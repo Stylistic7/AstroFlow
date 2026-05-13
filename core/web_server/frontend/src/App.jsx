@@ -244,6 +244,12 @@ function App() {
                     <StackViewer />
                   </AppLayout>
                 } />
+                <Route path="/stack/:stack_id/:implementation/:quality" element={
+                  dataIsAvailable &&
+                  <AppLayout>
+                    <StackViewer />
+                  </AppLayout>
+                } />
                 <Route path="/stack/:stack_id/calibration_stack/:calibration_stack_id" element={
                   dataIsAvailable &&
                   <AppLayout>
@@ -280,6 +286,12 @@ function App() {
                     <StackViewer />
                   </AppLayout>
                 } />
+                <Route path="/target/:target_id/stack/:stack_id/:implementation/:quality" element={
+                  dataIsAvailable &&
+                  <AppLayout>
+                    <StackViewer />
+                  </AppLayout>
+                } />
                 <Route path="/target/:target_id/stack/:stack_id/calibration_stack/:calibration_stack_id" element={
                   dataIsAvailable &&
                   <AppLayout>
@@ -293,6 +305,12 @@ function App() {
                   </AppLayout>}
                 />
                 <Route path="/mosaic/:mosaic_id/target/:target_id/stack/:stack_id" element={
+                  dataIsAvailable &&
+                  <AppLayout>
+                    <StackViewer />
+                  </AppLayout>
+                } />
+                <Route path="/mosaic/:mosaic_id/target/:target_id/stack/:stack_id/:implementation/:quality" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <StackViewer />

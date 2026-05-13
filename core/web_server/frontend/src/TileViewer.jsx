@@ -30,7 +30,7 @@ const formatDecDms = (decDeg) => {
   return `${sign}${String(d).padStart(2, '0')}°${String(m).padStart(2, '0')}'${s.toFixed(0).padStart(2, '0')}"`;
 };
 
-const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filter: filterProp, qualityLevel: qualityLevelProp, showPolygons, showPanelNumbers }) => {
+const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filter: filterProp, qualityLevel: qualityLevelProp, implementation, showPolygons, showPanelNumbers }) => {
   const params = useParams();
   const { objectType: objectTypeParam, imageHash: imageHashParam, filter: filterParam } = params;
 
@@ -89,10 +89,18 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
 
   useEffect(() => {
     const level = qualityLevelProp || 'auto';
-    fetch(`/tile_metadata/${objectType}/${imageHash}/${filter}/${level}`)
+    // Two flavors of the route — with-implementation and without. The
+    // with-implementation form is needed whenever the caller has
+    // selected a specific pipeline (mosaic/stack viewers); the
+    // without-implementation form falls back to context.settings's
+    // default for legacy callers (target cards, etc.).
+    const url = implementation
+      ? `/tile_metadata/${objectType}/${imageHash}/${implementation}/${level}/${filter}`
+      : `/tile_metadata/${objectType}/${imageHash}/${filter}/${level}`;
+    fetch(url)
       .then((res) => res.ok ? res.json() : null)
       .then((meta) => { if (meta) setTileMetadata(meta); });
-  }, [objectType, imageHash, filter, qualityLevelProp, computeGraphStatus]);
+  }, [objectType, imageHash, filter, qualityLevelProp, implementation, computeGraphStatus]);
 
   const onClick = (poly, event) => {
     const e = event.nativeEvent; // underlying DOM PointerEvent
@@ -149,6 +157,7 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
           imageHash={imageHash}
           filter={filter}
           qualityLevel={qualityLevelProp}
+          implementation={implementation}
           port={tileMetadata.port}
           imageWidth={tileMetadata.width}
           imageHeight={tileMetadata.height}
@@ -208,7 +217,7 @@ function drawExposureClock(g, cx, cy, radius, hours) {
 }
 
 
-const ImperativeViewport = ({ objectType, imageHash, filter, qualityLevel, port, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom, mtime, showPolygons, showPanelNumbers, metadata, mosaics, onClick, showQuarantined, isQuarantined, stacks }) => {
+const ImperativeViewport = ({ objectType, imageHash, filter, qualityLevel, implementation, port, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom, mtime, showPolygons, showPanelNumbers, metadata, mosaics, onClick, showQuarantined, isQuarantined, stacks }) => {
   const app = useApp();
   const viewportRef = useRef(null);
   const spritesRef = useRef({});
@@ -441,7 +450,9 @@ const ImperativeViewport = ({ objectType, imageHash, filter, qualityLevel, port,
           if (spritesRef.current[key]) continue;
 
           const tileLevel = qualityLevel || 'auto';
-          const relativePath = `/tile/${objectType}/${imageHash}/${filter}/${tileLevel}/${bestZ}/${x}/${y}.png`;
+          const relativePath = implementation
+            ? `/tile/${objectType}/${imageHash}/${implementation}/${tileLevel}/${filter}/${bestZ}/${x}/${y}.png`
+            : `/tile/${objectType}/${imageHash}/${filter}/${tileLevel}/${bestZ}/${x}/${y}.png`;
           const url = new URL(relativePath, `${window.location.protocol}//${window.location.hostname}:${port}`);
           if (mtime) url.searchParams.set('v', mtime);
           PIXI.Texture.fromURL(url.href)
@@ -490,7 +501,7 @@ const ImperativeViewport = ({ objectType, imageHash, filter, qualityLevel, port,
       try { viewport.destroy({ children: true }); } catch {}
       spritesRef.current = {};
     };
-  }, [app, mosaics, imageHash, filter, imageWidth, imageHeight, maxZoom, worldWidth, worldHeight, showPolygons, showPanelNumbers, stacks, metadata]);
+  }, [app, mosaics, imageHash, filter, implementation, qualityLevel, imageWidth, imageHeight, maxZoom, worldWidth, worldHeight, showPolygons, showPanelNumbers, stacks, metadata]);
 
   return null;
 };

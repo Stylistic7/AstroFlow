@@ -2,7 +2,7 @@
 // (mosaic × implementation × quality × filter). The dashboard
 // (MosaicDashboard.jsx) is the entry point; this is what you see
 // after clicking a thumbnail.
-import React, { useContext, useEffect, useMemo, useState, useCallback } from "react";
+import React, { useCallback, useContext, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 
 import {
@@ -28,8 +28,7 @@ import ToggleIconButton from "./ToggleIconButton";
 import WorkflowGraph from "./WorkflowGraph.jsx";
 import ConcernsBadge from "./ConcernsBadge.jsx";
 import darkTheme from "./theme.js";
-
-const QUALITY_ORDER = ["PostProcessed", "Master", "DownscaledMaster", "Subframe"];
+import { useVersionsMatrix, useVersionCycling, versionExists } from "./useVersions.js";
 
 
 export default function MosaicViewer() {
@@ -41,93 +40,29 @@ export default function MosaicViewer() {
 	const [showOutline, setShowOutline] = useState(true);
 	const [showPanelNumbers, setShowPanelNumbers] = useState(false);
 	const [telescopiusOpen, setTelescopiusOpen] = useState(false);
-	const [versionsData, setVersionsData] = useState({ filters: [], versions: [] });
 
     const mosaic = mosaics?.[mosaic_id];
 
-    useEffect(() => {
-        fetch(`/api/mosaic_versions/${mosaic_id}`)
-            .then((res) => res.ok ? res.json() : null)
-            .then((data) => data && setVersionsData(data))
-            .catch((e) => console.warn(e));
-    }, [mosaic_id, computeGraphStatus]);
+    const versionsData = useVersionsMatrix("mosaic", mosaic_id, computeGraphStatus);
 
-    // Keyboard shortcuts to flip between versions while staying at full screen:
-    //   [ ]   cycle implementation
-    //   { }   cycle quality
-    //   , .   cycle filter
-    useEffect(() => {
-        const handler = (e) => {
-            // Ignore when typing in an input.
-            if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+    // Keyboard shortcuts:  [ ]  implementation,  { }  quality,  , .  filter.
+    const onCycle = useCallback(
+        ({ implementation: i, quality: q, filter: f }) =>
+            navigate(`/mosaic/${mosaic_id}/${i}/${q}/${f}`),
+        [navigate, mosaic_id],
+    );
+    useVersionCycling({
+        data: versionsData,
+        current: { implementation, quality, filter },
+        onChange: onCycle,
+    });
 
-            const { implementations, qualities, filters } = (() => {
-                const vs = versionsData.versions;
-                const impls = [...new Set(vs.map((v) => v.implementation))];
-                const quals = QUALITY_ORDER.filter((q) =>
-                    vs.some((v) => v.quality === q && v.implementation === implementation && v.exists)
-                );
-                return { implementations: impls, qualities: quals, filters: versionsData.filters };
-            })();
-
-            const exists = (impl, q, f) => versionsData.versions.some(
-                (v) => v.implementation === impl && v.quality === q && v.filter === f && v.exists
-            );
-
-            const cycle = (list, current, dir) => {
-                const idx = list.indexOf(current);
-                if (idx < 0) return current;
-                return list[(idx + dir + list.length) % list.length];
-            };
-            const cycleToExisting = (list, current, dir, predicate) => {
-                // Step through until we find a combination that exists.
-                let candidate = current;
-                for (let i = 0; i < list.length; i++) {
-                    candidate = cycle(list, candidate, dir);
-                    if (predicate(candidate)) return candidate;
-                }
-                return current;
-            };
-
-            if (e.key === "[" || e.key === "]") {
-                const dir = e.key === "]" ? 1 : -1;
-                const next = cycleToExisting(
-                    implementations, implementation, dir,
-                    (i) => exists(i, quality, filter),
-                );
-                if (next !== implementation) navigate(`/mosaic/${mosaic_id}/${next}/${quality}/${filter}`);
-                e.preventDefault();
-            } else if (e.key === "{" || e.key === "}") {
-                const dir = e.key === "}" ? 1 : -1;
-                const next = cycleToExisting(
-                    qualities, quality, dir,
-                    (q) => exists(implementation, q, filter),
-                );
-                if (next !== quality) navigate(`/mosaic/${mosaic_id}/${implementation}/${next}/${filter}`);
-                e.preventDefault();
-            } else if (e.key === "," || e.key === ".") {
-                const dir = e.key === "." ? 1 : -1;
-                const next = cycleToExisting(
-                    filters, filter, dir,
-                    (f) => exists(implementation, quality, f),
-                );
-                if (next !== filter) navigate(`/mosaic/${mosaic_id}/${implementation}/${quality}/${next}`);
-                e.preventDefault();
-            }
-        };
-        window.addEventListener("keydown", handler);
-        return () => window.removeEventListener("keydown", handler);
-    }, [mosaic_id, implementation, quality, filter, versionsData, navigate]);
-
-    // Furthest-processed file exists for the current (impl, filter)
-    // when versionsData has a Master version flagged exists. Backend
-    // accepts either the canonical store output or the per-filter
-    // merge-progress TIFF, both of which set exists=true.
-    const masterExists = versionsData.versions.some(
-        (v) => v.implementation === implementation
-            && v.quality === "Master"
-            && v.filter === filter
-            && v.exists,
+    // The "Open in PixInsight" button needs to know whether the
+    // canonical Master output (or its in-progress fallback) exists for
+    // the current view; either path counts as available per the
+    // versions matrix.
+    const masterExists = versionExists(
+        versionsData.versions, implementation, "Master", filter,
     );
 
     const openInPixInsight = () => {

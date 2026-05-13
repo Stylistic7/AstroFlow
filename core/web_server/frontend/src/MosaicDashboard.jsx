@@ -133,7 +133,7 @@ export default function MosaicDashboard() {
     const mosaic = mosaics?.[mosaic_id];
 
     useEffect(() => {
-        fetch(`/api/mosaic_versions/${mosaic_id}`)
+        fetch(`/api/object_versions/mosaic/${mosaic_id}`)
             .then((res) => res.ok ? res.json() : null)
             .then(setData)
             .catch(() => setData(null));

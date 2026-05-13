@@ -11,7 +11,7 @@ import {
   ToggleButtonGroup,
   Typography,
 } from '@mui/material';
-import TileViewer from './TileViewer';
+import { AstroFlowImage } from './AstroFlowImage.jsx';
 import RunsTab from './RunsTab.jsx';
 import WorkflowGraph from './WorkflowGraph.jsx';
 import StackingReportPanel from './StackingReportPanel.jsx';
@@ -79,29 +79,9 @@ function BlinkQualityInfo({ stack_id }) {
   );
 }
 
-const StackTabs = ({ stack_type, stack, stack_id }) => {
+const StackTabs = ({ stack_type, stack, stack_id, implementation, quality }) => {
   const [tabIndex, setTabIndex] = useState(0);
-  const [tileViewerAvailable, setTileViewerAvailable] = useState(true);
   const videoRef = useRef(null);
-
-  useEffect(() => {
-    const checkTile = async () => {
-      try {
-        // tile_metadata 200s when a tile pyramid resolves at any
-        // available level for the stack; 404s when nothing's been
-        // built yet. (Filter is unused at the stack level — passing
-        // "none" as a placeholder.)
-        const res = await fetch(
-          `/tile_metadata/stack/${stack_id}/none/auto`,
-          { method: 'HEAD' },
-        );
-        setTileViewerAvailable(res.ok);
-      } catch {
-        setTileViewerAvailable(false);
-      }
-    };
-    checkTile();
-  }, [stack_id]);
 
   return (
     <Paper
@@ -140,18 +120,16 @@ const StackTabs = ({ stack_type, stack, stack_id }) => {
               (sx wins specificity), leaving this tab rendered under the
               Runs tab. */}
           <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-            {tileViewerAvailable ? (
-              <>
-                {stack_type === 'stack' && <StackingReportPanel stack_id={stack_id} />}
-                <Box sx={{ flex: 1, minHeight: 0 }}>
-                  <TileViewer objectType={stack_type} imageHash={stack_id} />
-                </Box>
-              </>
-            ) : (
-              <Typography align="center" variant="h6" sx={{ mt: 10 }}>
-                This stack has not been integrated yet.
-              </Typography>
-            )}
+            {stack_type === 'stack' && <StackingReportPanel stack_id={stack_id} />}
+            <Box sx={{ flex: 1, minHeight: 0 }}>
+              <AstroFlowImage
+                objectType={stack_type}
+                objectId={stack_id}
+                qualityLevel={quality}
+                implementation={implementation}
+                showQualitySelector={false}
+              />
+            </Box>
           </Box>
         </Box>
 

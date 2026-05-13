@@ -91,8 +91,8 @@ def test_orion_mosaic_versions_endpoint(client, with_orion_mosaic):
     mosaics = client.get("/api/mosaics").get_json()
     mosaic_id = next(iter(mosaics.keys()))
 
-    # /api/mosaic_versions/<id>: returns a full matrix
-    resp = client.get(f"/api/mosaic_versions/{mosaic_id}")
+    # /api/object_versions/mosaic/<id>: returns a full matrix
+    resp = client.get(f"/api/object_versions/mosaic/{mosaic_id}")
     assert resp.status_code == 200
     data = resp.get_json()
     assert "filters" in data and "versions" in data
@@ -134,4 +134,4 @@ def test_orion_mosaic_versions_endpoint(client, with_orion_mosaic):
                 assert field in m
 
     # Unknown mosaic id → 404.
-    assert client.get("/api/mosaic_versions/does_not_exist").status_code == 404
+    assert client.get("/api/object_versions/mosaic/does_not_exist").status_code == 404

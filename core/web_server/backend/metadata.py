@@ -338,13 +338,110 @@ def metadata(object_type: str, object_id: str, level_or_filter: str = None, filt
     })
 
 
-@metadata_bp.route("/api/mosaic_versions/<mosaic_id>")
-def mosaic_versions(mosaic_id: str):
-    """Return the (implementation × quality × filter) matrix for a mosaic.
+_OBJECT_TYPE_MAP = {
+    "mosaic": Mosaic,
+    "target": Target,
+    "stack": Stack,
+    "calibration_stack": CalibrationStack,
+}
 
-    Shape:
+
+def _resolve_versioned_object(object_type: str, object_id: str):
+    """Return (obj, filters, filename_candidates) for /api/object_versions.
+
+    `filename_candidates(impl, level, f) -> list[Path]` lists every path
+    that should count as "this version exists" — the canonical producer
+    output plus any object-specific fallbacks (e.g. mosaic in-progress
+    merge tiffs). The caller takes the first one that's on disk.
+    """
+    from pathlib import Path
+
+    obj_cls = _OBJECT_TYPE_MAP.get(object_type)
+    if obj_cls is None:
+        return None
+
+    if object_type == "mosaic":
+        mosaics = context.mosaics or {}
+        if object_id not in mosaics:
+            return None
+        mosaic = mosaics[object_id].get()
+        filters = _mosaic_filters(mosaic)
+        output_dir = context.output_dir
+
+        def filename_candidates(impl, level, f):
+            candidates = []
+            fn = get_filename_fn(MediaType.IMAGE, Mosaic, level, impl)
+            if fn is not None:
+                candidates.append(fn(mosaic, f))
+            # merge_images writes a per-(mosaic, filter, level) progress
+            # tiff that's overwritten each step; surface it so the
+            # dashboard lights up before the final store runs.
+            if output_dir is not None:
+                candidates.append(
+                    Path(output_dir) / "Mosaic" / str(level)
+                    / f"progress_{mosaic.stable_hash}_{f}.tiff"
+                )
+            return candidates
+
+        return mosaic, filters, filename_candidates
+
+    if object_type == "target":
+        targets = context.targets or {}
+        if object_id not in targets:
+            return None
+        target = targets[object_id].get()
+        stacks_dict = context.stacks or {}
+        filters = sorted({
+            stacks_dict[sid].get().filter
+            for sid in target.stack_ids
+            if sid in stacks_dict and stacks_dict[sid].get().filter
+        })
+
+        def filename_candidates(impl, level, f):
+            fn = get_filename_fn(MediaType.IMAGE, Target, level, impl)
+            return [fn(target, f)] if fn else []
+
+        return target, filters, filename_candidates
+
+    if object_type == "stack":
+        stacks_dict = context.stacks or {}
+        if object_id not in stacks_dict:
+            return None
+        stack = stacks_dict[object_id].get()
+        filters = [stack.filter] if stack.filter else []
+
+        def filename_candidates(impl, level, f):
+            fn = get_filename_fn(MediaType.IMAGE, type(stack), level, impl)
+            return [fn(stack)] if fn else []
+
+        return stack, filters, filename_candidates
+
+    if object_type == "calibration_stack":
+        cal_stacks = context.calibration_stacks or {}
+        if object_id not in cal_stacks:
+            return None
+        stack = cal_stacks[object_id]
+        filters = [stack.filter] if stack.filter else []
+
+        def filename_candidates(impl, level, f):
+            fn = get_filename_fn(MediaType.IMAGE, type(stack), level, impl)
+            return [fn(stack)] if fn else []
+
+        return stack, filters, filename_candidates
+
+    return None
+
+
+@metadata_bp.route("/api/object_versions/<object_type>/<object_id>")
+def object_versions(object_type: str, object_id: str):
+    """Return the (implementation × quality × filter) matrix for any
+    object type (mosaic / target / stack / calibration_stack).
+
+    Shape matches /api/mosaic_versions so the frontend can consume one
+    endpoint for every viewer:
+
       {
-        "filters": ["H", "S", "O"],
+        "filters": ["H", "S"],   # one entry for stacks; possibly empty for cal stacks
         "versions": [
           {"implementation": "PixInsight", "quality": "Master",
            "filter": "H", "exists": true, "mtime": 1234567890.0},
@@ -352,50 +449,32 @@ def mosaic_versions(mosaic_id: str):
         ],
       }
     """
-    mosaics = context.mosaics or {}
-    if mosaic_id not in mosaics:
+    resolved = _resolve_versioned_object(object_type, object_id)
+    if resolved is None:
         return abort(404)
-    mosaic = mosaics[mosaic_id].get()
-    filters = _mosaic_filters(mosaic)
+    _obj, filters, filename_candidates = resolved
 
-    # Progress tile pyramids (written by merge_images) signal in-progress
-    # merges before the final store_mosaic_color_channel runs. Surface them
-    # so the dashboard shows thumbnails as merges stream in.
-    from pathlib import Path
-    output_dir = context.output_dir
-
-    def progress_path(level, f):
-        if output_dir is None:
-            return None
-        return Path(output_dir) / "Mosaic" / str(level) / f"progress_{mosaic.stable_hash}_{f}.tiff"
+    # Filterless objects (e.g., bias cal stacks) still need one entry per
+    # (impl, level) — model that as a single None-filter row.
+    iter_filters = filters or [None]
 
     versions = []
     for impl in Implementation:
         for level in QUALITY_PRIORITY:
-            filename_fn = get_filename_fn(MediaType.IMAGE, Mosaic, level, impl)
-            if filename_fn is None:
-                continue
-            for f in filters:
-                path = filename_fn(mosaic, f)
-                final_exists = path is not None and os.path.exists(path)
-                prog = progress_path(level, f)
-                progress_exists = prog is not None and prog.exists()
-                exists = final_exists or progress_exists
-                if final_exists:
-                    mtime = os.path.getmtime(path)
-                elif progress_exists:
-                    mtime = os.path.getmtime(prog)
-                else:
-                    mtime = None
+            for f in iter_filters:
+                candidates = filename_candidates(impl, level, f)
+                hit = next(
+                    (p for p in candidates if p is not None and os.path.exists(p)),
+                    None,
+                )
                 versions.append({
                     "implementation": impl.value,
                     "quality": level.value,
                     "filter": f,
-                    "exists": exists,
-                    "mtime": mtime,
+                    "exists": hit is not None,
+                    "mtime": os.path.getmtime(hit) if hit is not None else None,
                 })
 
-    return jsonify({
-        "filters": filters,
-        "versions": versions,
-    })
+    return jsonify({"filters": filters, "versions": versions})
+
+

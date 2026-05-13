@@ -1,4 +1,4 @@
-import { useContext, useEffect, useState } from 'react';
+import { useContext } from 'react';
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { useTheme } from '@mui/material/styles';
 
@@ -19,13 +19,16 @@ import AstroFlowContext from './AstroFlowContext.jsx';
 import QuarantineToggle from './QuarantineToggle.jsx';
 import ShoppingCartMenu from './ShoppingCartMenu.jsx';
 import SuggestionBadge from './suggestions/SuggestionBadge.jsx';
+import {
+    useVersionsMatrix,
+    implementationsFrom,
+    qualitiesFor,
+    versionExists,
+} from './useVersions.js';
 
 function capitalizeFirst(str) {
     return str.charAt(0).toUpperCase() + str.slice(1);
 }
-
-
-const QUALITY_ORDER = ["PostProcessed", "Master", "DownscaledMaster", "Subframe"];
 
 /**
  * A breadcrumb crumb that's also a row of selectable pills.
@@ -85,37 +88,7 @@ export default function AstroFlowBreadcrumbs() {
     const navigate = useNavigate();
     const theme = useTheme();
 
-    // Fetch the (implementation × quality × filter) matrix when the URL
-    // has a mosaic_id, so the pill crumbs can render with correct
-    // enabled/disabled state. Re-fetch on compute-graph-status SSE so the
-    // pills light up live as versions finish rendering.
-    const [versionsData, setVersionsData] = useState({ filters: [], versions: [] });
-    useEffect(() => {
-        if (!params.mosaic_id) return;
-        fetch(`/api/mosaic_versions/${params.mosaic_id}`)
-            .then((res) => res.ok ? res.json() : null)
-            .then((data) => data && setVersionsData(data))
-            .catch((e) => console.warn(e));
-    }, [params.mosaic_id, computeGraphStatus]);
-
     const { implementation, quality, filter } = params;
-    const mosaicVersions = versionsData.versions;
-
-    // Derive the options for each pill row from the versions matrix.
-    const implementations = [...new Set(mosaicVersions.map((v) => v.implementation))];
-    const qualities = QUALITY_ORDER.filter((q) =>
-        mosaicVersions.some(
-            (v) => v.quality === q && v.implementation === implementation && v.exists
-        )
-    );
-    const filters = versionsData.filters;
-
-    const versionExists = (impl, q, f) => mosaicVersions.some(
-        (v) => v.implementation === impl && v.quality === q && v.filter === f && v.exists
-    );
-
-    const goToVersion = (impl, q, f) =>
-        navigate(`/mosaic/${params.mosaic_id}/${impl}/${q}/${f}`);
 
     const mosaic = mosaics[params.mosaic_id];
     const target = targets[params.target_id];
@@ -125,13 +98,9 @@ export default function AstroFlowBreadcrumbs() {
     // TODO: Don't hardcode the font color; use the theme.
     const fontColor = "#aaa";
 
-    // Target/stack drill-down URLs intentionally drop the parent
-    // mosaic's (implementation, quality, filter) — those segments are
-    // image-viewer state and don't belong in deeper paths. The
-    // implementation/quality/filter pill crumbs below render only when
-    // we're on the mosaic image viewer route (where those params are
-    // actually set), so they disappear automatically as soon as the
-    // user clicks into a target.
+    // Breadcrumb-link URLs intentionally drop the viewer's trailing
+    // (implementation, quality, filter) segments — those describe
+    // image-viewer state and shouldn't ride along into deeper crumbs.
     let mosaic_url = "";
     let target_url = "";
     let stack_url = "";
@@ -154,6 +123,44 @@ export default function AstroFlowBreadcrumbs() {
     if (params.calibration_stack_id) {
         cal_stack_url += `/calibration_stack/${params.stack_id}`;
     }
+
+    // Pick the deepest object that the URL identifies — that's the one
+    // whose version matrix drives the pill crumbs. Stack viewer pages
+    // (even when nested under a mosaic) show stack versions; the bare
+    // mosaic viewer page shows mosaic versions. Target / calibration
+    // stack pages don't render an image, so they don't get pills.
+    let viewerObjectType = null;
+    let viewerObjectId = null;
+    let viewerPathPrefix = "";
+    let viewerHasFilter = false;
+    if (params.stack_id) {
+        viewerObjectType = "stack";
+        viewerObjectId = params.stack_id;
+        viewerPathPrefix = stack_url;
+        viewerHasFilter = false;
+    } else if (params.mosaic_id && implementation) {
+        viewerObjectType = "mosaic";
+        viewerObjectId = params.mosaic_id;
+        viewerPathPrefix = mosaic_url;
+        viewerHasFilter = true;
+    }
+
+    const versionsData = useVersionsMatrix(
+        viewerObjectType, viewerObjectId, computeGraphStatus,
+    );
+    const allVersions = versionsData.versions;
+    // Stack URLs have no filter segment, but the backend tags every
+    // version row with the stack's intrinsic filter — use that for
+    // matching so the pill-disabled state lines up with reality.
+    const matchFilter = filter ?? versionsData.filters?.[0] ?? null;
+    const implementations = implementationsFrom(allVersions);
+    const qualities = qualitiesFor(allVersions, implementation, matchFilter);
+    const filters = versionsData.filters;
+
+    const goToVersion = (impl, q, f) =>
+        navigate(viewerHasFilter
+            ? `${viewerPathPrefix}/${impl}/${q}/${f}`
+            : `${viewerPathPrefix}/${impl}/${q}`);
 
     // Determine the deepest (most specific) object for the quarantine toggle.
     let quarantineObjectType = null;
@@ -231,39 +238,6 @@ export default function AstroFlowBreadcrumbs() {
                     <AutoAwesomeMosaicIcon sx={{ marginRight: '0.5em' }} />
                     Mosaic "{mosaic.name}"
                 </Link>}
-                {implementation && implementations.length > 0 && (
-                    <PillCrumb
-                        icon={<BuildIcon sx={{ marginRight: '0.5em' }} />}
-                        options={implementations}
-                        active={implementation}
-                        exists={(impl) => versionExists(impl, quality, filter)}
-                        onPick={(impl) => goToVersion(impl, quality, filter)}
-                        fontColor={fontColor}
-                        activeColor={theme.palette.text.primary}
-                    />
-                )}
-                {quality && qualities.length > 0 && (
-                    <PillCrumb
-                        icon={<HighQualityIcon sx={{ marginRight: '0.5em' }} />}
-                        options={qualities}
-                        active={quality}
-                        exists={(q) => versionExists(implementation, q, filter)}
-                        onPick={(q) => goToVersion(implementation, q, filter)}
-                        fontColor={fontColor}
-                        activeColor={theme.palette.text.primary}
-                    />
-                )}
-                {filter && filters.length > 0 && (
-                    <PillCrumb
-                        icon={<ColorLensIcon sx={{ marginRight: '0.5em' }} />}
-                        options={filters}
-                        active={filter}
-                        exists={(f) => versionExists(implementation, quality, f)}
-                        onPick={(f) => goToVersion(implementation, quality, f)}
-                        fontColor={fontColor}
-                        activeColor={theme.palette.text.primary}
-                    />
-                )}
                 {params.target_id && <Link
                     href={target_url}
                     underline="hover"
@@ -312,6 +286,39 @@ export default function AstroFlowBreadcrumbs() {
                     <SquareFootIcon sx={{ marginRight: '0.5em' }} />
                     {capitalizeFirst(calStack.image_type)} calibration stack
                 </Link>}
+                {implementation && implementations.length > 0 && (
+                    <PillCrumb
+                        icon={<BuildIcon sx={{ marginRight: '0.5em' }} />}
+                        options={implementations}
+                        active={implementation}
+                        exists={(impl) => versionExists(allVersions, impl, quality, matchFilter)}
+                        onPick={(impl) => goToVersion(impl, quality, filter)}
+                        fontColor={fontColor}
+                        activeColor={theme.palette.text.primary}
+                    />
+                )}
+                {quality && qualities.length > 0 && (
+                    <PillCrumb
+                        icon={<HighQualityIcon sx={{ marginRight: '0.5em' }} />}
+                        options={qualities}
+                        active={quality}
+                        exists={(q) => versionExists(allVersions, implementation, q, matchFilter)}
+                        onPick={(q) => goToVersion(implementation, q, filter)}
+                        fontColor={fontColor}
+                        activeColor={theme.palette.text.primary}
+                    />
+                )}
+                {filter && filters.length > 0 && (
+                    <PillCrumb
+                        icon={<ColorLensIcon sx={{ marginRight: '0.5em' }} />}
+                        options={filters}
+                        active={filter}
+                        exists={(f) => versionExists(allVersions, implementation, quality, f)}
+                        onPick={(f) => goToVersion(implementation, quality, f)}
+                        fontColor={fontColor}
+                        activeColor={theme.palette.text.primary}
+                    />
+                )}
             </Breadcrumbs>
             {quarantineObjectType && (<>
                 <ShoppingCartMenu

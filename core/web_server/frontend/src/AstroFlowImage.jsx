@@ -46,6 +46,7 @@ export const AstroFlowImage = ({
     showQualitySelector = true,
     qualityLevel: qualityLevelProp = undefined,
     onQualityChange = undefined,
+    implementation = undefined,
 }) => {
     // Use controlled props if provided, otherwise manage internally.
     const [internalLevel, setInternalLevel, enrichedLevels] =
@@ -61,11 +62,12 @@ export const AstroFlowImage = ({
             <div style={{ flexGrow: 1, position: 'relative', overflow: 'hidden' }}>
                 {size === "full" ? (
                     <TileViewer
-                        key={`${objectType}:${objectId}:${filter}:${qualityLevel}`}
+                        key={`${objectType}:${objectId}:${filter}:${qualityLevel}:${implementation}`}
                         objectType={objectType}
                         imageHash={objectId}
                         filter={filter}
                         qualityLevel={qualityLevel}
+                        implementation={implementation}
                         showPolygons={showPolygons}
                         showPanelNumbers={showPanelNumbers}
                     />
