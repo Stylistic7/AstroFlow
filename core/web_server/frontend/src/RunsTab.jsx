@@ -95,7 +95,10 @@ const RunsTab = ({ stack }) => {
   };
 
   const getSelectedFlatByRun = run => {
-    if (selectedFlatsByRun[run.id]) {
+    // Key presence, not truthiness: clicking "none" stores `undefined` as
+    // the user's explicit choice. A truthy check would treat that as "no
+    // selection" and fall through to the server-side default.
+    if (run.id in selectedFlatsByRun) {
       return selectedFlatsByRun[run.id];
     } else if ('flat' in run.dependencies) {
       if ('stack_id' in run.dependencies['flat']) {
