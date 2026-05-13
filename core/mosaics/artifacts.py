@@ -30,26 +30,32 @@ def tile_filename(mosaic: Mosaic, filter: str) -> TiffFilePath:
 
 
 def merged_filename_tiff(
-    mosaic: Mosaic, image_0: ImageMetadata, image_1: ImageMetadata
+    mosaic: Mosaic, filter: str,
+    image_0: ImageMetadata, image_1: ImageMetadata,
 ) -> TiffFilePath:
     return TiffFilePath(
-        f"merged_{mosaic.stable_hash}_{image_0.stable_hash}_{image_1.stable_hash}.tiff"
+        f"merged_{mosaic.stable_hash}_{filter}_"
+        f"{image_0.stable_hash}_{image_1.stable_hash}.tiff"
     )
 
 
 def merged_filename_xisf(
-    mosaic: Mosaic, image_0: ImageMetadata, image_1: ImageMetadata
+    mosaic: Mosaic, filter: str,
+    image_0: ImageMetadata, image_1: ImageMetadata,
 ) -> XisfFilePath:
     return XisfFilePath(
-        f"merged_{mosaic.stable_hash}_{image_0.stable_hash}_{image_1.stable_hash}.xisf"
+        f"merged_{mosaic.stable_hash}_{filter}_"
+        f"{image_0.stable_hash}_{image_1.stable_hash}.xisf"
     )
 
 
 def merged_filename_fits(
-    mosaic: Mosaic, image_0: ImageMetadata, image_1: ImageMetadata
+    mosaic: Mosaic, filter: str,
+    image_0: ImageMetadata, image_1: ImageMetadata,
 ) -> FitsFilePath:
     return FitsFilePath(
-        f"merged_{mosaic.stable_hash}_{image_0.stable_hash}_{image_1.stable_hash}.fits"
+        f"merged_{mosaic.stable_hash}_{filter}_"
+        f"{image_0.stable_hash}_{image_1.stable_hash}.fits"
     )
 
 

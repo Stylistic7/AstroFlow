@@ -111,16 +111,6 @@ class MosaicId(ObjectId):
 
 
 @dataclass(frozen=True)
-class MergeStepId(ObjectId):
-    mosaic: Mosaic
-    input_0: ImageMetadata
-    input_1: ImageMetadata
-
-    def filename_stem(self) -> str:
-        return f"merged_{self.mosaic.stable_hash}_{self.input_0.stable_hash}_{self.input_1.stable_hash}"
-
-
-@dataclass(frozen=True)
 class MergeProgressId(ObjectId):
     mosaic: Mosaic
     filter: str

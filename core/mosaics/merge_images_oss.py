@@ -65,7 +65,7 @@ def merge_images_oss(
     input_1: ImageMetadata,
 ) -> WithSidecar:
     output_filename = get_filename_fn(MediaType.IMAGE, MergedImage, mode, OSS)(
-        mosaic, input_0, input_1,
+        mosaic, filter, input_0, input_1,
     )
     Path(output_filename).parent.mkdir(parents=True, exist_ok=True)
 

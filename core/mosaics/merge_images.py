@@ -57,7 +57,7 @@ def merge_images(
     path_1 = input_1.filename.resolve(strict=True)
 
     output_fn = get_filename_fn(MediaType.IMAGE, MergedImage, mode)
-    output_filename = output_fn(mosaic, input_0, input_1)
+    output_filename = output_fn(mosaic, filter, input_0, input_1)
     Path(output_filename).parent.mkdir(parents=True, exist_ok=True)
 
     if mode == SUBFRAME:
