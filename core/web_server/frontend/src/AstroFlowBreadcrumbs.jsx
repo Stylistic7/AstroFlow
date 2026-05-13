@@ -1,9 +1,11 @@
-import { useContext } from 'react';
+import { useContext, useRef, useState } from 'react';
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { useTheme } from '@mui/material/styles';
 
 import Box from '@mui/material/Box';
 import Breadcrumbs from '@mui/material/Breadcrumbs';
+import Menu from '@mui/material/Menu';
+import MenuItem from '@mui/material/MenuItem';
 import LayersIcon from '@mui/icons-material/Layers';
 import SquareFootIcon from '@mui/icons-material/SquareFoot';
 import AutoAwesomeMosaicIcon from '@mui/icons-material/AutoAwesomeMosaic';
@@ -25,56 +27,83 @@ import {
     qualitiesFor,
     versionExists,
 } from './useVersions.js';
+import { filterLabel } from './filters.js';
 
 function capitalizeFirst(str) {
     return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
 /**
- * A breadcrumb crumb that's also a row of selectable pills.
+ * A breadcrumb crumb that opens a dropdown of selectable values.
  *
- * Renders an icon + a row of values. The currently-active value is
- * highlighted; values that exist on disk are clickable; values with no
- * corresponding version are dimmed. Matches the typography / padding of
- * the sibling Link crumbs so it reads as part of the breadcrumb trail.
+ * Renders an icon + the currently-active value + a chevron. Clicking
+ * the chip opens an MUI Menu listing all options; unavailable ones
+ * (no version on disk) are dimmed and disabled. Keeps the breadcrumb
+ * compact even when there are many options (filters can have 7+).
  */
-function PillCrumb({ icon, options, active, exists, onPick, fontColor, activeColor }) {
+function PillCrumb({ icon, options, active, exists, onPick, fontColor, activeColor, formatOption }) {
+    const [open, setOpen] = useState(false);
+    const anchorRef = useRef(null);
+    const label = formatOption ? formatOption : (v) => v;
+
     return (
         <Box sx={{
             display: 'flex',
             alignItems: 'center',
             marginLeft: '0.5em',
             marginRight: '0.5em',
-            gap: '0.25em',
         }}>
             {icon}
-            {options.map((opt, i) => {
-                const isActive = opt === active;
-                const isAvailable = exists(opt);
-                return (
-                    <Box
-                        key={opt}
-                        component={isAvailable ? 'a' : 'span'}
-                        onClick={isAvailable ? (e) => { e.preventDefault(); onPick(opt); } : undefined}
-                        href={isAvailable ? '#' : undefined}
-                        sx={{
-                            color: isActive ? activeColor : fontColor,
-                            fontWeight: isActive ? 600 : 400,
-                            opacity: isAvailable ? 1 : 0.35,
-                            cursor: isAvailable && !isActive ? 'pointer' : 'default',
-                            textDecoration: 'none',
-                            px: '0.4em',
-                            py: '0.1em',
-                            borderRadius: '4px',
-                            '&:hover': isAvailable && !isActive
-                                ? { textDecoration: 'underline' }
-                                : {},
-                        }}
-                    >
-                        {opt}
-                    </Box>
-                );
-            })}
+            <Box
+                ref={anchorRef}
+                onClick={() => setOpen((o) => !o)}
+                sx={{
+                    color: activeColor,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.25em',
+                    px: '0.4em',
+                    py: '0.1em',
+                    borderRadius: '4px',
+                    '&:hover': { backgroundColor: 'rgba(255,255,255,0.06)' },
+                }}
+            >
+                {label(active)}
+                <Box component="span" sx={{ fontSize: '0.7em', color: fontColor }}>
+                    ▾
+                </Box>
+            </Box>
+            <Menu
+                anchorEl={anchorRef.current}
+                open={open}
+                onClose={() => setOpen(false)}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+            >
+                {options.map((opt) => {
+                    const isActive = opt === active;
+                    const isAvailable = exists(opt);
+                    return (
+                        <MenuItem
+                            key={opt}
+                            selected={isActive}
+                            disabled={!isAvailable}
+                            onClick={() => {
+                                setOpen(false);
+                                if (!isActive && isAvailable) onPick(opt);
+                            }}
+                            sx={{
+                                fontWeight: isActive ? 600 : 400,
+                                opacity: isAvailable ? 1 : 0.4,
+                            }}
+                        >
+                            {label(opt)}
+                        </MenuItem>
+                    );
+                })}
+            </Menu>
         </Box>
     );
 }
@@ -317,6 +346,7 @@ export default function AstroFlowBreadcrumbs() {
                         onPick={(f) => goToVersion(implementation, quality, f)}
                         fontColor={fontColor}
                         activeColor={theme.palette.text.primary}
+                        formatOption={filterLabel}
                     />
                 )}
             </Breadcrumbs>
