@@ -34,7 +34,8 @@ def _cached_path_missing(cached: Any) -> Optional[Path]:
     return the missing path; otherwise None.
 
     Handles bare Path / FitsFilePath / XisfFilePath / TiffFilePath
-    (all subclass `Path`) plus `WithSidecar` wrappers around them.
+    (all subclass `Path`) plus `WithSidecar` wrappers around them, and
+    any result type carrying a `.filename: Path` (e.g. ImageMetadata).
     Anything else (numpy arrays, dicts, plain strings, ContextRefs)
     is left alone — only file-path returns are validated.
 
@@ -47,7 +48,14 @@ def _cached_path_missing(cached: Any) -> Optional[Path]:
     if isinstance(cached, WithSidecar):
         cached = cached.path
     if not isinstance(cached, Path):
-        return None
+        # Result types like ImageMetadata wrap a path in `.filename`.
+        # If that file is gone, the cached metadata is stale — fall
+        # through to the missing-path branch.
+        inner = getattr(cached, "filename", None)
+        if isinstance(inner, Path):
+            cached = inner
+        else:
+            return None
     return cached if not cached.exists() else None
 
 
