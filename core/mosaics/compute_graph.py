@@ -253,6 +253,7 @@ def build_mosaic_filter_subgraph(
                     mode,
                     mosaic,
                     filter,
+                    config.implementation,
                     config.development_settings.mock_pixinsight,
                     name=f"merge_{mosaic.stable_hash}_{filter}_{target.stable_hash}",
                 )
@@ -278,6 +279,7 @@ def build_mosaic_filter_subgraph(
                 mode,
                 mosaic,
                 filter,
+                config.implementation,
                 config.development_settings.mock_pixinsight,
                 name=f"merge_{mosaic.stable_hash}_{filter}_strip_{i}",
             )

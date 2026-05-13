@@ -7,23 +7,28 @@ from pathlib import Path
 from dataclasses import dataclass
 
 from file_io.generic import read_header, read_image
+from file_io.sidecar import get_section, set_section
 from pix import Image
 from pix.tasks import PhotometricMosaic
 from metadata.classes import ImageMetadata
 from mosaics.types import Mosaic
-from previews.types import QualityLevel, ALL_IMPLEMENTATIONS, PIXINSIGHT, SUBFRAME, MASTER, DOWNSCALED_MASTER
-from decorators import node, create_tile_pyramid
+from previews.types import (
+    QualityLevel, Implementation, ALL_IMPLEMENTATIONS,
+    PIXINSIGHT, SUBFRAME, MASTER, DOWNSCALED_MASTER,
+)
+from previews.create_tile_pyramid import default_make_tile_pyramid
+from decorators import node
 from file_io.tiff_file_io import write_tiff_image
 from file_io.types import XisfFilePath, TiffFilePath, WithSidecar
 from mosaics.artifacts import merged_filename_tiff, merged_filename_xisf
 from products import makes_image
-from products.identity import MergeProgressId, PresentationType
-
-THUMBNAIL = PresentationType.THUMBNAIL
+from products.identity import MosaicChannelId, PresentationType
 from products.registry import get_filename_fn, MediaType
 from hashing import hash_list
 
 log = structlog.get_logger()
+
+THUMBNAIL = PresentationType.THUMBNAIL
 
 
 @dataclass(frozen=True)
@@ -31,24 +36,89 @@ class MergedImage:
     pass
 
 
-def _merge_tile_path(mode, mosaic, filter, mock_pixinsight, input_0, input_1):
-    """Fixed tile pyramid location per (mosaic, filter, mode). Each merge
-    overwrites the previous, so the web server always serves the latest."""
-    from context import context
-    return context.output_dir / "Mosaic" / str(mode) / f"progress_{mosaic.stable_hash}_{filter}.tiff"
+def _panel_count(image_metadata: ImageMetadata) -> int:
+    """Return the number of mosaic panels contained in this intermediate.
 
+    Placed images carry sidecar `panel_count=1`; merges carry the sum of
+    their inputs. Missing sidecar defaults to 1 (treats unknown inputs as
+    single-panel placed images), keeping the chain monotonic for any
+    pre-existing files left over from before this mechanism existed.
+    """
+    return get_section(image_metadata.filename, "panel_count") or 1
+
+
+def _progress_tile_path(mosaic: Mosaic, filter: str, mode: QualityLevel) -> Path:
+    """Per-(mosaic, filter, mode) tile pyramid that the web server serves
+    while the canonical Master output is still in progress."""
+    from context import context
+    return (
+        Path(context.output_dir) / "Mosaic" / str(mode)
+        / f"progress_{mosaic.stable_hash}_{filter}.tiff"
+    )
+
+
+def _maybe_publish_progress(
+    mode: QualityLevel,
+    mosaic: Mosaic,
+    filter: str,
+    impl: Implementation,
+    output_filename: Path,
+    new_count: int,
+) -> None:
+    """Publish `output_filename` as this (mosaic, filter, mode, impl)'s
+    visible progress IFF it's strictly more complete than the current
+    best. "More complete" means strictly larger panel count — equal
+    counts (e.g., the second strip catching up to the first) do NOT
+    displace the current best, so the displayed image only ever gains
+    panels.
+    """
+    from context import context
+
+    best_key = (
+        "mosaic_best_merge",
+        mosaic.stable_hash,
+        filter,
+        mode.value,
+        impl.value,
+    )
+    best = context.get(best_key)
+    if best is not None and new_count <= best.get("panel_count", 0):
+        return
+
+    progress_path = _progress_tile_path(mosaic, filter, mode)
+    try:
+        default_make_tile_pyramid(Path(output_filename), progress_path)
+    except Exception as e:
+        log.warning("Failed to write progress tile pyramid",
+                    output=str(output_filename), error=str(e))
+        return
+
+    # Same key shape that store_mosaic_color_channel_xisf eventually
+    # overwrites with the final mosaic's thumbnail, so the handoff from
+    # in-progress to final is automatic.
+    thumbnail_key = MosaicChannelId(mosaic=mosaic, filter=filter).presentation_cache_key(
+        THUMBNAIL, Mosaic, mode, impl,
+    )
+    try:
+        from previews.operations import resize_array, autostretch, array_to_png
+        arr = read_image(output_filename)
+        png = array_to_png(autostretch(np.clip(resize_array(arr, 2048), 0.0, 1.0)))
+        context[thumbnail_key] = png
+    except Exception as e:
+        log.warning("Failed to render progress thumbnail",
+                    output=str(output_filename), error=str(e))
+
+    context[best_key] = {"path": str(output_filename), "panel_count": new_count}
 
 
 @node(resources={"PixInsight": 1}, auto_memory=True)
-@makes_image(MergedImage, ALL_IMPLEMENTATIONS, [SUBFRAME], merged_filename_tiff,
-             identity=MergeProgressId, presentations=[THUMBNAIL])
-@makes_image(MergedImage, PIXINSIGHT, [MASTER, DOWNSCALED_MASTER], merged_filename_xisf,
-             identity=MergeProgressId, presentations=[THUMBNAIL])
-@create_tile_pyramid(tile_filename=_merge_tile_path)
+@makes_image(MergedImage, ALL_IMPLEMENTATIONS, [SUBFRAME], merged_filename_tiff)
+@makes_image(MergedImage, PIXINSIGHT, [MASTER, DOWNSCALED_MASTER], merged_filename_xisf)
 def merge_images(
     mode: QualityLevel,
     mosaic: Mosaic,
     filter: str,
+    impl: Implementation,
     mock_pixinsight: bool,
     input_0: ImageMetadata,
     input_1: ImageMetadata,
@@ -82,5 +152,14 @@ def merge_images(
         result = PhotometricMosaic(images)
         result.save_to(output_filename, mock=mock_pixinsight)
 
-    log.info("Merge images complete", output=output_filename)
+    new_count = _panel_count(input_0) + _panel_count(input_1)
+    set_section(Path(output_filename), "panel_count", new_count)
+
+    # SUBFRAME is a fast preview path with no "in progress" semantics —
+    # there's no final Master mosaic to hand off to, so the progress-
+    # publication machinery only applies to MASTER / DOWNSCALED_MASTER.
+    if mode != SUBFRAME:
+        _maybe_publish_progress(mode, mosaic, filter, impl, Path(output_filename), new_count)
+
+    log.info("Merge images complete", output=output_filename, panel_count=new_count)
     return WithSidecar(output_filename)

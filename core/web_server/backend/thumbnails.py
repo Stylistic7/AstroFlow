@@ -10,7 +10,7 @@ from mosaics.merge_images import MergedImage
 from products.registry import get_producer, MediaType
 from products.identity import (
     ObjectId, PresentationType, StackId, TargetId,
-    MosaicChannelId, MergeProgressId,
+    MosaicChannelId,
     CalibratedStackId, UncorrectedRunId,
 )
 from previews.types import QualityLevel, Implementation, QUALITY_PRIORITY

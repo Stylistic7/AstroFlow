@@ -11,19 +11,17 @@ from pathlib import Path
 import astropy.io.fits as pyfits
 from scipy.ndimage import distance_transform_edt
 
-from decorators import node, create_tile_pyramid
+from decorators import node
 from file_io.generic import read_image
+from file_io.sidecar import set_section
 from file_io.types import FitsFilePath, WithSidecar
 from hashing import hash_list
 from metadata.classes import ImageMetadata
 from mosaics.artifacts import merged_filename_fits
-from mosaics.merge_images import MergedImage, _merge_tile_path
+from mosaics.merge_images import MergedImage, _maybe_publish_progress, _panel_count
 from mosaics.types import Mosaic
 from previews.types import QualityLevel, OSS, MASTER, DOWNSCALED_MASTER
 from products import makes_image
-from products.identity import MergeProgressId, PresentationType
-
-THUMBNAIL = PresentationType.THUMBNAIL
 from products.registry import get_filename_fn, MediaType
 
 log = structlog.get_logger()
@@ -53,13 +51,12 @@ def _blend(image_0, image_1):
 
 
 @node(auto_memory=True)
-@makes_image(MergedImage, OSS, [MASTER, DOWNSCALED_MASTER], merged_filename_fits,
-             identity=MergeProgressId, presentations=[THUMBNAIL])
-@create_tile_pyramid(tile_filename=_merge_tile_path)
+@makes_image(MergedImage, OSS, [MASTER, DOWNSCALED_MASTER], merged_filename_fits)
 def merge_images_oss(
     mode: QualityLevel,
     mosaic: Mosaic,
     filter: str,
+    impl,  # always OSS; accepted to match merge_images' signature
     mock_pixinsight: bool,
     input_0: ImageMetadata,
     input_1: ImageMetadata,
@@ -81,7 +78,9 @@ def merge_images_oss(
         str(output_filename), overwrite=True,
     )
 
-    from context import context
-    context[("latest_merge", mosaic.stable_hash, filter, mode)] = str(output_filename)
-    log.info("OSS merge complete", output=str(output_filename))
+    new_count = _panel_count(input_0) + _panel_count(input_1)
+    set_section(Path(output_filename), "panel_count", new_count)
+    _maybe_publish_progress(mode, mosaic, filter, impl, Path(output_filename), new_count)
+
+    log.info("OSS merge complete", output=str(output_filename), panel_count=new_count)
     return WithSidecar(output_filename)

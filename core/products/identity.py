@@ -111,12 +111,6 @@ class MosaicId(ObjectId):
 
 
 @dataclass(frozen=True)
-class MergeProgressId(ObjectId):
-    mosaic: Mosaic
-    filter: str
-
-
-@dataclass(frozen=True)
 class PlacedImageId(ObjectId):
     mosaic: Mosaic
     target: Target

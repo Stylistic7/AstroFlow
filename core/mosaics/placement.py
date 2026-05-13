@@ -203,6 +203,11 @@ def place_image(
         "FILTER": filter,
         "STBLHASH": target.stable_hash,
     })
+    # Panel-count sidecar: a placed image is one panel by definition.
+    # merge_images sums input sidecars to track "most complete merge so
+    # far" without touching file headers.
+    from file_io.sidecar import set_section
+    set_section(output_filename, "panel_count", 1)
     log.info("Place image complete", output_filename=output_filename)
 
     return WithSidecar(output_filename)
