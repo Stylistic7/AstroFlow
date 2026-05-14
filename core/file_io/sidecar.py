@@ -83,18 +83,21 @@ def get_file_size(data_path: Path) -> int | None:
     return root.get("file_size")
 
 
+_STALE_ON_REWRITE = ("image_metadata", "plate_solution", "content_hash", "broken")
+
+
 def discard_sidecar(obj: Any) -> None:
-    """Delete the sidecar .json file next to ``obj``, if it exists.
+    """Drop the sidecar sections that were computed from the previous
+    file content and would be wrong after the producer rewrites the
+    output. Currently: ``image_metadata``, ``plate_solution``,
+    ``content_hash``, ``broken``. Sections that describe the file's
+    identity rather than its content (e.g. ``panel_count``) are
+    preserved — producers that write them inside ``inner_func`` can
+    rely on them surviving this hook.
 
-    Called by cached_decorator's cache-miss path when an @makes_image
-    producer rewrites its output: any cached image_metadata or
-    plate_solution in the sidecar was computed from the previous file
-    content and is now stale. The sidecar will be recreated when the
-    image metadata is recomputed.
-
-    Only the sidecar .json is removed — the underlying data file is
-    never touched, preserving the "AstroFlow doesn't change the data
-    on your disk" invariant.
+    Called by ``@makes_image`` on every producer completion. If no
+    sections are left after pruning, the sidecar file is removed
+    entirely. The underlying data file is never touched.
     """
     # Unwrap WithSidecar (or any wrapper exposing .path) to its underlying path.
     while hasattr(obj, "path") and not isinstance(obj, (str, os.PathLike)):
@@ -103,7 +106,16 @@ def discard_sidecar(obj: Any) -> None:
         data_path = Path(os.fspath(obj))
     except TypeError:
         return
-    try:
-        sidecar_path_for(data_path).unlink()
-    except FileNotFoundError:
-        pass
+    sc_path = sidecar_path_for(data_path)
+    if not sc_path.exists():
+        return
+    root = load_sidecar(sc_path)
+    for stale_key in _STALE_ON_REWRITE:
+        root["astroflow"].pop(stale_key, None)
+    if root["astroflow"]:
+        save_sidecar(sc_path, root)
+    else:
+        try:
+            sc_path.unlink()
+        except FileNotFoundError:
+            pass

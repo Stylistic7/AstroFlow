@@ -13,12 +13,13 @@ from scipy.ndimage import distance_transform_edt
 
 from decorators import node
 from file_io.generic import read_image
-from file_io.sidecar import set_section
 from file_io.types import FitsFilePath, WithSidecar
 from hashing import hash_list
 from metadata.classes import ImageMetadata
 from mosaics.artifacts import merged_filename_fits
-from mosaics.merge_images import MergedImage, _maybe_publish_progress, _panel_count
+from mosaics.merge_images import (
+    MergedImage, _maybe_publish_progress, _panel_count, _set_panel_count,
+)
 from mosaics.types import Mosaic
 from previews.types import QualityLevel, OSS, MASTER, DOWNSCALED_MASTER
 from products import makes_image
@@ -79,7 +80,7 @@ def merge_images_oss(
     )
 
     new_count = _panel_count(input_0) + _panel_count(input_1)
-    set_section(Path(output_filename), "panel_count", new_count)
+    _set_panel_count(output_filename, new_count)
     _maybe_publish_progress(mode, mosaic, filter, impl, Path(output_filename), new_count)
 
     log.info("OSS merge complete", output=str(output_filename), panel_count=new_count)

@@ -6,7 +6,7 @@ from beartype import beartype
 from pathlib import Path
 from dataclasses import dataclass
 
-from file_io.generic import read_header, read_image
+from file_io.generic import read_header, read_image, update_header
 from file_io.sidecar import get_section, set_section
 from pix import Image
 from pix.tasks import PhotometricMosaic
@@ -37,14 +37,19 @@ class MergedImage:
 
 
 def _panel_count(image_metadata: ImageMetadata) -> int:
-    """Return the number of mosaic panels contained in this intermediate.
+    """Number of mosaic panels contained in this intermediate.
 
-    Placed images carry sidecar `panel_count=1`; merges carry the sum of
-    their inputs. Missing sidecar defaults to 1 (treats unknown inputs as
-    single-panel placed images), keeping the chain monotonic for any
+    Placed images set `panel_count=1` in their sidecar; merges record
+    the sum of their inputs. `discard_sidecar` is surgical about which
+    sections it drops, so `panel_count` survives across producer reruns.
+    Missing entry defaults to 1, keeping the chain monotonic for any
     pre-existing files left over from before this mechanism existed.
     """
     return get_section(image_metadata.filename, "panel_count") or 1
+
+
+def _set_panel_count(path, count: int) -> None:
+    set_section(Path(path), "panel_count", count)
 
 
 def _progress_tile_path(mosaic: Mosaic, filter: str, mode: QualityLevel) -> Path:
@@ -151,9 +156,17 @@ def merge_images(
         images = Image.open_many([path_0, path_1])
         result = PhotometricMosaic(images)
         result.save_to(output_filename, mock=mock_pixinsight)
+        # PhotometricMosaic doesn't preserve FILTER from the inputs and
+        # writes a placeholder ("none"); stamp the canonical FILTER and
+        # a stable hash back onto the output so downstream consumers
+        # (compute_image_metadata, MergeStepId chaining) see real values.
+        update_header(Path(output_filename), {
+            "FILTER": filter,
+            "STBLHASH": hash_list([input_0.stable_hash, input_1.stable_hash]),
+        })
 
     new_count = _panel_count(input_0) + _panel_count(input_1)
-    set_section(Path(output_filename), "panel_count", new_count)
+    _set_panel_count(output_filename, new_count)
 
     # SUBFRAME is a fast preview path with no "in progress" semantics —
     # there's no final Master mosaic to hand off to, so the progress-

@@ -203,11 +203,12 @@ def place_image(
         "FILTER": filter,
         "STBLHASH": target.stable_hash,
     })
-    # Panel-count sidecar: a placed image is one panel by definition.
-    # merge_images sums input sidecars to track "most complete merge so
-    # far" without touching file headers.
-    from file_io.sidecar import set_section
-    set_section(output_filename, "panel_count", 1)
+    # A placed image is one panel by definition. merge_images sums
+    # input counts to track "most complete merge so far." Stored in the
+    # context cache (not the file sidecar) because @makes_image wipes
+    # the sidecar after every producer run.
+    from mosaics.merge_images import _set_panel_count
+    _set_panel_count(output_filename, 1)
     log.info("Place image complete", output_filename=output_filename)
 
     return WithSidecar(output_filename)
