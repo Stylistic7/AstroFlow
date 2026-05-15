@@ -7,7 +7,6 @@ import pytest
 import ray
 
 from cache.content_hashed import ContentHashed
-from cache import context_ref as _cr
 from cache.context_ref import ContextRef, dict_content_hash
 from context import context
 from decorators import cached
@@ -113,48 +112,36 @@ def test_get_does_not_call_ray_put(empty_context):
 # ---------------------------------------------------------------------------
 
 
-def test_pickling_preserves_ref_same_session(empty_context):
-    """Same-session pickling KEEPS the ObjectRef, so a ContextRef passed
-    as a Ray task argument hits the zero-copy Plasma fast path instead of
-    re-reading the whole object from the ContextActor/diskcache."""
+def test_stdlib_pickle_always_strips_ref(empty_context):
+    """Step A: the stdlib-pickle path (diskcache, cached Graphs,
+    _snapshot_context) ALWAYS drops the ObjectRef — even same-session.
+    A live ref must never reach an out-of-band pickle, or it orphans and
+    later raises 'owner is unknown' on any Ray re-serialization. The
+    durable name survives; the value still resolves via context."""
     ref = ContextRef.store("my_key", "value")
     assert ref.ref is not None and ref.session is not None
     restored = pickle.loads(pickle.dumps(ref))
-    assert restored.ref is not None
-    assert restored.ref == ref.ref
-    assert restored.session == ref.session
+    assert restored.ref is None
     assert restored.cache_key == ref.cache_key
     assert restored.content_hash == ref.content_hash
+    assert restored.session == ref.session  # threaded for Step B
+    assert restored.get() == "value"
 
 
-def test_pickling_strips_stale_cross_session_ref(empty_context, monkeypatch):
-    """A ContextRef written to diskcache by one session and reloaded in a
-    *different* session is stale. It must (a) unpickle without raising,
-    (b) drop the dangling ref on the next pickle instead of crashing
-    cloudpickle with 'owner is unknown', and (c) still resolve via the
-    diskcache fallback. This is the exact regression that the blunt
-    unconditional strip used to guard — now handled by the session tag."""
+def test_persisted_contextref_never_orphans(empty_context):
+    """The owner-unknown regression guard: a ref-bearing structure
+    written to context (→ diskcache, stdlib pickle), read back, and
+    re-pickled, is ref-free at every step and still resolves. Nothing a
+    snapshot/RPC re-serializes can carry a live ref."""
     ref = ContextRef.store(("stacks", "X"), {"v": 7})
-    assert ref.ref is not None and ref.session is not None
+    assert ref.ref is not None
 
-    # How a Graph / StacksDict carrying ContextRefs is persisted: a dict
-    # of refs round-tripped through the real diskcache. Written now, in
-    # the owning session, so the blob carries a live serialized ObjectRef.
-    context["holder"] = {"r": ref}
-    blob = pickle.dumps(context["holder"])
-
-    # Simulate a Ray restart: every ref minted by the old session is now
-    # stale relative to the running session.
-    monkeypatch.setattr(_cr, "_current_session", lambda: "different-session")
-
-    # (a) Deserializing the persisted blob must not raise.
-    reloaded = pickle.loads(blob)["r"]
-
-    # (b) Re-pickling it (e.g. to ship as a task arg) drops the stale ref.
-    repickled = pickle.loads(pickle.dumps(reloaded))
-    assert repickled.ref is None
-
-    # (c) The value is still recoverable via the diskcache fallback.
+    context["holder"] = {"r": ref}                 # stdlib pickle → strip
+    reloaded = context["holder"]["r"]
+    assert reloaded.ref is None
+    # Re-serializing it (what _snapshot_context / actor RPC return does)
+    # carries no ref, so it cannot raise owner-unknown.
+    assert pickle.loads(pickle.dumps(reloaded)).ref is None
     assert reloaded.get() == {"v": 7}
 
 
@@ -300,8 +287,9 @@ def _remote_get(ref: ContextRef) -> Any:
 
 
 def test_get_in_ray_task(empty_context):
-    """A ContextRef passed to a Ray task preserves its ref across pickling
-    and can retrieve the value via the fast ray.get() path."""
+    """A ContextRef passed to a Ray task can retrieve its value. Step A
+    strips the ref on pickle, so this resolves via the context fallback
+    (the Plasma fast path returns in Step B's registered serializer)."""
     ref = ContextRef.store("remote_key", {"answer": 42})
     result = ray.get(_remote_get.remote(ref))
     assert result == {"answer": 42}

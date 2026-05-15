@@ -85,19 +85,20 @@ class ContextRef(Generic[T]):
         return context[self.cache_key]
 
     def __reduce__(self):
-        # The single serialization chokepoint for every ObjectRef in the
-        # codebase. Preserve the ref only when it was minted in the Ray
-        # session that's running now: same-session pickles (task args)
-        # keep the Plasma fast path; a stale cross-session ref is never
-        # re-emitted into any pickle stream, so the "owner is unknown"
-        # crash cannot occur. get() still falls back to diskcache when a
-        # preserved ref turns out to be evicted within the session.
-        ref = None
-        if self.ref is not None and _current_session() == self.session:
-            ref = self.ref
+        # stdlib pickle path (diskcache persistence, cached Graphs,
+        # _snapshot_context): ALWAYS strip the ObjectRef. A live ref that
+        # reaches an out-of-band pickle (SQLite) is orphaned from Ray's
+        # ownership graph and later raises "owner is unknown" when
+        # re-serialized across any Ray boundary. strip_refs can't catch
+        # refs buried in opaque objects (Node.args, ProcessingConfig),
+        # so airtightness has to live here. The same-session Plasma fast
+        # path is restored separately and safely via a serializer
+        # registered into Ray's serialization context (Step B), which
+        # this __reduce__ is deliberately NOT — keeping every non-Ray
+        # pickle ref-free. `session` is still threaded for that serializer.
         return (
             _reconstruct_context_ref,
-            (self.cache_key, self.content_hash, ref, self.session),
+            (self.cache_key, self.content_hash, None, self.session),
         )
 
     def __hash__(self):
