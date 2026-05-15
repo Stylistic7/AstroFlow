@@ -214,7 +214,6 @@ def associate_with_stacks(
 
     new_stacks = RunsDict()
     for h, stack in stacks.items():
-        log.info("Associating stack", stack=str(stack))
         deps = dict(stack.dependencies)  # mutable copy to build up
         for t in calibrations_for_stack_type[stack.image_type]:
             if t not in deps:
