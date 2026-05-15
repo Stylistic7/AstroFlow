@@ -153,7 +153,12 @@ def make_measure_performance_decorator(cache: CacheProtocol):
                 - baseline_rss,
                 "images": image_stats_by_arg,
                 "image_totals": image_totals,
-                "ray_opts": ray_opts,
+                # ray_opts can carry callables (e.g. cache_key_narrow);
+                # a profile record must be pure data — it's persisted
+                # and JSON-served at /api/performance.
+                "ray_opts": {
+                    k: v for k, v in ray_opts.items() if not callable(v)
+                },
             }
 
             quality = _infer_quality(args, kwargs)
