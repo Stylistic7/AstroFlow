@@ -222,6 +222,25 @@ def _generate_presentations(
 
         for presentation in presentations:
             if presentation == PresentationType.THUMBNAIL:
+                # Lazy thumbnails: when a filename_fn is registered the
+                # producer leaves an on-disk source, so the web server
+                # regenerates the thumbnail on first view (and it lives
+                # in the bounded evictable cache, self-healing after
+                # eviction) — eager generation here would just refill
+                # the 95 GB. Only producers with NO filename_fn (e.g.
+                # the flat-correction Run thumbnails, which return a
+                # computed ndarray and persist nothing else) still need
+                # the eager store — it's their only source.
+                eager_pairs = [
+                    (impl, level)
+                    for impl in implementations
+                    for level in active_levels
+                    if get_filename_fn(
+                        MediaType.IMAGE, obj_type, level, impl
+                    ) is None
+                ]
+                if not eager_pairs:
+                    continue
                 try:
                     thumbnail = _make_thumbnail(result, resize_array, autostretch, array_to_png)
                 except Exception as e:
@@ -229,13 +248,12 @@ def _generate_presentations(
                     continue
                 if thumbnail is None:
                     continue
-                for impl in implementations:
-                    for level in active_levels:
-                        key = obj_id.presentation_cache_key(
-                            PresentationType.THUMBNAIL, obj_type, level, impl,
-                        )
-                        context[key] = thumbnail
-                        print(f"### Stored thumbnail {key}")
+                for impl, level in eager_pairs:
+                    key = obj_id.presentation_cache_key(
+                        PresentationType.THUMBNAIL, obj_type, level, impl,
+                    )
+                    context[key] = thumbnail
+                    print(f"### Stored eager thumbnail (no filename_fn) {key}")
 
             elif presentation == PresentationType.TILE_PYRAMID:
                 tile_path = _make_tile_pyramid(result)
