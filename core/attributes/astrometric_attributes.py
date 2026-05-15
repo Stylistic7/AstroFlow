@@ -104,6 +104,22 @@ def _intersect_polygons(
     return footprint
 
 
+def _to_spherical_polygon(ssp: SingleSphericalPolygon) -> SphericalPolygon:
+    """Build a `SphericalPolygon` from a `SingleSphericalPolygon`,
+    bypassing the iteration path in `SphericalPolygon.__init__` that
+    accesses `polygon._degenerate` directly. spherical_geometry 1.4.0
+    introduced "return None for degenerate" semantics but didn't add a
+    `getattr(..., '_degenerate', False)` fallback in its constructor,
+    so any SSP that's missing that instance attribute (e.g. one
+    unpickled from an older version) crashes the wrap. Passing the
+    points array makes the constructor break out of the iteration and
+    re-derive a single polygon from the points, which avoids the
+    fragile attribute lookup entirely.
+    """
+    inside = getattr(ssp, "_inside", None)
+    return SphericalPolygon(ssp.points, inside)
+
+
 @beartype
 @dataclass(frozen=True)
 class AstrometricAttributes:
@@ -172,7 +188,7 @@ class AstrometricAttributes:
         ))
         name = position_string.canonical_target_string(center)
         footprint = _intersect_polygons(
-            [SphericalPolygon(o.footprint) for o in objects]
+            [_to_spherical_polygon(o.footprint) for o in objects]
         )
         projected_footprints = frozendict(footprints.all_projections(footprint))
         healpix_cells = healpix_cells_from_poly(footprint)
