@@ -47,8 +47,18 @@ def connect_to_ray_cluster():
                     "testdata/",
                     "pix/testdata/",
                 ],
+                # Install the ContextRef Ray-context serializer in every
+                # worker process (restores the same-session Plasma fast
+                # path; stdlib pickle stays ref-free / airtight).
+                "worker_process_setup_hook": (
+                    "cache.context_ref.register_context_ref_serializer"
+                ),
             },
         )
+
+        # The driver runs no worker hook — register here too.
+        from cache.context_ref import register_context_ref_serializer
+        register_context_ref_serializer()
 
         print("Ray dashboard:", ray_context.dashboard_url)
 

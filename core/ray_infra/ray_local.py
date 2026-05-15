@@ -63,8 +63,13 @@ def enable_test_mode(ray_temp_dir: str | None = None) -> None:
                 "**/web_server/",
                 "**/testdata/",
             ],
+            "worker_process_setup_hook": (
+                "cache.context_ref.register_context_ref_serializer"
+            ),
         },
     )
+    from cache.context_ref import register_context_ref_serializer
+    register_context_ref_serializer()
     _log("ray.init DONE")
 
     _log(f"cluster resources: {ray.get(get_available_resources.remote())}")

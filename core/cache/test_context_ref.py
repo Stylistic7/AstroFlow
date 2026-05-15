@@ -286,13 +286,31 @@ def _remote_get(ref: ContextRef) -> Any:
     return ref.get()
 
 
+@ray.remote
+def _remote_ref_present(ref: ContextRef) -> bool:
+    return ref.ref is not None
+
+
 def test_get_in_ray_task(empty_context):
-    """A ContextRef passed to a Ray task can retrieve its value. Step A
-    strips the ref on pickle, so this resolves via the context fallback
-    (the Plasma fast path returns in Step B's registered serializer)."""
+    """A ContextRef passed to a Ray task can retrieve its value."""
     ref = ContextRef.store("remote_key", {"answer": 42})
     result = ray.get(_remote_get.remote(ref))
     assert result == {"answer": 42}
+
+
+def test_ray_serializer_preserves_ref_stdlib_still_strips(empty_context):
+    """Step B asymmetry: Ray's serialization context (task args) keeps
+    the live ref so the worker hits the Plasma fast path, while stdlib
+    pickle (diskcache/snapshots) still strips it (Step A airtight).
+    Registration runs via enable_test_mode (driver + worker hook)."""
+    ref = ContextRef.store("k", {"v": 1})
+    assert ref.ref is not None and ref.session is not None
+
+    # Ray path: ref survives the task-arg boundary (owner-tracked).
+    assert ray.get(_remote_ref_present.remote(ref)) is True
+
+    # stdlib path: still ref-free — persistence can never orphan.
+    assert pickle.loads(pickle.dumps(ref)).ref is None
 
 
 @ray.remote

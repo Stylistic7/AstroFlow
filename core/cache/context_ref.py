@@ -147,6 +147,62 @@ class ContextRef(Generic[T]):
         return cls.store(("large_object", content_hash), obj)
 
 
+# --- Step B: Ray-context fast path -----------------------------------
+#
+# `__reduce__` (stdlib pickle) always strips the ObjectRef so nothing
+# can orphan a ref into diskcache/cached graphs/snapshots. That alone is
+# correct but loses the same-session Plasma fast path (every
+# identify_stacks scatter task re-fetches the whole MetadataDict from
+# the ContextActor). Ray serializes task args / RPC with its OWN
+# cloudpickle under a SerializationContext (separate from stdlib
+# pickle, which diskcache uses). Registering a serializer there lets us
+# preserve the ref ONLY on the Ray path — where the owner is alive and
+# Ray's borrow handshake makes it valid — while persistence stays
+# ref-free. If a worker misses registration it just falls back to
+# __reduce__ (strip): correct, only slower. Never corrupt.
+
+
+def _ctxref_serializer(cr: "ContextRef") -> dict:
+    # Preserve the ref only when it was minted in the running job (same
+    # session ⇒ owner alive ⇒ Ray registers the borrow as it serializes
+    # the nested ObjectRef in-context). Otherwise strip — get() falls
+    # back to diskcache.
+    ref = cr.ref if (cr.ref is not None and _current_session() == cr.session) else None
+    return {"k": cr.cache_key, "h": cr.content_hash, "r": ref, "s": cr.session}
+
+
+def _ctxref_deserializer(d: dict) -> "ContextRef":
+    return ContextRef(
+        cache_key=d["k"], content_hash=d["h"], ref=d["r"], session=d["s"],
+    )
+
+
+_serializer_registered = False
+
+
+def register_context_ref_serializer() -> None:
+    """Install the Ray-context serializer for ContextRef. Idempotent.
+
+    Driver calls this right after ray.init; workers run it via
+    runtime_env['worker_process_setup_hook']. Safe to call when Ray
+    isn't up (no-op) — the stdlib __reduce__ strip is the correctness
+    guarantee; this is purely the opt-in accelerator.
+    """
+    global _serializer_registered
+    if _serializer_registered:
+        return
+    try:
+        from ray.util import register_serializer
+        register_serializer(
+            ContextRef,
+            serializer=_ctxref_serializer,
+            deserializer=_ctxref_deserializer,
+        )
+        _serializer_registered = True
+    except Exception:
+        pass
+
+
 def strip_refs(value: Any) -> Any:
     """Recursively null the ObjectRef on every ContextRef in a value.
 
