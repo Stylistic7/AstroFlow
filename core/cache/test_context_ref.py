@@ -271,15 +271,15 @@ def test_dict_content_hash_is_order_independent(empty_context):
 
 
 def test_context_ref_shares_key_with_lazy_load_dict(empty_context):
-    """ContextRef uses the same ("stacks", k) key format as LazyLoadDict."""
-    from context import get_cache
-
+    """ContextRef uses the same ("stacks", k) key format as the lazy-load
+    dict, and both resolve through the routed context (the "stacks"
+    namespace lives in the durable store)."""
     stack = MockStack(name="Orion", content_hash="orion_hash")
     ref = ContextRef.store(("stacks", "Orion"), stack)
 
-    # The value is reachable via the lazy-load dict.
-    cache = get_cache()
-    cache["stacks"] = {"Orion": stack}  # register key list
+    # The value is reachable via the lazy-load dict registry, written
+    # through the routed context (not poking the raw evictable cache).
+    context["stacks"] = {"Orion": stack}  # register key list
     assert context.stacks["Orion"] == stack
 
     # And directly via the tuple key.

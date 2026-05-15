@@ -2,7 +2,7 @@ import ray
 import os
 
 from typing import Any
-from context.cache import get_cache
+from context.cache import get_cache, get_durable_cache, is_durable_key
 from ray_infra.ray_init import connect_to_ray_cluster
 
 # The context system is a cluster-wide write-through cache. It has the following
@@ -60,9 +60,14 @@ _MAX_CONCURRENCY = 64
 class ContextActor:
     def __init__(self) -> None:
         self.cache = get_cache()
+        self.durable = get_durable_cache()
         self._inflight = 0
         self._peak_inflight = 0
         self._total_calls = 0
+
+    def _c(self, key):
+        """Route a key to the durable store or the evictable cache."""
+        return self.durable if is_durable_key(key) else self.cache
 
     def _enter(self):
         self._inflight += 1
@@ -94,14 +99,15 @@ class ContextActor:
         self._enter()
         try:
             from cache.context_ref import strip_refs
-            return strip_refs(self.cache.get(key, default_value))
+            return strip_refs(self._c(key).get(key, default_value))
         finally:
             self._exit()
 
     def get_matching(self, key_fragment: Key) -> ray.ObjectRef:
         return {
-            key: self.cache[key]
-            for key in self.cache.iterkeys()
+            key: c[key]
+            for c in (self.cache, self.durable)
+            for key in c.iterkeys()
             if starts_with(key, key_fragment)
         }
 
@@ -109,52 +115,58 @@ class ContextActor:
         self._enter()
         try:
             from cache.context_ref import strip_refs
-            self.cache[key] = strip_refs(value)
+            self._c(key)[key] = strip_refs(value)
         finally:
             self._exit()
 
     def contains(self, key: Key) -> bool:
-        return key in self.cache
+        return key in self._c(key)
 
     def delete(self, key: Key) -> None:
-        if key in self.cache:
-            del self.cache[key]
+        c = self._c(key)
+        if key in c:
+            del c[key]
 
     def and_equals(
         self, key: Key, value: Any, length_limit: int | None
     ) -> None:
         """Append value (a list) to an existing list at key."""
         from cache.context_ref import strip_refs
-        with self.cache.transact():
-            old_value = self.cache.get(key, [])
+        c = self._c(key)
+        with c.transact():
+            old_value = c.get(key, [])
             new_value = old_value + value
             if length_limit is not None:
                 new_value = new_value[-length_limit:]
-            self.cache[key] = strip_refs(new_value)
+            c[key] = strip_refs(new_value)
 
     def or_equals(self, key: Key, value: dict) -> None:
         """Merge value into a dict stored at key (dict |= value)."""
         self._enter()
         try:
             from cache.context_ref import strip_refs
-            with self.cache.transact():
-                old_value = self.cache.get(key, {})
+            c = self._c(key)
+            with c.transact():
+                old_value = c.get(key, {})
                 if not isinstance(old_value, dict):
                     old_value = {}
-                self.cache[key] = strip_refs({**old_value, **value})
+                c[key] = strip_refs({**old_value, **value})
         finally:
             self._exit()
 
     def set_many(self, items: dict) -> None:
         from cache.context_ref import strip_refs
         for key, value in items.items():
-            self.cache[key] = strip_refs(value)
+            self._c(key)[key] = strip_refs(value)
 
     def clear(self) -> None:
+        # Explicit full reset clears BOTH stores. Durability protects
+        # against eviction, not against a deliberate wipe.
         self.cache.clear()
+        self.durable.clear()
 
     def get_cache_keys(self) -> list:
-        return list(self.cache.iterkeys())
+        return list(self.cache.iterkeys()) + list(self.durable.iterkeys())
 
 
 class Context:
@@ -254,9 +266,16 @@ class LocalContext:
         # in processes that never use LocalContext.
         return get_cache()
 
+    @property
+    def _durable(self):
+        return get_durable_cache()
+
+    def _c(self, key):
+        return self._durable if is_durable_key(key) else self._cache
+
     def get(self, key: Key, default_value: Any = None) -> Any:
         from cache.context_ref import strip_refs
-        return strip_refs(self._cache.get(key, default_value))
+        return strip_refs(self._c(key).get(key, default_value))
 
     def __getattr__(self, key: Key) -> Any:
         if isinstance(key, str) and key.startswith("__") and key.endswith("__"):
@@ -275,14 +294,15 @@ class LocalContext:
 
     def get_matching(self, key_fragment: Key) -> dict:
         return {
-            key: self._cache[key]
-            for key in self._cache.iterkeys()
+            key: c[key]
+            for c in (self._cache, self._durable)
+            for key in c.iterkeys()
             if starts_with(key, key_fragment)
         }
 
     def set(self, key: Key, value: Any) -> None:
         from cache.context_ref import strip_refs
-        self._cache[key] = strip_refs(value)
+        self._c(key)[key] = strip_refs(value)
 
     def __setattr__(self, key: Key, value: Any) -> None:
         self.set(key, value)
@@ -295,39 +315,43 @@ class LocalContext:
     ) -> None:
         """Append value (a list) to an existing list at key — atomic."""
         from cache.context_ref import strip_refs
-        with self._cache.transact():
-            old_value = self._cache.get(key, [])
+        c = self._c(key)
+        with c.transact():
+            old_value = c.get(key, [])
             new_value = old_value + value
             if length_limit is not None:
                 new_value = new_value[-length_limit:]
-            self._cache[key] = strip_refs(new_value)
+            c[key] = strip_refs(new_value)
 
     def or_equals(self, key: Key, value: dict) -> None:
         """Merge value into a dict stored at key — atomic."""
         from cache.context_ref import strip_refs
-        with self._cache.transact():
-            old_value = self._cache.get(key, {})
+        c = self._c(key)
+        with c.transact():
+            old_value = c.get(key, {})
             if not isinstance(old_value, dict):
                 old_value = {}
-            self._cache[key] = strip_refs({**old_value, **value})
+            c[key] = strip_refs({**old_value, **value})
 
     def __contains__(self, key: Key) -> bool:
-        return key in self._cache
+        return key in self._c(key)
 
     def delete(self, key: Key) -> None:
-        if key in self._cache:
-            del self._cache[key]
+        c = self._c(key)
+        if key in c:
+            del c[key]
 
     def set_many(self, items: dict) -> None:
         from cache.context_ref import strip_refs
         for key, value in items.items():
-            self._cache[key] = strip_refs(value)
+            self._c(key)[key] = strip_refs(value)
 
     def clear(self) -> None:
         self._cache.clear()
+        self._durable.clear()
 
     def get_cache_keys(self) -> list:
-        return list(self._cache.iterkeys())
+        return list(self._cache.iterkeys()) + list(self._durable.iterkeys())
 
 
 local_context = LocalContext()

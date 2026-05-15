@@ -9,7 +9,6 @@ from typing import Iterator
 import clustering
 from stacks.composite_stack import Stack, StacksDict
 from metadata.classes import FrameHash, MetadataDict
-from decorators import node
 from cache.context_ref import ContextRef
 from context import context
 from decisions.decisions import (
@@ -25,7 +24,16 @@ from decisions.decisions import (
 log = structlog.get_logger()
 
 
-@node
+# NOT @node: identify_stacks both reads context (metadata_ref) and
+# writes it (ContextRef.store(("stacks", h), ...) plus decision-point
+# publication). A cached @node skips its body on a hit, so those
+# context writes silently don't happen — and the cached ref wrappers
+# then point at ("stacks", h) payloads that were never written (the
+# build_mosaic_subgraph None-stack crash). Per the @node=pure /
+# @ray.remote=context contract this is a context node; it must always
+# run so the payloads are always (re)written into the durable store.
+@ray.remote(num_cpus=0.1)
+@beartype
 def identify_stacks(
     metadata_ref: ContextRef[MetadataDict],
     angular_tolerance: float,

@@ -176,14 +176,58 @@ def store_workflow_graph(key: Any, rt: GraphRuntime):
     context.or_equals("workflow_graphs", {key: new_ref})
 
 
+# node_status is read only by the UI (/api/node_status/<id>), which
+# json-dumps it for display. Captured structlog event dicts can carry
+# arbitrarily large objects (a logged Graph/Stack/MetadataDict), which
+# made single entries 100+ MB. Stringify and bound everything before it
+# reaches the cache — the UI only ever shows this as text anyway.
+_LOG_FIELD_MAX = 4000
+_LOG_MAX_ENTRIES = 1000
+
+
+def _stringify(v: Any) -> str:
+    if isinstance(v, str):
+        return v
+    try:
+        return repr(v)
+    except Exception:
+        return f"<unreprable {type(v).__name__}>"
+
+
+def _truncate(s: str) -> str:
+    if len(s) <= _LOG_FIELD_MAX:
+        return s
+    return s[:_LOG_FIELD_MAX] + f"…[+{len(s) - _LOG_FIELD_MAX} chars]"
+
+
+def _bounded_logs(logs: Any) -> list:
+    if not isinstance(logs, list):
+        return [{"event": _truncate(_stringify(logs))}]
+    out: list = []
+    if len(logs) > _LOG_MAX_ENTRIES:
+        out.append(
+            {"event": f"[{len(logs) - _LOG_MAX_ENTRIES} earlier entries elided]"}
+        )
+    for e in logs[-_LOG_MAX_ENTRIES:]:
+        if isinstance(e, dict):
+            out.append({k: _truncate(_stringify(v)) for k, v in e.items()})
+        else:
+            out.append({"event": _truncate(_stringify(e))})
+    return out
+
+
 def store_node_status(node: Node, result: Any, logs: list[Any]):
     if isinstance(result, ray.ObjectRef):
         result = ray.get(result)
 
-    status_dict = dict(result_type=str(type(result).__name__), logs=logs)
+    status_dict = dict(
+        result_type=str(type(result).__name__), logs=_bounded_logs(logs)
+    )
 
     if isinstance(result, Exception):
-        status_dict["exception"] = result
+        # repr, not the raw exception: a pickled exception drags its
+        # traceback frames/locals (more 100 MB blobs).
+        status_dict["exception"] = _truncate(_stringify(result))
         status_dict["stack_trace"] = traceback.format_exc()
     elif isinstance(result, (Path, WithSidecar)):
         status_dict["path"] = str(result)

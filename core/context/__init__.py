@@ -1,2 +1,8 @@
 from .context import context, local_context, ContextActor, LocalContext
-from .cache import get_cache, get_queue_cache
+from .cache import (
+    get_cache,
+    get_queue_cache,
+    get_durable_cache,
+    cache_for,
+    is_durable_key,
+)
