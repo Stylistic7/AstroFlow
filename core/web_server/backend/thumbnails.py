@@ -1,4 +1,8 @@
 import io
+import os
+import dataclasses
+import threading
+
 import flask
 from flask import Blueprint, abort
 
@@ -7,7 +11,9 @@ from stacks.composite_stack import Stack
 from targets.types import Target
 from mosaics.types import Mosaic
 from mosaics.merge_images import MergedImage
-from products.registry import get_producer, MediaType
+from products.registry import (
+    get_producer, get_filename_fn, fully_resolve, _make_thumbnail, MediaType,
+)
 from products.identity import (
     ObjectId, PresentationType, StackId, TargetId,
     MosaicChannelId,
@@ -20,18 +26,92 @@ from stacks.composite_stack import CalibrationStack
 thumbnails_bp = Blueprint("thumbnails", __name__)
 
 
+# Per-cache-key single-flight: a thumbnail gallery / tile burst fires
+# many simultaneous misses for the same key; without this they'd all
+# regenerate the same PNG from disk at once.
+_regen_meta_lock = threading.Lock()
+_regen_locks: dict = {}
+
+
+def _key_lock(key) -> threading.Lock:
+    with _regen_meta_lock:
+        lk = _regen_locks.get(key)
+        if lk is None:
+            lk = _regen_locks[key] = threading.Lock()
+        return lk
+
+
+def _regenerate_thumbnail(
+    object_type: type, identity: ObjectId,
+    level: QualityLevel, implementation: Implementation,
+):
+    """Rebuild a thumbnail from the on-disk master, or None if there's
+    no resolvable/extant master for this (type, level, impl). Lazy
+    replacement for eager generation: the thumbnail cache is now the
+    bounded evictable store, so an evicted entry self-heals on view."""
+    filename_fn = get_filename_fn(
+        MediaType.IMAGE, object_type, level, implementation,
+    )
+    if filename_fn is None:
+        return None
+    args = [getattr(identity, f.name) for f in dataclasses.fields(identity)]
+    try:
+        master = fully_resolve(
+            object_type, level, filename_fn, implementation,
+        )(*args)
+    except Exception:
+        return None
+    path = os.fspath(master)
+    if not os.path.exists(path):
+        return None
+    from previews.operations import resize_array, autostretch, array_to_png
+    try:
+        return _make_thumbnail(path, resize_array, autostretch, array_to_png)
+    except Exception:
+        return None
+
+
+def _thumbnail_for(
+    object_type: type, identity: ObjectId,
+    level: QualityLevel, implementation: Implementation,
+):
+    """Cached thumbnail bytes for one (level, impl), regenerating from
+    the on-disk master on a miss (single-flight). None if unavailable."""
+    key = identity.presentation_cache_key(
+        PresentationType.THUMBNAIL, object_type, level, implementation,
+    )
+    thumbnail = context.get(key)
+    if thumbnail:
+        return thumbnail
+    with _key_lock(key):
+        thumbnail = context.get(key)  # filled while we waited?
+        if thumbnail:
+            return thumbnail
+        thumbnail = _regenerate_thumbnail(
+            object_type, identity, level, implementation,
+        )
+        if thumbnail is not None:
+            context[key] = thumbnail
+        return thumbnail
+
+
+def _png_response(thumbnail: bytes, level: QualityLevel):
+    resp = flask.Response(
+        thumbnail, mimetype="image/png", direct_passthrough=True,
+    )
+    resp.headers["X-Quality-Level"] = level.value
+    return resp
+
+
 def get_thumbnail_by_id(object_type: type, identity: ObjectId):
     """Return the best-available thumbnail using ObjectId-based lookup."""
     implementation = context.settings.implementation
     for level in QUALITY_PRIORITY:
-        key = identity.presentation_cache_key(
-            PresentationType.THUMBNAIL, object_type, level, implementation,
+        thumbnail = _thumbnail_for(
+            object_type, identity, level, implementation,
         )
-        thumbnail = context.get(key)
         if thumbnail:
-            resp = flask.Response(thumbnail, mimetype="image/png", direct_passthrough=True)
-            resp.headers["X-Quality-Level"] = level.value
-            return resp
+            return _png_response(thumbnail, level)
     return abort(404)
 
 
@@ -40,14 +120,9 @@ def get_specific_thumbnail_by_id(
     level: QualityLevel, identity: ObjectId,
 ):
     """Return the thumbnail for an exact (implementation, level)."""
-    key = identity.presentation_cache_key(
-        PresentationType.THUMBNAIL, object_type, level, implementation,
-    )
-    thumbnail = context.get(key)
+    thumbnail = _thumbnail_for(object_type, identity, level, implementation)
     if thumbnail:
-        resp = flask.Response(thumbnail, mimetype="image/png", direct_passthrough=True)
-        resp.headers["X-Quality-Level"] = level.value
-        return resp
+        return _png_response(thumbnail, level)
     return abort(404)
 
 
