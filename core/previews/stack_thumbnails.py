@@ -12,7 +12,6 @@ from decorators import (
     create_video,
 )
 from previews.operations import resize_array
-from previews.flat_correction import create_flat_correction_thumbnails
 from frozendict import frozendict
 from previews.calibration import calibrate_subframe
 from file_io.types import FitsFilePath, WithSidecar
@@ -63,29 +62,25 @@ def scatter_stack_thumbnails(
             decisions=decisions,
         )
 
+    # Thumbnails (stack_thumbnail / calibration_stack_thumbnail /
+    # create_flat_correction_thumbnails) are no longer generated here —
+    # they're rebuilt lazily on first view by the web server
+    # (web_server/backend/thumbnails._regenerate_thumbnail). Only the
+    # videos still need eager generation, so this graph just builds
+    # those. This removes the per-substack×flat calibrate_subframe loop
+    # that dominated the cold start.
     calibration_stacks = cal_stacks_ref.get() or {}
     for stack_hash, stack_ref in stacks.items():
         stack = stack_ref.get()
-        tasks.append((stack_thumbnail, stack))
-        tasks.append((stack_thumbnail_video, stack, subframe_thumbnail_width, config_for(stack_hash)))
-
-        # Pre-narrow inputs to create_flat_correction_thumbnails so its cache
-        # key invalidates only on changes that actually affect its output.
-        # Passing the full calibration_stacks made every new bias/dark/flat
-        # added anywhere in the catalog miss the cache for every light stack.
-        decisions = decisions_for_stack(settings.decision_overrides, stack_hash)
-        resolved_stack = resolve_calibration(stack, calibration_stacks, decisions)
-        matching_flat_stacks = tuple(
-            s for s in calibration_stacks.values()
-            if s.image_type == "flat"
-            and s.camera == stack.camera
-            and s.filter == stack.filter
+        tasks.append(
+            (stack_thumbnail_video, stack, subframe_thumbnail_width,
+             config_for(stack_hash))
         )
-        tasks.append((create_flat_correction_thumbnails, resolved_stack, matching_flat_stacks))
 
     for stack in calibration_stacks.values():
-        tasks.append((calibration_stack_thumbnail, stack))
-        tasks.append((calibration_stack_thumbnail_video, stack, subframe_thumbnail_width))
+        tasks.append(
+            (calibration_stack_thumbnail_video, stack, subframe_thumbnail_width)
+        )
 
     return Graph({gather_stack_thumbnails: tasks})
 

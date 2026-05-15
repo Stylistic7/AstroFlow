@@ -135,3 +135,41 @@ def test_orion_mosaic_versions_endpoint(client, with_orion_mosaic):
 
     # Unknown mosaic id → 404.
     assert client.get("/api/object_versions/mosaic/does_not_exist").status_code == 404
+
+
+@pytest.mark.exhaustive
+def test_lazy_thumbnails_regenerate_on_miss(client, with_orion_mosaic):
+    """Thumbnails are no longer eagerly generated; the web server must
+    rebuild them on first request. Proves all three regen shapes:
+    file-backed (stack master/subframe) and compute-backed (the
+    flat-correction Run thumbnails, which have no on-disk source)."""
+    from context import local_context as ctx
+
+    stacks = ctx.stacks or {}
+    assert len(stacks) > 0
+
+    saw_stack = saw_run = False
+    for sid, stack_ref in stacks.items():
+        stack = stack_ref.get()
+
+        # File-backed: stack subframe/master, rebuilt from disk on miss.
+        r = client.get(f"/thumbnail/stack/{sid}")
+        assert r.status_code == 200, f"/thumbnail/stack/{sid}: {r.status_code}"
+        assert r.mimetype == "image/png" and len(r.data) > 0
+        saw_stack = True
+
+        # Compute-backed: the uncorrected Run thumbnail has NO on-disk
+        # source — it can only come from invoking the producer on miss.
+        for sub_id in stack.contents:
+            r = client.get(f"/thumbnail/run/{sid}/{sub_id}")
+            assert r.status_code == 200, (
+                f"/thumbnail/run/{sid}/{sub_id}: {r.status_code} "
+                f"(compute-on-miss regen failed)"
+            )
+            assert r.mimetype == "image/png" and len(r.data) > 0
+            saw_run = True
+            break  # one substack is enough to exercise the path
+        if saw_stack and saw_run:
+            break
+
+    assert saw_stack and saw_run, "did not exercise both regen shapes"

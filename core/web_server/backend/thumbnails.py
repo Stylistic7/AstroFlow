@@ -50,38 +50,53 @@ def _regenerate_thumbnail(
     Lazy replacement for eager generation: the thumbnail cache is now
     the bounded evictable store, so an evicted entry self-heals on view.
 
-    Two producer shapes:
+    Three producer shapes:
     - master-backed (Stack/Mosaic MASTER/POST_PROCESSED): filename_fn
       yields a name resolved under output_dir/Type/Level/Impl.
     - selection-backed (SUBFRAME stack_thumbnail/calibration_stack_
       thumbnail): filename_fn (get_best_light_frame/get_first_frame) is
       itself the cheap selection and returns an absolute raw-frame path.
-    Try both; use whichever exists on disk."""
+    - compute-backed (flat-correction Run thumbnails): NO filename_fn;
+      the producer returns a computed ndarray and persists nothing.
+      Invoke it on miss — safe because it's cheap (one calibrated
+      subframe) and directly callable; the _is_task guard guarantees
+      we never re-run an expensive @node (a file-backed producer always
+      has a filename_fn and never reaches that branch anyway)."""
+    from previews.operations import resize_array, autostretch, array_to_png
+    args = [getattr(identity, f.name) for f in dataclasses.fields(identity)]
+
     filename_fn = get_filename_fn(
         MediaType.IMAGE, object_type, level, implementation,
     )
-    if filename_fn is None:
-        return None
-    args = [getattr(identity, f.name) for f in dataclasses.fields(identity)]
+    if filename_fn is not None:
+        candidates = []
+        try:
+            candidates.append(os.fspath(fully_resolve(
+                object_type, level, filename_fn, implementation,
+            )(*args)))
+        except Exception:
+            pass
+        try:
+            candidates.append(os.fspath(filename_fn(*args)))
+        except Exception:
+            pass
+        path = next((p for p in candidates if os.path.exists(p)), None)
+        if path is None:
+            return None
+        try:
+            return _make_thumbnail(path, resize_array, autostretch, array_to_png)
+        except Exception:
+            return None
 
-    candidates = []
-    try:
-        candidates.append(os.fspath(fully_resolve(
-            object_type, level, filename_fn, implementation,
-        )(*args)))
-    except Exception:
-        pass
-    try:
-        candidates.append(os.fspath(filename_fn(*args)))
-    except Exception:
-        pass
-
-    path = next((p for p in candidates if os.path.exists(p)), None)
-    if path is None:
+    # No filename_fn → compute-on-miss.
+    producer = get_producer(
+        MediaType.IMAGE, object_type, level, implementation,
+    )
+    if producer is None or getattr(producer, "_is_task", False):
         return None
-    from previews.operations import resize_array, autostretch, array_to_png
     try:
-        return _make_thumbnail(path, resize_array, autostretch, array_to_png)
+        result = producer(*args)
+        return _make_thumbnail(result, resize_array, autostretch, array_to_png)
     except Exception:
         return None
 

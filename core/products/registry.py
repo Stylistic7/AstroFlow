@@ -203,8 +203,6 @@ def _generate_presentations(
     if not pres_entries:
         return
 
-    from previews.operations import resize_array, autostretch, array_to_png
-
     for entry in pres_entries:
         identity_cls = entry['identity_cls']
         presentations = entry['presentations']
@@ -222,38 +220,15 @@ def _generate_presentations(
 
         for presentation in presentations:
             if presentation == PresentationType.THUMBNAIL:
-                # Lazy thumbnails: when a filename_fn is registered the
-                # producer leaves an on-disk source, so the web server
-                # regenerates the thumbnail on first view (and it lives
-                # in the bounded evictable cache, self-healing after
-                # eviction) — eager generation here would just refill
-                # the 95 GB. Only producers with NO filename_fn (e.g.
-                # the flat-correction Run thumbnails, which return a
-                # computed ndarray and persist nothing else) still need
-                # the eager store — it's their only source.
-                eager_pairs = [
-                    (impl, level)
-                    for impl in implementations
-                    for level in active_levels
-                    if get_filename_fn(
-                        MediaType.IMAGE, obj_type, level, impl
-                    ) is None
-                ]
-                if not eager_pairs:
-                    continue
-                try:
-                    thumbnail = _make_thumbnail(result, resize_array, autostretch, array_to_png)
-                except Exception as e:
-                    print(f"### Failed to make thumbnail for {func.__name__}: {e}")
-                    continue
-                if thumbnail is None:
-                    continue
-                for impl, level in eager_pairs:
-                    key = obj_id.presentation_cache_key(
-                        PresentationType.THUMBNAIL, obj_type, level, impl,
-                    )
-                    context[key] = thumbnail
-                    print(f"### Stored eager thumbnail (no filename_fn) {key}")
+                # Thumbnails are fully lazy now. The web server rebuilds
+                # them on first view into the bounded evictable cache:
+                # file-backed producers from their on-disk master/frame,
+                # compute-backed ones (flat-correction Run thumbnails,
+                # no filename_fn) by invoking the cheap producer on miss
+                # (see web_server/backend/thumbnails._regenerate_
+                # thumbnail). Eager generation here only refilled the
+                # ~95 GB and stalled the cold start, so it is gone.
+                continue
 
             elif presentation == PresentationType.TILE_PYRAMID:
                 tile_path = _make_tile_pyramid(result)
