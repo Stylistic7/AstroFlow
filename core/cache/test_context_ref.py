@@ -7,6 +7,7 @@ import pytest
 import ray
 
 from cache.content_hashed import ContentHashed
+from cache import context_ref as _cr
 from cache.context_ref import ContextRef, dict_content_hash
 from context import context
 from decorators import cached
@@ -112,14 +113,49 @@ def test_get_does_not_call_ray_put(empty_context):
 # ---------------------------------------------------------------------------
 
 
-def test_pickling_drops_ref(empty_context):
-    """Pickling drops the ObjectRef (session-scoped, not portable)."""
+def test_pickling_preserves_ref_same_session(empty_context):
+    """Same-session pickling KEEPS the ObjectRef, so a ContextRef passed
+    as a Ray task argument hits the zero-copy Plasma fast path instead of
+    re-reading the whole object from the ContextActor/diskcache."""
     ref = ContextRef.store("my_key", "value")
-    assert ref.ref is not None
+    assert ref.ref is not None and ref.session is not None
     restored = pickle.loads(pickle.dumps(ref))
-    assert restored.ref is None
+    assert restored.ref is not None
+    assert restored.ref == ref.ref
+    assert restored.session == ref.session
     assert restored.cache_key == ref.cache_key
     assert restored.content_hash == ref.content_hash
+
+
+def test_pickling_strips_stale_cross_session_ref(empty_context, monkeypatch):
+    """A ContextRef written to diskcache by one session and reloaded in a
+    *different* session is stale. It must (a) unpickle without raising,
+    (b) drop the dangling ref on the next pickle instead of crashing
+    cloudpickle with 'owner is unknown', and (c) still resolve via the
+    diskcache fallback. This is the exact regression that the blunt
+    unconditional strip used to guard — now handled by the session tag."""
+    ref = ContextRef.store(("stacks", "X"), {"v": 7})
+    assert ref.ref is not None and ref.session is not None
+
+    # How a Graph / StacksDict carrying ContextRefs is persisted: a dict
+    # of refs round-tripped through the real diskcache. Written now, in
+    # the owning session, so the blob carries a live serialized ObjectRef.
+    context["holder"] = {"r": ref}
+    blob = pickle.dumps(context["holder"])
+
+    # Simulate a Ray restart: every ref minted by the old session is now
+    # stale relative to the running session.
+    monkeypatch.setattr(_cr, "_current_session", lambda: "different-session")
+
+    # (a) Deserializing the persisted blob must not raise.
+    reloaded = pickle.loads(blob)["r"]
+
+    # (b) Re-pickling it (e.g. to ship as a task arg) drops the stale ref.
+    repickled = pickle.loads(pickle.dumps(reloaded))
+    assert repickled.ref is None
+
+    # (c) The value is still recoverable via the diskcache fallback.
+    assert reloaded.get() == {"v": 7}
 
 
 def test_get_after_pickling(empty_context):

@@ -13,9 +13,8 @@ from hashing import hash_source_code
 from cache.context_ref import ContextRef
 from protocols import CacheProtocol
 from cache.types import NeverRun
-
-
 from cache.context_ref import strip_refs
+
 
 import os
 TRACE_TASKS = os.environ.get("ASTROFLOW_TRACE_TASKS", "") == "1"
