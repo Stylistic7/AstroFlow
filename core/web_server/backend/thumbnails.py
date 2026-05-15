@@ -45,24 +45,39 @@ def _regenerate_thumbnail(
     object_type: type, identity: ObjectId,
     level: QualityLevel, implementation: Implementation,
 ):
-    """Rebuild a thumbnail from the on-disk master, or None if there's
-    no resolvable/extant master for this (type, level, impl). Lazy
-    replacement for eager generation: the thumbnail cache is now the
-    bounded evictable store, so an evicted entry self-heals on view."""
+    """Rebuild a thumbnail from the producer's on-disk source, or None
+    if nothing resolvable/extant exists for this (type, level, impl).
+    Lazy replacement for eager generation: the thumbnail cache is now
+    the bounded evictable store, so an evicted entry self-heals on view.
+
+    Two producer shapes:
+    - master-backed (Stack/Mosaic MASTER/POST_PROCESSED): filename_fn
+      yields a name resolved under output_dir/Type/Level/Impl.
+    - selection-backed (SUBFRAME stack_thumbnail/calibration_stack_
+      thumbnail): filename_fn (get_best_light_frame/get_first_frame) is
+      itself the cheap selection and returns an absolute raw-frame path.
+    Try both; use whichever exists on disk."""
     filename_fn = get_filename_fn(
         MediaType.IMAGE, object_type, level, implementation,
     )
     if filename_fn is None:
         return None
     args = [getattr(identity, f.name) for f in dataclasses.fields(identity)]
+
+    candidates = []
     try:
-        master = fully_resolve(
+        candidates.append(os.fspath(fully_resolve(
             object_type, level, filename_fn, implementation,
-        )(*args)
+        )(*args)))
     except Exception:
-        return None
-    path = os.fspath(master)
-    if not os.path.exists(path):
+        pass
+    try:
+        candidates.append(os.fspath(filename_fn(*args)))
+    except Exception:
+        pass
+
+    path = next((p for p in candidates if os.path.exists(p)), None)
+    if path is None:
         return None
     from previews.operations import resize_array, autostretch, array_to_png
     try:
