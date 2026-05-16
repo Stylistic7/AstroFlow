@@ -23,6 +23,7 @@ from mosaics.merge_images import (
 from mosaics.types import Mosaic
 from previews.types import QualityLevel, OSS, MASTER, DOWNSCALED_MASTER
 from products import makes_image
+from products.identity import MergedImageId
 from products.registry import get_filename_fn, MediaType
 
 log = structlog.get_logger()
@@ -52,7 +53,8 @@ def _blend(image_0, image_1):
 
 
 @node(auto_memory=True)
-@makes_image(MergedImage, OSS, [MASTER, DOWNSCALED_MASTER], merged_filename_fits)
+@makes_image(OSS, [MASTER, DOWNSCALED_MASTER], merged_filename_fits,
+             identity=MergedImageId)
 def merge_images_oss(
     mode: QualityLevel,
     mosaic: Mosaic,
@@ -62,7 +64,7 @@ def merge_images_oss(
     input_0: ImageMetadata,
     input_1: ImageMetadata,
 ) -> WithSidecar:
-    output_filename = get_filename_fn(MediaType.IMAGE, MergedImage, mode, OSS)(
+    output_filename = get_filename_fn(MediaType.IMAGE, MergedImageId, mode, OSS)(
         mosaic, filter, input_0, input_1,
     )
     Path(output_filename).parent.mkdir(parents=True, exist_ok=True)

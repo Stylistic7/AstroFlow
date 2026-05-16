@@ -8,6 +8,7 @@ from decorators import node
 from stacks.composite_stack import Run, Stack, RunsDict, StacksDict, CalibrationStacksDict
 from stacks.types import StackIdDependency
 from products import get_producer, MediaType
+from products.identity import StackId, identity_for_stack
 
 from stacks.convert_to_dict import convert_to_dict
 from metadata.image_metadata import compute_image_metadata
@@ -60,7 +61,7 @@ def build_calibration_stack_subgraph(
         for dep in run.dependencies.values():
             if isinstance(dep, StackIdDependency):
                 cal_stack = config.get_calibration_stacks()[dep.stack_id]
-                stack_fn = get_producer(MediaType.IMAGE, type(cal_stack), config.quality, config.implementation)
+                stack_fn = get_producer(MediaType.IMAGE, identity_for_stack(cal_stack), config.quality, config.implementation)
                 task = (stack_fn, cal_stack, cal_config)
                 cal_run = next(iter(cal_stack.contents.values()))
                 inner = visit_cal_dependencies(cal_run)
@@ -94,11 +95,11 @@ def build_stacking_subgraph(
     )
     node_status_fn = store_node_status
 
-    stack_fn = get_producer(MediaType.IMAGE, type(stack), config.quality, config.implementation)
+    stack_fn = get_producer(MediaType.IMAGE, identity_for_stack(stack), config.quality, config.implementation)
 
     if config.quality == QualityLevel.MASTER:
         # Full: calibrate → stack → metadata → post-process → metadata
-        pp_fn = get_producer(MediaType.IMAGE, Stack, QualityLevel.POST_PROCESSED, config.implementation)
+        pp_fn = get_producer(MediaType.IMAGE, StackId, QualityLevel.POST_PROCESSED, config.implementation)
         steps = chain(
             (build_calibration_stack_subgraph, stack, config),
             (stack_fn, stack, config),

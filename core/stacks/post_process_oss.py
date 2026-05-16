@@ -27,14 +27,14 @@ log = structlog.get_logger()
 
 
 @node(auto_memory=True)
-@makes_image(Stack, OSS, [QualityLevel.POST_PROCESSED],
+@makes_image(OSS, [QualityLevel.POST_PROCESSED],
              identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
              file_type=FitsFilePath)
 def post_process_stack_oss(stack: Stack, mock_pixinsight: bool) -> WithSidecar[FitsFilePath]:
     from products import ensure_producers_registered
     ensure_producers_registered()
 
-    master_path = get_filename_fn(MediaType.IMAGE, Stack, QualityLevel.MASTER, OSS)(stack)
+    master_path = get_filename_fn(MediaType.IMAGE, StackId, QualityLevel.MASTER, OSS)(stack)
     output_filename = post_process_stack_oss.filename_fn(stack)
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
     log.info("OSS post-processing stack", stack=str(stack), master=str(master_path))

@@ -25,6 +25,9 @@ from stacks.composite_stack import Stack, CalibrationStack
 from targets.types import Target
 from mosaics.types import Mosaic
 from products.registry import get_producer, MediaType
+from products.identity import (
+    StackId, CalibrationStackId, TargetChannelId, MosaicChannelId,
+)
 from web_server.backend.router import stateful_route
 
 
@@ -39,16 +42,16 @@ _handle_cache_lock = threading.Lock()
 
 
 _TYPE_MAP = {
-    "stack": Stack,
-    "calibration_stack": CalibrationStack,
-    "target": Target,
-    "mosaic": Mosaic,
+    "stack": StackId,
+    "calibration_stack": CalibrationStackId,
+    "target": TargetChannelId,
+    "mosaic": MosaicChannelId,
 }
 
 
 def _resolve_obj_args(object_type: str, object_id: str, filter: str | None):
-    """Look up the object and return the (obj_type, obj_args) tuple
-    that the producer's tile_pyramid_fn expects as its first arg(s)."""
+    """Look up the object and return the (identity_cls, obj_args) tuple
+    that the producer's filename_fn / tile_pyramid_fn expects."""
     obj_cls = _TYPE_MAP.get(object_type)
     if obj_cls is None:
         raise ValueError(f"Unknown object_type {object_type}")
@@ -112,7 +115,7 @@ def _tile_pyramid_path_for(
     # these at a deterministic path per (mosaic, filter, mode),
     # overwriting on each merge step — surfaces partial mosaic results
     # before the final store_mosaic_color_channel completes.
-    if obj_cls is Mosaic:
+    if obj_cls is MosaicChannelId:
         output_dir = context.output_dir
         if output_dir is not None:
             mosaic_obj, mosaic_filter = obj_args[0], obj_args[1]

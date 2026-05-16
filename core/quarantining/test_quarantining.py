@@ -133,8 +133,9 @@ def test_quarantine_triggers_restack(test_context) -> None:
 
     # Locate the master file produced by stack_files (mock-stacked).
     from products.registry import get_filename_fn, MediaType
+    from products.identity import StackId
     from previews.types import QualityLevel
-    master_fn = get_filename_fn(MediaType.IMAGE, Stack, QualityLevel.MASTER)
+    master_fn = get_filename_fn(MediaType.IMAGE, StackId, QualityLevel.MASTER)
     master_path = master_fn(stack)
     assert master_path.exists(), f"No master at {master_path} after first run"
 

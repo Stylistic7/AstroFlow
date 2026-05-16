@@ -10,6 +10,7 @@ from decorators import node
 from dependency_graph import Graph
 from targets.types import Target
 from products import get_producer, MediaType
+from products.identity import TargetId
 from previews.types import QualityLevel
 from targets.types import TargetsDict
 from targets.target_channel import (
@@ -47,7 +48,7 @@ def build_target_subgraph(
     )
 
     mock = config.development_settings.mock_pixinsight
-    pp_fn = get_producer(MediaType.IMAGE, Target, QualityLevel.POST_PROCESSED, config.implementation)
+    pp_fn = get_producer(MediaType.IMAGE, TargetId, QualityLevel.POST_PROCESSED, config.implementation)
     graph[(pp_fn, target, mock)] = {
         (build_target_channel_subgraph, target, filter_, tuple(channel_stacks), config)
         for filter_, channel_stacks in by_filter.items()

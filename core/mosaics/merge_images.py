@@ -22,7 +22,7 @@ from file_io.tiff_file_io import write_tiff_image
 from file_io.types import XisfFilePath, TiffFilePath, WithSidecar
 from mosaics.artifacts import merged_filename_tiff, merged_filename_xisf
 from products import makes_image
-from products.identity import MosaicChannelId, PresentationType
+from products.identity import MosaicChannelId, MergedImageId, PresentationType
 from products.registry import get_filename_fn, MediaType
 from hashing import hash_list
 
@@ -117,8 +117,10 @@ def _maybe_publish_progress(
 
 
 @node(resources={"PixInsight": 1}, auto_memory=True)
-@makes_image(MergedImage, ALL_IMPLEMENTATIONS, [SUBFRAME], merged_filename_tiff)
-@makes_image(MergedImage, PIXINSIGHT, [MASTER, DOWNSCALED_MASTER], merged_filename_xisf)
+@makes_image(ALL_IMPLEMENTATIONS, [SUBFRAME], merged_filename_tiff,
+             identity=MergedImageId)
+@makes_image(PIXINSIGHT, [MASTER, DOWNSCALED_MASTER], merged_filename_xisf,
+             identity=MergedImageId)
 def merge_images(
     mode: QualityLevel,
     mosaic: Mosaic,
@@ -131,7 +133,7 @@ def merge_images(
     path_0 = input_0.filename.resolve(strict=True)
     path_1 = input_1.filename.resolve(strict=True)
 
-    output_fn = get_filename_fn(MediaType.IMAGE, MergedImage, mode)
+    output_fn = get_filename_fn(MediaType.IMAGE, MergedImageId, mode)
     output_filename = output_fn(mosaic, filter, input_0, input_1)
     Path(output_filename).parent.mkdir(parents=True, exist_ok=True)
 

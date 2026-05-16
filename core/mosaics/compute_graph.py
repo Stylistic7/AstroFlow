@@ -18,6 +18,7 @@ from mosaics.placement import PlacedImage
 from stacks.types import StackHash
 from previews.types import QualityLevel
 from products import get_producer, MediaType
+from products.identity import MosaicId, PlacedImageId, MergedImageId
 from decorators import node
 from targets.types import TargetsDict, Target, TargetHash
 from targets.target_channel import (
@@ -127,7 +128,7 @@ def build_mosaic_subgraph(
         graph[store_task] = {filter_subgraph_task}
         filter_done_tasks.append(store_task)
 
-    pp_fn = get_producer(MediaType.IMAGE, Mosaic, QualityLevel.POST_PROCESSED, config.implementation)
+    pp_fn = get_producer(MediaType.IMAGE, MosaicId, QualityLevel.POST_PROCESSED, config.implementation)
     graph[(pp_fn, mode, mosaic, targets)] = filter_done_tasks
 
     return graph
@@ -145,7 +146,7 @@ def build_placement_subgraph(
     from products import ensure_producers_registered
     ensure_producers_registered()
 
-    place_fn = get_producer(MediaType.IMAGE, PlacedImage, mode, config.implementation)
+    place_fn = get_producer(MediaType.IMAGE, PlacedImageId, mode, config.implementation)
     channel_stacks = channel_stacks_for(target, filter)
     # build_target_channel_subgraph already terminates in
     # compute_image_metadata, so place_fn consumes that ImageMetadata
@@ -221,7 +222,7 @@ def build_mosaic_filter_subgraph(
     #   merge(merge_j, place_k) -> merge_k
     #   merge(merge_k, place_l) -> merge_l
 
-    merge_fn = get_producer(MediaType.IMAGE, MergedImage, mode, config.implementation)
+    merge_fn = get_producer(MediaType.IMAGE, MergedImageId, mode, config.implementation)
 
     graph = Graph(
         graph_update_fn=graph_update_fn, node_status_fn=node_status_fn

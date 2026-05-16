@@ -18,7 +18,7 @@ from decorators import node
 from targets.types import Target
 from targets.target_channel import TargetChannel, group_stacks_by_filter
 from products import makes_image, get_filename_fn, MediaType
-from products.identity import TargetId, PresentationType
+from products.identity import TargetId, TargetChannelId, PresentationType
 
 THUMBNAIL = PresentationType.THUMBNAIL
 from previews.types import QualityLevel, PIXINSIGHT, OSS
@@ -83,13 +83,13 @@ def _target_channel_paths(target: Target, implementation) -> list[Path]:
     target_stacks = [stacks[sid].get() for sid in target.stack_ids]
     by_filter = group_stacks_by_filter(target_stacks)
     channel_fn = get_filename_fn(
-        MediaType.IMAGE, TargetChannel, QualityLevel.MASTER, implementation,
+        MediaType.IMAGE, TargetChannelId, QualityLevel.MASTER, implementation,
     )
     return [Path(channel_fn(target, f)) for f in by_filter.keys()]
 
 
 @node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD", auto_memory=True)
-@makes_image(Target, PIXINSIGHT, [QualityLevel.POST_PROCESSED], target_filename,
+@makes_image(PIXINSIGHT, [QualityLevel.POST_PROCESSED], target_filename,
              identity=TargetId, presentations=[THUMBNAIL])
 def post_process_target(target: Target, mock_pixinsight: bool = False) -> None:
     print(f"Entering post_process_target for {target}")
@@ -108,7 +108,7 @@ def post_process_target(target: Target, mock_pixinsight: bool = False) -> None:
 
 
 @node
-@makes_image(Target, OSS, [QualityLevel.POST_PROCESSED], target_filename,
+@makes_image(OSS, [QualityLevel.POST_PROCESSED], target_filename,
              identity=TargetId, presentations=[THUMBNAIL])
 def post_process_target_oss(target: Target, mock_pixinsight: bool = False) -> None:
     """Stub: target post-processing for the OSS pipeline (TODO)."""

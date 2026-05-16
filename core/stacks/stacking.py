@@ -19,7 +19,9 @@ from decisions.resolve import resolve_calibration, resolve_decisions
 from decisions.compute_graph import ALL_EXCLUSION_TYPES
 from previews.types import QualityLevel, PIXINSIGHT, MASTER, DOWNSCALED_MASTER, DOWNSCALE_FACTORS
 from products import makes_image
-from products.identity import StackId, PresentationType
+from products.identity import (
+    StackId, CalibrationStackId, identity_for_stack, PresentationType,
+)
 import structlog
 
 THUMBNAIL = PresentationType.THUMBNAIL
@@ -91,7 +93,7 @@ def _setup_run(
         if isinstance(d, StackIdDependency):
             from products.registry import get_filename_fn, MediaType
             cal_stack = calibration_stacks[d.stack_id]
-            filename_fn = get_filename_fn(MediaType.IMAGE, type(cal_stack), quality)
+            filename_fn = get_filename_fn(MediaType.IMAGE, identity_for_stack(cal_stack), quality)
             return filename_fn(cal_stack)
         elif isinstance(d, FilenameDependency):
             return d.filename
@@ -200,10 +202,10 @@ def _stack_files_narrow(args, kwargs):
 
 @node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD", auto_memory=True,
       cache_key_narrow=_stack_files_narrow)
-@makes_image(CalibrationStack, PIXINSIGHT, [MASTER, DOWNSCALED_MASTER],
-             identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
+@makes_image(PIXINSIGHT, [MASTER, DOWNSCALED_MASTER],
+             identity=CalibrationStackId, presentations=[THUMBNAIL, TILE_PYRAMID],
              file_type=XisfFilePath)
-@makes_image(Stack, PIXINSIGHT, [MASTER, DOWNSCALED_MASTER],
+@makes_image(PIXINSIGHT, [MASTER, DOWNSCALED_MASTER],
              identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
              file_type=XisfFilePath)
 def stack_files(
@@ -223,7 +225,7 @@ def stack_files(
 
     # Determine the output file, and the metadata it should have.
     from products.registry import get_filename_fn, MediaType
-    filename_fn = get_filename_fn(MediaType.IMAGE, type(stack), config.quality) or stack_files.filename_fn
+    filename_fn = get_filename_fn(MediaType.IMAGE, identity_for_stack(stack), config.quality) or stack_files.filename_fn
     dest_filename = filename_fn(stack)
     dest_filename_exists = os.path.exists(dest_filename)
     os.makedirs(os.path.dirname(dest_filename), exist_ok=True)

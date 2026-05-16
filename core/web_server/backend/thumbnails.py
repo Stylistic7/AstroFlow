@@ -15,7 +15,7 @@ from products.registry import (
     get_producer, get_filename_fn, fully_resolve, _make_thumbnail, MediaType,
 )
 from products.identity import (
-    ObjectId, PresentationType, StackId, TargetId,
+    ObjectId, PresentationType, StackId, CalibrationStackId, TargetId,
     MosaicChannelId,
     CalibratedStackId, UncorrectedRunId,
 )
@@ -42,7 +42,7 @@ def _key_lock(key) -> threading.Lock:
 
 
 def _regenerate_thumbnail(
-    object_type: type, identity: ObjectId,
+    identity: ObjectId,
     level: QualityLevel, implementation: Implementation,
 ):
     """Rebuild a thumbnail from the producer's on-disk source, or None
@@ -62,17 +62,19 @@ def _regenerate_thumbnail(
       subframe) and directly callable; the _is_task guard guarantees
       we never re-run an expensive @node (a file-backed producer always
       has a filename_fn and never reaches that branch anyway)."""
+    import traceback
     from previews.operations import resize_array, autostretch, array_to_png
+    identity_cls = type(identity)
     args = [getattr(identity, f.name) for f in dataclasses.fields(identity)]
 
     filename_fn = get_filename_fn(
-        MediaType.IMAGE, object_type, level, implementation,
+        MediaType.IMAGE, identity_cls, level, implementation,
     )
     if filename_fn is not None:
         candidates = []
         try:
             candidates.append(os.fspath(fully_resolve(
-                object_type, level, filename_fn, implementation,
+                identity_cls, level, filename_fn, implementation,
             )(*args)))
         except Exception:
             pass
@@ -86,11 +88,13 @@ def _regenerate_thumbnail(
         try:
             return _make_thumbnail(path, resize_array, autostretch, array_to_png)
         except Exception:
+            print(f"### thumbnail regen FAILED ({identity_cls.__name__}, "
+                  f"{level}, {implementation}): {traceback.format_exc()}")
             return None
 
     # No filename_fn → compute-on-miss.
     producer = get_producer(
-        MediaType.IMAGE, object_type, level, implementation,
+        MediaType.IMAGE, identity_cls, level, implementation,
     )
     if producer is None or getattr(producer, "_is_task", False):
         return None
@@ -98,17 +102,19 @@ def _regenerate_thumbnail(
         result = producer(*args)
         return _make_thumbnail(result, resize_array, autostretch, array_to_png)
     except Exception:
+        print(f"### thumbnail regen FAILED ({identity_cls.__name__}, "
+              f"{level}, {implementation}): {traceback.format_exc()}")
         return None
 
 
 def _thumbnail_for(
-    object_type: type, identity: ObjectId,
+    identity: ObjectId,
     level: QualityLevel, implementation: Implementation,
 ):
     """Cached thumbnail bytes for one (level, impl), regenerating from
     the on-disk master on a miss (single-flight). None if unavailable."""
     key = identity.presentation_cache_key(
-        PresentationType.THUMBNAIL, object_type, level, implementation,
+        PresentationType.THUMBNAIL, level, implementation,
     )
     thumbnail = context.get(key)
     if thumbnail:
@@ -118,7 +124,7 @@ def _thumbnail_for(
         if thumbnail:
             return thumbnail
         thumbnail = _regenerate_thumbnail(
-            object_type, identity, level, implementation,
+            identity, level, implementation,
         )
         if thumbnail is not None:
             context[key] = thumbnail
@@ -133,12 +139,12 @@ def _png_response(thumbnail: bytes, level: QualityLevel):
     return resp
 
 
-def get_thumbnail_by_id(object_type: type, identity: ObjectId):
+def get_thumbnail_by_id(identity: ObjectId):
     """Return the best-available thumbnail using ObjectId-based lookup."""
     implementation = context.settings.implementation
     for level in QUALITY_PRIORITY:
         thumbnail = _thumbnail_for(
-            object_type, identity, level, implementation,
+            identity, level, implementation,
         )
         if thumbnail:
             return _png_response(thumbnail, level)
@@ -146,11 +152,11 @@ def get_thumbnail_by_id(object_type: type, identity: ObjectId):
 
 
 def get_specific_thumbnail_by_id(
-    object_type: type, implementation: Implementation,
+    implementation: Implementation,
     level: QualityLevel, identity: ObjectId,
 ):
     """Return the thumbnail for an exact (implementation, level)."""
-    thumbnail = _thumbnail_for(object_type, identity, level, implementation)
+    thumbnail = _thumbnail_for(identity, level, implementation)
     if thumbnail:
         return _png_response(thumbnail, level)
     return abort(404)
@@ -159,19 +165,19 @@ def get_specific_thumbnail_by_id(
 @thumbnails_bp.route("/thumbnail/stack/<stack_id>")
 def stack_thumbnail(stack_id: str):
     stack = context.stacks[stack_id].get()
-    return get_thumbnail_by_id(Stack, StackId(stack=stack))
+    return get_thumbnail_by_id(StackId(stack=stack))
 
 
 @thumbnails_bp.route("/thumbnail/target/<target_id>")
 def target_thumbnail(target_id: str):
     target = context.targets[target_id].get()
-    return get_thumbnail_by_id(Target, TargetId(target=target))
+    return get_thumbnail_by_id(TargetId(target=target))
 
 
 @thumbnails_bp.route("/thumbnail/mosaic/<mosaic_id>/<filter>")
 def mosaic_thumbnail(mosaic_id: str, filter: str):
     mosaic = context.mosaics[mosaic_id].get()
-    return get_thumbnail_by_id(Mosaic, MosaicChannelId(mosaic=mosaic, filter=filter))
+    return get_thumbnail_by_id(MosaicChannelId(mosaic=mosaic, filter=filter))
 
 
 @thumbnails_bp.route("/thumbnail/mosaic/<mosaic_id>/<implementation>/<quality>/<filter>")
@@ -179,7 +185,7 @@ def mosaic_thumbnail_specific(mosaic_id: str, implementation: str, quality: str,
     """Thumbnail for an exact (mosaic, implementation, quality, filter)."""
     mosaic = context.mosaics[mosaic_id].get()
     return get_specific_thumbnail_by_id(
-        Mosaic, Implementation(implementation), QualityLevel(quality),
+        Implementation(implementation), QualityLevel(quality),
         MosaicChannelId(mosaic=mosaic, filter=filter),
     )
 
@@ -187,7 +193,7 @@ def mosaic_thumbnail_specific(mosaic_id: str, implementation: str, quality: str,
 @thumbnails_bp.route("/thumbnail/calibration_stack/<stack_id>")
 def calibration_stack_thumbnail(stack_id: str):
     stack = context.calibration_stacks[stack_id]
-    return get_thumbnail_by_id(CalibrationStack, StackId(stack=stack))
+    return get_thumbnail_by_id(CalibrationStackId(stack=stack))
 
 
 @thumbnails_bp.route("/thumbnail/run/<stack_id>/<substack_id>")
@@ -195,7 +201,7 @@ def uncorrected_run_thumbnail_route(stack_id: str, substack_id: str):
     stack = context.stacks[stack_id].get()
     substack = stack.contents[substack_id]
     return get_thumbnail_by_id(
-        Run, UncorrectedRunId(stack=stack, substack=substack),
+        UncorrectedRunId(stack=stack, substack=substack),
     )
 
 
@@ -205,14 +211,14 @@ def run_thumbnail(stack_id: str, substack_id: str, flat_stack_id: str):
     substack = stack.contents[substack_id]
     flat_stack = context.calibration_stacks[flat_stack_id]
     return get_thumbnail_by_id(
-        Run, CalibratedStackId(stack=stack, substack=substack, flat_stack=flat_stack),
+        CalibratedStackId(stack=stack, substack=substack, flat_stack=flat_stack),
     )
 
 
-def get_video(object_type: type, *args):
+def get_video(identity: type, *args):
     implementation = context.settings.implementation
     for level in QUALITY_PRIORITY:
-        if fn := get_producer(MediaType.VIDEO, object_type, level, implementation):
+        if fn := get_producer(MediaType.VIDEO, identity, level, implementation):
             if hasattr(fn, "video_fn"):
                 if video := fn.video_fn(*args):
                     buffer = io.BytesIO()

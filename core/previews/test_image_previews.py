@@ -105,8 +105,9 @@ def test_stack_dependency_graph(test_context) -> None:
         # producers now use @makes_image).
         file = ray.get(stack_thumbnail.remote(stack))
         assert isinstance(file, WithSidecar)
+        from products.identity import identity_for_stack
         assert get_producer(
-            MediaType.IMAGE, type(stack), QualityLevel.SUBFRAME
+            MediaType.IMAGE, identity_for_stack(stack), QualityLevel.SUBFRAME
         ) is not None
 
     for stack_ref in context.stacks.values():

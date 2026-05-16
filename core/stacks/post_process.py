@@ -49,13 +49,13 @@ def _post_process_stack(master_path, stack: Stack, downscale_factor: int = 1) ->
 
 
 @node(resources={"PixInsight": 1}, auto_memory=True)
-@makes_image(Stack, PIXINSIGHT, [QualityLevel.POST_PROCESSED],
+@makes_image(PIXINSIGHT, [QualityLevel.POST_PROCESSED],
              identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
              file_type=XisfFilePath)
 def post_process_stack(stack: Stack, mock_pixinsight: bool) -> WithSidecar[XisfFilePath]:
     from products import ensure_producers_registered
     ensure_producers_registered()
-    master_fn = get_filename_fn(MediaType.IMAGE, Stack, QualityLevel.MASTER)
+    master_fn = get_filename_fn(MediaType.IMAGE, StackId, QualityLevel.MASTER)
     master = master_fn(stack)
 
     output_filename = post_process_stack.filename_fn(stack)

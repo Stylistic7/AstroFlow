@@ -168,7 +168,7 @@ def _project_in_tiles(
 # footprint (interpolator + output buffer) while leaving room for many
 # concurrent place_tile subtasks.
 @node
-@makes_image(PlacedImage, ALL_IMPLEMENTATIONS, [SUBFRAME, MASTER, DOWNSCALED_MASTER],
+@makes_image(ALL_IMPLEMENTATIONS, [SUBFRAME, MASTER, DOWNSCALED_MASTER],
              identity=PlacedImageId, file_type=TiffFilePath)
 def place_image(
     mode: QualityLevel,
@@ -189,7 +189,7 @@ def place_image(
     interp = _make_interpolator(image_metadata.filename)
     image = _project_in_tiles(viewbox, interp, wcs, skip_empty=False)
 
-    output_fn = get_filename_fn(MediaType.IMAGE, PlacedImage, mode)
+    output_fn = get_filename_fn(MediaType.IMAGE, PlacedImageId, mode)
     output_filename = output_fn(mosaic, target, filter, viewbox)
 
     if not np.any(image):

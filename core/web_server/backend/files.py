@@ -71,6 +71,7 @@ def stacking_report(stack_id):
       implementation (default "PixInsight")
     """
     from products.registry import get_filename_fn, MediaType
+    from products.identity import identity_for_stack
     from previews.types import QualityLevel, Implementation
     from stacks.stacking_report import read_stacking_report
 
@@ -86,7 +87,7 @@ def stacking_report(stack_id):
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
-    filename_fn = get_filename_fn(MediaType.IMAGE, type(stack), quality, implementation)
+    filename_fn = get_filename_fn(MediaType.IMAGE, identity_for_stack(stack), quality, implementation)
     if filename_fn is None:
         return jsonify(None)
     master_path = filename_fn(stack)
@@ -228,9 +229,10 @@ def invalidate_stack(stack_id):
 @files_bp.route("/api/open_stack_master/<stack_id>")
 def open_stack_master(stack_id):
     from products.registry import get_filename_fn, MediaType
+    from products.identity import identity_for_stack
     from previews.types import QualityLevel
     stack = context.stacks[stack_id].get()
-    filename_fn = get_filename_fn(MediaType.IMAGE, type(stack), QualityLevel.MASTER)
+    filename_fn = get_filename_fn(MediaType.IMAGE, identity_for_stack(stack), QualityLevel.MASTER)
     filename = filename_fn(stack)
     print(f"### opening filename {filename}")
     subprocess.Popen(
@@ -325,8 +327,8 @@ def open_mosaic_master(mosaic_id, implementation, filter):
     """
     from pathlib import Path
     from products.registry import get_filename_fn, MediaType
+    from products.identity import MosaicChannelId
     from previews.types import QualityLevel, Implementation
-    from mosaics.types import Mosaic
 
     mosaics = context.mosaics or {}
     if mosaic_id not in mosaics:
@@ -336,7 +338,7 @@ def open_mosaic_master(mosaic_id, implementation, filter):
 
     candidates = []
 
-    filename_fn = get_filename_fn(MediaType.IMAGE, Mosaic, QualityLevel.MASTER, impl)
+    filename_fn = get_filename_fn(MediaType.IMAGE, MosaicChannelId, QualityLevel.MASTER, impl)
     if filename_fn is not None:
         candidates.append(filename_fn(mosaic, filter))
 

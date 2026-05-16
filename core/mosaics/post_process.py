@@ -16,7 +16,7 @@ from decorators import node
 from previews.types import QualityLevel, PIXINSIGHT, OSS
 from mosaics.types import Mosaic
 from products import makes_image
-from products.identity import MosaicId, PresentationType
+from products.identity import MosaicId, MosaicChannelId, PresentationType
 
 THUMBNAIL = PresentationType.THUMBNAIL
 TILE_PYRAMID = PresentationType.TILE_PYRAMID
@@ -55,7 +55,7 @@ def _post_process_mosaic(images: ImageList, mosaic: Mosaic) -> Image | None:
 
 
 @node(resources={"PixInsight": 1}, auto_memory=True)
-@makes_image(Mosaic, PIXINSIGHT, [QualityLevel.POST_PROCESSED],
+@makes_image(PIXINSIGHT, [QualityLevel.POST_PROCESSED],
              identity=MosaicId, presentations=[THUMBNAIL, TILE_PYRAMID],
              file_type=XisfFilePath)
 def post_process_mosaic(
@@ -73,7 +73,7 @@ def post_process_mosaic(
     for target_id in mosaic.target_ids:
         filters.update(filters_for_target(targets[target_id].get()))
 
-    master_fn = get_filename_fn(MediaType.IMAGE, Mosaic, QualityLevel.MASTER)
+    master_fn = get_filename_fn(MediaType.IMAGE, MosaicChannelId, QualityLevel.MASTER)
     image_paths = [master_fn(mosaic, f) for f in filters]
 
     images = Image.open_many(image_paths)
@@ -91,7 +91,7 @@ def post_process_mosaic(
 
 
 @node
-@makes_image(Mosaic, OSS, [QualityLevel.POST_PROCESSED],
+@makes_image(OSS, [QualityLevel.POST_PROCESSED],
              identity=MosaicId, presentations=[THUMBNAIL, TILE_PYRAMID],
              file_type=XisfFilePath)
 def post_process_mosaic_oss(

@@ -21,14 +21,14 @@ from metadata.classes import ImageMetadata
 
 
 @node(resources={"PixInsight": 1}, auto_memory=True)
-@makes_image(Mosaic, PIXINSIGHT, [MASTER, DOWNSCALED_MASTER],
+@makes_image(PIXINSIGHT, [MASTER, DOWNSCALED_MASTER],
              identity=MosaicChannelId, presentations=[THUMBNAIL, TILE_PYRAMID],
              file_type=XisfFilePath)
 def store_mosaic_color_channel_xisf(
     mode: QualityLevel, mosaic: Mosaic, filter: str, input: ImageMetadata,
     mock_pixinsight: bool = False,
 ) -> WithSidecar[XisfFilePath]:
-    fn = store_mosaic_color_channel_xisf.filename_fns[(Mosaic, mode)]
+    fn = store_mosaic_color_channel_xisf.filename_fns[(MosaicChannelId, mode)]
     filename = input.filename
     output = fn(mosaic, filter)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -40,7 +40,7 @@ def store_mosaic_color_channel_xisf(
 
 
 @node(resources={"fastest_storage": 0.001})
-@makes_image(Mosaic, ALL_IMPLEMENTATIONS, [SUBFRAME],
+@makes_image(ALL_IMPLEMENTATIONS, [SUBFRAME],
              identity=MosaicChannelId, presentations=[THUMBNAIL, TILE_PYRAMID],
              file_type=TiffFilePath)
 def store_mosaic_color_channel_subframe(
@@ -63,14 +63,14 @@ def store_mosaic_color_channel_subframe(
 
 
 @node
-@makes_image(Mosaic, OSS, [MASTER, DOWNSCALED_MASTER],
+@makes_image(OSS, [MASTER, DOWNSCALED_MASTER],
              identity=MosaicChannelId, presentations=[THUMBNAIL, TILE_PYRAMID],
              file_type=FitsFilePath)
 def store_mosaic_color_channel_oss(
     mode: QualityLevel, mosaic: Mosaic, filter: str, input: ImageMetadata,
 ) -> WithSidecar[FitsFilePath]:
     """Copy the final merged FITS to the canonical mosaic path."""
-    fn = store_mosaic_color_channel_oss.filename_fns[(Mosaic, mode)]
+    fn = store_mosaic_color_channel_oss.filename_fns[(MosaicChannelId, mode)]
     output = fn(mosaic, filter)
     output.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(str(input.filename), str(output))

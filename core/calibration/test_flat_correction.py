@@ -80,7 +80,10 @@ def test_one_perfect_stack(test_context) -> None:
     assert context.get_matching(("Thumbnail",)) == {}
     from products.registry import get_producer, MediaType
     from previews.types import SUBFRAME, Implementation
-    from stacks.run import Run
+    from products.identity import CalibratedStackId, UncorrectedRunId
     assert get_producer(
-        MediaType.IMAGE, Run, SUBFRAME, Implementation.PIXINSIGHT
+        MediaType.IMAGE, CalibratedStackId, SUBFRAME, Implementation.PIXINSIGHT
+    ) is not None
+    assert get_producer(
+        MediaType.IMAGE, UncorrectedRunId, SUBFRAME, Implementation.PIXINSIGHT
     ) is not None

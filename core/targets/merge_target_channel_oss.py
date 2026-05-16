@@ -32,6 +32,7 @@ from products import get_filename_fn, makes_image, MediaType
 from products.identity import (
     PresentationType,
     TargetChannelId,
+    identity_for_stack,
 )
 from stacks.composite_stack import Stack
 from targets.target_channel import TargetChannel
@@ -51,12 +52,12 @@ _SATURATION_FRACTION = 0.999
 
 
 def _stack_master_path(stack: Stack, quality: QualityLevel) -> Path:
-    fn = get_filename_fn(MediaType.IMAGE, type(stack), quality, OSS)
+    fn = get_filename_fn(MediaType.IMAGE, identity_for_stack(stack), quality, OSS)
     return Path(fn(stack))
 
 
 @node(auto_memory=True, cache_key_narrow=_merge_target_channel_narrow)
-@makes_image(TargetChannel, OSS, [MASTER, DOWNSCALED_MASTER],
+@makes_image(OSS, [MASTER, DOWNSCALED_MASTER],
              identity=TargetChannelId,
              presentations=[THUMBNAIL, TILE_PYRAMID],
              file_type=FitsFilePath)

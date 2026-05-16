@@ -16,7 +16,7 @@ from previews.types import ALL_IMPLEMENTATIONS, SUBFRAME
 THUMBNAIL = PresentationType.THUMBNAIL
 
 
-@makes_image(Run, ALL_IMPLEMENTATIONS, [SUBFRAME],
+@makes_image(ALL_IMPLEMENTATIONS, [SUBFRAME],
              identity=CalibratedStackId,
              presentations=[THUMBNAIL])
 @measure_performance
@@ -39,7 +39,7 @@ def flat_corrected_stack(
     return calibrate_subframe(light_frame, dependencies)
 
 
-@makes_image(Run, ALL_IMPLEMENTATIONS, [SUBFRAME],
+@makes_image(ALL_IMPLEMENTATIONS, [SUBFRAME],
              identity=UncorrectedRunId,
              presentations=[THUMBNAIL])
 def uncorrected_run_thumbnail(

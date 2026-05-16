@@ -252,11 +252,12 @@ def make_cached_decorator(
         wrapper.__dict__.update(func.__dict__)
 
         # Update registry entries to point at the @node-wrapped function
-        # (the one with .remote and _function) instead of the inner wrapper.
+        # (the one with .remote and _function) instead of the inner
+        # wrapper, keyed by identity.
         if hasattr(wrapper, '_registry_keys'):
             from products.registry import _registry
-            for media_type, obj_type, level, impl in wrapper._registry_keys:
-                key = (obj_type, level, impl)
+            for media_type, identity, level, impl in wrapper._registry_keys:
+                key = (identity, level, impl)
                 if key in _registry[media_type]:
                     _registry[media_type][key] = wrapper
 

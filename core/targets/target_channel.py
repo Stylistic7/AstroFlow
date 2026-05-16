@@ -26,6 +26,7 @@ from dependency_graph import Graph, Node, chain
 from metadata.image_metadata import compute_image_metadata
 from previews.types import QualityLevel
 from products import get_producer, MediaType
+from products.identity import TargetChannelId
 from stacks.composite_stack import Stack
 from stacks.compute_graph import build_stacking_subgraph, get_stack_subframe_image
 from targets.types import Target
@@ -121,7 +122,7 @@ def build_target_channel_subgraph(
     ]
 
     merge_fn = get_producer(
-        MediaType.IMAGE, TargetChannel, config.quality, config.implementation,
+        MediaType.IMAGE, TargetChannelId, config.quality, config.implementation,
     )
     assert merge_fn is not None, (
         f"No TargetChannel producer registered for "

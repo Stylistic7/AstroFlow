@@ -29,7 +29,9 @@ from file_io.generic import read_image, read_header
 from file_io.types import FitsFilePath, WithSidecar
 from previews.types import OSS, MASTER, DOWNSCALED_MASTER, DOWNSCALE_FACTORS
 from products import makes_image
-from products.identity import StackId, PresentationType
+from products.identity import (
+    StackId, CalibrationStackId, identity_for_stack, PresentationType,
+)
 from products.registry import get_filename_fn, MediaType
 
 THUMBNAIL = PresentationType.THUMBNAIL
@@ -44,7 +46,7 @@ log = structlog.get_logger()
 
 
 def _load_calibration(cal_stack, quality, implementation):
-    fn = get_filename_fn(MediaType.IMAGE, type(cal_stack), quality, implementation)
+    fn = get_filename_fn(MediaType.IMAGE, identity_for_stack(cal_stack), quality, implementation)
     path = fn(cal_stack) if fn else None
     return read_image(path) if path and os.path.exists(path) else None
 
@@ -175,10 +177,10 @@ def _stack_files_oss_narrow(args, kwargs):
 
 
 @node(auto_memory=True, cache_key_narrow=_stack_files_oss_narrow)
-@makes_image(CalibrationStack, OSS, [MASTER, DOWNSCALED_MASTER],
-             identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
+@makes_image(OSS, [MASTER, DOWNSCALED_MASTER],
+             identity=CalibrationStackId, presentations=[THUMBNAIL, TILE_PYRAMID],
              file_type=FitsFilePath)
-@makes_image(Stack, OSS, [MASTER, DOWNSCALED_MASTER],
+@makes_image(OSS, [MASTER, DOWNSCALED_MASTER],
              identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
              file_type=FitsFilePath)
 def stack_files_oss(
@@ -195,7 +197,7 @@ def stack_files_oss(
             raise ValueError(f"Stack {stack} has no frames after applying decisions")
         stack = filtered
 
-    dest_filename = get_filename_fn(MediaType.IMAGE, type(stack), config.quality, OSS)(stack)
+    dest_filename = get_filename_fn(MediaType.IMAGE, identity_for_stack(stack), config.quality, OSS)(stack)
     os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
     log.info("OSS stacking", stack=str(stack), dest=str(dest_filename))
 

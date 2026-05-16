@@ -40,50 +40,51 @@ _producers_registered = False
 
 def _ensure_registered():
     global _producers_registered
-    if not _producers_registered:
-        _producers_registered = True
-        from products import ensure_producers_registered
-        ensure_producers_registered()
+    if _producers_registered:
+        return
+    _producers_registered = True
+    from products import ensure_producers_registered
+    ensure_producers_registered()
 
 
 def register_producer(
     media_type: MediaType,
-    object_type: type,
     level: QualityLevel,
     func: Callable[..., Path],
     filename_fn: "FilenameFn | None" = None,
     implementation: Implementation = Implementation.PIXINSIGHT,
+    identity: "type[ObjectId] | None" = None,
 ) -> None:
-    key = (object_type, level, implementation)
+    key = (identity, level, implementation)
     _registry[media_type][key] = func
     if filename_fn is not None:
         _filename_fns[media_type][key] = filename_fn
 
 
 def get_producer(
-    media_type: MediaType, object_type: type, level: QualityLevel,
+    media_type: MediaType, identity: "type[ObjectId]", level: QualityLevel,
     implementation: Implementation = Implementation.PIXINSIGHT,
 ) -> Optional[Callable[..., Path]]:
     _ensure_registered()
-    return _registry[media_type].get((object_type, level, implementation))
+    return _registry[media_type].get((identity, level, implementation))
 
 
 def get_filename_fn(
-    media_type: MediaType, object_type: type, level: QualityLevel,
+    media_type: MediaType, identity: "type[ObjectId]", level: QualityLevel,
     implementation: Implementation = Implementation.PIXINSIGHT,
 ) -> Optional[Callable[..., Path]]:
     _ensure_registered()
-    return _filename_fns[media_type].get((object_type, level, implementation))
+    return _filename_fns[media_type].get((identity, level, implementation))
 
 
 def available_levels(
-    media_type: MediaType, object_type: type,
+    media_type: MediaType, identity: "type[ObjectId]",
     implementation: Implementation = Implementation.PIXINSIGHT,
 ) -> set[QualityLevel]:
     return {
         level
-        for (otype, level, impl) in _registry[media_type]
-        if otype is object_type and impl == implementation
+        for (idcls, level, impl) in _registry[media_type]
+        if idcls is identity and impl == implementation
     }
 
 
@@ -92,14 +93,14 @@ def clear_registry(media_type: MediaType) -> None:
     _filename_fns[media_type].clear()
 
 
-def _mark_valid(object_type: type, level: QualityLevel, implementation: Implementation, args: tuple) -> None:
+def _mark_valid(identity_cls: type, level: QualityLevel, implementation: Implementation, args: tuple) -> None:
     """Mark a product as valid after its producer completes."""
     # The first argument to a producer is always the primary object
     # (Stack, Mosaic, etc.) which has stable_hash.
     obj = args[0] if args else None
     if obj is None or not hasattr(obj, "stable_hash"):
         return
-    key = (object_type.__name__.lower(), obj.stable_hash, level.value, implementation.value)
+    key = (identity_cls.object_type.__name__.lower(), obj.stable_hash, level.value, implementation.value)
     from context import context
     context.or_equals("validity", {key: True})
 
@@ -145,9 +146,11 @@ def is_object_valid(object_type: str, object_id: str, level: str, implementation
 
 
 def fully_resolve(
-    object_type: type, level: QualityLevel, filename_fn: FilenameFn,
+    identity_cls: type, level: QualityLevel, filename_fn: FilenameFn,
     implementation: Implementation = Implementation.PIXINSIGHT,
 ):
+    object_type_name = identity_cls.object_type.__name__
+
     def inner(*args, **kwargs):
         filename = filename_fn(*args, **kwargs)
         assert isinstance(filename, ContentHashable)
@@ -158,7 +161,7 @@ def fully_resolve(
             "filename can be fully resolved."
         )
         return filename.resolve_at(
-            output_dir / str(object_type.__name__) / str(level) / str(implementation)
+            output_dir / object_type_name / str(level) / str(implementation)
         )
 
     return inner
@@ -206,7 +209,6 @@ def _generate_presentations(
     for entry in pres_entries:
         identity_cls = entry['identity_cls']
         presentations = entry['presentations']
-        obj_type = entry['object_type']
         implementations = entry['implementations']
         levels = entry['levels']
 
@@ -237,7 +239,7 @@ def _generate_presentations(
                 for impl in implementations:
                     for level in active_levels:
                         key = obj_id.presentation_cache_key(
-                            PresentationType.TILE_PYRAMID, obj_type, level, impl,
+                            PresentationType.TILE_PYRAMID, level, impl,
                         )
                         context[key] = str(tile_path)
                         print(f"### Stored tile_pyramid {key}")
@@ -303,25 +305,50 @@ def _make_filename_fn(identity_cls: type[ObjectId], file_type: type):
     return fn
 
 
+def _make_dispatch_filename_fn(func: Callable):
+    """Convenience `producer.filename_fn` that resolves across every
+    registered `(identity, level)` filename_fn. Monomorphic producers
+    have exactly one and behave identically; polymorphic ones
+    (stack_files registers StackId AND CalibrationStackId) dispatch on
+    the one whose filename_stem() applies. The identities' filename_stem
+    predicates are disjoint by image_type and signal "not mine" with a
+    ValueError — catch ONLY that, so a genuine TypeError/KeyError in a
+    filename_fn stays loud instead of being silently masked (the
+    swallow-and-try-next pattern that hid the original 404 bug)."""
+    def dispatch(*args, **kwargs):
+        last_exc = None
+        for fn in func.filename_fns.values():
+            try:
+                return fn(*args, **kwargs)
+            except ValueError as e:
+                last_exc = e
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError("no filename_fn registered for producer")
+    return dispatch
+
+
 def _bind_producer(
     media_type: MediaType,
-    object_type: type,
     implementation: Implementation | list[Implementation],
     levels: list[QualityLevel],
     filename_fn: FilenameFn | None,
-    identity: "type[ObjectId] | None" = None,
+    identity: "type[ObjectId]",
     presentations: "list[PresentationType] | None" = None,
     file_type: "type | None" = None,
 ):
     """Decorator that registers a function as a producer for the given
-    (object_type, level, implementation) combinations.
+    (identity, level, implementation) combinations. The produced
+    object_type is derived from ``identity.object_type``.
 
     Usage::
 
         @node(...)
-        @makes_image(Stack, PIXINSIGHT, [MASTER, DOWNSCALED_MASTER], stack_filename)
+        @makes_image(PIXINSIGHT, [MASTER, DOWNSCALED_MASTER], stack_filename,
+                     identity=StackId)
         def stack_files(stack, config): ...
     """
+    assert identity is not None, "@makes_image/@makes_video requires identity="
     implementations = implementation if isinstance(implementation, list) else [implementation]
 
     # Auto-generate filename_fn from identity when file_type is provided.
@@ -340,7 +367,7 @@ def _bind_producer(
             deco = "makes_image" if media_type == MediaType.IMAGE else "makes_video"
             raise TypeError(
                 f"@{deco} must be applied inside @node, not outside. "
-                f"Got @{deco}({object_type.__name__}) wrapping "
+                f"Got @{deco}(identity={identity.__name__}) wrapping "
                 f"a Ray task. Correct order:\n"
                 f"    @node(...)\n"
                 f"    @{deco}(...)\n"
@@ -348,20 +375,19 @@ def _bind_producer(
             )
 
         # Validate identity fields match producer params at decoration time.
-        if identity is not None:
-            import dataclasses
-            import inspect
-            id_fields = {f.name for f in dataclasses.fields(identity)}
-            raw_func = func._original if hasattr(func, '_original') else func
-            raw_func = raw_func.__wrapped__ if hasattr(raw_func, '__wrapped__') else raw_func
-            producer_params = set(inspect.signature(raw_func).parameters.keys())
-            missing = id_fields - producer_params
-            if missing:
-                raise TypeError(
-                    f"{identity.__name__} has fields {missing} that don't match "
-                    f"any parameter of {getattr(func, '__name__', '...')}. "
-                    f"ObjectId field names must be a subset of producer parameter names."
-                )
+        import dataclasses
+        import inspect
+        id_fields = {f.name for f in dataclasses.fields(identity)}
+        raw_func = func._original if hasattr(func, '_original') else func
+        raw_func = raw_func.__wrapped__ if hasattr(raw_func, '__wrapped__') else raw_func
+        producer_params = set(inspect.signature(raw_func).parameters.keys())
+        missing = id_fields - producer_params
+        if missing:
+            raise TypeError(
+                f"{identity.__name__} has fields {missing} that don't match "
+                f"any parameter of {getattr(func, '__name__', '...')}. "
+                f"ObjectId field names must be a subset of producer parameter names."
+            )
 
         # Accumulate validity entries (shared across stacked decorators
         # for polymorphic producers like stack_files).
@@ -381,20 +407,25 @@ def _bind_producer(
             for level in levels:
                 resolved = None
                 if filename_fn is not None:
-                    resolved = fully_resolve(object_type, level, filename_fn, impl)
+                    resolved = fully_resolve(identity, level, filename_fn, impl)
                     if not hasattr(func, 'filename_fns'):
                         func.filename_fns = {}
-                    func.filename_fns[(object_type, level)] = resolved
-                    func.filename_fn = resolved  # convenience alias (last wins)
+                    func.filename_fns[(identity, level)] = resolved
+                    # Convenience alias. For polymorphic producers
+                    # (stack_files: StackId + CalibrationStackId, whose
+                    # filename_stem()s ValueError on a mismatched
+                    # image_type) a single "last wins" fn would crash on
+                    # half the inputs, so dispatch across all registered
+                    # filename_fns and use the first that resolves.
+                    func.filename_fn = _make_dispatch_filename_fn(func)
 
-                func._validity_entries.append((object_type, level, impl))
-                func._registry_keys.append((media_type, object_type, level, impl))
+                func._validity_entries.append((identity, level, impl))
+                func._registry_keys.append((media_type, identity, level, impl))
 
-        if identity is not None and presentations:
+        if presentations:
             func._presentation_entries.append({
                 'identity_cls': identity,
                 'presentations': list(presentations),
-                'object_type': object_type,
                 'implementations': implementations,
                 'levels': levels,
             })
@@ -415,8 +446,8 @@ def _bind_producer(
             def wrapped(*args, **kwargs):
                 result = inner_func(*args, **kwargs)
                 if result is not None:
-                    for obj_type, lvl, impl in entries:
-                        _mark_valid(obj_type, lvl, impl, args)
+                    for idcls, lvl, impl in entries:
+                        _mark_valid(idcls, lvl, impl, args)
                     if not isinstance(result, np.ndarray):
                         discard_sidecar(result)
                     _generate_presentations(
@@ -437,11 +468,12 @@ def _bind_producer(
             for level in levels:
                 resolved = None
                 if filename_fn is not None:
-                    resolved = fully_resolve(object_type, level, filename_fn, impl)
+                    resolved = fully_resolve(identity, level, filename_fn, impl)
                 register_producer(
-                    media_type, object_type, level, wrapped,
+                    media_type, level, wrapped,
                     filename_fn=resolved,
                     implementation=impl,
+                    identity=identity,
                 )
 
         return wrapped
@@ -450,26 +482,26 @@ def _bind_producer(
 
 
 def makes_image(
-    object_type: type, implementation: Implementation,
+    implementation: Implementation,
     levels: list[QualityLevel], filename_fn: FilenameFn | None = None,
-    identity: type[ObjectId] | None = None,
+    identity: type[ObjectId] = None,
     presentations: list[PresentationType] | None = None,
     file_type: type | None = None,
 ):
     return _bind_producer(
-        MediaType.IMAGE, object_type, implementation, levels, filename_fn,
+        MediaType.IMAGE, implementation, levels, filename_fn,
         identity=identity, presentations=presentations, file_type=file_type,
     )
 
 
 def makes_video(
-    object_type: type, implementation: Implementation,
+    implementation: Implementation,
     levels: list[QualityLevel], filename_fn: FilenameFn | None = None,
-    identity: type[ObjectId] | None = None,
+    identity: type[ObjectId] = None,
     presentations: list[PresentationType] | None = None,
     file_type: type | None = None,
 ):
     return _bind_producer(
-        MediaType.VIDEO, object_type, implementation, levels, filename_fn,
+        MediaType.VIDEO, implementation, levels, filename_fn,
         identity=identity, presentations=presentations, file_type=file_type,
     )

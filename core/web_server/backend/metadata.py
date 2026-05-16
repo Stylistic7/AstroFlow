@@ -12,6 +12,9 @@ from targets.types import Target
 from mosaics.types import Mosaic, Viewbox
 from mosaics.viewbox import compute_viewbox
 from products.registry import get_producer, get_filename_fn, MediaType
+from products.identity import (
+    StackId, CalibrationStackId, TargetId, MosaicChannelId, identity_for_stack,
+)
 from previews.types import QualityLevel, QUALITY_PRIORITY
 from mosaics.trimming import project_to_viewbox
 from metadata.sidecar_io import read_image_metadata
@@ -20,11 +23,11 @@ from decisions.decisions import ObjectType, get_decisions_for_object
 
 metadata_bp = Blueprint("metadata", __name__)
 
-def _available_qualities(object_type: type, implementation: Implementation, *args) -> list[tuple[QualityLevel, str]]:
+def _available_qualities(identity_cls: type, implementation: Implementation, *args) -> list[tuple[QualityLevel, str]]:
     """Return all quality levels that have files on disk, in priority order."""
     result = []
     for level in QUALITY_PRIORITY:
-        filename_fn = get_filename_fn(MediaType.IMAGE, object_type, level, implementation)
+        filename_fn = get_filename_fn(MediaType.IMAGE, identity_cls, level, implementation)
         if filename_fn is None:
             continue
         filename = filename_fn(*args)
@@ -35,9 +38,9 @@ def _available_qualities(object_type: type, implementation: Implementation, *arg
     return result
 
 
-def _best_quality(object_type: type, implementation: Implementation, *args) -> tuple[QualityLevel, str] | None:
+def _best_quality(identity_cls: type, implementation: Implementation, *args) -> tuple[QualityLevel, str] | None:
     """Find the best available quality level for an object."""
-    available = _available_qualities(object_type, implementation, *args)
+    available = _available_qualities(identity_cls, implementation, *args)
     return available[0] if available else None
 
 
@@ -57,9 +60,9 @@ def _mosaic_filters(mosaic) -> list[str]:
     return sorted(filters, key=lambda f: (order.index(f) if f in order else len(order), f))
 
 
-def _get_polygons(object_type: type, level: QualityLevel, *args) -> list[dict[str, Any]]:
+def _get_polygons(identity_cls: type, level: QualityLevel, *args) -> list[dict[str, Any]]:
     """Compute projected polygons for an object at a given quality level."""
-    if object_type is CalibrationStack:
+    if identity_cls is CalibrationStackId:
         return []
 
     obj = args[0]
@@ -91,7 +94,7 @@ def _get_polygons(object_type: type, level: QualityLevel, *args) -> list[dict[st
         # Output polygon comes from the stacked master's WCS regardless of
         # the displayed level. At Subframe level the per-stack filename is a
         # raw frame, not a Path, and read_image_metadata would reject it.
-        master_fn = get_filename_fn(MediaType.IMAGE, Stack, QualityLevel.MASTER)
+        master_fn = get_filename_fn(MediaType.IMAGE, StackId, QualityLevel.MASTER)
         overrides = context.settings.decision_overrides
         from decisions.compute_graph import _is_quarantined
 
@@ -183,17 +186,22 @@ def _get_polygons(object_type: type, level: QualityLevel, *args) -> list[dict[st
 # ---------------------------------------------------------------------------
 
 def _resolve_object(object_type_str, object_id, filter=None):
-    """Resolve an object type string + id to (type, *args)."""
+    """Resolve an object type string + id to (identity_cls, *args).
+
+    The identity class drives the producer/filename-fn registry lookup;
+    the args are the real objects the filename_fn / polygon code needs.
+    """
     if object_type_str == "stack":
-        return Stack, (context.stacks[object_id].get(),)
+        stack = context.stacks[object_id].get()
+        return identity_for_stack(stack), (stack,)
     if object_type_str == "calibration_stack":
-        return CalibrationStack, (context.calibration_stacks[object_id],)
+        return CalibrationStackId, (context.calibration_stacks[object_id],)
     if object_type_str == "target":
         obj = context.targets[object_id].get()
-        return Target, (obj, filter) if filter else (obj,)
+        return TargetId, (obj, filter) if filter else (obj,)
     if object_type_str == "mosaic":
         obj = context.mosaics[object_id].get()
-        return Mosaic, (obj, filter) if filter else (obj,)
+        return MosaicChannelId, (obj, filter) if filter else (obj,)
     abort(400, f"Unknown object type: {object_type_str}")
 
 
@@ -339,10 +347,10 @@ def metadata(object_type: str, object_id: str, level_or_filter: str = None, filt
 
 
 _OBJECT_TYPE_MAP = {
-    "mosaic": Mosaic,
-    "target": Target,
-    "stack": Stack,
-    "calibration_stack": CalibrationStack,
+    "mosaic": MosaicChannelId,
+    "target": TargetId,
+    "stack": StackId,
+    "calibration_stack": CalibrationStackId,
 }
 
 
@@ -370,7 +378,7 @@ def _resolve_versioned_object(object_type: str, object_id: str):
 
         def filename_candidates(impl, level, f):
             candidates = []
-            fn = get_filename_fn(MediaType.IMAGE, Mosaic, level, impl)
+            fn = get_filename_fn(MediaType.IMAGE, MosaicChannelId, level, impl)
             if fn is not None:
                 candidates.append(fn(mosaic, f))
             # merge_images writes a per-(mosaic, filter, level) progress
@@ -398,7 +406,7 @@ def _resolve_versioned_object(object_type: str, object_id: str):
         })
 
         def filename_candidates(impl, level, f):
-            fn = get_filename_fn(MediaType.IMAGE, Target, level, impl)
+            fn = get_filename_fn(MediaType.IMAGE, TargetId, level, impl)
             return [fn(target, f)] if fn else []
 
         return target, filters, filename_candidates
@@ -411,7 +419,7 @@ def _resolve_versioned_object(object_type: str, object_id: str):
         filters = [stack.filter] if stack.filter else []
 
         def filename_candidates(impl, level, f):
-            fn = get_filename_fn(MediaType.IMAGE, type(stack), level, impl)
+            fn = get_filename_fn(MediaType.IMAGE, identity_for_stack(stack), level, impl)
             return [fn(stack)] if fn else []
 
         return stack, filters, filename_candidates
@@ -424,7 +432,7 @@ def _resolve_versioned_object(object_type: str, object_id: str):
         filters = [stack.filter] if stack.filter else []
 
         def filename_candidates(impl, level, f):
-            fn = get_filename_fn(MediaType.IMAGE, type(stack), level, impl)
+            fn = get_filename_fn(MediaType.IMAGE, identity_for_stack(stack), level, impl)
             return [fn(stack)] if fn else []
 
         return stack, filters, filename_candidates

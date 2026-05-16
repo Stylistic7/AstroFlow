@@ -20,8 +20,7 @@ def test_downscaled_mosaic_has_real_pixels(test_context):
     that placed images and merged outputs contain real pixel data."""
     from mosaics.orion_mosaic import add_orion_mosaic_images
     from products.registry import get_filename_fn, MediaType
-    from mosaics.types import Mosaic
-    from mosaics.placement import PlacedImage
+    from products.identity import PlacedImageId, MosaicChannelId
 
     add_orion_mosaic_images()
     context.shopping_cart = [
@@ -37,7 +36,7 @@ def test_downscaled_mosaic_has_real_pixels(test_context):
     assert len(stacks) >= 4
 
     # Check that placed images exist and have non-zero pixels.
-    placed_fn = get_filename_fn(MediaType.IMAGE, PlacedImage, QualityLevel.DOWNSCALED_MASTER)
+    placed_fn = get_filename_fn(MediaType.IMAGE, PlacedImageId, QualityLevel.DOWNSCALED_MASTER)
     assert placed_fn is not None, "No filename function for PlacedImage at DownscaledMaster"
 
     placed_count = 0
@@ -65,7 +64,7 @@ def test_downscaled_mosaic_has_real_pixels(test_context):
 
     # Check that the final merged mosaic exists and has non-zero pixels.
     from mosaics.artifacts import mosaic_filename_tiff
-    final_fn = get_filename_fn(MediaType.IMAGE, Mosaic, QualityLevel.DOWNSCALED_MASTER)
+    final_fn = get_filename_fn(MediaType.IMAGE, MosaicChannelId, QualityLevel.DOWNSCALED_MASTER)
     if final_fn:
         final_path = final_fn(mosaic, "H")
         if final_path and os.path.exists(final_path):
