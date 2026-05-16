@@ -217,11 +217,12 @@ def test_per_kind_independence(test_context) -> None:
 
 @pytest.mark.exhaustive
 def test_resolve_handles_stale_cached_choice(test_context) -> None:
-    """If the per-object decision cache still holds a stack hash that's no
-    longer in calibration_stacks (e.g. one filtered out at discovery), the
-    resolver must not crash. The bias dep is silently dropped; downstream
-    stack_files runs without that calibration kind rather than KeyError'ing
-    inside `_setup_run`.
+    """The per-object decision cache is never read as the source of truth
+    (it exists only for the UI). So even if it holds a stack hash that's
+    no longer in calibration_stacks (e.g. one filtered out at discovery),
+    that stale entry cannot poison resolution at all: bias is computed
+    fresh and lands on a real calibration stack — never the stale hash,
+    never KeyError'ing downstream in `_setup_run`.
     """
     target_dir = Path(context.input_dirs[0]) / "Cyg4"
     _make_lights_with_raw_cals(target_dir)
@@ -254,10 +255,13 @@ def test_resolve_handles_stale_cached_choice(test_context) -> None:
     )
 
     deps = _resolve_first_light(light_stack)
-    # The stale bias choice was dropped — no bias dep on the run.
-    assert "bias" not in deps
-    # Dark and flat were resolved fresh and reference real calibration
-    # stacks, demonstrating the failure is per-kind, not whole-run.
+    # The stale cached choice is ignored entirely (cache is never the
+    # source of truth): bias is resolved fresh to a REAL calibration
+    # stack — not the stale hash, not dropped.
+    assert isinstance(deps["bias"], StackIdDependency)
+    assert deps["bias"].stack_id != stale_hash
+    assert deps["bias"].stack_id in context.calibration_stacks
+    # Dark and flat likewise resolve fresh to real calibration stacks.
     assert isinstance(deps["dark"], StackIdDependency)
     assert deps["dark"].stack_id in context.calibration_stacks
     assert isinstance(deps["flat"], StackIdDependency)

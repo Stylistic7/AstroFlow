@@ -71,5 +71,16 @@ def test_one_perfect_stack(test_context) -> None:
     assert len(stacks) == 1
     assert len(context.calibration_stacks) == 4
 
-    thumbnail_keys = context.get_matching(("thumbnail",))
-    assert len(thumbnail_keys) == 7
+    # Flat-correction thumbnails are lazy now: nothing is eagerly
+    # written (the web server rebuilds them on first view via
+    # compute-on-miss). Assert the contract — no eager thumbnail
+    # entries, and the Run thumbnail producer is registered so the
+    # lazy path can find and invoke it.
+    assert context.get_matching(("thumbnail",)) == {}
+    assert context.get_matching(("Thumbnail",)) == {}
+    from products.registry import get_producer, MediaType
+    from previews.types import SUBFRAME, Implementation
+    from stacks.run import Run
+    assert get_producer(
+        MediaType.IMAGE, Run, SUBFRAME, Implementation.PIXINSIGHT
+    ) is not None

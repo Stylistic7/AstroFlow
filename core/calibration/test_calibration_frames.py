@@ -587,20 +587,32 @@ def test_flat_frame_selection(test_context) -> None:
         if ref.get().image_type == "light" and isinstance(ref.get(), Stack)
     ]
     assert len(light_stacks) == 1
-    stack = _resolve_light_stack(next(iter(light_stacks)))
+    raw_light_stack = next(iter(light_stacks))
+    stack = _resolve_light_stack(raw_light_stack)
     assert len(stack.contents) == 1
     substack = next(iter(stack.contents.values()))
-    # Automatic flat selection is disabled — no flat by default.
-    assert "flat" not in substack.dependencies
+    # Auto-selection picks the chronologically-closest flat by default
+    # (flat_run_1, imaged the same night as the lights; flat_run_0 is a
+    # month earlier).
+    assert substack.dependencies.get("flat") == StackIdDependency(
+        stack_id=second_flat_stack
+    )
 
-    # Configure the light run to use flat_run_0 via decision override,
-    # and verify resolve_calibration applies it.
+    # Configure the light run to use flat_run_0 via decision override.
+    # resolve_calibration only resolves cal_types not already in run
+    # deps, so the override must be applied to the RAW (unresolved)
+    # stack — exactly how the real graph resolves: raw stack + the
+    # user's overrides — not re-applied to an already-resolved one.
     from decisions.resolve import resolve_calibration
     from decisions.helpers import calibration_override
-    run_hash = next(iter(stack.contents.keys()))
-    overrides = frozendict(calibration_override("flat", stack.stable_hash, run_hash, first_flat_stack))
+    run_hash = next(iter(raw_light_stack.contents.keys()))
+    overrides = frozendict(calibration_override(
+        "flat", raw_light_stack.stable_hash, run_hash, first_flat_stack
+    ))
 
-    resolved = resolve_calibration(stack, context.calibration_stacks, overrides)
+    resolved = resolve_calibration(
+        raw_light_stack, context.calibration_stacks, overrides
+    )
     substack = next(iter(resolved.contents.values()))
     assert substack.dependencies == {"flat": StackIdDependency(stack_id=first_flat_stack)}
 

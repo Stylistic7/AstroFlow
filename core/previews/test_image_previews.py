@@ -7,10 +7,7 @@ from context import context
 from dependency_graph import run_graph
 from file_io.types import WithSidecar
 from testing import make_synthetic_frames, copy_testdata_frames
-from previews.stack_thumbnails import (
-    stack_thumbnail,
-    calibration_stack_thumbnail,
-)
+from previews.stack_thumbnails import stack_thumbnail
 from products import get_producer, MediaType, ensure_producers_registered
 from previews.types import QualityLevel
 from file_io.find_image_files import find_image_files
@@ -96,25 +93,21 @@ def test_stack_dependency_graph(test_context) -> None:
     assert len(context.stacks) == 1
     assert len(context.calibration_stacks) == 4
 
-    def check_thumbnail(stack, fn):
+    def check_thumbnail(stack):
+        # stack_thumbnail's job now is just the cheap subframe SELECTION
+        # — it returns the chosen frame. The PNG is rebuilt lazily by
+        # the web server on first view (the actual lazy-thumbnail PNG
+        # path is covered by test_endpoints'
+        # test_lazy_thumbnails_regenerate_on_miss). Here we assert the
+        # selection works and the SUBFRAME image producer is registered
+        # so the lazy regen path can find it. The legacy
+        # `.thumbnail_fn` attribute is gone (it was @create_thumbnail's;
+        # producers now use @makes_image).
         file = ray.get(stack_thumbnail.remote(stack))
         assert isinstance(file, WithSidecar)
-
-        thumbnail = stack_thumbnail.thumbnail_fn(stack)
-        assert thumbnail is not None
-        assert isinstance(thumbnail, bytes)
-
-        for mode in [QualityLevel.SUBFRAME, QualityLevel.MASTER]:
-            fn = get_producer(MediaType.IMAGE, type(stack), mode)
-            assert fn is not None
-            assert hasattr(fn, 'thumbnail_fn'), f"{fn.__name__} has no thumbnail_fn (type={type(stack).__name__}, mode={mode})"
-            thumbnail = fn.thumbnail_fn(stack)
-            assert type(thumbnail) is bytes
-
-            fn = get_producer(MediaType.IMAGE, type(stack), mode)
-            assert fn is not None
-            thumbnail = fn.thumbnail_fn(stack)
-            assert type(thumbnail) is bytes
+        assert get_producer(
+            MediaType.IMAGE, type(stack), QualityLevel.SUBFRAME
+        ) is not None
 
     for stack_ref in context.stacks.values():
-        check_thumbnail(stack_ref.get(), stack_thumbnail)
+        check_thumbnail(stack_ref.get())
