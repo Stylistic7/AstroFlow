@@ -64,6 +64,7 @@ dependencies = [
     "rich",
     # Tests
     "pytest",
+    "pytest-benchmark",
 ]
 
 [tool.setuptools.packages.find]
