@@ -55,8 +55,13 @@ def store_calibration_stacks(
 @beartype
 def store_stacks(stacks: dict[str, Any]) -> dict[str, Any]:
     assert None not in stacks.values()
-    # stacks values are already ContextRefs (from gather_enriched_stacks)
-    result = StacksDict(stacks)
+    # identify_stacks is pure (returns real Stacks). This node always
+    # runs (uncached), so the ("stacks", h) durable payloads are
+    # written here every build — the cached identify_stacks result is
+    # self-sufficient and can never point at a missing payload.
+    result = StacksDict({
+        h: ContextRef.store(("stacks", h), s) for h, s in stacks.items()
+    })
     context.stacks = result
     log.info("Stored stacks", count=len(stacks))
     return result
@@ -66,8 +71,10 @@ def store_stacks(stacks: dict[str, Any]) -> dict[str, Any]:
 @beartype
 def store_targets(targets: dict[str, Any]) -> dict[str, Any]:
     assert None not in targets.values()
-    # targets values are already ContextRefs (from identify_targets)
-    result = TargetsDict(targets)
+    # identify_targets is pure (real Targets); ref them here (always-run).
+    result = TargetsDict({
+        h: ContextRef.store(("targets", h), t) for h, t in targets.items()
+    })
     context.targets = result
     log.info("Stored targets", count=len(targets))
     return result
@@ -77,10 +84,13 @@ def store_targets(targets: dict[str, Any]) -> dict[str, Any]:
 @beartype
 def store_mosaics(mosaics: MosaicsDict) -> MosaicsDict:
     assert None not in mosaics.values()
-    # mosaics values are already ContextRefs (from identify_mosaics)
-    context.mosaics = mosaics
+    # identify_mosaics is pure (real Mosaics); ref them here (always-run).
+    result = MosaicsDict({
+        h: ContextRef.store(("mosaics", h), m) for h, m in mosaics.items()
+    })
+    context.mosaics = result
     log.info("Stored mosaics", count=len(mosaics))
-    return mosaics
+    return result
 
 
 @ray.remote(num_cpus=0.1)

@@ -27,7 +27,7 @@ from mosaics.overlap import Overlap
 from decorators import cached, node
 from attributes import AstrometricAttributes, ChronologyAttributes
 from attributes.astrometric_attributes import healpix_cells_from_poly
-from cache.context_ref import ContextRef
+from cache.context_ref import ContextRef, deref
 from units import Degrees, Radians, ArcsecondsPerPixel
 
 logger = structlog.get_logger()
@@ -57,8 +57,8 @@ def roughly_same_position_angle(
 
 @node
 def targets_overlap(
-    a_target_ref: ContextRef[Target],
-    b_target_ref: ContextRef[Target],
+    a_target_ref: Target | ContextRef[Target],
+    b_target_ref: Target | ContextRef[Target],
     min_area_frac: float = 0.03,
     span_match: float = 0.75,
     thick_min: float = 0.1,
@@ -66,8 +66,8 @@ def targets_overlap(
     angular_tolerance: Radians = Radians(math.radians(10.0)),
     debug: bool = False,
 ) -> Overlap:
-    a_target = a_target_ref.get()
-    b_target = b_target_ref.get()
+    a_target = deref(a_target_ref)
+    b_target = deref(b_target_ref)
 
     if a_target is b_target:
         return Overlap.IDENTICAL
@@ -200,7 +200,7 @@ def targets_overlap(
 
 @beartype
 def group_targets(
-    target_refs: dict[TargetHash, ContextRef[Target]],
+    target_refs: dict[TargetHash, Target | ContextRef[Target]],
     target_ids: list[TargetHash],
     allowed_overlaps: list[Overlap],
     angular_tolerance: Radians,
@@ -209,7 +209,7 @@ def group_targets(
 
     target_ids_for_cell = defaultdict(list)
     for target_id in target_ids:
-        target = target_refs[target_id].get()
+        target = deref(target_refs[target_id])
         assert len(target.healpix_cells) > 0
         for cell in target.healpix_cells:
             target_ids_for_cell[cell].append(target_id)
@@ -248,12 +248,12 @@ def group_targets(
 
 @beartype
 def find_strips(
-    target_refs: dict[TargetHash, ContextRef[Target]],
+    target_refs: dict[TargetHash, Target | ContextRef[Target]],
     target_ids: list[TargetHash],
     angular_tolerance: Radians,
     debug: bool = False,
 ) -> tuple[Strip, ...]:
-    resolved: dict[TargetHash, Target] = {k: ref.get() for k, ref in target_refs.items()}
+    resolved: dict[TargetHash, Target] = {k: deref(v) for k, v in target_refs.items()}
     strips = group_targets(
         target_refs, target_ids, [Overlap.LONG_EDGE], angular_tolerance
     )
@@ -344,14 +344,14 @@ def find_strips(
 
 @beartype
 def _identify_overlapping_targets(
-    target_refs: dict[TargetHash, ContextRef[Target]],
+    target_refs: dict[TargetHash, Target | ContextRef[Target]],
     angular_tolerance: Radians,
     debug: bool = False,
 ) -> list[list[TargetHash]]:
     if not target_refs:
         return []
 
-    resolved = {k: ref.get() for k, ref in target_refs.items()}
+    resolved = {k: deref(v) for k, v in target_refs.items()}
 
     # Sort the targets by their center RA.
     target_ids = list(
@@ -385,10 +385,10 @@ def _identify_overlapping_targets(
 @node
 def identify_mosaics(
     angular_tolerance: Radians,
-    targets: dict[TargetHash, ContextRef[Target]],
+    targets: dict[TargetHash, Target | ContextRef[Target]],
     debug: bool = False,
 ) -> MosaicsDict:
-    resolved: dict[str, Target] = {k: ref.get() for k, ref in targets.items()}
+    resolved: dict[str, Target] = {k: deref(v) for k, v in targets.items()}
     log.info("Identifying mosaics", num_targets=len(resolved))
 
     mosaics = _identify_overlapping_targets(targets, angular_tolerance, debug)
@@ -502,8 +502,7 @@ def identify_mosaics(
                 title=f"Mosaic {stable_hash} after ordering",
             )
 
-        output_mosaics[stable_hash] = ContextRef.store(
-            ("mosaics", stable_hash), output_mosaic
-        )
+        # Pure: return the real Mosaic; store_mosaics refs it.
+        output_mosaics[stable_hash] = output_mosaic
 
     return output_mosaics

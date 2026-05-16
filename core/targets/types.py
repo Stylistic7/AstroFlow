@@ -62,7 +62,9 @@ class Target(
     # TODO: Add a valid() method, and assert on it.
 
 
-class TargetsDict(dict[TargetHash, ContextRef["Target"]]):
+class TargetsDict(dict[TargetHash, Target | ContextRef[Target]]):
+    # Plain Targets in the pure identify_targets stage; ContextRefs
+    # after store_targets. Both expose .content_hash.
     def __hash__(self):
         from cache.context_ref import dict_content_hash
         return hash_list_int([dict_content_hash(self)])

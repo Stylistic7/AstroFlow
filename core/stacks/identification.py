@@ -9,7 +9,7 @@ from typing import Iterator
 import clustering
 from stacks.composite_stack import Stack, StacksDict
 from metadata.classes import FrameHash, MetadataDict
-from cache.context_ref import ContextRef
+from cache.context_ref import ContextRef, deref
 from context import context
 from decorators import node
 from decisions.decisions import (
@@ -131,9 +131,12 @@ def identify_stacks(
                                 exposure_frames, metadata=metadata, max_run_gap=max_run_gap
                             )
                             if new_stack is not None:
-                                new_stacks[new_stack.stable_hash] = ContextRef.store(
-                                    ("stacks", new_stack.stable_hash), new_stack
-                                )
+                                # Pure: return the real Stack. store_stacks
+                                # (always-runs, uncached) does the
+                                # ContextRef.store so the cached @node
+                                # result is self-sufficient and can't
+                                # point at a missing payload.
+                                new_stacks[new_stack.stable_hash] = new_stack
 
     assert None not in new_stacks.values()
 
@@ -162,7 +165,7 @@ def _detect_rotation_outliers(
     detected = {}
 
     for stack_hash, stack_ref in stacks.items():
-        stack = stack_ref.get()
+        stack = deref(stack_ref)
         if len(stack.contents) < 2:
             continue
 
