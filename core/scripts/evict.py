@@ -1,9 +1,15 @@
 import argparse
 from pathlib import Path
 
-from context import get_cache
+from context import get_cache, get_durable_cache
 
-cache = get_cache()
+# Operate on BOTH stores. The durable store (eviction_policy='none')
+# holds the ("stacks"/"targets"/"mosaics"/"large_object", h) identity
+# payloads and never self-evicts; if the clear tool skips it, stale
+# schema-incompatible pickled objects (e.g. a pre-refactor Run whose
+# `exposure` is a tuple, which deserializes bypassing beartype)
+# resurface forever — surviving every "cache clear".
+caches = [get_cache(), get_durable_cache()]
 
 
 def matches(big_tuple, pattern):
@@ -60,7 +66,13 @@ def main():
         else:
             return any(matches(key, pattern) for pattern in delete_prefixes)
 
-    keys_to_delete = [key for key in cache.iterkeys() if should_delete(key)]
+    # (store, key) pairs across both the evictable and durable caches.
+    targets = [
+        (store, key)
+        for store in caches
+        for key in store.iterkeys()
+        if should_delete(key)
+    ]
 
     action = (
         f"Keeping keys starting with: {keep_prefixes}"
@@ -70,17 +82,18 @@ def main():
 
     print(f"\n{action}")
     print(
-        f"{'Would delete' if not args.confirm else 'Deleting'} {len(keys_to_delete)} keys:\n"
+        f"{'Would delete' if not args.confirm else 'Deleting'} "
+        f"{len(targets)} keys (across evictable + durable):\n"
     )
-    for key in keys_to_delete:
+    for _store, key in targets:
         print(f"  - {key}")
 
     if not args.confirm:
         print("\nDry-run only. Use `--confirm` to actually delete.")
     else:
-        for key in keys_to_delete:
+        for store, key in targets:
             try:
-                del cache[key]
+                del store[key]
             except KeyError:
                 print(f"⚠️  Key not found during deletion: {key}")
         print("\nDeletion complete.")
