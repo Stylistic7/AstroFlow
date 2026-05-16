@@ -9,22 +9,6 @@ from hashing.hashing import hash_list, hash_list_int
 Key = str | tuple[Any, ...]
 
 
-# Distinguishes "key absent from the store" from a legitimately stored
-# None. Must survive the ContextActor RPC round-trip with identity
-# intact (a bare object() pickles to a fresh instance), so it pickles
-# back to the same singleton.
-class _Missing:
-    def __reduce__(self):
-        return (_get_missing, ())
-
-
-def _get_missing() -> "_Missing":
-    return _MISSING
-
-
-_MISSING = _Missing()
-
-
 # Process-local override that lets ContextRef.get() bypass the Ray actor
 # when the calling process has direct access to the canonical diskcache
 # (i.e. it's running on the head node). The web server sets this at
@@ -96,22 +80,9 @@ class ContextRef(Generic[T]):
             except Exception:
                 self.ref = None
         if _active_context is not None:
-            ctx = _active_context
-        else:
-            from context import context as ctx
-        value = ctx.get(self.cache_key, _MISSING)
-        if value is _MISSING:
-            raise KeyError(
-                f"ContextRef {self.cache_key!r}: no live Plasma ref and "
-                f"the payload is absent from the context store. This means "
-                f"the producing @node's cached result outlived its durable "
-                f"payload (the two stores were cleared/evicted "
-                f"non-atomically). Clear BOTH stores atomically — "
-                f"`context.clear()` or `scripts/evict.py --delete \"*\" "
-                f"--confirm` — and re-run so the producer re-runs and "
-                f"repopulates."
-            )
-        return value
+            return _active_context[self.cache_key]
+        from context import context
+        return context[self.cache_key]
 
     def __reduce__(self):
         # stdlib pickle path (diskcache persistence, cached Graphs,
@@ -258,23 +229,8 @@ def strip_refs(value: Any) -> Any:
     return value
 
 
-def deref(v: Any) -> Any:
-    """Resolve a value that may be a ContextRef or already the object.
-
-    The identify_* producers are pure: they return the real objects.
-    `store_*` (always-runs) wraps them in ContextRefs for the durable
-    store / downstream graph. So a `*Dict` holds plain objects in the
-    pure stage and ContextRefs after `store_*`; consumers that may see
-    either use this.
-    """
-    return v.get() if isinstance(v, ContextRef) else v
-
-
 def dict_content_hash(refs: dict[str, "ContextRef[Any]"]) -> str:
-    """Stable content hash for a dict of values that each expose
-    `.content_hash` — works for both ContextRefs and the underlying
-    ContentHashed objects, so a `*Dict` hashes identically in the pure
-    (by-value) and post-store (by-ref) stages.
+    """Stable content hash for a dict of ContextRefs.
 
     Pure in-memory — reads no values from diskcache or the ContextActor.
     """

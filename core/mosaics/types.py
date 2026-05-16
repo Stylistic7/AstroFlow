@@ -56,9 +56,7 @@ class Mosaic(
     # TODO: Add a valid() method, and assert on it.
 
 
-class MosaicsDict(dict[MosaicHash, Mosaic | ContextRef[Mosaic]]):
-    # Plain Mosaics in the pure identify_mosaics stage; ContextRefs
-    # after store_mosaics. Both expose .content_hash.
+class MosaicsDict(dict[MosaicHash, ContextRef["Mosaic"]]):
     def __hash__(self):
         from hashing import hash_list_int
         from cache.context_ref import dict_content_hash

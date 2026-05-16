@@ -312,5 +312,5 @@ def process_mosaics_for_ui(mosaics: MosaicsDict) -> dict:
         return convert_to_dict(mosaic, transform=my_transform)
 
     # TODO: Parallelize this.
-    ui_mosaics = {h: prepare_mosaic(_unwrap(ref)) for h, ref in mosaics.items()}
+    ui_mosaics = {h: prepare_mosaic(ref.get()) for h, ref in mosaics.items()}
     return ui_mosaics

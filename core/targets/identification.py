@@ -8,7 +8,7 @@ from targets.types import Target, TargetsDict
 from stacks.composite_stack import StacksDict
 from stacks.types import StackHash
 from decorators import node
-from cache.context_ref import deref
+from cache.context_ref import ContextRef
 
 log = structlog.get_logger()
 
@@ -19,9 +19,8 @@ def identify_targets(
 ) -> TargetsDict:
     log.info("Identifying targets", num_stacks=len(stacks))
 
-    # identify_stacks is pure now (returns plain Stacks); tolerate
-    # ContextRefs too in case a caller passes the post-store dict.
-    resolved = {k: deref(v) for k, v in stacks.items()}
+    # Resolve all ContextRefs once up-front for efficient access
+    resolved = {k: ref.get() for k, ref in stacks.items()}
 
     @beartype
     def scale_clusters() -> Iterator[tuple[StackHash, ...]]:
@@ -77,8 +76,9 @@ def identify_targets(
                     new_target = Target.from_stacks(
                         [resolved[s] for s in rotation_stacks]
                     )
-                    # Pure: return the real Target; store_targets refs it.
-                    new_targets[new_target.stable_hash] = new_target
+                    new_targets[new_target.stable_hash] = ContextRef.store(
+                        ("targets", new_target.stable_hash), new_target
+                    )
                 except ValueError:
                     log.warning("Failed to create target", stacks=rotation_stacks)
 
