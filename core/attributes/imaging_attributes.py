@@ -57,6 +57,50 @@ class ImagingAttributes:
     width_pixels: int
     height_pixels: int
 
+    def __post_init__(self):
+        # Fail-fast at the PRODUCER. `exposure` must be a scalar
+        # Seconds (a float subclass), never a tuple/list — a recurring
+        # bug where some live path constructs a 1-tuple `(30.0,)` that
+        # bypasses beartype and only detonates much later in
+        # resolve_calibration's replace(). Raising here makes the
+        # constructing traceback the actual culprit. Runs on every
+        # __init__ incl. replace(); pickle restore bypasses this (and
+        # __init__) — if this never fires but the tuple still appears,
+        # the producer is a deserialization boundary.
+        for _name in ("exposure", "integration"):
+            _v = getattr(self, _name)
+            if isinstance(_v, bool) or not isinstance(_v, (int, float)):
+                raise TypeError(
+                    f"ImagingAttributes.{_name} must be a scalar Seconds, "
+                    f"got {type(_v).__name__} {_v!r} "
+                    f"(image_type={self.image_type!r}, camera={self.camera!r}, "
+                    f"filter={self.filter!r})"
+                )
+
+    def __setstate__(self, state):
+        # Pickle / copy.deepcopy restore bypasses __init__, beartype AND
+        # __post_init__ (default dataclass unpickle = __new__ +
+        # __dict__.update). This is the ONLY hook that runs on unpickle,
+        # and the recurring tuple-`exposure` bug enters via a
+        # deserialization boundary (Ray object store / diskcache /
+        # ContextRef / a snapshot fixture). Validate here so the
+        # *restoring* traceback names the live producer instead of
+        # detonating later in resolve_calibration's replace().
+        self.__dict__.update(state)
+        for _name in ("exposure", "integration"):
+            if _name in self.__dict__:
+                _v = self.__dict__[_name]
+                if isinstance(_v, bool) or not isinstance(_v, (int, float)):
+                    raise TypeError(
+                        f"ImagingAttributes.{_name} restored from pickle is "
+                        f"{type(_v).__name__} {_v!r}, not a scalar Seconds "
+                        f"(image_type={self.__dict__.get('image_type')!r}, "
+                        f"camera={self.__dict__.get('camera')!r}, "
+                        f"filter={self.__dict__.get('filter')!r}). Object "
+                        f"serialized with the OLD tuple-exposure schema — "
+                        f"this traceback is the deserializing producer."
+                    )
+
     @classmethod
     def from_frames(
         cls, frames: Iterable[FrameHash], metadata: MetadataDict | None = None
