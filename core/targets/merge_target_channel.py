@@ -21,12 +21,14 @@ from previews.types import (
     PIXINSIGHT,
     MASTER,
     DOWNSCALED_MASTER,
+    POST_PROCESSED,
+    DOWNSCALED_POST_PROCESSED,
 )
 from products import get_filename_fn, makes_image, MediaType
 from products.identity import (
     PresentationType,
     TargetChannelId,
-    identity_for_stack,
+    StackId,
 )
 from stacks.composite_stack import Stack
 from targets.target_channel import TargetChannel
@@ -36,8 +38,24 @@ THUMBNAIL = PresentationType.THUMBNAIL
 TILE_PYRAMID = PresentationType.TILE_PYRAMID
 
 
+def _postprocessed_level(quality: QualityLevel) -> QualityLevel:
+    """The gradient-corrected stack artifact a channel merge consumes
+    for a given mosaic mode. Shared with the OSS merge. The merge runs
+    only at MASTER / DOWNSCALED_MASTER (SUBFRAME short-circuits in
+    build_target_channel_subgraph)."""
+    if quality == MASTER:
+        return POST_PROCESSED
+    if quality == DOWNSCALED_MASTER:
+        return DOWNSCALED_POST_PROCESSED
+    raise AssertionError(f"channel merge not defined for quality {quality}")
+
+
 def _stack_master_path(stack: Stack, quality: QualityLevel) -> Path:
-    fn = get_filename_fn(MediaType.IMAGE, identity_for_stack(stack), quality, PIXINSIGHT)
+    # Consume the gradient-corrected (post-processed) stack, NOT the raw
+    # master — so mosaic panels are flattened before placement/merge.
+    fn = get_filename_fn(
+        MediaType.IMAGE, StackId, _postprocessed_level(quality), PIXINSIGHT
+    )
     return Path(fn(stack))
 
 

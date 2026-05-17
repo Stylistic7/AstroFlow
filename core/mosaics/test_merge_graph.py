@@ -299,6 +299,78 @@ def test_three_panes(test_context) -> None:
 
 
 @pytest.mark.exhaustive
+def test_channel_merge_waits_for_per_stack_postprocess(test_context) -> None:
+    """Master AND DownscaledMaster: each per-stack subgraph must
+    terminate in gradient correction (post-process), and the channel
+    merge must depend on that per-stack subgraph — so mosaic panels are
+    flattened before placement/merge. Closes the "merge resolves stack
+    filenames independently" hazard for both modes.
+    """
+    from dataclasses import replace
+    from targets.target_channel import build_target_channel_subgraph
+    from stacks.compute_graph import build_stacking_subgraph
+    from products import get_producer, MediaType
+    from products.identity import StackId
+    from previews.types import (
+        QualityLevel, PIXINSIGHT, POST_PROCESSED, DOWNSCALED_POST_PROCESSED,
+    )
+
+    def fn(n):
+        return n.task._function.__name__
+
+    stack = make_composite_stack(stable_hash="s1", content_hash="s1")
+    target = make_test_target(
+        "t", stack_ids=("s1",), stable_hash="t", content_hash="t"
+    )
+    base = ProcessingConfig(
+        calibration_stacks=CalibrationStacksDict({}), min_frames_in_stack=3
+    )
+
+    cases = {
+        QualityLevel.MASTER: (POST_PROCESSED, "post_process_"),
+        QualityLevel.DOWNSCALED_MASTER: (
+            DOWNSCALED_POST_PROCESSED, "post_process_downscaled_",
+        ),
+    }
+    for mode, (pp_level, meta_prefix) in cases.items():
+        config = replace(base, quality=mode)
+
+        # 1. The per-stack subgraph must END in the right gradient
+        #    correction (sink = post-process metadata, NOT raw stacking).
+        g = canonicalize_graph(
+            ray.get(build_stacking_subgraph.remote(stack, config))
+        )
+        nodes = set(g) | {d for ds in g.values() for d in ds}
+        pp_fn = get_producer(MediaType.IMAGE, StackId, pp_level, PIXINSIGHT)
+        pp_name = getattr(pp_fn, "_function", pp_fn).__name__
+        assert pp_name in {fn(n) for n in nodes}, (mode, pp_name)
+        has_dep = {d for ds in g.values() for d in ds}
+        sinks = [n for n in nodes if n not in has_dep]
+        assert len(sinks) == 1, (mode, [str(s) for s in sinks])
+        assert fn(sinks[0]) == "compute_image_metadata", (mode, fn(sinks[0]))
+        assert sinks[0].name.startswith(meta_prefix), (mode, sinks[0].name)
+        assert not sinks[0].name.startswith("stacking_"), sinks[0].name
+
+        # 2. The channel merge must DEPEND on the per-stack subgraph
+        #    (whose sink is the post-process above) → merge is ordered
+        #    strictly after gradient correction.
+        tcg = canonicalize_graph(
+            ray.get(
+                build_target_channel_subgraph.remote(
+                    target, "H", (stack,), config
+                )
+            )
+        )
+        tnodes = set(tcg) | {d for ds in tcg.values() for d in ds}
+        merges = [n for n in tnodes if fn(n) == "merge_target_channel"]
+        assert len(merges) == 1, (mode, [fn(n) for n in tnodes])
+        assert any(
+            fn(d) == "build_stacking_subgraph"
+            for d in tcg.get(merges[0], set())
+        ), (mode, [fn(d) for d in tcg.get(merges[0], set())])
+
+
+@pytest.mark.exhaustive
 def test_orion_mosaic(test_context) -> None:
     add_orion_mosaic_images()
 

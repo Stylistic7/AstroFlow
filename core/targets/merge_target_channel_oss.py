@@ -32,11 +32,14 @@ from products import get_filename_fn, makes_image, MediaType
 from products.identity import (
     PresentationType,
     TargetChannelId,
-    identity_for_stack,
+    StackId,
 )
 from stacks.composite_stack import Stack
 from targets.target_channel import TargetChannel
-from targets.merge_target_channel import _merge_target_channel_narrow
+from targets.merge_target_channel import (
+    _merge_target_channel_narrow,
+    _postprocessed_level,
+)
 from targets.types import Target
 
 THUMBNAIL = PresentationType.THUMBNAIL
@@ -52,7 +55,11 @@ _SATURATION_FRACTION = 0.999
 
 
 def _stack_master_path(stack: Stack, quality: QualityLevel) -> Path:
-    fn = get_filename_fn(MediaType.IMAGE, identity_for_stack(stack), quality, OSS)
+    # Consume the gradient-corrected (post-processed) stack, NOT the raw
+    # master — so mosaic panels are flattened before placement/merge.
+    fn = get_filename_fn(
+        MediaType.IMAGE, StackId, _postprocessed_level(quality), OSS
+    )
     return Path(fn(stack))
 
 

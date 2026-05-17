@@ -21,6 +21,11 @@ class QualityLevel(StrEnum):
     DOWNSCALED_MASTER = "DownscaledMaster"
     MASTER = "Master"
     POST_PROCESSED = "PostProcessed"
+    # Gradient-corrected stack at downscaled resolution. Its own
+    # artifact so a DownscaledMaster mosaic gets gradient removal
+    # (cheaply, on the small image) independent of the full-res
+    # PostProcessed master.
+    DOWNSCALED_POST_PROCESSED = "DownscaledPostProcessed"
 
 
 # Module-level aliases for ergonomic imports.
@@ -28,6 +33,7 @@ SUBFRAME = QualityLevel.SUBFRAME
 DOWNSCALED_MASTER = QualityLevel.DOWNSCALED_MASTER
 MASTER = QualityLevel.MASTER
 POST_PROCESSED = QualityLevel.POST_PROCESSED
+DOWNSCALED_POST_PROCESSED = QualityLevel.DOWNSCALED_POST_PROCESSED
 
 
 # Quality levels in priority order (best first → worst last). Web server
@@ -42,4 +48,5 @@ DOWNSCALE_FACTORS: dict[QualityLevel, int] = {
     QualityLevel.DOWNSCALED_MASTER: 8,
     QualityLevel.MASTER: 1,
     QualityLevel.POST_PROCESSED: 1,
+    QualityLevel.DOWNSCALED_POST_PROCESSED: 8,
 }

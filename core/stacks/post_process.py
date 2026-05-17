@@ -12,7 +12,7 @@ from stacks.composite_stack import Stack
 from file_io.types import XisfFilePath, WithSidecar
 from products import makes_image, get_filename_fn, MediaType
 from products.identity import StackId, PresentationType
-from previews.types import QualityLevel, PIXINSIGHT
+from previews.types import QualityLevel, PIXINSIGHT, DOWNSCALE_FACTORS
 import structlog
 
 THUMBNAIL = PresentationType.THUMBNAIL
@@ -62,6 +62,37 @@ def post_process_stack(stack: Stack, mock_pixinsight: bool) -> WithSidecar[XisfF
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
 
     result = _post_process_stack(master, stack, downscale_factor=1)
+    result.save_to(output_filename, mock=mock_pixinsight)
+
+    return WithSidecar(XisfFilePath(output_filename))
+
+
+@node(resources={"PixInsight": 1}, auto_memory=True)
+@makes_image(PIXINSIGHT, [QualityLevel.DOWNSCALED_POST_PROCESSED],
+             identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
+             file_type=XisfFilePath)
+def post_process_stack_downscaled(
+    stack: Stack, mock_pixinsight: bool
+) -> WithSidecar[XisfFilePath]:
+    """Same gradient correction as `post_process_stack`, but on the
+    already-downscaled master so a DownscaledMaster mosaic gets
+    gradient removal cheaply (on the small image). Not pixel-identical
+    to the full-res PostProcessed — `_post_process_stack`'s low-res
+    solver branch (downscale_factor > 1) handles the tiny stars."""
+    from products import ensure_producers_registered
+    ensure_producers_registered()
+    master_fn = get_filename_fn(
+        MediaType.IMAGE, StackId, QualityLevel.DOWNSCALED_MASTER
+    )
+    master = master_fn(stack)
+
+    output_filename = post_process_stack_downscaled.filename_fn(stack)
+    os.makedirs(os.path.dirname(output_filename), exist_ok=True)
+
+    result = _post_process_stack(
+        master, stack,
+        downscale_factor=DOWNSCALE_FACTORS[QualityLevel.DOWNSCALED_MASTER],
+    )
     result.save_to(output_filename, mock=mock_pixinsight)
 
     return WithSidecar(XisfFilePath(output_filename))

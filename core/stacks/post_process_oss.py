@@ -63,3 +63,47 @@ def post_process_stack_oss(stack: Stack, mock_pixinsight: bool) -> WithSidecar[F
 
     log.info("OSS post-processing complete", output=str(output_filename))
     return WithSidecar(FitsFilePath(output_filename))
+
+
+@node(auto_memory=True)
+@makes_image(OSS, [QualityLevel.DOWNSCALED_POST_PROCESSED],
+             identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
+             file_type=FitsFilePath)
+def post_process_stack_oss_downscaled(
+    stack: Stack, mock_pixinsight: bool
+) -> WithSidecar[FitsFilePath]:
+    """OSS gradient/background removal on the already-downscaled master,
+    so a DownscaledMaster mosaic gets gradient correction cheaply."""
+    from products import ensure_producers_registered
+    ensure_producers_registered()
+
+    master_path = get_filename_fn(
+        MediaType.IMAGE, StackId, QualityLevel.DOWNSCALED_MASTER, OSS
+    )(stack)
+    output_filename = post_process_stack_oss_downscaled.filename_fn(stack)
+    os.makedirs(os.path.dirname(output_filename), exist_ok=True)
+    log.info("OSS post-processing downscaled stack",
+             stack=str(stack), master=str(master_path))
+
+    data = read_image(master_path).astype(np.float32)
+
+    try:
+        bkg = Background2D(data, box_size=(64, 64), filter_size=(3, 3),
+                           bkg_estimator=MedianBackground())
+        data = data - bkg.background
+    except Exception as e:
+        log.warning("Background correction failed, leaving uncorrected", error=str(e))
+
+    header = pyfits.Header()
+    header["IMAGETYP"] = "Post-processed Light"
+    header["STBLHASH"] = stack.stable_hash
+    header["FILTER"] = stack.filter
+    header["PIPELINE"] = "AstroFlow-OSS"
+    header["RA"] = stack.center[0]
+    header["DEC"] = stack.center[1]
+    pyfits.PrimaryHDU(data=data, header=header).writeto(str(output_filename), overwrite=True)
+
+    plate_solving.solve_field(output_filename)
+
+    log.info("OSS downscaled post-processing complete", output=str(output_filename))
+    return WithSidecar(FitsFilePath(output_filename))

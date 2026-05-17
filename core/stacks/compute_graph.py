@@ -107,8 +107,20 @@ def build_stacking_subgraph(
             (pp_fn, stack, config.development_settings.mock_pixinsight),
             Node(compute_image_metadata, name=f"post_process_{stack.stable_hash}"),
         )
+    elif config.quality == QualityLevel.DOWNSCALED_MASTER:
+        # Downscaled: calibrate → stack → metadata → gradient-correct
+        # (on the small image) → metadata. Mirrors MASTER so a
+        # DownscaledMaster mosaic gets gradient removal too.
+        pp_fn = get_producer(MediaType.IMAGE, StackId, QualityLevel.DOWNSCALED_POST_PROCESSED, config.implementation)
+        steps = chain(
+            (build_calibration_stack_subgraph, stack, config),
+            (stack_fn, stack, config),
+            Node(compute_image_metadata, name=f"stacking_{stack.stable_hash}"),
+            (pp_fn, stack, config.development_settings.mock_pixinsight),
+            Node(compute_image_metadata, name=f"post_process_downscaled_{stack.stable_hash}"),
+        )
     else:
-        # Downscaled: calibrate → stack → metadata (no post-processing)
+        # SUBFRAME or other: calibrate → stack → metadata (no post-process)
         steps = chain(
             (build_calibration_stack_subgraph, stack, config),
             (stack_fn, stack, config),
