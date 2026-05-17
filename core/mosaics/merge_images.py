@@ -102,7 +102,7 @@ def _maybe_publish_progress(
     # overwrites with the final mosaic's thumbnail, so the handoff from
     # in-progress to final is automatic.
     thumbnail_key = MosaicChannelId(mosaic=mosaic, filter=filter).presentation_cache_key(
-        THUMBNAIL, Mosaic, mode, impl,
+        THUMBNAIL, mode, impl,
     )
     try:
         from previews.operations import resize_array, autostretch, array_to_png
