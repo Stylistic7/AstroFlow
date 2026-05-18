@@ -158,16 +158,35 @@ class MountContextManager:
 def _group_subs_by_date(
     subs: list[str],
 ) -> tuple[list[list[str]], list[datetime.datetime]]:
-    def date_predicate(sub: str) -> datetime.datetime:
+    def sub_date(sub: str) -> datetime.datetime:
         utc_dt = file_io.fits_file_io.read_fits_header(sub)["DATE-OBS"]
         return datetime.datetime(utc_dt.year, utc_dt.month, utc_dt.day)
 
+    print(f"group_subs_by_date found {len(subs)} frames")
+
+    # The ASIAir SMB mount routinely contains *.fit files that aren't
+    # readable FITS yet: in-progress/truncated captures, empty files,
+    # or non-light files. A single bad file must NOT abort the whole
+    # download (it used to, inside sorted()'s key) — skip it loudly;
+    # an in-progress sub is picked up on the next poll once complete.
+    # Compute each date exactly once (the old code re-read every
+    # header in both sorted() and groupby()).
+    dated: list[tuple[str, datetime.datetime]] = []
+    skipped = 0
+    for sub in subs:
+        try:
+            dated.append((sub, sub_date(sub)))
+        except Exception as e:
+            skipped += 1
+            print(f"### group_subs_by_date: skipping unreadable {sub}: {e}")
+    if skipped:
+        print(f"group_subs_by_date skipped {skipped} unreadable frame(s)")
+
+    dated.sort(key=lambda sd: sd[1])
     groups = []
     dates = []
-    print(f"group_subs_by_date found {len(subs)} frames")
-    sorted_subs = sorted(subs, key=date_predicate)
-    for k, g in itertools.groupby(sorted_subs, key=lambda x: date_predicate(x)):
-        groups.append(list(g))
+    for k, g in itertools.groupby(dated, key=lambda sd: sd[1]):
+        groups.append([sub for sub, _ in g])
         dates.append(k)
 
     print(f"group_subs_by_date returning {len(groups)} groups")
@@ -191,6 +210,9 @@ def _download_from_rig_grouped_by_date(
         return None
 
     groups, dates = _group_subs_by_date(fits_files)
+    if not dates:
+        print(f"No readable FITS frames from rig {rig} in path {path}")
+        return None
     for fits_files, date in zip(groups, dates):
         date_dir = _make_dest_dir_for_date(dest_path, date)
         print(
@@ -240,10 +262,12 @@ def download_from_asiair(
                     min_date = _download_from_rig_grouped_by_date(
                         path, dest_path, rig, default_filter
                     )
-                    if total_min_date is None:
-                        total_min_date = min_date
-                    else:
-                        total_min_date = min(total_min_date, min_date)
+                    if min_date is None:
+                        continue
+                    total_min_date = (
+                        min_date if total_min_date is None
+                        else min(total_min_date, min_date)
+                    )
 
                 if total_min_date:
                     log_dir = os.path.join(mount_point, search_def["log_dir"])
