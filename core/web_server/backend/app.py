@@ -293,6 +293,18 @@ def stack_detail(stack_id):
     result = convert_to_dict(
         stack, [["contents", "*", "metadata"]], transform=transform
     )
+
+    # Per-run selected-vs-total so the RunsTab can show "10 frames
+    # (6 selected)" — the runs here keep their FULL frame list (no
+    # subframe selection applied), and this reflects the resolved
+    # per-Stack quality setting (default keeps all).
+    from decisions.subframe_selection import selected_counts_by_run
+
+    counts = selected_counts_by_run(stack, decisions)
+    for content_hash, run in result.get("contents", {}).items():
+        if content_hash in counts:
+            run["selected_frame_count"] = counts[content_hash][0]
+
     return jsonify(result)
 
 

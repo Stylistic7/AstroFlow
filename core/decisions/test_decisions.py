@@ -156,7 +156,14 @@ def test_rotation_outlier_detection_and_exclusion(test_context):
 
 
 def test_subframe_quality_decision_and_filtering(test_context):
-    """Subframe quality: detection, metadata, resolve_decisions filtering, and override."""
+    """Default keeps ALL subframes (no decision spam); a per-Stack
+    override dials a specific Stack down even though the default would
+    exclude nothing. Also covers the RunsTab selected/total helpers."""
+    from decisions.decisions import DecisionKey
+    from decisions.subframe_selection import (
+        resolved_quality_threshold, selected_counts_by_run,
+    )
+
     make_synthetic_frames(
         ra=100, dec=50, prefix="good", number=10, dither=0,
         rotation_angle_deg=90.0, num_stars=1000,
@@ -175,44 +182,54 @@ def test_subframe_quality_decision_and_filtering(test_context):
     assert len(context.stacks) == 1
     stack = next(iter(context.stacks.values())).get()
     stack_hash = next(iter(context.stacks))
-
-    # Enriched stack preserves all frames.
     assert len(stack.all_frames()) == 15
 
-    # --- Detection ---
-    all_decisions = get_decisions_for_object(ObjectType.STACK, stack_hash)
+    # Default keeps everything → NO subframe-quality decision published
+    # (we don't nag the user when nothing is excluded).
     quality_decisions = {
-        k: v for k, v in all_decisions.items()
+        k: v for k, v in
+        get_decisions_for_object(ObjectType.STACK, stack_hash).items()
         if v.decision_type == DecisionType.SUBFRAME_QUALITY
     }
-    assert len(quality_decisions) == 1
-    dp = next(iter(quality_decisions.values()))
-    assert dp.metadata["excluded_count"] == 5
-    assert dp.metadata["total_frames"] == 15
-    # The cached default is the quality threshold (a float).
-    assert dp.default_choice == 0.75
+    assert quality_decisions == {}
 
-    # --- Filtering with default threshold ---
-    # Default 75% threshold: 100 stars < 750 (75% of 1000), so bad frames excluded.
-    resolved = resolve_decisions(stack, ALL_EXCLUSION_TYPES, frozendict(), min_frames_in_stack=1)
-    assert len(resolved.all_frames()) == 10
-
-    # --- Override with threshold=0.0 (keep all frames) ---
-    quality_key = next(iter(quality_decisions))
-    override_keep_all = frozendict({quality_key: DecisionOverride(choice=0.0)})
-    resolved = resolve_decisions(stack, ALL_EXCLUSION_TYPES, override_keep_all, min_frames_in_stack=1)
+    # Default: keep all 15; per-run helper reports everything selected.
+    assert resolved_quality_threshold(stack, frozendict()) == 0.0
+    resolved = resolve_decisions(
+        stack, ALL_EXCLUSION_TYPES, frozendict(), min_frames_in_stack=1
+    )
     assert len(resolved.all_frames()) == 15
+    counts = selected_counts_by_run(stack, frozendict())
+    assert sum(s for s, _ in counts.values()) == 15
+    assert all(s == t for s, t in counts.values())
 
-    # --- Override with stricter threshold (0.9 = 900 stars minimum) ---
-    override_strict = frozendict({quality_key: DecisionOverride(choice=0.9)})
-    resolved = resolve_decisions(stack, ALL_EXCLUSION_TYPES, override_strict, min_frames_in_stack=1)
-    # Only frames with >= 900 stars survive (the 10 "good" frames have ~1000 stars each,
-    # but with noise they might vary — just verify fewer than 15 survive).
+    # Per-Stack override dials THIS stack down even though the default
+    # (keep-all) excluded nothing — the key requirement.
+    quality_key = DecisionKey.subframe_quality(stack_hash)
+    strict = frozendict({quality_key: DecisionOverride(choice=0.9)})
+    assert resolved_quality_threshold(stack, strict) == 0.9
+    resolved = resolve_decisions(
+        stack, ALL_EXCLUSION_TYPES, strict, min_frames_in_stack=1
+    )
     assert len(resolved.all_frames()) <= 10
+    s_counts = selected_counts_by_run(stack, strict)
+    assert sum(s for s, _ in s_counts.values()) <= 10
+    # Totals (full run sizes) are unaffected by the threshold.
+    assert {h: t for h, (_, t) in counts.items()} == {
+        h: t for h, (_, t) in s_counts.items()
+    }
+
+    # Explicit keep-all override behaves like the default.
+    keep_all = frozendict({quality_key: DecisionOverride(choice=0.0)})
+    resolved = resolve_decisions(
+        stack, ALL_EXCLUSION_TYPES, keep_all, min_frames_in_stack=1
+    )
+    assert len(resolved.all_frames()) == 15
 
 
 def test_no_subframe_decision_for_minor_exclusion(test_context):
-    """When only a small fraction of frames are excluded, no decision is generated."""
+    """The default keeps all frames, so no subframe-quality decision is
+    generated (nothing is excluded to nag about)."""
     make_synthetic_frames(
         ra=100, dec=50, prefix="good", number=14, dither=0,
         rotation_angle_deg=90.0, num_stars=1000,

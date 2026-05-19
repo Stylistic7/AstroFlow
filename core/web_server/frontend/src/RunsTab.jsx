@@ -133,7 +133,10 @@ const RunsTab = ({ stack }) => {
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                 <Typography variant="h6">
-                  Run {run.id} — {runDate.toDateString()} ({run.frames.length} frames)
+                  Run {run.id} — {runDate.toDateString()} ({run.frames.length} frames
+                  {run.selected_frame_count != null
+                    && run.selected_frame_count < run.frames.length
+                    ? ` (${run.selected_frame_count} selected)` : ''})
                 </Typography>
                 {runDecisions.map(d => (
                   <Chip

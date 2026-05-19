@@ -12,8 +12,54 @@ from decisions.decisions import (
 
 log = structlog.get_logger()
 
-_DEFAULT_QUALITY_THRESHOLD = 0.75
+# Keep ALL subframes by default. A user dials this down per-Stack via a
+# subframe_quality DecisionOverride (0.0–1.0 fraction of the best
+# frame's star count); only then are frames dropped.
+_DEFAULT_QUALITY_THRESHOLD = 0.0
 _DECISION_SIGNIFICANCE_THRESHOLD = 0.25  # >25% excluded → generate decision
+
+
+def resolved_quality_threshold(
+    stack: Stack,
+    decision_overrides: "frozendict[DecisionKey, DecisionOverride]" = frozendict(),
+) -> float:
+    """The subframe-quality threshold actually in effect for this stack:
+    a per-Stack user override if present, else the default (0.0 = keep
+    all). Single source of truth, side-effect-free — `select_subframes`
+    and the UI's per-run counts must agree, so both go through here.
+    """
+    override = decision_overrides.get(
+        DecisionKey.subframe_quality(stack.stable_hash)
+    )
+    return (
+        float(override.choice) if override is not None
+        else _DEFAULT_QUALITY_THRESHOLD
+    )
+
+
+def selected_counts_by_run(
+    stack: Stack,
+    decision_overrides: "frozendict[DecisionKey, DecisionOverride]" = frozendict(),
+) -> dict[str, tuple[int, int]]:
+    """Per run content_hash → (selected, total) frame counts under the
+    resolved subframe-quality threshold. Side-effect-free; mirrors
+    `select_subframes`' inclusion math (a stack-global star cutoff,
+    applied per run) so the RunsTab shows exactly what stacking uses.
+    """
+    metadata = stack.all_metadata()
+    all_frames = stack.all_frames()
+    threshold_stars = _compute_threshold_stars(
+        metadata, all_frames,
+        resolved_quality_threshold(stack, decision_overrides),
+    )
+    counts: dict[str, tuple[int, int]] = {}
+    for content_hash, run in stack.contents.items():
+        selected = sum(
+            1 for f in run.frames
+            if metadata[f].plate_solution.num_stars >= threshold_stars
+        )
+        counts[content_hash] = (selected, len(run.frames))
+    return counts
 
 
 def get_light_frames_sorted_by_stars(
@@ -124,7 +170,13 @@ def select_subframes(
             decision, decision_overrides, default=_DEFAULT_QUALITY_THRESHOLD
         )
     else:
-        quality_threshold = _DEFAULT_QUALITY_THRESHOLD
+        # Honor a per-Stack override even when the default (keep-all)
+        # excludes nothing — without this, dialing down a specific
+        # Stack would be silently ignored, since the decision is only
+        # published/resolved above when the DEFAULT is significant.
+        quality_threshold = resolved_quality_threshold(
+            stack, decision_overrides
+        )
 
     # Apply the resolved threshold.
     threshold_stars = _compute_threshold_stars(metadata, all_frames, quality_threshold)
