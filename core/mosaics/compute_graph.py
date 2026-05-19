@@ -11,6 +11,7 @@ from frozendict import frozendict
 from stacks.composite_stack import Stack, StacksDict, RunsDict, CalibrationStacksDict
 from decisions.settings import DevelopmentSettings
 from dependency_graph import Graph, Node, chain
+from dependency_graph.tracing import trace, record
 from mosaics.merge_images import MergedImage
 from mosaics.types import Mosaic, MosaicsDict, Viewbox
 from mosaics.viewbox import compute_viewbox
@@ -223,81 +224,48 @@ def build_mosaic_filter_subgraph(
     #   merge(merge_k, place_l) -> merge_l
 
     merge_fn = get_producer(MediaType.IMAGE, MergedImageId, mode, config.implementation)
+    mock = config.development_settings.mock_pixinsight
 
-    graph = Graph(
-        graph_update_fn=graph_update_fn, node_status_fn=node_status_fn
-    )
-    strip_tasks = []
-    for strip in strips:
-        prev_task = None
-        for i, target in enumerate(strip):
-            # Missing targets are acceptable, except in MASTER mode.
-            if target is None:
-                if mode == QualityLevel.MASTER:
-                    log.warning("Returning None, target for filter not found", filter=filter)
-                    return None
-                else:
+    # Define-by-run: write the merge as the obvious left-fold; the tracer
+    # records place/merge/metadata calls (handle args -> dependency edges)
+    # and synthesises the DAG. No manual Graph[...]=, no hand-named nodes.
+    def _filter():
+        def place(target):
+            return record(
+                build_placement_subgraph,
+                mode, mosaic, target, filter, viewbox, config,
+            )
+
+        def merge(a, b):
+            merged = record(merge_fn, mode, mosaic, filter,
+                            config.implementation, mock, a, b)
+            return record(compute_image_metadata, merged)
+
+        strip_imgs = []
+        for strip in strips:
+            acc = None
+            for target in strip:
+                # Missing targets are acceptable, except in MASTER mode.
+                if target is None:
+                    if mode == QualityLevel.MASTER:
+                        log.warning("Returning None, target for filter not found", filter=filter)
+                        return None
                     continue
+                p = place(target)
+                acc = p if acc is None else merge(acc, p)
+            assert acc is not None, f"strips are {strips}"
+            strip_imgs.append(acc)
 
-            if i == 0:
-                prev_task = Node(
-                    build_placement_subgraph,
-                    mode, mosaic, target, filter, viewbox, config,
-                )
-            else:
-                placement_task = Node(
-                    build_placement_subgraph,
-                    mode, mosaic, target, filter, viewbox, config,
-                )
-                merge_task = Node(
-                    merge_fn,
-                    mode,
-                    mosaic,
-                    filter,
-                    config.implementation,
-                    config.development_settings.mock_pixinsight,
-                    name=f"merge_{mosaic.stable_hash}_{filter}_{target.stable_hash}",
-                )
-                metadata_task = Node(
-                    compute_image_metadata,
-                    name=f"merge_{mosaic.stable_hash}_{filter}_{target.stable_hash}",
-                )
-                if prev_task is not None:
-                    graph[placement_task] = [prev_task]
-                graph[merge_task] = [prev_task, placement_task]
-                graph[metadata_task] = [merge_task]
-                prev_task = metadata_task
+        out = strip_imgs[0]
+        for s in strip_imgs[1:]:
+            out = merge(out, s)
+        return out
 
-        assert prev_task is not None, f"strips are {strips}"
-        strip_tasks.append(prev_task)
-
-    for i in range(len(strips)):
-        if i == 0:
-            prev_task = strip_tasks[0]
-        else:
-            merge_task = Node(
-                merge_fn,
-                mode,
-                mosaic,
-                filter,
-                config.implementation,
-                config.development_settings.mock_pixinsight,
-                name=f"merge_{mosaic.stable_hash}_{filter}_strip_{i}",
-            )
-            metadata_task = Node(
-                compute_image_metadata,
-                name=f"merge_{mosaic.stable_hash}_{filter}_strip_{i}",
-            )
-            graph[merge_task] = [prev_task, strip_tasks[i]]
-            graph[metadata_task] = [merge_task]
-            prev_task = metadata_task
-
-    # If prev_task was never added to the graph as a key (single-strip, single-stack
-    # case), register it as a leaf so the subgraph actually runs it.
-    if strip_tasks and prev_task not in graph:
-        graph[prev_task] = []
-
-    return graph
+    return trace(
+        _filter,
+        graph_update_fn=graph_update_fn,
+        node_status_fn=node_status_fn,
+    )
 
 
 @node

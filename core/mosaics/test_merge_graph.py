@@ -109,12 +109,18 @@ def assert_filter_subgraph_invariants(graph, strips) -> None:
     # 2. Sequential pairwise merge across all panels => n-1 merges.
     assert len(merges) == max(n - 1, 0), (len(merges), n)
 
-    # 3. Each merge pairs 1:1 by name with a metadata node depending
-    #    only on it.
-    assert sorted(m.name for m in merges) == sorted(m.name for m in metas)
+    # 3. Each merge is consumed by exactly one metadata node that
+    #    depends only on that merge (a 1:1 merge<->metadata pairing).
+    #    Asserts the structural intent, NOT incidental node names —
+    #    node identities legitimately change with the build strategy
+    #    (see this function's docstring).
+    assert len(metas) == len(merges), (len(metas), len(merges))
+    paired = []
     for meta in metas:
         deps = list(cg.get(meta, []))
-        assert len(deps) == 1 and deps[0] in merges and deps[0].name == meta.name
+        assert len(deps) == 1 and deps[0] in merges, (str(meta), deps)
+        paired.append(deps[0])
+    assert sorted(paired) == sorted(merges), "merge<->metadata not 1:1"
 
     # 4. Valid acyclic DAG with exactly one sink (the filter output).
     has_dependent = {d for deps in cg.values() for d in deps}
