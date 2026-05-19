@@ -1,8 +1,46 @@
-"""SpectrophotometricFluxCalibration."""
+"""SpectrophotometricFluxCalibration.
+
+Filter-aware: the gray-channel calibration filter is selected from the
+image's FITS ``FILTER`` keyword (single-letter in this pipeline). Emission-
+line filters (S/H/O) are calibrated in narrowband mode at the line center
+with the physical bandwidth of the Chroma 3 nm filters; broadband ZWO
+R/G/B are calibrated in broadband mode against the filter's transmission
+curve. Nothing about the filter is hardcoded into the process defaults.
+"""
+
 import re
 
+from pix.image import Image
 from pix.tasks.js import Enum
 from pix.tasks.process import make_process_task
+
+# Narrowband emission-line filters: Chroma 3 nm. FITS FILTER -> line center
+# (nm). Ha = 656.3, OIII = 500.7, SII = 671.6 (standard rest wavelengths).
+_NARROWBAND_LINE_NM = {
+    "H": 656.3,  # H-alpha
+    "O": 500.7,  # OIII
+    "S": 671.6,  # SII
+}
+_CHROMA_BANDWIDTH_NM = 3.0
+
+# Broadband filters calibrated against a transmission curve (not a
+# narrowband line). FITS FILTER -> (PixInsight grayFilterName, curve).
+# Curves are PixInsight's built-in ZWO filter data, verbatim.
+# L (luminance): flat / ideal response, not a ZWO bandpass.
+_IDEAL_TR_CURVE = "1,1.0,500,1.0,1000,1.0,1500,1.0,2000,1.0,2500,1.0"
+
+_ZWO_B_TR_CURVE = "418,0.003,420,0.007,422,0.012,424,0.045,426,0.098,428,0.337,430,0.695,432,0.774,434,0.815,436,0.849,438,0.873,440,0.886,442,0.899,444,0.891,446,0.891,448,0.895,450,0.909,452,0.929,454,0.932,456,0.932,458,0.935,460,0.94,462,0.945,464,0.948,466,0.944,468,0.94,470,0.939,472,0.943,474,0.946,476,0.947,478,0.947,480,0.947,482,0.947,484,0.949,486,0.951,488,0.953,490,0.954,492,0.953,494,0.952,496,0.952,498,0.955,500,0.958,502,0.961,504,0.959,506,0.957,508,0.954,510,0.948,512,0.939,514,0.93,516,0.918,518,0.914,520,0.895,522,0.828,524,0.599,526,0.311,528,0.144,530,0.065,532,0.038,534,0.016,536,0.005,538,0.004,540,0.003,542,0.002"
+
+_ZWO_G_TR_CURVE = "502,0.003,504,0.004,506,0.005,508,0.008,510,0.018,512,0.028,514,0.062,516,0.131,518,0.275,520,0.552,522,0.741,524,0.879,526,0.946,528,0.969,530,0.965,532,0.961,534,0.957,536,0.964,538,0.972,540,0.976,542,0.978,544,0.981,546,0.982,548,0.982,550,0.982,552,0.981,554,0.976,556,0.971,558,0.969,560,0.975,562,0.978,564,0.978,566,0.977,568,0.975,570,0.973,572,0.973,574,0.973,576,0.973,578,0.97,580,0.966,582,0.962,584,0.954,586,0.946,588,0.934,590,0.876,592,0.818,594,0.586,596,0.238,598,0.132,600,0.049,602,0.025,604,0.014,606,0.008,608,0.003,610,0.003,612,0.002,614,0.002"
+
+_ZWO_R_TR_CURVE = "592,0.003,594,0.004,596,0.006,598,0.014,600,0.023,602,0.051,604,0.078,606,0.211,608,0.443,610,0.732,612,0.918,614,0.953,616,0.96,618,0.957,620,0.964,622,0.972,624,0.979,626,0.982,628,0.978,630,0.974,632,0.972,634,0.97,636,0.97,638,0.975,640,0.978,642,0.979,644,0.98,646,0.98,648,0.981,650,0.982,652,0.982,654,0.982,656,0.982,658,0.982,660,0.984,662,0.989,664,0.988,666,0.987,668,0.986,670,0.984,672,0.982,674,0.979,676,0.978,678,0.979,680,0.98,682,0.984,684,0.985,686,0.985,688,0.985,690,0.985,692,0.985,694,0.985,696,0.973,698,0.951,700,0.916,702,0.854,704,0.775,706,0.658,708,0.53,710,0.391,712,0.267,714,0.156,716,0.115,718,0.081,720,0.05,722,0.034,724,0.02,726,0.015,728,0.011,730,0.009,732,0.007,734,0.005,736,0.003,738,0.002,740,0.001,742,0"
+
+_BROADBAND_FILTERS: dict[str, tuple[str, str]] = {
+    "R": ("ZWO R", _ZWO_R_TR_CURVE),
+    "G": ("ZWO G", _ZWO_G_TR_CURVE),
+    "B": ("ZWO B", _ZWO_B_TR_CURVE),
+    "L": ("Ideal QE curve", _IDEAL_TR_CURVE),
+}
 
 _default_parameters = {
     "narrowbandMode": False,
@@ -52,8 +90,48 @@ _default_parameters = {
     "outputDirectory": "",
 }
 
-SpectrophotometricFluxCalibration = make_process_task(
+_run_sfc = make_process_task(
     "SpectrophotometricFluxCalibration",
     _default_parameters,
-    error_patterns=[re.compile(r'\*\*\* Error:.*no astrometric solution')],
+    error_patterns=[re.compile(r"\*\*\* Error:.*no astrometric solution")],
 )
+
+
+def _gray_filter_overrides(filter: str | None) -> dict:
+    """SFC parameter overrides selecting the gray-channel filter from the
+    image's FITS FILTER keyword. Fail-fast on anything we can't calibrate
+    correctly rather than silently calibrating against the wrong filter."""
+    if filter is None:
+        raise ValueError(
+            "SpectrophotometricFluxCalibration: image has no FITS FILTER; "
+            "cannot select a calibration filter."
+        )
+    key = filter.strip().upper()[:1]
+
+    if key in _NARROWBAND_LINE_NM:
+        line_nm = _NARROWBAND_LINE_NM[key]
+        return {
+            "narrowbandMode": True,
+            "grayFilterWavelength": line_nm,
+            "grayFilterBandwidth": _CHROMA_BANDWIDTH_NM,
+            "grayFilterName": f"Chroma 3nm ({key})",
+        }
+
+    if key in _BROADBAND_FILTERS:
+        gray_filter_name, tr_curve = _BROADBAND_FILTERS[key]
+        return {
+            "narrowbandMode": False,
+            "grayFilterName": gray_filter_name,
+            "grayFilterTrCurve": tr_curve,
+        }
+
+    raise ValueError(
+        f"SpectrophotometricFluxCalibration: unsupported FITS FILTER "
+        f"{filter!r} (expected one of S/H/O/R/G/B/L)."
+    )
+
+
+def SpectrophotometricFluxCalibration(image: Image, **kwargs) -> Image:
+    """Spectrophotometric flux calibration with the gray filter chosen from
+    ``image.filter``. Explicit ``kwargs`` still override everything."""
+    return _run_sfc(image, **(_gray_filter_overrides(image.filter) | kwargs))
