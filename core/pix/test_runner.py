@@ -62,3 +62,46 @@ def test_find_running_instances_falls_back_on_timeout():
                       return_value={}) as fallback:
         assert runner._find_running_instances() == {}
         fallback.assert_called_once()
+
+
+# `_slot_registered` is the readiness probe used by `_start_instance` to
+# gate `--execute=N:` dispatches. It must NOT fall back to psutil — PID
+# existence is true immediately after Popen, well before PI's IPC is
+# ready, so falling back would reintroduce the race that makes the next
+# `--execute=` hang for 60s on slower hosts.
+
+def test_slot_registered_true_when_e_reports_slot():
+    with patch.object(runner.subprocess, "run",
+                      return_value=_completed(0, "   1    42\n")), \
+         patch.object(runner, "_find_via_psutil") as fallback:
+        assert runner._slot_registered(1) is True
+        fallback.assert_not_called()
+
+
+def test_slot_registered_false_when_e_reports_different_slot():
+    with patch.object(runner.subprocess, "run",
+                      return_value=_completed(0, "   2    42\n")), \
+         patch.object(runner, "_find_via_psutil") as fallback:
+        assert runner._slot_registered(1) is False
+        fallback.assert_not_called()
+
+
+def test_slot_registered_false_when_e_fails_no_psutil_fallback():
+    """The MacBook failure mode again: `-e` fails. The readiness probe
+    must NOT fall back to psutil — that would defeat the whole point of
+    waiting for PI's IPC to be ready."""
+    with patch.object(runner.subprocess, "run",
+                      return_value=_completed(1, stderr="*** Fatal Error: Failure to send message.")), \
+         patch.object(runner, "_find_via_psutil",
+                      return_value={1: 42}) as fallback:
+        assert runner._slot_registered(1) is False
+        fallback.assert_not_called()
+
+
+def test_slot_registered_false_on_timeout_no_psutil_fallback():
+    with patch.object(runner.subprocess, "run",
+                      side_effect=subprocess.TimeoutExpired(cmd="pi", timeout=10)), \
+         patch.object(runner, "_find_via_psutil",
+                      return_value={1: 42}) as fallback:
+        assert runner._slot_registered(1) is False
+        fallback.assert_not_called()

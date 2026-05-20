@@ -81,18 +81,45 @@ def _find_running_instances() -> dict[int, int]:
     return _parse_e_output(result.stdout)
 
 
-def _start_instance(slot: int) -> None:
-    """Ensure a PixInsight instance is running at the given slot.
+def _slot_registered(slot: int) -> bool:
+    """Strict check: PI's own IPC reports slot `slot` as registered.
 
-    If an instance is already running (and its PID is alive), this is a no-op.
-    Otherwise, waits for any stale registration to clear, then launches a new
-    instance and waits until it registers.
+    Unlike `_find_running_instances`, this does NOT fall back to psutil —
+    it's purely a "PI is ready to receive --execute={slot}:" probe. PI
+    process existence (psutil) becomes true the instant Popen returns,
+    well before PI has set up its Mach IPC, so it's not a valid readiness
+    signal. Only `-e` returning the slot is.
+    """
+    try:
+        result = subprocess.run(
+            [_PIXINSIGHT_EXECUTABLE, "-e"],
+            text=True, capture_output=True, timeout=10,
+        )
+    except subprocess.TimeoutExpired:
+        return False
+    if result.returncode != 0:
+        return False
+    return slot in _parse_e_output(result.stdout)
+
+
+def _start_instance(slot: int) -> None:
+    """Ensure a PixInsight instance is running at `slot` and is ready to
+    accept --execute= dispatches.
+
+    Readiness means PI's own IPC reports the slot — not just that the
+    Popen'd PID exists. PID-existence is true within milliseconds of
+    Popen, but PI takes several seconds (longer on slower hosts) to
+    finish initialising Qt and register its slot in the Mach IPC table.
+    Returning early lets the next `subprocess.run([PI, --execute=N:])`
+    block waiting for slot N to become reachable, which on the MacBook
+    Pro burned the full start-sentinel timeout (60s) every restart and
+    triggered cascading "Start sentinel not written" restart loops.
     """
     existing = _find_running_instances()
     if slot in existing:
         pid = existing[slot]
         if psutil.pid_exists(pid):
-            return  # Already running
+            return  # Already running and registered
         # Stale registration — wait for it to clear (max 60s)
         print(f"### pix: Slot {slot} has stale PID {pid}, waiting for cleanup")
         deadline = time.monotonic() + 60
@@ -114,15 +141,21 @@ def _start_instance(slot: int) -> None:
     )
     print(f"### pix: Started PixInsight instance at slot {slot} (pid {proc.pid})")
 
-    # Wait for the spawned process to be alive. We have its PID directly
-    # from Popen, so a `pid_exists` check is enough — no need to ask PI's
-    # own registry, which would cost a subprocess invocation per poll
-    # (and a dock-icon flash on macOS) for every iteration.
-    deadline = time.monotonic() + 120
-    while not psutil.pid_exists(proc.pid):
+    # Wait until PI's IPC reports the slot. Each iteration costs one
+    # `PixInsight -e` subprocess (~1-10s); during boot `-e` typically
+    # fails fast with returncode != 0, so iterations are cheap until PI
+    # is actually ready.
+    started_at = time.monotonic()
+    deadline = started_at + 120
+    while not _slot_registered(slot):
+        if not psutil.pid_exists(proc.pid):
+            raise RuntimeError(
+                f"PixInsight pid {proc.pid} died before registering slot {slot}"
+            )
         if time.monotonic() > deadline:
             raise TimeoutError(f"PixInsight slot {slot} did not register within 120s")
-        time.sleep(1)
+        time.sleep(2)
+    print(f"### pix: Slot {slot} ready after {time.monotonic() - started_at:.1f}s")
 
 
 def _counter_path(slot: int) -> Path:
