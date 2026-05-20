@@ -105,7 +105,7 @@ def merge_target_channel(
     sorted_stacks = sorted(stacks, key=lambda s: -float(s.exposure))
     masters = [_stack_master_path(s, config.quality) for s in sorted_stacks]
 
-    images = Image.open_many(masters)
+    images = Image.open_many(masters, filters=[s.filter for s in sorted_stacks])
     aligned = StarAlignment(images)
     composed = HDRComposition(aligned)
     composed.save_to(

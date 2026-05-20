@@ -32,7 +32,7 @@ class Image:
         recipe.register_output(self)
 
     @classmethod
-    def open(cls, filename: Path | str) -> "Image":
+    def open(cls, filename: Path | str, filter: str | None = None) -> "Image":
         """Create a lazy image from a file on disk.
 
         This does not read the file — it just records that this file
@@ -42,36 +42,51 @@ class Image:
         ImageWindow.open until the script timeout, which is wasteful
         and obscures the real cause. Failing fast lets Ray's retry
         machinery and the next graph run handle it cleanly.
-        """
-        from pix.tasks.open_images import read_filter_from_header
 
+        ``filter`` is an opaque label the caller attaches (e.g. the
+        FITS FILTER keyword, or the grouping value from upstream
+        metadata). pix never introspects the file for it — that's
+        the caller's concern.
+        """
         filename = Path(filename)
         if not filename.exists():
             raise FileNotFoundError(f"pix.Image.open: input does not exist: {filename}")
         recipe = Recipe(input_filenames=[filename])
-        filter = read_filter_from_header(filename)
         view_id = view_id_for(filename)
         return cls(view_id=view_id, recipe=recipe, filter=filter)
 
     @classmethod
-    def open_many(cls, filenames: list[Path | str]) -> "ImageList":
+    def open_many(
+        cls,
+        filenames: list[Path | str],
+        filters: list[str | None] | None = None,
+    ) -> "ImageList":
         """Create lazy images from multiple files on disk.
 
         Same fail-fast behavior as `open`: any missing input raises
         a FileNotFoundError listing every missing path, before any
         PixInsight script work begins.
+
+        ``filters``, if supplied, must be a parallel list of filter
+        labels (one per filename); otherwise every image's filter is
+        ``None``. pix never introspects the files for filter values.
         """
         filenames = [Path(f) for f in filenames]
         missing = [str(f) for f in filenames if not f.exists()]
         if missing:
             raise FileNotFoundError(f"pix.Image.open_many: inputs do not exist: {missing}")
+        if filters is None:
+            filters = [None] * len(filenames)
+        elif len(filters) != len(filenames):
+            raise ValueError(
+                f"pix.Image.open_many: filters has length {len(filters)} "
+                f"but filenames has length {len(filenames)}"
+            )
         recipe = Recipe(input_filenames=filenames)
-        images = []
-        for filename in filenames:
-            from pix.tasks.open_images import read_filter_from_header
-            filter = read_filter_from_header(filename)
-            view_id = view_id_for(filename)
-            images.append(cls(view_id=view_id, recipe=recipe, filter=filter))
+        images = [
+            cls(view_id=view_id_for(f), recipe=recipe, filter=flt)
+            for f, flt in zip(filenames, filters)
+        ]
         return ImageList(images)
 
     def save_to(self, path: Path | str, mock: bool = False) -> None:

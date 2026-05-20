@@ -33,7 +33,7 @@ def store_mosaic_color_channel_xisf(
     output = fn(mosaic, filter)
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    image = Image.open(filename)
+    image = Image.open(filename, filter=filter)
     image.save_to(output, mock=mock_pixinsight)
 
     return WithSidecar(output)

@@ -22,7 +22,9 @@ log = structlog.get_logger()
 
 
 def _post_process_stack(master_path, stack: Stack, downscale_factor: int = 1) -> Image:
-    image = Image.open(master_path)
+    # Stack.filter is the authoritative grouping value; pix doesn't read
+    # FILTER from disk (the caller is the only thing that knows it).
+    image = Image.open(master_path, filter=stack.filter)
 
     effective_scale = stack.image_scale * downscale_factor
     julian_date = int(Time(stack.oldest_date).jd)

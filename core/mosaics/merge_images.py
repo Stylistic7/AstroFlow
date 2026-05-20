@@ -155,7 +155,7 @@ def merge_images(
 
         write_tiff_image(Path(output_filename), output_image, {"FILTER": filter, "STBLHASH": stable_hash})
     else:
-        images = Image.open_many([path_0, path_1])
+        images = Image.open_many([path_0, path_1], filters=[filter, filter])
         result = PhotometricMosaic(images)
         result.save_to(output_filename, mock=mock_pixinsight)
         # PhotometricMosaic doesn't preserve FILTER from the inputs and

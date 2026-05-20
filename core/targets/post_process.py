@@ -73,11 +73,15 @@ def target_filename(target: Target, suffix: str) -> XisfFilePath:
     return XisfFilePath(f"target {target.stable_hash}_{suffix}.xisf")
 
 
-def _target_channel_paths(target: Target, implementation) -> list[Path]:
+def _target_channel_paths(
+    target: Target, implementation
+) -> tuple[list[Path], list[str]]:
     """Resolve the per-(target, filter) merged-master paths.
 
     Reads which filters this target has from `context.stacks` and looks
-    up the registered TargetChannel filename for each.
+    up the registered TargetChannel filename for each. Returns parallel
+    lists of (paths, filters) so callers can attach filter metadata to
+    the lazy Images without re-reading anything from disk.
     """
     stacks = context.stacks
     target_stacks = [stacks[sid].get() for sid in target.stack_ids]
@@ -85,7 +89,9 @@ def _target_channel_paths(target: Target, implementation) -> list[Path]:
     channel_fn = get_filename_fn(
         MediaType.IMAGE, TargetChannelId, QualityLevel.MASTER, implementation,
     )
-    return [Path(channel_fn(target, f)) for f in by_filter.keys()]
+    filters = list(by_filter.keys())
+    paths = [Path(channel_fn(target, f)) for f in filters]
+    return paths, filters
 
 
 @node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD", auto_memory=True)
@@ -93,8 +99,8 @@ def _target_channel_paths(target: Target, implementation) -> list[Path]:
              identity=TargetId, presentations=[THUMBNAIL])
 def post_process_target(target: Target, mock_pixinsight: bool = False) -> None:
     print(f"Entering post_process_target for {target}")
-    image_paths = _target_channel_paths(target, PIXINSIGHT)
-    images = Image.open_many(image_paths)
+    image_paths, image_filters = _target_channel_paths(target, PIXINSIGHT)
+    images = Image.open_many(image_paths, filters=image_filters)
 
     result = _post_process_target(images, target)
     if result is None:

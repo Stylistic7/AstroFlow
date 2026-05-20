@@ -72,11 +72,13 @@ def post_process_mosaic(
     filters: set[str] = set()
     for target_id in mosaic.target_ids:
         filters.update(filters_for_target(targets[target_id].get()))
+    # Pin iteration order so the parallel filters list lines up with the paths.
+    filter_list = list(filters)
 
     master_fn = get_filename_fn(MediaType.IMAGE, MosaicChannelId, QualityLevel.MASTER)
-    image_paths = [master_fn(mosaic, f) for f in filters]
+    image_paths = [master_fn(mosaic, f) for f in filter_list]
 
-    images = Image.open_many(image_paths)
+    images = Image.open_many(image_paths, filters=filter_list)
     result = _post_process_mosaic(images, mosaic)
     if result is None:
         return None
