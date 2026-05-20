@@ -223,6 +223,19 @@ def make_cached_decorator(
 
         @wraps(func)
         def wrapper(*args, **kwargs):
+            # Implicit recording: inside a `@graph_builder` / `@pipeline`
+            # trace, calling a @node op as plain Python emits a `Node`
+            # handle into the active Graph instead of erroring. Outside
+            # a trace, the original behaviour is preserved.
+            from dependency_graph.tracing import _TRACE, record
+            if _TRACE.get() is not None:
+                if kwargs:
+                    raise NotImplementedError(
+                        f"{func.__name__} called with kwargs inside a "
+                        f"trace ({sorted(kwargs)}); only positional args "
+                        "are supported in trace context."
+                    )
+                return record(wrapper, *args)
             raise RuntimeError(
                 f"{func.__name__} is a remote task. Use `.remote(...)`."
             )
