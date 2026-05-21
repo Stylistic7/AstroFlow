@@ -35,7 +35,7 @@ def test_downscaled_orion_mosaic(test_context):
             set_flat(stack.stable_hash, run_hash, flat_stack_id)
 
     # Trigger DOWNSCALED_MASTER mosaic processing.
-    context.shopping_cart = [("mosaic", mosaic.stable_hash, "DownscaledMaster")]
+    context.shopping_cart = [("mosaic", mosaic.stable_hash, "PixInsight Downscaled")]
 
     graph = build_compute_graph()
     run_graph(graph, debug=True)
@@ -84,7 +84,7 @@ def test_downscaled_orion_mosaic_produces_tiled_tiff(test_context):
             set_flat(stack.stable_hash, run_hash, flat_stack_id)
 
     # Pass 2: full DOWNSCALED_MASTER mosaic pipeline.
-    context.shopping_cart = [("mosaic", mosaic.stable_hash, "DownscaledMaster")]
+    context.shopping_cart = [("mosaic", mosaic.stable_hash, "PixInsight Downscaled")]
     run_graph(build_compute_graph(), debug=True)
 
     print_tree(context.output_dir)

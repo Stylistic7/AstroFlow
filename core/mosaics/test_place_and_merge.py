@@ -24,7 +24,7 @@ def test_downscaled_mosaic_has_real_pixels(test_context):
 
     add_orion_mosaic_images()
     context.shopping_cart = [
-        ("mosaic", "2e5e69b75efbc277", "DownscaledMaster", "PixInsight"),
+        ("mosaic", "2e5e69b75efbc277", "PixInsight Downscaled"),
     ]
     run_graph(build_compute_graph())
 

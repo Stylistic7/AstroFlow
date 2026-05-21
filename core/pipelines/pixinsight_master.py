@@ -25,6 +25,7 @@ from astroflow.pipeline import pipeline
 # implementation each step uses. An "OSS Master" sibling would import
 # `stack_files` from `stacks.stacking.oss` etc.; the diff between
 # the two files IS the algorithm change.
+from mosaics.final_storage import store_mosaic_color_channel_xisf
 from mosaics.merging.pixinsight import merge_images
 from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
@@ -123,7 +124,14 @@ def for_mosaic(mosaic, config):
             merged_strip(strip, filter, viewbox) for strip in mosaic.strips
         ) if r is not None]
         if rows:
-            out[filter] = _pairwise_merge(rows, mosaic, filter, mock)
+            merged = _pairwise_merge(rows, mosaic, filter, mock)
+            # Write the canonical per-filter Mosaic XISF (the path
+            # viewers stream from). `merged` is the Node handle and
+            # MUST be the last positional arg — the trace appends
+            # handle-resolved values after literals at dispatch time.
+            out[filter] = store_mosaic_color_channel_xisf(
+                _MODE, mosaic, filter, mock, merged,
+            )
 
     return out
 

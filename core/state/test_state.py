@@ -66,7 +66,7 @@ def test_single_compute_graph(test_context):
     assert len(stacks) == 1
     toplevel_stack = next(iter(stacks.values())).get()
 
-    context.shopping_cart = [("stack", toplevel_stack.stable_hash)]
+    context.shopping_cart = [("stack", toplevel_stack.stable_hash, "PixInsight Master")]
 
     # Flat selection is manual — override to assign the flat to every light run.
     flat_stack_id = next(

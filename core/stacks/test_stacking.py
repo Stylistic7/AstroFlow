@@ -67,7 +67,7 @@ def test_orion_pane(test_context):
     assert len(filenames) == 0
 
     stack_id = next(iter(context.stacks))
-    context.shopping_cart = [("stack", stack_id)]
+    context.shopping_cart = [("stack", stack_id, "PixInsight Master")]
 
     print(f"### made stack {next(iter(context.stacks.values())).get()}")
 

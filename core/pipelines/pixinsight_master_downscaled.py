@@ -18,6 +18,7 @@ ops (one per quality) and composing a separate `downscale` op
 above the master variant. Deferred — see plan B-3c.
 """
 from astroflow.pipeline import pipeline
+from mosaics.final_storage import store_mosaic_color_channel_xisf
 from mosaics.merging.pixinsight import merge_images
 from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
@@ -53,21 +54,21 @@ def _channels_for_target(target, config, mock):
     }
 
 
-@pipeline("PixInsight Master Downscaled", processes=Stack)
+@pipeline("PixInsight Downscaled", processes=Stack)
 def for_stack(stack, config):
     return _post_processed_master(
         stack, config, config.development_settings.mock_pixinsight,
     )
 
 
-@pipeline("PixInsight Master Downscaled", processes=Target)
+@pipeline("PixInsight Downscaled", processes=Target)
 def for_target(target, config):
     return _channels_for_target(
         target, config, config.development_settings.mock_pixinsight,
     )
 
 
-@pipeline("PixInsight Master Downscaled", processes=Mosaic)
+@pipeline("PixInsight Downscaled", processes=Mosaic)
 def for_mosaic(mosaic, config):
     mock = config.development_settings.mock_pixinsight
     targets_by_id = {t.id: t for t in mosaic.targets}
@@ -95,7 +96,10 @@ def for_mosaic(mosaic, config):
             merged_strip(strip, filter, viewbox) for strip in mosaic.strips
         ) if r is not None]
         if rows:
-            out[filter] = _pairwise_merge(rows, mosaic, filter, mock)
+            merged = _pairwise_merge(rows, mosaic, filter, mock)
+            out[filter] = store_mosaic_color_channel_xisf(
+                _MODE, mosaic, filter, mock, merged,
+            )
 
     return out
 

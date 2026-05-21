@@ -85,7 +85,7 @@ def test_stack_dependency_graph(test_context) -> None:
     filenames = find_image_files(context.input_dirs[0])
     assert len(filenames) == 42
 
-    context.shopping_cart = [("stack", "c39bb8ef8c9266e6")]
+    context.shopping_cart = [("stack", "c39bb8ef8c9266e6", "PixInsight Master")]
 
     graph = build_compute_graph()
     run_graph(graph)

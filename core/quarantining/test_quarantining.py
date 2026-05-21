@@ -128,7 +128,7 @@ def test_quarantine_triggers_restack(test_context) -> None:
     assert len(stack.contents) == 2
 
     # Now drive stack_files via the shopping cart and re-run the graph.
-    context.shopping_cart = [("stack", stack_hash, "Master")]
+    context.shopping_cart = [("stack", stack_hash, "PixInsight Master")]
     run_graph(build_compute_graph())
 
     # Locate the master file produced by stack_files (mock-stacked).

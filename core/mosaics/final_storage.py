@@ -25,9 +25,14 @@ from metadata.classes import ImageMetadata
              identity=MosaicChannelId, presentations=[THUMBNAIL, TILE_PYRAMID],
              file_type=XisfFilePath)
 def store_mosaic_color_channel_xisf(
-    mode: QualityLevel, mosaic: Mosaic, filter: str, input: ImageMetadata,
-    mock_pixinsight: bool = False,
+    mode: QualityLevel, mosaic: Mosaic, filter: str,
+    mock_pixinsight: bool,
+    input: ImageMetadata,
 ) -> WithSidecar[XisfFilePath]:
+    # Argument order: literals first, Node-handle args (here, `input`)
+    # LAST. The @node trace strips handles out of `args` and re-appends
+    # them after the literals at call-time, so any handle-args in the
+    # middle of the signature end up bound to the wrong parameter.
     fn = store_mosaic_color_channel_xisf.filename_fns[(MosaicChannelId, mode)]
     filename = input.filename
     output = fn(mosaic, filter)

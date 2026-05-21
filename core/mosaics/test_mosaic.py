@@ -75,7 +75,7 @@ def test_orion_mosaic(test_context) -> None:
     # After putting the mosaic in the shopping cart, the second graph
     # execution should stack the subframes into masters, and generate a final
     # master mosaic image.
-    context.shopping_cart = [("mosaic", mosaic.stable_hash)]
+    context.shopping_cart = [("mosaic", mosaic.stable_hash, "PixInsight Master")]
     _override_flats_for_all_stacks()
 
     print("### First pass done; starting pass with shopping cart")
@@ -162,7 +162,7 @@ def test_orion_mosaic_with_missing_panel(test_context) -> None:
     # After putting the mosaic in the shopping cart, the second graph
     # execution should stack the subframes into masters, and generate a final
     # master mosaic image.
-    context.shopping_cart = [("mosaic", mosaic.stable_hash)]
+    context.shopping_cart = [("mosaic", mosaic.stable_hash, "PixInsight Master")]
     print("### test_mosaic shopping_cart", context.shopping_cart)
 
     print("### First pass done; starting pass with shopping cart")

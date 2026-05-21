@@ -144,9 +144,11 @@ def test_pixinsight_master_records_expected_graph_shape(test_context):
     assert counts.get("place_image", 0) == 2, counts
     # In-strip pairwise merge (1 merge for 2 panels in 1 strip):
     assert counts.get("merge_images", 0) == 1, counts
+    # Final canonical per-filter Mosaic file (1 filter):
+    assert counts.get("store_mosaic_color_channel_xisf", 0) == 1, counts
     # compute_image_metadata: per master (2) + per pp (2) + per channel
-    # (2) + per placed (2) + per row merge (1) = 9.
-    assert counts.get("compute_image_metadata", 0) == 9, counts
+    # (2) + per placed (2) + per row merge (1) + per filter store (1) = 10.
+    assert counts.get("compute_image_metadata", 0) == 10, counts
 
 
 def test_pixinsight_master_handles_missing_panels(test_context):

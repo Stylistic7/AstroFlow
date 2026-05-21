@@ -54,7 +54,7 @@ def test_downscaled_stack(test_context):
     for run_hash in stack.contents:
         set_flat(stack.stable_hash, run_hash, flat_stack_id)
 
-    context.shopping_cart = [("stack", stack_id, "DownscaledMaster")]
+    context.shopping_cart = [("stack", stack_id, "PixInsight Downscaled")]
 
     graph = build_compute_graph()
     run_graph(graph, debug=True)

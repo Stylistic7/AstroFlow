@@ -20,6 +20,7 @@ quality master, so showing whatever frames exist is fine.
 """
 from astroflow.pipeline import pipeline
 from metadata.image_metadata import compute_image_metadata
+from mosaics.final_storage import store_mosaic_color_channel_subframe
 from mosaics.merging.pixinsight import merge_images
 from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
@@ -97,7 +98,14 @@ def for_mosaic(mosaic, config):
             merged_strip(strip, filter, viewbox) for strip in mosaic.strips
         ) if r is not None]
         if rows:
-            out[filter] = _pairwise_merge(rows, mosaic, filter, mock)
+            merged = _pairwise_merge(rows, mosaic, filter, mock)
+            # Write the canonical per-filter Mosaic file (the path
+            # viewers stream from). Without this, the per-filter
+            # merge_images output exists but no Mosaic/<level>/...
+            # file is on disk.
+            out[filter] = store_mosaic_color_channel_subframe(
+                mosaic, filter, merged,
+            )
 
     return out
 

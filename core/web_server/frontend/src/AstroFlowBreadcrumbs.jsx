@@ -331,7 +331,7 @@ export default function AstroFlowBreadcrumbs() {
                 )}
                 {/* Quality PillCrumb removed: pipeline is the sole user-facing
                     variant axis. The implementation pill now refers to the
-                    pipeline (PixInsight Master, PixInsight Master Downscaled,
+                    pipeline (PixInsight Master, PixInsight Downscaled,
                     Subframe, …); quality is implicit in the pipeline's
                     identity. URL still carries `:quality` for viewer file
                     resolution until the route refactor lands. */}
