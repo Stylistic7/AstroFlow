@@ -83,17 +83,21 @@ def test_get_pipeline_raises_with_available_list():
         get_pipeline("nonexistent")
 
 
-def test_pipeline_yields_graph_builder_object():
-    """The decoration result has the `@graph_builder` surface: `.remote`,
-    `._function`, `_is_graph_builder`. Without them the runtime's
-    `_submit_node` and signature-inspection paths would fail."""
+def test_pipeline_yields_in_process_runner():
+    """The decoration result is a plain-Python runner: NOT a Ray task.
+    Pipelines are graph builders (cheap, run on the head node), not
+    data ops; making them @ray.remote forced cloudpickle to walk the
+    function's globals and choked on the ContextVar in
+    `dependency_graph.tracing`. The new shape: `runner(*args)` calls
+    `trace(fn, *args)` and returns a `Graph` directly."""
     @pipeline("X")
     def entry(mosaic):
         return None
 
-    assert hasattr(entry, "remote")
     assert hasattr(entry, "_function")
-    assert getattr(entry, "_is_graph_builder", False) is True
+    assert getattr(entry, "_is_pipeline", False) is True
+    # Crucially: no `.remote` — pipelines aren't Ray-dispatched.
+    assert not hasattr(entry, "remote")
 
 
 def test_registered_pipelines_is_a_snapshot():

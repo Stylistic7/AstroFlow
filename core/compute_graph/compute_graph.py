@@ -362,7 +362,23 @@ def build_main_processing_graph(
             # bundled-implementation names (including the default None
             # → PIXINSIGHT) fall through to the legacy chain below.
             if pipeline_fn is not None:
-                tasks.append((pipeline_fn, mode, mosaic, cfg))
+                # Pipelines are graph builders, not data ops — they
+                # don't need to be Ray-dispatched. Call directly to
+                # get their Graph and splice it into the outer graph,
+                # just like `build_compute_graph` is called in-process
+                # by `state/actor.py`. Each sink of the spliced graph
+                # becomes a task the outer 'done' collector depends on.
+                sub_graph = pipeline_fn(mode, mosaic, cfg)
+                if sub_graph is None:
+                    continue
+                for node, deps in sub_graph.items():
+                    graph[node] = deps
+                depended_on = {
+                    d for ds in sub_graph.values() for d in ds
+                }
+                for node in sub_graph:
+                    if node not in depended_on:
+                        tasks.append(node)
             else:
                 tasks.append(
                     (
