@@ -1,52 +1,46 @@
 import { useState, useContext } from 'react';
 import { useParams } from 'react-router-dom';
-import { IconButton, Popover, FormGroup, FormControlLabel, Checkbox, Tooltip, Typography } from '@mui/material';
+import { IconButton, Tooltip } from '@mui/material';
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
 import ShoppingCartOutlinedIcon from '@mui/icons-material/ShoppingCartOutlined';
 import AstroFlowContext from './AstroFlowContext.jsx';
 
-const QUALITY_LEVELS = [
-  { value: "DownscaledMaster", label: "Downscaled Master" },
-  { value: "Master", label: "Master" },
-  { value: "PostProcessed", label: "Post-processed" },
-];
+// Legacy (implementation, quality) URL pair → canonical pipeline name.
+// The cart entry is now a 3-tuple (type, id, pipeline_name); URLs
+// still carry (implementation, quality) for the viewer pages until
+// those are refactored, so we derive the pipeline name at cart-add
+// time from whatever the user is currently looking at.
+function legacyUrlParamsToPipelineName(implementation, quality) {
+  if (!implementation && !quality) return null;
+  if (quality === "Subframe") return "Subframe";
+  if (quality === "DownscaledMaster") return `${implementation} Master Downscaled`;
+  // "Master" / "PostProcessed" / no quality default
+  return `${implementation} Master`;
+}
 
 export default function ShoppingCartMenu({ objectType, objectId }) {
   const { shoppingCart } = useContext(AstroFlowContext);
-  const [anchorEl, setAnchorEl] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // The current pipeline comes from the URL's `:implementation` param —
-  // when the user is on a Mosaic / Stack viewer page with a pipeline
-  // pill selected, that pill's name flows into cart-adds from this
-  // menu. Pages without a pipeline in the URL (e.g. the targets list)
-  // get pipeline=undefined → backend defaults to legacy PixInsight.
-  const { implementation: pipelineName } = useParams();
+  // Pipeline derived from the current URL. The viewer routes today
+  // carry `:implementation` and `:quality` separately; we combine them.
+  // After the URL refactor (separate change), the URL will carry the
+  // pipeline name directly.
+  const { implementation, quality } = useParams();
+  const pipelineName = legacyUrlParamsToPipelineName(implementation, quality);
 
   const cart = shoppingCart || [];
-  // Match cart entries for this object regardless of pipeline — the
-  // checkbox shows "is this quality queued at all," not "is it queued
-  // with the currently-active pipeline." Cleanest for the user; the
-  // backend dispatcher stores the pipeline per-entry so two different
-  // pipelines on the same object coexist as two separate entries.
-  const checkedLevels = new Set(
-    cart
-      .filter(([t, id]) => t === objectType && id === objectId)
-      .map(([, , quality]) => quality)
+  const isQueued = cart.some(
+    ([t, id, pipe]) => t === objectType && id === objectId && pipe === pipelineName,
   );
 
-  const hasAny = checkedLevels.size > 0;
-
-  const handleToggle = async (quality) => {
+  const handleToggle = async () => {
+    if (!pipelineName) return;
     setLoading(true);
     try {
-      const method = checkedLevels.has(quality) ? 'DELETE' : 'POST';
-      // Pipeline name rides as the optional 4th URL segment so the
-      // backend can store it on the cart entry. Omitted entirely when
-      // the user is on a no-pipeline page (legacy default).
-      const suffix = pipelineName ? `/${pipelineName}` : '';
+      const method = isQueued ? 'DELETE' : 'POST';
       await fetch(
-        `/api/shopping_cart/${objectType}/${objectId}/${quality}${suffix}`,
+        `/api/shopping_cart/${objectType}/${objectId}/${encodeURIComponent(pipelineName)}`,
         { method },
       );
     } finally {
@@ -54,43 +48,24 @@ export default function ShoppingCartMenu({ objectType, objectId }) {
     }
   };
 
+  const tooltip = !pipelineName
+    ? "Pick a pipeline first"
+    : isQueued
+      ? `Remove from queue: ${pipelineName}`
+      : `Queue with ${pipelineName}`;
+
   return (
-    <>
-      <Tooltip title="Processing queue">
+    <Tooltip title={tooltip}>
+      <span>
         <IconButton
           size="small"
-          onClick={(e) => setAnchorEl(e.currentTarget)}
-          sx={{ color: hasAny ? 'primary.main' : 'text.secondary' }}
+          onClick={handleToggle}
+          disabled={loading || !pipelineName}
+          sx={{ color: isQueued ? 'primary.main' : 'text.secondary' }}
         >
-          {hasAny ? <ShoppingCartIcon /> : <ShoppingCartOutlinedIcon />}
+          {isQueued ? <ShoppingCartIcon /> : <ShoppingCartOutlinedIcon />}
         </IconButton>
-      </Tooltip>
-      <Popover
-        open={Boolean(anchorEl)}
-        anchorEl={anchorEl}
-        onClose={() => setAnchorEl(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-      >
-        <FormGroup sx={{ px: 2, py: 1 }}>
-          <Typography variant="caption" sx={{ mb: 0.5, color: 'text.secondary' }}>
-            Process at quality:
-          </Typography>
-          {QUALITY_LEVELS.map(({ value, label }) => (
-            <FormControlLabel
-              key={value}
-              control={
-                <Checkbox
-                  size="small"
-                  checked={checkedLevels.has(value)}
-                  onChange={() => handleToggle(value)}
-                  disabled={loading}
-                />
-              }
-              label={<Typography variant="body2">{label}</Typography>}
-            />
-          ))}
-        </FormGroup>
-      </Popover>
-    </>
+      </span>
+    </Tooltip>
   );
 }

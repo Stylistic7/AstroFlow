@@ -202,16 +202,20 @@ def get_pipelines():
     return {"pipelines": pipelines}
 
 
-@app.route("/api/shopping_cart/<object_type>/<object_id>/<quality>", methods=["POST"])
-@app.route("/api/shopping_cart/<object_type>/<object_id>/<quality>/<pipeline_name>", methods=["POST"])
-def add_to_shopping_cart(object_type, object_id, quality, pipeline_name=None):
+@app.route("/api/shopping_cart/<object_type>/<object_id>/<path:pipeline_name>", methods=["POST"])
+def add_to_shopping_cart(object_type, object_id, pipeline_name):
+    """Add a cart entry. Pipeline name is the sole variant axis — what
+    quality / implementation / algorithm to run is encoded in the
+    pipeline. The 3-tuple `(type, id, pipeline_name)` is what gets
+    persisted in `context.shopping_cart`.
+
+    Uses `<path:pipeline_name>` because pipeline display names contain
+    spaces ('PixInsight Master Downscaled').
+    """
     from web_server.backend.announcer import announce
     from state.actor import state as state_handle
     cart = list(context.shopping_cart or [])
-    entry = (
-        (object_type, object_id, quality, pipeline_name) if pipeline_name
-        else (object_type, object_id, quality)
-    )
+    entry = (object_type, object_id, pipeline_name)
     if entry not in cart:
         cart.append(entry)
         context.shopping_cart = cart
@@ -220,16 +224,12 @@ def add_to_shopping_cart(object_type, object_id, quality, pipeline_name=None):
     return Response(status=204)
 
 
-@app.route("/api/shopping_cart/<object_type>/<object_id>/<quality>", methods=["DELETE"])
-@app.route("/api/shopping_cart/<object_type>/<object_id>/<quality>/<pipeline_name>", methods=["DELETE"])
-def remove_from_shopping_cart(object_type, object_id, quality, pipeline_name=None):
+@app.route("/api/shopping_cart/<object_type>/<object_id>/<path:pipeline_name>", methods=["DELETE"])
+def remove_from_shopping_cart(object_type, object_id, pipeline_name):
     from web_server.backend.announcer import announce
     from state.actor import state as state_handle
     cart = list(context.shopping_cart or [])
-    entry = (
-        (object_type, object_id, quality, pipeline_name) if pipeline_name
-        else (object_type, object_id, quality)
-    )
+    entry = (object_type, object_id, pipeline_name)
     if entry in cart:
         cart.remove(entry)
         context.shopping_cart = cart

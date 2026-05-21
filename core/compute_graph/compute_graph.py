@@ -271,6 +271,77 @@ def build_preview_graph(
     return Graph({preview_graph_done: tasks})
 
 
+# Legacy cart-entry shapes that may still be sitting in
+# `context.shopping_cart` after an upgrade. Quality strings → canonical
+# pipeline names. Removed once stored state has churned (a session or
+# two).
+_LEGACY_QUALITY_NAMES = {
+    "Subframe", "Master", "DownscaledMaster",
+    "PostProcessed", "DownscaledPostProcessed",
+}
+
+
+def _quality_to_pipeline(quality: str, impl: "Implementation") -> str:
+    """Back-translate a legacy (quality, impl) pair to a canonical
+    pipeline name. PostProcessed / DownscaledPostProcessed don't have
+    standalone pipelines yet — fold them into the Master variant."""
+    if quality == "Subframe":
+        return "Subframe"
+    if quality in ("Master", "PostProcessed"):
+        return f"{impl.value} Master"
+    if quality in ("DownscaledMaster", "DownscaledPostProcessed"):
+        return f"{impl.value} Master Downscaled"
+    return quality
+
+
+def _normalize_cart_entry(entry: tuple) -> tuple | None:
+    """Map any cart entry shape we've ever shipped to the canonical
+    `(type, id, pipeline_name)` 3-tuple, or `None` if it's
+    unrecognisable. The shapes seen in the wild:
+
+    * `(type, id, pipeline_name)`            — current (3-tuple)
+    * `(type, id, quality_str)`              — legacy (no pipeline)
+    * `(type, id, quality_str, impl_str)`    — legacy (4-tuple)
+    """
+    from previews.types import Implementation
+    if len(entry) == 3:
+        a, b, c = entry
+        if c in _LEGACY_QUALITY_NAMES:
+            return (a, b, _quality_to_pipeline(c, Implementation.PIXINSIGHT))
+        return entry
+    if len(entry) == 4:
+        a, b, quality, impl_str = entry
+        impl = Implementation(impl_str) if impl_str else Implementation.PIXINSIGHT
+        return (a, b, _quality_to_pipeline(quality, impl))
+    return None
+
+
+def _pipeline_to_mode_impl(
+    pipeline_name: str,
+) -> tuple["QualityLevel", "Implementation"]:
+    """Back-translate a pipeline name to the legacy `(quality, impl)`
+    pair that the stack/target dispatchers still consume. Mosaic
+    dispatch goes via the @pipeline registry directly; this is just
+    for stack/target shims that haven't been migrated yet."""
+    from previews.types import Implementation
+    if pipeline_name == "Subframe":
+        return QualityLevel.SUBFRAME, Implementation.PIXINSIGHT
+    if pipeline_name == "PixInsight Master":
+        return QualityLevel.MASTER, Implementation.PIXINSIGHT
+    if pipeline_name == "PixInsight Master Downscaled":
+        return QualityLevel.DOWNSCALED_MASTER, Implementation.PIXINSIGHT
+    # Fallback for future bundled pipelines ("OSS Master", etc.).
+    for impl in Implementation:
+        if pipeline_name == f"{impl.value} Master":
+            return QualityLevel.MASTER, impl
+        if pipeline_name == f"{impl.value} Master Downscaled":
+            return QualityLevel.DOWNSCALED_MASTER, impl
+    # User-registered pipeline with no quality mapping. Default to
+    # MASTER + PIXINSIGHT for the stack/target legacy paths; those
+    # paths don't run user pipelines anyway.
+    return QualityLevel.MASTER, Implementation.PIXINSIGHT
+
+
 @ray.remote(num_cpus=0.1)
 @beartype
 def main_processing_graph_done() -> None:
@@ -314,31 +385,33 @@ def build_main_processing_graph(
 
     graph = Graph({})
     tasks = []
-    for entry in shopping_cart:
-        # Shopping cart entries: (type, id, mode_str?, pipeline_name?).
-        # `pipeline_name` is the unified UI-level concept: it can name a
-        # bundled implementation ("PixInsight", "AstroFlow", "OSS") or a
-        # registered user pipeline. None = today's default (PixInsight).
-        # Per-entry, not global, so the same mosaic can be dropped in
-        # twice with two different pipelines for side-by-side comparison;
-        # the choice never reaches any cached @node op's args.
-        type, id = entry[0], entry[1]
-        mode = QualityLevel(entry[2]) if len(entry) > 2 else QualityLevel.MASTER
-        pipeline_name = entry[3] if len(entry) > 3 else None
+    for raw_entry in shopping_cart:
+        # Cart entries: `(type, id, pipeline_name)` 3-tuples. Pipeline
+        # name is the unified UI-level concept — bundled built-ins
+        # ("PixInsight Master", "PixInsight Master Downscaled",
+        # "Subframe", future "OSS Master") and registered user
+        # pipelines in `~/AstroFlow/pipelines/` share one namespace.
+        # The same mosaic can be added twice with two pipelines for
+        # side-by-side comparison; pipeline_name never reaches any
+        # cached @node op's args.
+        entry = _normalize_cart_entry(raw_entry)
+        if entry is None:
+            log.warning("Unrecognised cart entry shape", entry=raw_entry)
+            continue
+        type, id, pipeline_name = entry
 
-        # Resolve `pipeline_name` to (implementation, pipeline_fn). A
-        # bundled-implementation name takes the legacy build_mosaic_subgraph
-        # path; a registered name takes the @pipeline dispatch. Other
-        # cart-entry types (stack/target) just use the resolved
-        # implementation and ignore pipeline_fn.
-        impl = Implementation.PIXINSIGHT
+        # Stack/target paths haven't been migrated to @pipeline yet, so
+        # they consume (quality, impl). Derive from pipeline_name.
+        mode, impl = _pipeline_to_mode_impl(pipeline_name)
+        # Mosaic path looks up the pipeline_fn from the registry.
         pipeline_fn = None
-        if pipeline_name is not None:
+        if type == "mosaic":
+            from pipelines.registry import get_pipeline
             try:
-                impl = Implementation(pipeline_name)
-            except ValueError:
-                from pipelines.registry import get_pipeline
                 pipeline_fn = get_pipeline(pipeline_name)
+            except KeyError:
+                log.warning("Unknown pipeline in cart", pipeline=pipeline_name)
+                continue
 
         if type == "stack":
             if id not in stacks:
@@ -350,45 +423,25 @@ def build_main_processing_graph(
                 log.warning("Target in shopping cart does not exist", target_id=id)
                 continue
             tasks.append((build_target_subgraph, targets[id].get(), config_for(mode=mode, implementation=impl)))
-        if type == "mosaic":
+        elif type == "mosaic":
             if id not in mosaics:
                 log.warning("Mosaic in shopping cart does not exist", mosaic_id=id)
                 continue
-
             mosaic = mosaics[id].get()
             cfg = config_for(mode=mode, implementation=impl)
-
-            # Registered pipelines take the @pipeline dispatch;
-            # bundled-implementation names (including the default None
-            # → PIXINSIGHT) fall through to the legacy chain below.
-            if pipeline_fn is not None:
-                # Pipelines are graph builders, not data ops — they
-                # don't need to be Ray-dispatched. Call directly to
-                # get their Graph and splice it into the outer graph,
-                # just like `build_compute_graph` is called in-process
-                # by `state/actor.py`. Each sink of the spliced graph
-                # becomes a task the outer 'done' collector depends on.
-                sub_graph = pipeline_fn(mode, mosaic, cfg)
-                if sub_graph is None:
-                    continue
-                for node, deps in sub_graph.items():
-                    graph[node] = deps
-                depended_on = {
-                    d for ds in sub_graph.values() for d in ds
-                }
-                for node in sub_graph:
-                    if node not in depended_on:
-                        tasks.append(node)
-            else:
-                tasks.append(
-                    (
-                        build_mosaic_subgraph,
-                        mode,
-                        mosaic,
-                        targets_for_mosaic(mosaic, targets),
-                        cfg,
-                    )
-                )
+            # Pipelines are graph builders, not data ops — they don't
+            # need Ray dispatch. Call directly to get their Graph and
+            # splice it into the outer graph (same shape as
+            # build_compute_graph is called in-process by state/actor).
+            sub_graph = pipeline_fn(mode, mosaic, cfg)
+            if sub_graph is None:
+                continue
+            for node, deps in sub_graph.items():
+                graph[node] = deps
+            depended_on = {d for ds in sub_graph.values() for d in ds}
+            for node in sub_graph:
+                if node not in depended_on:
+                    tasks.append(node)
 
     graph[main_processing_graph_done] = tasks
 

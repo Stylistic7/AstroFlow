@@ -6,10 +6,6 @@ import {
   Typography,
   IconButton,
   Badge,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemSecondaryAction,
   Chip,
 } from "@mui/material";
 import { ExpandMore, ExpandLess, Delete } from "@mui/icons-material";
@@ -17,52 +13,20 @@ import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
 import ShoppingCartOutlinedIcon from "@mui/icons-material/ShoppingCartOutlined";
 import AstroFlowContext from "./AstroFlowContext.jsx";
 
-const qualityLabels = {
-  DownscaledMaster: "Downscaled",
-  Master: "Master",
-  PostProcessed: "Post-processed",
-};
-
-const qualityColors = {
-  DownscaledMaster: "secondary",
-  Master: "primary",
-  PostProcessed: "success",
-};
-
 export default function ShoppingCartPanel() {
   const { shoppingCart, stacks, targets, mosaics } = useContext(AstroFlowContext);
   const [anchorEl, setAnchorEl] = useState(null);
 
+  // Cart entries are now `(type, id, pipeline_name)` 3-tuples. Each
+  // entry is one row; pipeline is the variant axis.
   const cart = shoppingCart || [];
+  const items = cart.map(([type, id, pipeline]) => ({ type, id, pipeline }));
 
-  // Group cart entries by (type, id, pipeline). Two cart entries for
-  // the same object but different pipelines are intentionally distinct
-  // groups — that's the side-by-side comparison workflow.
-  const grouped = {};
-  for (const entry of cart) {
-    const [type, id, quality] = entry;
-    const pipeline = entry[3] ?? null;
-    const key = `${type}:${id}:${pipeline ?? ''}`;
-    if (!grouped[key]) {
-      grouped[key] = { type, id, pipeline, qualities: [] };
-    }
-    grouped[key].qualities.push(quality);
-  }
-  const items = Object.values(grouped);
+  const cartUrl = (type, id, pipeline) =>
+    `/api/shopping_cart/${type}/${id}/${encodeURIComponent(pipeline)}`;
 
-  const cartUrl = (type, id, quality, pipeline) =>
-    pipeline
-      ? `/api/shopping_cart/${type}/${id}/${quality}/${pipeline}`
-      : `/api/shopping_cart/${type}/${id}/${quality}`;
-
-  const handleRemove = async (type, id, quality, pipeline) => {
-    await fetch(cartUrl(type, id, quality, pipeline), { method: "DELETE" });
-  };
-
-  const handleRemoveAll = async (type, id, qualities, pipeline) => {
-    for (const q of qualities) {
-      await fetch(cartUrl(type, id, q, pipeline), { method: "DELETE" });
-    }
+  const handleRemove = async (type, id, pipeline) => {
+    await fetch(cartUrl(type, id, pipeline), { method: "DELETE" });
   };
 
   const getName = (type, id) => {
@@ -113,9 +77,9 @@ export default function ShoppingCartPanel() {
             </Typography>
           </MenuItem>
         ) : (
-          items.map(({ type, id, pipeline, qualities }) => (
+          items.map(({ type, id, pipeline }) => (
             <MenuItem
-              key={`${type}:${id}:${pipeline ?? ''}`}
+              key={`${type}:${id}:${pipeline}`}
               sx={{ display: "flex", flexDirection: "column", alignItems: "flex-start", py: 1 }}
               disableRipple
             >
@@ -125,25 +89,14 @@ export default function ShoppingCartPanel() {
                 </Typography>
                 <IconButton
                   size="small"
-                  onClick={(e) => { e.stopPropagation(); handleRemoveAll(type, id, qualities, pipeline); }}
+                  onClick={(e) => { e.stopPropagation(); handleRemove(type, id, pipeline); }}
                 >
                   <Delete fontSize="small" />
                 </IconButton>
               </Box>
               <Box sx={{ display: "flex", gap: 0.5, mt: 0.5, flexWrap: "wrap" }}>
                 <Chip size="small" label={type} variant="outlined" />
-                {pipeline && (
-                  <Chip size="small" label={pipeline} variant="outlined" color="info" />
-                )}
-                {qualities.map((q) => (
-                  <Chip
-                    key={q}
-                    size="small"
-                    label={qualityLabels[q] || q}
-                    color={qualityColors[q] || "default"}
-                    onDelete={() => handleRemove(type, id, q, pipeline)}
-                  />
-                ))}
+                <Chip size="small" label={pipeline} variant="outlined" color="info" />
               </Box>
             </MenuItem>
           ))
