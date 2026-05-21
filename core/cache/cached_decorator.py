@@ -238,7 +238,17 @@ def make_cached_decorator(
                         f"trace ({sorted(kwargs)}); only positional args "
                         "are supported in trace context."
                     )
-                return record(wrapper, *args, _after=_after)
+                handle = record(wrapper, *args, _after=_after)
+                # Generic post-record hooks: each `_trace_hook` is a
+                # callable `Node -> Node` that records additional graph
+                # nodes downstream of this call and returns the new
+                # sink. Lets decorators like `@makes_image` chain on
+                # their own canonical downstream ops (e.g.
+                # `compute_image_metadata`) without this module knowing
+                # what's being chained.
+                for hook in getattr(wrapper, "_trace_hooks", ()):
+                    handle = hook(handle)
+                return handle
             raise RuntimeError(
                 f"{func.__name__} is a remote task. Use `.remote(...)`."
             )

@@ -328,6 +328,18 @@ def _make_dispatch_filename_fn(func: Callable):
     return dispatch
 
 
+def _chain_compute_image_metadata(handle):
+    """Trace-time hook: record a compute_image_metadata node downstream
+    of `handle` and return its handle. Attached to every @makes_image-
+    decorated op so user pipelines don't need to write the
+    `compute_image_metadata(stack(...))` pattern explicitly. Invoked by
+    `cached_decorator`'s trace branch through the generic `_trace_hooks`
+    list."""
+    from dependency_graph.tracing import record
+    from metadata.image_metadata import compute_image_metadata
+    return record(compute_image_metadata, handle)
+
+
 def _bind_producer(
     media_type: MediaType,
     implementation: Implementation | list[Implementation],
@@ -459,6 +471,17 @@ def _bind_producer(
             wrapped._presentation_entries = pres_entries
             wrapped._makes_image_wrapped = True
             wrapped._registry_keys = func._registry_keys
+            # Trace-time hook: when this op is called inside a
+            # @graph_builder / @pipeline trace, automatically record a
+            # compute_image_metadata node downstream. Every @makes_image
+            # op produces a file on disk whose canonical downstream
+            # consumer is its ImageMetadata; auto-chaining lets user
+            # pipelines skip the boilerplate
+            # `compute_image_metadata(stack(...))` pattern. The hook is
+            # invoked by cached_decorator's trace branch, which knows
+            # only about the generic hook list — not about
+            # compute_image_metadata specifically.
+            wrapped._trace_hooks = [_chain_compute_image_metadata]
             if hasattr(inner_func, 'filename_fns'):
                 wrapped.filename_fns = inner_func.filename_fns
             if hasattr(inner_func, 'filename_fn'):
