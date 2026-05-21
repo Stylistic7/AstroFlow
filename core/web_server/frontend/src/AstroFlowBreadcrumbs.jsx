@@ -11,7 +11,6 @@ import SquareFootIcon from '@mui/icons-material/SquareFoot';
 import AutoAwesomeMosaicIcon from '@mui/icons-material/AutoAwesomeMosaic';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import BuildIcon from '@mui/icons-material/Build';
-import HighQualityIcon from '@mui/icons-material/HighQuality';
 import ColorLensIcon from '@mui/icons-material/ColorLens';
 import Link from '@mui/material/Link';
 import PanoramaHorizontalIcon from '@mui/icons-material/PanoramaHorizontal';
@@ -25,7 +24,6 @@ import {
     useVersionsMatrix,
     usePipelines,
     pipelineOptions,
-    qualitiesFor,
     versionExists,
 } from './useVersions.js';
 import { filterLabel } from './filters.js';
@@ -189,7 +187,6 @@ export default function AstroFlowBreadcrumbs() {
     // results vs which don't — handled by `exists` styling).
     const availablePipelines = usePipelines();
     const implementations = pipelineOptions(allVersions, availablePipelines);
-    const qualities = qualitiesFor(allVersions, implementation, matchFilter);
     const filters = versionsData.filters;
 
     const goToVersion = (impl, q, f) =>
@@ -332,17 +329,12 @@ export default function AstroFlowBreadcrumbs() {
                         activeColor={theme.palette.text.primary}
                     />
                 )}
-                {quality && qualities.length > 0 && (
-                    <PillCrumb
-                        icon={<HighQualityIcon sx={{ marginRight: '0.5em' }} />}
-                        options={qualities}
-                        active={quality}
-                        exists={(q) => versionExists(allVersions, implementation, q, matchFilter)}
-                        onPick={(q) => goToVersion(implementation, q, filter)}
-                        fontColor={fontColor}
-                        activeColor={theme.palette.text.primary}
-                    />
-                )}
+                {/* Quality PillCrumb removed: pipeline is the sole user-facing
+                    variant axis. The implementation pill now refers to the
+                    pipeline (PixInsight Master, PixInsight Master Downscaled,
+                    Subframe, …); quality is implicit in the pipeline's
+                    identity. URL still carries `:quality` for viewer file
+                    resolution until the route refactor lands. */}
                 {filter && filters.length > 0 && (
                     <PillCrumb
                         icon={<ColorLensIcon sx={{ marginRight: '0.5em' }} />}
