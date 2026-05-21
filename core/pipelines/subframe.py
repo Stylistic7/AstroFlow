@@ -18,12 +18,8 @@ ops:
   place_image (universal)           place_image (universal)
   merge_images / numpy overlay      merge_images / PhotometricMosaic
 
-The pipeline uses `get_stack_subframe_image` (picks the highest-star
-light frame per stack) and then runs panel placement + pairwise merge
-the same way the master pipeline does — `merge_images` itself
-branches on `mode == SUBFRAME` and uses numpy instead of PixInsight
-PhotometricMosaic. After the merge_images split (Phase B-3) those
-will be two distinct ops.
+Three entry points (stack / target / mosaic) so the cart can queue at
+any granularity, same shape as the master pipelines.
 
 Missing panels are tolerated: this is a preview, not a
 science-quality master, so showing whatever frames exist is fine.
@@ -32,47 +28,72 @@ from astroflow.pipeline import pipeline
 from metadata.image_metadata import compute_image_metadata
 from mosaics.merging.pixinsight import merge_images
 from mosaics.placement.astroflow import place_image
+from mosaics.types import Mosaic
 from previews.types import Implementation
 from stacks.compute_graph import get_stack_subframe_image
+from stacks.composite_stack import Stack
+from targets.types import Target
 
 
-@pipeline("Subframe")
-def subframe_mosaic(mode, mosaic, config):
+def _stack_subframe(s):
+    """Best light frame for one stack, with computed metadata.
+    `get_stack_subframe_image` returns a raw `Path` (no
+    @makes_image), so the auto-chain from @makes_image's
+    _trace_hooks doesn't fire — chain `compute_image_metadata`
+    explicitly so downstream `place_image` receives an
+    ImageMetadata handle."""
+    subframe = get_stack_subframe_image(s)
+    return compute_image_metadata(subframe)
+
+
+def _channels_for_target(target):
+    """Per-filter representative-frame metadata for one target. Uses
+    the first stack as the representative — same choice the legacy
+    `build_target_channel_subgraph` SUBFRAME path made."""
+    channels: dict = {}
+    for filter in target.filters:
+        stacks = target.stacks_for(filter)
+        if not stacks:
+            continue
+        channels[filter] = _stack_subframe(stacks[0])
+    return channels
+
+
+@pipeline("Subframe", processes=Stack)
+def for_stack(mode, stack, config):
+    """Pick the highest-star light frame for one stack and compute
+    its metadata. No stacking, no calibration."""
+    del mode, config
+    return _stack_subframe(stack)
+
+
+@pipeline("Subframe", processes=Target)
+def for_target(mode, target, config):
+    """Per-filter representative subframes for one target."""
+    del mode, config
+    return _channels_for_target(target)
+
+
+@pipeline("Subframe", processes=Mosaic)
+def for_mosaic(mode, mosaic, config):
     """Build a subframe preview mosaic, end to end.
 
     Per (target, filter) — pick the best light frame from the first
     stack, compute metadata. Per filter — place each panel into the
     mosaic viewbox, pairwise-merge inside each strip, then merge
     rows. Returns `{filter: sink_metadata}`.
-
-    `mode` is `QualityLevel.SUBFRAME` per the cart dispatcher; we
-    don't dereference it here (signature parity with the cart-branch
-    dispatcher's `pipeline_fn(mode, mosaic, config)` call shape).
-    `merge_images(mode=SUBFRAME, ...)` selects the numpy path
-    internally.
     """
     mock = config.development_settings.mock_pixinsight
     # `impl` is required by `merge_images`'s signature but is ignored
-    # on the SUBFRAME path (the numpy overlay doesn't use it).
+    # on the SUBFRAME path (numpy overlay).
     impl = Implementation.PIXINSIGHT
 
     targets_by_id = {t.id: t for t in mosaic.targets}
 
     channels: dict = {}
     for target in mosaic.targets:
-        for filter in target.filters:
-            stacks = target.stacks_for(filter)
-            if not stacks:
-                continue
-            # First stack is the representative; legacy
-            # build_target_channel_subgraph SUBFRAME path did the same.
-            subframe = get_stack_subframe_image(stacks[0])
-            # `get_stack_subframe_image` returns a raw Path (no
-            # @makes_image), so the auto-chain from
-            # @makes_image's _trace_hooks doesn't fire. Chain
-            # compute_image_metadata explicitly so downstream
-            # `place_image` receives an ImageMetadata handle.
-            channels[(target.id, filter)] = compute_image_metadata(subframe)
+        for filter, sink in _channels_for_target(target).items():
+            channels[(target.id, filter)] = sink
 
     out: dict = {}
     for filter in mosaic.filters:

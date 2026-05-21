@@ -1,16 +1,25 @@
 """User-facing pipeline / stage decorators.
 
-* `@pipeline("Display Name")` — registers a function as a user-selectable
-  pipeline. The decorated function is a plain Python callable (NOT a
-  Ray task): the cart-branch dispatcher in
-  `compute_graph.build_main_processing_graph` calls it directly, on
-  the same worker that's already running `build_main_processing_graph`
-  itself, and splices the recorded `Graph` into the outer graph. So
-  pipelines have the same execution shape as `build_compute_graph`:
-  graph-building code, runs in-process, returns a `Graph`. There's no
-  cloudpickle pass over the pipeline body — important because the
-  trace machinery references a `ContextVar` that doesn't survive
-  pickling.
+* `@pipeline("Display Name", processes=Mosaic)` — registers a function
+  as a user-selectable pipeline entry point. The decorated function
+  is a plain Python callable (NOT a Ray task): the cart-branch
+  dispatcher in `compute_graph.build_main_processing_graph` calls
+  it directly, on the same worker that's already running
+  `build_main_processing_graph`, and splices the recorded `Graph`
+  into the outer graph. So pipelines have the same execution shape
+  as `build_compute_graph`: graph-building code, runs in-process,
+  returns a `Graph`. There's no cloudpickle pass over the pipeline
+  body — important because the trace machinery references a
+  `ContextVar` that doesn't survive pickling.
+
+  The `processes=` arg is the entity class this entry point handles
+  (`Stack`, `Target`, or `Mosaic`). One pipeline name can register
+  multiple entry points, one per class; the cart-branch dispatcher
+  looks up `(display_name, processes)` to pick the right one. A
+  pipeline that only handles mosaics declares one entry point; one
+  that supports queueing at any granularity declares three. Using
+  the actual class (not a string) means a typo is a `NameError` at
+  decoration time rather than a silent registry miss.
 
 * `@stage` — pipeline-local cacheable Ray-task op. Today this is just a
   re-export of `@node`, kept as a distinct name so we can fork the
@@ -25,13 +34,14 @@ from dependency_graph.tracing import trace
 from pipelines.registry import _REGISTRY
 
 
-def pipeline(display_name: str) -> Callable:
-    """Decorator: register the wrapped function as a pipeline named
-    `display_name`. Re-registration silently overrides (so a user file
-    in `~/AstroFlow/pipelines/` can replace a built-in by reusing the
-    name). The wrapped function, when called, runs the user's body
-    under a fresh trace context and returns the recorded `Graph` (or
-    `None` if the body returned `None`).
+def pipeline(display_name: str, processes: type) -> Callable:
+    """Decorator: register the wrapped function as an entry point for
+    pipeline `display_name`, handling cart entries whose object class
+    is `processes`. Re-registration silently overrides (so a user
+    file in `~/AstroFlow/pipelines/` can replace a built-in by reusing
+    the (name, class) pair). The wrapped function, when called, runs
+    the user's body under a fresh trace context and returns the
+    recorded `Graph` (or `None` if the body returned `None`).
     """
     def decorate(fn: Callable) -> Callable:
         @functools.wraps(fn)
@@ -42,7 +52,9 @@ def pipeline(display_name: str) -> Callable:
 
         runner._function = fn
         runner._is_pipeline = True
-        _REGISTRY[display_name] = runner
+        runner._pipeline_name = display_name
+        runner._pipeline_processes = processes
+        _REGISTRY[(display_name, processes)] = runner
         return runner
 
     return decorate

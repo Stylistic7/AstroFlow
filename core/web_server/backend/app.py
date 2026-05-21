@@ -183,17 +183,20 @@ def get_shopping_cart():
 
 @app.route("/api/pipelines")
 def get_pipelines():
-    """Pipelines available for cart selection. Returns every name in
-    the `@pipeline` registry — built-ins in `core/pipelines/*.py`
-    (`PixInsight Master`, `PixInsight Master Downscaled`, `Subframe`)
-    and any user-registered pipelines in `~/AstroFlow/pipelines/`.
+    """Pipelines available for cart selection. Returns every distinct
+    display name in the `@pipeline` registry — built-ins in
+    `core/pipelines/*.py` (`PixInsight Master`, `PixInsight Master
+    Downscaled`, `Subframe`) and any user-registered pipelines in
+    `~/AstroFlow/pipelines/`. A pipeline may register multiple entry
+    points (per Stack / Target / Mosaic class it processes); they
+    collapse to the single display name in this listing.
     """
-    from pipelines.registry import registered_pipelines
+    from pipelines.registry import registered_pipeline_names
 
     return {
         "pipelines": [
             {"name": name}
-            for name in sorted(registered_pipelines().keys())
+            for name in sorted(registered_pipeline_names())
         ],
     }
 

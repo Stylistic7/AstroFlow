@@ -258,7 +258,8 @@ def build_preview_graph(
     # implicitly in the shopping cart with the Subframe pipeline."
     # The user never has to queue subframe previews manually.
     from pipelines.registry import get_pipeline
-    subframe_pipeline = get_pipeline("Subframe")
+    from mosaics.types import Mosaic
+    subframe_pipeline = get_pipeline("Subframe", processes=Mosaic)
 
     graph = Graph({})
     tasks = []
@@ -401,65 +402,78 @@ def build_main_processing_graph(
 
     log.info("Building main processing graph", shopping_cart=shopping_cart)
 
+    # Cart entry's type string → entity class for pipeline lookup.
+    # The cart stores type as a URL-friendly string ("stack" /
+    # "target" / "mosaic") because routes do; the @pipeline decorator
+    # keys on the actual class (`Stack` / `Target` / `Mosaic`) because
+    # that's typo-safe and self-documenting in user pipeline files.
+    # This dict is the one place those two conventions meet.
+    from stacks.composite_stack import Stack
+    from targets.types import Target
+    from mosaics.types import Mosaic
+    type_to_class = {"stack": Stack, "target": Target, "mosaic": Mosaic}
+
     graph = Graph({})
     tasks = []
     for raw_entry in shopping_cart:
         # Cart entries: `(type, id, pipeline_name)` 3-tuples. Pipeline
-        # name is the unified UI-level concept — bundled built-ins
-        # ("PixInsight Master", "PixInsight Master Downscaled",
-        # "Subframe", future "OSS Master") and registered user
-        # pipelines in `~/AstroFlow/pipelines/` share one namespace.
-        # The same mosaic can be added twice with two pipelines for
-        # side-by-side comparison; pipeline_name never reaches any
-        # cached @node op's args.
+        # name is the unified UI-level concept; per-entity-class entry
+        # points are looked up via `get_pipeline(name, processes=cls)`.
+        # Pipelines are graph builders, not data ops — they run in-
+        # process; the recorded Graph is spliced into the outer graph.
         entry = _normalize_cart_entry(raw_entry)
         if entry is None:
             log.warning("Unrecognised cart entry shape", entry=raw_entry)
             continue
         type, id, pipeline_name = entry
 
-        # Stack/target paths haven't been migrated to @pipeline yet, so
-        # they consume (quality, impl). Derive from pipeline_name.
-        mode, impl = _pipeline_to_mode_impl(pipeline_name)
-        # Mosaic path looks up the pipeline_fn from the registry.
-        pipeline_fn = None
-        if type == "mosaic":
-            from pipelines.registry import get_pipeline
-            try:
-                pipeline_fn = get_pipeline(pipeline_name)
-            except KeyError:
-                log.warning("Unknown pipeline in cart", pipeline=pipeline_name)
-                continue
-
+        # Resolve the entity object the pipeline will operate on.
         if type == "stack":
             if id not in stacks:
                 log.warning("Stack in shopping cart does not exist", stack_id=id)
                 continue
-            tasks.append((build_stacking_subgraph, stacks[id].get(), config_for(id, mode, impl)))
+            entity = stacks[id].get()
         elif type == "target":
             if id not in targets:
                 log.warning("Target in shopping cart does not exist", target_id=id)
                 continue
-            tasks.append((build_target_subgraph, targets[id].get(), config_for(mode=mode, implementation=impl)))
+            entity = targets[id].get()
         elif type == "mosaic":
             if id not in mosaics:
                 log.warning("Mosaic in shopping cart does not exist", mosaic_id=id)
                 continue
-            mosaic = mosaics[id].get()
-            cfg = config_for(mode=mode, implementation=impl)
-            # Pipelines are graph builders, not data ops — they don't
-            # need Ray dispatch. Call directly to get their Graph and
-            # splice it into the outer graph (same shape as
-            # build_compute_graph is called in-process by state/actor).
-            sub_graph = pipeline_fn(mode, mosaic, cfg)
-            if sub_graph is None:
-                continue
-            for node, deps in sub_graph.items():
-                graph[node] = deps
-            depended_on = {d for ds in sub_graph.values() for d in ds}
-            for node in sub_graph:
-                if node not in depended_on:
-                    tasks.append(node)
+            entity = mosaics[id].get()
+        else:
+            log.warning("Unknown cart entry type", entry=raw_entry)
+            continue
+
+        # `mode` and `impl` are vestigial — the pipeline body knows
+        # what it produces. Passed through for legacy pipeline-body
+        # parity (mode used for viewbox + merge_images branching).
+        # Will be dropped once `ProcessingConfig.{quality, implementation}`
+        # are deleted (Phase B-3).
+        mode, impl = _pipeline_to_mode_impl(pipeline_name)
+        cfg = config_for(id if type == "stack" else None, mode, impl)
+
+        from pipelines.registry import get_pipeline
+        try:
+            pipeline_fn = get_pipeline(pipeline_name, processes=type_to_class[type])
+        except KeyError:
+            log.warning(
+                "Unknown pipeline in cart",
+                pipeline=pipeline_name, type=type,
+            )
+            continue
+
+        sub_graph = pipeline_fn(mode, entity, cfg)
+        if sub_graph is None:
+            continue
+        for node, deps in sub_graph.items():
+            graph[node] = deps
+        depended_on = {d for ds in sub_graph.values() for d in ds}
+        for node in sub_graph:
+            if node not in depended_on:
+                tasks.append(node)
 
     graph[main_processing_graph_done] = tasks
 

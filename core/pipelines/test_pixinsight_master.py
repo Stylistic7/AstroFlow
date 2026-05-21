@@ -73,7 +73,7 @@ def test_pixinsight_master_registers_under_name():
     # doesn't depend on prior imports.
     r._DISCOVERED = False
     snap = r.discover_pipelines()
-    assert "PixInsight Master" in snap
+    assert ("PixInsight Master", Mosaic) in snap
 
 
 def test_pixinsight_master_records_expected_graph_shape(test_context):
@@ -129,7 +129,7 @@ def test_pixinsight_master_records_expected_graph_shape(test_context):
     # Trace the pipeline body (not via .remote — no Ray needed for
     # structural verification).
     g = trace(
-        pi_master_pipeline.merge_mosaic._function,
+        pi_master_pipeline.for_mosaic._function,
         QualityLevel.MASTER, mosaic, config,
     )
     assert g is not None
@@ -198,7 +198,7 @@ def test_pixinsight_master_handles_missing_panels(test_context):
     )
 
     g = trace(
-        pi_master_pipeline.merge_mosaic._function,
+        pi_master_pipeline.for_mosaic._function,
         QualityLevel.MASTER, mosaic, config,
     )
     assert g is not None
