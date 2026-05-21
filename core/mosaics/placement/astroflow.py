@@ -207,7 +207,7 @@ def place_image(
     # input counts to track "most complete merge so far." Stored in the
     # context cache (not the file sidecar) because @makes_image wipes
     # the sidecar after every producer run.
-    from mosaics.merge_images import _set_panel_count
+    from mosaics.merging import _set_panel_count
     _set_panel_count(output_filename, 1)
     log.info("Place image complete", output_filename=output_filename)
 

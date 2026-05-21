@@ -15,7 +15,7 @@ from dependency_graph import (
     canonicalize_graph,
 )
 from mosaics.types import Mosaic
-from mosaics.merge_images import merge_images
+from mosaics.merging import merge_images
 from mosaics.compute_graph import (
     build_mosaic_filter_subgraph,
     build_placement_subgraph,

@@ -29,7 +29,7 @@ from previews.types import QualityLevel
 from targets.compute_graph import build_target_subgraph, process_targets_for_ui
 from stacks.compute_graph import build_stacking_subgraph
 from targets.post_process import post_process_target
-from stacks.post_process import post_process_stack
+from stacks.post_processing import post_process_stack
 from mosaics.post_process import post_process_mosaic
 from metadata.image_metadata import scatter_compute_image_metadata
 

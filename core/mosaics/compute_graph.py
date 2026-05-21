@@ -12,7 +12,7 @@ from stacks.composite_stack import Stack, StacksDict, RunsDict, CalibrationStack
 from decisions.settings import DevelopmentSettings
 from dependency_graph import Graph, Node, chain
 from dependency_graph.tracing import trace, record
-from mosaics.merge_images import MergedImage
+from mosaics.merging import MergedImage
 from mosaics.types import Mosaic, MosaicsDict, Viewbox
 from mosaics.viewbox import compute_viewbox
 from mosaics.placement import PlacedImage

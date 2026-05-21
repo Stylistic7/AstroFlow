@@ -10,7 +10,7 @@ from context import local_context as context
 from stacks.composite_stack import Stack
 from targets.types import Target
 from mosaics.types import Mosaic
-from mosaics.merge_images import MergedImage
+from mosaics.merging import MergedImage
 from products.registry import (
     get_producer, get_filename_fn, fully_resolve, _make_thumbnail, MediaType,
 )

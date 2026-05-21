@@ -54,7 +54,7 @@ def test_stackid_split_is_total_and_distinct():
 
 
 def test_new_identities_exist_for_formerly_identityless_producers():
-    from mosaics.merge_images import MergedImage
+    from mosaics.merging import MergedImage
     from products import identity as I
 
     assert hasattr(I, "MergedImageId"), (
