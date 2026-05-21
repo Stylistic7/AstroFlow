@@ -539,6 +539,7 @@ def pipeline_outputs(object_type: str, object_id: str):
     frontend whether a thumbnail exists for filter[i].
     """
     from pipelines.registry import registered_pipeline_names
+    from pipelines.output_index import for_object
 
     resolved = _resolve_versioned_object(object_type, object_id)
     if resolved is None:
@@ -546,17 +547,28 @@ def pipeline_outputs(object_type: str, object_id: str):
     _obj, filters, filename_candidates = resolved
 
     iter_filters = filters or [None]
+    # Per-(pipeline_name, filter) paths the dispatcher recorded the last
+    # time this object's cart entries were traced. Authoritative when
+    # populated; falls back to the static (impl, level) mapping for
+    # objects that haven't been processed yet.
+    indexed = for_object(object_type, object_id)
 
     pipelines = []
     for name in sorted(registered_pipeline_names()):
         impl, level = _PIPELINE_FINAL_OUTPUT.get(name, (PIXINSIGHT, MASTER))
+        indexed_for_pipeline = indexed.get(name, {})
         outputs = []
         for f in iter_filters:
-            candidates = filename_candidates(impl, level, f)
-            hit = next(
-                (p for p in candidates if p is not None and os.path.exists(p)),
-                None,
-            )
+            # Indexed path beats the table guess when present.
+            indexed_path = indexed_for_pipeline.get(str(f))
+            if indexed_path and os.path.exists(indexed_path):
+                hit = indexed_path
+            else:
+                candidates = filename_candidates(impl, level, f)
+                hit = next(
+                    (p for p in candidates if p is not None and os.path.exists(p)),
+                    None,
+                )
             outputs.append({
                 "filter": f,
                 "exists": hit is not None,

@@ -292,6 +292,73 @@ def main_processing_graph_done() -> None:
     pass
 
 
+def _record_pipeline_sinks(record, pipeline_name, type, id, entity, result):
+    """Walk a pipeline's return value and record sink paths in the
+    PipelineOutputIndex.
+
+    Three pipeline-return shapes:
+    * Stack: single Node returning a stack metadata. Single filter
+      (the stack's own filter).
+    * Target: dict[filter -> Node]. One sink per filter.
+    * Mosaic: dict[filter -> Node]. One sink per filter.
+
+    For each sink, walk back one Node-dep step to the actual producer
+    Node (auto-chained compute_image_metadata wraps the producer), pull
+    its task's filename_fn, and call with the identity-relevant subset
+    of the producer's args. Identity-arg extraction maps producer
+    function parameter names to identity-class field names by position.
+    """
+    from dependency_graph.classes import Node
+    import dataclasses
+    import inspect
+
+    def _path_for_sink(sink_node):
+        if not isinstance(sink_node, Node):
+            return None
+        producer_node = sink_node.deps[0] if sink_node.deps else sink_node
+        task = producer_node.task
+        # Unwrap Ray remote → underlying function for signature + filename_fn.
+        fn = getattr(task, "_function", task)
+        filename_fn = getattr(fn, "filename_fn", None) or getattr(task, "filename_fn", None)
+        if filename_fn is None:
+            return None
+        # Bind the producer Node's literal args positionally to the
+        # function signature, then extract values for the registered
+        # identity's fields.
+        try:
+            sig = inspect.signature(fn)
+        except (TypeError, ValueError):
+            return None
+        params = list(sig.parameters.keys())
+        arg_map = {params[i]: producer_node.args[i]
+                   for i in range(min(len(producer_node.args), len(params)))}
+        # Try each registered identity (handles polymorphic producers
+        # like stack_files registered for both StackId and CalibrationStackId).
+        identities = getattr(fn, "filename_fns", {})
+        for (identity_cls, _level) in identities.keys():
+            id_field_names = [f.name for f in dataclasses.fields(identity_cls)]
+            id_values = [arg_map[n] for n in id_field_names if n in arg_map]
+            if len(id_values) != len(id_field_names):
+                continue
+            try:
+                return str(filename_fn(*id_values))
+            except (ValueError, TypeError, KeyError):
+                continue
+        return None
+
+    if isinstance(result, dict):
+        for filter, sink in result.items():
+            path = _path_for_sink(sink)
+            if path:
+                record(pipeline_name, type, id, filter, path)
+    elif isinstance(result, Node):
+        # Stack-type pipeline; filter comes from the entity itself.
+        filter = getattr(entity, "filter", None)
+        path = _path_for_sink(result)
+        if path:
+            record(pipeline_name, type, id, filter, path)
+
+
 @node
 def build_main_processing_graph(
     development_settings: DevelopmentSettings,
@@ -334,6 +401,7 @@ def build_main_processing_graph(
         )
 
     from pipelines.registry import get_pipeline
+    from pipelines.output_index import record as record_pipeline_output
     graph = Graph({})
     tasks = []
     for entry in shopping_cart:
@@ -351,7 +419,15 @@ def build_main_processing_graph(
         except KeyError:
             log.warning("Unknown pipeline in cart", entry=entry)
             continue
-        _splice(graph, tasks, pipeline_fn(entity, cfg))
+        result = pipeline_fn(entity, cfg)
+        _splice(graph, tasks, result)
+        # Index the pipeline's sink paths so view-side endpoints can
+        # surface "what this pipeline produced for this object" without
+        # going through the legacy (impl, level) → pipeline static
+        # mapping. See pipelines/output_index.
+        _record_pipeline_sinks(
+            record_pipeline_output, pipeline_name, type, id, entity, result,
+        )
 
     graph[main_processing_graph_done] = tasks
     return graph
