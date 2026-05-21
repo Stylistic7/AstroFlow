@@ -40,6 +40,25 @@ class Target(
 
         return cls(**attributes)
 
+    # User-pipeline conveniences (Phase B of the pipelines-as-Python work).
+    # Delegate to existing helpers; no new behaviour, just friendly names.
+
+    @property
+    def id(self) -> TargetHash:
+        """Display alias for `stable_hash`."""
+        return self.stable_hash
+
+    @property
+    def filters(self) -> list[str]:
+        """Filters this target was imaged in, deterministic order."""
+        from targets.target_channel import filters_for_target
+        return filters_for_target(self)
+
+    def stacks_for(self, filter: str) -> tuple:
+        """The constituent `Stack`s for one `(target, filter)` channel."""
+        from targets.target_channel import channel_stacks_for
+        return channel_stacks_for(self, filter)
+
     def __str__(self) -> str:
         return (
             f"Target(name={self.name}, stable_hash={self.stable_hash}, "
