@@ -20,7 +20,7 @@ import large_image
 from flask import Blueprint, send_file, abort, jsonify
 
 from context import local_context as context
-from previews.types import QualityLevel, QUALITY_PRIORITY
+from previews.types import QualityLevel, QUALITY_PRIORITY, PIXINSIGHT
 from stacks.composite_stack import Stack, CalibrationStack
 from targets.types import Target
 from mosaics.types import Mosaic

@@ -14,13 +14,41 @@ from products.registry import get_producer, get_filename_fn, MediaType
 from products.identity import (
     StackId, CalibrationStackId, TargetId, MosaicChannelId, identity_for_stack,
 )
-from previews.types import QualityLevel, QUALITY_PRIORITY, MASTER, ALL_IMPLEMENTATIONS
+from previews.types import QualityLevel, QUALITY_PRIORITY, MASTER, PIXINSIGHT, ALL_IMPLEMENTATIONS, ALL_QUALITY_LEVELS
 from mosaics.trimming import project_to_viewbox
 from metadata.sidecar_io import read_image_metadata
 from attributes.astrometric_attributes import _spherical_polygon_for_wcs
 from decisions.decisions import ObjectType, get_decisions_for_object
 
 metadata_bp = Blueprint("metadata", __name__)
+
+
+# Map (implementation, quality) to the user-facing pipeline name that
+# produces that artifact slot. Used to project the legacy version
+# matrix into the pipeline-keyed view the UI now renders.
+#
+# Stays in this file because it's a presentation concern, not a
+# data-model concern: ops on disk don't know their pipeline, but the
+# version-matrix endpoint exists specifically to translate disk state
+# into UI-facing pipeline labels.
+#
+# When user pipelines arrive, this table won't scale — at that point
+# pipelines themselves should record their sink paths in a per-run
+# PipelineOutputIndex (planned in B-6) and this endpoint would read
+# from that instead.
+# Pipeline → (implementation, quality) of the pipeline's mosaic / target /
+# stack sink. Used by /api/pipeline_outputs to find each pipeline's final
+# artifact on disk for the version-thumbnail view.
+#
+# Hardcoded for the three built-in pipelines. When user-defined pipelines
+# arrive, this table won't scale — at that point pipelines should record
+# their sink paths in a per-run PipelineOutputIndex (planned in B-6) and
+# this map disappears in favour of reading from that index.
+_PIPELINE_FINAL_OUTPUT: dict[str, tuple[str, str]] = {
+    "PixInsight Master":     ("PixInsight", "Master"),
+    "PixInsight Downscaled": ("PixInsight", "DownscaledMaster"),
+    "Subframe":              ("PixInsight", "Subframe"),
+}
 
 def _available_qualities(identity_cls: type, implementation: str, *args) -> list[tuple[QualityLevel, str]]:
     """Return all quality levels that have files on disk, in priority order."""
@@ -483,5 +511,64 @@ def object_versions(object_type: str, object_id: str):
                 })
 
     return jsonify({"filters": filters, "versions": versions})
+
+
+@metadata_bp.route("/api/pipeline_outputs/<object_type>/<object_id>")
+def pipeline_outputs(object_type: str, object_id: str):
+    """Per-pipeline thumbnail matrix for the object dashboard.
+
+    Shape:
+
+      {
+        "filters": ["H", "S"],
+        "pipelines": [
+          {
+            "name": "PixInsight Master",
+            "implementation": "PixInsight",   # the on-disk artifact's impl
+            "quality": "Master",              # and quality (used in tile URLs)
+            "outputs": [
+              {"filter": "H", "exists": true,  "mtime": 17..., ...},
+              {"filter": "S", "exists": false, "mtime": null,  ...},
+            ],
+          },
+          ...
+        ],
+      }
+
+    One row per registered pipeline. Each row's outputs[i] tells the
+    frontend whether a thumbnail exists for filter[i].
+    """
+    from pipelines.registry import registered_pipeline_names
+
+    resolved = _resolve_versioned_object(object_type, object_id)
+    if resolved is None:
+        return abort(404)
+    _obj, filters, filename_candidates = resolved
+
+    iter_filters = filters or [None]
+
+    pipelines = []
+    for name in sorted(registered_pipeline_names()):
+        impl, level = _PIPELINE_FINAL_OUTPUT.get(name, (PIXINSIGHT, MASTER))
+        outputs = []
+        for f in iter_filters:
+            candidates = filename_candidates(impl, level, f)
+            hit = next(
+                (p for p in candidates if p is not None and os.path.exists(p)),
+                None,
+            )
+            outputs.append({
+                "filter": f,
+                "exists": hit is not None,
+                "mtime": os.path.getmtime(hit) if hit is not None else None,
+            })
+        pipelines.append({
+            "name": name,
+            "implementation": impl,
+            "quality": level,
+            "outputs": outputs,
+        })
+
+    return jsonify({"filters": filters, "pipelines": pipelines})
 
 

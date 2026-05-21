@@ -1,29 +1,23 @@
-// MosaicDashboard.jsx — at-a-glance view of a mosaic across every
-// (implementation × quality level × filter). Click a thumbnail to open
-// that specific version in a full-screen viewer.
+// MosaicDashboard.jsx — at-a-glance view of a mosaic, one row per
+// registered pipeline. Each row shows a thumbnail per filter; clicking
+// a thumbnail opens that pipeline's output in a full-screen viewer.
+//
+// Data source: `/api/pipeline_outputs/mosaic/<id>` returns one entry
+// per pipeline (PixInsight Master, PixInsight Downscaled, Subframe,
+// + any user-registered pipelines). The (implementation, quality)
+// fields on each pipeline entry are still threaded into thumbnail
+// URLs because the on-disk artifacts are still keyed that way; the
+// pipeline name is the user-facing label.
 import React, { useContext, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Box, Paper, Typography, Divider } from "@mui/material";
 
 import AstroFlowContext from "./AstroFlowContext.jsx";
 
-// Stable quality-level ordering: best → worst, same as backend.
-const QUALITY_ORDER = [
-    "PostProcessed",
-    "Master",
-    "DownscaledMaster",
-    "Subframe",
-];
 
-const QUALITY_LABEL = {
-    PostProcessed: "Post-Processed",
-    Master: "Master",
-    DownscaledMaster: "Downscaled",
-    Subframe: "Subframe",
-};
-
-
-function VersionThumbnail({ mosaicId, implementation, quality, filter, exists, mtime }) {
+function VersionThumbnail({
+    mosaicId, implementation, quality, filter, exists, mtime,
+}) {
     const navigate = useNavigate();
     const url = exists
         ? `/thumbnail/mosaic/${mosaicId}/${implementation}/${quality}/${filter}?v=${mtime}`
@@ -51,12 +45,12 @@ function VersionThumbnail({ mosaicId, implementation, quality, filter, exists, m
             {url ? (
                 <img
                     src={url}
-                    alt={`${filter} — ${implementation} ${quality}`}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                    alt={`${filter}`}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                 />
             ) : (
                 <Typography variant="caption" sx={{ color: 'text.disabled' }}>
-                    {filter} — not yet
+                    not yet built
                 </Typography>
             )}
             <Box sx={{
@@ -66,60 +60,41 @@ function VersionThumbnail({ mosaicId, implementation, quality, filter, exists, m
                 fontSize: 12,
                 px: 1, py: 0.25,
             }}>
-                {filter}
+                {filter || '—'}
             </Box>
         </Box>
     );
 }
 
 
-function QualityRow({ mosaicId, implementation, quality, filters, versions }) {
-    // Map (filter) → version for fast lookup.
+function PipelineSection({ mosaicId, pipeline, filters }) {
+    // outputs[i] aligns with filters[i] (backend guarantees same order).
     const byFilter = {};
-    for (const v of versions) {
-        if (v.implementation === implementation && v.quality === quality) {
-            byFilter[v.filter] = v;
-        }
+    for (let i = 0; i < filters.length; i++) {
+        byFilter[filters[i]] = pipeline.outputs[i];
     }
     return (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-            <Typography variant="body2" sx={{ width: 140, color: 'text.secondary' }}>
-                {QUALITY_LABEL[quality] || quality}
+        <Box sx={{ mb: 4 }}>
+            <Typography variant="h6" sx={{ mb: 1, color: 'primary.main' }}>
+                {pipeline.name}
             </Typography>
+            <Divider sx={{ mb: 2 }} />
             <Box sx={{ display: 'flex', gap: 1, overflowX: 'auto', flex: 1 }}>
                 {filters.map((f) => {
-                    const v = byFilter[f] || { implementation, quality, filter: f, exists: false };
+                    const o = byFilter[f] || { filter: f, exists: false };
                     return (
                         <VersionThumbnail
-                            key={`${f}`}
+                            key={f}
                             mosaicId={mosaicId}
-                            {...v}
+                            implementation={pipeline.implementation}
+                            quality={pipeline.quality}
+                            filter={f}
+                            exists={o.exists}
+                            mtime={o.mtime}
                         />
                     );
                 })}
             </Box>
-        </Box>
-    );
-}
-
-
-function ImplementationSection({ mosaicId, implementation, filters, versions }) {
-    return (
-        <Box sx={{ mb: 4 }}>
-            <Typography variant="h6" sx={{ mb: 1, color: 'primary.main' }}>
-                {implementation}
-            </Typography>
-            <Divider sx={{ mb: 2 }} />
-            {QUALITY_ORDER.map((q) => (
-                <QualityRow
-                    key={q}
-                    mosaicId={mosaicId}
-                    implementation={implementation}
-                    quality={q}
-                    filters={filters}
-                    versions={versions}
-                />
-            ))}
         </Box>
     );
 }
@@ -133,7 +108,7 @@ export default function MosaicDashboard() {
     const mosaic = mosaics?.[mosaic_id];
 
     useEffect(() => {
-        fetch(`/api/object_versions/mosaic/${mosaic_id}`)
+        fetch(`/api/pipeline_outputs/mosaic/${mosaic_id}`)
             .then((res) => res.ok ? res.json() : null)
             .then(setData)
             .catch(() => setData(null));
@@ -144,17 +119,7 @@ export default function MosaicDashboard() {
     }
 
     const filters = data?.filters || [];
-    const versions = data?.versions || [];
-
-    // Unique implementations, in registry order (PixInsight → AstroFlow → OSS).
-    const implementations = [];
-    const seen = new Set();
-    for (const v of versions) {
-        if (!seen.has(v.implementation)) {
-            seen.add(v.implementation);
-            implementations.push(v.implementation);
-        }
-    }
+    const pipelines = data?.pipelines || [];
 
     return (
         <Paper elevation={2} sx={{
@@ -172,18 +137,17 @@ export default function MosaicDashboard() {
                 {mosaic.name || `Mosaic ${mosaic_id.slice(0, 8)}`}
             </Typography>
 
-            {implementations.length === 0 ? (
+            {pipelines.length === 0 ? (
                 <Typography sx={{ color: 'text.secondary' }}>
-                    No versions produced yet.
+                    No pipelines registered.
                 </Typography>
             ) : (
-                implementations.map((impl) => (
-                    <ImplementationSection
-                        key={impl}
+                pipelines.map((p) => (
+                    <PipelineSection
+                        key={p.name}
                         mosaicId={mosaic_id}
-                        implementation={impl}
+                        pipeline={p}
                         filters={filters}
-                        versions={versions}
                     />
                 ))
             )}
