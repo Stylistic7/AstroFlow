@@ -80,12 +80,10 @@ def test_pixinsight_master_records_expected_graph_shape(test_context):
     """One-strip / two-panel / one-filter mosaic. Each panel has one
     stack. Verify node counts match the algorithm:
 
-    Per stack (×2): stack + master_meta + post_process + pp_meta = 4
+    Per stack (×2): calibration + stack + master_meta + post_process + pp_meta = 5
     Per channel (×2): merge_target_channel + channel_meta = 2
     Per panel (×2): place + placed_meta = 2
     In-strip pairwise merge (×1): merge_images + row_meta = 2
-
-    Total: 2*4 + 2*2 + 2*2 + 2 = 18 nodes.
     """
     import pipelines.pixinsight_master as pi_master_pipeline
 
@@ -139,6 +137,7 @@ def test_pixinsight_master_records_expected_graph_shape(test_context):
     counts = _count_by_op(g)
 
     # Per-stack chain (2 stacks):
+    assert counts.get("build_calibration_stack_subgraph", 0) == 2, counts
     assert counts.get("stack_files", 0) == 2, counts
     assert counts.get("post_process_stack", 0) == 2, counts
     # Per-channel HDR-combine (2 channels):

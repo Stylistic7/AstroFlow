@@ -28,6 +28,7 @@ from astroflow.ops import (
     stack,
 )
 from astroflow.pipeline import pipeline
+from stacks.compute_graph import build_calibration_stack_subgraph
 
 
 @pipeline("PixInsight Master")
@@ -64,7 +65,16 @@ def merge_mosaic(mode, mosaic, config):
             stacks = target.stacks_for(filter)
             stack_pps = []
             for s in stacks:
-                master = stack(s, config)
+                # Stack all calibration deps first. The legacy
+                # `build_stacking_subgraph` chained this in front of
+                # every light-stack run; expressing it explicitly here
+                # makes the pipeline self-contained. The Node returned
+                # by `build_calibration_stack_subgraph` expands to a
+                # sub-graph at runtime (the per-(bias, dark, flat) stack
+                # tasks); `_after=(cal,)` on the light stack waits on
+                # that whole sub-graph's `calibration_done` sentinel.
+                cal = build_calibration_stack_subgraph(s, config)
+                master = stack(s, config, _after=(cal,))
                 stack_pps.append(post_process(s, mock, _after=(master,)))
             channels[(target.id, filter)] = merge_target_channel(
                 target, filter, stacks, config, _after=tuple(stack_pps),
