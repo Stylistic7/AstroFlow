@@ -46,14 +46,14 @@ def test_downscaled_orion_mosaic(test_context):
 
     # Light stack masters at DownscaledMaster come from the new
     # `downscale_master` op composed on top of `stack_files`.
-    stack_masters = list(output.rglob("Stack/DownscaledMaster/*/*.xisf"))
+    stack_masters = list(output.rglob("Stack/downscale_master/*.xisf"))
     assert len(stack_masters) >= 1, f"Expected stack masters, found: {stack_masters}"
 
     # Full-resolution masters ARE present — they're the upstream input
     # the downscale_master op reads from. Same path as PI Master writes
     # to, which is exactly what makes stack_files's diskcache shared
     # across the two pipelines.
-    full_masters = list(output.rglob("Stack/Master/*/light*.xisf"))
+    full_masters = list(output.rglob("Stack/stack_files/light*.xisf"))
     assert len(full_masters) >= 1, (
         f"Expected upstream full-res master, found: {full_masters}"
     )
@@ -92,8 +92,8 @@ def test_downscaled_orion_mosaic_produces_tiled_tiff(test_context):
     print_tree(context.output_dir)
 
     output = Path(context.output_dir)
-    xisfs = list(output.rglob("Mosaic/DownscaledMaster/*/*.xisf"))
-    tiffs = list(output.rglob("Mosaic/DownscaledMaster/*/*.tiff"))
+    xisfs = list(output.rglob("Mosaic/store_mosaic_color_channel_xisf/*_DownscaledMaster_*.xisf"))
+    tiffs = list(output.rglob("Mosaic/store_mosaic_color_channel_xisf/*_DownscaledMaster_*.tiff"))
 
     # The per-filter XISF is the canonical final mosaic; the .tiff is
     # what get_image()/tile_metadata streams to the browser.

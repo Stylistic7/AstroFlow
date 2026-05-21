@@ -62,7 +62,7 @@ def test_orion_pane(test_context):
     assert len(context.targets) == 1
 
     filenames = list(
-        str(f) for f in Path(context.output_dir).rglob("PostProcessed/**/*.xisf")
+        str(f) for f in Path(context.output_dir).rglob("post_process_stack/**/*.xisf")
     )
     assert len(filenames) == 0
 
@@ -77,7 +77,7 @@ def test_orion_pane(test_context):
     print_tree(context.output_dir)
 
     filenames = list(
-        str(f) for f in Path(context.output_dir).rglob("PostProcessed/**/*.xisf")
+        str(f) for f in Path(context.output_dir).rglob("post_process_stack/**/*.xisf")
     )
     assert len(filenames) == 1
 

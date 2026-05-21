@@ -99,20 +99,14 @@ def test_presentation_cache_key_distinguishes_object_kind():
         ref: str
 
     a = _A(ref="x").presentation_cache_key(
-        PresentationType.THUMBNAIL,
-        SUBFRAME,
-        PIXINSIGHT,
+        PresentationType.THUMBNAIL, "fake_op",
     )
     b = _B(ref="x").presentation_cache_key(
-        PresentationType.THUMBNAIL,
-        SUBFRAME,
-        PIXINSIGHT,
+        PresentationType.THUMBNAIL, "fake_op",
     )
     assert a != b, "distinct object kinds must not alias in presentation cache"
     assert a == _A(ref="x").presentation_cache_key(
-        PresentationType.THUMBNAIL,
-        SUBFRAME,
-        PIXINSIGHT,
+        PresentationType.THUMBNAIL, "fake_op",
     ), "presentation key must be stable for the same identity"
 
 

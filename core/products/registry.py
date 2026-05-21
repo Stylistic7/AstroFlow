@@ -151,9 +151,30 @@ def is_object_valid(
 
 def fully_resolve(
     identity_cls: type, level: str, filename_fn: FilenameFn,
-    implementation: str = PIXINSIGHT,
+    implementation: str = PIXINSIGHT, op_name: str | None = None,
+    multi_mode: bool = False,
 ):
+    """Resolve a filename_fn against an output directory layout keyed
+    by op_name (the producer's `__name__`). The level/impl axes that
+    used to live in the directory hierarchy now collapse into the
+    op_name layer — `Stack/Master/PixInsight/light_*.xisf` becomes
+    `Stack/stack_files/light_*.xisf` — because after the pipeline
+    collapse, "what op wrote this" replaces "which quality + which
+    backend" as the artifact's primary identity.
+
+    Multi-mode ops (those whose @makes_image registers under multiple
+    (level, impl) combos with the same function — `place_image`,
+    `merge_images_xisf`, `merge_target_channel`, etc.) inject the
+    (level, impl) tuple into the filename STEM to avoid collisions
+    within their shared op_name directory.
+    """
     object_type_name = identity_cls.object_type.__name__
+    # Backwards-compat: fall back to legacy (level, impl) layout if
+    # @makes_image hasn't passed op_name explicitly. Won't trigger
+    # for any in-tree producer because _bind_producer always passes
+    # op_name; here so external callers (none today) don't break.
+    if op_name is None:
+        op_name = f"{level}_{implementation}"
 
     def inner(*args, **kwargs):
         filename = filename_fn(*args, **kwargs)
@@ -164,9 +185,22 @@ def fully_resolve(
             "state_machine._populate_context must run before any "
             "filename can be fully resolved."
         )
-        return filename.resolve_at(
-            output_dir / object_type_name / str(level) / str(implementation)
-        )
+        # Selection-style filename_fns (`get_best_light_frame`,
+        # `get_first_frame`) return ABSOLUTE paths to existing raw
+        # frames; mangling those into the output-dir scheme would
+        # invent paths that don't exist on disk. Detect and pass
+        # through unchanged.
+        path_str = os.fspath(filename)
+        if os.path.isabs(path_str):
+            return filename
+        if multi_mode:
+            # Inject `_<level>_<impl>` into the stem so the multiple
+            # (level, impl) registrations of the same op_name don't
+            # clobber each other inside the shared op directory.
+            suffix = filename.suffix
+            new_name = filename.stem + f"_{level}_{implementation}" + suffix
+            filename = type(filename)(new_name)
+        return filename.resolve_at(output_dir / object_type_name / op_name)
 
     return inner
 
@@ -424,11 +458,20 @@ def _bind_producer(
         if not hasattr(func, '_presentation_entries'):
             func._presentation_entries = []
 
+        op_name = func.__name__
+        # Ops whose @makes_image declares multiple (impl, level) combos
+        # share a single op_name directory, so per-combo filenames need
+        # the (level, impl) discriminator baked into the stem.
+        multi_mode = len(implementations) * len(levels) > 1
+
         for impl in implementations:
             for level in levels:
                 resolved = None
                 if filename_fn is not None:
-                    resolved = fully_resolve(identity, level, filename_fn, impl)
+                    resolved = fully_resolve(
+                        identity, level, filename_fn, impl,
+                        op_name=op_name, multi_mode=multi_mode,
+                    )
                     if not hasattr(func, 'filename_fns'):
                         func.filename_fns = {}
                     func.filename_fns[(identity, level)] = resolved
@@ -500,7 +543,10 @@ def _bind_producer(
             for level in levels:
                 resolved = None
                 if filename_fn is not None:
-                    resolved = fully_resolve(identity, level, filename_fn, impl)
+                    resolved = fully_resolve(
+                        identity, level, filename_fn, impl,
+                        op_name=op_name, multi_mode=multi_mode,
+                    )
                 register_producer(
                     media_type, level, wrapped,
                     filename_fn=resolved,
