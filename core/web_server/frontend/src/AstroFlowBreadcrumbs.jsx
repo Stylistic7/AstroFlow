@@ -25,6 +25,8 @@ import {
     usePipelines,
     pipelineOptions,
     versionExists,
+    pipelineForUrlParams,
+    urlParamsForPipeline,
 } from './useVersions.js';
 import { filterLabel } from './filters.js';
 
@@ -318,23 +320,31 @@ export default function AstroFlowBreadcrumbs() {
                     <SquareFootIcon sx={{ marginRight: '0.5em' }} />
                     {capitalizeFirst(calStack.image_type)} calibration stack
                 </Link>}
-                {implementation && implementations.length > 0 && (
-                    <PillCrumb
-                        icon={<BuildIcon sx={{ marginRight: '0.5em' }} />}
-                        options={implementations}
-                        active={implementation}
-                        exists={(impl) => versionExists(allVersions, impl, quality, matchFilter)}
-                        onPick={(impl) => goToVersion(impl, quality, filter)}
-                        fontColor={fontColor}
-                        activeColor={theme.palette.text.primary}
-                    />
-                )}
-                {/* Quality PillCrumb removed: pipeline is the sole user-facing
-                    variant axis. The implementation pill now refers to the
-                    pipeline (PixInsight Master, PixInsight Downscaled,
-                    Subframe, …); quality is implicit in the pipeline's
-                    identity. URL still carries `:quality` for viewer file
-                    resolution until the route refactor lands. */}
+                {/* Pipeline pill. The viewer URL still carries
+                    (:implementation, :quality) for backend file lookup;
+                    we translate to/from pipeline name here so the user
+                    sees "PixInsight Master" instead of "PixInsight" +
+                    "Master" in two separate pills. */}
+                {implementation && implementations.length > 0 && (() => {
+                    const activePipeline = pipelineForUrlParams(implementation, quality);
+                    return (
+                        <PillCrumb
+                            icon={<BuildIcon sx={{ marginRight: '0.5em' }} />}
+                            options={implementations}
+                            active={activePipeline}
+                            exists={(p) => {
+                                const [i, q] = urlParamsForPipeline(p);
+                                return versionExists(allVersions, i, q, matchFilter);
+                            }}
+                            onPick={(p) => {
+                                const [i, q] = urlParamsForPipeline(p);
+                                goToVersion(i, q, filter);
+                            }}
+                            fontColor={fontColor}
+                            activeColor={theme.palette.text.primary}
+                        />
+                    );
+                })()}
                 {filter && filters.length > 0 && (
                     <PillCrumb
                         icon={<ColorLensIcon sx={{ marginRight: '0.5em' }} />}

@@ -11,6 +11,40 @@ export const QUALITY_ORDER = [
 ];
 
 
+// Pipeline → (implementation, quality) of that pipeline's final
+// on-disk artifact. Mirrors `_PIPELINE_FINAL_OUTPUT` in
+// `web_server/backend/metadata.py`; kept in sync by convention.
+// Viewer URLs still encode (implementation, quality) for the
+// backend's tile/thumbnail lookup; the breadcrumb pill picks a
+// pipeline and we translate here.
+const PIPELINE_FINAL_OUTPUT = {
+    "PixInsight Master":     ["PixInsight", "Master"],
+    "PixInsight Downscaled": ["PixInsight", "DownscaledMaster"],
+    "Subframe":              ["PixInsight", "Subframe"],
+};
+
+
+export function pipelineForUrlParams(implementation, quality) {
+    /* Reverse-lookup: given the (impl, quality) the URL carries, find
+     * the pipeline name that produces that slot. Returns null if no
+     * mapping matches (e.g., a legacy artifact whose pipeline was
+     * removed). */
+    if (!implementation || !quality) return null;
+    for (const [name, [i, q]] of Object.entries(PIPELINE_FINAL_OUTPUT)) {
+        if (i === implementation && q === quality) return name;
+    }
+    return null;
+}
+
+
+export function urlParamsForPipeline(pipelineName) {
+    /* Forward-lookup: given a pipeline name, return [impl, quality]
+     * for the viewer URL. Falls back to a sensible default for
+     * unknown pipelines (so a typo in a user pipeline doesn't 404). */
+    return PIPELINE_FINAL_OUTPUT[pipelineName] ?? ["PixInsight", "Master"];
+}
+
+
 // One fetcher for /api/object_versions. Every viewer (mosaic, stack, …)
 // reads from this hook so there's a single source of truth for "what
 // versions exist for this object." URL params are the single source of
