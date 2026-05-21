@@ -41,6 +41,11 @@ class DevelopmentSettings:
     dangerously_accept_existing_files: bool = False
     override_filters: tuple[str, ...] | None = None
     skip_preview_graph: bool = False
+    # When set, the `"mosaic"` cart branch dispatches to the named
+    # user/built-in pipeline via `pipelines.registry.get_pipeline` instead
+    # of the default `build_mosaic_subgraph`. None = today's behaviour
+    # exactly. See ~/.claude/plans/splendid-munching-rainbow.md.
+    pipeline_name: str | None = None
 
     def __hash__(self):
         return hash_dataclass(self)

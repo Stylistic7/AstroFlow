@@ -336,15 +336,25 @@ def build_main_processing_graph(
                 continue
 
             mosaic = mosaics[id].get()
-            tasks.append(
-                (
-                    build_mosaic_subgraph,
-                    mode,
-                    mosaic,
-                    targets_for_mosaic(mosaic, targets),
-                    config_for(mode=mode, implementation=impl),
+            cfg = config_for(mode=mode, implementation=impl)
+
+            # Opt-in to a user/built-in pipeline via DevelopmentSettings.
+            # Default (pipeline_name is None) is byte-for-byte the same
+            # build_mosaic_subgraph call this branch made before.
+            if development_settings.pipeline_name is not None:
+                from pipelines.registry import get_pipeline
+                pipeline_fn = get_pipeline(development_settings.pipeline_name)
+                tasks.append((pipeline_fn, mode, mosaic, cfg))
+            else:
+                tasks.append(
+                    (
+                        build_mosaic_subgraph,
+                        mode,
+                        mosaic,
+                        targets_for_mosaic(mosaic, targets),
+                        cfg,
+                    )
                 )
-            )
 
     graph[main_processing_graph_done] = tasks
 
