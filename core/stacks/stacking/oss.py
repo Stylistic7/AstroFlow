@@ -172,22 +172,24 @@ def _streaming_sigma_clipped_mean(preprocessed_frames, is_light):
 def _stack_files_oss_narrow(args, kwargs):
     """Cache-key hook: same shape as `stack_files`, see `_stack_files_narrow`."""
     from stacks.stacking import narrow_stack_config
-    stack, mode, config, *rest = args
-    return (stack, mode, narrow_stack_config(stack, config), *rest), kwargs
+    stack, config, *rest = args
+    return (stack, narrow_stack_config(stack, config), *rest), kwargs
 
 
 @node(auto_memory=True, cache_key_narrow=_stack_files_oss_narrow)
-@makes_image(OSS, [MASTER, DOWNSCALED_MASTER],
+@makes_image(OSS, [MASTER],
              identity=CalibrationStackId, presentations=[THUMBNAIL, TILE_PYRAMID],
              file_type=FitsFilePath)
-@makes_image(OSS, [MASTER, DOWNSCALED_MASTER],
+@makes_image(OSS, [MASTER],
              identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
              file_type=FitsFilePath)
 def stack_files_oss(
     stack: BaseStack,
-    mode: QualityLevel,
     config: ProcessingConfig,
 ) -> WithSidecar[FitsFilePath]:
+    """OSS stacker producing a full-resolution master. A future
+    downscaled OSS pipeline would compose `downscale_master` on top
+    (only the PI backend has the downscale op registered today)."""
     from products import ensure_producers_registered
     ensure_producers_registered()
 
@@ -198,7 +200,7 @@ def stack_files_oss(
             raise ValueError(f"Stack {stack} has no frames after applying decisions")
         stack = filtered
 
-    dest_filename = get_filename_fn(MediaType.IMAGE, identity_for_stack(stack), mode, OSS)(stack)
+    dest_filename = get_filename_fn(MediaType.IMAGE, identity_for_stack(stack), QualityLevel.MASTER, OSS)(stack)
     os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
     log.info("OSS stacking", stack=str(stack), dest=str(dest_filename))
 
@@ -212,8 +214,8 @@ def stack_files_oss(
                 continue
             cal_stack = config.get_calibration_stacks()[dep.stack_id]
             cal_data = (
-                _load_calibration(cal_stack, mode, OSS)
-                or _load_calibration(cal_stack, mode, PIXINSIGHT)
+                _load_calibration(cal_stack, QualityLevel.MASTER, OSS)
+                or _load_calibration(cal_stack, QualityLevel.MASTER, PIXINSIGHT)
             )
             if cal_data is None:
                 continue
@@ -221,7 +223,7 @@ def stack_files_oss(
             elif cal_stack.image_type == "dark": dark = cal_data
             elif cal_stack.image_type == "flat": flat = cal_data
 
-    downscale_factor = DOWNSCALE_FACTORS[mode]
+    downscale_factor = 1
     is_light = isinstance(stack, Stack)
 
     # Pre-count frames so we can enforce min_frames_in_stack before

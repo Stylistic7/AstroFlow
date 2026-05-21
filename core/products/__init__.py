@@ -15,6 +15,7 @@ def ensure_producers_registered():
     import previews.stack_thumbnails  # noqa: F401 — Stack/CalibrationStack subframe + video
     import previews.flat_correction  # noqa: F401 — Run subframe
     import stacks.stacking.pixinsight  # noqa: F401 — Stack/CalibrationStack master (PI WBPP)
+    import stacks.downscale_master  # noqa: F401 — Stack downscaled-master from master
     import stacks.post_processing.pixinsight  # noqa: F401 — Stack post-processed (PI MSGC)
     import targets.merging.pixinsight  # noqa: F401 — TargetChannel master (PixInsight)
     import targets.post_process  # noqa: F401 — Target post-processed

@@ -65,6 +65,11 @@ def test_downscaled_stack(test_context):
     downscaled_masters = list(Path(context.output_dir).rglob("DownscaledMaster/**/*.xisf"))
     assert len(downscaled_masters) >= 1, f"Expected downscaled master files, found: {downscaled_masters}"
 
-    # Full-resolution masters should NOT exist (we only asked for downscaled).
-    full_masters = list(Path(context.output_dir).rglob("Master/**/*.xisf"))
-    assert len(full_masters) == 0, f"Unexpected full-resolution masters: {full_masters}"
+    # Full-resolution master is ALSO produced. The PixInsight Downscaled
+    # pipeline composes `downscale_master` on top of `stack_files`, so
+    # the full-res master exists as an upstream by-product — same on-
+    # disk path stack_files would have written via the PixInsight Master
+    # pipeline. This is what makes the diskcache entry shared between
+    # the two pipelines.
+    light_masters = list(Path(context.output_dir).rglob("Stack/Master/**/light*.xisf"))
+    assert len(light_masters) >= 1, f"Expected full-res light master, found: {light_masters}"

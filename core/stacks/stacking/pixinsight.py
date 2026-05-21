@@ -17,7 +17,7 @@ from decorators import node
 from decisions.settings import DevelopmentSettings, ProcessingConfig
 from decisions.resolve import resolve_calibration, resolve_decisions
 from decisions.compute_graph import ALL_EXCLUSION_TYPES
-from previews.types import QualityLevel, PIXINSIGHT, MASTER, DOWNSCALED_MASTER, DOWNSCALE_FACTORS
+from previews.types import QualityLevel, PIXINSIGHT, MASTER
 from products import makes_image
 from products.identity import (
     StackId, CalibrationStackId, identity_for_stack, PresentationType,
@@ -44,11 +44,11 @@ def _symlink_frames(filenames: list[str], dest_dir: str) -> None:
 
 
 def _copy_frames_with_plate_solution(
-    metadata: MetadataDict, dest_dir: str, quality: QualityLevel = QualityLevel.MASTER,
+    metadata: MetadataDict, dest_dir: str,
 ) -> None:
-    from stacks.downscale import downscale_fits
-
-    downscale_factor = DOWNSCALE_FACTORS[quality]
+    """Copy input frames into the WBPP working dir at full resolution.
+    Downscaling lives in a separate op (`downscale_master`) that runs
+    after `stack_files`; the legacy in-frame downscale is gone."""
     for frame in metadata.values():
         filename = frame.filename
         assert filename
@@ -59,41 +59,38 @@ def _copy_frames_with_plate_solution(
 
         dest_filename = os.path.join(dest_dir, os.path.basename(filename))
         os.makedirs(dest_dir, exist_ok=True)
+        print(f"copying {filename} -> {dest_filename}")
+        copy_image(filename, dest_filename)
 
-        if downscale_factor > 1:
-            log.info("Downscaling frame", filename=filename, factor=downscale_factor)
-            downscale_fits(filename, dest_filename, K=downscale_factor)
-        else:
-            print(f"copying {filename} -> {dest_filename}")
-            copy_image(filename, dest_filename)
+        with pyfits.open(str(dest_filename), mode="update", mmap=False) as fits:
+            if "invalid" in fits[0].header.get("BAYERPAT", "").lower():
+                del fits[0].header["BAYERPAT"]
 
-            with pyfits.open(str(dest_filename), mode="update", mmap=False) as fits:
-                if "invalid" in fits[0].header.get("BAYERPAT", "").lower():
-                    del fits[0].header["BAYERPAT"]
-
-                if frame.plate_solution:
-                    fits[0].header["RA"] = frame.plate_solution.header["CRVAL1"]
-                    fits[0].header["DEC"] = frame.plate_solution.header["CRVAL2"]
-                    for k, v in frame.plate_solution.header.items():
-                        fits[0].header[k] = v
+            if frame.plate_solution:
+                fits[0].header["RA"] = frame.plate_solution.header["CRVAL1"]
+                fits[0].header["DEC"] = frame.plate_solution.header["CRVAL2"]
+                for k, v in frame.plate_solution.header.items():
+                    fits[0].header[k] = v
 
 
 def _setup_run(
     run: Run,
     calibration_stacks: CalibrationStacksDict,
     dest_dir: str,
-    quality: QualityLevel = QualityLevel.MASTER,
 ) -> list[str]:
     filenames = [i.filename for i in run.metadata.values()]
     assert len(run.frames) == len(filenames)
 
-    _copy_frames_with_plate_solution(run.metadata, dest_dir, quality)
+    _copy_frames_with_plate_solution(run.metadata, dest_dir)
 
     def get_dependency_filename(d):
         if isinstance(d, StackIdDependency):
             from products.registry import get_filename_fn, MediaType
             cal_stack = calibration_stacks[d.stack_id]
-            filename_fn = get_filename_fn(MediaType.IMAGE, identity_for_stack(cal_stack), quality)
+            filename_fn = get_filename_fn(
+                MediaType.IMAGE, identity_for_stack(cal_stack),
+                QualityLevel.MASTER,
+            )
             return filename_fn(cal_stack)
         elif isinstance(d, FilenameDependency):
             return d.filename
@@ -110,13 +107,12 @@ def _setup_stack(
     stack: BaseStack,
     calibration_stacks: CalibrationStacksDict,
     dest_dir: str,
-    quality: QualityLevel = QualityLevel.MASTER,
 ) -> list[str]:
     filenames = []
     for i, run in enumerate(stack.contents.values()):
         run_dir = os.path.join(dest_dir, f"RUN_{i}")
         os.makedirs(run_dir, exist_ok=True)
-        filenames.extend(_setup_run(run, calibration_stacks, run_dir, quality))
+        filenames.extend(_setup_run(run, calibration_stacks, run_dir))
 
     return filenames
 
@@ -196,21 +192,20 @@ def _stack_files_narrow(args, kwargs):
     """`stack_files` cache-key hook: drop the global cal_stacks and
     other-stack decisions so a new bias for an unrelated camera doesn't
     invalidate this stack's cached master."""
-    stack, mode, config, *rest = args
-    return (stack, mode, narrow_stack_config(stack, config), *rest), kwargs
+    stack, config, *rest = args
+    return (stack, narrow_stack_config(stack, config), *rest), kwargs
 
 
 @node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD", auto_memory=True,
       cache_key_narrow=_stack_files_narrow)
-@makes_image(PIXINSIGHT, [MASTER, DOWNSCALED_MASTER],
+@makes_image(PIXINSIGHT, [MASTER],
              identity=CalibrationStackId, presentations=[THUMBNAIL, TILE_PYRAMID],
              file_type=XisfFilePath)
-@makes_image(PIXINSIGHT, [MASTER, DOWNSCALED_MASTER],
+@makes_image(PIXINSIGHT, [MASTER],
              identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
              file_type=XisfFilePath)
 def stack_files(
     stack: BaseStack,
-    mode: QualityLevel,
     config: ProcessingConfig,
 ) -> WithSidecar[XisfFilePath]:
     # Resolve calibration (lazy, cached via decision framework).
@@ -225,8 +220,9 @@ def stack_files(
     development_settings = config.development_settings
 
     # Determine the output file, and the metadata it should have.
+    from previews.types import QualityLevel
     from products.registry import get_filename_fn, MediaType
-    filename_fn = get_filename_fn(MediaType.IMAGE, identity_for_stack(stack), mode) or stack_files.filename_fn
+    filename_fn = get_filename_fn(MediaType.IMAGE, identity_for_stack(stack), QualityLevel.MASTER) or stack_files.filename_fn
     dest_filename = filename_fn(stack)
     dest_filename_exists = os.path.exists(dest_filename)
     os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
@@ -253,7 +249,10 @@ def stack_files(
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
         log.debug("Using temporary directory", tmp_dir=tmp_dir)
 
-        filenames = _setup_stack(stack, calibration_stacks, tmp_dir, mode)
+        # `_setup_stack` defaults to full-resolution. The downscaled
+        # output is produced by a separate `downscale_master` op (see
+        # `stacks/downscale_master.py`), not by re-stacking at low res.
+        filenames = _setup_stack(stack, calibration_stacks, tmp_dir)
 
         if len(filenames) < min_frames_in_stack:
             log.info("Not stacking, too few files", stack=str(stack), num_files=len(filenames))

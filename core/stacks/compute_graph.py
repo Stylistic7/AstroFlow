@@ -34,19 +34,18 @@ log = structlog.get_logger()
 @node
 def calibrate(
     stack: Stack,
-    mode: QualityLevel,
     config: ProcessingConfig,
 ) -> Graph:
     """Build the per-(bias, dark, flat) stacking sub-graph this
     `stack`'s calibration depends on, terminating in a single
     `calibration_done` sentinel that downstream nodes can `_after=`
     on. Cal stacks are themselves stacked via `stack_files` — same
-    op used for light stacks, with empty decisions (calibration
-    cache is independent of per-light quarantine choices).
+    op used for light stacks — at full resolution. Pipelines that
+    want downscaled cal masters compose `downscale_master` on top.
 
-    Today this hardcodes the PixInsight `stack_files` because every
-    current pipeline runs the PI WBPP backend. A future OSS / AstroFlow
-    calibrate variant would import its backend's stacker directly.
+    Hardcodes the PixInsight `stack_files`: every current pipeline
+    runs the PI WBPP backend. A future OSS / AstroFlow calibrate
+    variant would import its backend's stacker directly.
     """
     from decisions.resolve import resolve_calibration
     from frozendict import frozendict as fd
@@ -64,7 +63,7 @@ def calibrate(
             if not isinstance(dep, StackIdDependency):
                 continue
             cal_stack = config.get_calibration_stacks()[dep.stack_id]
-            task = (stack_files, cal_stack, mode, cal_config)
+            task = (stack_files, cal_stack, cal_config)
             cal_run = next(iter(cal_stack.contents.values()))
             inner = visit(cal_run)
             subgraph[task] = list(inner) if inner else []

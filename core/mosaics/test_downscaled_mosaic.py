@@ -44,17 +44,19 @@ def test_downscaled_orion_mosaic(test_context):
 
     output = Path(context.output_dir)
 
-    # Calibration stacks should be in DownscaledMaster directory.
-    cal_masters = list(output.rglob("CalibrationStack/DownscaledMaster/*/*.xisf"))
-    assert len(cal_masters) >= 1, f"Expected calibration masters, found: {cal_masters}"
-
-    # Light stack masters should be in DownscaledMaster directory.
+    # Light stack masters at DownscaledMaster come from the new
+    # `downscale_master` op composed on top of `stack_files`.
     stack_masters = list(output.rglob("Stack/DownscaledMaster/*/*.xisf"))
     assert len(stack_masters) >= 1, f"Expected stack masters, found: {stack_masters}"
 
-    # Full-resolution masters should NOT exist.
-    full_masters = list(output.rglob("Stack/Master/*/*.xisf"))
-    assert len(full_masters) == 0, f"Unexpected full-resolution masters: {full_masters}"
+    # Full-resolution masters ARE present — they're the upstream input
+    # the downscale_master op reads from. Same path as PI Master writes
+    # to, which is exactly what makes stack_files's diskcache shared
+    # across the two pipelines.
+    full_masters = list(output.rglob("Stack/Master/*/light*.xisf"))
+    assert len(full_masters) >= 1, (
+        f"Expected upstream full-res master, found: {full_masters}"
+    )
 
     # Note: placement and merging are not tested here because mock
     # stacking doesn't re-solve WCS at downscaled resolution, causing

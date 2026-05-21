@@ -472,8 +472,7 @@ def test_stack_calibration_frames(test_context) -> None:
         development_settings=context.settings.development_settings,
         min_frames_in_stack=context.settings.clustering_settings.min_frames_in_stack,
     )
-    from previews.types import QualityLevel
-    graph = ray.get(calibrate.remote(light_stacks[0], QualityLevel.MASTER, config))
+    graph = ray.get(calibrate.remote(light_stacks[0], config))
     print_graph(graph)
 
 
