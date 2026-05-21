@@ -19,7 +19,7 @@ from products.identity import (
     MosaicChannelId,
     CalibratedStackId, UncorrectedRunId,
 )
-from previews.types import QualityLevel, PIXINSIGHT, QUALITY_PRIORITY
+from previews.types import QualityLevel, PIXINSIGHT, QUALITY_PRIORITY, SUBFRAME,MASTER,POST_PROCESSED
 from stacks.run import Run
 from stacks.composite_stack import CalibrationStack
 
@@ -43,7 +43,7 @@ def _key_lock(key) -> threading.Lock:
 
 def _regenerate_thumbnail(
     identity: ObjectId,
-    level: QualityLevel, implementation: str,
+    level: str, implementation: str,
 ):
     """Rebuild a thumbnail from the producer's on-disk source, or None
     if nothing resolvable/extant exists for this (type, level, impl).
@@ -109,7 +109,7 @@ def _regenerate_thumbnail(
 
 def _thumbnail_for(
     identity: ObjectId,
-    level: QualityLevel, implementation: str,
+    level: str, implementation: str,
 ):
     """Cached thumbnail bytes for one (level, impl), regenerating from
     the on-disk master on a miss (single-flight). None if unavailable."""
@@ -131,11 +131,11 @@ def _thumbnail_for(
         return thumbnail
 
 
-def _png_response(thumbnail: bytes, level: QualityLevel):
+def _png_response(thumbnail: bytes, level: str):
     resp = flask.Response(
         thumbnail, mimetype="image/png", direct_passthrough=True,
     )
-    resp.headers["X-Quality-Level"] = level.value
+    resp.headers["X-Quality-Level"] = str(level)
     return resp
 
 
@@ -153,7 +153,7 @@ def get_thumbnail_by_id(identity: ObjectId):
 
 def get_specific_thumbnail_by_id(
     implementation: str,
-    level: QualityLevel, identity: ObjectId,
+    level: str, identity: ObjectId,
 ):
     """Return the thumbnail for an exact (implementation, level)."""
     thumbnail = _thumbnail_for(identity, level, implementation)
@@ -185,7 +185,7 @@ def mosaic_thumbnail_specific(mosaic_id: str, implementation: str, quality: str,
     """Thumbnail for an exact (mosaic, implementation, quality, filter)."""
     mosaic = context.mosaics[mosaic_id].get()
     return get_specific_thumbnail_by_id(
-        implementation, QualityLevel(quality),
+        implementation, quality,
         MosaicChannelId(mosaic=mosaic, filter=filter),
     )
 

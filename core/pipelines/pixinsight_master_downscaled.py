@@ -25,7 +25,7 @@ from mosaics.final_storage import store_mosaic_color_channel_xisf
 from mosaics.merging.pixinsight import merge_images
 from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
-from previews.types import PIXINSIGHT, QualityLevel
+from previews.types import PIXINSIGHT, DOWNSCALED_MASTER
 from stacks.compute_graph import calibrate
 from stacks.composite_stack import Stack
 from stacks.downscale_master import downscale_master
@@ -35,7 +35,7 @@ from targets.merging.pixinsight import merge_target_channel
 from targets.types import Target
 
 
-_MODE = QualityLevel.DOWNSCALED_MASTER
+_MODE = DOWNSCALED_MASTER
 _IMPL = PIXINSIGHT
 
 

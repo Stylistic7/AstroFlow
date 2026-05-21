@@ -23,7 +23,7 @@ from file_io.generic import read_image
 from file_io.types import XisfFilePath, WithSidecar
 from file_io.xisf_file_io import write_xisf_image
 from previews.types import (
-    PIXINSIGHT, DOWNSCALED_MASTER, DOWNSCALE_FACTORS, QualityLevel,
+    PIXINSIGHT, MASTER, DOWNSCALED_MASTER, DOWNSCALE_FACTORS,
 )
 from products import makes_image, get_filename_fn, MediaType
 from products.identity import (
@@ -51,7 +51,7 @@ def downscale_master(
     output path. Reads the master via `get_filename_fn(StackId,
     MASTER)`, which resolves to `stack_files`'s output."""
     master_fn = get_filename_fn(
-        MediaType.IMAGE, identity_for_stack(stack), QualityLevel.MASTER,
+        MediaType.IMAGE, identity_for_stack(stack), MASTER,
     )
     master_path = master_fn(stack)
 

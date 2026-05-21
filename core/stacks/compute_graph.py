@@ -15,7 +15,6 @@ from decisions.subframe_selection import (
     get_light_frames_sorted_by_stars,
 )
 from dependency_graph import Graph
-from previews.types import QualityLevel
 
 
 @ray.remote(num_cpus=0.1)

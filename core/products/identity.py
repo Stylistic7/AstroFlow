@@ -58,7 +58,7 @@ class ObjectId:
     def presentation_cache_key(
         self,
         presentation: PresentationType,
-        level: "QualityLevel",
+        level: str,
         implementation: str,
     ) -> tuple:
         return (

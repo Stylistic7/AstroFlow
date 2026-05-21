@@ -96,20 +96,25 @@ def _update_profile(
 
 
 def _infer_quality(args, kwargs) -> str | None:
-    """Scan args/kwargs for a QualityLevel instance; return its value or None.
+    """Scan args/kwargs for a quality-level string; return it or None.
 
-    Also looks one level inside dataclasses (e.g. ProcessingConfig.quality).
-    Type-based — no argument-name introspection.
+    Quality is a free-form string now (e.g. "Master", "Subframe"); the
+    legacy QualityLevel enum is gone. We match against the known
+    values in ALL_QUALITY_LEVELS so a random string arg can't be
+    misread as a quality. Also looks one level inside dataclasses
+    (legacy ProcessingConfig.quality is gone, but this still gives
+    us robustness for any user dataclass that carries a quality).
     """
-    from previews.types import QualityLevel
+    from previews.types import ALL_QUALITY_LEVELS
+    known = set(ALL_QUALITY_LEVELS)
     for v in (*args, *kwargs.values()):
-        if isinstance(v, QualityLevel):
-            return v.value
+        if isinstance(v, str) and v in known:
+            return v
         if is_dataclass(v) and not isinstance(v, type):
             for f in fields(v):
                 inner = getattr(v, f.name, None)
-                if isinstance(inner, QualityLevel):
-                    return inner.value
+                if isinstance(inner, str) and inner in known:
+                    return inner
     return None
 
 

@@ -4,14 +4,13 @@ import numpy as np
 from context import context
 from beartype import beartype
 from hashing import hash_source_code
-from previews.types import QualityLevel
 
 
 @beartype
 def estimate_time(
     fn_name: str,
     remaining: int = 1,
-    quality: QualityLevel | None = None,
+    quality: str | None = None,
     fn_hash: str | None = None,
 ) -> float | None:
     """Estimate seconds to complete `remaining` tasks of function `fn_name`.
@@ -27,7 +26,7 @@ def estimate_time(
     if fn_hash is None:
         return None
 
-    quality_value = quality.value if quality is not None else None
+    quality_value = str(quality) if quality is not None else None
     key = ("profile", fn_hash, fn_name, quality_value)
     samples = context.get(key, [])
 

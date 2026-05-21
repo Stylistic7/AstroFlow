@@ -21,7 +21,7 @@ from mosaics.merging.pixinsight import (
     MergedImage, _maybe_publish_progress, _panel_count, _set_panel_count,
 )
 from mosaics.types import Mosaic
-from previews.types import QualityLevel, OSS, MASTER, DOWNSCALED_MASTER
+from previews.types import OSS, MASTER, DOWNSCALED_MASTER
 from products import makes_image
 from products.identity import MergedImageId
 from products.registry import get_filename_fn, MediaType
@@ -56,7 +56,7 @@ def _blend(image_0, image_1):
 @makes_image(OSS, [MASTER, DOWNSCALED_MASTER], merged_filename_fits,
              identity=MergedImageId)
 def merge_images_oss(
-    mode: QualityLevel,
+    mode: str,
     mosaic: Mosaic,
     filter: str,
     impl,  # always OSS; accepted to match merge_images' signature

@@ -17,7 +17,7 @@ from file_io.types import XisfFilePath, WithSidecar
 from pix import Image
 from pix.tasks import HDRComposition, StarAlignment
 from previews.types import (
-    QualityLevel,
+
     PIXINSIGHT,
     MASTER,
     DOWNSCALED_MASTER,
@@ -38,7 +38,7 @@ THUMBNAIL = PresentationType.THUMBNAIL
 TILE_PYRAMID = PresentationType.TILE_PYRAMID
 
 
-def _postprocessed_level(quality: QualityLevel) -> QualityLevel:
+def _postprocessed_level(quality: str) -> str:
     """The gradient-corrected stack artifact a channel merge consumes
     for a given mosaic mode. Shared with the OSS merge. The merge runs
     only at MASTER / DOWNSCALED_MASTER (SUBFRAME short-circuits in
@@ -50,7 +50,7 @@ def _postprocessed_level(quality: QualityLevel) -> QualityLevel:
     raise AssertionError(f"channel merge not defined for quality {quality}")
 
 
-def _stack_master_path(stack: Stack, quality: QualityLevel) -> Path:
+def _stack_master_path(stack: Stack, quality: str) -> Path:
     # Consume the gradient-corrected (post-processed) stack, NOT the raw
     # master — so mosaic panels are flattened before placement/merge.
     fn = get_filename_fn(
@@ -84,7 +84,7 @@ def merge_target_channel(
     target: Target,
     filter: str,
     stacks: tuple[Stack, ...],
-    mode: QualityLevel,
+    mode: str,
     config: ProcessingConfig,
 ) -> WithSidecar[XisfFilePath]:
     assert len(stacks) >= 1, "merge_target_channel needs at least one stack"

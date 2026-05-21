@@ -14,7 +14,7 @@ from products.registry import get_producer, get_filename_fn, MediaType
 from products.identity import (
     StackId, CalibrationStackId, TargetId, MosaicChannelId, identity_for_stack,
 )
-from previews.types import QualityLevel, QUALITY_PRIORITY
+from previews.types import QualityLevel, QUALITY_PRIORITY, MASTER, ALL_IMPLEMENTATIONS
 from mosaics.trimming import project_to_viewbox
 from metadata.sidecar_io import read_image_metadata
 from attributes.astrometric_attributes import _spherical_polygon_for_wcs
@@ -59,7 +59,7 @@ def _mosaic_filters(mosaic) -> list[str]:
     return sorted(filters, key=lambda f: (order.index(f) if f in order else len(order), f))
 
 
-def _get_polygons(identity_cls: type, level: QualityLevel, *args) -> list[dict[str, Any]]:
+def _get_polygons(identity_cls: type, level: str, *args) -> list[dict[str, Any]]:
     """Compute projected polygons for an object at a given quality level."""
     if identity_cls is CalibrationStackId:
         return []
@@ -93,7 +93,7 @@ def _get_polygons(identity_cls: type, level: QualityLevel, *args) -> list[dict[s
         # Output polygon comes from the stacked master's WCS regardless of
         # the displayed level. At Subframe level the per-stack filename is a
         # raw frame, not a Path, and read_image_metadata would reject it.
-        master_fn = get_filename_fn(MediaType.IMAGE, StackId, QualityLevel.MASTER)
+        master_fn = get_filename_fn(MediaType.IMAGE, StackId, MASTER)
         overrides = context.settings.decision_overrides
         from decisions.compute_graph import _is_quarantined
 
@@ -209,8 +209,8 @@ def validity_for_object(object_type: str, object_id: str):
     """Return validity per quality level for a single object."""
     from products import is_object_valid
     result = {}
-    for level in QualityLevel:
-        result[level.value] = is_object_valid(object_type, object_id, level.value)
+    for level in ALL_QUALITY_LEVELS:
+        result[str(level)] = is_object_valid(object_type, object_id, str(level))
     return jsonify(result)
 
 
@@ -244,18 +244,18 @@ def validity_all():
     result = {}
     for stack_id in stacks:
         result[f"stack:{stack_id}"] = {
-            level.value: stack_valid(stack_id, level.value)
-            for level in QualityLevel
+            str(level): stack_valid(stack_id, str(level))
+            for level in ALL_QUALITY_LEVELS
         }
     for target_id in ui_targets:
         result[f"target:{target_id}"] = {
-            level.value: target_valid(target_id, level.value)
-            for level in QualityLevel
+            str(level): target_valid(target_id, str(level))
+            for level in ALL_QUALITY_LEVELS
         }
     for mosaic_id in ui_mosaics:
         result[f"mosaic:{mosaic_id}"] = {
-            level.value: mosaic_valid(mosaic_id, level.value)
-            for level in QualityLevel
+            str(level): mosaic_valid(mosaic_id, str(level))
+            for level in ALL_QUALITY_LEVELS
         }
     return jsonify(result)
 
@@ -273,10 +273,10 @@ def available_qualities(object_type: str, object_id: str, filter: str = None):
     for level in QUALITY_PRIORITY:
         path = on_disk.get(level)
         levels.append({
-            "quality_level": level.value,
+            "quality_level": str(level),
             "image_path": os.fspath(path) if path else None,
             "exists": path is not None,
-            "valid": is_object_valid(object_type, object_id, level.value) if path else False,
+            "valid": is_object_valid(object_type, object_id, str(level)) if path else False,
         })
 
     # Best: first existing+valid, then first existing, then first overall.
@@ -321,7 +321,7 @@ def metadata(object_type: str, object_id: str, level_or_filter: str = None, filt
     obj_type, args = _resolve_object(object_type, object_id, filter)
 
     if level is not None:
-        quality_level = QualityLevel(level) if isinstance(level, str) else level
+        quality_level = level if isinstance(level, str) else level
     else:
         # Fallback: find best quality.
         result = _best_quality(obj_type, implementation, *args)
@@ -339,7 +339,7 @@ def metadata(object_type: str, object_id: str, level_or_filter: str = None, filt
     objects = _get_polygons(obj_type, quality_level, *args)
 
     return jsonify({
-        "quality_level": quality_level.value,
+        "quality_level": quality_str(level),
         "image_path": image_path,
         "objects": objects,
     })
@@ -475,8 +475,8 @@ def object_versions(object_type: str, object_id: str):
                     None,
                 )
                 versions.append({
-                    "implementation": impl.value,
-                    "quality": level.value,
+                    "implementation": str(impl),
+                    "quality": str(level),
                     "filter": f,
                     "exists": hit is not None,
                     "mtime": os.path.getmtime(hit) if hit is not None else None,

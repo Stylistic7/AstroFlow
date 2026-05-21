@@ -8,7 +8,7 @@ from mosaics.types import Mosaic
 from file_io.generic import read_image
 from file_io.tiff_file_io import write_tiff_image
 from previews.operations import autostretch
-from previews.types import QualityLevel, ALL_IMPLEMENTATIONS, PIXINSIGHT, OSS, SUBFRAME, MASTER, DOWNSCALED_MASTER
+from previews.types import ALL_IMPLEMENTATIONS, PIXINSIGHT, OSS, SUBFRAME, MASTER, DOWNSCALED_MASTER
 from pix import Image
 from products import makes_image
 from products.identity import MosaicChannelId, PresentationType
@@ -25,7 +25,7 @@ from metadata.classes import ImageMetadata
              identity=MosaicChannelId, presentations=[THUMBNAIL, TILE_PYRAMID],
              file_type=XisfFilePath)
 def store_mosaic_color_channel_xisf(
-    mode: QualityLevel, mosaic: Mosaic, filter: str,
+    mode: str, mosaic: Mosaic, filter: str,
     mock_pixinsight: bool,
     input: ImageMetadata,
 ) -> WithSidecar[XisfFilePath]:
@@ -72,7 +72,7 @@ def store_mosaic_color_channel_subframe(
              identity=MosaicChannelId, presentations=[THUMBNAIL, TILE_PYRAMID],
              file_type=FitsFilePath)
 def store_mosaic_color_channel_oss(
-    mode: QualityLevel, mosaic: Mosaic, filter: str, input: ImageMetadata,
+    mode: str, mosaic: Mosaic, filter: str, input: ImageMetadata,
 ) -> WithSidecar[FitsFilePath]:
     """Copy the final merged FITS to the canonical mosaic path."""
     fn = store_mosaic_color_channel_oss.filename_fns[(MosaicChannelId, mode)]
@@ -85,7 +85,7 @@ def store_mosaic_color_channel_oss(
 @ray.remote
 @beartype
 def store_mosaic_color_channel(
-    mode: QualityLevel, mosaic: Mosaic, filter: str,
+    mode: str, mosaic: Mosaic, filter: str,
     implementation: str, input: ImageMetadata,
 ) -> WithSidecar:
     from context import context

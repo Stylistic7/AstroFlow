@@ -72,7 +72,7 @@ def stacking_report(stack_id):
     """
     from products.registry import get_filename_fn, MediaType
     from products.identity import identity_for_stack
-    from previews.types import QualityLevel, PIXINSIGHT
+    from previews.types import QualityLevel, PIXINSIGHT, MASTER
     from stacks.stacking_report import read_stacking_report
 
     if stack_id not in (context.stacks or {}):
@@ -82,7 +82,7 @@ def stacking_report(stack_id):
     quality_str = request.args.get("quality", "Master")
     impl_str = request.args.get("implementation", "PixInsight")
     try:
-        quality = QualityLevel(quality_str)
+        quality = quality_str
         implementation = impl_str
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -115,13 +115,13 @@ def concerns_for_object(object_type, object_id):
       filter — required for object_type=mosaic
     """
     from products.identity import StackId, MosaicChannelId
-    from previews.types import QualityLevel, PIXINSIGHT
+    from previews.types import QualityLevel, PIXINSIGHT, MASTER
     from context import get_cache
 
     quality_str = request.args.get("quality", "Master")
     impl_str = request.args.get("implementation", "PixInsight")
     try:
-        quality = QualityLevel(quality_str)
+        quality = quality_str
         implementation = impl_str
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -203,7 +203,7 @@ def invalidate_stack(stack_id):
     cache miss and re-stacks just this one.
     """
     from decisions.settings import ProcessingConfig
-    from previews.types import QualityLevel, PIXINSIGHT
+    from previews.types import QualityLevel, PIXINSIGHT, MASTER
     from stacks.stacking import stack_files
 
     if stack_id not in (context.stacks or {}):
@@ -217,7 +217,7 @@ def invalidate_stack(stack_id):
         development_settings=settings.development_settings,
         min_frames_in_stack=settings.clustering_settings.min_frames_in_stack,
         decisions=settings.decision_overrides,
-        quality=QualityLevel.MASTER,
+        quality=MASTER,
         implementation=PIXINSIGHT,
     )
     deleted = stack_files.invalidate(stack, config)
@@ -230,9 +230,9 @@ def invalidate_stack(stack_id):
 def open_stack_master(stack_id):
     from products.registry import get_filename_fn, MediaType
     from products.identity import identity_for_stack
-    from previews.types import QualityLevel
+    from previews.types import QualityLevel, MASTER
     stack = context.stacks[stack_id].get()
-    filename_fn = get_filename_fn(MediaType.IMAGE, identity_for_stack(stack), QualityLevel.MASTER)
+    filename_fn = get_filename_fn(MediaType.IMAGE, identity_for_stack(stack), MASTER)
     filename = filename_fn(stack)
     print(f"### opening filename {filename}")
     subprocess.Popen(
@@ -328,7 +328,7 @@ def open_mosaic_master(mosaic_id, implementation, filter):
     from pathlib import Path
     from products.registry import get_filename_fn, MediaType
     from products.identity import MosaicChannelId
-    from previews.types import QualityLevel, PIXINSIGHT
+    from previews.types import QualityLevel, PIXINSIGHT, MASTER
 
     mosaics = context.mosaics or {}
     if mosaic_id not in mosaics:
@@ -338,13 +338,13 @@ def open_mosaic_master(mosaic_id, implementation, filter):
 
     candidates = []
 
-    filename_fn = get_filename_fn(MediaType.IMAGE, MosaicChannelId, QualityLevel.MASTER, impl)
+    filename_fn = get_filename_fn(MediaType.IMAGE, MosaicChannelId, MASTER, impl)
     if filename_fn is not None:
         candidates.append(filename_fn(mosaic, filter))
 
     if context.output_dir is not None:
         candidates.append(
-            Path(context.output_dir) / "Mosaic" / str(QualityLevel.MASTER)
+            Path(context.output_dir) / "Mosaic" / str(MASTER)
             / f"progress_{mosaic.stable_hash}_{filter}.tiff"
         )
 

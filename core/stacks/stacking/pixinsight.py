@@ -17,7 +17,7 @@ from decorators import node
 from decisions.settings import DevelopmentSettings, ProcessingConfig
 from decisions.resolve import resolve_calibration, resolve_decisions
 from decisions.compute_graph import ALL_EXCLUSION_TYPES
-from previews.types import QualityLevel, PIXINSIGHT, MASTER
+from previews.types import PIXINSIGHT, MASTER
 from products import makes_image
 from products.identity import (
     StackId, CalibrationStackId, identity_for_stack, PresentationType,
@@ -89,7 +89,7 @@ def _setup_run(
             cal_stack = calibration_stacks[d.stack_id]
             filename_fn = get_filename_fn(
                 MediaType.IMAGE, identity_for_stack(cal_stack),
-                QualityLevel.MASTER,
+                MASTER,
             )
             return filename_fn(cal_stack)
         elif isinstance(d, FilenameDependency):
@@ -220,9 +220,8 @@ def stack_files(
     development_settings = config.development_settings
 
     # Determine the output file, and the metadata it should have.
-    from previews.types import QualityLevel
     from products.registry import get_filename_fn, MediaType
-    filename_fn = get_filename_fn(MediaType.IMAGE, identity_for_stack(stack), QualityLevel.MASTER) or stack_files.filename_fn
+    filename_fn = get_filename_fn(MediaType.IMAGE, identity_for_stack(stack), MASTER) or stack_files.filename_fn
     dest_filename = filename_fn(stack)
     dest_filename_exists = os.path.exists(dest_filename)
     os.makedirs(os.path.dirname(dest_filename), exist_ok=True)

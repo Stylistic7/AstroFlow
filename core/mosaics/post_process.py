@@ -13,7 +13,7 @@ from pix.tasks import (
 )
 from file_io.types import XisfFilePath, WithSidecar
 from decorators import node
-from previews.types import QualityLevel, PIXINSIGHT, OSS
+from previews.types import PIXINSIGHT, OSS, MASTER,POST_PROCESSED
 from mosaics.types import Mosaic
 from products import makes_image
 from products.identity import MosaicId, MosaicChannelId, PresentationType
@@ -55,18 +55,18 @@ def _post_process_mosaic(images: ImageList, mosaic: Mosaic) -> Image | None:
 
 
 @node(resources={"PixInsight": 1}, auto_memory=True)
-@makes_image(PIXINSIGHT, [QualityLevel.POST_PROCESSED],
+@makes_image(PIXINSIGHT, [POST_PROCESSED],
              identity=MosaicId, presentations=[THUMBNAIL, TILE_PYRAMID],
              file_type=XisfFilePath)
 def post_process_mosaic(
-    mode: QualityLevel,
+    mode: str,
     mosaic: Mosaic,
     targets: TargetsDict,
 ) -> WithSidecar[XisfFilePath] | None:
     from context import context
     log.info("Entering post_process_mosaic", mode=mode, mosaic=str(mosaic))
 
-    if mode != QualityLevel.MASTER:
+    if mode != MASTER:
         return None
 
     filters: set[str] = set()
@@ -75,7 +75,7 @@ def post_process_mosaic(
     # Pin iteration order so the parallel filters list lines up with the paths.
     filter_list = list(filters)
 
-    master_fn = get_filename_fn(MediaType.IMAGE, MosaicChannelId, QualityLevel.MASTER)
+    master_fn = get_filename_fn(MediaType.IMAGE, MosaicChannelId, MASTER)
     image_paths = [master_fn(mosaic, f) for f in filter_list]
 
     images = Image.open_many(image_paths, filters=filter_list)
@@ -93,11 +93,11 @@ def post_process_mosaic(
 
 
 @node
-@makes_image(OSS, [QualityLevel.POST_PROCESSED],
+@makes_image(OSS, [POST_PROCESSED],
              identity=MosaicId, presentations=[THUMBNAIL, TILE_PYRAMID],
              file_type=XisfFilePath)
 def post_process_mosaic_oss(
-    mode: QualityLevel,
+    mode: str,
     mosaic: Mosaic,
     targets: TargetsDict,
 ) -> None:

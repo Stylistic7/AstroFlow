@@ -14,7 +14,7 @@ import plate_solving
 from decorators import node
 from file_io.generic import read_image
 from file_io.types import FitsFilePath, WithSidecar
-from previews.types import QualityLevel, OSS
+from previews.types import OSS, DOWNSCALED_MASTER,MASTER,POST_PROCESSED,DOWNSCALED_POST_PROCESSED
 from products import makes_image
 from products.identity import StackId, PresentationType
 from products.registry import get_filename_fn, MediaType
@@ -27,14 +27,14 @@ log = structlog.get_logger()
 
 
 @node(auto_memory=True)
-@makes_image(OSS, [QualityLevel.POST_PROCESSED],
+@makes_image(OSS, [POST_PROCESSED],
              identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
              file_type=FitsFilePath)
 def post_process_stack_oss(stack: Stack, mock_pixinsight: bool) -> WithSidecar[FitsFilePath]:
     from products import ensure_producers_registered
     ensure_producers_registered()
 
-    master_path = get_filename_fn(MediaType.IMAGE, StackId, QualityLevel.MASTER, OSS)(stack)
+    master_path = get_filename_fn(MediaType.IMAGE, StackId, MASTER, OSS)(stack)
     output_filename = post_process_stack_oss.filename_fn(stack)
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
     log.info("OSS post-processing stack", stack=str(stack), master=str(master_path))
@@ -66,7 +66,7 @@ def post_process_stack_oss(stack: Stack, mock_pixinsight: bool) -> WithSidecar[F
 
 
 @node(auto_memory=True)
-@makes_image(OSS, [QualityLevel.DOWNSCALED_POST_PROCESSED],
+@makes_image(OSS, [DOWNSCALED_POST_PROCESSED],
              identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
              file_type=FitsFilePath)
 def post_process_stack_oss_downscaled(
@@ -78,7 +78,7 @@ def post_process_stack_oss_downscaled(
     ensure_producers_registered()
 
     master_path = get_filename_fn(
-        MediaType.IMAGE, StackId, QualityLevel.DOWNSCALED_MASTER, OSS
+        MediaType.IMAGE, StackId, DOWNSCALED_MASTER, OSS
     )(stack)
     output_filename = post_process_stack_oss_downscaled.filename_fn(stack)
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)

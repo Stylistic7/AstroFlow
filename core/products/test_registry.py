@@ -86,7 +86,7 @@ def test_presentation_cache_key_distinguishes_object_kind():
     depend on it — just sourced from self now)."""
     from dataclasses import dataclass
     from products.identity import ObjectId, PresentationType
-    from previews.types import QualityLevel, Implementation
+    from previews.types import PIXINSIGHT, SUBFRAME, MASTER
 
     @dataclass(frozen=True)
     class _A(ObjectId):
@@ -100,19 +100,19 @@ def test_presentation_cache_key_distinguishes_object_kind():
 
     a = _A(ref="x").presentation_cache_key(
         PresentationType.THUMBNAIL,
-        QualityLevel.SUBFRAME,
-        Implementation.PIXINSIGHT,
+        SUBFRAME,
+        PIXINSIGHT,
     )
     b = _B(ref="x").presentation_cache_key(
         PresentationType.THUMBNAIL,
-        QualityLevel.SUBFRAME,
-        Implementation.PIXINSIGHT,
+        SUBFRAME,
+        PIXINSIGHT,
     )
     assert a != b, "distinct object kinds must not alias in presentation cache"
     assert a == _A(ref="x").presentation_cache_key(
         PresentationType.THUMBNAIL,
-        QualityLevel.SUBFRAME,
-        Implementation.PIXINSIGHT,
+        SUBFRAME,
+        PIXINSIGHT,
     ), "presentation key must be stable for the same identity"
 
 
@@ -124,7 +124,7 @@ def test_registry_no_last_wins_on_shared_level_impl():
     Pre-refactor the second clobbered the first."""
     from products import ensure_producers_registered, registry
     from products.registry import register_producer, get_producer, MediaType
-    from previews.types import QualityLevel, Implementation
+    from previews.types import PIXINSIGHT, SUBFRAME, MASTER
     from products.identity import ObjectId
 
     # Load the real producers FIRST so the lazy _ensure_registered()
@@ -147,8 +147,8 @@ def test_registry_no_last_wins_on_shared_level_impl():
     def prod_b():
         return "b"
 
-    lvl = QualityLevel.SUBFRAME
-    impl = Implementation.PIXINSIGHT
+    lvl = SUBFRAME
+    impl = PIXINSIGHT
     try:
         register_producer(
             MediaType.IMAGE, lvl, prod_a, implementation=impl, identity=_IdA,
@@ -169,13 +169,13 @@ def test_real_run_subframe_producers_resolve_distinctly():
     resolve to different functions by identity (calibrated route used
     to wrongly get the 2-arg uncorrected producer -> TypeError -> 404)."""
     from products.registry import get_producer, MediaType
-    from previews.types import QualityLevel, Implementation
+    from previews.types import PIXINSIGHT, SUBFRAME, MASTER
     from products.identity import CalibratedStackId, UncorrectedRunId
     from products import ensure_producers_registered
 
     ensure_producers_registered()
-    lvl = QualityLevel.SUBFRAME
-    impl = Implementation.PIXINSIGHT
+    lvl = SUBFRAME
+    impl = PIXINSIGHT
 
     cal = get_producer(MediaType.IMAGE, CalibratedStackId, lvl, impl)
     unc = get_producer(MediaType.IMAGE, UncorrectedRunId, lvl, impl)

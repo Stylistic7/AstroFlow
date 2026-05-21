@@ -27,7 +27,7 @@ from astroscrappy import detect_cosmics
 from decorators import node
 from file_io.generic import read_image, read_header
 from file_io.types import FitsFilePath, WithSidecar
-from previews.types import OSS, PIXINSIGHT, MASTER, DOWNSCALED_MASTER, DOWNSCALE_FACTORS, QualityLevel
+from previews.types import OSS, PIXINSIGHT, MASTER, DOWNSCALED_MASTER, DOWNSCALE_FACTORS
 from products import makes_image
 from products.identity import (
     StackId, CalibrationStackId, identity_for_stack, PresentationType,
@@ -200,7 +200,7 @@ def stack_files_oss(
             raise ValueError(f"Stack {stack} has no frames after applying decisions")
         stack = filtered
 
-    dest_filename = get_filename_fn(MediaType.IMAGE, identity_for_stack(stack), QualityLevel.MASTER, OSS)(stack)
+    dest_filename = get_filename_fn(MediaType.IMAGE, identity_for_stack(stack), MASTER, OSS)(stack)
     os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
     log.info("OSS stacking", stack=str(stack), dest=str(dest_filename))
 
@@ -214,8 +214,8 @@ def stack_files_oss(
                 continue
             cal_stack = config.get_calibration_stacks()[dep.stack_id]
             cal_data = (
-                _load_calibration(cal_stack, QualityLevel.MASTER, OSS)
-                or _load_calibration(cal_stack, QualityLevel.MASTER, PIXINSIGHT)
+                _load_calibration(cal_stack, MASTER, OSS)
+                or _load_calibration(cal_stack, MASTER, PIXINSIGHT)
             )
             if cal_data is None:
                 continue

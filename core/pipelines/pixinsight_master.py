@@ -29,7 +29,7 @@ from mosaics.final_storage import store_mosaic_color_channel_xisf
 from mosaics.merging.pixinsight import merge_images
 from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
-from previews.types import PIXINSIGHT, QualityLevel
+from previews.types import PIXINSIGHT, MASTER
 from stacks.compute_graph import calibrate
 from stacks.composite_stack import Stack
 from stacks.post_processing.pixinsight import post_process_stack
@@ -41,7 +41,7 @@ from targets.types import Target
 # This pipeline's output identity. Used internally by the ops that
 # still branch on QualityLevel (place_image, merge_images, etc.);
 # Phase B-3 splits those into per-quality ops and removes the constant.
-_MODE = QualityLevel.MASTER
+_MODE = MASTER
 _IMPL = PIXINSIGHT
 
 

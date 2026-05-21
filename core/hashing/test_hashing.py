@@ -130,9 +130,9 @@ def test_quality_level_stable():
 
 
 def test_implementation_stable():
-    from previews.types import Implementation
-    assert hash_list([Implementation.PIXINSIGHT]) == hash_list([Implementation.PIXINSIGHT])
-    assert hash_list([Implementation.PIXINSIGHT]) != hash_list([Implementation.OSS])
+    from previews.types import PIXINSIGHT, OSS
+    assert hash_list([PIXINSIGHT]) == hash_list([PIXINSIGHT])
+    assert hash_list([PIXINSIGHT]) != hash_list([OSS])
 
 
 def test_set_order_independent():

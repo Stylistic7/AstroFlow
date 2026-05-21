@@ -8,13 +8,13 @@ from geometry.projections import mercator
 # TODO: Rename or unify geometry_compute_viewbox
 from geometry.viewbox import compute_viewbox as geometry_compute_viewbox
 from geometry.polygons import project_polygon
-from previews.types import QualityLevel, DOWNSCALE_FACTORS
+from previews.types import DOWNSCALE_FACTORS, SUBFRAME
 
 _TILE_SIZE = 2048  # pixels
 
 
 def compute_viewbox(
-    quality: QualityLevel, object: AstrometricAttributes,
+    quality: str, object: AstrometricAttributes,
 ) -> Viewbox:
     print(f"### Entering compute_viewbox for object {object} quality {quality}")
 
@@ -31,7 +31,7 @@ def compute_viewbox(
     # Compute the number of pixels along the x axis. Non-subframe modes use
     # the object's image scale (adjusted by the quality's downscale factor);
     # subframe mode makes a fixed-size thumbnail.
-    if quality == QualityLevel.SUBFRAME:
+    if quality == SUBFRAME:
         num_pixels_x = 2048
     else:
         effective_scale = object.image_scale * DOWNSCALE_FACTORS[quality]

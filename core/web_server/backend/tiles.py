@@ -78,7 +78,7 @@ def _tile_pyramid_path_for(
     obj_cls, obj_args = _resolve_obj_args(object_type, object_id, filter)
 
     if level and level != "auto":
-        levels_to_try = [QualityLevel(level)]
+        levels_to_try = [level]
     else:
         levels_to_try = QUALITY_PRIORITY
 

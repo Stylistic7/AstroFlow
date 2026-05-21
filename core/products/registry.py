@@ -9,7 +9,7 @@ from typing import Callable, Any, Type, Optional, Union
 import numpy as np
 
 from file_io.types import ContentHashable
-from previews.types import QualityLevel, PIXINSIGHT
+from previews.types import PIXINSIGHT, ALL_QUALITY_LEVELS, ALL_IMPLEMENTATIONS, DOWNSCALED_MASTER,MASTER
 from products.identity import ObjectId, PresentationType
 from context import context
 
@@ -22,14 +22,14 @@ class MediaType(str, Enum):
 type FilenameFn = Union[str, Callable[..., Path]]
 
 _registry: dict[
-    MediaType, dict[tuple[Type, QualityLevel], Callable[..., Path]]
+    MediaType, dict[tuple[Type, str], Callable[..., Path]]
 ] = {
     MediaType.IMAGE: {},
     MediaType.VIDEO: {},
 }
 
 _filename_fns: dict[
-    MediaType, dict[tuple[Type, QualityLevel], Callable[..., Path]]
+    MediaType, dict[tuple[Type, str], Callable[..., Path]]
 ] = {
     MediaType.IMAGE: {},
     MediaType.VIDEO: {},
@@ -49,7 +49,7 @@ def _ensure_registered():
 
 def register_producer(
     media_type: MediaType,
-    level: QualityLevel,
+    level: str,
     func: Callable[..., Path],
     filename_fn: "FilenameFn | None" = None,
     implementation: str = PIXINSIGHT,
@@ -62,7 +62,7 @@ def register_producer(
 
 
 def get_producer(
-    media_type: MediaType, identity: "type[ObjectId]", level: QualityLevel,
+    media_type: MediaType, identity: "type[ObjectId]", level: str,
     implementation: str = PIXINSIGHT,
 ) -> Optional[Callable[..., Path]]:
     _ensure_registered()
@@ -70,7 +70,7 @@ def get_producer(
 
 
 def get_filename_fn(
-    media_type: MediaType, identity: "type[ObjectId]", level: QualityLevel,
+    media_type: MediaType, identity: "type[ObjectId]", level: str,
     implementation: str = PIXINSIGHT,
 ) -> Optional[Callable[..., Path]]:
     _ensure_registered()
@@ -80,7 +80,7 @@ def get_filename_fn(
 def available_levels(
     media_type: MediaType, identity: "type[ObjectId]",
     implementation: str = PIXINSIGHT,
-) -> set[QualityLevel]:
+) -> set[str]:
     return {
         level
         for (idcls, level, impl) in _registry[media_type]
@@ -93,14 +93,14 @@ def clear_registry(media_type: MediaType) -> None:
     _filename_fns[media_type].clear()
 
 
-def _mark_valid(identity_cls: type, level: QualityLevel, implementation: str, args: tuple) -> None:
+def _mark_valid(identity_cls: type, level: str, implementation: str, args: tuple) -> None:
     """Mark a product as valid after its producer completes."""
     # The first argument to a producer is always the primary object
     # (Stack, Mosaic, etc.) which has stable_hash.
     obj = args[0] if args else None
     if obj is None or not hasattr(obj, "stable_hash"):
         return
-    key = (identity_cls.object_type.__name__.lower(), obj.stable_hash, level.value, implementation.value)
+    key = (identity_cls.object_type.__name__.lower(), obj.stable_hash, str(level), str(implementation))
     from context import context
     context.or_equals("validity", {key: True})
 
@@ -110,9 +110,9 @@ def invalidate_object(object_type: str, object_id: str, implementation: str = No
     from context import context
     implementations = [implementation] if implementation else ALL_IMPLEMENTATIONS
     updates = {}
-    for level in QualityLevel:
+    for level in ALL_QUALITY_LEVELS:
         for impl in implementations:
-            updates[(object_type, object_id, level.value, impl)] = False
+            updates[(object_type, object_id, str(level), impl)] = False
     context.or_equals("validity", updates)
 
 
@@ -150,7 +150,7 @@ def is_object_valid(
 
 
 def fully_resolve(
-    identity_cls: type, level: QualityLevel, filename_fn: FilenameFn,
+    identity_cls: type, level: str, filename_fn: FilenameFn,
     implementation: str = PIXINSIGHT,
 ):
     object_type_name = identity_cls.object_type.__name__
@@ -186,8 +186,8 @@ def _extract_identity(
 
 
 def _detect_level(
-    func: Callable, args: tuple, kwargs: dict, levels: list[QualityLevel],
-) -> list[QualityLevel]:
+    func: Callable, args: tuple, kwargs: dict, levels: list[str],
+) -> list[str]:
     if len(levels) == 1:
         return levels
     sig = inspect.signature(func)
@@ -195,7 +195,7 @@ def _detect_level(
     bound.apply_defaults()
     if 'mode' in bound.arguments:
         mode = bound.arguments['mode']
-        if isinstance(mode, QualityLevel):
+        if isinstance(mode, str):
             return [mode]
     return levels
 
@@ -347,7 +347,7 @@ def _chain_compute_image_metadata(handle):
 def _bind_producer(
     media_type: MediaType,
     implementation: str | list[str],
-    levels: list[QualityLevel],
+    levels: list[str],
     filename_fn: FilenameFn | None,
     identity: "type[ObjectId]",
     presentations: "list[PresentationType] | None" = None,
@@ -510,7 +510,7 @@ def _bind_producer(
 
 def makes_image(
     implementation: str,
-    levels: list[QualityLevel], filename_fn: FilenameFn | None = None,
+    levels: list[str], filename_fn: FilenameFn | None = None,
     identity: type[ObjectId] = None,
     presentations: list[PresentationType] | None = None,
     file_type: type | None = None,
@@ -523,7 +523,7 @@ def makes_image(
 
 def makes_video(
     implementation: str,
-    levels: list[QualityLevel], filename_fn: FilenameFn | None = None,
+    levels: list[str], filename_fn: FilenameFn | None = None,
     identity: type[ObjectId] = None,
     presentations: list[PresentationType] | None = None,
     file_type: type | None = None,

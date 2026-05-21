@@ -13,7 +13,7 @@ from pix.tasks import PhotometricMosaic
 from metadata.classes import ImageMetadata
 from mosaics.types import Mosaic
 from previews.types import (
-    QualityLevel, ALL_IMPLEMENTATIONS,
+    ALL_IMPLEMENTATIONS,
     PIXINSIGHT, SUBFRAME, MASTER, DOWNSCALED_MASTER,
 )
 from previews.create_tile_pyramid import default_make_tile_pyramid
@@ -52,7 +52,7 @@ def _set_panel_count(path, count: int) -> None:
     set_section(Path(path), "panel_count", count)
 
 
-def _progress_tile_path(mosaic: Mosaic, filter: str, mode: QualityLevel) -> Path:
+def _progress_tile_path(mosaic: Mosaic, filter: str, mode: str) -> Path:
     """Per-(mosaic, filter, mode) tile pyramid that the web server serves
     while the canonical Master output is still in progress."""
     from context import context
@@ -63,7 +63,7 @@ def _progress_tile_path(mosaic: Mosaic, filter: str, mode: QualityLevel) -> Path
 
 
 def _maybe_publish_progress(
-    mode: QualityLevel,
+    mode: str,
     mosaic: Mosaic,
     filter: str,
     impl: str,
@@ -83,8 +83,8 @@ def _maybe_publish_progress(
         "mosaic_best_merge",
         mosaic.stable_hash,
         filter,
-        mode.value,
-        impl.value,
+        str(mode),
+        str(impl),
     )
     best = context.get(best_key)
     if best is not None and new_count <= best.get("panel_count", 0):
@@ -122,7 +122,7 @@ def _maybe_publish_progress(
 @makes_image(PIXINSIGHT, [MASTER, DOWNSCALED_MASTER], merged_filename_xisf,
              identity=MergedImageId)
 def merge_images(
-    mode: QualityLevel,
+    mode: str,
     mosaic: Mosaic,
     filter: str,
     impl: str,

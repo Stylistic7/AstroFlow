@@ -5,20 +5,21 @@ from dataclasses import is_dataclass, fields
 from dependency_graph import GraphStatus
 from hashing import hash_source_code
 from profiling.estimate_time import estimate_time
-from previews.types import QualityLevel
+from previews.types import ALL_QUALITY_LEVELS
 from beartype import beartype
 
 
-def _infer_node_quality(node) -> QualityLevel | None:
+def _infer_node_quality(node) -> str | None:
     """Mirror @measure_performance's quality inference so ETA lookups
     hit the same profile bucket that was recorded at runtime."""
+    known = set(ALL_QUALITY_LEVELS)
     for v in node.args:
-        if isinstance(v, QualityLevel):
+        if isinstance(v, str) and v in known:
             return v
         if is_dataclass(v) and not isinstance(v, type):
             for f in fields(v):
                 inner = getattr(v, f.name, None)
-                if isinstance(inner, QualityLevel):
+                if isinstance(inner, str) and inner in known:
                     return inner
     return None
 

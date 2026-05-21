@@ -23,7 +23,7 @@ from decorators import node
 from file_io.generic import read_image
 from file_io.types import FitsFilePath, WithSidecar
 from previews.types import (
-    QualityLevel,
+
     OSS,
     MASTER,
     DOWNSCALED_MASTER,
@@ -54,7 +54,7 @@ log = structlog.get_logger()
 _SATURATION_FRACTION = 0.999
 
 
-def _stack_master_path(stack: Stack, quality: QualityLevel) -> Path:
+def _stack_master_path(stack: Stack, quality: str) -> Path:
     # Consume the gradient-corrected (post-processed) stack, NOT the raw
     # master — so mosaic panels are flattened before placement/merge.
     fn = get_filename_fn(
@@ -73,7 +73,7 @@ def merge_target_channel_oss(
     target: Target,
     filter: str,
     stacks: tuple[Stack, ...],
-    mode: QualityLevel,
+    mode: str,
     config: ProcessingConfig,
 ) -> WithSidecar[FitsFilePath]:
     assert len(stacks) >= 1, "merge_target_channel_oss needs at least one stack"

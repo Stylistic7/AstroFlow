@@ -12,7 +12,7 @@ from stacks.composite_stack import Stack
 from file_io.types import XisfFilePath, WithSidecar
 from products import makes_image, get_filename_fn, MediaType
 from products.identity import StackId, PresentationType
-from previews.types import QualityLevel, PIXINSIGHT, DOWNSCALE_FACTORS
+from previews.types import PIXINSIGHT, DOWNSCALE_FACTORS, DOWNSCALED_MASTER,MASTER,POST_PROCESSED,DOWNSCALED_POST_PROCESSED
 import structlog
 
 THUMBNAIL = PresentationType.THUMBNAIL
@@ -51,13 +51,13 @@ def _post_process_stack(master_path, stack: Stack, downscale_factor: int = 1) ->
 
 
 @node(resources={"PixInsight": 1}, auto_memory=True)
-@makes_image(PIXINSIGHT, [QualityLevel.POST_PROCESSED],
+@makes_image(PIXINSIGHT, [POST_PROCESSED],
              identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
              file_type=XisfFilePath)
 def post_process_stack(stack: Stack, mock_pixinsight: bool) -> WithSidecar[XisfFilePath]:
     from products import ensure_producers_registered
     ensure_producers_registered()
-    master_fn = get_filename_fn(MediaType.IMAGE, StackId, QualityLevel.MASTER)
+    master_fn = get_filename_fn(MediaType.IMAGE, StackId, MASTER)
     master = master_fn(stack)
 
     output_filename = post_process_stack.filename_fn(stack)
@@ -70,7 +70,7 @@ def post_process_stack(stack: Stack, mock_pixinsight: bool) -> WithSidecar[XisfF
 
 
 @node(resources={"PixInsight": 1}, auto_memory=True)
-@makes_image(PIXINSIGHT, [QualityLevel.DOWNSCALED_POST_PROCESSED],
+@makes_image(PIXINSIGHT, [DOWNSCALED_POST_PROCESSED],
              identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
              file_type=XisfFilePath)
 def post_process_stack_downscaled(
@@ -84,7 +84,7 @@ def post_process_stack_downscaled(
     from products import ensure_producers_registered
     ensure_producers_registered()
     master_fn = get_filename_fn(
-        MediaType.IMAGE, StackId, QualityLevel.DOWNSCALED_MASTER
+        MediaType.IMAGE, StackId, DOWNSCALED_MASTER
     )
     master = master_fn(stack)
 
@@ -93,7 +93,7 @@ def post_process_stack_downscaled(
 
     result = _post_process_stack(
         master, stack,
-        downscale_factor=DOWNSCALE_FACTORS[QualityLevel.DOWNSCALED_MASTER],
+        downscale_factor=DOWNSCALE_FACTORS[DOWNSCALED_MASTER],
     )
     result.save_to(output_filename, mock=mock_pixinsight)
 
