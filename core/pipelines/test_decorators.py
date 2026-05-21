@@ -8,14 +8,19 @@ from pipelines.registry import _REGISTRY, get_pipeline, registered_pipelines
 
 @pytest.fixture(autouse=True)
 def _isolate_registry():
-    """Each test gets a fresh registry. The decorator's module-level
-    side effect on `_REGISTRY` would otherwise leak between tests.
-    Also pin `_DISCOVERED=True` so `get_pipeline` doesn't try to scan
-    `~/AstroFlow/pipelines/` during unit tests."""
+    """Each test runs with a saved-then-restored snapshot of the
+    registry, so tests' decorator side effects don't leak between
+    tests or escape into other test files. Tests are additive — they
+    assert `"X" in _REGISTRY` rather than `set(_REGISTRY) == {"X"}` —
+    because Python module-import caching means @pipeline registrations
+    in already-loaded built-in/user pipeline files cannot be reversed
+    without `importlib.reload`. The fixture restores the exact
+    pre-test state on exit so tests that follow see the same registry
+    they would have seen without us."""
     import pipelines.registry as r
     saved = dict(_REGISTRY)
     saved_discovered = r._DISCOVERED
-    _REGISTRY.clear()
+    # Pin discovery off so tests don't trigger ~/AstroFlow scans.
     r._DISCOVERED = True
     try:
         yield
@@ -45,10 +50,10 @@ def test_pipeline_decorator_accepts_friendly_strings():
     def other(mosaic):
         return None
 
-    assert set(_REGISTRY) == {
+    assert {
         "WBPP + MSGC + PhotometricMosaic",
         "v2.1 — narrowband only",
-    }
+    } <= set(_REGISTRY)
 
 
 def test_pipeline_reregistration_overrides():
