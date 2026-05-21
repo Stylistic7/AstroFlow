@@ -27,7 +27,7 @@ from astroscrappy import detect_cosmics
 from decorators import node
 from file_io.generic import read_image, read_header
 from file_io.types import FitsFilePath, WithSidecar
-from previews.types import OSS, MASTER, DOWNSCALED_MASTER, DOWNSCALE_FACTORS
+from previews.types import OSS, PIXINSIGHT, MASTER, DOWNSCALED_MASTER, DOWNSCALE_FACTORS, QualityLevel
 from products import makes_image
 from products.identity import (
     StackId, CalibrationStackId, identity_for_stack, PresentationType,
@@ -172,8 +172,8 @@ def _streaming_sigma_clipped_mean(preprocessed_frames, is_light):
 def _stack_files_oss_narrow(args, kwargs):
     """Cache-key hook: same shape as `stack_files`, see `_stack_files_narrow`."""
     from stacks.stacking import narrow_stack_config
-    stack, config, *rest = args
-    return (stack, narrow_stack_config(stack, config), *rest), kwargs
+    stack, mode, config, *rest = args
+    return (stack, mode, narrow_stack_config(stack, config), *rest), kwargs
 
 
 @node(auto_memory=True, cache_key_narrow=_stack_files_oss_narrow)
@@ -185,6 +185,7 @@ def _stack_files_oss_narrow(args, kwargs):
              file_type=FitsFilePath)
 def stack_files_oss(
     stack: BaseStack,
+    mode: QualityLevel,
     config: ProcessingConfig,
 ) -> WithSidecar[FitsFilePath]:
     from products import ensure_producers_registered
@@ -197,27 +198,30 @@ def stack_files_oss(
             raise ValueError(f"Stack {stack} has no frames after applying decisions")
         stack = filtered
 
-    dest_filename = get_filename_fn(MediaType.IMAGE, identity_for_stack(stack), config.quality, OSS)(stack)
+    dest_filename = get_filename_fn(MediaType.IMAGE, identity_for_stack(stack), mode, OSS)(stack)
     os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
     log.info("OSS stacking", stack=str(stack), dest=str(dest_filename))
 
-    # Load master calibration frames from whichever implementation has them.
+    # Load master calibration frames. Falls back from OSS to PIXINSIGHT
+    # if no OSS cal exists yet — the PI cal masters are pixel-compatible
+    # (just a different on-disk container).
     bias = dark = flat = None
     for run in stack.contents.values():
         for dep in run.dependencies.values():
             if not isinstance(dep, StackIdDependency):
                 continue
             cal_stack = config.get_calibration_stacks()[dep.stack_id]
-            cal_data = _load_calibration(cal_stack, config.quality, OSS)
-            if cal_data is None:
-                cal_data = _load_calibration(cal_stack, config.quality, config.implementation)
+            cal_data = (
+                _load_calibration(cal_stack, mode, OSS)
+                or _load_calibration(cal_stack, mode, PIXINSIGHT)
+            )
             if cal_data is None:
                 continue
             if cal_stack.image_type == "bias": bias = cal_data
             elif cal_stack.image_type == "dark": dark = cal_data
             elif cal_stack.image_type == "flat": flat = cal_data
 
-    downscale_factor = DOWNSCALE_FACTORS[config.quality]
+    downscale_factor = DOWNSCALE_FACTORS[mode]
     is_light = isinstance(stack, Stack)
 
     # Pre-count frames so we can enforce min_frames_in_stack before

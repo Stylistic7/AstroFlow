@@ -18,7 +18,6 @@ from decisions.settings import ProcessingConfig
 from dependency_graph.classes import Node
 from dependency_graph.tracing import trace
 from mosaics.types import Mosaic
-from previews.types import QualityLevel
 from stacks.composite_stack import CalibrationStacksDict, StacksDict
 from targets.types import TargetsDict
 from testing.test_stacks import make_composite_stack
@@ -123,7 +122,6 @@ def test_pixinsight_master_records_expected_graph_shape(test_context):
     config = ProcessingConfig(
         calibration_stacks=CalibrationStacksDict({}),
         min_frames_in_stack=3,
-        quality=QualityLevel.MASTER,
     )
 
     # Trace the pipeline body (not via .remote — no Ray needed for
@@ -194,7 +192,6 @@ def test_pixinsight_master_handles_missing_panels(test_context):
     config = ProcessingConfig(
         calibration_stacks=CalibrationStacksDict({}),
         min_frames_in_stack=3,
-        quality=QualityLevel.MASTER,
     )
 
     g = trace(

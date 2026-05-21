@@ -196,8 +196,8 @@ def _stack_files_narrow(args, kwargs):
     """`stack_files` cache-key hook: drop the global cal_stacks and
     other-stack decisions so a new bias for an unrelated camera doesn't
     invalidate this stack's cached master."""
-    stack, config, *rest = args
-    return (stack, narrow_stack_config(stack, config), *rest), kwargs
+    stack, mode, config, *rest = args
+    return (stack, mode, narrow_stack_config(stack, config), *rest), kwargs
 
 
 @node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD", auto_memory=True,
@@ -210,6 +210,7 @@ def _stack_files_narrow(args, kwargs):
              file_type=XisfFilePath)
 def stack_files(
     stack: BaseStack,
+    mode: QualityLevel,
     config: ProcessingConfig,
 ) -> WithSidecar[XisfFilePath]:
     # Resolve calibration (lazy, cached via decision framework).
@@ -225,7 +226,7 @@ def stack_files(
 
     # Determine the output file, and the metadata it should have.
     from products.registry import get_filename_fn, MediaType
-    filename_fn = get_filename_fn(MediaType.IMAGE, identity_for_stack(stack), config.quality) or stack_files.filename_fn
+    filename_fn = get_filename_fn(MediaType.IMAGE, identity_for_stack(stack), mode) or stack_files.filename_fn
     dest_filename = filename_fn(stack)
     dest_filename_exists = os.path.exists(dest_filename)
     os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
@@ -252,7 +253,7 @@ def stack_files(
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
         log.debug("Using temporary directory", tmp_dir=tmp_dir)
 
-        filenames = _setup_stack(stack, calibration_stacks, tmp_dir, config.quality)
+        filenames = _setup_stack(stack, calibration_stacks, tmp_dir, mode)
 
         if len(filenames) < min_frames_in_stack:
             log.info("Not stacking, too few files", stack=str(stack), num_files=len(filenames))

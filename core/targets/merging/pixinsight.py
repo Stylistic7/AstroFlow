@@ -65,12 +65,12 @@ def _merge_target_channel_narrow(args, kwargs):
     target-channel master.
     """
     from stacks.stacking import narrow_stack_config
-    target, filter, stacks, config, *rest = args
+    target, filter, stacks, mode, config, *rest = args
     # Use the first constituent stack for narrowing — narrow_stack_config
     # only reads stable_hash and decisions, both of which should be
     # consistent across this group.
     narrowed = narrow_stack_config(stacks[0], config) if stacks else config
-    return (target, filter, stacks, narrowed, *rest), kwargs
+    return (target, filter, stacks, mode, narrowed, *rest), kwargs
 
 
 @node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD",
@@ -84,6 +84,7 @@ def merge_target_channel(
     target: Target,
     filter: str,
     stacks: tuple[Stack, ...],
+    mode: QualityLevel,
     config: ProcessingConfig,
 ) -> WithSidecar[XisfFilePath]:
     assert len(stacks) >= 1, "merge_target_channel needs at least one stack"
@@ -95,7 +96,7 @@ def merge_target_channel(
     # n=1: passthrough. No registration, no HDR — the single stack's
     # master IS the (target, filter) master.
     if len(stacks) == 1:
-        src = _stack_master_path(stacks[0], config.quality)
+        src = _stack_master_path(stacks[0], mode)
         shutil.copy(src, output_filename)
         return WithSidecar(XisfFilePath(output_filename))
 
@@ -103,7 +104,7 @@ def merge_target_channel(
     # HDRComposition treats the deepest integration as the base and
     # replaces its saturated regions with the shorter exposures.
     sorted_stacks = sorted(stacks, key=lambda s: -float(s.exposure))
-    masters = [_stack_master_path(s, config.quality) for s in sorted_stacks]
+    masters = [_stack_master_path(s, mode) for s in sorted_stacks]
 
     images = Image.open_many(masters, filters=[s.filter for s in sorted_stacks])
     aligned = StarAlignment(images)

@@ -7,7 +7,6 @@ from frozendict import frozendict
 from units import Radians
 from hashing import hash_dataclass
 from decisions.decisions import DecisionKey, DecisionOverride
-from previews.types import QualityLevel, Implementation
 
 
 @dataclass(frozen=True)
@@ -48,17 +47,23 @@ class DevelopmentSettings:
 
 @dataclass(frozen=True)
 class ProcessingConfig:
-    """Bundles the 'how to process' parameters passed through the compute graph.
+    """The "how to process" parameters passed through the compute graph.
 
-    Created once per graph run by the @ray.remote graph builder, then passed
-    to all @node compute functions. Frozen and hashable for cache keys.
+    Created once per graph run, passed to all @node compute functions.
+    Frozen and hashable for cache keys.
+
+    Notably absent: `quality` and `implementation`. Pipeline choice
+    (which backend, which output quality) is the pipeline's identity,
+    decided by which @node ops the pipeline body imports and calls.
+    Keeping pipeline-specific axes out of config means two pipelines
+    that happen to invoke the same op with the same args share its
+    diskcache entry — the cache key reflects only what the op
+    genuinely depends on.
     """
     calibration_stacks: Any = field(default_factory=frozendict)
     development_settings: "DevelopmentSettings" = field(default_factory=lambda: DevelopmentSettings())
     min_frames_in_stack: int = 5
     decisions: frozendict = field(default_factory=frozendict)
-    quality: QualityLevel = QualityLevel.MASTER
-    implementation: Implementation = Implementation.PIXINSIGHT
 
     def get_calibration_stacks(self):
         """Dereference calibration_stacks (may be a ContextRef or a plain dict)."""
@@ -78,7 +83,6 @@ class Settings:
     clustering_settings: ClusteringSettings = field(default_factory=ClusteringSettings)
     development_settings: DevelopmentSettings = field(default_factory=DevelopmentSettings)
     preview_settings: PreviewSettings = field(default_factory=PreviewSettings)
-    implementation: Implementation = Implementation.PIXINSIGHT
     # San Francisco default (lat_deg, lon_deg, elevation_m). Used by the
     # mosaic panel-numbering rise-time display and the moon recommendation.
     observer_location: tuple[float, float, float] = (37.7749, -122.4194, 16.0)

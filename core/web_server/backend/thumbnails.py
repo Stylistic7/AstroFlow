@@ -141,7 +141,7 @@ def _png_response(thumbnail: bytes, level: QualityLevel):
 
 def get_thumbnail_by_id(identity: ObjectId):
     """Return the best-available thumbnail using ObjectId-based lookup."""
-    implementation = context.settings.implementation
+    implementation = Implementation.PIXINSIGHT
     for level in QUALITY_PRIORITY:
         thumbnail = _thumbnail_for(
             identity, level, implementation,
@@ -216,7 +216,7 @@ def run_thumbnail(stack_id: str, substack_id: str, flat_stack_id: str):
 
 
 def get_video(identity: type, *args):
-    implementation = context.settings.implementation
+    implementation = Implementation.PIXINSIGHT
     for level in QUALITY_PRIORITY:
         if fn := get_producer(MediaType.VIDEO, identity, level, implementation):
             if hasattr(fn, "video_fn"):

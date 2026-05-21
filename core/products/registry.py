@@ -116,15 +116,19 @@ def invalidate_object(object_type: str, object_id: str, implementation: str = No
     context.or_equals("validity", updates)
 
 
-def is_object_valid(object_type: str, object_id: str, level: str, implementation: str = None) -> bool:
+def is_object_valid(
+    object_type: str, object_id: str, level: str,
+    implementation: str = "PixInsight",
+) -> bool:
     """Query validity, deriving parent validity from children.
 
     Returns True if the product is up to date, False otherwise
-    (stale or never produced).
+    (stale or never produced). `implementation` defaults to the
+    PixInsight backend — there's no "user-active implementation"
+    setting anymore; callers that care about a specific backend
+    pass it explicitly.
     """
     from context import context
-    if implementation is None:
-        implementation = context.settings.implementation.value
 
     if object_type == "mosaic":
         mosaics = context.mosaics or {}

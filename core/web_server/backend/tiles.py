@@ -82,7 +82,9 @@ def _tile_pyramid_path_for(
     else:
         levels_to_try = QUALITY_PRIORITY
 
-    impl = Implementation(implementation) if implementation else context.settings.implementation
+    # `implementation` URL param is optional; default to PixInsight,
+    # the only backend in production today.
+    impl = Implementation(implementation) if implementation else Implementation.PIXINSIGHT
 
     from pathlib import Path
     from products.registry import get_filename_fn

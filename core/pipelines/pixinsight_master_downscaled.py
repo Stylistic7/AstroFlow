@@ -9,12 +9,13 @@ The only diff from `pixinsight_master.py` is the per-stack chain's
 post-processing op: `post_process_stack_downscaled` in place of
 `post_process_stack`, and the `_MODE` constant.
 
-Cache sharing with `PixInsight Master`: today `stack_files`'s cache
-key includes `config.quality`, so this pipeline's stack_files calls
-don't hit cache entries produced by the master pipeline. Cross-
-pipeline `stack_files` sharing would require dropping `config.quality`
-from stack_files (and routing the downscale via a separate op
-composed on top). Deferred — see plan B-3.
+Cache sharing with `PixInsight Master`: today `stack_files` takes
+`mode: QualityLevel` as an explicit arg (it produces MASTER or
+DOWNSCALED_MASTER), so this pipeline's stack_files calls don't hit
+cache entries produced by the master pipeline. Cross-pipeline
+`stack_files` sharing would require splitting stack_files into two
+ops (one per quality) and composing a separate `downscale` op
+above the master variant. Deferred — see plan B-3c.
 """
 from astroflow.pipeline import pipeline
 from mosaics.merging.pixinsight import merge_images
@@ -34,15 +35,15 @@ _IMPL = Implementation.PIXINSIGHT
 
 
 def _post_processed_master(s, config, mock):
-    cal = calibrate(s, config)
-    master = stack_files(s, config, _after=(cal,))
+    cal = calibrate(s, _MODE, config)
+    master = stack_files(s, _MODE, config, _after=(cal,))
     return post_process_stack_downscaled(s, mock, _after=(master,))
 
 
 def _channels_for_target(target, config, mock):
     return {
         filter: merge_target_channel(
-            target, filter, target.stacks_for(filter), config,
+            target, filter, target.stacks_for(filter), _MODE, config,
             _after=tuple(
                 _post_processed_master(s, config, mock)
                 for s in target.stacks_for(filter)

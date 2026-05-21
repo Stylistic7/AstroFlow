@@ -266,7 +266,7 @@ def validity_all():
 def available_qualities(object_type: str, object_id: str, filter: str = None):
     """Return all quality levels with existence and validity status."""
     from products import is_object_valid
-    implementation = context.settings.implementation
+    implementation = Implementation.PIXINSIGHT
     obj_type, args = _resolve_object(object_type, object_id, filter)
     on_disk = dict(_available_qualities(obj_type, implementation, *args))  # level -> path
 
@@ -318,7 +318,7 @@ def metadata(object_type: str, object_id: str, level_or_filter: str = None, filt
             filter = level_or_filter
             level = None
 
-    implementation = context.settings.implementation
+    implementation = Implementation.PIXINSIGHT
     obj_type, args = _resolve_object(object_type, object_id, filter)
 
     if level is not None:

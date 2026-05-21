@@ -73,6 +73,7 @@ def merge_target_channel_oss(
     target: Target,
     filter: str,
     stacks: tuple[Stack, ...],
+    mode: QualityLevel,
     config: ProcessingConfig,
 ) -> WithSidecar[FitsFilePath]:
     assert len(stacks) >= 1, "merge_target_channel_oss needs at least one stack"
@@ -82,13 +83,13 @@ def merge_target_channel_oss(
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
 
     if len(stacks) == 1:
-        src = _stack_master_path(stacks[0], config.quality)
+        src = _stack_master_path(stacks[0], mode)
         shutil.copy(src, output_filename)
         return WithSidecar(FitsFilePath(output_filename))
 
     sorted_stacks = sorted(stacks, key=lambda s: -float(s.exposure))
     masters = [
-        read_image(_stack_master_path(s, config.quality)).astype(np.float32, copy=False)
+        read_image(_stack_master_path(s, mode)).astype(np.float32, copy=False)
         for s in sorted_stacks
     ]
 

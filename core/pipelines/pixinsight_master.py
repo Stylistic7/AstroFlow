@@ -50,8 +50,8 @@ def _post_processed_master(s, config, mock):
     carries disk-side data flow: `post_process_stack` looks up its
     input via filename_fn, so an ordering edge to the master is
     enough — no value flow."""
-    cal = calibrate(s, config)
-    master = stack_files(s, config, _after=(cal,))
+    cal = calibrate(s, _MODE, config)
+    master = stack_files(s, _MODE, config, _after=(cal,))
     return post_process_stack(s, mock, _after=(master,))
 
 
@@ -59,7 +59,7 @@ def _channels_for_target(target, config, mock):
     """Per-filter HDR-combined channel masters for one target."""
     return {
         filter: merge_target_channel(
-            target, filter, target.stacks_for(filter), config,
+            target, filter, target.stacks_for(filter), _MODE, config,
             _after=tuple(
                 _post_processed_master(s, config, mock)
                 for s in target.stacks_for(filter)
