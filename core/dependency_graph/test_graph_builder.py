@@ -156,3 +156,50 @@ def test_graph_builder_none_return_propagates_via_trace():
 
     g = trace(builder_that_bails)
     assert g is None
+
+
+def test_after_kwarg_adds_ordering_dep_without_call_arg():
+    """`_after=(handle,)` adds the handle as a dependency edge but
+    doesn't promote it to a literal positional arg on the recorded node."""
+    @graph_builder
+    def step(x):
+        return x
+
+    g = Graph()
+    token = _TRACE.set(g)
+    try:
+        upstream = step("setup")
+        # post_process_stack-style call: all literals in `args`, ordering
+        # dep via `_after`. The recorded node should depend on `upstream`
+        # but its `args` should still be just the literals.
+        downstream = step("a", _after=(upstream,))
+    finally:
+        _reset_trace(token)
+
+    assert g[downstream] == [upstream]
+    assert downstream.args == ("a",)
+
+
+def test_after_kwarg_differentiates_otherwise_identical_calls():
+    """Two calls with the same literal args but different `_after` deps
+    must produce different `Node` identities — otherwise the runtime
+    would dedup them and one of the orderings would be lost."""
+    @graph_builder
+    def step(x):
+        return x
+
+    g = Graph()
+    token = _TRACE.set(g)
+    try:
+        a = step("a")
+        b = step("b")
+        # Same literal args, different _after deps:
+        node_via_a = step("payload", _after=(a,))
+        node_via_b = step("payload", _after=(b,))
+    finally:
+        _reset_trace(token)
+
+    assert node_via_a is not node_via_b
+    assert node_via_a.name != node_via_b.name
+    assert g[node_via_a] == [a]
+    assert g[node_via_b] == [b]

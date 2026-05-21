@@ -229,13 +229,16 @@ def make_cached_decorator(
             # a trace, the original behaviour is preserved.
             from dependency_graph.tracing import _TRACE, record
             if _TRACE.get() is not None:
+                # `_after` is a magic kwarg for ordering-only deps; pop
+                # it before validating that user kwargs are absent.
+                _after = kwargs.pop("_after", ())
                 if kwargs:
                     raise NotImplementedError(
                         f"{func.__name__} called with kwargs inside a "
                         f"trace ({sorted(kwargs)}); only positional args "
                         "are supported in trace context."
                     )
-                return record(wrapper, *args)
+                return record(wrapper, *args, _after=_after)
             raise RuntimeError(
                 f"{func.__name__} is a remote task. Use `.remote(...)`."
             )

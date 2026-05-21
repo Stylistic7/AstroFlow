@@ -42,7 +42,7 @@ def tracing_active() -> bool:
     return _TRACE.get() is not None
 
 
-def record(task: Callable, *args: Any) -> Node:
+def record(task: Callable, *args: Any, _after: tuple = ()) -> Node:
     """Record one op invocation as a graph node and return its handle.
 
     Handle (Node) args become dependency edges, in call order; the rest
@@ -50,13 +50,24 @@ def record(task: Callable, *args: Any) -> Node:
     dependency results after the literals, so ops must take their
     upstream inputs as their trailing parameters (place_image /
     merge_images / compute_image_metadata already do).
+
+    `_after` is a tuple of Node handles to add as *ordering-only*
+    dependencies — the recorded node won't run until each `_after` node
+    finishes, but their results are not appended to the call args. Use
+    this for ops like `post_process_stack(stack, mock)` whose signature
+    is fully covered by literals but which depend on the side-effect of
+    an upstream node (the master file on disk). Including `_after` in
+    the node-name hash ensures that two calls with identical data deps
+    but different ordering deps don't dedup.
     """
     g = _TRACE.get()
     if g is None:
         raise RuntimeError("record() called outside trace()")
 
     literals = [a for a in args if not isinstance(a, Node)]
-    deps = [a for a in args if isinstance(a, Node)]
+    data_deps = [a for a in args if isinstance(a, Node)]
+    ordering_deps = [a for a in _after if isinstance(a, Node)]
+    deps = data_deps + ordering_deps
 
     fn = getattr(task, "_function", task)
     name = str(hash_list_int([
@@ -204,13 +215,16 @@ def _make_graph_builder(fn: Callable, ray_opts: dict):
                 "Either call from inside another @graph_builder/@pipeline, "
                 "or use .remote(...) for Ray-dispatched execution."
             )
+        # `_after` is a magic kwarg for ordering-only dependencies; pop
+        # it before checking for forbidden user-supplied kwargs.
+        _after = kwargs.pop("_after", ())
         if kwargs:
             raise NotImplementedError(
                 f"@graph_builder {fn.__name__} called with kwargs inside a "
                 f"trace ({sorted(kwargs)}); only positional args are "
                 "supported in trace context."
             )
-        return record(wrapper, *args)
+        return record(wrapper, *args, _after=_after)
 
     wrapper.remote = ray_func.remote
     wrapper.options = ray_func.options
