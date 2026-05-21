@@ -57,13 +57,7 @@ export function implementationsFrom(versions) {
 }
 
 
-// Fetch the merged pipelines list (bundled implementations + registered
-// user pipelines) from /api/pipelines. Cached per session.
-//
-// Each pipeline entry is `{name, kind}` where kind is "bundled" or
-// "registered" — the backend dispatcher resolves either via the
-// per-cart-entry pipeline_name. The frontend treats them uniformly
-// here: they're just "available pipelines" the user can select.
+// Fetch the registered pipelines from /api/pipelines. Cached per session.
 export function usePipelines() {
     const [pipelines, setPipelines] = useState([]);
 
@@ -84,23 +78,14 @@ export function usePipelines() {
 }
 
 
-// Union of pipelines available in the registry with implementations
-// that already have on-disk versions. Result includes every pipeline
-// the user could reasonably click — even ones that don't have results
-// yet — so the pill row can show empty slots for pipelines they might
-// want to queue. Ordering: bundled implementations first (preserving
-// the legacy presentation), then registered pipelines alphabetically.
+// Pipelines the user can pick: every registered pipeline, plus any
+// legacy on-disk names not in the current registry (so old artifacts
+// produced by a removed/renamed pipeline still appear in the dropdown
+// — they just can't be queued anew).
 export function pipelineOptions(versions, availablePipelines) {
+    const registered = availablePipelines.map((p) => p.name);
     const fromVersions = new Set(versions.map((v) => v.implementation));
-    const bundled = availablePipelines
-        .filter((p) => p.kind === "bundled")
-        .map((p) => p.name);
-    const registered = availablePipelines
-        .filter((p) => p.kind === "registered")
-        .map((p) => p.name);
-    const merged = [...bundled, ...registered];
-    // Append any version-only names not present in the api/pipelines
-    // response (e.g. legacy on-disk results for a removed pipeline).
+    const merged = [...registered];
     for (const v of fromVersions) {
         if (!merged.includes(v)) merged.push(v);
     }

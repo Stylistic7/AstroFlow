@@ -183,23 +183,19 @@ def get_shopping_cart():
 
 @app.route("/api/pipelines")
 def get_pipelines():
-    """Merged list: bundled-implementation names + registered user
-    pipelines. The frontend's pipeline dropdown is populated from this.
-    `kind` distinguishes the two for any UI that wants to label them
-    differently, but the backend dispatcher resolves either kind via
-    the same per-cart-entry `pipeline_name`.
+    """Pipelines available for cart selection. Returns every name in
+    the `@pipeline` registry — built-ins in `core/pipelines/*.py`
+    (`PixInsight Master`, `PixInsight Master Downscaled`, `Subframe`)
+    and any user-registered pipelines in `~/AstroFlow/pipelines/`.
     """
-    from previews.types import Implementation
     from pipelines.registry import registered_pipelines
 
-    pipelines = [
-        {"name": impl.value, "kind": "bundled"} for impl in Implementation
-    ]
-    pipelines += [
-        {"name": name, "kind": "registered"}
-        for name in sorted(registered_pipelines().keys())
-    ]
-    return {"pipelines": pipelines}
+    return {
+        "pipelines": [
+            {"name": name}
+            for name in sorted(registered_pipelines().keys())
+        ],
+    }
 
 
 @app.route("/api/shopping_cart/<object_type>/<object_id>/<path:pipeline_name>", methods=["POST"])
