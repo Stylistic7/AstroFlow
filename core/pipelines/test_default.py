@@ -66,7 +66,7 @@ def _count_by_op(graph) -> dict[str, int]:
 
 
 def test_default_pipeline_registers_under_name():
-    """Importing `pipelines.Default` populates the registry with 'Default'.
+    """Importing `pipelines.default` populates the registry with 'Default'.
     Verifies the `@pipeline` decorator's side effect."""
     import pipelines.registry as r
     # Force a discovery sweep that imports built-ins, so the test
@@ -87,7 +87,7 @@ def test_default_pipeline_records_expected_graph_shape(test_context):
 
     Total: 2*4 + 2*2 + 2*2 + 2 = 18 nodes.
     """
-    import pipelines.Default as default_pipeline
+    import pipelines.default as default_pipeline
 
     # Fixture: 1 strip, 2 targets ("a", "b"), 1 stack each. Filter "H"
     # is the default `make_composite_stack` filter.
@@ -156,7 +156,7 @@ def test_default_pipeline_handles_missing_panels(test_context):
     """A mosaic where one target lacks the requested filter: the
     pipeline should skip the missing panel and still produce a graph,
     just with fewer place / merge nodes."""
-    import pipelines.Default as default_pipeline
+    import pipelines.default as default_pipeline
 
     mosaic = Mosaic(
         name="2x1_one_missing",
