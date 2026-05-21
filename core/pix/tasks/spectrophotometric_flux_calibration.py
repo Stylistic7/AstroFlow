@@ -93,7 +93,13 @@ _default_parameters = {
 _run_sfc = make_process_task(
     "SpectrophotometricFluxCalibration",
     _default_parameters,
-    error_patterns=[re.compile(r"\*\*\* Error:.*no astrometric solution")],
+    # Just the unique error string — `*** Error:` and `no astrometric
+    # solution` can land on separate lines when PixInsight wraps the
+    # message (long master filenames trigger this). `re.search` with
+    # default flags doesn't span newlines via `.*`, so the old prefixed
+    # pattern silently missed wrapped errors. Match the distinctive
+    # phrase only.
+    error_patterns=[re.compile(r"no astrometric solution")],
 )
 
 
