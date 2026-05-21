@@ -7,7 +7,7 @@ from compute_graph.compute_graph import build_compute_graph
 from testing import make_synthetic_frames, copy_testdata_frames
 
 from previews.types import QualityLevel
-from stacks.compute_graph import build_calibration_stack_subgraph
+from stacks.compute_graph import calibrate
 from stacks.run import Run
 from stacks.composite_stack import Stack, CalibrationStack
 from stacks.types import StackHash, StackIdDependency
@@ -472,7 +472,7 @@ def test_stack_calibration_frames(test_context) -> None:
         development_settings=context.settings.development_settings,
         min_frames_in_stack=context.settings.clustering_settings.min_frames_in_stack,
     )
-    graph = ray.get(build_calibration_stack_subgraph.remote(light_stacks[0], config))
+    graph = ray.get(calibrate.remote(light_stacks[0], config))
     print_graph(graph)
 
 

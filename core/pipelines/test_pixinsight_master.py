@@ -137,7 +137,7 @@ def test_pixinsight_master_records_expected_graph_shape(test_context):
     counts = _count_by_op(g)
 
     # Per-stack chain (2 stacks):
-    assert counts.get("build_calibration_stack_subgraph", 0) == 2, counts
+    assert counts.get("calibrate", 0) == 2, counts
     assert counts.get("stack_files", 0) == 2, counts
     assert counts.get("post_process_stack", 0) == 2, counts
     # Per-channel HDR-combine (2 channels):

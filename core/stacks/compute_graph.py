@@ -41,7 +41,7 @@ log = structlog.get_logger()
 
 
 @node
-def build_calibration_stack_subgraph(
+def calibrate(
     stack: Stack,
     config: ProcessingConfig,
 ) -> Graph:
@@ -101,7 +101,7 @@ def build_stacking_subgraph(
         # Full: calibrate → stack → metadata → post-process → metadata
         pp_fn = get_producer(MediaType.IMAGE, StackId, QualityLevel.POST_PROCESSED, config.implementation)
         steps = chain(
-            (build_calibration_stack_subgraph, stack, config),
+            (calibrate, stack, config),
             (stack_fn, stack, config),
             Node(compute_image_metadata, name=f"stacking_{stack.stable_hash}"),
             (pp_fn, stack, config.development_settings.mock_pixinsight),
@@ -113,7 +113,7 @@ def build_stacking_subgraph(
         # DownscaledMaster mosaic gets gradient removal too.
         pp_fn = get_producer(MediaType.IMAGE, StackId, QualityLevel.DOWNSCALED_POST_PROCESSED, config.implementation)
         steps = chain(
-            (build_calibration_stack_subgraph, stack, config),
+            (calibrate, stack, config),
             (stack_fn, stack, config),
             Node(compute_image_metadata, name=f"stacking_{stack.stable_hash}"),
             (pp_fn, stack, config.development_settings.mock_pixinsight),
@@ -122,7 +122,7 @@ def build_stacking_subgraph(
     else:
         # SUBFRAME or other: calibrate → stack → metadata (no post-process)
         steps = chain(
-            (build_calibration_stack_subgraph, stack, config),
+            (calibrate, stack, config),
             (stack_fn, stack, config),
             Node(compute_image_metadata, name=f"stacking_{stack.stable_hash}"),
         )

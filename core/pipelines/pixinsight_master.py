@@ -20,15 +20,17 @@ this file to `~/AstroFlow/pipelines/<YourName>.py`, change the
 `@pipeline("…")` display name, and edit the call you want to
 replace.
 """
-from astroflow.ops import (
-    merge_images,
-    merge_target_channel,
-    place,
-    post_process,
-    stack,
-)
 from astroflow.pipeline import pipeline
-from stacks.compute_graph import build_calibration_stack_subgraph
+# Explicit per-backend imports — reading the pipeline file tells you
+# exactly which implementation each step uses. An "OSS Master" sibling
+# pipeline would import `stack_files` from `stacks.stacking.oss` etc.,
+# and the diff between the two files is the algorithm change.
+from mosaics.merging.pixinsight import merge_images
+from mosaics.placement.astroflow import place_image
+from stacks.compute_graph import calibrate
+from stacks.post_processing.pixinsight import post_process_stack
+from stacks.stacking.pixinsight import stack_files
+from targets.merging.pixinsight import merge_target_channel
 
 
 @pipeline("PixInsight Master")
@@ -65,17 +67,16 @@ def merge_mosaic(mode, mosaic, config):
             stacks = target.stacks_for(filter)
             stack_pps = []
             for s in stacks:
-                # Stack all calibration deps first. The legacy
-                # `build_stacking_subgraph` chained this in front of
-                # every light-stack run; expressing it explicitly here
-                # makes the pipeline self-contained. The Node returned
-                # by `build_calibration_stack_subgraph` expands to a
-                # sub-graph at runtime (the per-(bias, dark, flat) stack
-                # tasks); `_after=(cal,)` on the light stack waits on
-                # that whole sub-graph's `calibration_done` sentinel.
-                cal = build_calibration_stack_subgraph(s, config)
-                master = stack(s, config, _after=(cal,))
-                stack_pps.append(post_process(s, mock, _after=(master,)))
+                # Calibration deps are stacked first. The Node returned
+                # by `calibrate` expands to a sub-graph at runtime
+                # (the per-(bias, dark, flat) stack tasks); `_after=(cal,)`
+                # on the light stack waits on that sub-graph's
+                # `calibration_done` sentinel.
+                cal = calibrate(s, config)
+                master = stack_files(s, config, _after=(cal,))
+                stack_pps.append(
+                    post_process_stack(s, mock, _after=(master,))
+                )
             channels[(target.id, filter)] = merge_target_channel(
                 target, filter, stacks, config, _after=tuple(stack_pps),
             )
@@ -92,8 +93,8 @@ def merge_mosaic(mode, mosaic, config):
         rows = []
         for strip in mosaic.strips:
             placed = [
-                place(mode, mosaic, targets_by_id[tid], filter, viewbox,
-                      channels[(tid, filter)])
+                place_image(mode, mosaic, targets_by_id[tid], filter, viewbox,
+                            channels[(tid, filter)])
                 for tid in strip if (tid, filter) in channels
             ]
             if not placed:
