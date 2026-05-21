@@ -253,22 +253,40 @@ def build_preview_graph(
         min_frames_in_stack=min_frames_in_stack,
     )
 
+    # The preview graph automatically dispatches the 'Subframe'
+    # pipeline over every object — semantically "every mosaic is
+    # implicitly in the shopping cart with the Subframe pipeline."
+    # The user never has to queue subframe previews manually.
+    from pipelines.registry import get_pipeline
+    subframe_pipeline = get_pipeline("Subframe")
+
+    graph = Graph({})
     tasks = []
     tasks.append((scatter_stack_thumbnails, cal_stacks_ref, objects.stacks))
 
+    # Subframe pipeline needs `context.targets` populated to resolve
+    # per-mosaic target sets. The preview graph runs inside the
+    # StateActor's process; context is already set up there.
+    from context import local_context as context
+    context.targets = objects.targets
+
     for mosaic_ref in objects.mosaics.values():
         mosaic = mosaic_ref.get()
-        tasks.append(
-            (
-                build_mosaic_subgraph,
-                QualityLevel.SUBFRAME,
-                mosaic,
-                targets_for_mosaic(mosaic, objects.targets),
-                config,
-            )
-        )
+        # Pipelines are graph builders — call in-process and splice
+        # the recorded Graph into the outer preview graph. Sinks
+        # become tasks the preview_graph_done collector waits on.
+        sub_graph = subframe_pipeline(QualityLevel.SUBFRAME, mosaic, config)
+        if sub_graph is None:
+            continue
+        for node, deps in sub_graph.items():
+            graph[node] = deps
+        depended_on = {d for ds in sub_graph.values() for d in ds}
+        for node in sub_graph:
+            if node not in depended_on:
+                tasks.append(node)
 
-    return Graph({preview_graph_done: tasks})
+    graph[preview_graph_done] = tasks
+    return graph
 
 
 # Legacy cart-entry shapes that may still be sitting in
