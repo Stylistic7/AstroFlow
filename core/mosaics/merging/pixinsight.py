@@ -100,9 +100,13 @@ def _maybe_publish_progress(
 
     # Same key shape that store_mosaic_color_channel_xisf eventually
     # overwrites with the final mosaic's thumbnail, so the handoff from
-    # in-progress to final is automatic.
+    # in-progress to final is automatic. Op-named: this is the in-progress
+    # thumbnail produced by merge_images and overwritten by the final
+    # store_mosaic_color_channel_xisf — both surface via the same key
+    # because the viewer cares about "the mosaic's current thumbnail",
+    # not which step produced it.
     thumbnail_key = MosaicChannelId(mosaic=mosaic, filter=filter).presentation_cache_key(
-        THUMBNAIL, mode, impl,
+        THUMBNAIL, "store_mosaic_color_channel_xisf",
     )
     try:
         from previews.operations import resize_array, autostretch, array_to_png

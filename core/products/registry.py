@@ -240,13 +240,18 @@ def _generate_presentations(
                 tile_path = _make_tile_pyramid(result)
                 if tile_path is None:
                     continue
-                for impl in implementations:
-                    for level in active_levels:
-                        key = obj_id.presentation_cache_key(
-                            PresentationType.TILE_PYRAMID, level, impl,
-                        )
-                        context[key] = str(tile_path)
-                        print(f"### Stored tile_pyramid {key}")
+                # Tile-pyramid identity is "this op's output for this
+                # object" — the (impl, level) axes the legacy registry
+                # used are folded into op_name (e.g. `stack_files` vs
+                # `downscale_master`). One entry per @makes_image
+                # decoration, regardless of how many (impl, level) pairs
+                # the legacy registration declared.
+                op_name = func.__name__
+                key = obj_id.presentation_cache_key(
+                    PresentationType.TILE_PYRAMID, op_name,
+                )
+                context[key] = str(tile_path)
+                print(f"### Stored tile_pyramid {key}")
 
 
 def _make_thumbnail(result, resize_array, autostretch, array_to_png, width=2048):

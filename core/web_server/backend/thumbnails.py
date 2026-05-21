@@ -112,9 +112,18 @@ def _thumbnail_for(
     level: str, implementation: str,
 ):
     """Cached thumbnail bytes for one (level, impl), regenerating from
-    the on-disk master on a miss (single-flight). None if unavailable."""
+    the on-disk master on a miss (single-flight). None if unavailable.
+
+    The URL still carries (level, impl) for backwards-compatibility;
+    we translate that to the producer's `__name__` so the cache key
+    is op-named (matching the producer registry's pipeline-collapse).
+    """
+    producer = get_producer(
+        MediaType.IMAGE, type(identity), level, implementation,
+    )
+    op_name = producer.__name__ if producer is not None else f"{level}_{implementation}"
     key = identity.presentation_cache_key(
-        PresentationType.THUMBNAIL, level, implementation,
+        PresentationType.THUMBNAIL, op_name,
     )
     thumbnail = context.get(key)
     if thumbnail:

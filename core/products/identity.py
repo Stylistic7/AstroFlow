@@ -58,14 +58,18 @@ class ObjectId:
     def presentation_cache_key(
         self,
         presentation: PresentationType,
-        level: str,
-        implementation: str,
+        op_name: str,
     ) -> tuple:
+        """Cache key for a presentation (tile pyramid / thumbnail) of an
+        object produced by op `op_name`. The op name replaces the legacy
+        (level, implementation) axes — the artifact's identity is "which
+        op produced it for which object", not "which level/impl slot it
+        was written to."
+        """
         return (
             str(presentation),
             type(self).object_type.__name__,
-            str(level),
-            str(implementation),
+            op_name,
             self.cache_key(),
         )
 
