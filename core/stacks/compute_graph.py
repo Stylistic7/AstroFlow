@@ -6,8 +6,6 @@ from beartype import beartype
 from decorators import node
 from stacks.composite_stack import Run, Stack, StacksDict, CalibrationStacksDict
 from stacks.types import StackIdDependency
-from products import get_producer, MediaType
-from products.identity import identity_for_stack
 
 from stacks.convert_to_dict import convert_to_dict
 from dataclasses import replace
@@ -37,43 +35,55 @@ def calibrate(
     stack: Stack,
     config: ProcessingConfig,
 ) -> Graph:
+    """Build the per-(bias, dark, flat) stacking sub-graph this
+    `stack`'s calibration depends on, terminating in a single
+    `calibration_done` sentinel that downstream nodes can `_after=`
+    on. Cal stacks are themselves stacked via `stack_files` — the same
+    op used for light stacks, with empty decisions (calibration
+    cache is independent of per-light quarantine choices).
+
+    Today this hardcodes the PixInsight `stack_files` because every
+    current pipeline runs the PI WBPP backend. If a future backend
+    (OSS, AstroFlow) needs different calibration stacking, it'd ship
+    its own `calibrate` variant; the few extra lines of duplication
+    beat parameterising this function with a stack-op callable that
+    every caller has to provide explicitly.
+    """
     from decisions.resolve import resolve_calibration
-
-    # Resolve calibration to discover which cal stacks this stack depends on.
-    enriched = resolve_calibration(stack, config.get_calibration_stacks(), config.decisions)
-
-    # Calibration stacks have no per-stack decisions — give them a clean
-    # config so that light-stack quarantine changes don't invalidate their cache.
     from frozendict import frozendict as fd
+    from stacks.stacking.pixinsight import stack_files
+
+    enriched = resolve_calibration(
+        stack, config.get_calibration_stacks(), config.decisions,
+    )
     cal_config = replace(config, decisions=fd())
 
-    def visit_cal_dependencies(run: Run) -> Graph:
-        """Build tasks to stack all calibration dependencies of a run."""
+    def visit(run: Run) -> dict:
+        """Recursively build stacking tasks for one run's cal deps."""
         subgraph = {}
         for dep in run.dependencies.values():
-            if isinstance(dep, StackIdDependency):
-                cal_stack = config.get_calibration_stacks()[dep.stack_id]
-                stack_fn = get_producer(MediaType.IMAGE, identity_for_stack(cal_stack), config.quality, config.implementation)
-                task = (stack_fn, cal_stack, cal_config)
-                cal_run = next(iter(cal_stack.contents.values()))
-                inner = visit_cal_dependencies(cal_run)
-                subgraph[task] = list(inner.keys()) if inner else []
-                subgraph |= inner
+            if not isinstance(dep, StackIdDependency):
+                continue
+            cal_stack = config.get_calibration_stacks()[dep.stack_id]
+            task = (stack_files, cal_stack, cal_config)
+            cal_run = next(iter(cal_stack.contents.values()))
+            inner = visit(cal_run)
+            subgraph[task] = list(inner) if inner else []
+            subgraph |= inner
         return subgraph
 
     cal_tasks = {}
     for run in enriched.contents.values():
-        cal_tasks |= visit_cal_dependencies(run)
+        cal_tasks |= visit(run)
 
     if not cal_tasks:
         return Graph({})
 
-    # Single terminal node gathering all calibration stacking tasks.
+    # Terminal sentinel: every leaf cal task funnels into one Node so
+    # the caller can wait on a single handle.
     graph = Graph(cal_tasks)
-    all_cal = set(cal_tasks.keys())
-    depended_on = {d for deps in cal_tasks.values() for d in deps}
-    leaf_tasks = all_cal - depended_on
-    graph[(calibration_done, stack)] = leaf_tasks
+    has_dep = {d for ds in cal_tasks.values() for d in ds}
+    graph[(calibration_done, stack)] = set(cal_tasks) - has_dep
     return graph
 
 
