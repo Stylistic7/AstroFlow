@@ -23,7 +23,8 @@ import ShoppingCartMenu from './ShoppingCartMenu.jsx';
 import SuggestionBadge from './suggestions/SuggestionBadge.jsx';
 import {
     useVersionsMatrix,
-    implementationsFrom,
+    usePipelines,
+    pipelineOptions,
     qualitiesFor,
     versionExists,
 } from './useVersions.js';
@@ -182,7 +183,12 @@ export default function AstroFlowBreadcrumbs() {
     // version row with the stack's intrinsic filter — use that for
     // matching so the pill-disabled state lines up with reality.
     const matchFilter = filter ?? versionsData.filters?.[0] ?? null;
-    const implementations = implementationsFrom(allVersions);
+    // "Pipeline" is the unified concept across bundled implementations
+    // (PixInsight / OSS / AstroFlow) and registered user pipelines.
+    // Show all of them so the user can switch view (and see which have
+    // results vs which don't — handled by `exists` styling).
+    const availablePipelines = usePipelines();
+    const implementations = pipelineOptions(allVersions, availablePipelines);
     const qualities = qualitiesFor(allVersions, implementation, matchFilter);
     const filters = versionsData.filters;
 

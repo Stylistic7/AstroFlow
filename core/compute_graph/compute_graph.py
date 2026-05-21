@@ -315,10 +315,30 @@ def build_main_processing_graph(
     graph = Graph({})
     tasks = []
     for entry in shopping_cart:
-        # Shopping cart entries: (type, id, mode_str?, implementation_str?)
+        # Shopping cart entries: (type, id, mode_str?, pipeline_name?).
+        # `pipeline_name` is the unified UI-level concept: it can name a
+        # bundled implementation ("PixInsight", "AstroFlow", "OSS") or a
+        # registered user pipeline. None = today's default (PixInsight).
+        # Per-entry, not global, so the same mosaic can be dropped in
+        # twice with two different pipelines for side-by-side comparison;
+        # the choice never reaches any cached @node op's args.
         type, id = entry[0], entry[1]
         mode = QualityLevel(entry[2]) if len(entry) > 2 else QualityLevel.MASTER
-        impl = Implementation(entry[3]) if len(entry) > 3 else Implementation.PIXINSIGHT
+        pipeline_name = entry[3] if len(entry) > 3 else None
+
+        # Resolve `pipeline_name` to (implementation, pipeline_fn). A
+        # bundled-implementation name takes the legacy build_mosaic_subgraph
+        # path; a registered name takes the @pipeline dispatch. Other
+        # cart-entry types (stack/target) just use the resolved
+        # implementation and ignore pipeline_fn.
+        impl = Implementation.PIXINSIGHT
+        pipeline_fn = None
+        if pipeline_name is not None:
+            try:
+                impl = Implementation(pipeline_name)
+            except ValueError:
+                from pipelines.registry import get_pipeline
+                pipeline_fn = get_pipeline(pipeline_name)
 
         if type == "stack":
             if id not in stacks:
@@ -338,12 +358,10 @@ def build_main_processing_graph(
             mosaic = mosaics[id].get()
             cfg = config_for(mode=mode, implementation=impl)
 
-            # Opt-in to a user/built-in pipeline via DevelopmentSettings.
-            # Default (pipeline_name is None) is byte-for-byte the same
-            # build_mosaic_subgraph call this branch made before.
-            if development_settings.pipeline_name is not None:
-                from pipelines.registry import get_pipeline
-                pipeline_fn = get_pipeline(development_settings.pipeline_name)
+            # Registered pipelines take the @pipeline dispatch;
+            # bundled-implementation names (including the default None
+            # → PIXINSIGHT) fall through to the legacy chain below.
+            if pipeline_fn is not None:
                 tasks.append((pipeline_fn, mode, mosaic, cfg))
             else:
                 tasks.append(

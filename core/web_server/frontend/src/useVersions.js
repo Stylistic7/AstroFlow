@@ -57,6 +57,57 @@ export function implementationsFrom(versions) {
 }
 
 
+// Fetch the merged pipelines list (bundled implementations + registered
+// user pipelines) from /api/pipelines. Cached per session.
+//
+// Each pipeline entry is `{name, kind}` where kind is "bundled" or
+// "registered" — the backend dispatcher resolves either via the
+// per-cart-entry pipeline_name. The frontend treats them uniformly
+// here: they're just "available pipelines" the user can select.
+export function usePipelines() {
+    const [pipelines, setPipelines] = useState([]);
+
+    useEffect(() => {
+        let cancelled = false;
+        fetch("/api/pipelines")
+            .then((res) => (res.ok ? res.json() : null))
+            .then((d) => {
+                if (!cancelled && d) setPipelines(d.pipelines || []);
+            })
+            .catch((e) => console.warn(e));
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    return pipelines;
+}
+
+
+// Union of pipelines available in the registry with implementations
+// that already have on-disk versions. Result includes every pipeline
+// the user could reasonably click — even ones that don't have results
+// yet — so the pill row can show empty slots for pipelines they might
+// want to queue. Ordering: bundled implementations first (preserving
+// the legacy presentation), then registered pipelines alphabetically.
+export function pipelineOptions(versions, availablePipelines) {
+    const fromVersions = new Set(versions.map((v) => v.implementation));
+    const bundled = availablePipelines
+        .filter((p) => p.kind === "bundled")
+        .map((p) => p.name);
+    const registered = availablePipelines
+        .filter((p) => p.kind === "registered")
+        .map((p) => p.name);
+    const merged = [...bundled, ...registered];
+    // Append any version-only names not present in the api/pipelines
+    // response (e.g. legacy on-disk results for a removed pipeline).
+    for (const v of fromVersions) {
+        if (!merged.includes(v)) merged.push(v);
+    }
+    return merged;
+}
+
+
 // Qualities (in priority order) that exist for the current (impl, filter).
 export function qualitiesFor(versions, impl, filter) {
     return QUALITY_ORDER.filter((q) => versionExists(versions, impl, q, filter));

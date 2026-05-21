@@ -181,12 +181,37 @@ def get_shopping_cart():
     return list(context.shopping_cart or [])
 
 
+@app.route("/api/pipelines")
+def get_pipelines():
+    """Merged list: bundled-implementation names + registered user
+    pipelines. The frontend's pipeline dropdown is populated from this.
+    `kind` distinguishes the two for any UI that wants to label them
+    differently, but the backend dispatcher resolves either kind via
+    the same per-cart-entry `pipeline_name`.
+    """
+    from previews.types import Implementation
+    from pipelines.registry import registered_pipelines
+
+    pipelines = [
+        {"name": impl.value, "kind": "bundled"} for impl in Implementation
+    ]
+    pipelines += [
+        {"name": name, "kind": "registered"}
+        for name in sorted(registered_pipelines().keys())
+    ]
+    return {"pipelines": pipelines}
+
+
 @app.route("/api/shopping_cart/<object_type>/<object_id>/<quality>", methods=["POST"])
-def add_to_shopping_cart(object_type, object_id, quality):
+@app.route("/api/shopping_cart/<object_type>/<object_id>/<quality>/<pipeline_name>", methods=["POST"])
+def add_to_shopping_cart(object_type, object_id, quality, pipeline_name=None):
     from web_server.backend.announcer import announce
     from state.actor import state as state_handle
     cart = list(context.shopping_cart or [])
-    entry = (object_type, object_id, quality)
+    entry = (
+        (object_type, object_id, quality, pipeline_name) if pipeline_name
+        else (object_type, object_id, quality)
+    )
     if entry not in cart:
         cart.append(entry)
         context.shopping_cart = cart
@@ -196,11 +221,15 @@ def add_to_shopping_cart(object_type, object_id, quality):
 
 
 @app.route("/api/shopping_cart/<object_type>/<object_id>/<quality>", methods=["DELETE"])
-def remove_from_shopping_cart(object_type, object_id, quality):
+@app.route("/api/shopping_cart/<object_type>/<object_id>/<quality>/<pipeline_name>", methods=["DELETE"])
+def remove_from_shopping_cart(object_type, object_id, quality, pipeline_name=None):
     from web_server.backend.announcer import announce
     from state.actor import state as state_handle
     cart = list(context.shopping_cart or [])
-    entry = (object_type, object_id, quality)
+    entry = (
+        (object_type, object_id, quality, pipeline_name) if pipeline_name
+        else (object_type, object_id, quality)
+    )
     if entry in cart:
         cart.remove(entry)
         context.shopping_cart = cart

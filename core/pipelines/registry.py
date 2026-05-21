@@ -98,7 +98,7 @@ def get_pipeline(display_name: str) -> Callable:
 
     Triggers `discover_pipelines()` on first call. Raises `KeyError`
     with a list of available names when unknown — so a typo in
-    `DevelopmentSettings.pipeline_name` fails loudly rather than
+    a shopping-cart-entry `pipeline_name` fails loudly rather than
     silently falling through to the default builder.
     """
     if not _DISCOVERED:

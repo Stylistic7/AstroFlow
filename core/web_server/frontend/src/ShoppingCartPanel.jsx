@@ -35,24 +35,33 @@ export default function ShoppingCartPanel() {
 
   const cart = shoppingCart || [];
 
-  // Group cart entries by (type, id)
+  // Group cart entries by (type, id, pipeline). Two cart entries for
+  // the same object but different pipelines are intentionally distinct
+  // groups — that's the side-by-side comparison workflow.
   const grouped = {};
-  for (const [type, id, quality] of cart) {
-    const key = `${type}:${id}`;
+  for (const entry of cart) {
+    const [type, id, quality] = entry;
+    const pipeline = entry[3] ?? null;
+    const key = `${type}:${id}:${pipeline ?? ''}`;
     if (!grouped[key]) {
-      grouped[key] = { type, id, qualities: [] };
+      grouped[key] = { type, id, pipeline, qualities: [] };
     }
     grouped[key].qualities.push(quality);
   }
   const items = Object.values(grouped);
 
-  const handleRemove = async (type, id, quality) => {
-    await fetch(`/api/shopping_cart/${type}/${id}/${quality}`, { method: "DELETE" });
+  const cartUrl = (type, id, quality, pipeline) =>
+    pipeline
+      ? `/api/shopping_cart/${type}/${id}/${quality}/${pipeline}`
+      : `/api/shopping_cart/${type}/${id}/${quality}`;
+
+  const handleRemove = async (type, id, quality, pipeline) => {
+    await fetch(cartUrl(type, id, quality, pipeline), { method: "DELETE" });
   };
 
-  const handleRemoveAll = async (type, id, qualities) => {
+  const handleRemoveAll = async (type, id, qualities, pipeline) => {
     for (const q of qualities) {
-      await fetch(`/api/shopping_cart/${type}/${id}/${q}`, { method: "DELETE" });
+      await fetch(cartUrl(type, id, q, pipeline), { method: "DELETE" });
     }
   };
 
@@ -104,9 +113,9 @@ export default function ShoppingCartPanel() {
             </Typography>
           </MenuItem>
         ) : (
-          items.map(({ type, id, qualities }) => (
+          items.map(({ type, id, pipeline, qualities }) => (
             <MenuItem
-              key={`${type}:${id}`}
+              key={`${type}:${id}:${pipeline ?? ''}`}
               sx={{ display: "flex", flexDirection: "column", alignItems: "flex-start", py: 1 }}
               disableRipple
             >
@@ -116,20 +125,23 @@ export default function ShoppingCartPanel() {
                 </Typography>
                 <IconButton
                   size="small"
-                  onClick={(e) => { e.stopPropagation(); handleRemoveAll(type, id, qualities); }}
+                  onClick={(e) => { e.stopPropagation(); handleRemoveAll(type, id, qualities, pipeline); }}
                 >
                   <Delete fontSize="small" />
                 </IconButton>
               </Box>
-              <Box sx={{ display: "flex", gap: 0.5, mt: 0.5 }}>
+              <Box sx={{ display: "flex", gap: 0.5, mt: 0.5, flexWrap: "wrap" }}>
                 <Chip size="small" label={type} variant="outlined" />
+                {pipeline && (
+                  <Chip size="small" label={pipeline} variant="outlined" color="info" />
+                )}
                 {qualities.map((q) => (
                   <Chip
                     key={q}
                     size="small"
                     label={qualityLabels[q] || q}
                     color={qualityColors[q] || "default"}
-                    onDelete={() => handleRemove(type, id, q)}
+                    onDelete={() => handleRemove(type, id, q, pipeline)}
                   />
                 ))}
               </Box>

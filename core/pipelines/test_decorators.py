@@ -151,12 +151,31 @@ def test_get_pipeline_triggers_discovery_on_first_call():
     assert r._DISCOVERED is True
 
 
-def test_development_settings_has_pipeline_name():
-    """The opt-in field exists, defaults to None, accepts a string."""
-    from decisions.settings import DevelopmentSettings
+def test_pipeline_name_is_not_on_any_settings_dataclass():
+    """`pipeline_name` is intentionally per-shopping-cart-entry, not a
+    global / development setting. Putting it on `DevelopmentSettings`
+    would bleed into every cached op's cache key via `ProcessingConfig`;
+    putting it on `Settings` would still hash through `Settings.__hash__`
+    in any code that takes Settings as an arg. The cart-entry tuple
+    carries it instead, where it only affects dispatch."""
+    from decisions.settings import DevelopmentSettings, Settings
+    assert not hasattr(DevelopmentSettings(), "pipeline_name")
+    assert not hasattr(Settings(), "pipeline_name")
 
-    default = DevelopmentSettings()
-    assert default.pipeline_name is None
 
-    explicit = DevelopmentSettings(pipeline_name="Default")
-    assert explicit.pipeline_name == "Default"
+def test_cart_entry_carries_pipeline_name_as_fourth_field():
+    """The cart-branch dispatch in `build_main_processing_graph` reads
+    `pipeline_name` from `entry[3]` when present, defaulting to None.
+    A bundled-implementation name (`"PixInsight"`, `"OSS"`,
+    `"AstroFlow"`) or a registered pipeline display name are both valid
+    here — the dispatcher resolves which kind via the Implementation
+    enum lookup."""
+    # Cart format: (type, id, mode_str?, pipeline_name?)
+    entries = [
+        ("mosaic", "m1"),                          # no pipeline → default
+        ("mosaic", "m2", "MASTER"),                # no pipeline → default
+        ("mosaic", "m3", "MASTER", "PixInsight"),  # bundled
+        ("mosaic", "m4", "MASTER", "Default"),     # registered
+    ]
+    parsed = [e[3] if len(e) > 3 else None for e in entries]
+    assert parsed == [None, None, "PixInsight", "Default"]
