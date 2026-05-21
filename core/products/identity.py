@@ -150,7 +150,7 @@ class MosaicId(ObjectId):
 
 @dataclass(frozen=True)
 class PlacedImageId(ObjectId):
-    object_type = _LazyObjectType("mosaics.placement", "PlacedImage")
+    object_type = _LazyObjectType("mosaics.placement.astroflow", "PlacedImage")
     mosaic: Mosaic
     target: Target
     filter: str
@@ -162,7 +162,7 @@ class PlacedImageId(ObjectId):
 
 @dataclass(frozen=True)
 class MergedImageId(ObjectId):
-    object_type = _LazyObjectType("mosaics.merge_images", "MergedImage")
+    object_type = _LazyObjectType("mosaics.merging.pixinsight", "MergedImage")
     mosaic: Mosaic
     filter: str
     input_0: ImageMetadata

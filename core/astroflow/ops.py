@@ -8,11 +8,11 @@ The friendly names are intentional simplifications of the internal
 names: `stack` for `stack_files`, `place` for `place_image`, etc.
 """
 from metadata.image_metadata import compute_image_metadata
-from mosaics.merge_images import merge_images
-from mosaics.placement import place_image as place
-from stacks.post_process import post_process_stack as post_process
-from stacks.stacking import stack_files as stack
-from targets.merge_target_channel import merge_target_channel
+from mosaics.merging.pixinsight import merge_images
+from mosaics.placement.astroflow import place_image as place
+from stacks.post_processing.pixinsight import post_process_stack as post_process
+from stacks.stacking.pixinsight import stack_files as stack
+from targets.merging.pixinsight import merge_target_channel
 
 __all__ = [
     "compute_image_metadata",
