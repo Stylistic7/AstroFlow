@@ -24,7 +24,7 @@ from mosaics.final_storage import store_mosaic_color_channel_subframe
 from mosaics.merging.pixinsight import merge_images
 from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
-from previews.types import Implementation, QualityLevel
+from previews.types import PIXINSIGHT, QualityLevel
 from stacks.compute_graph import get_stack_subframe_image
 from stacks.composite_stack import Stack
 from targets.types import Target
@@ -33,7 +33,7 @@ from targets.types import Target
 _MODE = QualityLevel.SUBFRAME
 # `_IMPL` is required by `merge_images`'s signature but unused on the
 # SUBFRAME path (the numpy overlay doesn't dispatch by impl).
-_IMPL = Implementation.PIXINSIGHT
+_IMPL = PIXINSIGHT
 
 
 def _stack_subframe(s):

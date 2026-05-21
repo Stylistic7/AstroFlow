@@ -5,7 +5,6 @@ from flask import Blueprint, jsonify, abort
 from typing import Any
 
 from context import local_context as context
-from previews.types import Implementation
 from stacks.composite_stack import CalibrationStack
 from stacks.composite_stack import Stack
 from targets.types import Target
@@ -23,7 +22,7 @@ from decisions.decisions import ObjectType, get_decisions_for_object
 
 metadata_bp = Blueprint("metadata", __name__)
 
-def _available_qualities(identity_cls: type, implementation: Implementation, *args) -> list[tuple[QualityLevel, str]]:
+def _available_qualities(identity_cls: type, implementation: str, *args) -> list[tuple[QualityLevel, str]]:
     """Return all quality levels that have files on disk, in priority order."""
     result = []
     for level in QUALITY_PRIORITY:
@@ -38,7 +37,7 @@ def _available_qualities(identity_cls: type, implementation: Implementation, *ar
     return result
 
 
-def _best_quality(identity_cls: type, implementation: Implementation, *args) -> tuple[QualityLevel, str] | None:
+def _best_quality(identity_cls: type, implementation: str, *args) -> tuple[QualityLevel, str] | None:
     """Find the best available quality level for an object."""
     available = _available_qualities(identity_cls, implementation, *args)
     return available[0] if available else None
@@ -266,7 +265,7 @@ def validity_all():
 def available_qualities(object_type: str, object_id: str, filter: str = None):
     """Return all quality levels with existence and validity status."""
     from products import is_object_valid
-    implementation = Implementation.PIXINSIGHT
+    implementation = PIXINSIGHT
     obj_type, args = _resolve_object(object_type, object_id, filter)
     on_disk = dict(_available_qualities(obj_type, implementation, *args))  # level -> path
 
@@ -318,7 +317,7 @@ def metadata(object_type: str, object_id: str, level_or_filter: str = None, filt
             filter = level_or_filter
             level = None
 
-    implementation = Implementation.PIXINSIGHT
+    implementation = PIXINSIGHT
     obj_type, args = _resolve_object(object_type, object_id, filter)
 
     if level is not None:
@@ -467,7 +466,7 @@ def object_versions(object_type: str, object_id: str):
     iter_filters = filters or [None]
 
     versions = []
-    for impl in Implementation:
+    for impl in ALL_IMPLEMENTATIONS:
         for level in QUALITY_PRIORITY:
             for f in iter_filters:
                 candidates = filename_candidates(impl, level, f)

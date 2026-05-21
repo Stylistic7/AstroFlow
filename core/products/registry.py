@@ -9,7 +9,7 @@ from typing import Callable, Any, Type, Optional, Union
 import numpy as np
 
 from file_io.types import ContentHashable
-from previews.types import QualityLevel, Implementation
+from previews.types import QualityLevel, PIXINSIGHT
 from products.identity import ObjectId, PresentationType
 from context import context
 
@@ -22,14 +22,14 @@ class MediaType(str, Enum):
 type FilenameFn = Union[str, Callable[..., Path]]
 
 _registry: dict[
-    MediaType, dict[tuple[Type, QualityLevel, Implementation], Callable[..., Path]]
+    MediaType, dict[tuple[Type, QualityLevel], Callable[..., Path]]
 ] = {
     MediaType.IMAGE: {},
     MediaType.VIDEO: {},
 }
 
 _filename_fns: dict[
-    MediaType, dict[tuple[Type, QualityLevel, Implementation], Callable[..., Path]]
+    MediaType, dict[tuple[Type, QualityLevel], Callable[..., Path]]
 ] = {
     MediaType.IMAGE: {},
     MediaType.VIDEO: {},
@@ -52,7 +52,7 @@ def register_producer(
     level: QualityLevel,
     func: Callable[..., Path],
     filename_fn: "FilenameFn | None" = None,
-    implementation: Implementation = Implementation.PIXINSIGHT,
+    implementation: str = PIXINSIGHT,
     identity: "type[ObjectId] | None" = None,
 ) -> None:
     key = (identity, level, implementation)
@@ -63,7 +63,7 @@ def register_producer(
 
 def get_producer(
     media_type: MediaType, identity: "type[ObjectId]", level: QualityLevel,
-    implementation: Implementation = Implementation.PIXINSIGHT,
+    implementation: str = PIXINSIGHT,
 ) -> Optional[Callable[..., Path]]:
     _ensure_registered()
     return _registry[media_type].get((identity, level, implementation))
@@ -71,7 +71,7 @@ def get_producer(
 
 def get_filename_fn(
     media_type: MediaType, identity: "type[ObjectId]", level: QualityLevel,
-    implementation: Implementation = Implementation.PIXINSIGHT,
+    implementation: str = PIXINSIGHT,
 ) -> Optional[Callable[..., Path]]:
     _ensure_registered()
     return _filename_fns[media_type].get((identity, level, implementation))
@@ -79,7 +79,7 @@ def get_filename_fn(
 
 def available_levels(
     media_type: MediaType, identity: "type[ObjectId]",
-    implementation: Implementation = Implementation.PIXINSIGHT,
+    implementation: str = PIXINSIGHT,
 ) -> set[QualityLevel]:
     return {
         level
@@ -93,7 +93,7 @@ def clear_registry(media_type: MediaType) -> None:
     _filename_fns[media_type].clear()
 
 
-def _mark_valid(identity_cls: type, level: QualityLevel, implementation: Implementation, args: tuple) -> None:
+def _mark_valid(identity_cls: type, level: QualityLevel, implementation: str, args: tuple) -> None:
     """Mark a product as valid after its producer completes."""
     # The first argument to a producer is always the primary object
     # (Stack, Mosaic, etc.) which has stable_hash.
@@ -108,7 +108,7 @@ def _mark_valid(identity_cls: type, level: QualityLevel, implementation: Impleme
 def invalidate_object(object_type: str, object_id: str, implementation: str = None) -> None:
     """Mark all quality levels of an object as invalid."""
     from context import context
-    implementations = [implementation] if implementation else [i.value for i in Implementation]
+    implementations = [implementation] if implementation else ALL_IMPLEMENTATIONS
     updates = {}
     for level in QualityLevel:
         for impl in implementations:
@@ -151,7 +151,7 @@ def is_object_valid(
 
 def fully_resolve(
     identity_cls: type, level: QualityLevel, filename_fn: FilenameFn,
-    implementation: Implementation = Implementation.PIXINSIGHT,
+    implementation: str = PIXINSIGHT,
 ):
     object_type_name = identity_cls.object_type.__name__
 
@@ -346,7 +346,7 @@ def _chain_compute_image_metadata(handle):
 
 def _bind_producer(
     media_type: MediaType,
-    implementation: Implementation | list[Implementation],
+    implementation: str | list[str],
     levels: list[QualityLevel],
     filename_fn: FilenameFn | None,
     identity: "type[ObjectId]",
@@ -509,7 +509,7 @@ def _bind_producer(
 
 
 def makes_image(
-    implementation: Implementation,
+    implementation: str,
     levels: list[QualityLevel], filename_fn: FilenameFn | None = None,
     identity: type[ObjectId] = None,
     presentations: list[PresentationType] | None = None,
@@ -522,7 +522,7 @@ def makes_image(
 
 
 def makes_video(
-    implementation: Implementation,
+    implementation: str,
     levels: list[QualityLevel], filename_fn: FilenameFn | None = None,
     identity: type[ObjectId] = None,
     presentations: list[PresentationType] | None = None,

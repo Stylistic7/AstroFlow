@@ -4,16 +4,14 @@ from enum import StrEnum
 PreviewHash = NewType("PreviewHash", str)
 
 
-class Implementation(StrEnum):
-    PIXINSIGHT = "PixInsight"
-    ASTROFLOW = "AstroFlow"
-    OSS = "OSS"
-
-
-PIXINSIGHT = Implementation.PIXINSIGHT
-ASTROFLOW = Implementation.ASTROFLOW
-OSS = Implementation.OSS
-ALL_IMPLEMENTATIONS = list(Implementation)
+# Backend names — strings, not an enum. Used as the "implementation"
+# axis in producer-registry keys and as path segments in on-disk file
+# layout. Free-form by design: user pipelines may declare their own
+# backend names without touching this module.
+PIXINSIGHT = "PixInsight"
+ASTROFLOW = "AstroFlow"
+OSS = "OSS"
+ALL_IMPLEMENTATIONS = [PIXINSIGHT, ASTROFLOW, OSS]
 
 
 class QualityLevel(StrEnum):

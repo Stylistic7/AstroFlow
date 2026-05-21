@@ -72,7 +72,7 @@ def stacking_report(stack_id):
     """
     from products.registry import get_filename_fn, MediaType
     from products.identity import identity_for_stack
-    from previews.types import QualityLevel, Implementation
+    from previews.types import QualityLevel, PIXINSIGHT
     from stacks.stacking_report import read_stacking_report
 
     if stack_id not in (context.stacks or {}):
@@ -83,7 +83,7 @@ def stacking_report(stack_id):
     impl_str = request.args.get("implementation", "PixInsight")
     try:
         quality = QualityLevel(quality_str)
-        implementation = Implementation(impl_str)
+        implementation = impl_str
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
@@ -115,14 +115,14 @@ def concerns_for_object(object_type, object_id):
       filter — required for object_type=mosaic
     """
     from products.identity import StackId, MosaicChannelId
-    from previews.types import QualityLevel, Implementation
+    from previews.types import QualityLevel, PIXINSIGHT
     from context import get_cache
 
     quality_str = request.args.get("quality", "Master")
     impl_str = request.args.get("implementation", "PixInsight")
     try:
         quality = QualityLevel(quality_str)
-        implementation = Implementation(impl_str)
+        implementation = impl_str
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
@@ -203,7 +203,7 @@ def invalidate_stack(stack_id):
     cache miss and re-stacks just this one.
     """
     from decisions.settings import ProcessingConfig
-    from previews.types import QualityLevel, Implementation
+    from previews.types import QualityLevel, PIXINSIGHT
     from stacks.stacking import stack_files
 
     if stack_id not in (context.stacks or {}):
@@ -218,7 +218,7 @@ def invalidate_stack(stack_id):
         min_frames_in_stack=settings.clustering_settings.min_frames_in_stack,
         decisions=settings.decision_overrides,
         quality=QualityLevel.MASTER,
-        implementation=Implementation.PIXINSIGHT,
+        implementation=PIXINSIGHT,
     )
     deleted = stack_files.invalidate(stack, config)
     if deleted:
@@ -328,13 +328,13 @@ def open_mosaic_master(mosaic_id, implementation, filter):
     from pathlib import Path
     from products.registry import get_filename_fn, MediaType
     from products.identity import MosaicChannelId
-    from previews.types import QualityLevel, Implementation
+    from previews.types import QualityLevel, PIXINSIGHT
 
     mosaics = context.mosaics or {}
     if mosaic_id not in mosaics:
         return jsonify({"error": "mosaic not found"}), 404
     mosaic = mosaics[mosaic_id].get()
-    impl = Implementation(implementation)
+    impl = implementation
 
     candidates = []
 

@@ -13,7 +13,7 @@ from pix.tasks import PhotometricMosaic
 from metadata.classes import ImageMetadata
 from mosaics.types import Mosaic
 from previews.types import (
-    QualityLevel, Implementation, ALL_IMPLEMENTATIONS,
+    QualityLevel, ALL_IMPLEMENTATIONS,
     PIXINSIGHT, SUBFRAME, MASTER, DOWNSCALED_MASTER,
 )
 from previews.create_tile_pyramid import default_make_tile_pyramid
@@ -66,7 +66,7 @@ def _maybe_publish_progress(
     mode: QualityLevel,
     mosaic: Mosaic,
     filter: str,
-    impl: Implementation,
+    impl: str,
     output_filename: Path,
     new_count: int,
 ) -> None:
@@ -125,7 +125,7 @@ def merge_images(
     mode: QualityLevel,
     mosaic: Mosaic,
     filter: str,
-    impl: Implementation,
+    impl: str,
     mock_pixinsight: bool,
     input_0: ImageMetadata,
     input_1: ImageMetadata,

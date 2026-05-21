@@ -8,7 +8,7 @@ from mosaics.types import Mosaic
 from file_io.generic import read_image
 from file_io.tiff_file_io import write_tiff_image
 from previews.operations import autostretch
-from previews.types import QualityLevel, Implementation, ALL_IMPLEMENTATIONS, PIXINSIGHT, OSS, SUBFRAME, MASTER, DOWNSCALED_MASTER
+from previews.types import QualityLevel, ALL_IMPLEMENTATIONS, PIXINSIGHT, OSS, SUBFRAME, MASTER, DOWNSCALED_MASTER
 from pix import Image
 from products import makes_image
 from products.identity import MosaicChannelId, PresentationType
@@ -86,7 +86,7 @@ def store_mosaic_color_channel_oss(
 @beartype
 def store_mosaic_color_channel(
     mode: QualityLevel, mosaic: Mosaic, filter: str,
-    implementation: Implementation, input: ImageMetadata,
+    implementation: str, input: ImageMetadata,
 ) -> WithSidecar:
     from context import context
     mock = context.settings.development_settings.mock_pixinsight

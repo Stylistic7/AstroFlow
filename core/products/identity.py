@@ -59,7 +59,7 @@ class ObjectId:
         self,
         presentation: PresentationType,
         level: "QualityLevel",
-        implementation: "Implementation",
+        implementation: str,
     ) -> tuple:
         return (
             str(presentation),

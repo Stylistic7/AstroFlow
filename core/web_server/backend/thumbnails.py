@@ -19,7 +19,7 @@ from products.identity import (
     MosaicChannelId,
     CalibratedStackId, UncorrectedRunId,
 )
-from previews.types import QualityLevel, Implementation, QUALITY_PRIORITY
+from previews.types import QualityLevel, PIXINSIGHT, QUALITY_PRIORITY
 from stacks.run import Run
 from stacks.composite_stack import CalibrationStack
 
@@ -43,7 +43,7 @@ def _key_lock(key) -> threading.Lock:
 
 def _regenerate_thumbnail(
     identity: ObjectId,
-    level: QualityLevel, implementation: Implementation,
+    level: QualityLevel, implementation: str,
 ):
     """Rebuild a thumbnail from the producer's on-disk source, or None
     if nothing resolvable/extant exists for this (type, level, impl).
@@ -109,7 +109,7 @@ def _regenerate_thumbnail(
 
 def _thumbnail_for(
     identity: ObjectId,
-    level: QualityLevel, implementation: Implementation,
+    level: QualityLevel, implementation: str,
 ):
     """Cached thumbnail bytes for one (level, impl), regenerating from
     the on-disk master on a miss (single-flight). None if unavailable."""
@@ -141,7 +141,7 @@ def _png_response(thumbnail: bytes, level: QualityLevel):
 
 def get_thumbnail_by_id(identity: ObjectId):
     """Return the best-available thumbnail using ObjectId-based lookup."""
-    implementation = Implementation.PIXINSIGHT
+    implementation = PIXINSIGHT
     for level in QUALITY_PRIORITY:
         thumbnail = _thumbnail_for(
             identity, level, implementation,
@@ -152,7 +152,7 @@ def get_thumbnail_by_id(identity: ObjectId):
 
 
 def get_specific_thumbnail_by_id(
-    implementation: Implementation,
+    implementation: str,
     level: QualityLevel, identity: ObjectId,
 ):
     """Return the thumbnail for an exact (implementation, level)."""
@@ -185,7 +185,7 @@ def mosaic_thumbnail_specific(mosaic_id: str, implementation: str, quality: str,
     """Thumbnail for an exact (mosaic, implementation, quality, filter)."""
     mosaic = context.mosaics[mosaic_id].get()
     return get_specific_thumbnail_by_id(
-        Implementation(implementation), QualityLevel(quality),
+        implementation, QualityLevel(quality),
         MosaicChannelId(mosaic=mosaic, filter=filter),
     )
 
@@ -216,7 +216,7 @@ def run_thumbnail(stack_id: str, substack_id: str, flat_stack_id: str):
 
 
 def get_video(identity: type, *args):
-    implementation = Implementation.PIXINSIGHT
+    implementation = PIXINSIGHT
     for level in QUALITY_PRIORITY:
         if fn := get_producer(MediaType.VIDEO, identity, level, implementation):
             if hasattr(fn, "video_fn"):
