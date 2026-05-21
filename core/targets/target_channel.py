@@ -1,4 +1,4 @@
-"""Per-(target, filter) merged-master artifact and subgraph builder.
+"""Per-(target, filter) artifact identity and grouping helpers.
 
 A `TargetChannel` is the canonical "this target's R-channel image" — one
 master per (target, filter) pair, regardless of whether the user shot
@@ -9,26 +9,13 @@ can register the merge producer. The actual merge implementation lives
 in `merge_target_channel.py` (PIXINSIGHT) and `merge_target_channel_oss.py`
 (OSS).
 
-This module is the encapsulation boundary: callers above the Target
-layer (e.g. mosaic placement) ask `channel_stacks_for(target, filter)`
-or invoke `build_target_channel_subgraph(...)` and never poke at Stack
-internals directly.
+The graph-building that pipelines do (stack + merge per channel) is in
+each `@pipeline` body now — see `core/pipelines/*.py`.
 """
-from dataclasses import dataclass, replace
-
-import ray
-from beartype import beartype
+from dataclasses import dataclass
 
 from context import context
-from decisions.decisions import decisions_for_stack
-from decisions.settings import ProcessingConfig
-from dependency_graph import Graph, Node, chain
-from metadata.image_metadata import compute_image_metadata
-from previews.types import QualityLevel
-from products import get_producer, MediaType
-from products.identity import TargetChannelId
 from stacks.composite_stack import Stack
-from stacks.compute_graph import build_stacking_subgraph, get_stack_subframe_image
 from targets.types import Target
 
 
@@ -70,69 +57,3 @@ def filters_for_target(target: Target) -> list[str]:
     """Filters this target was imaged in, in deterministic order."""
     target_stacks = [context.stacks[sid].get() for sid in target.stack_ids]
     return list(group_stacks_by_filter(target_stacks).keys())
-
-
-@ray.remote(num_cpus=0.1)
-@beartype
-def build_target_channel_subgraph(
-    target: Target,
-    filter: str,
-    stacks: tuple[Stack, ...],
-    config: ProcessingConfig,
-) -> Graph:
-    """Per-(target, filter) subgraph: stack each constituent, then merge.
-
-    SUBFRAME mode short-circuits to the first stack's best frame —
-    "merge a single preview frame" doesn't make scientific sense, and
-    a SUBFRAME mosaic preview just wants something fast and
-    representative. MASTER / DOWNSCALED_MASTER modes go through the
-    full stack-then-merge path.
-    """
-    # Both branches must terminate in `compute_image_metadata` so the
-    # caller (build_placement_subgraph) can chain place_fn(...,
-    # image_metadata) on top without caring which mode produced the
-    # input. SUBFRAME terminates in subframe-path -> metadata; MASTER
-    # terminates in merge -> path -> metadata.
-    metadata_node = Node(
-        compute_image_metadata,
-        name=f"channel_{target.stable_hash}_{filter}_{config.quality.value}",
-    )
-
-    if config.quality == QualityLevel.SUBFRAME:
-        # Pick the first stack as the representative for this channel
-        # in preview mode. Same behavior the old code had implicitly
-        # via "first matching stack wins".
-        assert stacks, f"channel ({target}, {filter}) has no stacks"
-        return Graph({
-            **chain(
-                (get_stack_subframe_image, stacks[0]),
-                metadata_node,
-            )
-        })
-
-    def config_for(stack: Stack) -> ProcessingConfig:
-        return replace(
-            config,
-            decisions=decisions_for_stack(config.decisions, stack.stable_hash),
-        )
-
-    per_stack_tasks = [
-        (build_stacking_subgraph, stack, config_for(stack))
-        for stack in stacks
-    ]
-
-    merge_fn = get_producer(
-        MediaType.IMAGE, TargetChannelId, config.quality, config.implementation,
-    )
-    assert merge_fn is not None, (
-        f"No TargetChannel producer registered for "
-        f"({config.quality}, {config.implementation})"
-    )
-    merge_task = (merge_fn, target, filter, stacks, config)
-
-    graph = Graph()
-    for task in per_stack_tasks:
-        graph[task] = set()
-    graph[merge_task] = set(per_stack_tasks)
-    graph[metadata_node] = {merge_task}
-    return graph

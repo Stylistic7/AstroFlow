@@ -7,7 +7,6 @@ from typing import Any
 
 from context import context
 from cache.context_ref import ContextRef
-from decisions.decisions import decisions_for_stack
 from compute_graph import (
     build_compute_graph,
     build_regroup_graph,
@@ -17,20 +16,8 @@ from compute_graph import (
 from dependency_graph import (
     Graph,
     run_graph,
-    chain,
     GraphStatus,
 )
-from mosaics.compute_graph import (
-    build_mosaic_subgraph,
-    targets_for_mosaic,
-    process_mosaics_for_ui,
-)
-from previews.types import QualityLevel
-from targets.compute_graph import build_target_subgraph, process_targets_for_ui
-from stacks.compute_graph import build_stacking_subgraph
-from targets.post_process import post_process_target
-from stacks.post_processing import post_process_stack
-from mosaics.post_process import post_process_mosaic
 from metadata.image_metadata import scatter_compute_image_metadata
 
 
@@ -49,89 +36,6 @@ def _announce(state: State, action: Action) -> tuple[State, list[Action]]:
 @ray.remote
 def command_done() -> None:
     pass
-
-
-def _process_stack(action: Action) -> Graph:
-    from decisions.settings import ProcessingConfig
-    from frozendict import frozendict as fd
-    stack_id = action["object_id"]
-    stack = context.stacks[stack_id].get()
-    settings = context.settings
-    config = ProcessingConfig(
-        calibration_stacks=ContextRef.store_large(context.calibration_stacks),
-        development_settings=settings.development_settings,
-        min_frames_in_stack=settings.clustering_settings.min_frames_in_stack,
-        decisions=decisions_for_stack(settings.decision_overrides, stack_id),
-    )
-
-    return Graph({(build_stacking_subgraph, stack, config): {}})
-
-
-def _process_target(action: Action) -> Graph:
-    from decisions.settings import ProcessingConfig
-    target = context.targets[action["object_id"]].get()
-    settings = context.settings
-    config = ProcessingConfig(
-        calibration_stacks=ContextRef.store_large(context.calibration_stacks),
-        development_settings=settings.development_settings,
-        min_frames_in_stack=settings.clustering_settings.min_frames_in_stack,
-        decisions=settings.decision_overrides,
-    )
-
-    return Graph(
-        {
-            **chain(
-                (build_target_subgraph, target, config),
-                process_targets_for_ui,
-            )
-        }
-    )
-
-
-def _process_mosaic(action: Action) -> Graph:
-    from decisions.settings import ProcessingConfig
-    mosaic = context.mosaics[action["object_id"]].get()
-
-    stacks = context.stacks
-    targets = context.targets
-    settings = context.settings
-    config = ProcessingConfig(
-        calibration_stacks=ContextRef.store_large(context.calibration_stacks),
-        development_settings=settings.development_settings,
-        min_frames_in_stack=settings.clustering_settings.min_frames_in_stack,
-        decisions=settings.decision_overrides,
-    )
-
-    tasks = []
-    for mode in ["subframe", "master"]:
-        if action["mode"] in ["all", mode]:
-            task = (
-                build_mosaic_subgraph,
-                QualityLevel(mode),
-                mosaic,
-                targets_for_mosaic(mosaic, targets),
-                config,
-            )
-            tasks.append(task)
-
-    tasks.append(process_mosaics_for_ui)
-
-    return Graph({command_done: tasks})
-
-
-def _post_process(action: Action) -> Graph:
-    print(f"### _post_process {action=}")
-    if action["object_type"] == "stack":
-        stack = context.stacks[action["object_id"]].get()
-        mock = context.settings.development_settings.mock_pixinsight
-        run_graph(Graph({(post_process_stack, stack, mock): {}}))
-    elif action["object_type"] == "target":
-        target = context.targets[action["object_id"]].get()
-        mock = context.settings.development_settings.mock_pixinsight
-        run_graph(Graph({(post_process_target, target, mock): {}}))
-    elif action["object_type"] == "mosaic":
-        mosaic = context.mosaics[action["object_id"]].get()
-        run_graph(Graph({(post_process_mosaic, QualityLevel.MASTER, mosaic, context.stacks, context.targets): {}}))
 
 
 @ray.remote(
@@ -244,23 +148,6 @@ class StateActor:
                 pass
             case "announce":
                 self.state, new_actions = _announce(self.state, action)
-            case "process":
-                if action["object_type"] == "stack":
-                    self.state, new_actions = self._run_graph(
-                        self.state, _process_stack(action)
-                    )
-                if action["object_type"] == "target":
-                    self.state, new_actions = self._run_graph(
-                        self.state, _process_target(action)
-                    )
-                elif action["object_type"] == "mosaic":
-                    self.state, new_actions = self._run_graph(
-                        self.state, _process_mosaic(action)
-                    )
-            case "post_process":
-                self.state, new_actions = self._run_graph(
-                    self.state, _post_process(action)
-                )
             case "update_settings" | "run_entire_graph":
                 self.state, new_actions = self._run_graph(
                     self.state, build_compute_graph()

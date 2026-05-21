@@ -1,14 +1,11 @@
 """Subframe-preview pipeline: cheap NumPy approximations.
 
-The `Subframe` pipeline is automatically dispatched by
-`build_preview_graph` over every object — semantically "every object
-is implicitly in the cart with the Subframe pipeline" — so the user
-never has to queue it explicitly. Users who specifically want a
-preview-only result for one object can also add a cart entry with
-pipeline `"Subframe"`.
+Auto-dispatched by `build_preview_graph` over every object —
+semantically "every object is implicitly in the cart with the
+Subframe pipeline" — so the user never has to queue it explicitly.
+A cart entry with pipeline `"Subframe"` re-runs it on demand.
 
-NOT a fork of `PixInsight Master`. The two share approximately no
-ops:
+NOT a fork of `PixInsight Master`. The two share no ops:
 
   Subframe                          PixInsight Master
   ────────                          ─────────────────
@@ -18,104 +15,95 @@ ops:
   place_image (universal)           place_image (universal)
   merge_images / numpy overlay      merge_images / PhotometricMosaic
 
-Three entry points (stack / target / mosaic) so the cart can queue at
-any granularity, same shape as the master pipelines.
-
-Missing panels are tolerated: this is a preview, not a
-science-quality master, so showing whatever frames exist is fine.
+Missing panels are tolerated: this is a preview, not a science-
+quality master, so showing whatever frames exist is fine.
 """
 from astroflow.pipeline import pipeline
 from metadata.image_metadata import compute_image_metadata
 from mosaics.merging.pixinsight import merge_images
 from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
-from previews.types import Implementation
+from previews.types import Implementation, QualityLevel
 from stacks.compute_graph import get_stack_subframe_image
 from stacks.composite_stack import Stack
 from targets.types import Target
 
 
+_MODE = QualityLevel.SUBFRAME
+# `_IMPL` is required by `merge_images`'s signature but unused on the
+# SUBFRAME path (the numpy overlay doesn't dispatch by impl).
+_IMPL = Implementation.PIXINSIGHT
+
+
 def _stack_subframe(s):
     """Best light frame for one stack, with computed metadata.
-    `get_stack_subframe_image` returns a raw `Path` (no
-    @makes_image), so the auto-chain from @makes_image's
-    _trace_hooks doesn't fire — chain `compute_image_metadata`
-    explicitly so downstream `place_image` receives an
-    ImageMetadata handle."""
-    subframe = get_stack_subframe_image(s)
-    return compute_image_metadata(subframe)
+    `get_stack_subframe_image` returns a raw `Path` (no @makes_image),
+    so we chain `compute_image_metadata` explicitly to hand
+    `place_image` an ImageMetadata downstream."""
+    return compute_image_metadata(get_stack_subframe_image(s))
 
 
 def _channels_for_target(target):
-    """Per-filter representative-frame metadata for one target. Uses
-    the first stack as the representative — same choice the legacy
-    `build_target_channel_subgraph` SUBFRAME path made."""
-    channels: dict = {}
-    for filter in target.filters:
-        stacks = target.stacks_for(filter)
-        if not stacks:
-            continue
-        channels[filter] = _stack_subframe(stacks[0])
-    return channels
+    """First stack's best frame per filter — same representative
+    choice the legacy SUBFRAME path made."""
+    return {
+        filter: _stack_subframe(target.stacks_for(filter)[0])
+        for filter in target.filters
+        if target.stacks_for(filter)
+    }
 
 
 @pipeline("Subframe", processes=Stack)
-def for_stack(mode, stack, config):
-    """Pick the highest-star light frame for one stack and compute
-    its metadata. No stacking, no calibration."""
-    del mode, config
+def for_stack(stack, config):
+    """The highest-star light frame for one stack, with metadata."""
+    del config
     return _stack_subframe(stack)
 
 
 @pipeline("Subframe", processes=Target)
-def for_target(mode, target, config):
+def for_target(target, config):
     """Per-filter representative subframes for one target."""
-    del mode, config
+    del config
     return _channels_for_target(target)
 
 
 @pipeline("Subframe", processes=Mosaic)
-def for_mosaic(mode, mosaic, config):
-    """Build a subframe preview mosaic, end to end.
-
-    Per (target, filter) — pick the best light frame from the first
-    stack, compute metadata. Per filter — place each panel into the
-    mosaic viewbox, pairwise-merge inside each strip, then merge
-    rows. Returns `{filter: sink_metadata}`.
-    """
+def for_mosaic(mosaic, config):
+    """Subframe preview mosaic, end to end. Returns
+    `{filter: sink_metadata}`."""
     mock = config.development_settings.mock_pixinsight
-    # `impl` is required by `merge_images`'s signature but is ignored
-    # on the SUBFRAME path (numpy overlay).
-    impl = Implementation.PIXINSIGHT
-
     targets_by_id = {t.id: t for t in mosaic.targets}
 
-    channels: dict = {}
-    for target in mosaic.targets:
-        for filter, sink in _channels_for_target(target).items():
-            channels[(target.id, filter)] = sink
+    channels = {
+        (target.id, filter): sink
+        for target in mosaic.targets
+        for filter, sink in _channels_for_target(target).items()
+    }
 
-    out: dict = {}
+    def merged_strip(strip, filter, viewbox):
+        placed = [
+            place_image(_MODE, mosaic, targets_by_id[tid], filter, viewbox,
+                        channels[(tid, filter)])
+            for tid in strip if (tid, filter) in channels
+        ]
+        if not placed:
+            return None
+        return _pairwise_merge(placed, mosaic, filter, mock)
+
+    out = {}
     for filter in mosaic.filters:
-        viewbox = mosaic.viewbox(mode)
-        rows = []
-        for strip in mosaic.strips:
-            placed = [
-                place_image(mode, mosaic, targets_by_id[tid], filter, viewbox,
-                            channels[(tid, filter)])
-                for tid in strip if (tid, filter) in channels
-            ]
-            if not placed:
-                continue
-            row = placed[0]
-            for p in placed[1:]:
-                row = merge_images(mode, mosaic, filter, impl, mock, row, p)
-            rows.append(row)
-        if not rows:
-            continue
-        merged = rows[0]
-        for r in rows[1:]:
-            merged = merge_images(mode, mosaic, filter, impl, mock, merged, r)
-        out[filter] = merged
+        viewbox = mosaic.viewbox(_MODE)
+        rows = [r for r in (
+            merged_strip(strip, filter, viewbox) for strip in mosaic.strips
+        ) if r is not None]
+        if rows:
+            out[filter] = _pairwise_merge(rows, mosaic, filter, mock)
 
     return out
+
+
+def _pairwise_merge(items, mosaic, filter, mock):
+    acc = items[0]
+    for item in items[1:]:
+        acc = merge_images(_MODE, mosaic, filter, _IMPL, mock, acc, item)
+    return acc

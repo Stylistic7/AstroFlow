@@ -16,14 +16,13 @@ from previews.stack_thumbnails import scatter_stack_thumbnails
 from previews.types import QualityLevel
 from mosaics.identification import identify_mosaics
 from stacks.compute_graph import (
-    build_stacking_subgraph,
     process_stacks_for_ui,
     process_calibration_stacks_for_ui,
 )
-from targets.compute_graph import build_target_subgraph, process_targets_for_ui
+from targets.compute_graph import process_targets_for_ui
 from targets.identification import identify_targets
 from targets.types import TargetsDict
-from mosaics.compute_graph import build_mosaic_subgraph, process_mosaics_for_ui
+from mosaics.compute_graph import process_mosaics_for_ui
 from mosaics.types import MosaicsDict
 from dependency_graph import Graph, Node
 from stacks.identification import identify_stacks
@@ -32,7 +31,6 @@ from decorators import node
 from decisions.compute_graph import (
     scatter_customize_targets,
 )
-from mosaics.compute_graph import targets_for_mosaic
 from cache.context_ref import ContextRef
 from decisions.settings import ClusteringSettings, DevelopmentSettings
 from decisions.decisions import decisions_for_stack
@@ -253,112 +251,39 @@ def build_preview_graph(
         min_frames_in_stack=min_frames_in_stack,
     )
 
-    # The preview graph automatically dispatches the 'Subframe'
-    # pipeline over every object — semantically "every mosaic is
-    # implicitly in the shopping cart with the Subframe pipeline."
-    # The user never has to queue subframe previews manually.
+    # Auto-preview: the 'Subframe' pipeline is dispatched over every
+    # mosaic — semantically "every mosaic is implicitly in the cart
+    # with the Subframe pipeline." The user never queues these.
     from pipelines.registry import get_pipeline
     from mosaics.types import Mosaic
     subframe_pipeline = get_pipeline("Subframe", processes=Mosaic)
 
     graph = Graph({})
-    tasks = []
-    tasks.append((scatter_stack_thumbnails, cal_stacks_ref, objects.stacks))
+    tasks = [(scatter_stack_thumbnails, cal_stacks_ref, objects.stacks)]
 
-    # Subframe pipeline needs `context.targets` populated to resolve
-    # per-mosaic target sets. The preview graph runs inside the
-    # StateActor's process; context is already set up there.
+    # Subframe pipeline body resolves `mosaic.targets` against
+    # `context.targets`; populate it here so the trace runs cleanly.
     from context import local_context as context
     context.targets = objects.targets
 
     for mosaic_ref in objects.mosaics.values():
-        mosaic = mosaic_ref.get()
-        # Pipelines are graph builders — call in-process and splice
-        # the recorded Graph into the outer preview graph. Sinks
-        # become tasks the preview_graph_done collector waits on.
-        sub_graph = subframe_pipeline(QualityLevel.SUBFRAME, mosaic, config)
-        if sub_graph is None:
-            continue
-        for node, deps in sub_graph.items():
-            graph[node] = deps
-        depended_on = {d for ds in sub_graph.values() for d in ds}
-        for node in sub_graph:
-            if node not in depended_on:
-                tasks.append(node)
+        _splice(graph, tasks, subframe_pipeline(mosaic_ref.get(), config))
 
     graph[preview_graph_done] = tasks
     return graph
 
 
-# Legacy cart-entry shapes that may still be sitting in
-# `context.shopping_cart` after an upgrade. Quality strings → canonical
-# pipeline names. Removed once stored state has churned (a session or
-# two).
-_LEGACY_QUALITY_NAMES = {
-    "Subframe", "Master", "DownscaledMaster",
-    "PostProcessed", "DownscaledPostProcessed",
-}
-
-
-def _quality_to_pipeline(quality: str, impl: "Implementation") -> str:
-    """Back-translate a legacy (quality, impl) pair to a canonical
-    pipeline name. PostProcessed / DownscaledPostProcessed don't have
-    standalone pipelines yet — fold them into the Master variant."""
-    if quality == "Subframe":
-        return "Subframe"
-    if quality in ("Master", "PostProcessed"):
-        return f"{impl.value} Master"
-    if quality in ("DownscaledMaster", "DownscaledPostProcessed"):
-        return f"{impl.value} Master Downscaled"
-    return quality
-
-
-def _normalize_cart_entry(entry: tuple) -> tuple | None:
-    """Map any cart entry shape we've ever shipped to the canonical
-    `(type, id, pipeline_name)` 3-tuple, or `None` if it's
-    unrecognisable. The shapes seen in the wild:
-
-    * `(type, id, pipeline_name)`            — current (3-tuple)
-    * `(type, id, quality_str)`              — legacy (no pipeline)
-    * `(type, id, quality_str, impl_str)`    — legacy (4-tuple)
-    """
-    from previews.types import Implementation
-    if len(entry) == 3:
-        a, b, c = entry
-        if c in _LEGACY_QUALITY_NAMES:
-            return (a, b, _quality_to_pipeline(c, Implementation.PIXINSIGHT))
-        return entry
-    if len(entry) == 4:
-        a, b, quality, impl_str = entry
-        impl = Implementation(impl_str) if impl_str else Implementation.PIXINSIGHT
-        return (a, b, _quality_to_pipeline(quality, impl))
-    return None
-
-
-def _pipeline_to_mode_impl(
-    pipeline_name: str,
-) -> tuple["QualityLevel", "Implementation"]:
-    """Back-translate a pipeline name to the legacy `(quality, impl)`
-    pair that the stack/target dispatchers still consume. Mosaic
-    dispatch goes via the @pipeline registry directly; this is just
-    for stack/target shims that haven't been migrated yet."""
-    from previews.types import Implementation
-    if pipeline_name == "Subframe":
-        return QualityLevel.SUBFRAME, Implementation.PIXINSIGHT
-    if pipeline_name == "PixInsight Master":
-        return QualityLevel.MASTER, Implementation.PIXINSIGHT
-    if pipeline_name == "PixInsight Master Downscaled":
-        return QualityLevel.DOWNSCALED_MASTER, Implementation.PIXINSIGHT
-    # Fallback for future bundled pipelines ("OSS Master", etc.).
-    for impl in Implementation:
-        if pipeline_name == f"{impl.value} Master":
-            return QualityLevel.MASTER, impl
-        if pipeline_name == f"{impl.value} Master Downscaled":
-            return QualityLevel.DOWNSCALED_MASTER, impl
-    # User-registered pipeline with no quality mapping. Default to
-    # MASTER + PIXINSIGHT for the stack/target legacy paths; those
-    # paths don't run user pipelines anyway.
-    return QualityLevel.MASTER, Implementation.PIXINSIGHT
+def _splice(graph: "Graph", tasks: list, sub_graph) -> None:
+    """Splice a pipeline's recorded Graph into the outer graph + add
+    its sinks (nodes with no dependents) to the outer task list."""
+    if sub_graph is None:
+        return
+    for node, deps in sub_graph.items():
+        graph[node] = deps
+    depended_on = {d for ds in sub_graph.values() for d in ds}
+    for node in sub_graph:
+        if node not in depended_on:
+            tasks.append(node)
 
 
 @ray.remote(num_cpus=0.1)
@@ -384,99 +309,51 @@ def build_main_processing_graph(
     from cache.context_ref import ContextRef
     cal_stacks_ref = ContextRef.store_large(objects.calibration_stacks)
 
-    from previews.types import Implementation
+    log.info("Building main processing graph", shopping_cart=shopping_cart)
 
-    def config_for(stack_id=None, mode=QualityLevel.MASTER, implementation=Implementation.PIXINSIGHT):
-        if stack_id:
-            decisions = decisions_for_stack(decision_overrides, stack_id)
-        else:
-            decisions = fd(decision_overrides)
+    # Cart's URL-friendly type-string → @pipeline-registered class.
+    # The cart and routes use strings; @pipeline decorators key on
+    # the actual class (typo-safe, self-documenting in pipeline
+    # bodies). This dict is the only place those conventions meet.
+    from stacks.composite_stack import Stack
+    from targets.types import Target
+    from mosaics.types import Mosaic
+    type_to_class = {"stack": Stack, "target": Target, "mosaic": Mosaic}
+    objects_by_type = {"stack": stacks, "target": targets, "mosaic": mosaics}
+
+    def config_for(stack_id=None):
+        decisions = (
+            decisions_for_stack(decision_overrides, stack_id) if stack_id
+            else fd(decision_overrides)
+        )
         return ProcessingConfig(
             calibration_stacks=cal_stacks_ref,
             development_settings=development_settings,
             min_frames_in_stack=min_frames_in_stack,
             decisions=decisions,
-            quality=mode,
-            implementation=implementation,
         )
 
-    log.info("Building main processing graph", shopping_cart=shopping_cart)
-
-    # Cart entry's type string → entity class for pipeline lookup.
-    # The cart stores type as a URL-friendly string ("stack" /
-    # "target" / "mosaic") because routes do; the @pipeline decorator
-    # keys on the actual class (`Stack` / `Target` / `Mosaic`) because
-    # that's typo-safe and self-documenting in user pipeline files.
-    # This dict is the one place those two conventions meet.
-    from stacks.composite_stack import Stack
-    from targets.types import Target
-    from mosaics.types import Mosaic
-    type_to_class = {"stack": Stack, "target": Target, "mosaic": Mosaic}
-
+    from pipelines.registry import get_pipeline
     graph = Graph({})
     tasks = []
-    for raw_entry in shopping_cart:
-        # Cart entries: `(type, id, pipeline_name)` 3-tuples. Pipeline
-        # name is the unified UI-level concept; per-entity-class entry
-        # points are looked up via `get_pipeline(name, processes=cls)`.
-        # Pipelines are graph builders, not data ops — they run in-
-        # process; the recorded Graph is spliced into the outer graph.
-        entry = _normalize_cart_entry(raw_entry)
-        if entry is None:
-            log.warning("Unrecognised cart entry shape", entry=raw_entry)
-            continue
+    for entry in shopping_cart:
+        # Cart entries: `(type, id, pipeline_name)`. Pipelines are
+        # graph builders — call in-process, splice the recorded Graph
+        # into the outer graph.
         type, id, pipeline_name = entry
-
-        # Resolve the entity object the pipeline will operate on.
-        if type == "stack":
-            if id not in stacks:
-                log.warning("Stack in shopping cart does not exist", stack_id=id)
-                continue
-            entity = stacks[id].get()
-        elif type == "target":
-            if id not in targets:
-                log.warning("Target in shopping cart does not exist", target_id=id)
-                continue
-            entity = targets[id].get()
-        elif type == "mosaic":
-            if id not in mosaics:
-                log.warning("Mosaic in shopping cart does not exist", mosaic_id=id)
-                continue
-            entity = mosaics[id].get()
-        else:
-            log.warning("Unknown cart entry type", entry=raw_entry)
+        if id not in objects_by_type[type]:
+            log.warning("Cart entry refers to missing object", entry=entry)
             continue
-
-        # `mode` and `impl` are vestigial — the pipeline body knows
-        # what it produces. Passed through for legacy pipeline-body
-        # parity (mode used for viewbox + merge_images branching).
-        # Will be dropped once `ProcessingConfig.{quality, implementation}`
-        # are deleted (Phase B-3).
-        mode, impl = _pipeline_to_mode_impl(pipeline_name)
-        cfg = config_for(id if type == "stack" else None, mode, impl)
-
-        from pipelines.registry import get_pipeline
+        entity = objects_by_type[type][id].get()
+        cfg = config_for(id if type == "stack" else None)
         try:
             pipeline_fn = get_pipeline(pipeline_name, processes=type_to_class[type])
         except KeyError:
-            log.warning(
-                "Unknown pipeline in cart",
-                pipeline=pipeline_name, type=type,
-            )
+            log.warning("Unknown pipeline in cart", entry=entry)
             continue
-
-        sub_graph = pipeline_fn(mode, entity, cfg)
-        if sub_graph is None:
-            continue
-        for node, deps in sub_graph.items():
-            graph[node] = deps
-        depended_on = {d for ds in sub_graph.values() for d in ds}
-        for node in sub_graph:
-            if node not in depended_on:
-                tasks.append(node)
+        _splice(graph, tasks, pipeline_fn(entity, cfg))
 
     graph[main_processing_graph_done] = tasks
-
     return graph
 
 

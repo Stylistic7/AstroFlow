@@ -2,29 +2,21 @@ from pathlib import Path
 import ray
 import numpy as np
 from spherical_geometry.polygon import SingleSphericalPolygon
-from functools import partial
 from beartype import beartype
 from decorators import node
-from stacks.composite_stack import Run, Stack, RunsDict, StacksDict, CalibrationStacksDict
+from stacks.composite_stack import Run, Stack, StacksDict, CalibrationStacksDict
 from stacks.types import StackIdDependency
 from products import get_producer, MediaType
-from products.identity import StackId, identity_for_stack
+from products.identity import identity_for_stack
 
 from stacks.convert_to_dict import convert_to_dict
-from metadata.image_metadata import compute_image_metadata
 from dataclasses import replace
-from decisions.settings import DevelopmentSettings
 from decisions.decisions import decisions_for_stack
 from decisions.subframe_selection import (
     effective_integration,
     get_light_frames_sorted_by_stars,
 )
-from previews.types import QualityLevel
-from dependency_graph import Graph, Node, chain
-from dependency_graph.workflow_graph_adapter import (
-    store_workflow_graph,
-    store_node_status,
-)
+from dependency_graph import Graph
 
 
 @ray.remote(num_cpus=0.1)
@@ -85,55 +77,6 @@ def calibrate(
     return graph
 
 
-@node
-def build_stacking_subgraph(
-    stack: Stack,
-    config: ProcessingConfig,
-) -> Graph:
-    graph_update_fn = partial(
-        store_workflow_graph, ("stack", stack.stable_hash, config.quality.value)
-    )
-    node_status_fn = store_node_status
-
-    stack_fn = get_producer(MediaType.IMAGE, identity_for_stack(stack), config.quality, config.implementation)
-
-    if config.quality == QualityLevel.MASTER:
-        # Full: calibrate → stack → metadata → post-process → metadata
-        pp_fn = get_producer(MediaType.IMAGE, StackId, QualityLevel.POST_PROCESSED, config.implementation)
-        steps = chain(
-            (calibrate, stack, config),
-            (stack_fn, stack, config),
-            Node(compute_image_metadata, name=f"stacking_{stack.stable_hash}"),
-            (pp_fn, stack, config.development_settings.mock_pixinsight),
-            Node(compute_image_metadata, name=f"post_process_{stack.stable_hash}"),
-        )
-    elif config.quality == QualityLevel.DOWNSCALED_MASTER:
-        # Downscaled: calibrate → stack → metadata → gradient-correct
-        # (on the small image) → metadata. Mirrors MASTER so a
-        # DownscaledMaster mosaic gets gradient removal too.
-        pp_fn = get_producer(MediaType.IMAGE, StackId, QualityLevel.DOWNSCALED_POST_PROCESSED, config.implementation)
-        steps = chain(
-            (calibrate, stack, config),
-            (stack_fn, stack, config),
-            Node(compute_image_metadata, name=f"stacking_{stack.stable_hash}"),
-            (pp_fn, stack, config.development_settings.mock_pixinsight),
-            Node(compute_image_metadata, name=f"post_process_downscaled_{stack.stable_hash}"),
-        )
-    else:
-        # SUBFRAME or other: calibrate → stack → metadata (no post-process)
-        steps = chain(
-            (calibrate, stack, config),
-            (stack_fn, stack, config),
-            Node(compute_image_metadata, name=f"stacking_{stack.stable_hash}"),
-        )
-
-    return Graph(
-        {**steps},
-        graph_update_fn=graph_update_fn,
-        node_status_fn=node_status_fn,
-    )
-
-
 # TODO: Calibrate the subframe returned here.
 @node
 def get_stack_subframe_image(stack: Stack) -> Path:
@@ -141,26 +84,6 @@ def get_stack_subframe_image(stack: Stack) -> Path:
     light_frames_by_stars = get_light_frames_sorted_by_stars(stack)
     best_light_frame = stack.all_metadata()[light_frames_by_stars[0]]
     return Path(best_light_frame.filename)
-
-
-@ray.remote
-def get_stack_image(
-    mode: QualityLevel,
-    stack: Stack,
-    config: ProcessingConfig,
-) -> Graph:
-    assert stack is not None
-    if mode == QualityLevel.SUBFRAME:
-        return Graph({
-            **chain(
-                (get_stack_subframe_image, stack),
-                Node(compute_image_metadata, name=f"subframe_{stack.stable_hash}"),
-            )
-        })
-    else:
-        filtered_config = replace(config, decisions=decisions_for_stack(
-            config.decisions, stack.stable_hash))
-        return Graph({(build_stacking_subgraph, stack, filtered_config): {}})
 
 
 def _my_transform(v):

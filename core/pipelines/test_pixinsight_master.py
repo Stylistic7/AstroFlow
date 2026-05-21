@@ -130,7 +130,7 @@ def test_pixinsight_master_records_expected_graph_shape(test_context):
     # structural verification).
     g = trace(
         pi_master_pipeline.for_mosaic._function,
-        QualityLevel.MASTER, mosaic, config,
+        mosaic, config,
     )
     assert g is not None
 
@@ -199,7 +199,7 @@ def test_pixinsight_master_handles_missing_panels(test_context):
 
     g = trace(
         pi_master_pipeline.for_mosaic._function,
-        QualityLevel.MASTER, mosaic, config,
+        mosaic, config,
     )
     assert g is not None
 
