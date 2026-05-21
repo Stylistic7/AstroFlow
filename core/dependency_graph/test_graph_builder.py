@@ -180,6 +180,29 @@ def test_after_kwarg_adds_ordering_dep_without_call_arg():
     assert downstream.args == ("a",)
 
 
+def test_graph_builder_ray_entry_is_picklable():
+    """Ray's `.remote(...)` dispatch pickles the Ray-side entry
+    function. If the entry references `_TRACE` (a ContextVar) in its
+    globals, cloudpickle dies because ContextVar isn't picklable. This
+    regression test would have caught the bug where pipelines.default's
+    @pipeline-decorated `merge_mosaic` couldn't be dispatched."""
+    # Use the module-level builder so cloudpickle pickles it by name +
+    # globals (the production path), not by local-function magic.
+    # Ray bundles cloudpickle under ray.cloudpickle.
+    from ray import cloudpickle
+    # The Ray ObjectRef-producing bound method: this is what
+    # _submit_node ultimately calls via .remote(...).
+    cloudpickle.dumps(_picklable_module_level_builder.remote)
+
+
+@graph_builder
+def _picklable_module_level_builder(x):
+    """Picklability sentinel for test_graph_builder_ray_entry_is_picklable.
+    Lives at module scope so cloudpickle takes the by-name-by-globals
+    pickle path that matches the production `.remote(...)` flow."""
+    return x
+
+
 def test_after_kwarg_differentiates_otherwise_identical_calls():
     """Two calls with the same literal args but different `_after` deps
     must produce different `Node` identities — otherwise the runtime

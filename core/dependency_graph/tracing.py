@@ -185,18 +185,19 @@ def _make_graph_builder(fn: Callable, ray_opts: dict):
 
     # The Ray-task entry: sets up trace, runs the user's body, returns
     # the recorded Graph (or None for a "no-graph" signal).
+    #
+    # IMPORTANT: this function must NOT reference `_TRACE` (a
+    # ContextVar) directly. cloudpickle walks `__globals__` of any
+    # function it serialises and tries to pickle every referenced
+    # name; ContextVar instances are not picklable, which breaks Ray
+    # dispatch (`.remote(...)`). Delegate to `trace()` instead -- it
+    # references `_TRACE` from its OWN body, and cloudpickle pickles
+    # `trace` itself by name/reference rather than by value.
     def _ray_entry(*args: Any, dry_run: bool = False, **kwargs: Any):
         # `dry_run` is meaningless for a graph builder — it doesn't
         # produce data, it produces a graph for the runtime to expand.
-        # Just build the graph and let the runtime handle dispatch.
         del dry_run
-        g = Graph()
-        token = _TRACE.set(g)
-        try:
-            result = fn(*args, **kwargs)
-        finally:
-            _TRACE.reset(token)
-        return None if result is None else g
+        return trace(fn, *args, **kwargs)
 
     _ray_entry.__name__ = fn.__name__
     _ray_entry.__qualname__ = fn.__qualname__
