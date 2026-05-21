@@ -1,4 +1,4 @@
-"""Structural smoke test for the `Default` reference pipeline.
+"""Structural smoke test for the `PixInsight Master` reference pipeline.
 
 Doesn't run the graph through Ray — just records the trace and asserts
 the node counts match what the algorithm should emit. The merge_graph
@@ -65,18 +65,18 @@ def _count_by_op(graph) -> dict[str, int]:
     return counts
 
 
-def test_default_pipeline_registers_under_name():
-    """Importing `pipelines.default` populates the registry with 'Default'.
+def test_pixinsight_master_registers_under_name():
+    """Importing `pipelines.pixinsight_master` populates the registry with 'PixInsight Master'.
     Verifies the `@pipeline` decorator's side effect."""
     import pipelines.registry as r
     # Force a discovery sweep that imports built-ins, so the test
     # doesn't depend on prior imports.
     r._DISCOVERED = False
     snap = r.discover_pipelines()
-    assert "Default" in snap
+    assert "PixInsight Master" in snap
 
 
-def test_default_pipeline_records_expected_graph_shape(test_context):
+def test_pixinsight_master_records_expected_graph_shape(test_context):
     """One-strip / two-panel / one-filter mosaic. Each panel has one
     stack. Verify node counts match the algorithm:
 
@@ -87,7 +87,7 @@ def test_default_pipeline_records_expected_graph_shape(test_context):
 
     Total: 2*4 + 2*2 + 2*2 + 2 = 18 nodes.
     """
-    import pipelines.default as default_pipeline
+    import pipelines.pixinsight_master as pi_master_pipeline
 
     # Fixture: 1 strip, 2 targets ("a", "b"), 1 stack each. Filter "H"
     # is the default `make_composite_stack` filter.
@@ -131,7 +131,7 @@ def test_default_pipeline_records_expected_graph_shape(test_context):
     # Trace the pipeline body (not via .remote — no Ray needed for
     # structural verification).
     g = trace(
-        default_pipeline.merge_mosaic._function,
+        pi_master_pipeline.merge_mosaic._function,
         QualityLevel.MASTER, mosaic, config,
     )
     assert g is not None
@@ -152,11 +152,11 @@ def test_default_pipeline_records_expected_graph_shape(test_context):
     assert counts.get("compute_image_metadata", 0) == 9, counts
 
 
-def test_default_pipeline_handles_missing_panels(test_context):
+def test_pixinsight_master_handles_missing_panels(test_context):
     """A mosaic where one target lacks the requested filter: the
     pipeline should skip the missing panel and still produce a graph,
     just with fewer place / merge nodes."""
-    import pipelines.default as default_pipeline
+    import pipelines.pixinsight_master as pi_master_pipeline
 
     mosaic = Mosaic(
         name="2x1_one_missing",
@@ -199,7 +199,7 @@ def test_default_pipeline_handles_missing_panels(test_context):
     )
 
     g = trace(
-        default_pipeline.merge_mosaic._function,
+        pi_master_pipeline.merge_mosaic._function,
         QualityLevel.MASTER, mosaic, config,
     )
     assert g is not None

@@ -1,23 +1,24 @@
-"""Reference pipeline: PixInsight defaults, end-to-end.
+"""Reference pipeline: full-resolution PixInsight master, end-to-end.
 
-Demonstrates the whole-pipeline-as-plain-Python pattern (see the plan
-at `~/.claude/plans/splendid-munching-rainbow.md`). Opt in by passing
-the display name as the 4th element of a `"mosaic"` shopping-cart
-entry: `("mosaic", mosaic_id, "Master", "Default")`. Bundled pipeline
-names (`"PixInsight"`, `"AstroFlow"`, `"OSS"`) and registered names
-(`"Default"` and any others in `~/AstroFlow/pipelines/`) live in the
-same dropdown — the dispatcher routes each to the right code path.
-Pipeline selection is per-cart-entry, so the same mosaic can be
-dropped in twice with different pipelines for side-by-side comparison;
-the choice never reaches any cached @node op's arg hash.
+The canonical pipeline (replaces the legacy `Default` name): WBPP-style
+stacking, per-stack PixInsight post-processing, HDR channel combine,
+photometric mosaic place + merge. Opt in by selecting `"PixInsight
+Master"` from the pipeline dropdown when adding a mosaic to the
+shopping cart. Cart entry shape: `("mosaic", mosaic_id, "PixInsight
+Master")`.
 
-This reference reuses the existing PixInsight @node ops verbatim — same
-function objects, same cache keys. To create a variant that swaps a
-step (e.g. MSGC → GraXpert), copy this file to
-`~/AstroFlow/pipelines/<YourName>.py`, change the `@pipeline("…")`
-display name, and edit the call you want to replace. A future
-iteration of this layer will add the inline-`@stage` recipe pattern
-that lets a single file fully express its own post-processing recipe.
+Bundled pipeline names (`"PixInsight Master"`, `"PixInsight Master
+Downscaled"`, `"Subframe"`, `"OSS Master"`) and registered user
+pipelines (in `~/AstroFlow/pipelines/`) live in the same dropdown. The
+choice is per-cart-entry, so the same mosaic can be added twice with
+two pipelines for side-by-side comparison. Pipeline names never reach
+any @node op's arg hash — ops are pipeline-agnostic and share cache
+across pipelines that call them with identical args.
+
+To create a variant that swaps a step (e.g. MSGC → GraXpert), copy
+this file to `~/AstroFlow/pipelines/<YourName>.py`, change the
+`@pipeline("…")` display name, and edit the call you want to
+replace.
 """
 from astroflow.ops import (
     merge_images,
@@ -29,7 +30,7 @@ from astroflow.ops import (
 from astroflow.pipeline import pipeline
 
 
-@pipeline("Default")
+@pipeline("PixInsight Master")
 def merge_mosaic(mode, mosaic, config):
     """Build a complete mosaic, end to end.
 
