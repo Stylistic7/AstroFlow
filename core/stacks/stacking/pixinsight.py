@@ -200,10 +200,10 @@ def _stack_files_narrow(args, kwargs):
       cache_key_narrow=_stack_files_narrow)
 @makes_image(PIXINSIGHT, [MASTER],
              identity=CalibrationStackId, presentations=[THUMBNAIL, TILE_PYRAMID],
-             file_type=XisfFilePath)
+             file_type=XisfFilePath, display="Master")
 @makes_image(PIXINSIGHT, [MASTER],
              identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
-             file_type=XisfFilePath)
+             file_type=XisfFilePath, display="Master")
 def stack_files(
     stack: BaseStack,
     config: ProcessingConfig,

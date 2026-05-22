@@ -78,7 +78,7 @@ def _merge_target_channel_narrow(args, kwargs):
 @makes_image(PIXINSIGHT, [MASTER, DOWNSCALED_MASTER],
              identity=TargetChannelId,
              presentations=[THUMBNAIL, TILE_PYRAMID],
-             file_type=XisfFilePath)
+             file_type=XisfFilePath, display="Channel")
 @beartype
 def merge_target_channel(
     target: Target,

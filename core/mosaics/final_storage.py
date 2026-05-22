@@ -23,7 +23,7 @@ from metadata.classes import ImageMetadata
 @node(resources={"PixInsight": 1}, auto_memory=True)
 @makes_image(PIXINSIGHT, [MASTER, DOWNSCALED_MASTER],
              identity=MosaicChannelId, presentations=[THUMBNAIL, TILE_PYRAMID],
-             file_type=XisfFilePath)
+             file_type=XisfFilePath, display="Mosaic")
 def store_mosaic_color_channel_xisf(
     mode: str, mosaic: Mosaic, filter: str,
     mock_pixinsight: bool,
@@ -47,7 +47,7 @@ def store_mosaic_color_channel_xisf(
 @node(resources={"fastest_storage": 0.001})
 @makes_image(ALL_IMPLEMENTATIONS, [SUBFRAME],
              identity=MosaicChannelId, presentations=[THUMBNAIL, TILE_PYRAMID],
-             file_type=TiffFilePath)
+             file_type=TiffFilePath, display="Subframe")
 def store_mosaic_color_channel_subframe(
     mosaic: Mosaic, filter: str, input: ImageMetadata
 ) -> WithSidecar[TiffFilePath]:
@@ -70,7 +70,7 @@ def store_mosaic_color_channel_subframe(
 @node
 @makes_image(OSS, [MASTER, DOWNSCALED_MASTER],
              identity=MosaicChannelId, presentations=[THUMBNAIL, TILE_PYRAMID],
-             file_type=FitsFilePath)
+             file_type=FitsFilePath, display="Mosaic")
 def store_mosaic_color_channel_oss(
     mode: str, mosaic: Mosaic, filter: str, input: ImageMetadata,
 ) -> WithSidecar[FitsFilePath]:

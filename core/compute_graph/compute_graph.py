@@ -292,71 +292,81 @@ def main_processing_graph_done() -> None:
     pass
 
 
-def _record_pipeline_sinks(record, pipeline_name, type, id, entity, result):
-    """Walk a pipeline's return value and record sink paths in the
-    PipelineOutputIndex.
+def _record_pipeline_taps(record, pipeline_name, cart_type, cart_id, graph):
+    """Walk every Node in the pipeline's traced `graph` and record
+    tap-point paths in the PipelineOutputIndex.
 
-    Three pipeline-return shapes:
-    * Stack: single Node returning a stack metadata. Single filter
-      (the stack's own filter).
-    * Target: dict[filter -> Node]. One sink per filter.
-    * Mosaic: dict[filter -> Node]. One sink per filter.
+    A tap point is any @makes_image-decorated op call whose task
+    carries a `_display` attribute (set by `@makes_image(display=...)`).
+    Intermediate ops (per-strip merge_images, per-panel place_image,
+    auto-chained compute_image_metadata) leave no `_display` and are
+    skipped.
 
-    For each sink, walk back one Node-dep step to the actual producer
-    Node (auto-chained compute_image_metadata wraps the producer), pull
-    its task's filename_fn, and call with the identity-relevant subset
-    of the producer's args. Identity-arg extraction maps producer
-    function parameter names to identity-class field names by position.
+    For each tap-point Node we:
+      1. Bind the Node's literal args to the producer function's
+         signature by parameter name.
+      2. Try each (identity_cls, level) the @makes_image registered;
+         extract that identity's fields from the bound args; if all
+         fields are present, call the resolved filename_fn to get
+         the on-disk path.
+      3. Record (pipeline_name, object_type_from_identity,
+         object_id_from_args, display, filter_from_args) → path.
+
+    Filtering by `(cart_type, cart_id)`: callers can be coarse — we
+    record EVERY tap whose identity matches; the cart entry's object
+    is the canonical id for object-scoped lookups but stack-level
+    taps under a mosaic cart entry are also useful (Master per
+    constituent stack, etc.), so we don't restrict.
     """
     from dependency_graph.classes import Node
     import dataclasses
     import inspect
 
-    def _path_for_sink(sink_node):
-        if not isinstance(sink_node, Node):
-            return None
-        producer_node = sink_node.deps[0] if sink_node.deps else sink_node
-        task = producer_node.task
-        # Unwrap Ray remote → underlying function for signature + filename_fn.
+    if graph is None:
+        return
+
+    for n in list(graph.keys()):
+        if not isinstance(n, Node):
+            continue
+        task = n.task
+        # Unwrap Ray remote → underlying function for signature + display.
         fn = getattr(task, "_function", task)
+        display = getattr(fn, "_display", None) or getattr(task, "_display", None)
+        if display is None:
+            continue
         filename_fn = getattr(fn, "filename_fn", None) or getattr(task, "filename_fn", None)
         if filename_fn is None:
-            return None
-        # Bind the producer Node's literal args positionally to the
-        # function signature, then extract values for the registered
-        # identity's fields.
+            continue
         try:
             sig = inspect.signature(fn)
         except (TypeError, ValueError):
-            return None
+            continue
         params = list(sig.parameters.keys())
-        arg_map = {params[i]: producer_node.args[i]
-                   for i in range(min(len(producer_node.args), len(params)))}
-        # Try each registered identity (handles polymorphic producers
-        # like stack_files registered for both StackId and CalibrationStackId).
+        arg_map = {params[i]: n.args[i]
+                   for i in range(min(len(n.args), len(params)))}
+        # Try each registered (identity_cls, level) the op declared.
         identities = getattr(fn, "filename_fns", {})
         for (identity_cls, _level) in identities.keys():
             id_field_names = [f.name for f in dataclasses.fields(identity_cls)]
-            id_values = [arg_map[n] for n in id_field_names if n in arg_map]
-            if len(id_values) != len(id_field_names):
+            try:
+                id_values = [arg_map[name] for name in id_field_names]
+            except KeyError:
                 continue
             try:
-                return str(filename_fn(*id_values))
+                path = str(filename_fn(*id_values))
             except (ValueError, TypeError, KeyError):
                 continue
-        return None
-
-    if isinstance(result, dict):
-        for filter, sink in result.items():
-            path = _path_for_sink(sink)
-            if path:
-                record(pipeline_name, type, id, filter, path)
-    elif isinstance(result, Node):
-        # Stack-type pipeline; filter comes from the entity itself.
-        filter = getattr(entity, "filter", None)
-        path = _path_for_sink(result)
-        if path:
-            record(pipeline_name, type, id, filter, path)
+            # Extract object_type, object_id, filter for the index key.
+            object_type_name = identity_cls.object_type.__name__.lower()
+            primary = id_values[0] if id_values else None
+            object_id_value = (
+                primary.stable_hash if hasattr(primary, "stable_hash")
+                else str(primary)
+            )
+            filter_value = arg_map.get("filter")
+            record(pipeline_name, object_type_name, object_id_value,
+                   display, filter_value, path)
+            break  # one identity matched; don't double-record
 
 
 @node
@@ -421,12 +431,12 @@ def build_main_processing_graph(
             continue
         result = pipeline_fn(entity, cfg)
         _splice(graph, tasks, result)
-        # Index the pipeline's sink paths so view-side endpoints can
-        # surface "what this pipeline produced for this object" without
-        # going through the legacy (impl, level) → pipeline static
-        # mapping. See pipelines/output_index.
-        _record_pipeline_sinks(
-            record_pipeline_output, pipeline_name, type, id, entity, result,
+        # Walk the traced graph for @makes_image(display=...) tap
+        # points and index them. View-side endpoints surface every
+        # `_display`-tagged Node — this is the only mechanism that
+        # scales to user-defined pipelines (no static table edits).
+        _record_pipeline_taps(
+            record_pipeline_output, pipeline_name, type, id, result,
         )
 
     graph[main_processing_graph_done] = tasks

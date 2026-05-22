@@ -53,7 +53,7 @@ def _post_process_stack(master_path, stack: Stack, downscale_factor: int = 1) ->
 @node(resources={"PixInsight": 1}, auto_memory=True)
 @makes_image(PIXINSIGHT, [POST_PROCESSED],
              identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
-             file_type=XisfFilePath)
+             file_type=XisfFilePath, display="Post-Processed")
 def post_process_stack(stack: Stack, mock_pixinsight: bool) -> WithSidecar[XisfFilePath]:
     from products import ensure_producers_registered
     ensure_producers_registered()
@@ -72,7 +72,7 @@ def post_process_stack(stack: Stack, mock_pixinsight: bool) -> WithSidecar[XisfF
 @node(resources={"PixInsight": 1}, auto_memory=True)
 @makes_image(PIXINSIGHT, [DOWNSCALED_POST_PROCESSED],
              identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
-             file_type=XisfFilePath)
+             file_type=XisfFilePath, display="Post-Processed (Downscaled)")
 def post_process_stack_downscaled(
     stack: Stack, mock_pixinsight: bool
 ) -> WithSidecar[XisfFilePath]:

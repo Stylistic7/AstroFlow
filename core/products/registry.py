@@ -391,16 +391,24 @@ def _bind_producer(
     identity: "type[ObjectId]",
     presentations: "list[PresentationType] | None" = None,
     file_type: "type | None" = None,
+    display: str | None = None,
 ):
     """Decorator that registers a function as a producer for the given
     (identity, level, implementation) combinations. The produced
     object_type is derived from ``identity.object_type``.
 
+    `display` (optional): free-form label naming this op as a user-
+    visible tap point within a pipeline. When a pipeline traces, every
+    @makes_image Node whose task has `_display` set is recorded in the
+    PipelineOutputIndex as a tap point under that name. Skip `display`
+    for intermediate ops (e.g. per-strip merge_images) that shouldn't
+    surface in the dashboard.
+
     Usage::
 
         @node(...)
-        @makes_image(PIXINSIGHT, [MASTER, DOWNSCALED_MASTER], stack_filename,
-                     identity=StackId)
+        @makes_image(PIXINSIGHT, [MASTER], identity=StackId,
+                     display="Master")
         def stack_files(stack, config): ...
     """
     assert identity is not None, "@makes_image/@makes_video requires identity="
@@ -538,6 +546,14 @@ def _bind_producer(
                 wrapped.filename_fns = inner_func.filename_fns
             if hasattr(inner_func, 'filename_fn'):
                 wrapped.filename_fn = inner_func.filename_fn
+            # `_display` is set on the wrapped fn so the trace-time
+            # tap-point collector can identify which Nodes the
+            # pipeline author marked as user-visible. None means
+            # "intermediate" (not a tap point).
+            if display is not None:
+                wrapped._display = display
+            if hasattr(inner_func, '_display'):
+                wrapped._display = inner_func._display
 
         for impl in implementations:
             for level in levels:
@@ -565,10 +581,12 @@ def makes_image(
     identity: type[ObjectId] = None,
     presentations: list[PresentationType] | None = None,
     file_type: type | None = None,
+    display: str | None = None,
 ):
     return _bind_producer(
         MediaType.IMAGE, implementation, levels, filename_fn,
         identity=identity, presentations=presentations, file_type=file_type,
+        display=display,
     )
 
 
@@ -578,8 +596,10 @@ def makes_video(
     identity: type[ObjectId] = None,
     presentations: list[PresentationType] | None = None,
     file_type: type | None = None,
+    display: str | None = None,
 ):
     return _bind_producer(
         MediaType.VIDEO, implementation, levels, filename_fn,
         identity=identity, presentations=presentations, file_type=file_type,
+        display=display,
     )

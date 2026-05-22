@@ -40,10 +40,10 @@ log = structlog.get_logger()
 @node(auto_memory=True)
 @makes_image(PIXINSIGHT, [DOWNSCALED_MASTER],
              identity=CalibrationStackId, presentations=[THUMBNAIL, TILE_PYRAMID],
-             file_type=XisfFilePath)
+             file_type=XisfFilePath, display="Downscaled Master")
 @makes_image(PIXINSIGHT, [DOWNSCALED_MASTER],
              identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
-             file_type=XisfFilePath)
+             file_type=XisfFilePath, display="Downscaled Master")
 def downscale_master(
     stack: BaseStack, config: ProcessingConfig,
 ) -> WithSidecar[XisfFilePath]:

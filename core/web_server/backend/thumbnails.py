@@ -191,12 +191,46 @@ def mosaic_thumbnail(mosaic_id: str, filter: str):
 
 @thumbnails_bp.route("/thumbnail/mosaic/<mosaic_id>/<implementation>/<quality>/<filter>")
 def mosaic_thumbnail_specific(mosaic_id: str, implementation: str, quality: str, filter: str):
-    """Thumbnail for an exact (mosaic, implementation, quality, filter)."""
+    """Thumbnail for an exact (mosaic, implementation, quality, filter).
+    Legacy URL shape; new callers should use the tap-keyed route below."""
     mosaic = context.mosaics[mosaic_id].get()
     return get_specific_thumbnail_by_id(
         implementation, quality,
         MosaicChannelId(mosaic=mosaic, filter=filter),
     )
+
+
+@thumbnails_bp.route("/tap/thumbnail/<object_type>/<object_id>/<path:pipeline_and_display>/<filter>")
+@thumbnails_bp.route("/tap/thumbnail/<object_type>/<object_id>/<path:pipeline_and_display>")
+def thumbnail_tap(
+    object_type: str, object_id: str, pipeline_and_display: str,
+    filter: str | None = None,
+):
+    """Thumbnail for a specific (pipeline, tap) of an object.
+
+    Rebuilds from the tap's on-disk artifact on miss; the file path
+    comes from the PipelineOutputIndex (recorded at trace time) with
+    a static-mapping fallback for tap points the pipeline hasn't
+    surfaced yet. `<path:pipeline_and_display>` is `<pipeline>/<display>`
+    joined into one URL segment so Flask doesn't have to know that
+    pipeline display names contain spaces.
+    """
+    from pathlib import Path
+    from web_server.backend.metadata import tap_path_for
+    from previews.operations import resize_array, autostretch, array_to_png
+    pipeline, _, display = pipeline_and_display.rpartition("/")
+    if not pipeline or not display:
+        return abort(404)
+    path = tap_path_for(pipeline, display, object_type, object_id, filter)
+    if not path or not os.path.exists(path):
+        return abort(404)
+    try:
+        thumbnail = _make_thumbnail(path, resize_array, autostretch, array_to_png)
+    except Exception:
+        return abort(500)
+    if thumbnail is None:
+        return abort(404)
+    return _png_response(thumbnail, display)
 
 
 @thumbnails_bp.route("/thumbnail/calibration_stack/<stack_id>")

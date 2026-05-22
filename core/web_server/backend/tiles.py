@@ -170,11 +170,51 @@ def tile_metadata_specific(
     object_type: str, object_id: str, implementation: str, level: str, filter: str,
     backend_port: int = None,
 ):
-    """tile_metadata pinned to a specific implementation."""
+    """tile_metadata pinned to a specific implementation. Legacy URL
+    shape; new callers should use the tap-keyed route below."""
     return _tile_metadata_response(
         _tile_pyramid_path_for(object_type, object_id, filter, level, implementation),
         backend_port,
     )
+
+
+@stateful_route(
+    tiles_bp.route("/tap/tile_metadata/<object_type>/<object_id>/<path:pipeline_and_display>/<filter>"),
+    sharding_key="object_id",
+)
+def tile_metadata_tap(
+    object_type: str, object_id: str, pipeline_and_display: str, filter: str,
+    backend_port: int = None,
+):
+    """tile_metadata for a specific (pipeline, tap) of an object.
+
+    `pipeline_and_display` is `<pipeline>/<display>` — joined into one
+    path segment so Flask doesn't have to know that pipeline names
+    contain spaces. Tile-pyramid paths are looked up via the
+    PipelineOutputIndex (recorded at trace time) with a static-mapping
+    fallback.
+    """
+    from web_server.backend.metadata import tap_path_for
+    pipeline, _, display = pipeline_and_display.rpartition("/")
+    if not pipeline or not display:
+        return abort(404)
+    path = _tap_tile_pyramid_path(pipeline, display, object_type, object_id, filter)
+    return _tile_metadata_response(path, backend_port)
+
+
+def _tap_tile_pyramid_path(pipeline, display, object_type, object_id, filter):
+    """Tile-pyramid TIFF for a tap point — same sibling-of-master
+    pattern as the legacy lookup, but the master comes from
+    tap_path_for() instead of (impl, level) filename_fn."""
+    from pathlib import Path
+    from web_server.backend.metadata import tap_path_for
+    master = tap_path_for(pipeline, display, object_type, object_id, filter)
+    if master is None:
+        return None
+    tiff = Path(str(master)).with_suffix(".tiff")
+    if tiff.exists():
+        return str(tiff)
+    return master if master.endswith((".tiff", ".tif")) else None
 
 
 def _tile_metadata_response(path, backend_port):
@@ -217,8 +257,27 @@ def serve_tile_specific(
     object_type: str, object_id: str, implementation: str, level: str, filter: str,
     z: str, x: str, y: str,
 ):
-    """Tile pinned to a specific implementation."""
+    """Tile pinned to a specific implementation. Legacy URL shape;
+    new callers should use the tap-keyed route below."""
     path = _tile_pyramid_path_for(object_type, object_id, filter, level, implementation)
+    return _serve_tile_response(path, object_type, object_id, x, y, z)
+
+
+@stateful_route(
+    tiles_bp.route(
+        "/tap/tile/<object_type>/<object_id>/<path:pipeline_and_display>/<filter>/<int:z>/<int:x>/<int:y>.png"
+    ),
+    sharding_key="object_id",
+)
+def serve_tile_tap(
+    object_type: str, object_id: str, pipeline_and_display: str, filter: str,
+    z: str, x: str, y: str,
+):
+    """Single tile from a tap-point's tile pyramid."""
+    pipeline, _, display = pipeline_and_display.rpartition("/")
+    if not pipeline or not display:
+        return abort(404)
+    path = _tap_tile_pyramid_path(pipeline, display, object_type, object_id, filter)
     return _serve_tile_response(path, object_type, object_id, x, y, z)
 
 
