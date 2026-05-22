@@ -22,12 +22,6 @@ from decisions.settings import ProcessingConfig
 from decorators import node
 from file_io.generic import read_image
 from file_io.types import FitsFilePath, WithSidecar
-from previews.types import (
-
-    OSS,
-    MASTER,
-    DOWNSCALED_MASTER,
-)
 from products import makes_image
 from products.identity import (
     PresentationType,
@@ -36,10 +30,7 @@ from products.identity import (
 )
 from stacks.composite_stack import Stack
 from targets.target_channel import TargetChannel
-from targets.merging.pixinsight import (
-    _merge_target_channel_narrow,
-    _postprocessed_level,
-)
+from targets.merging.pixinsight import _merge_target_channel_narrow
 from targets.types import Target
 
 THUMBNAIL = PresentationType.THUMBNAIL
@@ -52,41 +43,24 @@ log = structlog.get_logger()
 # 65535. Treat anything ≥ this fraction of the per-image max as saturated.
 _SATURATION_FRACTION = 0.999
 
-def _stack_master_path(stack: Stack, quality: str) -> Path:
-    # Consume the gradient-corrected (post-processed) stack, NOT the
-    # raw master — so mosaic panels are flattened before placement.
-    from stacks.post_processing.oss import (
-        post_process_stack_oss as _pp,
-        post_process_stack_oss_downscaled as _pp_down,
-    )
-    op = _pp_down if quality == DOWNSCALED_MASTER else _pp
-    return Path(op.filename_fn(stack))
-
-@node(auto_memory=True, cache_key_narrow=_merge_target_channel_narrow)
-@makes_image(OSS, [MASTER, DOWNSCALED_MASTER],
-             identity=TargetChannelId)
-@beartype
-def merge_target_channel_oss(
-    target: Target,
-    filter: str,
-    stacks: tuple[Stack, ...],
-    mode: str,
+def _merge_target_channel_oss_impl(
+    target: Target, filter: str, stacks: tuple[Stack, ...],
     config: ProcessingConfig,
+    output_filename, stack_master_path,
 ) -> WithSidecar[FitsFilePath]:
+    """Shared OSS-side body. `stack_master_path` resolves a single
+    Stack to its OSS post-processed master path — the only place the
+    per-mode ops differ."""
     assert len(stacks) >= 1, "merge_target_channel_oss needs at least one stack"
-
-    output_fn = merge_target_channel_oss.filename_fn
-    output_filename = output_fn(target, filter)
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
 
     if len(stacks) == 1:
-        src = _stack_master_path(stacks[0], mode)
-        shutil.copy(src, output_filename)
+        shutil.copy(stack_master_path(stacks[0]), output_filename)
         return WithSidecar(FitsFilePath(output_filename))
 
     sorted_stacks = sorted(stacks, key=lambda s: -float(s.exposure))
     masters = [
-        read_image(_stack_master_path(s, mode)).astype(np.float32, copy=False)
+        read_image(stack_master_path(s)).astype(np.float32, copy=False)
         for s in sorted_stacks
     ]
 
@@ -147,3 +121,35 @@ def merge_target_channel_oss(
         output=str(output_filename),
     )
     return WithSidecar(FitsFilePath(output_filename))
+
+
+@node(auto_memory=True, cache_key_narrow=_merge_target_channel_narrow)
+@makes_image(identity=TargetChannelId)
+@beartype
+def merge_target_channel_oss_master(
+    target: Target, filter: str, stacks: tuple[Stack, ...],
+    config: ProcessingConfig,
+) -> WithSidecar[FitsFilePath]:
+    """Full-resolution OSS channel master."""
+    from stacks.post_processing.oss import post_process_stack_oss
+    return _merge_target_channel_oss_impl(
+        target, filter, stacks, config,
+        merge_target_channel_oss_master.filename_fn(target, filter),
+        lambda s: Path(post_process_stack_oss.filename_fn(s)),
+    )
+
+
+@node(auto_memory=True, cache_key_narrow=_merge_target_channel_narrow)
+@makes_image(identity=TargetChannelId)
+@beartype
+def merge_target_channel_oss_downscaled_master(
+    target: Target, filter: str, stacks: tuple[Stack, ...],
+    config: ProcessingConfig,
+) -> WithSidecar[FitsFilePath]:
+    """Downscaled-resolution OSS channel master."""
+    from stacks.post_processing.oss import post_process_stack_oss_downscaled
+    return _merge_target_channel_oss_impl(
+        target, filter, stacks, config,
+        merge_target_channel_oss_downscaled_master.filename_fn(target, filter),
+        lambda s: Path(post_process_stack_oss_downscaled.filename_fn(s)),
+    )

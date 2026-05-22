@@ -11,7 +11,6 @@ from stacks.types import StackHash, StackIdDependency
 from products import makes_image
 from products.identity import PresentationType
 from previews.identity import CalibratedStackId, UncorrectedRunId
-from previews.types import ALL_IMPLEMENTATIONS, SUBFRAME
 
 THUMBNAIL = PresentationType.THUMBNAIL
 

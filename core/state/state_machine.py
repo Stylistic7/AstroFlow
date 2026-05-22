@@ -30,7 +30,6 @@ from state.network_settings import (
 from asiair.asiair_zeroconf import ASIAIRZeroconf
 from state.types import State, Action
 from dependency_graph import Graph, GraphRuntime
-from previews.types import QualityLevel
 
 T = TypeVar("T")
 
@@ -128,12 +127,6 @@ def _populate_context(
         ),
     )
 
-    context.shopping_cart = [
-        ("mosaic", "75a1da6463e118e6", "DownscaledMaster", "PixInsight"),
-        # ("mosaic", "75a1da6463e118e6", "DownscaledMaster", "OSS"),
-        ("mosaic", "75a1da6463e118e6", "Master", "PixInsight"),
-        # ("mosaic", "75a1da6463e118e6", "Master", "OSS"),
-    ]
     context.ray_head_node_enabled = True
 
     from state.actor import state as state_proxy
@@ -147,7 +140,9 @@ def _start_astroflow_zeroconf(
     state: State, action: Action
 ) -> tuple[State, list[Action]]:
     assert "astroflow_zeroconf" not in state
-    advertised_ip = resolve_interface_ip(get_network_settings().cluster_interface)
+    advertised_ip = resolve_interface_ip(
+        get_network_settings().cluster_interface
+    )
     state["astroflow_zeroconf"] = AstroFlowZeroconf(
         enqueue_action, advertised_ip=advertised_ip
     )
@@ -167,7 +162,9 @@ def _start_asiair_zeroconf(
 def _advertise_zeroconf(
     state: State, action: Action
 ) -> tuple[State, list[Action]]:
-    advertised_ip = resolve_interface_ip(get_network_settings().cluster_interface)
+    advertised_ip = resolve_interface_ip(
+        get_network_settings().cluster_interface
+    )
     state["astroflow_zeroconf"].update_state(
         is_ray_head=True, advertised_ip=advertised_ip
     )
@@ -218,6 +215,7 @@ def _stop_ray_node(state: State, action: Action) -> tuple[State, list[Action]]:
     # connect_to_ray_cluster() short-circuits on the next start, and any
     # RPC against the dead GCS crashes with WrongClusterID.
     import ray
+
     if ray.is_initialized():
         ray.shutdown()
 
@@ -289,10 +287,7 @@ def _update_astroflow_services(
     # advertised now, the head likely changed interfaces (or moved).
     # Tear down so the start_ray_subordinate_node action below can
     # reconnect to the new address.
-    if (
-        "ray_process" in state
-        and state.get("connected_head_ip") != head["ip"]
-    ):
+    if "ray_process" in state and state.get("connected_head_ip") != head["ip"]:
         print(
             f"### Head IP changed "
             f"{state.get('connected_head_ip')} -> {head['ip']}, reconnecting"
@@ -308,7 +303,9 @@ def _update_astroflow_services(
     if "ray_process" in state:
         return state, []
 
-    return state, [Action(type="start_ray_subordinate_node", head_ip=head["ip"])]
+    return state, [
+        Action(type="start_ray_subordinate_node", head_ip=head["ip"])
+    ]
 
 
 def _start_ray_subordinate_node(

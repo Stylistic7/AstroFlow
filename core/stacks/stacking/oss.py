@@ -27,7 +27,7 @@ from astroscrappy import detect_cosmics
 from decorators import node
 from file_io.generic import read_image, read_header
 from file_io.types import FitsFilePath, WithSidecar
-from previews.types import OSS, PIXINSIGHT, MASTER, DOWNSCALED_MASTER, DOWNSCALE_FACTORS
+from previews.types import DOWNSCALED_MASTER, DOWNSCALE_FACTORS
 from products import makes_image
 from products.identity import (
     StackId, CalibrationStackId, identity_for_stack, PresentationType,

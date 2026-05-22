@@ -5,23 +5,7 @@ from dataclasses import is_dataclass, fields
 from dependency_graph import GraphStatus
 from hashing import hash_source_code
 from profiling.estimate_time import estimate_time
-from previews.types import ALL_QUALITY_LEVELS
 from beartype import beartype
-
-
-def _infer_node_quality(node) -> str | None:
-    """Mirror @measure_performance's quality inference so ETA lookups
-    hit the same profile bucket that was recorded at runtime."""
-    known = set(ALL_QUALITY_LEVELS)
-    for v in node.args:
-        if isinstance(v, str) and v in known:
-            return v
-        if is_dataclass(v) and not isinstance(v, type):
-            for f in fields(v):
-                inner = getattr(v, f.name, None)
-                if isinstance(inner, str) and inner in known:
-                    return inner
-    return None
 
 
 # Convert a GraphStatus snapshot into the per-task-type dict that the
@@ -57,7 +41,6 @@ def graph_status_to_progress(status: GraphStatus) -> dict[str, Any]:
             estimated = estimate_time(
                 fn,
                 remaining,
-                quality=_infer_node_quality(sample),
                 fn_hash=hash_source_code(sample.task._function),
             ) or 0
         else:

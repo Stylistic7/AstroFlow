@@ -12,7 +12,7 @@ from stacks.composite_stack import Stack
 from file_io.types import XisfFilePath, WithSidecar
 from products import makes_image
 from products.identity import StackId, PresentationType
-from previews.types import PIXINSIGHT, DOWNSCALE_FACTORS, DOWNSCALED_MASTER,MASTER,POST_PROCESSED,DOWNSCALED_POST_PROCESSED
+from previews.types import DOWNSCALE_FACTORS, DOWNSCALED_MASTER
 import structlog
 
 THUMBNAIL = PresentationType.THUMBNAIL

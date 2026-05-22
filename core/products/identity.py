@@ -161,7 +161,17 @@ class PlacedImageId(ObjectId):
     viewbox: Viewbox
 
     def filename_stem(self) -> str:
-        return f"placed_{self.mosaic.stable_hash}_{self.target.stable_hash}_{self.filter}"
+        # `viewbox.num_pixels_x` discriminates the per-pipeline output
+        # canvas size — PixInsight Master places into a full-resolution
+        # viewbox (tens of thousands of pixels wide), PixInsight
+        # Downscaled into a 1/8 viewbox (thousands). Same (mosaic,
+        # target, filter) identity, two different viewbox sizes →
+        # two different filenames. Lets `place_image` be a single op
+        # that doesn't have to know which pipeline called it.
+        return (
+            f"placed_{self.mosaic.stable_hash}_{self.target.stable_hash}_"
+            f"{self.filter}_{self.viewbox.num_pixels_x}px"
+        )
 
 
 @dataclass(frozen=True)

@@ -61,9 +61,6 @@ def producers_for(
 
 def fully_resolve(
     identity_cls: type, filename_fn: FilenameFn, op_name: str,
-    *,
-    level: str | None = None,
-    implementation: str | None = None,
 ):
     """Resolve a filename_fn against the output-directory layout:
 
@@ -75,14 +72,13 @@ def fully_resolve(
     another (`stack_files` vs `stack_files_downscaled`) never
     collide.
 
-    `level`/`implementation` salt the filename stem for ops whose
-    single function body registers under multiple (impl, level)
-    combos (place_image, merge_images, merge_target_channel,
-    store_mosaic_color_channel_xisf). Single-mode ops pass None
-    for both and get the clean `<identity_stem>.<ext>` filename.
+    Ops that produce per-pipeline variants of the same identity
+    (`place_image` for Master vs Downscaled mosaics) encode the
+    variant directly in the identity's `filename_stem()` (e.g.
+    viewbox dimensions). No mode/impl discriminator threading
+    through the trace.
     """
     object_type_name = identity_cls.object_type.__name__
-    multi_mode = level is not None and implementation is not None
 
     def inner(*args, **kwargs):
         filename = filename_fn(*args, **kwargs)
@@ -99,10 +95,6 @@ def fully_resolve(
         path_str = os.fspath(filename)
         if os.path.isabs(path_str):
             return filename
-        if multi_mode:
-            suffix = filename.suffix
-            new_name = filename.stem + f"_{level}_{implementation}" + suffix
-            filename = type(filename)(new_name)
         return filename.resolve_at(output_dir / object_type_name / op_name)
 
     return inner
@@ -304,8 +296,6 @@ def _chain_compute_image_metadata(handle):
 
 def _bind_producer(
     media_type: MediaType,
-    implementation: "str | list[str] | None",
-    levels: "list[str] | None",
     filename_fn: FilenameFn | None,
     identity: "type[ObjectId]",
     display: str | None = None,
@@ -335,26 +325,8 @@ def _bind_producer(
         @makes_image(identity=StackId, display="Master")
         def stack_files(stack, config) -> WithSidecar[XisfFilePath]:
             ...
-
-    `implementation` and `levels` are still accepted by ops whose
-    single function body produces multiple on-disk variants
-    discriminated by a `mode` arg (place_image, merge_images,
-    merge_target_channel, store_mosaic_color_channel_xisf). The
-    (impl, level) tuple salts the filename stem so the variants
-    don't clobber each other inside the shared op-name directory.
-    Splitting these into one op per variant is the long-term
-    direction.
     """
     assert identity is not None, "@makes_image/@makes_video requires identity="
-
-    if implementation is None:
-        implementations = [None]
-    elif isinstance(implementation, list):
-        implementations = implementation
-    else:
-        implementations = [implementation]
-    if levels is None:
-        levels = [None]
 
     def decorator(func: Callable[..., Path]):
         # @makes_image must wrap the raw function, not the Ray-task
@@ -398,24 +370,18 @@ def _bind_producer(
         func._identities.append(identity)
 
         op_name = func.__name__
-        # Multi-mode ops register one body under N (impl, level) combos
-        # and need an in-stem discriminator to keep the variants apart.
-        multi_mode = len(implementations) * len(levels) > 1
 
-        for impl in implementations:
-            for level in levels:
-                if local_filename_fn is None:
-                    continue
-                fn_level = level if multi_mode else None
-                fn_impl = impl if multi_mode else None
-                resolved = fully_resolve(
-                    identity, local_filename_fn, op_name,
-                    level=fn_level, implementation=fn_impl,
-                )
-                if not hasattr(func, 'filename_fns'):
-                    func.filename_fns = {}
-                func.filename_fns[(identity, level)] = resolved
-                func.filename_fn = _make_dispatch_filename_fn(func)
+        if local_filename_fn is not None:
+            resolved = fully_resolve(identity, local_filename_fn, op_name)
+            if not hasattr(func, 'filename_fns'):
+                func.filename_fns = {}
+            # Polymorphic producers (stack_files registers for both
+            # StackId and CalibrationStackId) stack @makes_image
+            # decorators; each registration writes its own resolved
+            # fn into the dict, and the dispatch fn tries each at
+            # call time.
+            func.filename_fns[identity] = resolved
+            func.filename_fn = _make_dispatch_filename_fn(func)
 
         # Wrap once; stacked decorators (polymorphic identities) share
         # the closure-captured `identities` list and skip re-wrapping.
@@ -463,8 +429,6 @@ def _bind_producer(
 
 
 def makes_image(
-    implementation=None,
-    levels=None,
     filename_fn: FilenameFn | None = None,
     identity: type[ObjectId] = None,
     display: str | None = None,
@@ -478,32 +442,27 @@ def makes_image(
 
     Tile pyramids are auto-generated next to large outputs (over 8
     megapixels — the 4K display threshold). The web server's bare-
-    thumbnail route lazy-generates a 4K-wide PNG on miss.
+    thumbnail route lazy-generates a 1920px-wide PNG on miss.
 
-    Single-mode (most ops)::
+    Usage::
 
         @node(...)
         @makes_image(identity=StackId, display="Master")
         def stack_files(stack, config) -> WithSidecar[XisfFilePath]:
             ...
 
-    Multi-mode (place_image, merge_images, merge_target_channel,
-    store_mosaic_color_channel_xisf) accept positional
-    `(implementation, levels)` and inject `_<level>_<impl>` into the
-    filename stem so a single function body registered under
-    multiple (impl, level) combos doesn't clobber its own outputs.
-    Splitting these into one op per variant is the cleaner future
-    state.
+    Per-pipeline variants are encoded by the identity itself (e.g.
+    `PlacedImageId.filename_stem()` includes viewbox dimensions, so
+    PI Master and PI Downscaled place_image outputs naturally land
+    in distinct files). Ops never take a `mode` arg.
     """
     return _bind_producer(
-        MediaType.IMAGE, implementation, levels, filename_fn,
+        MediaType.IMAGE, filename_fn,
         identity=identity, display=display,
     )
 
 
 def makes_video(
-    implementation=None,
-    levels=None,
     filename_fn: FilenameFn | None = None,
     identity: type[ObjectId] = None,
     display: str | None = None,
@@ -513,6 +472,6 @@ def makes_video(
     `<output_dir>/<object_type>/<op_name>/<identity_stem>.<ext>`.
     """
     return _bind_producer(
-        MediaType.VIDEO, implementation, levels, filename_fn,
+        MediaType.VIDEO, filename_fn,
         identity=identity, display=display,
     )

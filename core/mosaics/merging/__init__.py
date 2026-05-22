@@ -11,5 +11,4 @@ from mosaics.merging.pixinsight import *  # noqa: F401, F403
 from mosaics.merging.pixinsight import (  # noqa: F401
     _set_panel_count,
     _panel_count,
-    _maybe_publish_progress,
 )

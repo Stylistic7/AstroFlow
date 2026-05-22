@@ -21,7 +21,6 @@ from file_io.generic import read_image
 from file_io.tiff_file_io import write_tiff_image
 from file_io.types import TiffFilePath, WithSidecar
 from context import context
-from previews.types import PIXINSIGHT, SUBFRAME, MASTER, DOWNSCALED_MASTER
 from mosaics.types import Mosaic, Viewbox
 from decorators import node
 from metadata.classes import ImageMetadata
@@ -161,29 +160,32 @@ def _project_in_tiles(
 # footprint (interpolator + output buffer) while leaving room for many
 # concurrent place_tile subtasks.
 @node
-@makes_image(PIXINSIGHT, [SUBFRAME, MASTER, DOWNSCALED_MASTER],
-             identity=PlacedImageId)
+@makes_image(identity=PlacedImageId)
 def place_image(
-    mode: str,
-    mosaic: Mosaic,
-    target: Target,
-    filter: str,
-    viewbox: Viewbox,
+    mosaic: Mosaic, target: Target, filter: str, viewbox: Viewbox,
     image_metadata: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
+    """Project one panel's master into the mosaic's viewbox.
+
+    Pipeline-agnostic: the downscaling — if any — is fully captured
+    by the `viewbox` size and by the upstream master (already
+    downscaled for the PixInsight Downscaled pipeline). place_image
+    just projects whatever it's given. PlacedImageId includes the
+    viewbox, and the on-disk filename includes a viewbox content-
+    hash prefix so PI Master and PI Downscaled outputs land in
+    distinct files."""
     assert image_metadata.plate_solution is not None, (
         f"place_image requires a plate solution on {image_metadata.filename}; "
         "DONTSOLV synthetic frames cannot be placed."
     )
-    log.info("Placing image", mode=mode, mosaic=str(mosaic), target=str(target),
+    log.info("Placing image", mosaic=str(mosaic), target=str(target),
              filter=filter, filename=image_metadata.filename, viewbox=str(viewbox))
 
     wcs = WCS(image_metadata.plate_solution.header)
     interp = _make_interpolator(image_metadata.filename)
     image = _project_in_tiles(viewbox, interp, wcs, skip_empty=False)
 
-    output_fn = place_image.filename_fns[(PlacedImageId, mode)]
-    output_filename = output_fn(mosaic, target, filter, viewbox)
+    output_filename = place_image.filename_fn(mosaic, target, filter, viewbox)
 
     if not np.any(image):
         raise ProjectionFailedException(

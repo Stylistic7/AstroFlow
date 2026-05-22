@@ -21,21 +21,21 @@ from typing import Any, Callable
 import psutil
 
 from hashing import hash_source_code
-from profiling.measure_performance import _infer_quality
 
 _GB = 1024 ** 3
 _MAX_MEMORY_FRACTION = 0.9
 
-# Quality-aware defaults for the first run of a function (no profile
-# samples yet). Based on observed peak-RSS distributions across the
-# pipeline. Master/PostProcessed tasks are heavy; everything else is
-# light. A blanket 32 GB default deadlocked scheduling because two
-# cold-start tasks couldn't coexist on a 64 GB Mac.
-_DEFAULT_MEMORY_BY_QUALITY = {
-    "Master": 16 * _GB,
-    "PostProcessed": 16 * _GB,
-    "DownscaledMaster": 2 * _GB,
-    "Subframe": 2 * _GB,
+# Per-op default for the first run (no profile samples yet). Keyed
+# on the op's __name__: heavy ops (full-res WBPP / PhotometricMosaic)
+# get 16 GB, everything else 4 GB. After the first run profile data
+# kicks in; this is just to avoid a cold-start deadlock where two
+# big tasks request more than a node's capacity combined.
+_DEFAULT_MEMORY_BY_OP = {
+    "stack_files":                   16 * _GB,
+    "post_process_stack":            16 * _GB,
+    "merge_target_channel":          16 * _GB,
+    "store_mosaic_color_channel_xisf": 16 * _GB,
+    "merge_images":                  16 * _GB,
 }
 _DEFAULT_MEMORY_UNKNOWN = 4 * _GB
 
@@ -112,9 +112,8 @@ def estimate_memory(fn: Callable, args: tuple, kwargs: dict) -> int:
     from context import context
 
     fn_hash = hash_source_code(fn)
-    quality = _infer_quality(args, kwargs)
 
-    key = ("profile", fn_hash, fn.__name__, quality)
+    key = ("profile", fn_hash, fn.__name__)
     samples = context.get(key, [])
 
     rsss: list[float] = [s["peak_rss_delta_b"] for s in samples]
@@ -122,7 +121,7 @@ def estimate_memory(fn: Callable, args: tuple, kwargs: dict) -> int:
     cap = _max_memory_bytes()
 
     if not rsss:
-        default = _DEFAULT_MEMORY_BY_QUALITY.get(quality, _DEFAULT_MEMORY_UNKNOWN)
+        default = _DEFAULT_MEMORY_BY_OP.get(fn.__name__, _DEFAULT_MEMORY_UNKNOWN)
         return min(default, cap)
 
     rsss = _trim_high_outliers(rsss)

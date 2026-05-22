@@ -25,7 +25,6 @@ from decisions.subframe_selection import get_light_frames_sorted_by_stars
 from decisions.resolve import is_frame_included, resolve_calibration
 from products import makes_image, makes_video
 from products.identity import StackId, CalibrationStackId, PresentationType
-from previews.types import ALL_IMPLEMENTATIONS, SUBFRAME
 
 THUMBNAIL = PresentationType.THUMBNAIL
 from file_io.generic import read_image

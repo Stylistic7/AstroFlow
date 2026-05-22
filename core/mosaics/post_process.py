@@ -13,7 +13,6 @@ from pix.tasks import (
 )
 from file_io.types import XisfFilePath, WithSidecar
 from decorators import node
-from previews.types import PIXINSIGHT, OSS, MASTER,POST_PROCESSED
 from mosaics.types import Mosaic
 from products import makes_image
 from products.identity import MosaicId, MosaicChannelId, PresentationType

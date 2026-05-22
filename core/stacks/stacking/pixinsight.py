@@ -17,7 +17,7 @@ from decorators import node
 from decisions.settings import DevelopmentSettings, ProcessingConfig
 from decisions.resolve import resolve_calibration, resolve_decisions
 from decisions.compute_graph import ALL_EXCLUSION_TYPES
-from previews.types import PIXINSIGHT, MASTER, DOWNSCALED_MASTER, DOWNSCALE_FACTORS
+from previews.types import DOWNSCALED_MASTER, DOWNSCALE_FACTORS
 from products import makes_image
 from products.identity import (
     StackId, CalibrationStackId, identity_for_stack, PresentationType,

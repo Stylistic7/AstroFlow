@@ -184,7 +184,6 @@ def invalidate_stack(stack_id):
     cache miss and re-stacks just this one.
     """
     from decisions.settings import ProcessingConfig
-    from previews.types import QualityLevel, PIXINSIGHT, MASTER
     from stacks.stacking import stack_files
 
     if stack_id not in (context.stacks or {}):
@@ -198,8 +197,6 @@ def invalidate_stack(stack_id):
         development_settings=settings.development_settings,
         min_frames_in_stack=settings.clustering_settings.min_frames_in_stack,
         decisions=settings.decision_overrides,
-        quality=MASTER,
-        implementation=PIXINSIGHT,
     )
     deleted = stack_files.invalidate(stack, config)
     if deleted:

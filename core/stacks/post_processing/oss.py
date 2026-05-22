@@ -14,7 +14,6 @@ import plate_solving
 from decorators import node
 from file_io.generic import read_image
 from file_io.types import FitsFilePath, WithSidecar
-from previews.types import OSS, DOWNSCALED_MASTER,MASTER,POST_PROCESSED,DOWNSCALED_POST_PROCESSED
 from products import makes_image
 from products.identity import StackId, PresentationType
 

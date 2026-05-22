@@ -18,10 +18,9 @@ from hashing import hash_list
 from metadata.classes import ImageMetadata
 from mosaics.artifacts import merged_filename_fits
 from mosaics.merging.pixinsight import (
-    MergedImage, _maybe_publish_progress, _panel_count, _set_panel_count,
+    MergedImage, _panel_count, _set_panel_count,
 )
 from mosaics.types import Mosaic
-from previews.types import OSS, MASTER, DOWNSCALED_MASTER
 from products import makes_image
 from products.identity import MergedImageId
 
@@ -50,22 +49,16 @@ def _blend(image_0, image_1):
     return (w_0 * image_0 + w_1 * image_1) / total
 
 @node(auto_memory=True)
-@makes_image(OSS, [MASTER, DOWNSCALED_MASTER], merged_filename_fits,
-             identity=MergedImageId)
+@makes_image(filename_fn=merged_filename_fits, identity=MergedImageId)
 def merge_images_oss(
-    mode: str,
-    mosaic: Mosaic,
-    filter: str,
-    impl,  # always OSS; accepted to match merge_images' signature
-    mock_pixinsight: bool,
-    input_0: ImageMetadata,
-    input_1: ImageMetadata,
+    mosaic: Mosaic, filter: str,
+    input_0: ImageMetadata, input_1: ImageMetadata,
 ) -> WithSidecar:
-    # Output path comes from this op's own filename_fn — `mode` selects
-    # which (identity, level) variant.
-    output_filename = merge_images_oss.filename_fns[(MergedImageId, mode)](
-        mosaic, filter, input_0, input_1,
-    )
+    """Distance-weighted blend of two placed-image inputs (OSS path).
+    Pipeline-agnostic: PI Master and PI Downscaled both call this
+    with their own placed inputs; the inputs' content_hashes differ,
+    so `merged_filename_fits` lands them in different files."""
+    output_filename = merge_images_oss.filename_fn(mosaic, filter, input_0, input_1)
     Path(output_filename).parent.mkdir(parents=True, exist_ok=True)
 
     image_0 = read_image(input_0.filename.resolve(strict=True)).astype(np.float32)
@@ -82,7 +75,6 @@ def merge_images_oss(
 
     new_count = _panel_count(input_0) + _panel_count(input_1)
     _set_panel_count(output_filename, new_count)
-    _maybe_publish_progress(mode, mosaic, filter, impl, Path(output_filename), new_count)
 
     log.info("OSS merge complete", output=str(output_filename), panel_count=new_count)
     return WithSidecar(output_filename)

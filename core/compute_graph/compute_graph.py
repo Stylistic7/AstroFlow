@@ -13,7 +13,6 @@ from calibration import (
     associate_calibration_stacks,
 )
 from previews.stack_thumbnails import scatter_stack_thumbnails
-from previews.types import QualityLevel
 from mosaics.identification import identify_mosaics
 from stacks.compute_graph import (
     process_stacks_for_ui,

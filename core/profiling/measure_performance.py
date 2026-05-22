@@ -85,37 +85,17 @@ def _collect_image_stats_by_argument(func, args, kwargs):
 def _update_profile(
     fn_hash: str,
     fn_name: str,
-    quality: str | None,
     record: dict[str, Any],
     cache: CacheProtocol,
 ):
     node_ip = ray.util.get_node_ip_address()
     record["node_ip"] = node_ip
-    key = ("profile", fn_hash, fn_name, quality)
+    # Profile bucketed by `(fn_hash, fn_name)` only — the function
+    # name carries enough discriminator now that per-pipeline
+    # variants are separate ops (no more `mode`/`quality` arg
+    # threading).
+    key = ("profile", fn_hash, fn_name)
     cache.and_equals(key, [record], _MAX_PROFILE_SAMPLES)
-
-
-def _infer_quality(args, kwargs) -> str | None:
-    """Scan args/kwargs for a quality-level string; return it or None.
-
-    Quality is a free-form string now (e.g. "Master", "Subframe"); the
-    legacy QualityLevel enum is gone. We match against the known
-    values in ALL_QUALITY_LEVELS so a random string arg can't be
-    misread as a quality. Also looks one level inside dataclasses
-    (legacy ProcessingConfig.quality is gone, but this still gives
-    us robustness for any user dataclass that carries a quality).
-    """
-    from previews.types import ALL_QUALITY_LEVELS
-    known = set(ALL_QUALITY_LEVELS)
-    for v in (*args, *kwargs.values()):
-        if isinstance(v, str) and v in known:
-            return v
-        if is_dataclass(v) and not isinstance(v, type):
-            for f in fields(v):
-                inner = getattr(v, f.name, None)
-                if isinstance(inner, str) and inner in known:
-                    return inner
-    return None
 
 
 def make_measure_performance_decorator(cache: CacheProtocol):
@@ -166,8 +146,7 @@ def make_measure_performance_decorator(cache: CacheProtocol):
                 },
             }
 
-            quality = _infer_quality(args, kwargs)
-            _update_profile(fn_hash, func.__name__, quality, record, cache)
+            _update_profile(fn_hash, func.__name__, record, cache)
             return result
 
         return wrapper

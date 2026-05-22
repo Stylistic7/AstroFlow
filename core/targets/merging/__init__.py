@@ -8,7 +8,4 @@ PixInsight variant; pipeline code should pick a backend explicitly via
 """
 from targets.merging.pixinsight import *  # noqa: F401, F403
 # Underscore-prefixed re-exports needed by other modules.
-from targets.merging.pixinsight import (  # noqa: F401
-    _merge_target_channel_narrow,
-    _postprocessed_level,
-)
+from targets.merging.pixinsight import _merge_target_channel_narrow  # noqa: F401

@@ -10,7 +10,6 @@ from hashing import hash_source_code
 def estimate_time(
     fn_name: str,
     remaining: int = 1,
-    quality: str | None = None,
     fn_hash: str | None = None,
 ) -> float | None:
     """Estimate seconds to complete `remaining` tasks of function `fn_name`.
@@ -26,8 +25,7 @@ def estimate_time(
     if fn_hash is None:
         return None
 
-    quality_value = str(quality) if quality is not None else None
-    key = ("profile", fn_hash, fn_name, quality_value)
+    key = ("profile", fn_hash, fn_name)
     samples = context.get(key, [])
 
     if not samples:

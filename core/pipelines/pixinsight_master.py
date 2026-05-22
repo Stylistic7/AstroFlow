@@ -21,28 +21,16 @@ display name, and edit the call you want to replace. All three entry
 points are independently customisable.
 """
 from astroflow.pipeline import pipeline
-# Explicit per-backend imports — reading this file tells you which
-# implementation each step uses. An "OSS Master" sibling would import
-# `stack_files` from `stacks.stacking.oss` etc.; the diff between
-# the two files IS the algorithm change.
-from mosaics.final_storage import store_mosaic_color_channel_xisf
+from mosaics.final_storage import store_mosaic_color_channel_master
 from mosaics.merging.pixinsight import merge_images
 from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
-from previews.types import PIXINSIGHT, MASTER
 from stacks.compute_graph import calibrate
 from stacks.composite_stack import Stack
 from stacks.post_processing.pixinsight import post_process_stack
 from stacks.stacking.pixinsight import stack_files
-from targets.merging.pixinsight import merge_target_channel
+from targets.merging.pixinsight import merge_target_channel_master
 from targets.types import Target
-
-
-# This pipeline's output identity. Used internally by the ops that
-# still branch on QualityLevel (place_image, merge_images, etc.);
-# Phase B-3 splits those into per-quality ops and removes the constant.
-_MODE = MASTER
-_IMPL = PIXINSIGHT
 
 
 def _post_processed_master(s, config, mock):
@@ -59,8 +47,8 @@ def _post_processed_master(s, config, mock):
 def _channels_for_target(target, config, mock):
     """Per-filter HDR-combined channel masters for one target."""
     return {
-        filter: merge_target_channel(
-            target, filter, target.stacks_for(filter), _MODE, config,
+        filter: merge_target_channel_master(
+            target, filter, target.stacks_for(filter), config,
             _after=tuple(  # Node-handle args must come last; see @node trace convention.
                 _post_processed_master(s, config, mock)
                 for s in target.stacks_for(filter)
@@ -99,8 +87,6 @@ def for_mosaic(mosaic, config):
     mock = config.development_settings.mock_pixinsight
     targets_by_id = {t.id: t for t in mosaic.targets}
 
-    # Per-(target, filter) channel masters — same chain as the
-    # target-only entry, flattened across the mosaic's targets.
     channels = {
         (target.id, filter): sink
         for target in mosaic.targets
@@ -109,7 +95,7 @@ def for_mosaic(mosaic, config):
 
     def merged_strip(strip, filter, viewbox):
         placed = [
-            place_image(_MODE, mosaic, targets_by_id[tid], filter, viewbox,
+            place_image(mosaic, targets_by_id[tid], filter, viewbox,
                         channels[(tid, filter)])
             for tid in strip if (tid, filter) in channels
         ]
@@ -119,18 +105,14 @@ def for_mosaic(mosaic, config):
 
     out = {}
     for filter in mosaic.filters:
-        viewbox = mosaic.viewbox(_MODE)
+        viewbox = mosaic.viewbox("Master")
         rows = [r for r in (
             merged_strip(strip, filter, viewbox) for strip in mosaic.strips
         ) if r is not None]
         if rows:
             merged = _pairwise_merge(rows, mosaic, filter, mock)
-            # Write the canonical per-filter Mosaic XISF (the path
-            # viewers stream from). `merged` is the Node handle and
-            # MUST be the last positional arg — the trace appends
-            # handle-resolved values after literals at dispatch time.
-            out[filter] = store_mosaic_color_channel_xisf(
-                _MODE, mosaic, filter, mock, merged,
+            out[filter] = store_mosaic_color_channel_master(
+                mosaic, filter, mock, merged,
             )
 
     return out
@@ -141,5 +123,5 @@ def _pairwise_merge(items, mosaic, filter, mock):
     metadata handles. Returns the final sink Node."""
     acc = items[0]
     for item in items[1:]:
-        acc = merge_images(_MODE, mosaic, filter, _IMPL, mock, acc, item)
+        acc = merge_images(mosaic, filter, mock, acc, item)
     return acc

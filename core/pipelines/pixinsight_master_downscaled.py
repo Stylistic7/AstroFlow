@@ -6,42 +6,36 @@ downscaled 8x BEFORE WBPP runs. The whole point of this pipeline
 is to cut WBPP/plate-solving/registration time by ~64x, which is
 only achievable if WBPP itself sees the small frames.
 
-The only structural difference from `pixinsight_master.py`:
+Structurally the only differences from `pixinsight_master.py` are
+which upstream ops it composes:
 
-  PixInsight Master:               PixInsight Downscaled:
-    calibrate(s, config)             calibrate(s, config,
-                                       stacker=stack_files_downscaled)
-    stack_files(s, config)           stack_files_downscaled(s, config)
-    post_process_stack(...)          post_process_stack_downscaled(...)
+  PixInsight Master:                  PixInsight Downscaled:
+    calibrate(s, config)                calibrate_downscaled(s, config)
+    stack_files(s, config)              stack_files_downscaled(s, config)
+    post_process_stack(...)             post_process_stack_downscaled(...)
+    merge_target_channel_master(...)    merge_target_channel_downscaled_master(...)
+    store_mosaic_color_channel_master   store_mosaic_color_channel_downscaled_master
 
-Cal masters land in a different on-disk slot than the full-res ones
-(via the `stack_files_downscaled` op's filename_fn), so the two
-pipelines don't collide. Cache sharing across the two pipelines is
-NOT possible — they're literally different work.
+`place_image` and `merge_images` are identical in both — both ops
+are pipeline-agnostic (viewbox / inputs carry the discriminator).
 """
 from astroflow.pipeline import pipeline
-from mosaics.final_storage import store_mosaic_color_channel_xisf
+from mosaics.final_storage import store_mosaic_color_channel_downscaled_master
 from mosaics.merging.pixinsight import merge_images
 from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
-from previews.types import PIXINSIGHT, DOWNSCALED_MASTER
 from stacks.compute_graph import calibrate_downscaled
 from stacks.composite_stack import Stack
 from stacks.post_processing.pixinsight import post_process_stack_downscaled
 from stacks.stacking.pixinsight import stack_files_downscaled
-from targets.merging.pixinsight import merge_target_channel
+from targets.merging.pixinsight import merge_target_channel_downscaled_master
 from targets.types import Target
-
-
-_MODE = DOWNSCALED_MASTER
-_IMPL = PIXINSIGHT
 
 
 def _post_processed_master(s, config, mock):
     """Calibrate (downscaled cal masters) → stack downscaled →
     post-process. The `stack_files_downscaled` op handles the input-
-    frame downscale and the WBPP run; `post_process_stack_downscaled`
-    runs MSGC on the already-small master."""
+    frame downscale and the WBPP run."""
     cal = calibrate_downscaled(s, config)
     master = stack_files_downscaled(s, config, _after=(cal,))
     return post_process_stack_downscaled(s, mock, _after=(master,))
@@ -49,8 +43,8 @@ def _post_processed_master(s, config, mock):
 
 def _channels_for_target(target, config, mock):
     return {
-        filter: merge_target_channel(
-            target, filter, target.stacks_for(filter), _MODE, config,
+        filter: merge_target_channel_downscaled_master(
+            target, filter, target.stacks_for(filter), config,
             _after=tuple(
                 _post_processed_master(s, config, mock)
                 for s in target.stacks_for(filter)
@@ -87,7 +81,7 @@ def for_mosaic(mosaic, config):
 
     def merged_strip(strip, filter, viewbox):
         placed = [
-            place_image(_MODE, mosaic, targets_by_id[tid], filter, viewbox,
+            place_image(mosaic, targets_by_id[tid], filter, viewbox,
                         channels[(tid, filter)])
             for tid in strip if (tid, filter) in channels
         ]
@@ -97,14 +91,14 @@ def for_mosaic(mosaic, config):
 
     out = {}
     for filter in mosaic.filters:
-        viewbox = mosaic.viewbox(_MODE)
+        viewbox = mosaic.viewbox("DownscaledMaster")
         rows = [r for r in (
             merged_strip(strip, filter, viewbox) for strip in mosaic.strips
         ) if r is not None]
         if rows:
             merged = _pairwise_merge(rows, mosaic, filter, mock)
-            out[filter] = store_mosaic_color_channel_xisf(
-                _MODE, mosaic, filter, mock, merged,
+            out[filter] = store_mosaic_color_channel_downscaled_master(
+                mosaic, filter, mock, merged,
             )
 
     return out
@@ -113,5 +107,5 @@ def for_mosaic(mosaic, config):
 def _pairwise_merge(items, mosaic, filter, mock):
     acc = items[0]
     for item in items[1:]:
-        acc = merge_images(_MODE, mosaic, filter, _IMPL, mock, acc, item)
+        acc = merge_images(mosaic, filter, mock, acc, item)
     return acc

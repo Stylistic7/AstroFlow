@@ -16,14 +16,6 @@ from decorators import node
 from file_io.types import XisfFilePath, WithSidecar
 from pix import Image
 from pix.tasks import HDRComposition, StarAlignment
-from previews.types import (
-
-    PIXINSIGHT,
-    MASTER,
-    DOWNSCALED_MASTER,
-    POST_PROCESSED,
-    DOWNSCALED_POST_PROCESSED,
-)
 from products import makes_image
 from products.identity import (
     PresentationType,
@@ -37,26 +29,6 @@ from targets.types import Target
 THUMBNAIL = PresentationType.THUMBNAIL
 TILE_PYRAMID = PresentationType.TILE_PYRAMID
 
-def _postprocessed_level(quality: str) -> str:
-    """The gradient-corrected stack artifact a channel merge consumes
-    for a given mosaic mode. Shared with the OSS merge. The merge runs
-    only at MASTER / DOWNSCALED_MASTER (SUBFRAME short-circuits in
-    build_target_channel_subgraph)."""
-    if quality == MASTER:
-        return POST_PROCESSED
-    if quality == DOWNSCALED_MASTER:
-        return DOWNSCALED_POST_PROCESSED
-    raise AssertionError(f"channel merge not defined for quality {quality}")
-
-def _stack_master_path(stack: Stack, quality: str) -> Path:
-    # Consume the gradient-corrected (post-processed) stack, NOT the
-    # raw master — so mosaic panels are flattened before placement.
-    from stacks.post_processing.pixinsight import (
-        post_process_stack as _pp,
-        post_process_stack_downscaled as _pp_down,
-    )
-    op = _pp_down if quality == DOWNSCALED_MASTER else _pp
-    return Path(op.filename_fn(stack))
 
 def _merge_target_channel_narrow(args, kwargs):
     """Cache-key hook: drop calibration_stacks from the config hash so a
@@ -64,43 +36,32 @@ def _merge_target_channel_narrow(args, kwargs):
     target-channel master.
     """
     from stacks.stacking import narrow_stack_config
-    target, filter, stacks, mode, config, *rest = args
-    # Use the first constituent stack for narrowing — narrow_stack_config
-    # only reads stable_hash and decisions, both of which should be
-    # consistent across this group.
+    target, filter, stacks, config, *rest = args
     narrowed = narrow_stack_config(stacks[0], config) if stacks else config
-    return (target, filter, stacks, mode, narrowed, *rest), kwargs
+    return (target, filter, stacks, narrowed, *rest), kwargs
 
-@node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD",
-      auto_memory=True, cache_key_narrow=_merge_target_channel_narrow)
-@makes_image(PIXINSIGHT, [MASTER, DOWNSCALED_MASTER],
-             identity=TargetChannelId, display="Channel")
-@beartype
-def merge_target_channel(
-    target: Target,
-    filter: str,
-    stacks: tuple[Stack, ...],
-    mode: str,
+
+def _merge_target_channel_impl(
+    target: Target, filter: str, stacks: tuple[Stack, ...],
     config: ProcessingConfig,
+    output_filename, stack_master_path,
 ) -> WithSidecar[XisfFilePath]:
+    """Shared body. `stack_master_path` resolves a single Stack to
+    its post-processed master path — the only place the per-mode
+    ops differ (Master variant reads `post_process_stack`,
+    Downscaled-Master reads `post_process_stack_downscaled`)."""
     assert len(stacks) >= 1, "merge_target_channel needs at least one stack"
-
-    output_fn = merge_target_channel.filename_fn
-    output_filename = output_fn(target, filter)
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
 
-    # n=1: passthrough. No registration, no HDR — the single stack's
-    # master IS the (target, filter) master.
+    # n=1: passthrough. The single stack's master IS the channel master.
     if len(stacks) == 1:
-        src = _stack_master_path(stacks[0], mode)
-        shutil.copy(src, output_filename)
+        shutil.copy(stack_master_path(stacks[0]), output_filename)
         return WithSidecar(XisfFilePath(output_filename))
 
     # n>1: register, then HDR-compose. Sort longest-exposure-first so
-    # HDRComposition treats the deepest integration as the base and
-    # replaces its saturated regions with the shorter exposures.
+    # HDRComposition treats the deepest integration as the base.
     sorted_stacks = sorted(stacks, key=lambda s: -float(s.exposure))
-    masters = [_stack_master_path(s, mode) for s in sorted_stacks]
+    masters = [stack_master_path(s) for s in sorted_stacks]
 
     images = Image.open_many(masters, filters=[s.filter for s in sorted_stacks])
     aligned = StarAlignment(images)
@@ -111,3 +72,39 @@ def merge_target_channel(
     )
 
     return WithSidecar(XisfFilePath(output_filename))
+
+
+@node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD",
+      auto_memory=True, cache_key_narrow=_merge_target_channel_narrow)
+@makes_image(identity=TargetChannelId, display="Channel")
+@beartype
+def merge_target_channel_master(
+    target: Target, filter: str, stacks: tuple[Stack, ...],
+    config: ProcessingConfig,
+) -> WithSidecar[XisfFilePath]:
+    """Full-resolution channel master (PixInsight Master pipeline).
+    Reads each stack's post-processed master from `post_process_stack`."""
+    from stacks.post_processing.pixinsight import post_process_stack
+    return _merge_target_channel_impl(
+        target, filter, stacks, config,
+        merge_target_channel_master.filename_fn(target, filter),
+        lambda s: Path(post_process_stack.filename_fn(s)),
+    )
+
+
+@node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD",
+      auto_memory=True, cache_key_narrow=_merge_target_channel_narrow)
+@makes_image(identity=TargetChannelId, display="Channel")
+@beartype
+def merge_target_channel_downscaled_master(
+    target: Target, filter: str, stacks: tuple[Stack, ...],
+    config: ProcessingConfig,
+) -> WithSidecar[XisfFilePath]:
+    """Downscaled-resolution channel master (PixInsight Downscaled
+    pipeline). Reads each stack's downscaled post-processed master."""
+    from stacks.post_processing.pixinsight import post_process_stack_downscaled
+    return _merge_target_channel_impl(
+        target, filter, stacks, config,
+        merge_target_channel_downscaled_master.filename_fn(target, filter),
+        lambda s: Path(post_process_stack_downscaled.filename_fn(s)),
+    )

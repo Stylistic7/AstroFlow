@@ -21,7 +21,6 @@ from products import makes_image
 from products.identity import TargetId, TargetChannelId, PresentationType
 
 THUMBNAIL = PresentationType.THUMBNAIL
-from previews.types import PIXINSIGHT, OSS, MASTER,POST_PROCESSED
 
 def _post_process_target(images: ImageList, target: Target) -> tuple[Image, Image] | None:
     if "LRGB" in images:
