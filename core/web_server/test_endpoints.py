@@ -87,54 +87,53 @@ def test_orion_mosaic_endpoints(client, with_orion_mosaic):
 
 @pytest.mark.exhaustive
 def test_orion_mosaic_versions_endpoint(client, with_orion_mosaic):
-    """Exercise the (implementation × quality × filter) matrix endpoints."""
+    """Exercise the per-pipeline tap-points endpoint that the
+    dashboard reads."""
     mosaics = client.get("/api/mosaics").get_json()
     mosaic_id = next(iter(mosaics.keys()))
 
-    # /api/object_versions/mosaic/<id>: returns a full matrix
-    resp = client.get(f"/api/object_versions/mosaic/{mosaic_id}")
+    # /api/pipeline_outputs/mosaic/<id>: returns {filters, pipelines}
+    # where each pipeline carries its discovered taps (display-labelled
+    # @makes_image nodes the pipeline trace surfaced) and each tap's
+    # per-filter on-disk presence.
+    resp = client.get(f"/api/pipeline_outputs/mosaic/{mosaic_id}")
     assert resp.status_code == 200
     data = resp.get_json()
-    assert "filters" in data and "versions" in data
+    assert "filters" in data and "pipelines" in data
     assert isinstance(data["filters"], list) and len(data["filters"]) > 0
 
-    versions = data["versions"]
-    assert len(versions) > 0
-    for v in versions:
-        assert set(v.keys()) >= {"implementation", "quality", "filter", "exists", "mtime"}
-        assert v["implementation"] in ("PixInsight", "AstroFlow", "OSS")
-        assert v["quality"] in ("PostProcessed", "Master", "DownscaledMaster", "Subframe")
-        assert v["filter"] in data["filters"]
-        if v["exists"]:
-            assert isinstance(v["mtime"], (int, float))
-        else:
-            assert v["mtime"] is None
-
-    # At least one version should have been produced by the test's compute graph.
-    existing = [v for v in versions if v["exists"]]
-    assert len(existing) > 0
-
-    # For each existing version, the implementation-specific thumbnail and
-    # tile_metadata routes should resolve.
-    for v in existing:
-        impl, q, f = v["implementation"], v["quality"], v["filter"]
-
-        thumb = client.get(f"/thumbnail/mosaic/{mosaic_id}/{impl}/{q}/{f}")
-        assert thumb.status_code in (200, 404), (
-            f"Thumbnail for {impl}/{q}/{f}: {thumb.status_code}"
-        )
-
-        meta = client.get(f"/tile_metadata/mosaic/{mosaic_id}/{impl}/{q}/{f}")
-        assert meta.status_code in (200, 404), (
-            f"tile_metadata for {impl}/{q}/{f}: {meta.status_code}"
-        )
-        if meta.status_code == 200:
-            m = meta.get_json()
-            for field in ("width", "height", "tileWidth", "tileHeight", "maxZoom", "mtime"):
-                assert field in m
+    pipelines = data["pipelines"]
+    assert len(pipelines) > 0
+    saw_existing = False
+    for p in pipelines:
+        assert set(p.keys()) >= {"name", "taps"}
+        assert isinstance(p["taps"], list)
+        for t in p["taps"]:
+            assert set(t.keys()) >= {"display", "outputs"}
+            assert isinstance(t["outputs"], list)
+            assert len(t["outputs"]) == len(data["filters"])
+            for o in t["outputs"]:
+                assert set(o.keys()) >= {"filter", "exists", "mtime"}
+                if o["exists"]:
+                    saw_existing = True
+                    # /tap/tile_metadata and /tap/thumbnail should resolve.
+                    tap = f"{p['name']}/{t['display']}"
+                    thumb = client.get(
+                        f"/tap/thumbnail/mosaic/{mosaic_id}/{tap}/{o['filter']}"
+                    )
+                    assert thumb.status_code in (200, 404), (
+                        f"thumbnail {tap}/{o['filter']}: {thumb.status_code}"
+                    )
+                    meta = client.get(
+                        f"/tap/tile_metadata/mosaic/{mosaic_id}/{tap}/{o['filter']}"
+                    )
+                    assert meta.status_code in (200, 404), (
+                        f"tile_metadata {tap}/{o['filter']}: {meta.status_code}"
+                    )
+    assert saw_existing, "no pipeline produced any output for the Orion mosaic"
 
     # Unknown mosaic id → 404.
-    assert client.get("/api/object_versions/mosaic/does_not_exist").status_code == 404
+    assert client.get("/api/pipeline_outputs/mosaic/does_not_exist").status_code == 404
 
 
 @pytest.mark.exhaustive

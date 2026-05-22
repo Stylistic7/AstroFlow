@@ -109,27 +109,6 @@ def tap_path_for(
         return None
     return str(path) if path and os.path.exists(path) else None
 
-def _available_qualities(identity_cls: type, implementation: str, *args) -> list[tuple[QualityLevel, str]]:
-    """Return all quality levels that have files on disk, in priority order."""
-    result = []
-    for level in QUALITY_PRIORITY:
-        filename_fn = get_filename_fn(MediaType.IMAGE, identity_cls, level, implementation)
-        if filename_fn is None:
-            continue
-        filename = filename_fn(*args)
-        if filename is None:
-            continue
-        if os.path.exists(filename):
-            result.append((level, os.fspath(filename)))
-    return result
-
-
-def _best_quality(identity_cls: type, implementation: str, *args) -> tuple[QualityLevel, str] | None:
-    """Find the best available quality level for an object."""
-    available = _available_qualities(identity_cls, implementation, *args)
-    return available[0] if available else None
-
-
 def _mosaic_filters(mosaic) -> list[str]:
     """All filters that any target in the mosaic has a stack in."""
     stacks = context.stacks or {}
@@ -180,7 +159,9 @@ def _get_polygons(identity_cls: type, level: str, *args) -> list[dict[str, Any]]
         # Output polygon comes from the stacked master's WCS regardless of
         # the displayed level. At Subframe level the per-stack filename is a
         # raw frame, not a Path, and read_image_metadata would reject it.
-        master_fn = get_filename_fn(MediaType.IMAGE, StackId, MASTER)
+        # `stack_files` is the canonical full-res master producer.
+        from stacks.stacking.pixinsight import stack_files
+        master_fn = stack_files.filename_fn
         overrides = context.settings.decision_overrides
         from decisions.compute_graph import _is_quarantined
 
@@ -347,39 +328,6 @@ def validity_all():
     return jsonify(result)
 
 
-@metadata_bp.route("/api/available_qualities/<object_type>/<object_id>")
-@metadata_bp.route("/api/available_qualities/<object_type>/<object_id>/<filter>")
-def available_qualities(object_type: str, object_id: str, filter: str = None):
-    """Return all quality levels with existence and validity status."""
-    from products import is_object_valid
-    implementation = PIXINSIGHT
-    obj_type, args = _resolve_object(object_type, object_id, filter)
-    on_disk = dict(_available_qualities(obj_type, implementation, *args))  # level -> path
-
-    levels = []
-    for level in QUALITY_PRIORITY:
-        path = on_disk.get(level)
-        levels.append({
-            "quality_level": str(level),
-            "image_path": os.fspath(path) if path else None,
-            "exists": path is not None,
-            "valid": is_object_valid(object_type, object_id, str(level)) if path else False,
-        })
-
-    # Best: first existing+valid, then first existing, then first overall.
-    best = (
-        next((l for l in levels if l["exists"] and l["valid"]), None)
-        or next((l for l in levels if l["exists"]), None)
-        or levels[0]
-    )
-
-    return jsonify({
-        "quality_level": best["quality_level"],
-        "image_path": best["image_path"],
-        "available": levels,
-    })
-
-
 @metadata_bp.route("/api/metadata/<object_type>/<object_id>/<path:pipeline_and_display>/<filter>")
 @metadata_bp.route("/api/metadata/<object_type>/<object_id>/<path:pipeline_and_display>")
 def metadata(object_type: str, object_id: str, pipeline_and_display: str, filter: str | None = None):
@@ -500,52 +448,6 @@ def _resolve_versioned_object(object_type: str, object_id: str):
         return stack, filters, filename_candidates
 
     return None
-
-
-@metadata_bp.route("/api/object_versions/<object_type>/<object_id>")
-def object_versions(object_type: str, object_id: str):
-    """Return the (implementation × quality × filter) matrix for any
-    object type (mosaic / target / stack / calibration_stack).
-
-    Shape matches /api/mosaic_versions so the frontend can consume one
-    endpoint for every viewer:
-
-      {
-        "filters": ["H", "S"],   # one entry for stacks; possibly empty for cal stacks
-        "versions": [
-          {"implementation": "PixInsight", "quality": "Master",
-           "filter": "H", "exists": true, "mtime": 1234567890.0},
-          ...
-        ],
-      }
-    """
-    resolved = _resolve_versioned_object(object_type, object_id)
-    if resolved is None:
-        return abort(404)
-    _obj, filters, filename_candidates = resolved
-
-    # Filterless objects (e.g., bias cal stacks) still need one entry per
-    # (impl, level) — model that as a single None-filter row.
-    iter_filters = filters or [None]
-
-    versions = []
-    for impl in ALL_IMPLEMENTATIONS:
-        for level in QUALITY_PRIORITY:
-            for f in iter_filters:
-                candidates = filename_candidates(impl, level, f)
-                hit = next(
-                    (p for p in candidates if p is not None and os.path.exists(p)),
-                    None,
-                )
-                versions.append({
-                    "implementation": str(impl),
-                    "quality": str(level),
-                    "filter": f,
-                    "exists": hit is not None,
-                    "mtime": os.path.getmtime(hit) if hit is not None else None,
-                })
-
-    return jsonify({"filters": filters, "versions": versions})
 
 
 @metadata_bp.route("/api/pipeline_outputs/<object_type>/<object_id>")
