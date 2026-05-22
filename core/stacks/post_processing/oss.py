@@ -31,7 +31,7 @@ def post_process_stack_oss(
     """Full-resolution OSS post-processing. `master` is the upstream
     `stack_files_oss` output passed as a data dep — no filename
     lookup needed."""
-    output_filename = post_process_stack_oss.filename_fn(stack, mock_pixinsight, master)
+    output_filename = post_process_stack_oss.filename_fn(stack, mock_pixinsight)
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
     log.info("OSS post-processing stack", stack=str(stack), master=str(master.filename))
 
@@ -69,7 +69,7 @@ def post_process_stack_oss_downscaled(
     master. `master` is the upstream `stack_files_oss_downscaled`
     output as a data dep."""
     output_filename = post_process_stack_oss_downscaled.filename_fn(
-        stack, mock_pixinsight, master,
+        stack, mock_pixinsight,
     )
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
     log.info("OSS post-processing downscaled stack",

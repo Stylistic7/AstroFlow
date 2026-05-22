@@ -72,7 +72,14 @@ def for_target(target, config):
 @pipeline("PixInsight Master", processes=Mosaic)
 def for_mosaic(mosaic, config):
     """Build a complete mosaic. Returns `{filter: sink_metadata}`.
-    Missing panels are skipped — the trace merges what's present."""
+    Missing panels are skipped — the trace merges what's present.
+
+    Per filter: place every panel into the mosaic viewbox, then
+    spread all placed handles into ONE `merge_images` call. The
+    op's body does the pairwise PhotometricMosaic tree inside a
+    single Ray task — necessary because every pairwise call would
+    share `(mosaic, filter, mock)` literals and collide on the
+    call-hash filename otherwise."""
     mock = config.development_settings.mock_pixinsight
     targets_by_id = {t.id: t for t in mosaic.targets}
 
@@ -82,33 +89,20 @@ def for_mosaic(mosaic, config):
         for filter, sink in _channels_for_target(target, config, mock).items()
     }
 
-    def merged_strip(strip, filter, viewbox):
-        placed = [
-            place_image(mosaic, targets_by_id[tid], filter, viewbox,
-                        channels[(tid, filter)])
-            for tid in strip if (tid, filter) in channels
-        ]
-        if not placed:
-            return None
-        return _pairwise_merge(placed, mosaic, filter, mock)
-
     out = {}
     for filter in mosaic.filters:
         viewbox = mosaic.viewbox("Master")
-        rows = [r for r in (
-            merged_strip(strip, filter, viewbox) for strip in mosaic.strips
-        ) if r is not None]
-        if rows:
-            merged = _pairwise_merge(rows, mosaic, filter, mock)
-            out[filter] = store_mosaic_color_channel_xisf(
-                mosaic, filter, mock, merged,
-            )
+        placed = [
+            place_image(mosaic, targets_by_id[tid], filter, viewbox,
+                        channels[(tid, filter)])
+            for strip in mosaic.strips
+            for tid in strip if (tid, filter) in channels
+        ]
+        if not placed:
+            continue
+        merged = merge_images(mosaic, filter, mock, *placed)
+        out[filter] = store_mosaic_color_channel_xisf(
+            mosaic, filter, mock, merged,
+        )
 
     return out
-
-
-def _pairwise_merge(items, mosaic, filter, mock):
-    acc = items[0]
-    for item in items[1:]:
-        acc = merge_images(mosaic, filter, mock, acc, item)
-    return acc

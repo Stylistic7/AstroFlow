@@ -17,25 +17,49 @@ from file_io.types import FitsFilePath, TiffFilePath, XisfFilePath, WithSidecar
 from metadata.classes import ImageMetadata
 
 
+def _store_mosaic_color_channel_pi(
+    mosaic: Mosaic, filter: str, mock_pixinsight: bool,
+    input: ImageMetadata, output: XisfFilePath,
+) -> WithSidecar[XisfFilePath]:
+    """Shared body for PI-backed mosaic-channel stores. Per-pipeline
+    variants supply their own output path — the op_name is what
+    keeps PI Master and PI Downscaled outputs in distinct directories
+    on disk (literals (mosaic, filter, mock) are identical between
+    them)."""
+    output.parent.mkdir(parents=True, exist_ok=True)
+    image = Image.open(input.filename, filter=filter)
+    image.save_to(output, mock=mock_pixinsight)
+    return WithSidecar(output)
+
+
 @node(resources={"PixInsight": 1}, auto_memory=True)
 @makes_image(identity=MosaicChannelId, display="Mosaic")
 def store_mosaic_color_channel_xisf(
     mosaic: Mosaic, filter: str, mock_pixinsight: bool,
     input: ImageMetadata,
 ) -> WithSidecar[XisfFilePath]:
-    """Persist the merged per-filter PixInsight mosaic master.
-
-    Pipeline-agnostic: PI Master and PI Downscaled both call this
-    with their own merged input (different upstream `merge_images`
-    result). Different `input` → different call_hash → different
-    output file. No mode-arg threading."""
-    output = store_mosaic_color_channel_xisf.filename_fn(
+    """Full-resolution per-filter mosaic master (PI Master)."""
+    return _store_mosaic_color_channel_pi(
         mosaic, filter, mock_pixinsight, input,
+        store_mosaic_color_channel_xisf.filename_fn(
+            mosaic, filter, mock_pixinsight,
+        ),
     )
-    output.parent.mkdir(parents=True, exist_ok=True)
-    image = Image.open(input.filename, filter=filter)
-    image.save_to(output, mock=mock_pixinsight)
-    return WithSidecar(output)
+
+
+@node(resources={"PixInsight": 1}, auto_memory=True)
+@makes_image(identity=MosaicChannelId, display="Mosaic")
+def store_mosaic_color_channel_downscaled_master(
+    mosaic: Mosaic, filter: str, mock_pixinsight: bool,
+    input: ImageMetadata,
+) -> WithSidecar[XisfFilePath]:
+    """Downscaled-resolution per-filter mosaic master (PI Downscaled)."""
+    return _store_mosaic_color_channel_pi(
+        mosaic, filter, mock_pixinsight, input,
+        store_mosaic_color_channel_downscaled_master.filename_fn(
+            mosaic, filter, mock_pixinsight,
+        ),
+    )
 
 
 @node(resources={"fastest_storage": 0.001})
@@ -48,7 +72,7 @@ def store_mosaic_color_channel_subframe(
     write_tiff) differs from the XISF/FITS variants."""
     filename = input.filename
     assert filename.exists()
-    output = store_mosaic_color_channel_subframe.filename_fn(mosaic, filter, input)
+    output = store_mosaic_color_channel_subframe.filename_fn(mosaic, filter)
     image = read_image(filename)
     autostretched = (autostretch(image) * 255.0).astype(np.uint8)
     Path(output).parent.mkdir(parents=True, exist_ok=True)
@@ -56,15 +80,33 @@ def store_mosaic_color_channel_subframe(
     return WithSidecar(output)
 
 
+def _store_mosaic_color_channel_oss_impl(
+    mosaic: Mosaic, filter: str, input: ImageMetadata, output: FitsFilePath,
+) -> WithSidecar[FitsFilePath]:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(str(input.filename), str(output))
+    return WithSidecar(FitsFilePath(output))
+
+
 @node
 @makes_image(identity=MosaicChannelId, display="Mosaic")
 def store_mosaic_color_channel_oss(
     mosaic: Mosaic, filter: str, input: ImageMetadata,
 ) -> WithSidecar[FitsFilePath]:
-    """Persist the merged per-filter OSS mosaic master. Same per-
-    pipeline discrimination as the PI variant — different `input`
-    → different call_hash → different output file."""
-    output = store_mosaic_color_channel_oss.filename_fn(mosaic, filter, input)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(str(input.filename), str(output))
-    return WithSidecar(FitsFilePath(output))
+    """Full-resolution OSS mosaic-channel store."""
+    return _store_mosaic_color_channel_oss_impl(
+        mosaic, filter, input,
+        store_mosaic_color_channel_oss.filename_fn(mosaic, filter),
+    )
+
+
+@node
+@makes_image(identity=MosaicChannelId, display="Mosaic")
+def store_mosaic_color_channel_oss_downscaled_master(
+    mosaic: Mosaic, filter: str, input: ImageMetadata,
+) -> WithSidecar[FitsFilePath]:
+    """Downscaled-resolution OSS mosaic-channel store."""
+    return _store_mosaic_color_channel_oss_impl(
+        mosaic, filter, input,
+        store_mosaic_color_channel_oss_downscaled_master.filename_fn(mosaic, filter),
+    )

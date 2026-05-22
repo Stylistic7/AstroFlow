@@ -9,7 +9,6 @@ from compute_graph import build_compute_graph
 from context import context
 from testing import copy_testdata_frames, make_synthetic_frames, print_tree
 from decisions.helpers import set_flat
-from previews.types import QualityLevel
 
 
 @pytest.mark.exhaustive

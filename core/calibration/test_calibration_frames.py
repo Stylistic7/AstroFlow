@@ -6,7 +6,6 @@ import pytz
 from compute_graph.compute_graph import build_compute_graph
 from testing import make_synthetic_frames, copy_testdata_frames
 
-from previews.types import QualityLevel
 from stacks.compute_graph import calibrate
 from stacks.run import Run
 from stacks.composite_stack import Stack, CalibrationStack

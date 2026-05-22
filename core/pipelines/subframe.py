@@ -76,33 +76,18 @@ def for_mosaic(mosaic, config):
         for filter, sink in _channels_for_target(target).items()
     }
 
-    def merged_strip(strip, filter, viewbox):
-        placed = [
-            place_image(mosaic, targets_by_id[tid], filter, viewbox,
-                        channels[(tid, filter)])
-            for tid in strip if (tid, filter) in channels
-        ]
-        if not placed:
-            return None
-        return _pairwise_merge(placed, mosaic, filter)
-
     out = {}
     for filter in mosaic.filters:
         viewbox = mosaic.viewbox("Subframe")
-        rows = [r for r in (
-            merged_strip(strip, filter, viewbox) for strip in mosaic.strips
-        ) if r is not None]
-        if rows:
-            merged = _pairwise_merge(rows, mosaic, filter)
-            out[filter] = store_mosaic_color_channel_subframe(
-                mosaic, filter, merged,
-            )
+        placed = [
+            place_image(mosaic, targets_by_id[tid], filter, viewbox,
+                        channels[(tid, filter)])
+            for strip in mosaic.strips
+            for tid in strip if (tid, filter) in channels
+        ]
+        if not placed:
+            continue
+        merged = merge_images_subframe(mosaic, filter, *placed)
+        out[filter] = store_mosaic_color_channel_subframe(mosaic, filter, merged)
 
     return out
-
-
-def _pairwise_merge(items, mosaic, filter):
-    acc = items[0]
-    for item in items[1:]:
-        acc = merge_images_subframe(mosaic, filter, acc, item)
-    return acc

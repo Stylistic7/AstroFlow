@@ -58,7 +58,7 @@ def merge_target_channel_oss(
     introspected). Pipeline-agnostic between full-res and downscaled."""
     assert len(stacks) >= 1, "merge_target_channel_oss needs at least one stack"
     output_filename = merge_target_channel_oss.filename_fn(
-        target, filter, stacks, config, *masters,
+        target, filter, stacks, config,
     )
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
 

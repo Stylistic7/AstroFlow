@@ -102,17 +102,19 @@ def _setup_run(
 
     _copy_frames_with_plate_solution(run.metadata, dest_dir, downscale_factor)
 
+    # Calibrate() builds its sub-graph by calling stack_files(
+    # cal_stack, cal_config) where cal_config = replace(config,
+    # decisions=fd()). The filename_fn computes its call_hash from
+    # those exact args (the cache_key_narrow hook runs once, on the
+    # un-narrowed input). Mirror that here — pre-narrowing would
+    # narrow twice and produce a different hash.
+    from frozendict import frozendict as fd
+    from dataclasses import replace
+    cal_config = replace(config, decisions=fd())
+
     def get_dependency_filename(d):
         if isinstance(d, StackIdDependency):
             cal_stack = calibration_stacks[d.stack_id]
-            # The cal master was produced by the *same* stack_files
-            # variant (full-res vs downscaled). Pass the same args
-            # the cal invocation used so filename_fn computes the
-            # same call_hash — and hence the same on-disk path —
-            # the cal call wrote to. `narrow_stack_config` mirrors
-            # the cache_key_narrow hook the cal call's @node used,
-            # so the hashes match.
-            cal_config = narrow_stack_config(cal_stack, config)
             op = stack_files_downscaled if downscale_factor > 1 else stack_files
             return op.filename_fn(cal_stack, cal_config)
         elif isinstance(d, FilenameDependency):

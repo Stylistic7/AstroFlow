@@ -62,8 +62,21 @@ def store_stacks(stacks: dict[str, Any]) -> dict[str, Any]:
 @ray.remote(num_cpus=0.1)
 @beartype
 def store_targets(targets: dict[str, Any]) -> dict[str, Any]:
-    assert None not in targets.values()
-    # targets values are already ContextRefs (from identify_targets)
+    assert None not in targets.values(), "ContextRef itself is None — identify_targets bug"
+    # Validate that every ContextRef's underlying value is reachable.
+    # We've hit a recurring bug where 2-4 target ContextRefs in the
+    # durable cache go missing between writes — `ref.get()` returns
+    # None. Surfacing that at write time, with the offending hashes,
+    # so the failure is visible at the source instead of propagating
+    # into `identify_mosaics` (which crashes on `target.center[0]`).
+    missing = [h for h, ref in targets.items() if ref.get() is None]
+    if missing:
+        raise RuntimeError(
+            f"store_targets: {len(missing)} target refs have no underlying "
+            f"value in the durable cache: {missing[:8]}. This is the bug "
+            f"that breaks identify_mosaics — investigate ContextRef.store / "
+            f"diskcache write path."
+        )
     result = TargetsDict(targets)
     context.targets = result
     log.info("Stored targets", count=len(targets))
@@ -343,19 +356,25 @@ def _record_pipeline_taps(record, pipeline_name, cart_type, cart_id, graph):
         params = list(sig.parameters.keys())
         arg_map = {params[i]: n.args[i]
                    for i in range(min(len(n.args), len(params)))}
-        # Try each registered (identity_cls, level) the op declared.
-        identities = getattr(fn, "filename_fns", {})
-        for (identity_cls, _level) in identities.keys():
+        # Recorder calls filename_fn with the Node's literal args.
+        # Convention: op bodies that write a file also compute their
+        # output path via filename_fn(*literal_args) — so the
+        # recorder-predicted path matches the runtime-written path
+        # byte-for-byte. Ops that need to discriminate across
+        # pipelines with identical literals (e.g. merge_target_channel
+        # called from PI Master vs PI Downscaled) split into per-
+        # pipeline ops; the op-name segment of the path keeps the
+        # outputs apart.
+        try:
+            path = str(filename_fn(*n.args))
+        except (TypeError, ValueError, KeyError):
+            continue
+        for identity_cls in getattr(fn, "_identities", []):
             id_field_names = [f.name for f in dataclasses.fields(identity_cls)]
             try:
                 id_values = [arg_map[name] for name in id_field_names]
             except KeyError:
                 continue
-            try:
-                path = str(filename_fn(*id_values))
-            except (ValueError, TypeError, KeyError):
-                continue
-            # Extract object_type, object_id, filter for the index key.
             object_type_name = identity_cls.object_type.__name__.lower()
             primary = id_values[0] if id_values else None
             object_id_value = (

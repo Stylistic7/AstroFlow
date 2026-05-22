@@ -60,7 +60,7 @@ def test_downscaled_orion_mosaic(test_context):
     # produces them (the speedup is the whole point — full-res
     # would defeat it). PI Master pipeline would have to be queued
     # separately to get full-res outputs.
-    full_res = list(output.rglob("Stack/stack_files/light*.xisf"))
+    full_res = list(output.rglob("Stack/stack_files/*.xisf"))
     assert len(full_res) == 0, f"Unexpected full-res masters: {full_res}"
 
     # Note: placement and merging are not tested here because mock
@@ -96,9 +96,13 @@ def test_downscaled_orion_mosaic_produces_tiled_tiff(test_context):
 
     print_tree(context.output_dir)
 
+    # Filenames are `<call_hash>.<ext>`; the per-pipeline op-name
+    # discriminates on disk. PI Downscaled writes to
+    # `store_mosaic_color_channel_downscaled_master/`.
     output = Path(context.output_dir)
-    xisfs = list(output.rglob("Mosaic/store_mosaic_color_channel_xisf/*_DownscaledMaster_*.xisf"))
-    tiffs = list(output.rglob("Mosaic/store_mosaic_color_channel_xisf/*_DownscaledMaster_*.tiff"))
+    op_dir = "Mosaic/store_mosaic_color_channel_downscaled_master"
+    xisfs = list(output.rglob(f"{op_dir}/*.xisf"))
+    tiffs = list(output.rglob(f"{op_dir}/*.tiff"))
 
     # The per-filter XISF is the canonical final mosaic. Tile pyramids
     # are auto-generated only when the image exceeds ~8 megapixels (a

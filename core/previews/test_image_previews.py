@@ -10,7 +10,6 @@ from testing import make_synthetic_frames, copy_testdata_frames
 from previews.stack_thumbnails import stack_thumbnail
 from products import ensure_producers_registered
 from products.registry import producers_for
-from previews.types import QualityLevel
 from file_io.find_image_files import find_image_files
 
 ensure_producers_registered()

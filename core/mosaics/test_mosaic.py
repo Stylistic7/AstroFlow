@@ -102,21 +102,35 @@ def test_orion_mosaic(test_context) -> None:
                 print(f"### {file=} {header=}")
                 assert expected_header.items() <= header.items()
 
-    assert_files("CalibrationStack/stack_files/bias*.xisf", 1)
-    assert_files("CalibrationStack/stack_files/dark*.xisf", 1)
-    assert_files("CalibrationStack/stack_files/flat*.xisf", 1)
+    # Filenames are now `<op>/<call_hash>.<ext>` — no human-readable
+    # stem. Per-op directories disambiguate by producer; call_hash
+    # disambiguates by call args. Filter is verified via FITS header
+    # (FILTER=H is the test corpus).
 
-    assert_files("Stack/stack_files/light*.xisf", 4, {"FILTER": "H"})
-    assert_files("Stack/post_process_stack/light*.xisf", 4, {"FILTER": "H"})
+    # CalibrationStack/stack_files writes one XISF per (bias/dark/flat)
+    # calibration master — 3 distinct call_hashes.
+    assert_files("CalibrationStack/stack_files/*.xisf", 3)
 
-    assert_files("PlacedImage/place_image/placed*_Subframe_*.tiff", 4, {"FILTER": "H"})
-    assert_files("PlacedImage/place_image/placed*_Master_*.tiff", 4, {"FILTER": "H"})
+    # Per-stack light masters: 4 stacks → 4 distinct call_hashes.
+    assert_files("Stack/stack_files/*.xisf", 4, {"FILTER": "H"})
+    assert_files("Stack/post_process_stack/*.xisf", 4, {"FILTER": "H"})
 
-    assert_files("MergedImage/merge_images/merged*_Subframe_*.tiff", expected_header={"FILTER": "H"})
-    assert_files("MergedImage/merge_images/merged*_Master_*.xisf", 3, {"FILTER": "H"})
+    # Placed panels: 4 stacks × 2 viewbox sizes (Master + Subframe)
+    # = 8 distinct call_hashes. Different viewboxes → different
+    # call_hashes → different files inside the same op directory.
+    assert_files("PlacedImage/place_image/*.tiff", 8, {"FILTER": "H"})
+
+    # Master-pipeline mosaic merge: ONE call per (mosaic, filter),
+    # pairwise PhotometricMosaic done inside the op body. The
+    # intermediate tree nodes don't surface as separate output files.
+    assert_files("MergedImage/merge_images/*.xisf", 1, {"FILTER": "H"})
+
+    # Subframe-pipeline mosaic merge (numpy TIFF). Same shape: one call.
+    assert_files("MergedImage/merge_images_subframe/*.tiff", 1,
+                 {"FILTER": "H"})
 
     assert_files("Mosaic/store_mosaic_color_channel_subframe/*.tiff", 1, {"FILTER": "H"})
-    assert_files("Mosaic/store_mosaic_color_channel_xisf/*_Master_*.xisf", 1, {"FILTER": "H"})
+    assert_files("Mosaic/store_mosaic_color_channel_xisf/*.xisf", 1, {"FILTER": "H"})
     # PostProcessed not produced — test data has only "H" filter,
     # which doesn't match any post-processing path (RGB or SHO).
 

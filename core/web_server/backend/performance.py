@@ -32,14 +32,14 @@ def performance_summary():
 
     functions: dict[str, list] = {}
     for key, samples in all_profiles.items():
-        # key shape: ("profile", fn_hash, fn_name, quality_or_None)
-        _, fn_hash, fn_name, quality = key
-        label = f"{fn_name} ({quality})" if quality else fn_name
-        if label not in functions:
-            functions[label] = []
+        # Key shape: ("profile", fn_hash, fn_name). The legacy quality
+        # axis is gone — samples are now bucketed at lookup time by
+        # input pixel count (see profiling/memory_estimate.pixel_bucket),
+        # which lives inside each sample dict as `pixel_bucket`.
+        _, fn_hash, fn_name = key
+        if fn_name not in functions:
+            functions[fn_name] = []
         for sample in samples:
-            functions[label].append({
-                **sample, "fn_hash": fn_hash, "quality": quality,
-            })
+            functions[fn_name].append({**sample, "fn_hash": fn_hash})
 
     return jsonify({"functions": functions})

@@ -148,6 +148,41 @@ def _infer_file_type(func: Callable):
     return None
 
 
+def _make_dispatch_filename_fn(func: Callable):
+    """Dispatch entry point for polymorphic producers.
+
+    `stack_files` registers for both `StackId` and `CalibrationStackId`;
+    each registration carries its own resolved filename_fn that routes
+    to a different `<object_type>` directory. At call time we pick the
+    fn whose `identity_cls.object_type` matches the first arg's type —
+    `Stack → StackId` path, `CalibrationStack → CalibrationStackId`
+    path. The call_hash inside is identical (same args yield same
+    hash), only the directory segment differs.
+    """
+    def dispatch(*args, **kwargs):
+        if not args:
+            for fn in func.filename_fns.values():
+                return fn(*args, **kwargs)
+            raise RuntimeError(f"{func.__name__}: no filename_fn registered")
+        first = args[0]
+        # Match on `identity_cls.object_type` — the class the identity
+        # is the artifact-type-id for. StackId.object_type = Stack;
+        # CalibrationStackId.object_type = CalibrationStack. A Stack
+        # instance matches StackId; a CalibrationStack instance
+        # (which doesn't subclass Stack) matches CalibrationStackId.
+        for identity_cls, resolved in func.filename_fns.items():
+            ot = identity_cls.object_type
+            if ot is None:
+                continue
+            if isinstance(first, ot):
+                return resolved(*args, **kwargs)
+        # Nothing matched — fall back to the first registered fn.
+        for fn in func.filename_fns.values():
+            return fn(*args, **kwargs)
+        raise RuntimeError(f"{func.__name__}: no filename_fn matched")
+    return dispatch
+
+
 def _make_call_hash_filename_fn(func: Callable, file_type: type):
     """Build a `filename_fn` that returns `<call_hash>.<ext>`.
 
@@ -359,21 +394,28 @@ def _bind_producer(
 
         op_name = func.__name__
 
-        # filename_fn is uniform across identities: it derives the
-        # on-disk filename from the producer's call_hash (same hash
-        # @node uses for its cache key, including source_hash). Two
-        # @makes_image decorations on the same function (polymorphic
-        # producers like stack_files for StackId + CalibrationStackId)
-        # share one filename_fn — the call_hash captures everything
-        # that distinguishes one call from another.
-        if not hasattr(func, 'filename_fn'):
-            local_filename_fn = filename_fn
-            if local_filename_fn is None:
-                file_type = _infer_file_type(raw_func)
-                if file_type is not None:
-                    local_filename_fn = _make_call_hash_filename_fn(func, file_type)
-            if local_filename_fn is not None:
-                func.filename_fn = fully_resolve(identity, local_filename_fn, op_name)
+        # Each @makes_image registration produces a fully-resolved
+        # filename_fn that routes to `<output_dir>/<identity.object_type>
+        # /<op_name>/<call_hash>.<ext>`. Polymorphic ops (stack_files
+        # for both StackId and CalibrationStackId) need one per
+        # identity because the object_type segment differs. The
+        # call_hash itself is identical — same op, same args, just
+        # routed to different directories.
+        local_filename_fn = filename_fn
+        if local_filename_fn is None:
+            file_type = _infer_file_type(raw_func)
+            if file_type is not None:
+                local_filename_fn = _make_call_hash_filename_fn(func, file_type)
+        if local_filename_fn is not None:
+            if not hasattr(func, 'filename_fns'):
+                func.filename_fns = {}
+            func.filename_fns[identity] = fully_resolve(
+                identity, local_filename_fn, op_name,
+            )
+            # `func.filename_fn` is the dispatch entry point: tries
+            # each registered identity's resolved fn and returns the
+            # first that produces a path matching the args' shape.
+            func.filename_fn = _make_dispatch_filename_fn(func)
 
         # Wrap once; stacked decorators (polymorphic identities) share
         # the closure-captured `identities` list and skip re-wrapping.

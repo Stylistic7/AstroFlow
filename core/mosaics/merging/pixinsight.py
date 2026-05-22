@@ -1,4 +1,5 @@
 import os
+import shutil
 import ray
 import numpy as np
 import structlog
@@ -44,76 +45,151 @@ def _set_panel_count(path, count: int) -> None:
 
 
 
+def _blend_pair_numpy(image_0, image_1):
+    overlap = np.where((image_0 > 0) & (image_1 > 0))
+    output = np.maximum(image_0, image_1)
+    output[overlap] = (image_0[overlap] + image_1[overlap]) / 2.0
+    return output
+
+
 @node(resources={"fastest_storage": 0.001})
 @makes_image(identity=MergedImageId)
 def merge_images_subframe(
-    mosaic: Mosaic, filter: str,
-    input_0: ImageMetadata, input_1: ImageMetadata,
+    mosaic: Mosaic, filter: str, *inputs,
 ) -> WithSidecar[TiffFilePath]:
     """Cheap pixel-overlap blend for the Subframe preview pipeline.
-    No PixInsight; pure numpy averaging in the overlap region."""
-    path_0 = input_0.filename.resolve(strict=True)
-    path_1 = input_1.filename.resolve(strict=True)
-
-    output_filename = merge_images_subframe.filename_fn(mosaic, filter, input_0, input_1)
+    Variadic *inputs gives ONE call per (mosaic, filter); pairwise
+    blend is done inside the Ray task. Same call_hash-filename
+    convention as `merge_images`: one output file per (mosaic, filter)
+    in `merge_images_subframe/`."""
+    assert len(inputs) >= 1
+    output_filename = merge_images_subframe.filename_fn(mosaic, filter)
     Path(output_filename).parent.mkdir(parents=True, exist_ok=True)
 
-    stable_hash = hash_list([input_0.stable_hash, input_1.stable_hash])
-    filters = set(read_header(i)["FILTER"] for i in [path_0, path_1])
-    assert len(filters) == 1
-    filter = next(iter(filters))
+    paths = [i.filename.resolve(strict=True) for i in inputs]
+    arrays = [read_image(p) for p in paths]
+    for a in arrays:
+        assert not np.isnan(np.min(a))
 
-    image_0 = read_image(path_0)
-    image_1 = read_image(path_1)
+    acc = arrays[0]
+    for arr in arrays[1:]:
+        acc = _blend_pair_numpy(acc, arr)
+    assert not np.isnan(np.min(acc))
 
-    assert not np.isnan(np.min(image_0))
-    assert not np.isnan(np.min(image_1))
-    overlap = np.where((image_0 > 0) & (image_1 > 0))
-    output_image = np.maximum(image_0, image_1)
-    output_image[overlap] = (image_0[overlap] + image_1[overlap]) / 2.0
-    assert not np.isnan(np.min(output_image))
+    stable_hash = hash_list([i.stable_hash for i in inputs])
+    write_tiff_image(Path(output_filename), acc, {"FILTER": filter, "STBLHASH": stable_hash})
 
-    write_tiff_image(Path(output_filename), output_image, {"FILTER": filter, "STBLHASH": stable_hash})
-
-    new_count = _panel_count(input_0) + _panel_count(input_1)
+    new_count = sum(_panel_count(i) for i in inputs)
     _set_panel_count(output_filename, new_count)
-    log.info("Merge images (subframe) complete", output=output_filename, panel_count=new_count)
+    log.info("Merge images (subframe) complete", output=output_filename,
+             panel_count=new_count, input_count=len(inputs))
     return WithSidecar(output_filename)
+
+
+def _merge_images_pi_impl(
+    mosaic: Mosaic, filter: str, mock_pixinsight: bool,
+    inputs: tuple,
+    output_filename: Path,
+) -> WithSidecar[XisfFilePath]:
+    """Pairwise PhotometricMosaic merge across all panel inputs at
+    once. Returns a single merged output. The pairwise tree is done
+    inside one Ray task — moving it out would create a chain of
+    @node calls with identical literal args and collide on the
+    call-hash filename. We accept the loss of Ray-level parallelism
+    inside the merge tree (rare and bounded; mosaic panel counts are
+    in the dozens, not thousands)."""
+    assert len(inputs) >= 1
+    output_filename = Path(output_filename)
+    output_filename.parent.mkdir(parents=True, exist_ok=True)
+
+    if len(inputs) == 1:
+        path = inputs[0].filename.resolve(strict=True)
+        shutil.copy(path, output_filename)
+        return WithSidecar(output_filename)
+
+    import tempfile
+    work_dir = Path(tempfile.mkdtemp(prefix="merge_images_"))
+    try:
+        # Pairwise tree: take pairs, merge each pair → next level.
+        current = list(inputs)
+        step = 0
+        while len(current) > 1:
+            next_level = []
+            for i in range(0, len(current), 2):
+                if i + 1 == len(current):
+                    next_level.append(current[i])
+                    continue
+                a, b = current[i], current[i + 1]
+                path_a = a.filename.resolve(strict=True)
+                path_b = b.filename.resolve(strict=True)
+                if i + 2 == len(current) and len(current) == 2:
+                    # Final pair lands at the canonical output.
+                    out_path = output_filename
+                else:
+                    out_path = work_dir / f"step_{step}_{i // 2}.xisf"
+                    step += 1
+                images = Image.open_many([path_a, path_b], filters=[filter, filter])
+                result = PhotometricMosaic(images)
+                result.save_to(out_path, mock=mock_pixinsight)
+                update_header(Path(out_path), {
+                    "FILTER": filter,
+                    "STBLHASH": hash_list([a.stable_hash, b.stable_hash]),
+                })
+                # Wrap as ImageMetadata-shaped for the next pairwise step.
+                from metadata.image_metadata import compute_image_metadata
+                # Compute fresh metadata for the intermediate so the next
+                # iteration has stable_hash + filename.
+                next_level.append(_intermediate_metadata(out_path, a, b))
+            current = next_level
+
+        new_count = sum(_panel_count(i) for i in inputs)
+        _set_panel_count(output_filename, new_count)
+        log.info("Merge images complete", output=str(output_filename),
+                 panel_count=new_count, input_count=len(inputs))
+        return WithSidecar(output_filename)
+    finally:
+        import shutil as _sh
+        _sh.rmtree(work_dir, ignore_errors=True)
+
+
+def _intermediate_metadata(path: Path, a, b) -> ImageMetadata:
+    """Stand-in ImageMetadata for an intermediate pairwise merge
+    output. We only need `.filename` and `.stable_hash` for the
+    next pairwise step + `_panel_count`."""
+    from dataclasses import dataclass
+    @dataclass
+    class _Stub:
+        filename: Path
+        stable_hash: str
+    return _Stub(filename=path, stable_hash=hash_list([a.stable_hash, b.stable_hash]))
 
 
 @node(resources={"PixInsight": 1}, auto_memory=True)
 @makes_image(identity=MergedImageId)
 def merge_images(
     mosaic: Mosaic, filter: str, mock_pixinsight: bool,
-    input_0: ImageMetadata, input_1: ImageMetadata,
+    *inputs,
 ) -> WithSidecar[XisfFilePath]:
-    """PhotometricMosaic merge of two placed inputs. Pipeline-agnostic:
-    PI Master and PI Downscaled both call this with their own placed-
-    image inputs; the inputs' content_hashes differ between pipelines,
-    so the output filename (via merged_filename_xisf) lands in
-    different files automatically.
+    """Full-resolution PI Master mosaic merge. Takes every panel as
+    a variadic data dep; does pairwise PhotometricMosaic inside one
+    Ray task. One call per (mosaic, filter); on-disk filename is
+    `merge_images/<call_hash(mosaic, filter, mock)>.xisf`."""
+    return _merge_images_pi_impl(
+        mosaic, filter, mock_pixinsight, inputs,
+        merge_images.filename_fn(mosaic, filter, mock_pixinsight),
+    )
 
-    `_maybe_publish_progress` uses the input filenames to derive a
-    per-pipeline progress key — the cache key includes the placed-
-    image content hashes, which already distinguish full-res from
-    downscaled mosaic progress without an explicit mode arg.
-    """
-    path_0 = input_0.filename.resolve(strict=True)
-    path_1 = input_1.filename.resolve(strict=True)
-    output_filename = merge_images.filename_fn(mosaic, filter, input_0, input_1)
-    Path(output_filename).parent.mkdir(parents=True, exist_ok=True)
 
-    images = Image.open_many([path_0, path_1], filters=[filter, filter])
-    result = PhotometricMosaic(images)
-    result.save_to(output_filename, mock=mock_pixinsight)
-    # PhotometricMosaic writes "none" for FILTER; stamp the real value back.
-    update_header(Path(output_filename), {
-        "FILTER": filter,
-        "STBLHASH": hash_list([input_0.stable_hash, input_1.stable_hash]),
-    })
-
-    new_count = _panel_count(input_0) + _panel_count(input_1)
-    _set_panel_count(output_filename, new_count)
-
-    log.info("Merge images complete", output=output_filename, panel_count=new_count)
-    return WithSidecar(output_filename)
+@node(resources={"PixInsight": 1}, auto_memory=True)
+@makes_image(identity=MergedImageId)
+def merge_images_downscaled_master(
+    mosaic: Mosaic, filter: str, mock_pixinsight: bool,
+    *inputs,
+) -> WithSidecar[XisfFilePath]:
+    """Downscaled-resolution PI Downscaled mosaic merge. Same body;
+    separate op-name keeps the on-disk output in
+    `merge_images_downscaled_master/`."""
+    return _merge_images_pi_impl(
+        mosaic, filter, mock_pixinsight, inputs,
+        merge_images_downscaled_master.filename_fn(mosaic, filter, mock_pixinsight),
+    )

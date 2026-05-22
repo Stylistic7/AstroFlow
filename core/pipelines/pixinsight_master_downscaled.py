@@ -20,15 +20,15 @@ which upstream stack-side ops it composes:
 in distinct on-disk files via the call-hash filename.
 """
 from astroflow.pipeline import pipeline
-from mosaics.final_storage import store_mosaic_color_channel_xisf
-from mosaics.merging.pixinsight import merge_images
+from mosaics.final_storage import store_mosaic_color_channel_downscaled_master
+from mosaics.merging.pixinsight import merge_images_downscaled_master
 from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
 from stacks.compute_graph import calibrate_downscaled
 from stacks.composite_stack import Stack
 from stacks.post_processing.pixinsight import post_process_stack_downscaled
 from stacks.stacking.pixinsight import stack_files_downscaled
-from targets.merging.pixinsight import merge_target_channel
+from targets.merging.pixinsight import merge_target_channel_downscaled_master
 from targets.types import Target
 
 
@@ -40,7 +40,7 @@ def _post_processed_master(s, config, mock):
 
 def _channels_for_target(target, config, mock):
     return {
-        filter: merge_target_channel(
+        filter: merge_target_channel_downscaled_master(
             target, filter, target.stacks_for(filter), config,
             *[_post_processed_master(s, config, mock)
               for s in target.stacks_for(filter)],
@@ -74,33 +74,20 @@ def for_mosaic(mosaic, config):
         for filter, sink in _channels_for_target(target, config, mock).items()
     }
 
-    def merged_strip(strip, filter, viewbox):
-        placed = [
-            place_image(mosaic, targets_by_id[tid], filter, viewbox,
-                        channels[(tid, filter)])
-            for tid in strip if (tid, filter) in channels
-        ]
-        if not placed:
-            return None
-        return _pairwise_merge(placed, mosaic, filter, mock)
-
     out = {}
     for filter in mosaic.filters:
         viewbox = mosaic.viewbox("DownscaledMaster")
-        rows = [r for r in (
-            merged_strip(strip, filter, viewbox) for strip in mosaic.strips
-        ) if r is not None]
-        if rows:
-            merged = _pairwise_merge(rows, mosaic, filter, mock)
-            out[filter] = store_mosaic_color_channel_xisf(
-                mosaic, filter, mock, merged,
-            )
+        placed = [
+            place_image(mosaic, targets_by_id[tid], filter, viewbox,
+                        channels[(tid, filter)])
+            for strip in mosaic.strips
+            for tid in strip if (tid, filter) in channels
+        ]
+        if not placed:
+            continue
+        merged = merge_images_downscaled_master(mosaic, filter, mock, *placed)
+        out[filter] = store_mosaic_color_channel_downscaled_master(
+            mosaic, filter, mock, merged,
+        )
 
     return out
-
-
-def _pairwise_merge(items, mosaic, filter, mock):
-    acc = items[0]
-    for item in items[1:]:
-        acc = merge_images(mosaic, filter, mock, acc, item)
-    return acc

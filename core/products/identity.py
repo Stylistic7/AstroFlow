@@ -141,8 +141,6 @@ class MergedImageId(ObjectId):
     object_type = _LazyObjectType("mosaics.merging.pixinsight", "MergedImage")
     mosaic: Mosaic
     filter: str
-    input_0: ImageMetadata
-    input_1: ImageMetadata
 
 
 @dataclass(frozen=True)

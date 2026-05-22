@@ -61,7 +61,11 @@ def post_process_stack(
     passed as a data dep by the pipeline body — so this op doesn't
     have to know stack_files's call args to find the master file.
     """
-    output_filename = post_process_stack.filename_fn(stack, mock_pixinsight, master)
+    # Literal args only — `master` is a data dep, and the recorder
+    # only sees the literals at trace time. Op body matches the
+    # recorder convention so the on-disk filename = the tap-index
+    # entry, byte-for-byte.
+    output_filename = post_process_stack.filename_fn(stack, mock_pixinsight)
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
 
     result = _post_process_stack(master.filename, stack, downscale_factor=1)
@@ -80,7 +84,7 @@ def post_process_stack_downscaled(
     `stack_files_downscaled` output as a data dep — same pattern as
     `post_process_stack` so the body doesn't have to look it up.
     """
-    output_filename = post_process_stack_downscaled.filename_fn(stack, mock_pixinsight, master)
+    output_filename = post_process_stack_downscaled.filename_fn(stack, mock_pixinsight)
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
 
     result = _post_process_stack(
