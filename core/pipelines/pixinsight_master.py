@@ -41,17 +41,15 @@ def _post_processed_master(s, config, mock):
 
 
 def _channels_for_target(target, config, mock):
-    """Per-filter HDR-combined channel masters. The `masters` tuple
-    is the last positional arg to merge_target_channel — Node args
-    in trace context must be positional (the trace machinery doesn't
-    accept kwargs)."""
+    """Per-filter HDR-combined channel masters. Spreads the per-stack
+    masters as variadic args (`*masters`) so each one shows up as a
+    top-level Node dep at trace time — the trace doesn't introspect
+    nested tuples for Node handles."""
     return {
         filter: merge_target_channel(
             target, filter, target.stacks_for(filter), config,
-            tuple(
-                _post_processed_master(s, config, mock)
-                for s in target.stacks_for(filter)
-            ),
+            *[_post_processed_master(s, config, mock)
+              for s in target.stacks_for(filter)],
         )
         for filter in target.filters
     }

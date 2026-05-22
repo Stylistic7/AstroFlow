@@ -34,37 +34,38 @@ def _merge_target_channel_narrow(args, kwargs):
     """Cache-key hook: drop calibration_stacks from the config hash so a
     new bias for an unrelated camera doesn't invalidate every merged
     target-channel master.
+
+    Signature: `(target, filter, stacks, config, *masters)`. The
+    `masters` tail flows through unchanged.
     """
     from stacks.stacking import narrow_stack_config
-    target, filter, stacks, config, *rest = args
+    target, filter, stacks, config, *masters = args
     narrowed = narrow_stack_config(stacks[0], config) if stacks else config
-    return (target, filter, stacks, narrowed, *rest), kwargs
+    return (target, filter, stacks, narrowed, *masters), kwargs
 
 
 @node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD",
       auto_memory=True, cache_key_narrow=_merge_target_channel_narrow)
 @makes_image(identity=TargetChannelId, display="Channel")
-@beartype
 def merge_target_channel(
     target: Target, filter: str, stacks: tuple[Stack, ...],
     config: ProcessingConfig,
-    masters,
+    *masters,
 ) -> WithSidecar[XisfFilePath]:
     """HDR-combine per-stack masters into one (target, filter) channel.
 
     Pipeline-agnostic: PI Master and PI Downscaled both call this
-    with their own per-stack post-processed masters. The `masters`
-    arg is a tuple of WithSidecar handles (data deps from the
-    pipeline body), so the body doesn't need to look up filename_fns
-    or know which upstream op produced them.
+    with their own per-stack post-processed masters. `*masters` is
+    a variadic tail of WithSidecar handles — each one is a top-level
+    Node arg at trace time, which is how the dependency-graph trace
+    detects them (it doesn't introspect inside tuples/lists/dicts).
 
     Different `masters` → different call_hash → different output
-    file. Cache sharing is automatic when two pipelines happen to
-    pass identical masters (which they won't for full-res vs
-    downscaled, by construction)."""
+    file. Cache sharing is automatic when two pipelines pass
+    identical masters."""
     assert len(stacks) >= 1, "merge_target_channel needs at least one stack"
     output_filename = merge_target_channel.filename_fn(
-        target, filter, stacks, config, masters,
+        target, filter, stacks, config, *masters,
     )
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
 

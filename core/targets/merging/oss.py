@@ -45,22 +45,20 @@ _SATURATION_FRACTION = 0.999
 
 @node(auto_memory=True, cache_key_narrow=_merge_target_channel_narrow)
 @makes_image(identity=TargetChannelId)
-@beartype
 def merge_target_channel_oss(
     target: Target, filter: str, stacks: tuple[Stack, ...],
     config: ProcessingConfig,
-    masters,
+    *masters,
 ) -> WithSidecar[FitsFilePath]:
     """Variance-weighted combine of per-stack masters into one
     (target, filter) channel (OSS path).
 
-    `masters` is a tuple of upstream WithSidecar handles passed as
-    data deps by the pipeline body — pipeline-agnostic between
-    full-res and downscaled because the masters carry the upstream
-    output paths."""
+    `*masters` is variadic so the trace detects each master as a
+    top-level Node dep (nested Nodes inside tuples aren't
+    introspected). Pipeline-agnostic between full-res and downscaled."""
     assert len(stacks) >= 1, "merge_target_channel_oss needs at least one stack"
     output_filename = merge_target_channel_oss.filename_fn(
-        target, filter, stacks, config, masters,
+        target, filter, stacks, config, *masters,
     )
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
 

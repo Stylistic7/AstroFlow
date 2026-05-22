@@ -42,10 +42,8 @@ def _channels_for_target(target, config, mock):
     return {
         filter: merge_target_channel(
             target, filter, target.stacks_for(filter), config,
-            tuple(
-                _post_processed_master(s, config, mock)
-                for s in target.stacks_for(filter)
-            ),
+            *[_post_processed_master(s, config, mock)
+              for s in target.stacks_for(filter)],
         )
         for filter in target.filters
     }
