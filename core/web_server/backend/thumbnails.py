@@ -110,14 +110,58 @@ def _png_response(thumbnail: bytes, label: str):
 
 
 def get_thumbnail_by_id(identity: ObjectId):
-    """Best-available thumbnail for `identity` — walks every producer
-    registered for this identity (in decoration order) and returns
-    the first one that resolves to a file on disk or to a cheap
-    compute path."""
+    """Best-available thumbnail for `identity`.
+
+    Ranking: among all `@makes_image`-registered producers whose
+    `filename_fn` resolves to an on-disk file, pick the one with
+    the LARGEST file (mtime breaks ties — fresher artifact wins if
+    sizes match). Bigger file ≈ more pixels ≈ higher quality, so
+    a post-processed master shows up above the raw-frame subframe
+    thumbnail without any explicit priority list.
+
+    If no producer has written anything, fall back to the
+    compute-on-miss path: walk the non-file-backed producers
+    (typically the cheap ndarray-returning ones like
+    flat-correction Run thumbnails) and invoke the first that
+    succeeds."""
+    candidates: list[tuple[int, float, ObjectId, object]] = []
+    args = [getattr(identity, f.name) for f in dataclasses.fields(identity)]
+
+    file_backed = []
+    compute_backed = []
     for producer in producers_for(type(identity)):
+        if getattr(producer, "filename_fn", None) is not None:
+            file_backed.append(producer)
+        else:
+            compute_backed.append(producer)
+
+    for producer in file_backed:
+        try:
+            path = os.fspath(producer.filename_fn(*args))
+        except Exception:
+            continue
+        if not os.path.exists(path):
+            continue
+        try:
+            size = os.path.getsize(path)
+            mtime = os.path.getmtime(path)
+        except OSError:
+            continue
+        candidates.append((size, mtime, producer, path))
+
+    if candidates:
+        # Largest, fresher wins.
+        candidates.sort(key=lambda t: (t[0], t[1]), reverse=True)
+        _size, _mtime, producer, _path = candidates[0]
         thumbnail = _thumbnail_for(identity, producer)
         if thumbnail:
             return _png_response(thumbnail, producer.__name__)
+
+    for producer in compute_backed:
+        thumbnail = _thumbnail_for(identity, producer)
+        if thumbnail:
+            return _png_response(thumbnail, producer.__name__)
+
     return abort(404)
 
 

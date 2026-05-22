@@ -237,11 +237,12 @@ def _make_tile_pyramid_if_warranted(result) -> "Path | None":
     return tile_path
 
 
-def _make_thumbnail(result, resize_array, autostretch, array_to_png, width=3840):
-    """Build a 4K-wide PNG thumbnail from `result`. `width=3840`
-    matches a 4K display so the thumbnail itself looks good at full
-    resolution; the on-disk image is downsampled to that width and
-    autostretched. Result types: an ndarray (returned directly), a
+def _make_thumbnail(result, resize_array, autostretch, array_to_png, width=1920):
+    """Build a 1920px-wide PNG thumbnail from `result`. 1920 is a
+    pragmatic balance: it looks sharp at any common dashboard size
+    and survives a full-window zoom on a 2560-wide laptop; above
+    that width the tile pyramid (auto-generated for images >8 MP)
+    takes over. Result types: an ndarray (returned directly), a
     tempfile, or a Path-like on-disk image file."""
     if isinstance(result, np.ndarray):
         return array_to_png(
