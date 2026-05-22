@@ -64,6 +64,13 @@ def merge_target_channel(
     file. Cache sharing is automatic when two pipelines pass
     identical masters."""
     assert len(stacks) >= 1, "merge_target_channel needs at least one stack"
+    # DEBUG: figure out what masters actually contains at runtime.
+    print(f"### merge_target_channel: {len(masters)} masters, types={[type(m).__name__ for m in masters]}")
+    if masters:
+        m0 = masters[0]
+        print(f"### masters[0] repr: {repr(m0)[:200]}")
+        print(f"### masters[0] dir: {[a for a in dir(m0) if not a.startswith('_')][:20]}")
+
     output_filename = merge_target_channel.filename_fn(
         target, filter, stacks, config, *masters,
     )
