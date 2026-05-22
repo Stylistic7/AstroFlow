@@ -21,30 +21,35 @@ class MediaType(str, Enum):
 
 type FilenameFn = Union[str, Callable[..., Path]]
 
+
+# LEGACY producer registry — kept as a backwards-compat layer for the
+# small set of view-side endpoints that haven't yet migrated to the
+# pipeline+tap model. New code SHOULD NOT call register_producer /
+# get_producer / get_filename_fn:
+#
+# * Internal op-to-op lookups: import the producing op directly, use
+#   `op.filename_fn(...)` (auto-dispatched across registered identities)
+#   or `op.filename_fns[(identity, level)](...)` (explicit per-mode).
+# * View-side lookups for "where did pipeline X publish?": go through
+#   the PipelineOutputIndex (`pipelines/output_index.py`), populated
+#   at pipeline-trace time by walking @makes_image(display=...) Nodes.
+#
+# The dicts below are still written by `@makes_image`'s decoration
+# loop; deletion is gated on retiring the remaining (impl, level)-
+# keyed view-side endpoints (/api/object_versions etc.).
 _registry: dict[
-    MediaType, dict[tuple[Type, str], Callable[..., Path]]
+    MediaType, dict[tuple[Type, str, str], Callable[..., Path]]
 ] = {
     MediaType.IMAGE: {},
     MediaType.VIDEO: {},
 }
 
 _filename_fns: dict[
-    MediaType, dict[tuple[Type, str], Callable[..., Path]]
+    MediaType, dict[tuple[Type, str, str], Callable[..., Path]]
 ] = {
     MediaType.IMAGE: {},
     MediaType.VIDEO: {},
 }
-
-_producers_registered = False
-
-
-def _ensure_registered():
-    global _producers_registered
-    if _producers_registered:
-        return
-    _producers_registered = True
-    from products import ensure_producers_registered
-    ensure_producers_registered()
 
 
 def register_producer(
@@ -55,6 +60,8 @@ def register_producer(
     implementation: str = PIXINSIGHT,
     identity: "type[ObjectId] | None" = None,
 ) -> None:
+    """Legacy: register a producer under (identity, level, implementation).
+    Internal-only — only `@makes_image` decoration writes to the registry."""
     key = (identity, level, implementation)
     _registry[media_type][key] = func
     if filename_fn is not None:
@@ -65,7 +72,8 @@ def get_producer(
     media_type: MediaType, identity: "type[ObjectId]", level: str,
     implementation: str = PIXINSIGHT,
 ) -> Optional[Callable[..., Path]]:
-    _ensure_registered()
+    """Legacy: look up a producer by (identity, level, implementation).
+    New code: import the producing op directly."""
     return _registry[media_type].get((identity, level, implementation))
 
 
@@ -73,24 +81,9 @@ def get_filename_fn(
     media_type: MediaType, identity: "type[ObjectId]", level: str,
     implementation: str = PIXINSIGHT,
 ) -> Optional[Callable[..., Path]]:
-    _ensure_registered()
+    """Legacy: look up a producer's resolved filename_fn. New code:
+    `op.filename_fn` or `op.filename_fns[(identity, level)]`."""
     return _filename_fns[media_type].get((identity, level, implementation))
-
-
-def available_levels(
-    media_type: MediaType, identity: "type[ObjectId]",
-    implementation: str = PIXINSIGHT,
-) -> set[str]:
-    return {
-        level
-        for (idcls, level, impl) in _registry[media_type]
-        if idcls is identity and impl == implementation
-    }
-
-
-def clear_registry(media_type: MediaType) -> None:
-    _registry[media_type].clear()
-    _filename_fns[media_type].clear()
 
 
 def _mark_valid(identity_cls: type, level: str, implementation: str, args: tuple) -> None:
@@ -555,6 +548,10 @@ def _bind_producer(
             if hasattr(inner_func, '_display'):
                 wrapped._display = inner_func._display
 
+        # Populate the legacy registry so the view-side endpoints
+        # that still call get_producer / get_filename_fn keep working.
+        # In-tree internal ops don't read these dicts; they import
+        # the producing op directly and use `op.filename_fn(...)`.
         for impl in implementations:
             for level in levels:
                 resolved = None

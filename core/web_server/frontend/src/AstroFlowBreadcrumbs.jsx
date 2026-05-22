@@ -176,18 +176,9 @@ export default function AstroFlowBreadcrumbs() {
     const versionsData = useVersionsMatrix(
         viewerObjectType, viewerObjectId, computeGraphStatus,
     );
-    const allVersions = versionsData.versions;
-    // Stack URLs have no filter segment, but the backend tags every
-    // version row with the stack's intrinsic filter — use that for
-    // matching so the pill-disabled state lines up with reality.
-    const matchFilter = filter ?? versionsData.filters?.[0] ?? null;
-    // "Pipeline" is the unified concept across bundled implementations
-    // (PixInsight / OSS / AstroFlow) and registered user pipelines.
-    // Show all of them so the user can switch view (and see which have
-    // results vs which don't — handled by `exists` styling).
     const availablePipelines = usePipelines();
-    const implementations = pipelineOptions(allVersions, availablePipelines);
-    const filters = versionsData.filters;
+    const implementations = pipelineOptions(versionsData.pipelines, availablePipelines);
+    const filters = versionsData.filters || [];
 
     // URLs are pipeline+display-keyed: /<obj>/<id>/<pipeline>/<display>[/<filter>].
     // The pill-cycle callers pass the next pipeline name; we keep

@@ -10,7 +10,7 @@ from stacks.composite_stack import Stack
 from targets.types import Target
 from mosaics.types import Mosaic, Viewbox
 from mosaics.viewbox import compute_viewbox
-from products.registry import get_producer, get_filename_fn, MediaType
+from products.registry import MediaType
 from products.identity import (
     StackId, CalibrationStackId, TargetId, MosaicChannelId, identity_for_stack,
 )

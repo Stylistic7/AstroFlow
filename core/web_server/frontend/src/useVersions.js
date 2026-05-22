@@ -15,22 +15,22 @@ export const DEFAULT_DISPLAY_FOR_TYPE = {
 };
 
 
-// One fetcher for /api/object_versions. Every viewer (mosaic, stack, …)
-// reads from this hook so there's a single source of truth for "what
-// versions exist for this object." URL params are the single source of
-// truth for "what version is currently being viewed" — this hook never
-// stores selection state.
+// One fetcher for the per-object pipeline / tap matrix. Pulls from
+// /api/pipeline_outputs, which is the single source of truth for
+// "what artifacts has each registered pipeline produced for this
+// object". URL params are the single source of truth for "what's
+// currently being viewed"; this hook never stores selection state.
 //
 // `refreshKey` is an opaque value that, when changed, forces a re-fetch.
-// Pass `computeGraphStatus` (or any SSE-driven counter) so the pill
-// crumbs light up live as new versions finish producing.
+// Pass `computeGraphStatus` (or any SSE-driven counter) so the
+// breadcrumb pills light up live as new outputs finish producing.
 export function useVersionsMatrix(objectType, objectId, refreshKey) {
-    const [data, setData] = useState({ filters: [], versions: [] });
+    const [data, setData] = useState({ filters: [], pipelines: [] });
 
     useEffect(() => {
         if (!objectType || !objectId) return;
         let cancelled = false;
-        fetch(`/api/object_versions/${objectType}/${objectId}`)
+        fetch(`/api/pipeline_outputs/${objectType}/${objectId}`)
             .then((res) => (res.ok ? res.json() : null))
             .then((d) => {
                 if (!cancelled && d) setData(d);

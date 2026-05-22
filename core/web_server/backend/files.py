@@ -218,12 +218,11 @@ def invalidate_stack(stack_id):
 
 @files_bp.route("/api/open_stack_master/<stack_id>")
 def open_stack_master(stack_id):
-    from products.registry import get_filename_fn, MediaType
-    from products.identity import identity_for_stack
-    from previews.types import QualityLevel, MASTER
+    # Open the stack's Master file directly via the stack_files op's
+    # filename_fn — same path the op writes to.
+    from stacks.stacking.pixinsight import stack_files
     stack = context.stacks[stack_id].get()
-    filename_fn = get_filename_fn(MediaType.IMAGE, identity_for_stack(stack), MASTER)
-    filename = filename_fn(stack)
+    filename = stack_files.filename_fn(stack)
     print(f"### opening filename {filename}")
     subprocess.Popen(
         [
@@ -306,45 +305,32 @@ def open_image(filename):
     return Response(status=200)
 
 
-@files_bp.route("/api/open_mosaic_master/<mosaic_id>/<implementation>/<filter>")
-def open_mosaic_master(mosaic_id, implementation, filter):
-    """Open the most-processed image for a mosaic+filter in PixInsight.
+@files_bp.route("/api/open_mosaic_master/<mosaic_id>/<path:pipeline_and_display>/<filter>")
+def open_mosaic_master(mosaic_id, pipeline_and_display, filter):
+    """Open a specific (pipeline, tap) of a mosaic+filter in PixInsight.
 
-    Prefers the canonical Master output of store_mosaic_color_channel_*.
-    Falls back to the per-filter merge progress TIFF — overwritten by
-    each merge_images step, so it always reflects the latest state of
-    the in-flight mosaic for that filter.
+    Path resolution goes through the PipelineOutputIndex
+    (`tap_path_for`); `<path:pipeline_and_display>` is the
+    `<pipeline>/<display>` pair joined into one URL segment so
+    pipeline names with spaces don't need extra escaping.
     """
-    from pathlib import Path
-    from products.registry import get_filename_fn, MediaType
-    from products.identity import MosaicChannelId
-    from previews.types import QualityLevel, PIXINSIGHT, MASTER
+    from web_server.backend.metadata import tap_path_for
+
+    pipeline, _, display = pipeline_and_display.rpartition("/")
+    if not pipeline or not display:
+        return jsonify({"error": "bad pipeline/display"}), 400
 
     mosaics = context.mosaics or {}
     if mosaic_id not in mosaics:
         return jsonify({"error": "mosaic not found"}), 404
-    mosaic = mosaics[mosaic_id].get()
-    impl = implementation
 
-    candidates = []
+    path = tap_path_for(pipeline, display, "mosaic", mosaic_id, filter)
+    if path is None:
+        return jsonify({"error": "no image available to open"}), 404
 
-    filename_fn = get_filename_fn(MediaType.IMAGE, MosaicChannelId, MASTER, impl)
-    if filename_fn is not None:
-        candidates.append(filename_fn(mosaic, filter))
-
-    if context.output_dir is not None:
-        candidates.append(
-            Path(context.output_dir) / "Mosaic" / str(MASTER)
-            / f"progress_{mosaic.stable_hash}_{filter}.tiff"
-        )
-
-    for path in candidates:
-        if path is not None and Path(path).exists():
-            print(f"### opening {path} in PixInsight")
-            subprocess.Popen([
-                "/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight",
-                str(path),
-            ])
-            return jsonify({"opened": str(path)})
-
-    return jsonify({"error": "no image available to open"}), 404
+    print(f"### opening {path} in PixInsight")
+    subprocess.Popen([
+        "/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight",
+        str(path),
+    ])
+    return jsonify({"opened": str(path)})

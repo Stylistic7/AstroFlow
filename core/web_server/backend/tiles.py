@@ -66,66 +66,25 @@ def _resolve_obj_args(object_type: str, object_id: str, filter: str | None):
         return obj_cls, (context.mosaics[object_id].get(), filter)
 
 
-def _tile_pyramid_path_for(
-    object_type: str, object_id: str, filter: str | None, level: str | None,
-    implementation: str | None = None,
+def _tile_pyramid_path_for_tap(
+    object_type: str, object_id: str, pipeline: str, display: str,
+    filter: str | None,
 ):
-    """Find the tile pyramid for an object at a specific level (or the
-    best available level when level is None or 'auto'). Returns the
-    on-disk path or None if no producer has yet generated a tile pyramid
-    for this object/level. If implementation is None, uses the active
-    setting."""
-    obj_cls, obj_args = _resolve_obj_args(object_type, object_id, filter)
-
-    if level and level != "auto":
-        levels_to_try = [level]
-    else:
-        levels_to_try = QUALITY_PRIORITY
-
-    # `implementation` URL param is optional; default to PixInsight,
-    # the only backend in production today.
-    impl = implementation or PIXINSIGHT
-
+    """Find the tile pyramid for a specific (pipeline, tap) — the
+    `.tiff` sibling of the master file. Path resolution goes through
+    the PipelineOutputIndex via `tap_path_for`; if the master exists,
+    its sibling tiff is the tile pyramid."""
     from pathlib import Path
-    from products.registry import get_filename_fn
-
-    for q in levels_to_try:
-        producer = get_producer(MediaType.IMAGE, obj_cls, q, impl)
-        if producer is None:
-            continue
-        # Legacy path: @create_tile_pyramid attaches `tile_pyramid_fn`
-        # directly to the producer.
-        if hasattr(producer, "tile_pyramid_fn"):
-            path = producer.tile_pyramid_fn(*obj_args, level=q)
-            if path is not None and os.path.exists(path):
-                return path
-        # Newer path: @makes_image with presentations=[TILE_PYRAMID]
-        # writes a .tiff sibling next to the master's main output but
-        # doesn't attach a lookup function — find the file by name.
-        master_fn = get_filename_fn(MediaType.IMAGE, obj_cls, q, impl)
-        if master_fn is not None:
-            try:
-                master_path = master_fn(*obj_args)
-            except (TypeError, KeyError):
-                master_path = None
-            if master_path is not None:
-                tiff = Path(str(master_path)).with_suffix(".tiff")
-                if tiff.exists():
-                    return tiff
-
-    # Fallback: in-progress merge tile pyramids. merge_images writes
-    # these at a deterministic path per (mosaic, filter, mode),
-    # overwriting on each merge step — surfaces partial mosaic results
-    # before the final store_mosaic_color_channel completes.
-    if obj_cls is MosaicChannelId:
-        output_dir = context.output_dir
-        if output_dir is not None:
-            mosaic_obj, mosaic_filter = obj_args[0], obj_args[1]
-            for q in levels_to_try:
-                progress = Path(output_dir) / "Mosaic" / str(q) / f"progress_{mosaic_obj.stable_hash}_{mosaic_filter}.tiff"
-                if progress.exists():
-                    return str(progress)
-
+    from web_server.backend.metadata import tap_path_for
+    master = tap_path_for(pipeline, display, object_type, object_id, filter)
+    if master is None:
+        return None
+    tiff = Path(str(master)).with_suffix(".tiff")
+    if tiff.exists():
+        return str(tiff)
+    # Some tap outputs are themselves tiffs (e.g., Subframe mosaics).
+    if str(master).endswith((".tiff", ".tif")) and os.path.exists(master):
+        return str(master)
     return None
 
 
@@ -149,36 +108,6 @@ def _get_handle(tile_pyramid_path):
 
 
 @stateful_route(
-    tiles_bp.route("/tile_metadata/<object_type>/<object_id>/<filter>/<level>"),
-    sharding_key="object_id",
-)
-def tile_metadata(
-    object_type: str, object_id: str, filter: str, level: str = "auto",
-    backend_port: int = None,
-):
-    return _tile_metadata_response(
-        _tile_pyramid_path_for(object_type, object_id, filter, level),
-        backend_port,
-    )
-
-
-@stateful_route(
-    tiles_bp.route("/tile_metadata/<object_type>/<object_id>/<implementation>/<level>/<filter>"),
-    sharding_key="object_id",
-)
-def tile_metadata_specific(
-    object_type: str, object_id: str, implementation: str, level: str, filter: str,
-    backend_port: int = None,
-):
-    """tile_metadata pinned to a specific implementation. Legacy URL
-    shape; new callers should use the tap-keyed route below."""
-    return _tile_metadata_response(
-        _tile_pyramid_path_for(object_type, object_id, filter, level, implementation),
-        backend_port,
-    )
-
-
-@stateful_route(
     tiles_bp.route("/tap/tile_metadata/<object_type>/<object_id>/<path:pipeline_and_display>/<filter>"),
     sharding_key="object_id",
 )
@@ -190,31 +119,15 @@ def tile_metadata_tap(
 
     `pipeline_and_display` is `<pipeline>/<display>` — joined into one
     path segment so Flask doesn't have to know that pipeline names
-    contain spaces. Tile-pyramid paths are looked up via the
-    PipelineOutputIndex (recorded at trace time) with a static-mapping
-    fallback.
+    contain spaces. The PipelineOutputIndex (populated at pipeline-
+    trace time) tells us which file backs the tap; the tile pyramid
+    is its `.tiff` sibling.
     """
-    from web_server.backend.metadata import tap_path_for
     pipeline, _, display = pipeline_and_display.rpartition("/")
     if not pipeline or not display:
         return abort(404)
-    path = _tap_tile_pyramid_path(pipeline, display, object_type, object_id, filter)
+    path = _tile_pyramid_path_for_tap(object_type, object_id, pipeline, display, filter)
     return _tile_metadata_response(path, backend_port)
-
-
-def _tap_tile_pyramid_path(pipeline, display, object_type, object_id, filter):
-    """Tile-pyramid TIFF for a tap point — same sibling-of-master
-    pattern as the legacy lookup, but the master comes from
-    tap_path_for() instead of (impl, level) filename_fn."""
-    from pathlib import Path
-    from web_server.backend.metadata import tap_path_for
-    master = tap_path_for(pipeline, display, object_type, object_id, filter)
-    if master is None:
-        return None
-    tiff = Path(str(master)).with_suffix(".tiff")
-    if tiff.exists():
-        return str(tiff)
-    return master if master.endswith((".tiff", ".tif")) else None
 
 
 def _tile_metadata_response(path, backend_port):

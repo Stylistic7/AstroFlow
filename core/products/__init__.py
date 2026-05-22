@@ -1,6 +1,11 @@
 from .registry import (
-    makes_image, makes_video, get_producer, get_filename_fn, MediaType,
-    clear_registry, invalidate_object, is_object_valid,
+    makes_image, makes_video, MediaType,
+    invalidate_object, is_object_valid,
+    # Legacy compatibility — internal ops should use direct imports;
+    # view-side should use the PipelineOutputIndex via tap_path_for.
+    # These remain only for the small set of legacy view-side endpoints
+    # still keyed on (impl, level).
+    get_producer, get_filename_fn,
 )
 
 

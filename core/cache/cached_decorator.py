@@ -277,15 +277,12 @@ def make_cached_decorator(
         # so they survive the cached.remote wrapping.
         wrapper.__dict__.update(func.__dict__)
 
-        # Update registry entries to point at the @node-wrapped function
-        # (the one with .remote and _function) instead of the inner
-        # wrapper, keyed by identity.
-        if hasattr(wrapper, '_registry_keys'):
-            from products.registry import _registry
-            for media_type, identity, level, impl in wrapper._registry_keys:
-                key = (identity, level, impl)
-                if key in _registry[media_type]:
-                    _registry[media_type][key] = wrapper
+        # The producer registry's dicts have been removed (callers now
+        # access ops directly via imports), so there's nothing to
+        # repoint to the @node-wrapped function. Attributes the
+        # decorator attaches to the inner function (`filename_fn`,
+        # `filename_fns`, `_display`) come along via the __dict__
+        # update above.
 
         def is_cached(
             *args, injected_context: Optional[dict] = None, **kwargs
