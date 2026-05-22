@@ -30,28 +30,16 @@ import structlog
 log = structlog.get_logger()
 
 
-@node
-def calibrate(
-    stack: Stack,
-    config: ProcessingConfig,
-    stacker=None,
-) -> Graph:
+def _build_calibration_graph(stack: Stack, config: ProcessingConfig, stacker) -> Graph:
     """Build the per-(bias, dark, flat) stacking sub-graph this
     `stack`'s calibration depends on, terminating in a single
     `calibration_done` sentinel that downstream nodes can `_after=`
-    on.
-
-    `stacker` selects the @node op that stacks each cal stack —
-    `stack_files` (full-resolution) or `stack_files_downscaled`
-    (frames block-mean-downscaled 8x before WBPP). Pipelines pass
-    whichever stacker matches their light-stack op; that way cal
+    on. `stacker` is the @node op that does the actual stacking —
+    `stack_files` (full-res) or `stack_files_downscaled` (8x). Cal
     masters come out at the same resolution the light frames will
-    be calibrated against. Default is full-resolution PI WBPP.
-    """
+    be calibrated against."""
     from decisions.resolve import resolve_calibration
     from frozendict import frozendict as fd
-    if stacker is None:
-        from stacks.stacking.pixinsight import stack_files as stacker
 
     enriched = resolve_calibration(
         stack, config.get_calibration_stacks(), config.decisions,
@@ -85,6 +73,27 @@ def calibrate(
     has_dep = {d for ds in cal_tasks.values() for d in ds}
     graph[(calibration_done, stack)] = set(cal_tasks) - has_dep
     return graph
+
+
+@node
+def calibrate(stack: Stack, config: ProcessingConfig) -> Graph:
+    """Calibration sub-graph at full resolution. Used by the
+    PixInsight Master pipeline. The downscaled variant is
+    `calibrate_downscaled` — same shape, different cal-stack stacker."""
+    from stacks.stacking.pixinsight import stack_files
+    return _build_calibration_graph(stack, config, stack_files)
+
+
+@node
+def calibrate_downscaled(stack: Stack, config: ProcessingConfig) -> Graph:
+    """Calibration sub-graph at 8x downscale. Used by the
+    PixInsight Downscaled pipeline. Cal stacks are stacked via
+    `stack_files_downscaled`, which downscales bias/dark/flat
+    frames before WBPP so the cal masters come out at the small
+    resolution that the (downscaled) light frames will be
+    calibrated against."""
+    from stacks.stacking.pixinsight import stack_files_downscaled
+    return _build_calibration_graph(stack, config, stack_files_downscaled)
 
 
 # TODO: Calibrate the subframe returned here.

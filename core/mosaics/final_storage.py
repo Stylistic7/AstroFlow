@@ -45,7 +45,7 @@ def store_mosaic_color_channel_xisf(
 
 
 @node(resources={"fastest_storage": 0.001})
-@makes_image(ALL_IMPLEMENTATIONS, [SUBFRAME],
+@makes_image(PIXINSIGHT, [SUBFRAME],
              identity=MosaicChannelId, presentations=[THUMBNAIL, TILE_PYRAMID],
              file_type=TiffFilePath, display="Subframe")
 def store_mosaic_color_channel_subframe(

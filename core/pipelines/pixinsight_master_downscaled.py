@@ -25,7 +25,7 @@ from mosaics.merging.pixinsight import merge_images
 from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
 from previews.types import PIXINSIGHT, DOWNSCALED_MASTER
-from stacks.compute_graph import calibrate
+from stacks.compute_graph import calibrate_downscaled
 from stacks.composite_stack import Stack
 from stacks.post_processing.pixinsight import post_process_stack_downscaled
 from stacks.stacking.pixinsight import stack_files_downscaled
@@ -42,7 +42,7 @@ def _post_processed_master(s, config, mock):
     post-process. The `stack_files_downscaled` op handles the input-
     frame downscale and the WBPP run; `post_process_stack_downscaled`
     runs MSGC on the already-small master."""
-    cal = calibrate(s, config, stacker=stack_files_downscaled)
+    cal = calibrate_downscaled(s, config)
     master = stack_files_downscaled(s, config, _after=(cal,))
     return post_process_stack_downscaled(s, mock, _after=(master,))
 

@@ -68,12 +68,28 @@ def register_producer(
         _filename_fns[media_type][key] = filename_fn
 
 
+_producers_registered = False
+
+
+def _ensure_registered():
+    """Lazy-import every module that calls @makes_image, so the legacy
+    registry is populated before any get_producer / get_filename_fn
+    lookup. Idempotent."""
+    global _producers_registered
+    if _producers_registered:
+        return
+    _producers_registered = True
+    from products import ensure_producers_registered
+    ensure_producers_registered()
+
+
 def get_producer(
     media_type: MediaType, identity: "type[ObjectId]", level: str,
     implementation: str = PIXINSIGHT,
 ) -> Optional[Callable[..., Path]]:
     """Legacy: look up a producer by (identity, level, implementation).
     New code: import the producing op directly."""
+    _ensure_registered()
     return _registry[media_type].get((identity, level, implementation))
 
 
@@ -83,6 +99,7 @@ def get_filename_fn(
 ) -> Optional[Callable[..., Path]]:
     """Legacy: look up a producer's resolved filename_fn. New code:
     `op.filename_fn` or `op.filename_fns[(identity, level)]`."""
+    _ensure_registered()
     return _filename_fns[media_type].get((identity, level, implementation))
 
 

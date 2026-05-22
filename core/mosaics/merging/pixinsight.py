@@ -120,7 +120,7 @@ def _maybe_publish_progress(
 
 
 @node(resources={"PixInsight": 1}, auto_memory=True)
-@makes_image(ALL_IMPLEMENTATIONS, [SUBFRAME], merged_filename_tiff,
+@makes_image(PIXINSIGHT, [SUBFRAME], merged_filename_tiff,
              identity=MergedImageId)
 @makes_image(PIXINSIGHT, [MASTER, DOWNSCALED_MASTER], merged_filename_xisf,
              identity=MergedImageId)

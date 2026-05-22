@@ -21,7 +21,7 @@ from file_io.generic import read_image
 from file_io.tiff_file_io import write_tiff_image
 from file_io.types import TiffFilePath, WithSidecar
 from context import context
-from previews.types import ALL_IMPLEMENTATIONS, SUBFRAME, MASTER, DOWNSCALED_MASTER
+from previews.types import PIXINSIGHT, SUBFRAME, MASTER, DOWNSCALED_MASTER
 from mosaics.types import Mosaic, Viewbox
 from decorators import node
 from metadata.classes import ImageMetadata
@@ -167,7 +167,7 @@ def _project_in_tiles(
 # footprint (interpolator + output buffer) while leaving room for many
 # concurrent place_tile subtasks.
 @node
-@makes_image(ALL_IMPLEMENTATIONS, [SUBFRAME, MASTER, DOWNSCALED_MASTER],
+@makes_image(PIXINSIGHT, [SUBFRAME, MASTER, DOWNSCALED_MASTER],
              identity=PlacedImageId, file_type=TiffFilePath)
 def place_image(
     mode: str,
