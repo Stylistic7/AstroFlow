@@ -28,7 +28,7 @@ from previews.types import (
     MASTER,
     DOWNSCALED_MASTER,
 )
-from products import get_filename_fn, makes_image, MediaType
+from products import makes_image
 from products.identity import (
     PresentationType,
     TargetChannelId,
@@ -55,12 +55,14 @@ _SATURATION_FRACTION = 0.999
 
 
 def _stack_master_path(stack: Stack, quality: str) -> Path:
-    # Consume the gradient-corrected (post-processed) stack, NOT the raw
-    # master — so mosaic panels are flattened before placement/merge.
-    fn = get_filename_fn(
-        MediaType.IMAGE, StackId, _postprocessed_level(quality), OSS
+    # Consume the gradient-corrected (post-processed) stack, NOT the
+    # raw master — so mosaic panels are flattened before placement.
+    from stacks.post_processing.oss import (
+        post_process_stack_oss as _pp,
+        post_process_stack_oss_downscaled as _pp_down,
     )
-    return Path(fn(stack))
+    op = _pp_down if quality == DOWNSCALED_MASTER else _pp
+    return Path(op.filename_fn(stack))
 
 
 @node(auto_memory=True, cache_key_narrow=_merge_target_channel_narrow)

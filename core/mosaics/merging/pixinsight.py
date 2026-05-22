@@ -23,7 +23,6 @@ from file_io.types import XisfFilePath, TiffFilePath, WithSidecar
 from mosaics.artifacts import merged_filename_tiff, merged_filename_xisf
 from products import makes_image
 from products.identity import MosaicChannelId, MergedImageId, PresentationType
-from products.registry import get_filename_fn, MediaType
 from hashing import hash_list
 
 log = structlog.get_logger()
@@ -137,7 +136,9 @@ def merge_images(
     path_0 = input_0.filename.resolve(strict=True)
     path_1 = input_1.filename.resolve(strict=True)
 
-    output_fn = get_filename_fn(MediaType.IMAGE, MergedImageId, mode)
+    # The op has TWO @makes_image registrations (Subframe + Master);
+    # each baked a per-mode filename_fn. Pick the right one by `mode`.
+    output_fn = merge_images.filename_fns[(MergedImageId, mode)]
     output_filename = output_fn(mosaic, filter, input_0, input_1)
     Path(output_filename).parent.mkdir(parents=True, exist_ok=True)
 

@@ -32,8 +32,6 @@ from products import makes_image
 from products.identity import (
     StackId, CalibrationStackId, identity_for_stack, PresentationType,
 )
-from products.registry import get_filename_fn, MediaType
-
 THUMBNAIL = PresentationType.THUMBNAIL
 TILE_PYRAMID = PresentationType.TILE_PYRAMID
 from stacks.composite_stack import BaseStack, Stack, CalibrationStack
@@ -45,9 +43,16 @@ from decisions.settings import ProcessingConfig
 log = structlog.get_logger()
 
 
-def _load_calibration(cal_stack, quality, implementation):
-    fn = get_filename_fn(MediaType.IMAGE, identity_for_stack(cal_stack), quality, implementation)
-    path = fn(cal_stack) if fn else None
+def _load_calibration(cal_stack, implementation):
+    """Read a calibration master via its producer's filename_fn,
+    selected by `implementation`. Returns the array or None when no
+    master exists for that backend."""
+    if implementation == OSS:
+        from stacks.stacking.oss import stack_files_oss
+        path = stack_files_oss.filename_fn(cal_stack)
+    else:
+        from stacks.stacking.pixinsight import stack_files
+        path = stack_files.filename_fn(cal_stack)
     return read_image(path) if path and os.path.exists(path) else None
 
 
@@ -190,9 +195,6 @@ def stack_files_oss(
     """OSS stacker producing a full-resolution master. A future
     downscaled OSS pipeline would compose `downscale_master` on top
     (only the PI backend has the downscale op registered today)."""
-    from products import ensure_producers_registered
-    ensure_producers_registered()
-
     stack = resolve_calibration(stack, config.get_calibration_stacks(), config.decisions)
     if config.decisions and isinstance(stack, Stack):
         filtered = resolve_decisions(stack, ALL_EXCLUSION_TYPES, config.decisions, config.min_frames_in_stack)
@@ -200,7 +202,7 @@ def stack_files_oss(
             raise ValueError(f"Stack {stack} has no frames after applying decisions")
         stack = filtered
 
-    dest_filename = get_filename_fn(MediaType.IMAGE, identity_for_stack(stack), MASTER, OSS)(stack)
+    dest_filename = stack_files_oss.filename_fn(stack)
     os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
     log.info("OSS stacking", stack=str(stack), dest=str(dest_filename))
 
@@ -214,8 +216,8 @@ def stack_files_oss(
                 continue
             cal_stack = config.get_calibration_stacks()[dep.stack_id]
             cal_data = (
-                _load_calibration(cal_stack, MASTER, OSS)
-                or _load_calibration(cal_stack, MASTER, PIXINSIGHT)
+                _load_calibration(cal_stack, OSS)
+                or _load_calibration(cal_stack, PIXINSIGHT)
             )
             if cal_data is None:
                 continue

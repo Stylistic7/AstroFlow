@@ -85,13 +85,11 @@ def _setup_run(
 
     def get_dependency_filename(d):
         if isinstance(d, StackIdDependency):
-            from products.registry import get_filename_fn, MediaType
             cal_stack = calibration_stacks[d.stack_id]
-            filename_fn = get_filename_fn(
-                MediaType.IMAGE, identity_for_stack(cal_stack),
-                MASTER,
-            )
-            return filename_fn(cal_stack)
+            # Calibration master path: same `stack_files` op that just
+            # produces the cal stack's master. `filename_fn` dispatches
+            # between StackId / CalibrationStackId polymorphism.
+            return stack_files.filename_fn(cal_stack)
         elif isinstance(d, FilenameDependency):
             return d.filename
 
@@ -220,9 +218,7 @@ def stack_files(
     development_settings = config.development_settings
 
     # Determine the output file, and the metadata it should have.
-    from products.registry import get_filename_fn, MediaType
-    filename_fn = get_filename_fn(MediaType.IMAGE, identity_for_stack(stack), MASTER) or stack_files.filename_fn
-    dest_filename = filename_fn(stack)
+    dest_filename = stack_files.filename_fn(stack)
     dest_filename_exists = os.path.exists(dest_filename)
     os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
     log.info("Entering stack_files", stack=str(stack), dest_filename=dest_filename, dest_filename_exists=dest_filename_exists)

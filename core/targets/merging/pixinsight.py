@@ -24,7 +24,7 @@ from previews.types import (
     POST_PROCESSED,
     DOWNSCALED_POST_PROCESSED,
 )
-from products import get_filename_fn, makes_image, MediaType
+from products import makes_image
 from products.identity import (
     PresentationType,
     TargetChannelId,
@@ -51,12 +51,14 @@ def _postprocessed_level(quality: str) -> str:
 
 
 def _stack_master_path(stack: Stack, quality: str) -> Path:
-    # Consume the gradient-corrected (post-processed) stack, NOT the raw
-    # master — so mosaic panels are flattened before placement/merge.
-    fn = get_filename_fn(
-        MediaType.IMAGE, StackId, _postprocessed_level(quality), PIXINSIGHT
+    # Consume the gradient-corrected (post-processed) stack, NOT the
+    # raw master — so mosaic panels are flattened before placement.
+    from stacks.post_processing.pixinsight import (
+        post_process_stack as _pp,
+        post_process_stack_downscaled as _pp_down,
     )
-    return Path(fn(stack))
+    op = _pp_down if quality == DOWNSCALED_MASTER else _pp
+    return Path(op.filename_fn(stack))
 
 
 def _merge_target_channel_narrow(args, kwargs):

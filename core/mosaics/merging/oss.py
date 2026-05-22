@@ -24,7 +24,6 @@ from mosaics.types import Mosaic
 from previews.types import OSS, MASTER, DOWNSCALED_MASTER
 from products import makes_image
 from products.identity import MergedImageId
-from products.registry import get_filename_fn, MediaType
 
 log = structlog.get_logger()
 
@@ -64,7 +63,9 @@ def merge_images_oss(
     input_0: ImageMetadata,
     input_1: ImageMetadata,
 ) -> WithSidecar:
-    output_filename = get_filename_fn(MediaType.IMAGE, MergedImageId, mode, OSS)(
+    # Output path comes from this op's own filename_fn — `mode` selects
+    # which (identity, level) variant.
+    output_filename = merge_images_oss.filename_fns[(MergedImageId, mode)](
         mosaic, filter, input_0, input_1,
     )
     Path(output_filename).parent.mkdir(parents=True, exist_ok=True)

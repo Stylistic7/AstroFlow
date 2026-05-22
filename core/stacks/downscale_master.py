@@ -25,11 +25,12 @@ from file_io.xisf_file_io import write_xisf_image
 from previews.types import (
     PIXINSIGHT, MASTER, DOWNSCALED_MASTER, DOWNSCALE_FACTORS,
 )
-from products import makes_image, get_filename_fn, MediaType
+from products import makes_image
 from products.identity import (
     StackId, CalibrationStackId, PresentationType, identity_for_stack,
 )
 from stacks.composite_stack import BaseStack
+from stacks.stacking.pixinsight import stack_files as _stack_files
 
 THUMBNAIL = PresentationType.THUMBNAIL
 TILE_PYRAMID = PresentationType.TILE_PYRAMID
@@ -50,10 +51,10 @@ def downscale_master(
     """Block-mean downscale a stack master to the DOWNSCALED_MASTER
     output path. Reads the master via `get_filename_fn(StackId,
     MASTER)`, which resolves to `stack_files`'s output."""
-    master_fn = get_filename_fn(
-        MediaType.IMAGE, identity_for_stack(stack), MASTER,
-    )
-    master_path = master_fn(stack)
+    # Read the upstream master directly via its op's filename_fn
+    # (the dispatch picks the right StackId vs CalibrationStackId
+    # resolver based on the stack's image_type).
+    master_path = _stack_files.filename_fn(stack)
 
     output_path = downscale_master.filename_fn(stack)
     os.makedirs(os.path.dirname(output_path), exist_ok=True)

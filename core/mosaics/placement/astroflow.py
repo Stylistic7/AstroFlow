@@ -22,7 +22,6 @@ from file_io.tiff_file_io import write_tiff_image
 from file_io.types import TiffFilePath, WithSidecar
 from context import context
 from previews.types import ALL_IMPLEMENTATIONS, SUBFRAME, MASTER, DOWNSCALED_MASTER
-from products.registry import get_filename_fn, MediaType
 from mosaics.types import Mosaic, Viewbox
 from decorators import node
 from metadata.classes import ImageMetadata
@@ -189,7 +188,7 @@ def place_image(
     interp = _make_interpolator(image_metadata.filename)
     image = _project_in_tiles(viewbox, interp, wcs, skip_empty=False)
 
-    output_fn = get_filename_fn(MediaType.IMAGE, PlacedImageId, mode)
+    output_fn = place_image.filename_fns[(PlacedImageId, mode)]
     output_filename = output_fn(mosaic, target, filter, viewbox)
 
     if not np.any(image):

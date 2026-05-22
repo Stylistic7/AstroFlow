@@ -17,7 +17,7 @@ from file_io.types import XisfFilePath
 from decorators import node
 from targets.types import Target
 from targets.target_channel import TargetChannel, group_stacks_by_filter
-from products import makes_image, get_filename_fn, MediaType
+from products import makes_image
 from products.identity import TargetId, TargetChannelId, PresentationType
 
 THUMBNAIL = PresentationType.THUMBNAIL
@@ -86,9 +86,13 @@ def _target_channel_paths(
     stacks = context.stacks
     target_stacks = [stacks[sid].get() for sid in target.stack_ids]
     by_filter = group_stacks_by_filter(target_stacks)
-    channel_fn = get_filename_fn(
-        MediaType.IMAGE, TargetChannelId, MASTER, implementation,
-    )
+    # Per-filter channel masters come from `merge_target_channel`
+    # for PixInsight or `merge_target_channel_oss` for OSS.
+    if implementation == OSS:
+        from targets.merging.oss import merge_target_channel_oss as op
+    else:
+        from targets.merging.pixinsight import merge_target_channel as op
+    channel_fn = op.filename_fns[(TargetChannelId, MASTER)]
     filters = list(by_filter.keys())
     paths = [Path(channel_fn(target, f)) for f in filters]
     return paths, filters

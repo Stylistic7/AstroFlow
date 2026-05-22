@@ -10,7 +10,7 @@ from pix.tasks import (
 from decorators import node
 from stacks.composite_stack import Stack
 from file_io.types import XisfFilePath, WithSidecar
-from products import makes_image, get_filename_fn, MediaType
+from products import makes_image
 from products.identity import StackId, PresentationType
 from previews.types import PIXINSIGHT, DOWNSCALE_FACTORS, DOWNSCALED_MASTER,MASTER,POST_PROCESSED,DOWNSCALED_POST_PROCESSED
 import structlog
@@ -55,10 +55,11 @@ def _post_process_stack(master_path, stack: Stack, downscale_factor: int = 1) ->
              identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
              file_type=XisfFilePath, display="Post-Processed")
 def post_process_stack(stack: Stack, mock_pixinsight: bool) -> WithSidecar[XisfFilePath]:
-    from products import ensure_producers_registered
-    ensure_producers_registered()
-    master_fn = get_filename_fn(MediaType.IMAGE, StackId, MASTER)
-    master = master_fn(stack)
+    # Read upstream master directly. Each op exports its filename_fn;
+    # consumers import the producing op explicitly instead of going
+    # through a (identity, level, impl) registry lookup.
+    from stacks.stacking.pixinsight import stack_files
+    master = stack_files.filename_fn(stack)
 
     output_filename = post_process_stack.filename_fn(stack)
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
@@ -81,12 +82,10 @@ def post_process_stack_downscaled(
     gradient removal cheaply (on the small image). Not pixel-identical
     to the full-res PostProcessed — `_post_process_stack`'s low-res
     solver branch (downscale_factor > 1) handles the tiny stars."""
-    from products import ensure_producers_registered
-    ensure_producers_registered()
-    master_fn = get_filename_fn(
-        MediaType.IMAGE, StackId, DOWNSCALED_MASTER
-    )
-    master = master_fn(stack)
+    # Downscaled master comes from `downscale_master`, the explicit
+    # post-stacking step the PixInsight Downscaled pipeline composes.
+    from stacks.downscale_master import downscale_master
+    master = downscale_master.filename_fn(stack)
 
     output_filename = post_process_stack_downscaled.filename_fn(stack)
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)

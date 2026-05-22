@@ -20,7 +20,6 @@ from products.identity import MosaicId, MosaicChannelId, PresentationType
 
 THUMBNAIL = PresentationType.THUMBNAIL
 TILE_PYRAMID = PresentationType.TILE_PYRAMID
-from products.registry import get_filename_fn, MediaType
 from targets.types import TargetsDict
 from targets.target_channel import filters_for_target
 
@@ -75,7 +74,12 @@ def post_process_mosaic(
     # Pin iteration order so the parallel filters list lines up with the paths.
     filter_list = list(filters)
 
-    master_fn = get_filename_fn(MediaType.IMAGE, MosaicChannelId, MASTER)
+    # Read each filter's mosaic master from the canonical
+    # store_mosaic_color_channel_xisf output. The op exports a
+    # filename_fns dict keyed by (identity, level) — pick the
+    # MASTER variant for full-resolution input.
+    from mosaics.final_storage import store_mosaic_color_channel_xisf
+    master_fn = store_mosaic_color_channel_xisf.filename_fns[(MosaicChannelId, MASTER)]
     image_paths = [master_fn(mosaic, f) for f in filter_list]
 
     images = Image.open_many(image_paths, filters=filter_list)

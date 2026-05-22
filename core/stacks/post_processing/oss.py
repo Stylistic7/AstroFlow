@@ -17,7 +17,6 @@ from file_io.types import FitsFilePath, WithSidecar
 from previews.types import OSS, DOWNSCALED_MASTER,MASTER,POST_PROCESSED,DOWNSCALED_POST_PROCESSED
 from products import makes_image
 from products.identity import StackId, PresentationType
-from products.registry import get_filename_fn, MediaType
 
 THUMBNAIL = PresentationType.THUMBNAIL
 TILE_PYRAMID = PresentationType.TILE_PYRAMID
@@ -31,10 +30,9 @@ log = structlog.get_logger()
              identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
              file_type=FitsFilePath)
 def post_process_stack_oss(stack: Stack, mock_pixinsight: bool) -> WithSidecar[FitsFilePath]:
-    from products import ensure_producers_registered
-    ensure_producers_registered()
 
-    master_path = get_filename_fn(MediaType.IMAGE, StackId, MASTER, OSS)(stack)
+    from stacks.stacking.oss import stack_files_oss
+    master_path = stack_files_oss.filename_fn(stack)
     output_filename = post_process_stack_oss.filename_fn(stack)
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
     log.info("OSS post-processing stack", stack=str(stack), master=str(master_path))
@@ -74,12 +72,12 @@ def post_process_stack_oss_downscaled(
 ) -> WithSidecar[FitsFilePath]:
     """OSS gradient/background removal on the already-downscaled master,
     so a DownscaledMaster mosaic gets gradient correction cheaply."""
-    from products import ensure_producers_registered
-    ensure_producers_registered()
 
-    master_path = get_filename_fn(
-        MediaType.IMAGE, StackId, DOWNSCALED_MASTER, OSS
-    )(stack)
+    # DOWNSCALED_MASTER comes from the OSS pipeline's downscale step;
+    # for the current architecture (no OSS downscale op yet) read the
+    # full-res master and let the post-process handle it.
+    from stacks.stacking.oss import stack_files_oss
+    master_path = stack_files_oss.filename_fn(stack)
     output_filename = post_process_stack_oss_downscaled.filename_fn(stack)
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
     log.info("OSS post-processing downscaled stack",
