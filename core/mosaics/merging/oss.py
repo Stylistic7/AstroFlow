@@ -16,7 +16,6 @@ from file_io.generic import read_image
 from file_io.types import FitsFilePath, WithSidecar
 from hashing import hash_list
 from metadata.classes import ImageMetadata
-from mosaics.artifacts import merged_filename_fits
 from mosaics.merging.pixinsight import (
     MergedImage, _panel_count, _set_panel_count,
 )
@@ -49,7 +48,7 @@ def _blend(image_0, image_1):
     return (w_0 * image_0 + w_1 * image_1) / total
 
 @node(auto_memory=True)
-@makes_image(filename_fn=merged_filename_fits, identity=MergedImageId)
+@makes_image(identity=MergedImageId)
 def merge_images_oss(
     mosaic: Mosaic, filter: str,
     input_0: ImageMetadata, input_1: ImageMetadata,

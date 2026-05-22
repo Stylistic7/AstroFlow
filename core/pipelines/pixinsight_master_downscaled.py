@@ -7,20 +7,20 @@ is to cut WBPP/plate-solving/registration time by ~64x, which is
 only achievable if WBPP itself sees the small frames.
 
 Structurally the only differences from `pixinsight_master.py` are
-which upstream ops it composes:
+which upstream stack-side ops it composes:
 
-  PixInsight Master:                  PixInsight Downscaled:
-    calibrate(s, config)                calibrate_downscaled(s, config)
-    stack_files(s, config)              stack_files_downscaled(s, config)
-    post_process_stack(...)             post_process_stack_downscaled(...)
-    merge_target_channel_master(...)    merge_target_channel_downscaled_master(...)
-    store_mosaic_color_channel_master   store_mosaic_color_channel_downscaled_master
+  PixInsight Master:                    PixInsight Downscaled:
+    calibrate(...)                        calibrate_downscaled(...)
+    stack_files(...)                      stack_files_downscaled(...)
+    post_process_stack(...)               post_process_stack_downscaled(...)
 
-`place_image` and `merge_images` are identical in both — both ops
-are pipeline-agnostic (viewbox / inputs carry the discriminator).
+`merge_target_channel`, `place_image`, `merge_images`, and
+`store_mosaic_color_channel_xisf` are SHARED — the data deps
+(different per-stack masters, different viewbox) keep the outputs
+in distinct on-disk files via the call-hash filename.
 """
 from astroflow.pipeline import pipeline
-from mosaics.final_storage import store_mosaic_color_channel_downscaled_master
+from mosaics.final_storage import store_mosaic_color_channel_xisf
 from mosaics.merging.pixinsight import merge_images
 from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
@@ -28,24 +28,21 @@ from stacks.compute_graph import calibrate_downscaled
 from stacks.composite_stack import Stack
 from stacks.post_processing.pixinsight import post_process_stack_downscaled
 from stacks.stacking.pixinsight import stack_files_downscaled
-from targets.merging.pixinsight import merge_target_channel_downscaled_master
+from targets.merging.pixinsight import merge_target_channel
 from targets.types import Target
 
 
 def _post_processed_master(s, config, mock):
-    """Calibrate (downscaled cal masters) → stack downscaled →
-    post-process. The `stack_files_downscaled` op handles the input-
-    frame downscale and the WBPP run."""
     cal = calibrate_downscaled(s, config)
     master = stack_files_downscaled(s, config, _after=(cal,))
-    return post_process_stack_downscaled(s, mock, _after=(master,))
+    return post_process_stack_downscaled(s, mock, master)
 
 
 def _channels_for_target(target, config, mock):
     return {
-        filter: merge_target_channel_downscaled_master(
+        filter: merge_target_channel(
             target, filter, target.stacks_for(filter), config,
-            _after=tuple(
+            tuple(
                 _post_processed_master(s, config, mock)
                 for s in target.stacks_for(filter)
             ),
@@ -97,7 +94,7 @@ def for_mosaic(mosaic, config):
         ) if r is not None]
         if rows:
             merged = _pairwise_merge(rows, mosaic, filter, mock)
-            out[filter] = store_mosaic_color_channel_downscaled_master(
+            out[filter] = store_mosaic_color_channel_xisf(
                 mosaic, filter, mock, merged,
             )
 

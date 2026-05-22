@@ -271,6 +271,14 @@ def make_cached_decorator(
         wrapper._original = func
         wrapper._function = func
         wrapper._is_task = True
+        # Expose `fn_hash` and the cache_key_narrow hook so
+        # @makes_image's filename_fn can compute the same call_hash
+        # @node uses for its cache key. Narrow-wrapped ops would
+        # diverge otherwise: cache hashes the narrowed args while
+        # filename_fn would hash the raw args. Both must match for
+        # the on-disk filename to be the cache entry's locator.
+        wrapper._fn_hash = fn_hash
+        wrapper._cache_key_narrow = cache_key_narrow
 
         # Forward all custom attributes from inner decorators (e.g.
         # filename_fn, filename_fns, _display, _trace_hooks) so they

@@ -1,7 +1,12 @@
-import os
+"""Mosaic post-processing — TODO.
+
+Pre-refactor this composed per-filter mosaic channels into an RGB /
+SHO post-processed master. In the new architecture pipelines should
+compose this themselves by passing per-filter `mosaic_channel`
+outputs as data deps to a `combine_mosaic` op. Not in the active
+pipeline trace path yet.
+"""
 import structlog
-from pathlib import Path
-from astropy.time import Time
 
 from pix import Image, ImageList
 from pix.tasks import (
@@ -15,14 +20,11 @@ from file_io.types import XisfFilePath, WithSidecar
 from decorators import node
 from mosaics.types import Mosaic
 from products import makes_image
-from products.identity import MosaicId, MosaicChannelId, PresentationType
-
-THUMBNAIL = PresentationType.THUMBNAIL
-TILE_PYRAMID = PresentationType.TILE_PYRAMID
-from targets.types import TargetsDict
-from targets.target_channel import filters_for_target
+from products.identity import MosaicId
+from astropy.time import Time
 
 log = structlog.get_logger()
+
 
 def _post_process_mosaic(images: ImageList, mosaic: Mosaic) -> Image | None:
     if "RGB" in images:
@@ -50,52 +52,28 @@ def _post_process_mosaic(images: ImageList, mosaic: Mosaic) -> Image | None:
 
     return None
 
+
 @node(resources={"PixInsight": 1}, auto_memory=True)
 @makes_image(identity=MosaicId)
 def post_process_mosaic(
-    mode: str,
     mosaic: Mosaic,
-    targets: TargetsDict,
+    channels,  # dict[str, WithSidecar]: per-filter mosaic-channel masters
+    mock_pixinsight: bool,
 ) -> WithSidecar[XisfFilePath] | None:
-    from context import context
-    log.info("Entering post_process_mosaic", mode=mode, mosaic=str(mosaic))
+    """Combine per-filter mosaic channels into an RGB / SHO master.
 
-    if mode != MASTER:
-        return None
-
-    filters: set[str] = set()
-    for target_id in mosaic.target_ids:
-        filters.update(filters_for_target(targets[target_id].get()))
-    # Pin iteration order so the parallel filters list lines up with the paths.
-    filter_list = list(filters)
-
-    # Read each filter's mosaic master from the canonical
-    # store_mosaic_color_channel_xisf output. The op exports a
-    # filename_fns dict keyed by (identity, level) — pick the
-    # MASTER variant for full-resolution input.
-    from mosaics.final_storage import store_mosaic_color_channel_xisf
-    master_fn = store_mosaic_color_channel_xisf.filename_fns[(MosaicChannelId, MASTER)]
-    image_paths = [master_fn(mosaic, f) for f in filter_list]
-
+    `channels` is a dict keyed by filter, values are upstream
+    WithSidecar handles produced by `store_mosaic_color_channel_xisf`.
+    The pipeline body builds the dict and passes it as a data dep."""
+    filter_list = sorted(channels.keys())
+    image_paths = [channels[f].filename for f in filter_list]
     images = Image.open_many(image_paths, filters=filter_list)
+
     result = _post_process_mosaic(images, mosaic)
     if result is None:
         return None
 
-    output_filename = post_process_mosaic.filename_fn(mosaic, None)
+    output_filename = post_process_mosaic.filename_fn(mosaic, channels, mock_pixinsight)
     output_filename.parent.mkdir(parents=True, exist_ok=True)
-
-    mock = context.settings.development_settings.mock_pixinsight
-    result.save_to(output_filename, mock=mock)
-
+    result.save_to(output_filename, mock=mock_pixinsight)
     return WithSidecar(output_filename)
-
-@node
-@makes_image(identity=MosaicId)
-def post_process_mosaic_oss(
-    mode: str,
-    mosaic: Mosaic,
-    targets: TargetsDict,
-) -> None:
-    """Stub: mosaic post-processing for the OSS pipeline (TODO)."""
-    return None

@@ -20,6 +20,7 @@ TILE_PYRAMID = PresentationType.TILE_PYRAMID
 
 log = structlog.get_logger()
 
+
 def _post_process_stack(master_path, stack: Stack, downscale_factor: int = 1) -> Image:
     # Stack.filter is the authoritative grouping value; pix doesn't read
     # FILTER from disk (the caller is the only thing that knows it).
@@ -48,44 +49,42 @@ def _post_process_stack(master_path, stack: Stack, downscale_factor: int = 1) ->
     calibrated = SpectrophotometricFluxCalibration(solved)
     return MultiscaleGradientCorrection(calibrated)
 
+
 @node(resources={"PixInsight": 1}, auto_memory=True)
 @makes_image(identity=StackId, display="Post-Processed")
-def post_process_stack(stack: Stack, mock_pixinsight: bool) -> WithSidecar[XisfFilePath]:
-    # Read upstream master directly. Each op exports its filename_fn;
-    # consumers import the producing op explicitly instead of going
-    # through a (identity, level, impl) registry lookup.
-    from stacks.stacking.pixinsight import stack_files
-    master = stack_files.filename_fn(stack)
+def post_process_stack(
+    stack: Stack, mock_pixinsight: bool, master,
+) -> WithSidecar[XisfFilePath]:
+    """Full-resolution PixInsight post-processing.
 
-    output_filename = post_process_stack.filename_fn(stack)
+    `master` is the upstream `stack_files` output (a WithSidecar)
+    passed as a data dep by the pipeline body — so this op doesn't
+    have to know stack_files's call args to find the master file.
+    """
+    output_filename = post_process_stack.filename_fn(stack, mock_pixinsight, master)
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
 
-    result = _post_process_stack(master, stack, downscale_factor=1)
+    result = _post_process_stack(master.filename, stack, downscale_factor=1)
     result.save_to(output_filename, mock=mock_pixinsight)
 
     return WithSidecar(XisfFilePath(output_filename))
 
+
 @node(resources={"PixInsight": 1}, auto_memory=True)
 @makes_image(identity=StackId, display="Post-Processed (Downscaled)")
 def post_process_stack_downscaled(
-    stack: Stack, mock_pixinsight: bool
+    stack: Stack, mock_pixinsight: bool, master,
 ) -> WithSidecar[XisfFilePath]:
     """Same gradient correction as `post_process_stack`, but on the
-    already-downscaled master so a DownscaledMaster mosaic gets
-    gradient removal cheaply (on the small image). Not pixel-identical
-    to the full-res PostProcessed — `_post_process_stack`'s low-res
-    solver branch (downscale_factor > 1) handles the tiny stars."""
-    # Downscaled master comes from `stack_files_downscaled` — WBPP
-    # ran on the already-downscaled input frames, so the output is
-    # already at the smaller resolution.
-    from stacks.stacking.pixinsight import stack_files_downscaled
-    master = stack_files_downscaled.filename_fn(stack)
-
-    output_filename = post_process_stack_downscaled.filename_fn(stack)
+    already-downscaled master. `master` is the upstream
+    `stack_files_downscaled` output as a data dep — same pattern as
+    `post_process_stack` so the body doesn't have to look it up.
+    """
+    output_filename = post_process_stack_downscaled.filename_fn(stack, mock_pixinsight, master)
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
 
     result = _post_process_stack(
-        master, stack,
+        master.filename, stack,
         downscale_factor=DOWNSCALE_FACTORS[DOWNSCALED_MASTER],
     )
     result.save_to(output_filename, mock=mock_pixinsight)

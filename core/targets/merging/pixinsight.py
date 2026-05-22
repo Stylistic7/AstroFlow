@@ -41,29 +41,48 @@ def _merge_target_channel_narrow(args, kwargs):
     return (target, filter, stacks, narrowed, *rest), kwargs
 
 
-def _merge_target_channel_impl(
+@node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD",
+      auto_memory=True, cache_key_narrow=_merge_target_channel_narrow)
+@makes_image(identity=TargetChannelId, display="Channel")
+@beartype
+def merge_target_channel(
     target: Target, filter: str, stacks: tuple[Stack, ...],
     config: ProcessingConfig,
-    output_filename, stack_master_path,
+    masters,
 ) -> WithSidecar[XisfFilePath]:
-    """Shared body. `stack_master_path` resolves a single Stack to
-    its post-processed master path — the only place the per-mode
-    ops differ (Master variant reads `post_process_stack`,
-    Downscaled-Master reads `post_process_stack_downscaled`)."""
+    """HDR-combine per-stack masters into one (target, filter) channel.
+
+    Pipeline-agnostic: PI Master and PI Downscaled both call this
+    with their own per-stack post-processed masters. The `masters`
+    arg is a tuple of WithSidecar handles (data deps from the
+    pipeline body), so the body doesn't need to look up filename_fns
+    or know which upstream op produced them.
+
+    Different `masters` → different call_hash → different output
+    file. Cache sharing is automatic when two pipelines happen to
+    pass identical masters (which they won't for full-res vs
+    downscaled, by construction)."""
     assert len(stacks) >= 1, "merge_target_channel needs at least one stack"
+    output_filename = merge_target_channel.filename_fn(
+        target, filter, stacks, config, masters,
+    )
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
 
+    master_paths = [m.filename for m in masters]
+
     # n=1: passthrough. The single stack's master IS the channel master.
-    if len(stacks) == 1:
-        shutil.copy(stack_master_path(stacks[0]), output_filename)
+    if len(master_paths) == 1:
+        shutil.copy(master_paths[0], output_filename)
         return WithSidecar(XisfFilePath(output_filename))
 
     # n>1: register, then HDR-compose. Sort longest-exposure-first so
     # HDRComposition treats the deepest integration as the base.
-    sorted_stacks = sorted(stacks, key=lambda s: -float(s.exposure))
-    masters = [stack_master_path(s) for s in sorted_stacks]
+    stack_master_pairs = sorted(
+        zip(stacks, master_paths), key=lambda p: -float(p[0].exposure),
+    )
+    sorted_stacks, sorted_masters = zip(*stack_master_pairs)
 
-    images = Image.open_many(masters, filters=[s.filter for s in sorted_stacks])
+    images = Image.open_many(list(sorted_masters), filters=[s.filter for s in sorted_stacks])
     aligned = StarAlignment(images)
     composed = HDRComposition(aligned)
     composed.save_to(
@@ -72,39 +91,3 @@ def _merge_target_channel_impl(
     )
 
     return WithSidecar(XisfFilePath(output_filename))
-
-
-@node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD",
-      auto_memory=True, cache_key_narrow=_merge_target_channel_narrow)
-@makes_image(identity=TargetChannelId, display="Channel")
-@beartype
-def merge_target_channel_master(
-    target: Target, filter: str, stacks: tuple[Stack, ...],
-    config: ProcessingConfig,
-) -> WithSidecar[XisfFilePath]:
-    """Full-resolution channel master (PixInsight Master pipeline).
-    Reads each stack's post-processed master from `post_process_stack`."""
-    from stacks.post_processing.pixinsight import post_process_stack
-    return _merge_target_channel_impl(
-        target, filter, stacks, config,
-        merge_target_channel_master.filename_fn(target, filter),
-        lambda s: Path(post_process_stack.filename_fn(s)),
-    )
-
-
-@node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD",
-      auto_memory=True, cache_key_narrow=_merge_target_channel_narrow)
-@makes_image(identity=TargetChannelId, display="Channel")
-@beartype
-def merge_target_channel_downscaled_master(
-    target: Target, filter: str, stacks: tuple[Stack, ...],
-    config: ProcessingConfig,
-) -> WithSidecar[XisfFilePath]:
-    """Downscaled-resolution channel master (PixInsight Downscaled
-    pipeline). Reads each stack's downscaled post-processed master."""
-    from stacks.post_processing.pixinsight import post_process_stack_downscaled
-    return _merge_target_channel_impl(
-        target, filter, stacks, config,
-        merge_target_channel_downscaled_master.filename_fn(target, filter),
-        lambda s: Path(post_process_stack_downscaled.filename_fn(s)),
-    )

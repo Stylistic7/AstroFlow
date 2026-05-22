@@ -93,6 +93,7 @@ def _copy_frames_with_plate_solution(
 def _setup_run(
     run: Run,
     calibration_stacks: CalibrationStacksDict,
+    config: ProcessingConfig,
     dest_dir: str,
     downscale_factor: int = 1,
 ) -> list[str]:
@@ -104,12 +105,16 @@ def _setup_run(
     def get_dependency_filename(d):
         if isinstance(d, StackIdDependency):
             cal_stack = calibration_stacks[d.stack_id]
-            # Calibration master from the matching stacker op — when
-            # the run is downscaled, use the downscaled cal master
-            # (`stack_files_downscaled`); otherwise the full-res master.
-            if downscale_factor > 1:
-                return stack_files_downscaled.filename_fn(cal_stack)
-            return stack_files.filename_fn(cal_stack)
+            # The cal master was produced by the *same* stack_files
+            # variant (full-res vs downscaled). Pass the same args
+            # the cal invocation used so filename_fn computes the
+            # same call_hash — and hence the same on-disk path —
+            # the cal call wrote to. `narrow_stack_config` mirrors
+            # the cache_key_narrow hook the cal call's @node used,
+            # so the hashes match.
+            cal_config = narrow_stack_config(cal_stack, config)
+            op = stack_files_downscaled if downscale_factor > 1 else stack_files
+            return op.filename_fn(cal_stack, cal_config)
         elif isinstance(d, FilenameDependency):
             return d.filename
 
@@ -123,6 +128,7 @@ def _setup_run(
 def _setup_stack(
     stack: BaseStack,
     calibration_stacks: CalibrationStacksDict,
+    config: ProcessingConfig,
     dest_dir: str,
     downscale_factor: int = 1,
 ) -> list[str]:
@@ -130,7 +136,7 @@ def _setup_stack(
     for i, run in enumerate(stack.contents.values()):
         run_dir = os.path.join(dest_dir, f"RUN_{i}")
         os.makedirs(run_dir, exist_ok=True)
-        filenames.extend(_setup_run(run, calibration_stacks, run_dir, downscale_factor))
+        filenames.extend(_setup_run(run, calibration_stacks, config, run_dir, downscale_factor))
 
     return filenames
 
@@ -252,7 +258,7 @@ def _run_wbpp_stacking(
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
         log.debug("Using temporary directory", tmp_dir=tmp_dir)
 
-        filenames = _setup_stack(stack, calibration_stacks, tmp_dir, downscale_factor)
+        filenames = _setup_stack(stack, calibration_stacks, config, tmp_dir, downscale_factor)
 
         if len(filenames) < min_frames_in_stack:
             log.info("Not stacking, too few files", stack=str(stack), num_files=len(filenames))
@@ -300,7 +306,7 @@ def stack_files(
     calibration stack. The downscaled pipeline uses the parallel
     `stack_files_downscaled` op below — same calibration, same WBPP,
     but input frames are block-mean-downscaled 8x before WBPP runs."""
-    return _run_wbpp_stacking(stack, config, stack_files.filename_fn(stack), downscale_factor=1)
+    return _run_wbpp_stacking(stack, config, stack_files.filename_fn(stack, config), downscale_factor=1)
 
 @node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD", auto_memory=True,
       cache_key_narrow=_stack_files_narrow)
@@ -323,7 +329,7 @@ def stack_files_downscaled(
     the SNR / footprint is equivalent at the lower resolution."""
     factor = DOWNSCALE_FACTORS[DOWNSCALED_MASTER]
     return _run_wbpp_stacking(
-        stack, config, stack_files_downscaled.filename_fn(stack),
+        stack, config, stack_files_downscaled.filename_fn(stack, config),
         downscale_factor=factor,
     )
 

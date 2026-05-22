@@ -16,7 +16,6 @@ from previews.create_tile_pyramid import default_make_tile_pyramid
 from decorators import node
 from file_io.tiff_file_io import write_tiff_image
 from file_io.types import XisfFilePath, TiffFilePath, WithSidecar
-from mosaics.artifacts import merged_filename_tiff, merged_filename_xisf
 from products import makes_image
 from products.identity import MosaicChannelId, MergedImageId, PresentationType
 from hashing import hash_list
@@ -46,7 +45,7 @@ def _set_panel_count(path, count: int) -> None:
 
 
 @node(resources={"fastest_storage": 0.001})
-@makes_image(filename_fn=merged_filename_tiff, identity=MergedImageId)
+@makes_image(identity=MergedImageId)
 def merge_images_subframe(
     mosaic: Mosaic, filter: str,
     input_0: ImageMetadata, input_1: ImageMetadata,
@@ -83,7 +82,7 @@ def merge_images_subframe(
 
 
 @node(resources={"PixInsight": 1}, auto_memory=True)
-@makes_image(filename_fn=merged_filename_xisf, identity=MergedImageId)
+@makes_image(identity=MergedImageId)
 def merge_images(
     mosaic: Mosaic, filter: str, mock_pixinsight: bool,
     input_0: ImageMetadata, input_1: ImageMetadata,

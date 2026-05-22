@@ -1,10 +1,29 @@
+"""Identity dataclasses for the artifacts pipelines produce.
+
+An `ObjectId` declares the field shape that disambiguates one
+artifact from another within an `object_type`. The dataclass is
+used at two layers:
+
+* **Tap recording.** The pipeline-trace tap collector reads
+  `identity.object_type.__name__.lower()` and the first arg's
+  `stable_hash` to record `(pipeline, object_type, object_id,
+  display, filter) → path` in the PipelineOutputIndex.
+* **Identity-field validation.** `@makes_image(identity=X)`
+  asserts at decoration time that every field name in `X` is also
+  a parameter of the producer function — catches typos before
+  Ray dispatch.
+
+Identities no longer carry human-readable `filename_stem()`
+methods: filenames are now `<op_name>/<call_hash>.<ext>` (see
+`products.registry._make_call_hash_filename_fn`). Browsing on
+disk by hand is replaced by the AstroFlow UI's pipeline-keyed
+viewers.
+"""
 import dataclasses
 import importlib
-import math
 from dataclasses import dataclass
 from enum import StrEnum
 
-from catalogs import position_string
 from metadata.classes import ImageMetadata
 from mosaics.types import Mosaic, Viewbox
 from stacks.composite_stack import BaseStack, Stack, CalibrationStack
@@ -20,9 +39,9 @@ class PresentationType(StrEnum):
 
 
 class _LazyObjectType:
-    """Descriptor for an ObjectId.object_type that lives in a module
+    """Descriptor for an `ObjectId.object_type` that lives in a module
     which (transitively) imports products — importing it eagerly here
-    would be circular. Resolved + cached on first access; ``is``
+    would be circular. Resolved + cached on first access; `is`
     identity holds because the underlying class object is a singleton.
     """
 
@@ -60,12 +79,8 @@ class ObjectId:
         presentation: PresentationType,
         op_name: str,
     ) -> tuple:
-        """Cache key for a presentation (tile pyramid / thumbnail) of an
-        object produced by op `op_name`. The op name replaces the legacy
-        (level, implementation) axes — the artifact's identity is "which
-        op produced it for which object", not "which level/impl slot it
-        was written to."
-        """
+        """Cache key for a presentation (tile pyramid / thumbnail) of
+        an object produced by op `op_name`."""
         return (
             str(presentation),
             type(self).object_type.__name__,
@@ -79,42 +94,11 @@ class StackId(ObjectId):
     object_type = Stack
     stack: BaseStack
 
-    def filename_stem(self) -> str:
-        stack = self.stack
-        if isinstance(stack, Stack) and "light" in stack.image_type:
-            ra_dec = position_string.ra_dec_string(*stack.center)
-            return (
-                f"light_{stack.stable_hash}_{stack.name}_{ra_dec}_"
-                f"{stack.camera}_{stack.image_scale:.02f}aspp_"
-                f"{math.degrees(stack.rotation_angle):.2f}deg_{stack.filter}"
-            )
-        raise ValueError(f'unknown image_type "{stack.image_type}"')
-
 
 @dataclass(frozen=True)
 class CalibrationStackId(ObjectId):
     object_type = CalibrationStack
     stack: BaseStack
-
-    def filename_stem(self) -> str:
-        stack = self.stack
-        if "bias" in stack.image_type:
-            return (
-                f"bias_{stack.stable_hash}_{stack.camera}_"
-                f"{stack.mean_temperature:.0f}C_{stack.stable_hash}"
-            )
-        elif "dark" in stack.image_type:
-            return (
-                f"dark_{stack.stable_hash}_{stack.camera}_"
-                f"{stack.mean_temperature:.0f}C_{stack.exposure:.0f}s_"
-                f"{stack.stable_hash}"
-            )
-        elif "flat" in stack.image_type:
-            return (
-                f"flat_{stack.stable_hash}_{stack.camera}_{stack.filter}_"
-                f"{stack.stable_hash}"
-            )
-        raise ValueError(f'unknown image_type "{stack.image_type}"')
 
 
 @dataclass(frozen=True)
@@ -129,9 +113,6 @@ class TargetChannelId(ObjectId):
     target: Target
     filter: str
 
-    def filename_stem(self) -> str:
-        return f"target_{self.target.stable_hash}_{self.filter}"
-
 
 @dataclass(frozen=True)
 class MosaicChannelId(ObjectId):
@@ -139,17 +120,11 @@ class MosaicChannelId(ObjectId):
     mosaic: Mosaic
     filter: str
 
-    def filename_stem(self) -> str:
-        return f"final_{self.mosaic.stable_hash}_{self.filter}"
-
 
 @dataclass(frozen=True)
 class MosaicId(ObjectId):
     object_type = Mosaic
     mosaic: Mosaic
-
-    def filename_stem(self) -> str:
-        return f"final_{self.mosaic.stable_hash}_None"
 
 
 @dataclass(frozen=True)
@@ -159,19 +134,6 @@ class PlacedImageId(ObjectId):
     target: Target
     filter: str
     viewbox: Viewbox
-
-    def filename_stem(self) -> str:
-        # `viewbox.num_pixels_x` discriminates the per-pipeline output
-        # canvas size — PixInsight Master places into a full-resolution
-        # viewbox (tens of thousands of pixels wide), PixInsight
-        # Downscaled into a 1/8 viewbox (thousands). Same (mosaic,
-        # target, filter) identity, two different viewbox sizes →
-        # two different filenames. Lets `place_image` be a single op
-        # that doesn't have to know which pipeline called it.
-        return (
-            f"placed_{self.mosaic.stable_hash}_{self.target.stable_hash}_"
-            f"{self.filter}_{self.viewbox.num_pixels_x}px"
-        )
 
 
 @dataclass(frozen=True)

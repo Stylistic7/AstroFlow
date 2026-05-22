@@ -43,26 +43,44 @@ log = structlog.get_logger()
 # 65535. Treat anything ≥ this fraction of the per-image max as saturated.
 _SATURATION_FRACTION = 0.999
 
-def _merge_target_channel_oss_impl(
+@node(auto_memory=True, cache_key_narrow=_merge_target_channel_narrow)
+@makes_image(identity=TargetChannelId)
+@beartype
+def merge_target_channel_oss(
     target: Target, filter: str, stacks: tuple[Stack, ...],
     config: ProcessingConfig,
-    output_filename, stack_master_path,
+    masters,
 ) -> WithSidecar[FitsFilePath]:
-    """Shared OSS-side body. `stack_master_path` resolves a single
-    Stack to its OSS post-processed master path — the only place the
-    per-mode ops differ."""
+    """Variance-weighted combine of per-stack masters into one
+    (target, filter) channel (OSS path).
+
+    `masters` is a tuple of upstream WithSidecar handles passed as
+    data deps by the pipeline body — pipeline-agnostic between
+    full-res and downscaled because the masters carry the upstream
+    output paths."""
     assert len(stacks) >= 1, "merge_target_channel_oss needs at least one stack"
+    output_filename = merge_target_channel_oss.filename_fn(
+        target, filter, stacks, config, masters,
+    )
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
 
-    if len(stacks) == 1:
-        shutil.copy(stack_master_path(stacks[0]), output_filename)
+    master_paths = [m.filename for m in masters]
+
+    if len(master_paths) == 1:
+        shutil.copy(master_paths[0], output_filename)
         return WithSidecar(FitsFilePath(output_filename))
 
-    sorted_stacks = sorted(stacks, key=lambda s: -float(s.exposure))
-    masters = [
-        read_image(stack_master_path(s)).astype(np.float32, copy=False)
-        for s in sorted_stacks
+    stack_master_pairs = sorted(
+        zip(stacks, master_paths), key=lambda p: -float(p[0].exposure),
+    )
+    sorted_stacks, sorted_master_paths = zip(*stack_master_pairs)
+    masters_data = [
+        read_image(p).astype(np.float32, copy=False)
+        for p in sorted_master_paths
     ]
+    # NOTE: variable name reuse — `masters` was the data-dep arg above;
+    # below it shadows with the loaded ndarrays. Keep them straight.
+    masters = masters_data
 
     reference = masters[0]
     aligned = [reference]
@@ -121,35 +139,3 @@ def _merge_target_channel_oss_impl(
         output=str(output_filename),
     )
     return WithSidecar(FitsFilePath(output_filename))
-
-
-@node(auto_memory=True, cache_key_narrow=_merge_target_channel_narrow)
-@makes_image(identity=TargetChannelId)
-@beartype
-def merge_target_channel_oss_master(
-    target: Target, filter: str, stacks: tuple[Stack, ...],
-    config: ProcessingConfig,
-) -> WithSidecar[FitsFilePath]:
-    """Full-resolution OSS channel master."""
-    from stacks.post_processing.oss import post_process_stack_oss
-    return _merge_target_channel_oss_impl(
-        target, filter, stacks, config,
-        merge_target_channel_oss_master.filename_fn(target, filter),
-        lambda s: Path(post_process_stack_oss.filename_fn(s)),
-    )
-
-
-@node(auto_memory=True, cache_key_narrow=_merge_target_channel_narrow)
-@makes_image(identity=TargetChannelId)
-@beartype
-def merge_target_channel_oss_downscaled_master(
-    target: Target, filter: str, stacks: tuple[Stack, ...],
-    config: ProcessingConfig,
-) -> WithSidecar[FitsFilePath]:
-    """Downscaled-resolution OSS channel master."""
-    from stacks.post_processing.oss import post_process_stack_oss_downscaled
-    return _merge_target_channel_oss_impl(
-        target, filter, stacks, config,
-        merge_target_channel_oss_downscaled_master.filename_fn(target, filter),
-        lambda s: Path(post_process_stack_oss_downscaled.filename_fn(s)),
-    )

@@ -1,19 +1,25 @@
 """Profile-driven Ray memory estimation for @node(auto_memory=True).
 
-Exports a single function, ``estimate_memory(fn, args, kwargs)``, which
-looks up recent peak-RSS samples in the context's profile cache and
-returns an int byte estimate suitable for Ray's ``memory=`` resource.
-Falls back to a quality-aware default when no samples are available
-for the current ``(fn_hash, quality)`` — Master tasks get 16 GB,
-DownscaledMaster/Subframe get 2 GB, unknown gets 4 GB.
+`estimate_memory(fn, args, kwargs)` returns an int byte estimate
+suitable for Ray's ``memory=`` resource. It buckets profile samples
+by inferred input pixel count (sum of `width_pixels × height_pixels`
+across every `ImageMetadata` in the call's args), then returns the
+p95 of the matching bucket's recent peak-RSS samples.
 
-The estimate is just a hint to Ray so it doesn't co-schedule N
-heavy tasks before realizing they're heavy; once samples exist,
-Ray's runtime memory tracking handles real availability. The
-estimate is capped at 0.9× the largest node's declared `memory`,
-because requests beyond any node's capacity make the autoscaler
-reject them as "no node type can fulfill" (a permanent stall)
-rather than queueing.
+The bucketing matters because the same op's RSS scales with input
+size — `stack_files` on full-res frames consumes ~16 GB, on 8x
+downscaled (1/64 the pixels) ~250 MB. Pre-split-op, the per-op
+buckets blended both into one p95; now each pixel-size bucket
+keeps a separate p95.
+
+Buckets are log2-MP rounded down: 0 → <1 MP, 1 → 1–2 MP, 2 → 2–4 MP,
+... 10 → 1024–2048 MP, etc. Samples in the same bucket are within
+2× of each other in pixel count — a coarse-but-stable
+classification that doesn't fragment the data.
+
+When no samples in the matching bucket exist, falls back to a
+per-op default. The estimate is capped at 0.9 × the largest node's
+declared `memory` so the autoscaler can always at least try.
 """
 import math
 from typing import Any, Callable
@@ -25,19 +31,65 @@ from hashing import hash_source_code
 _GB = 1024 ** 3
 _MAX_MEMORY_FRACTION = 0.9
 
-# Per-op default for the first run (no profile samples yet). Keyed
-# on the op's __name__: heavy ops (full-res WBPP / PhotometricMosaic)
-# get 16 GB, everything else 4 GB. After the first run profile data
-# kicks in; this is just to avoid a cold-start deadlock where two
-# big tasks request more than a node's capacity combined.
+# Per-op cold-start default (no profile samples yet). Keyed on op
+# `__name__`: heavy ops (full-res WBPP / PhotometricMosaic) get 16 GB,
+# everything else 4 GB. After the first sample lands in the matching
+# pixel bucket, this default is bypassed.
 _DEFAULT_MEMORY_BY_OP = {
-    "stack_files":                   16 * _GB,
-    "post_process_stack":            16 * _GB,
-    "merge_target_channel":          16 * _GB,
+    "stack_files":                     16 * _GB,
+    "post_process_stack":              16 * _GB,
+    "merge_target_channel":            16 * _GB,
     "store_mosaic_color_channel_xisf": 16 * _GB,
-    "merge_images":                  16 * _GB,
+    "merge_images":                    16 * _GB,
 }
 _DEFAULT_MEMORY_UNKNOWN = 4 * _GB
+
+
+def _pixel_count(args, kwargs) -> int:
+    """Sum `width_pixels × height_pixels` across every ImageMetadata
+    instance reachable in args/kwargs. Walks one level into tuples,
+    lists, and dicts (so `masters=(ImageMetadata, ...)` data deps
+    are caught). Returns 0 if no images are visible — falls back to
+    op-name default in that case."""
+    total = 0
+    seen = set()
+
+    def visit(v):
+        nonlocal total
+        if id(v) in seen:
+            return
+        seen.add(id(v))
+        wp = getattr(v, "width_pixels", None)
+        hp = getattr(v, "height_pixels", None)
+        if isinstance(wp, int) and isinstance(hp, int):
+            total += wp * hp
+            return
+        # Also accept WithSidecar-wrapped ImageMetadata: the .path or
+        # .metadata might carry the dims.
+        inner = getattr(v, "path", None)
+        if inner is not None and inner is not v:
+            visit(inner)
+        if isinstance(v, dict):
+            for x in v.values():
+                visit(x)
+        elif isinstance(v, (list, tuple)) and not isinstance(v, str):
+            for x in v:
+                visit(x)
+
+    for v in (*args, *kwargs.values()):
+        visit(v)
+    return total
+
+
+def pixel_bucket(pixels: int) -> int:
+    """Map a pixel count to a log2-MP bucket label. Same-bucket
+    samples are within 2× of each other in pixel count."""
+    if pixels <= 0:
+        return -1
+    mp = pixels / 1_000_000
+    if mp < 1:
+        return 0
+    return int(math.floor(math.log2(mp))) + 1
 
 
 def _p95(values: list[float]) -> float:
@@ -101,29 +153,38 @@ def _trim_high_outliers(values: list[float]) -> list[float]:
 def estimate_memory(fn: Callable, args: tuple, kwargs: dict) -> int:
     """Return a bytes estimate for Ray scheduling of ``fn(*args, **kwargs)``.
 
-    Looks up the function's recent peak-RSS samples in the profile cache,
-    drops contaminated high outliers, and returns the p95 of what's
-    left, rounded up to the nearest whole GB. Falls back to a
-    quality-aware default when no samples exist for the current
-    (fn_hash, quality). Always capped at 0.9 × the largest node's
-    declared `memory` so the autoscaler can always at least try to
-    schedule the result.
+    Buckets samples by input pixel count and reads p95 from the
+    bucket matching this call. Falls back to an adjacent bucket if
+    the exact one is empty (next-larger first, then next-smaller),
+    and finally to the per-op default for cold start. Always capped
+    at 0.9 × the largest node's declared `memory`.
     """
     from context import context
 
     fn_hash = hash_source_code(fn)
+    cap = _max_memory_bytes()
+    bucket = pixel_bucket(_pixel_count(args, kwargs))
 
     key = ("profile", fn_hash, fn.__name__)
     samples = context.get(key, [])
 
-    rsss: list[float] = [s["peak_rss_delta_b"] for s in samples]
+    # Group samples by their stored bucket; missing field implies a
+    # legacy sample (pre-bucket recording) — treat as bucket -1
+    # (unknown). Legacy samples are still useful as a last-resort
+    # fallback when nothing better exists.
+    by_bucket: dict[int, list[float]] = {}
+    for s in samples:
+        b = s.get("pixel_bucket", -1)
+        by_bucket.setdefault(b, []).append(s["peak_rss_delta_b"])
 
-    cap = _max_memory_bytes()
+    # Try this call's bucket, then nearby buckets (larger first —
+    # over-estimating memory is safer than under).
+    for candidate in [bucket, bucket + 1, bucket - 1, bucket + 2, bucket - 2, -1]:
+        rsss = by_bucket.get(candidate)
+        if rsss:
+            rsss = _trim_high_outliers(rsss)
+            rounded = int(math.ceil(_p95(rsss) / _GB) * _GB)
+            return min(rounded, cap)
 
-    if not rsss:
-        default = _DEFAULT_MEMORY_BY_OP.get(fn.__name__, _DEFAULT_MEMORY_UNKNOWN)
-        return min(default, cap)
-
-    rsss = _trim_high_outliers(rsss)
-    rounded = int(math.ceil(_p95(rsss) / _GB) * _GB)
-    return min(rounded, cap)
+    default = _DEFAULT_MEMORY_BY_OP.get(fn.__name__, _DEFAULT_MEMORY_UNKNOWN)
+    return min(default, cap)

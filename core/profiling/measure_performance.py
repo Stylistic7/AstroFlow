@@ -131,6 +131,8 @@ def make_measure_performance_decorator(cache: CacheProtocol):
                 stop_event.set()
                 t.join()
 
+            from profiling.memory_estimate import pixel_bucket, _pixel_count
+            pixels = _pixel_count(args, kwargs)
             record = {
                 "wall_time_s": time.perf_counter() - wall_start,
                 "cpu_time_s": time.process_time() - cpu_start,
@@ -138,6 +140,12 @@ def make_measure_performance_decorator(cache: CacheProtocol):
                 - baseline_rss,
                 "images": image_stats_by_arg,
                 "image_totals": image_totals,
+                # Pixel-count bucket so estimate_memory() can scale
+                # the next call's memory estimate to its actual input
+                # size — same op on 64 MP vs 1 MP inputs lives in
+                # very different buckets.
+                "pixel_count": pixels,
+                "pixel_bucket": pixel_bucket(pixels),
                 # ray_opts can carry callables (e.g. cache_key_narrow);
                 # a profile record must be pure data — it's persisted
                 # and JSON-served at /api/performance.

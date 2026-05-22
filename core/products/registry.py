@@ -148,41 +148,37 @@ def _infer_file_type(func: Callable):
     return None
 
 
-def _make_filename_fn(identity_cls: type[ObjectId], file_type: type):
-    """Generate a filename_fn from an ObjectId class with filename_stem()."""
+def _make_call_hash_filename_fn(func: Callable, file_type: type):
+    """Build a `filename_fn` that returns `<call_hash>.<ext>`.
+
+    The call_hash matches the one `@node`'s cache layer uses for
+    `func`, so the on-disk filename is byte-for-byte aligned with
+    the cache entry — same args produce the same filename across
+    pipelines, and editing `func`'s source produces a fresh
+    filename (old files orphan, the user GC-passes them later).
+
+    `file_type` is the typed Path subclass (XisfFilePath etc.)
+    determined from `func`'s return annotation; the suffix comes
+    from the global `_FILE_TYPE_SUFFIX` map.
+    """
+    from hashing import hash_call, hash_source_code
     suffix = _FILE_TYPE_SUFFIX.get(file_type.__name__)
     if suffix is None:
         return None
-    fields = [f.name for f in dataclasses.fields(identity_cls)]
+
     def fn(*args, **kwargs):
-        id_kwargs = {}
-        for i, name in enumerate(fields):
-            if name in kwargs:
-                id_kwargs[name] = kwargs[name]
-            elif i < len(args):
-                id_kwargs[name] = args[i]
-        return file_type(identity_cls(**id_kwargs).filename_stem() + suffix)
+        # Resolve fn_hash + narrow hook lazily — the @node wrapper
+        # attaches them, and @makes_image is applied INSIDE @node so
+        # the attributes are present by the time filename_fn is
+        # called.  Narrow-wrapped ops (`cache_key_narrow=`) feed
+        # their narrowed args through the same hash as the cache.
+        fn_hash = getattr(func, '_fn_hash', None) or hash_source_code(func)
+        narrow = getattr(func, '_cache_key_narrow', None)
+        if narrow is not None:
+            args, kwargs = narrow(args, kwargs)
+        call_hash = hash_call(fn_hash, *args, **kwargs)
+        return file_type(f"{call_hash}{suffix}")
     return fn
-
-
-def _make_dispatch_filename_fn(func: Callable):
-    """`producer.filename_fn` for polymorphic producers (stack_files
-    registers both StackId and CalibrationStackId). Tries each
-    registered identity's filename_fn and returns the first that
-    resolves; identity-mismatched callees raise ValueError, anything
-    else propagates loud — masking a real TypeError/KeyError once hid
-    a 404 bug for weeks."""
-    def dispatch(*args, **kwargs):
-        last_exc = None
-        for fn in func.filename_fns.values():
-            try:
-                return fn(*args, **kwargs)
-            except ValueError as e:
-                last_exc = e
-        if last_exc is not None:
-            raise last_exc
-        raise RuntimeError("no filename_fn registered for producer")
-    return dispatch
 
 
 # Auto-generated tile pyramids — anything large enough that scrolling
@@ -357,31 +353,27 @@ def _bind_producer(
                 f"ObjectId field names must be a subset of producer parameter names."
             )
 
-        # Auto-generate filename_fn from the return annotation when
-        # no explicit one was given.
-        local_filename_fn = filename_fn
-        if local_filename_fn is None and hasattr(identity, 'filename_stem'):
-            file_type = _infer_file_type(raw_func)
-            if file_type is not None:
-                local_filename_fn = _make_filename_fn(identity, file_type)
-
         if not hasattr(func, '_identities'):
             func._identities = []
         func._identities.append(identity)
 
         op_name = func.__name__
 
-        if local_filename_fn is not None:
-            resolved = fully_resolve(identity, local_filename_fn, op_name)
-            if not hasattr(func, 'filename_fns'):
-                func.filename_fns = {}
-            # Polymorphic producers (stack_files registers for both
-            # StackId and CalibrationStackId) stack @makes_image
-            # decorators; each registration writes its own resolved
-            # fn into the dict, and the dispatch fn tries each at
-            # call time.
-            func.filename_fns[identity] = resolved
-            func.filename_fn = _make_dispatch_filename_fn(func)
+        # filename_fn is uniform across identities: it derives the
+        # on-disk filename from the producer's call_hash (same hash
+        # @node uses for its cache key, including source_hash). Two
+        # @makes_image decorations on the same function (polymorphic
+        # producers like stack_files for StackId + CalibrationStackId)
+        # share one filename_fn — the call_hash captures everything
+        # that distinguishes one call from another.
+        if not hasattr(func, 'filename_fn'):
+            local_filename_fn = filename_fn
+            if local_filename_fn is None:
+                file_type = _infer_file_type(raw_func)
+                if file_type is not None:
+                    local_filename_fn = _make_call_hash_filename_fn(func, file_type)
+            if local_filename_fn is not None:
+                func.filename_fn = fully_resolve(identity, local_filename_fn, op_name)
 
         # Wrap once; stacked decorators (polymorphic identities) share
         # the closure-captured `identities` list and skip re-wrapping.

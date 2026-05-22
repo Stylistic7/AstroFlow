@@ -25,15 +25,17 @@ log = structlog.get_logger()
 
 @node(auto_memory=True)
 @makes_image(identity=StackId)
-def post_process_stack_oss(stack: Stack, mock_pixinsight: bool) -> WithSidecar[FitsFilePath]:
-
-    from stacks.stacking.oss import stack_files_oss
-    master_path = stack_files_oss.filename_fn(stack)
-    output_filename = post_process_stack_oss.filename_fn(stack)
+def post_process_stack_oss(
+    stack: Stack, mock_pixinsight: bool, master,
+) -> WithSidecar[FitsFilePath]:
+    """Full-resolution OSS post-processing. `master` is the upstream
+    `stack_files_oss` output passed as a data dep — no filename
+    lookup needed."""
+    output_filename = post_process_stack_oss.filename_fn(stack, mock_pixinsight, master)
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
-    log.info("OSS post-processing stack", stack=str(stack), master=str(master_path))
+    log.info("OSS post-processing stack", stack=str(stack), master=str(master.filename))
 
-    data = read_image(master_path).astype(np.float32)
+    data = read_image(master.filename).astype(np.float32)
 
     # Background/gradient removal.
     try:
@@ -61,22 +63,19 @@ def post_process_stack_oss(stack: Stack, mock_pixinsight: bool) -> WithSidecar[F
 @node(auto_memory=True)
 @makes_image(identity=StackId)
 def post_process_stack_oss_downscaled(
-    stack: Stack, mock_pixinsight: bool
+    stack: Stack, mock_pixinsight: bool, master,
 ) -> WithSidecar[FitsFilePath]:
-    """OSS gradient/background removal on the already-downscaled master,
-    so a DownscaledMaster mosaic gets gradient correction cheaply."""
-
-    # DOWNSCALED_MASTER comes from the OSS pipeline's downscale step;
-    # for the current architecture (no OSS downscale op yet) read the
-    # full-res master and let the post-process handle it.
-    from stacks.stacking.oss import stack_files_oss
-    master_path = stack_files_oss.filename_fn(stack)
-    output_filename = post_process_stack_oss_downscaled.filename_fn(stack)
+    """OSS gradient/background removal on the already-downscaled
+    master. `master` is the upstream `stack_files_oss_downscaled`
+    output as a data dep."""
+    output_filename = post_process_stack_oss_downscaled.filename_fn(
+        stack, mock_pixinsight, master,
+    )
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
     log.info("OSS post-processing downscaled stack",
-             stack=str(stack), master=str(master_path))
+             stack=str(stack), master=str(master.filename))
 
-    data = read_image(master_path).astype(np.float32)
+    data = read_image(master.filename).astype(np.float32)
 
     try:
         bkg = Background2D(data, box_size=(64, 64), filter_size=(3, 3),
