@@ -8,7 +8,8 @@ from dependency_graph import run_graph
 from file_io.types import WithSidecar
 from testing import make_synthetic_frames, copy_testdata_frames
 from previews.stack_thumbnails import stack_thumbnail
-from products import get_producer, MediaType, ensure_producers_registered
+from products import ensure_producers_registered
+from products.registry import producers_for
 from previews.types import QualityLevel
 from file_io.find_image_files import find_image_files
 
@@ -106,9 +107,11 @@ def test_stack_dependency_graph(test_context) -> None:
         file = ray.get(stack_thumbnail.remote(stack))
         assert isinstance(file, WithSidecar)
         from products.identity import identity_for_stack
-        assert get_producer(
-            MediaType.IMAGE, identity_for_stack(stack), QualityLevel.SUBFRAME
-        ) is not None
+        ops = {p.__name__ for p in producers_for(identity_for_stack(stack))}
+        assert "stack_thumbnail" in ops, (
+            f"stack_thumbnail must register for "
+            f"{identity_for_stack(stack).__name__}; got {ops}"
+        )
 
     for stack_ref in context.stacks.values():
         check_thumbnail(stack_ref.get())

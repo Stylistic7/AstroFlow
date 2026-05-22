@@ -15,10 +15,7 @@ from previews.types import ALL_IMPLEMENTATIONS, SUBFRAME
 
 THUMBNAIL = PresentationType.THUMBNAIL
 
-
-@makes_image(ALL_IMPLEMENTATIONS, [SUBFRAME],
-             identity=CalibratedStackId,
-             presentations=[THUMBNAIL])
+@makes_image(identity=CalibratedStackId)
 @measure_performance
 def flat_corrected_stack(
     stack: Stack, substack: Run, flat_stack: Run,
@@ -38,10 +35,7 @@ def flat_corrected_stack(
 
     return calibrate_subframe(light_frame, dependencies)
 
-
-@makes_image(ALL_IMPLEMENTATIONS, [SUBFRAME],
-             identity=UncorrectedRunId,
-             presentations=[THUMBNAIL])
+@makes_image(identity=UncorrectedRunId)
 def uncorrected_run_thumbnail(
     stack: Stack, substack: Run,
 ) -> np.ndarray:
@@ -56,7 +50,6 @@ def uncorrected_run_thumbnail(
         {k: v for k, v in substack.dependencies.items() if k != "flat"}
     )
     return calibrate_subframe(light_frame, dependencies)
-
 
 @node
 def create_flat_correction_thumbnails(

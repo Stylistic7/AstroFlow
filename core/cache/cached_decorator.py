@@ -273,16 +273,22 @@ def make_cached_decorator(
         wrapper._is_task = True
 
         # Forward all custom attributes from inner decorators (e.g.
-        # filename_fn, thumbnail_fn, tile_pyramid_fn, _validity_entries)
-        # so they survive the cached.remote wrapping.
+        # filename_fn, filename_fns, _display, _trace_hooks) so they
+        # survive the cached.remote wrapping.
         wrapper.__dict__.update(func.__dict__)
 
-        # The producer registry's dicts have been removed (callers now
-        # access ops directly via imports), so there's nothing to
-        # repoint to the @node-wrapped function. Attributes the
-        # decorator attaches to the inner function (`filename_fn`,
-        # `filename_fns`, `_display`) come along via the __dict__
-        # update above.
+        # Re-register the @node-wrapped function under each identity
+        # `func` registered for, so view-side enumeration via
+        # producers_for(identity) gets the @node-wrapped callable
+        # (with `.remote` and `_function`) instead of the inner
+        # wrapper. Only @makes_image-decorated functions are in the
+        # producer list — non-producer @node ops (e.g. graph builders
+        # like calibrate) skip this step.
+        if getattr(func, '_makes_image_wrapped', False):
+            import products.registry as _registry_module
+            for ops in _registry_module._producers.values():
+                for inner in ops.values():
+                    inner[:] = [wrapper if op is func else op for op in inner]
 
         def is_cached(
             *args, injected_context: Optional[dict] = None, **kwargs

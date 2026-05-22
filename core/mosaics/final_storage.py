@@ -19,11 +19,9 @@ TILE_PYRAMID = PresentationType.TILE_PYRAMID
 from file_io.types import FitsFilePath, TiffFilePath, XisfFilePath, WithSidecar
 from metadata.classes import ImageMetadata
 
-
 @node(resources={"PixInsight": 1}, auto_memory=True)
 @makes_image(PIXINSIGHT, [MASTER, DOWNSCALED_MASTER],
-             identity=MosaicChannelId, presentations=[THUMBNAIL, TILE_PYRAMID],
-             file_type=XisfFilePath, display="Mosaic")
+             identity=MosaicChannelId, display="Mosaic")
 def store_mosaic_color_channel_xisf(
     mode: str, mosaic: Mosaic, filter: str,
     mock_pixinsight: bool,
@@ -43,11 +41,8 @@ def store_mosaic_color_channel_xisf(
 
     return WithSidecar(output)
 
-
 @node(resources={"fastest_storage": 0.001})
-@makes_image(PIXINSIGHT, [SUBFRAME],
-             identity=MosaicChannelId, presentations=[THUMBNAIL, TILE_PYRAMID],
-             file_type=TiffFilePath, display="Subframe")
+@makes_image(identity=MosaicChannelId, display="Subframe")
 def store_mosaic_color_channel_subframe(
     mosaic: Mosaic, filter: str, input: ImageMetadata
 ) -> WithSidecar[TiffFilePath]:
@@ -66,11 +61,9 @@ def store_mosaic_color_channel_subframe(
 
     return WithSidecar(output)
 
-
 @node
 @makes_image(OSS, [MASTER, DOWNSCALED_MASTER],
-             identity=MosaicChannelId, presentations=[THUMBNAIL, TILE_PYRAMID],
-             file_type=FitsFilePath, display="Mosaic")
+             identity=MosaicChannelId, display="Mosaic")
 def store_mosaic_color_channel_oss(
     mode: str, mosaic: Mosaic, filter: str, input: ImageMetadata,
 ) -> WithSidecar[FitsFilePath]:
@@ -80,7 +73,6 @@ def store_mosaic_color_channel_oss(
     output.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(str(input.filename), str(output))
     return WithSidecar(FitsFilePath(output))
-
 
 @ray.remote
 @beartype

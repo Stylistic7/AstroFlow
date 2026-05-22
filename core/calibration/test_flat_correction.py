@@ -2,9 +2,15 @@ import datetime
 import pytest
 
 from context import context
+from products import ensure_producers_registered
 from testing import make_synthetic_frames, copy_testdata_frames
 from dependency_graph import run_graph
 from compute_graph import build_compute_graph
+
+# Import-time registration: producers_for(CalibratedStackId) below
+# needs flat_correction.py imported so its @makes_image decoration
+# has run.
+ensure_producers_registered()
 
 
 @pytest.mark.exhaustive
@@ -78,12 +84,13 @@ def test_one_perfect_stack(test_context) -> None:
     # lazy path can find and invoke it.
     assert context.get_matching(("thumbnail",)) == {}
     assert context.get_matching(("Thumbnail",)) == {}
-    from products.registry import get_producer, MediaType
-    from previews.types import SUBFRAME, PIXINSIGHT
+    from products.registry import producers_for
     from products.identity import CalibratedStackId, UncorrectedRunId
-    assert get_producer(
-        MediaType.IMAGE, CalibratedStackId, SUBFRAME, PIXINSIGHT
-    ) is not None
-    assert get_producer(
-        MediaType.IMAGE, UncorrectedRunId, SUBFRAME, PIXINSIGHT
-    ) is not None
+    assert any(
+        p.__name__ == "flat_corrected_stack"
+        for p in producers_for(CalibratedStackId)
+    )
+    assert any(
+        p.__name__ == "uncorrected_run_thumbnail"
+        for p in producers_for(UncorrectedRunId)
+    )

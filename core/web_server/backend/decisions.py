@@ -120,9 +120,6 @@ def override_decision():
 
     state.drain_and_restart()
 
-    from products import invalidate_object
-    invalidate_object(key.object_type.value, key.subject_id)
-
     return jsonify({
         "key": _serialize_key(key),
         "choice": raw_choice,

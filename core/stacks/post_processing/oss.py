@@ -24,11 +24,8 @@ from stacks.composite_stack import Stack
 
 log = structlog.get_logger()
 
-
 @node(auto_memory=True)
-@makes_image(OSS, [POST_PROCESSED],
-             identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
-             file_type=FitsFilePath)
+@makes_image(identity=StackId)
 def post_process_stack_oss(stack: Stack, mock_pixinsight: bool) -> WithSidecar[FitsFilePath]:
 
     from stacks.stacking.oss import stack_files_oss
@@ -62,11 +59,8 @@ def post_process_stack_oss(stack: Stack, mock_pixinsight: bool) -> WithSidecar[F
     log.info("OSS post-processing complete", output=str(output_filename))
     return WithSidecar(FitsFilePath(output_filename))
 
-
 @node(auto_memory=True)
-@makes_image(OSS, [DOWNSCALED_POST_PROCESSED],
-             identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
-             file_type=FitsFilePath)
+@makes_image(identity=StackId)
 def post_process_stack_oss_downscaled(
     stack: Stack, mock_pixinsight: bool
 ) -> WithSidecar[FitsFilePath]:

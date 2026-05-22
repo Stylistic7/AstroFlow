@@ -92,77 +92,68 @@ def stacking_report(stack_id):
 
 @files_bp.route("/api/concerns/<object_type>/<object_id>", methods=["GET"])
 def concerns_for_object(object_type, object_id):
-    """Concerns reported by the most recent producer run for this object.
+    """Concerns reported by recent producer runs for this object.
 
-    Looks up the per-object key written by `@capture_logs` when a
-    `@makes_image`-decorated producer ran. Returns a list of dicts;
-    each carries `event` (title), `detail`, and `_concern`
-    ("warning"/"error") plus any structured fields the emitter attached.
+    @capture_logs writes one entry per `(op_name, object_type, id)`
+    tuple — the producer's `__name__` discriminates between different
+    pipelines' producers, so PI Master's `post_process_stack` and PI
+    Downscaled's `post_process_stack_downscaled` keep their concerns
+    distinct. This endpoint scans every entry the running ops have
+    written for the requested object and returns the merged list;
+    mosaic concerns also bubble up the concerns from constituent
+    stacks at the requested filter.
 
     Query params:
-      pipeline (default "PixInsight Master")  — selects the producer's
-        (impl, level) for the cache-key lookup. Concerns are still
-        written under the legacy (impl, level) shape by `@capture_logs`;
-        this endpoint translates pipeline → (impl, level) for the read.
-      display (default "Master")  — unused for the lookup, kept in the
-        signature so callers can pass the dashboard's selected tap.
       filter — required for object_type=mosaic
     """
     from products.identity import StackId, MosaicChannelId
     from context import get_cache
 
-    from web_server.backend.metadata import pipeline_to_impl_quality
-    pipeline = request.args.get("pipeline", "PixInsight Master")
-    request.args.get("display", "Master")  # accepted but unused
-    implementation, quality = pipeline_to_impl_quality(pipeline)
+    cache = get_cache()
+    filter_arg = request.args.get("filter", "")
+
+    def concerns_for_key(object_type_name: str, identity_key: tuple) -> list[dict]:
+        """Sweep every cache entry of the shape
+        `('concerns', op_name, object_type_name, identity_key)` and
+        return the merged list. We don't know which ops have written —
+        any producer that ran and called `capture_logs.concern` could
+        have, so we pattern-match the keys."""
+        out: list[dict] = []
+        for key in list(cache.iterkeys() if hasattr(cache, "iterkeys") else []):
+            if (
+                isinstance(key, tuple) and len(key) == 4
+                and key[0] == "concerns"
+                and key[2] == object_type_name
+                and key[3] == identity_key
+            ):
+                out.extend(cache.get(key, []))
+        return out
 
     if object_type == "stack":
         if object_id not in (context.stacks or {}):
             return jsonify({"error": "stack not found"}), 404
         stack = context.stacks[object_id].get()
-        obj_id = StackId(stack=stack)
-        type_name = type(stack).__name__  # "Stack" or "CalibrationStack"
-    elif object_type == "mosaic":
+        return jsonify(concerns_for_key(
+            type(stack).__name__, StackId(stack=stack).cache_key(),
+        ))
+
+    if object_type == "mosaic":
         if object_id not in (context.mosaics or {}):
             return jsonify({"error": "mosaic not found"}), 404
         mosaic = context.mosaics[object_id].get()
-        filter_arg = request.args.get("filter", "")
-        cache = get_cache()
-        # Mosaic-level direct concerns (from store_mosaic_color_channel
-        # and friends) plus bubbled-up stack-level concerns from each
-        # constituent stack at this filter — so a WBPP frame-drop on
-        # any input shows up on the mosaic detail page.
-        direct = cache.get(
-            (
-                "concerns", "Mosaic", str(quality), str(implementation),
-                MosaicChannelId(mosaic=mosaic, filter=filter_arg).cache_key(),
-            ),
-            [],
+        direct = concerns_for_key(
+            "Mosaic",
+            MosaicChannelId(mosaic=mosaic, filter=filter_arg).cache_key(),
         )
         bubbled = []
         for stack in _constituent_stacks(mosaic, filter_arg):
-            stack_concerns = cache.get(
-                (
-                    "concerns", type(stack).__name__, str(quality),
-                    str(implementation), StackId(stack=stack).cache_key(),
-                ),
-                [],
-            )
-            for c in stack_concerns:
+            for c in concerns_for_key(
+                type(stack).__name__, StackId(stack=stack).cache_key(),
+            ):
                 bubbled.append({**c, "from_stack": stack.stable_hash})
         return jsonify(direct + bubbled)
-    else:
-        return jsonify({"error": f"object_type {object_type!r} not supported"}), 400
 
-    key = (
-        "concerns",
-        type_name,
-        str(quality),
-        str(implementation),
-        obj_id.cache_key(),
-    )
-    cache = get_cache()
-    return jsonify(cache.get(key, []))
+    return jsonify({"error": f"object_type {object_type!r} not supported"}), 400
 
 
 def _constituent_stacks(mosaic, filter):

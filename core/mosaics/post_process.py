@@ -25,7 +25,6 @@ from targets.target_channel import filters_for_target
 
 log = structlog.get_logger()
 
-
 def _post_process_mosaic(images: ImageList, mosaic: Mosaic) -> Image | None:
     if "RGB" in images:
         rgb = ChannelCombination(images.channels("RGB"))
@@ -52,11 +51,8 @@ def _post_process_mosaic(images: ImageList, mosaic: Mosaic) -> Image | None:
 
     return None
 
-
 @node(resources={"PixInsight": 1}, auto_memory=True)
-@makes_image(PIXINSIGHT, [POST_PROCESSED],
-             identity=MosaicId, presentations=[THUMBNAIL, TILE_PYRAMID],
-             file_type=XisfFilePath)
+@makes_image(identity=MosaicId)
 def post_process_mosaic(
     mode: str,
     mosaic: Mosaic,
@@ -95,11 +91,8 @@ def post_process_mosaic(
 
     return WithSidecar(output_filename)
 
-
 @node
-@makes_image(OSS, [POST_PROCESSED],
-             identity=MosaicId, presentations=[THUMBNAIL, TILE_PYRAMID],
-             file_type=XisfFilePath)
+@makes_image(identity=MosaicId)
 def post_process_mosaic_oss(
     mode: str,
     mosaic: Mosaic,

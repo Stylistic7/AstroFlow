@@ -16,10 +16,13 @@ from previews.types import QualityLevel
 
 @pytest.mark.exhaustive
 def test_downscaled_mosaic_has_real_pixels(test_context):
-    """Build the Orion mosaic at DownscaledMaster quality and verify
-    that placed images and merged outputs contain real pixel data."""
+    """Build the Orion mosaic with PixInsight Downscaled and verify
+    that placed images and merged outputs contain real pixel data —
+    not just empty arrays slipped through by a graph that ran but
+    didn't actually composite anything."""
     from mosaics.orion_mosaic import add_orion_mosaic_images
-    from products.registry import get_filename_fn, MediaType
+    from mosaics.placement.astroflow import place_image
+    from mosaics.final_storage import store_mosaic_color_channel_xisf
     from products.identity import PlacedImageId, MosaicChannelId
 
     add_orion_mosaic_images()
@@ -35,9 +38,7 @@ def test_downscaled_mosaic_has_real_pixels(test_context):
     stacks = context.stacks
     assert len(stacks) >= 4
 
-    # Check that placed images exist and have non-zero pixels.
-    placed_fn = get_filename_fn(MediaType.IMAGE, PlacedImageId, QualityLevel.DOWNSCALED_MASTER)
-    assert placed_fn is not None, "No filename function for PlacedImage at DownscaledMaster"
+    placed_fn = place_image.filename_fns[(PlacedImageId, QualityLevel.DOWNSCALED_MASTER)]
 
     placed_count = 0
     for stack_ref in stacks.values():
@@ -62,13 +63,12 @@ def test_downscaled_mosaic_has_real_pixels(test_context):
         f"Expected at least 1 placed image for H filter, got {placed_count}"
     )
 
-    # Check that the final merged mosaic exists and has non-zero pixels.
-    from mosaics.artifacts import mosaic_filename_tiff
-    final_fn = get_filename_fn(MediaType.IMAGE, MosaicChannelId, QualityLevel.DOWNSCALED_MASTER)
-    if final_fn:
-        final_path = final_fn(mosaic, "H")
-        if final_path and os.path.exists(final_path):
-            image = read_image(final_path)
-            assert np.any(image != 0), (
-                f"Final mosaic {final_path} is all zeros"
-            )
+    final_fn = store_mosaic_color_channel_xisf.filename_fns[
+        (MosaicChannelId, QualityLevel.DOWNSCALED_MASTER)
+    ]
+    final_path = final_fn(mosaic, "H")
+    if final_path and os.path.exists(final_path):
+        image = read_image(final_path)
+        assert np.any(image != 0), (
+            f"Final mosaic {final_path} is all zeros"
+        )

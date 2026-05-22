@@ -37,15 +37,12 @@ _PLACE_TILE_MEMORY_REQUIREMENT = 128 * 1024 * 1024  # 128 MB
 
 log = structlog.get_logger()
 
-
 @dataclass(frozen=True)
 class PlacedImage:
     pass
 
-
 def round_to_nearest_multiple(number: float, multiple: int) -> int:
     return int(np.ceil(number / multiple) * multiple)
-
 
 @ray.remote(memory=_PLACE_TILE_MEMORY_REQUIREMENT, scheduling_strategy="SPREAD")
 @beartype
@@ -100,7 +97,6 @@ def place_tile(
     tile_data = interp((source_ys, source_xs)).astype(np.float32)
     return tile_y, tile_x, tile_data
 
-
 def _make_interpolator(filename: Path):
     # TODO: The subframes need to be calibrated before being placed.
     image = read_image(filename)
@@ -115,7 +111,6 @@ def _make_interpolator(filename: Path):
         bounds_error=False,
         fill_value=0,
     )
-
 
 def _project_in_tiles(
     viewbox: Viewbox,
@@ -157,7 +152,6 @@ def _project_in_tiles(
 
     return projected_image[0 : viewbox.num_pixels_y, 0 : viewbox.num_pixels_x]
 
-
 # Explicit memory ceiling (not auto_memory) because place_image spawns
 # place_tile subtasks and waits for them internally via ray.wait().
 # auto_memory's p95 captured the TOTAL RSS while the parent sat waiting
@@ -168,7 +162,7 @@ def _project_in_tiles(
 # concurrent place_tile subtasks.
 @node
 @makes_image(PIXINSIGHT, [SUBFRAME, MASTER, DOWNSCALED_MASTER],
-             identity=PlacedImageId, file_type=TiffFilePath)
+             identity=PlacedImageId)
 def place_image(
     mode: str,
     mosaic: Mosaic,

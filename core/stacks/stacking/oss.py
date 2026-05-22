@@ -42,7 +42,6 @@ from decisions.settings import ProcessingConfig
 
 log = structlog.get_logger()
 
-
 def _load_calibration(cal_stack, implementation):
     """Read a calibration master via its producer's filename_fn,
     selected by `implementation`. Returns the array or None when no
@@ -55,7 +54,6 @@ def _load_calibration(cal_stack, implementation):
         path = stack_files.filename_fn(cal_stack)
     return read_image(path) if path and os.path.exists(path) else None
 
-
 def _calibrate(data, bias, dark, flat):
     if bias is not None:
         data = data - bias
@@ -67,7 +65,6 @@ def _calibrate(data, bias, dark, flat):
         data = data / flat_norm
     return data
 
-
 def _downscale(data, K):
     if K <= 1:
         return data
@@ -75,7 +72,6 @@ def _downscale(data, K):
     data = data[: h - h % K, : w - w % K]
     h, w = data.shape
     return data.reshape(h // K, K, w // K, K).mean(axis=(1, 3))
-
 
 def _preprocess_frame(frame_meta, bias, dark, flat, downscale_factor, is_light):
     """Load one raw frame, downscale, calibrate, and (for lights) remove
@@ -98,7 +94,6 @@ def _preprocess_frame(frame_meta, bias, dark, flat, downscale_factor, is_light):
         except Exception as e:
             log.warning("Cosmic ray removal failed", error=str(e))
     return data
-
 
 def _streaming_sigma_clipped_mean(preprocessed_frames, is_light):
     """Two-pass sigma-clipped mean with streaming registration.
@@ -173,21 +168,15 @@ def _streaming_sigma_clipped_mean(preprocessed_frames, is_light):
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
-
 def _stack_files_oss_narrow(args, kwargs):
     """Cache-key hook: same shape as `stack_files`, see `_stack_files_narrow`."""
     from stacks.stacking import narrow_stack_config
     stack, config, *rest = args
     return (stack, narrow_stack_config(stack, config), *rest), kwargs
 
-
 @node(auto_memory=True, cache_key_narrow=_stack_files_oss_narrow)
-@makes_image(OSS, [MASTER],
-             identity=CalibrationStackId, presentations=[THUMBNAIL, TILE_PYRAMID],
-             file_type=FitsFilePath)
-@makes_image(OSS, [MASTER],
-             identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
-             file_type=FitsFilePath)
+@makes_image(identity=CalibrationStackId)
+@makes_image(identity=StackId)
 def stack_files_oss(
     stack: BaseStack,
     config: ProcessingConfig,

@@ -27,7 +27,6 @@ from products.identity import MergedImageId
 
 log = structlog.get_logger()
 
-
 def _blend(image_0, image_1):
     """Distance-weighted blend with flux equalization in the overlap."""
     mask_0 = image_0 > 0
@@ -49,7 +48,6 @@ def _blend(image_0, image_1):
     total = w_0 + w_1
     total[total == 0] = 1.0
     return (w_0 * image_0 + w_1 * image_1) / total
-
 
 @node(auto_memory=True)
 @makes_image(OSS, [MASTER, DOWNSCALED_MASTER], merged_filename_fits,

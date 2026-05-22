@@ -54,8 +54,6 @@ def toggle_quarantine(object_type, object_id):
 
     _update_settings(lambda s: replace(s, decision_overrides=new_overrides))
 
-    from products import invalidate_object
-    invalidate_object(object_type, object_id)
     announce("reload_data")
 
     from state.actor import state

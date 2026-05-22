@@ -37,7 +37,6 @@ from targets.types import Target
 THUMBNAIL = PresentationType.THUMBNAIL
 TILE_PYRAMID = PresentationType.TILE_PYRAMID
 
-
 def _postprocessed_level(quality: str) -> str:
     """The gradient-corrected stack artifact a channel merge consumes
     for a given mosaic mode. Shared with the OSS merge. The merge runs
@@ -49,7 +48,6 @@ def _postprocessed_level(quality: str) -> str:
         return DOWNSCALED_POST_PROCESSED
     raise AssertionError(f"channel merge not defined for quality {quality}")
 
-
 def _stack_master_path(stack: Stack, quality: str) -> Path:
     # Consume the gradient-corrected (post-processed) stack, NOT the
     # raw master — so mosaic panels are flattened before placement.
@@ -59,7 +57,6 @@ def _stack_master_path(stack: Stack, quality: str) -> Path:
     )
     op = _pp_down if quality == DOWNSCALED_MASTER else _pp
     return Path(op.filename_fn(stack))
-
 
 def _merge_target_channel_narrow(args, kwargs):
     """Cache-key hook: drop calibration_stacks from the config hash so a
@@ -74,13 +71,10 @@ def _merge_target_channel_narrow(args, kwargs):
     narrowed = narrow_stack_config(stacks[0], config) if stacks else config
     return (target, filter, stacks, mode, narrowed, *rest), kwargs
 
-
 @node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD",
       auto_memory=True, cache_key_narrow=_merge_target_channel_narrow)
 @makes_image(PIXINSIGHT, [MASTER, DOWNSCALED_MASTER],
-             identity=TargetChannelId,
-             presentations=[THUMBNAIL, TILE_PYRAMID],
-             file_type=XisfFilePath, display="Channel")
+             identity=TargetChannelId, display="Channel")
 @beartype
 def merge_target_channel(
     target: Target,

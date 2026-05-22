@@ -1,28 +1,29 @@
-import os
 import io
 import flask
 from flask import Blueprint, abort
 
 from context import local_context as context
-from stacks.composite_stack import CalibrationStack
-from stacks.composite_stack import Stack
-from products.registry import get_producer, MediaType
+from products.registry import producers_for, MediaType
 from products.identity import StackId, CalibrationStackId
-from previews.types import QUALITY_PRIORITY
 
 videos_bp = Blueprint("videos", __name__)
 
 
 def get_video(identity: type, *args):
-    for level in QUALITY_PRIORITY:
-        if fn := get_producer(MediaType.VIDEO, identity, level):
-            if hasattr(fn, "video_fn"):
-                if video := fn.video_fn(*args):
-                    buffer = io.BytesIO()
-                    buffer.write(video)
-                    buffer.seek(0)
-                    return flask.send_file(buffer, mimetype="video/webm")
-
+    """First registered video producer for `identity` that yields a
+    stream. Each producer attaches a `video_fn` callable that, given
+    the identity args, returns bytes or None."""
+    for producer in producers_for(identity, MediaType.VIDEO):
+        video_fn = getattr(producer, "video_fn", None)
+        if video_fn is None:
+            continue
+        video = video_fn(*args)
+        if video is None:
+            continue
+        buffer = io.BytesIO()
+        buffer.write(video)
+        buffer.seek(0)
+        return flask.send_file(buffer, mimetype="video/webm")
     return abort(404)
 
 

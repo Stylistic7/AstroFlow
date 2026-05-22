@@ -110,85 +110,54 @@ def test_presentation_cache_key_distinguishes_object_kind():
     ), "presentation key must be stable for the same identity"
 
 
-# --- the core regression: identity-keyed resolution, no last-wins -----
+# --- per-identity producer enumeration ---
 
-def test_registry_no_last_wins_on_shared_level_impl():
-    """Two producers sharing (level, implementation) but declaring
-    different identities must BOTH be retrievable by their identity.
-    Pre-refactor the second clobbered the first."""
-    from products import ensure_producers_registered, registry
-    from products.registry import register_producer, get_producer, MediaType
-    from previews.types import PIXINSIGHT, SUBFRAME, MASTER
-    from products.identity import ObjectId
+def test_producers_for_returns_decoration_order():
+    """`producers_for(identity)` returns each op registered for that
+    identity, in decoration order. Polymorphic ops (one body
+    registered for multiple identities) appear in each identity's
+    list."""
+    from products import ensure_producers_registered
+    from products.registry import producers_for
+    from products.identity import StackId, CalibrationStackId
 
-    # Load the real producers FIRST so the lazy _ensure_registered()
-    # import inside get_producer can't clobber our entries mid-test.
     ensure_producers_registered()
 
-    # Throwaway identities: distinct registry keys that the real
-    # producers never register, so this test mutates only its own two
-    # keys and cleans them up precisely — no global snapshot/restore,
-    # no production-side replay machinery.
-    class _IdA(ObjectId):
-        object_type = type("KindA", (), {})
+    stack_ops = {p.__name__ for p in producers_for(StackId)}
+    assert "stack_files" in stack_ops, (
+        f"stack_files must register for StackId; got {stack_ops}"
+    )
+    assert "stack_files_downscaled" in stack_ops, (
+        f"stack_files_downscaled must register for StackId; got {stack_ops}"
+    )
+    assert "post_process_stack" in stack_ops
+    assert "post_process_stack_downscaled" in stack_ops
 
-    class _IdB(ObjectId):
-        object_type = type("KindB", (), {})
-
-    def prod_a():
-        return "a"
-
-    def prod_b():
-        return "b"
-
-    lvl = SUBFRAME
-    impl = PIXINSIGHT
-    try:
-        register_producer(
-            MediaType.IMAGE, lvl, prod_a, implementation=impl, identity=_IdA,
-        )
-        register_producer(
-            MediaType.IMAGE, lvl, prod_b, implementation=impl, identity=_IdB,
-        )
-        # Same (level, impl), different identity -> both retrievable.
-        assert get_producer(MediaType.IMAGE, _IdA, lvl, impl) is prod_a
-        assert get_producer(MediaType.IMAGE, _IdB, lvl, impl) is prod_b
-    finally:
-        registry._registry[MediaType.IMAGE].pop((_IdA, lvl, impl), None)
-        registry._registry[MediaType.IMAGE].pop((_IdB, lvl, impl), None)
+    cal_ops = {p.__name__ for p in producers_for(CalibrationStackId)}
+    # stack_files registers for BOTH StackId and CalibrationStackId; the
+    # polymorphic decoration appends to each identity's producer list.
+    assert "stack_files" in cal_ops
+    assert "stack_files_downscaled" in cal_ops
 
 
 def test_real_run_subframe_producers_resolve_distinctly():
-    """End of the actual bug: the two real Run/SUBFRAME producers must
-    resolve to different functions by identity (calibrated route used
-    to wrongly get the 2-arg uncorrected producer -> TypeError -> 404)."""
-    from products.registry import get_producer, MediaType
-    from previews.types import PIXINSIGHT, SUBFRAME, MASTER
+    """The two Run/SUBFRAME producers — `flat_corrected_stack` and
+    `uncorrected_run_thumbnail` — register under distinct identities
+    (CalibratedStackId vs UncorrectedRunId). Neither's
+    `filename_fn` can resolve the other's identity args, so they
+    can't be confused at view-side dispatch time."""
+    from products.registry import producers_for
     from products.identity import CalibratedStackId, UncorrectedRunId
     from products import ensure_producers_registered
 
     ensure_producers_registered()
-    lvl = SUBFRAME
-    impl = PIXINSIGHT
 
-    cal = get_producer(MediaType.IMAGE, CalibratedStackId, lvl, impl)
-    unc = get_producer(MediaType.IMAGE, UncorrectedRunId, lvl, impl)
+    cal = {p.__name__ for p in producers_for(CalibratedStackId)}
+    unc = {p.__name__ for p in producers_for(UncorrectedRunId)}
 
-    assert cal is not None and unc is not None
-    assert cal is not unc
-    assert cal.__name__ == "flat_corrected_stack"
-    assert unc.__name__ == "uncorrected_run_thumbnail"
-
-
-def test_get_producer_signature_is_identity_keyed():
-    """get_producer must take an identity class, not object_type."""
-    import inspect
-    from products.registry import get_producer
-
-    params = list(inspect.signature(get_producer).parameters)
-    assert "object_type" not in params, (
-        f"get_producer must be identity-keyed; got params {params}"
-    )
-    assert "identity" in params, (
-        f"get_producer must accept identity; got params {params}"
+    assert "flat_corrected_stack" in cal
+    assert "uncorrected_run_thumbnail" in unc
+    assert cal != unc, (
+        f"CalibratedStackId producers ({cal}) and UncorrectedRunId "
+        f"producers ({unc}) must be distinct sets"
     )

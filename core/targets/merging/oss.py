@@ -47,12 +47,10 @@ TILE_PYRAMID = PresentationType.TILE_PYRAMID
 
 log = structlog.get_logger()
 
-
 # Most stack masters are written as float32 in [0, 1] but XISF / FITS
 # masters from heterogeneous sources can carry uint16 saturation at
 # 65535. Treat anything ≥ this fraction of the per-image max as saturated.
 _SATURATION_FRACTION = 0.999
-
 
 def _stack_master_path(stack: Stack, quality: str) -> Path:
     # Consume the gradient-corrected (post-processed) stack, NOT the
@@ -64,12 +62,9 @@ def _stack_master_path(stack: Stack, quality: str) -> Path:
     op = _pp_down if quality == DOWNSCALED_MASTER else _pp
     return Path(op.filename_fn(stack))
 
-
 @node(auto_memory=True, cache_key_narrow=_merge_target_channel_narrow)
 @makes_image(OSS, [MASTER, DOWNSCALED_MASTER],
-             identity=TargetChannelId,
-             presentations=[THUMBNAIL, TILE_PYRAMID],
-             file_type=FitsFilePath)
+             identity=TargetChannelId)
 @beartype
 def merge_target_channel_oss(
     target: Target,

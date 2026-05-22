@@ -20,7 +20,6 @@ TILE_PYRAMID = PresentationType.TILE_PYRAMID
 
 log = structlog.get_logger()
 
-
 def _post_process_stack(master_path, stack: Stack, downscale_factor: int = 1) -> Image:
     # Stack.filter is the authoritative grouping value; pix doesn't read
     # FILTER from disk (the caller is the only thing that knows it).
@@ -49,11 +48,8 @@ def _post_process_stack(master_path, stack: Stack, downscale_factor: int = 1) ->
     calibrated = SpectrophotometricFluxCalibration(solved)
     return MultiscaleGradientCorrection(calibrated)
 
-
 @node(resources={"PixInsight": 1}, auto_memory=True)
-@makes_image(PIXINSIGHT, [POST_PROCESSED],
-             identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
-             file_type=XisfFilePath, display="Post-Processed")
+@makes_image(identity=StackId, display="Post-Processed")
 def post_process_stack(stack: Stack, mock_pixinsight: bool) -> WithSidecar[XisfFilePath]:
     # Read upstream master directly. Each op exports its filename_fn;
     # consumers import the producing op explicitly instead of going
@@ -69,11 +65,8 @@ def post_process_stack(stack: Stack, mock_pixinsight: bool) -> WithSidecar[XisfF
 
     return WithSidecar(XisfFilePath(output_filename))
 
-
 @node(resources={"PixInsight": 1}, auto_memory=True)
-@makes_image(PIXINSIGHT, [DOWNSCALED_POST_PROCESSED],
-             identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
-             file_type=XisfFilePath, display="Post-Processed (Downscaled)")
+@makes_image(identity=StackId, display="Post-Processed (Downscaled)")
 def post_process_stack_downscaled(
     stack: Stack, mock_pixinsight: bool
 ) -> WithSidecar[XisfFilePath]:

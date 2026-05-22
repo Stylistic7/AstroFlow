@@ -23,7 +23,6 @@ from products.identity import TargetId, TargetChannelId, PresentationType
 THUMBNAIL = PresentationType.THUMBNAIL
 from previews.types import PIXINSIGHT, OSS, MASTER,POST_PROCESSED
 
-
 def _post_process_target(images: ImageList, target: Target) -> tuple[Image, Image] | None:
     if "LRGB" in images:
         aligned = StarAlignment(images.channels("LRGB"))
@@ -68,10 +67,8 @@ def _post_process_target(images: ImageList, target: Target) -> tuple[Image, Imag
 
     return None
 
-
 def target_filename(target: Target, suffix: str) -> XisfFilePath:
     return XisfFilePath(f"target {target.stable_hash}_{suffix}.xisf")
-
 
 def _target_channel_paths(
     target: Target, implementation
@@ -97,10 +94,8 @@ def _target_channel_paths(
     paths = [Path(channel_fn(target, f)) for f in filters]
     return paths, filters
 
-
 @node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD", auto_memory=True)
-@makes_image(PIXINSIGHT, [POST_PROCESSED], target_filename,
-             identity=TargetId, presentations=[THUMBNAIL])
+@makes_image(filename_fn=target_filename, identity=TargetId)
 def post_process_target(target: Target, mock_pixinsight: bool = False) -> None:
     print(f"Entering post_process_target for {target}")
     image_paths, image_filters = _target_channel_paths(target, PIXINSIGHT)
@@ -116,10 +111,8 @@ def post_process_target(target: Target, mock_pixinsight: bool = False) -> None:
     if starless is not None:
         starless.save_to(target_filename(target, "starless"), mock=mock_pixinsight)
 
-
 @node
-@makes_image(OSS, [POST_PROCESSED], target_filename,
-             identity=TargetId, presentations=[THUMBNAIL])
+@makes_image(filename_fn=target_filename, identity=TargetId)
 def post_process_target_oss(target: Target, mock_pixinsight: bool = False) -> None:
     """Stub: target post-processing for the OSS pipeline (TODO)."""
     return None

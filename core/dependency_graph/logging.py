@@ -28,49 +28,45 @@ def _print_first_line(fn_name: str, event_dict: dict) -> None:
 def _concerns_keys_for(func: Callable, args: tuple, kwargs: dict) -> list[tuple]:
     """Per-object cache keys to side-write concerns under.
 
-    Returns one key per (object_type, level, implementation) registration
-    on the producer (a `@makes_image`-decorated function publishes the
-    `_presentation_entries` attribute). Empty list if the function isn't
-    a registered producer — concerns from such functions still live in
-    the per-call log, just not surfaced per-object.
+    Returns one key per identity the producer registers for (a
+    @makes_image-decorated function publishes `_identities`). Empty
+    list if the function isn't a registered producer — concerns from
+    such functions still live in the per-call log, just not surfaced
+    per-object.
 
-    Mirrors the dispatch in `products.registry._generate_presentations`:
-    pick the entry whose `object_type` matches an actual arg, extract
-    the `ObjectId` via the entry's `identity_cls`, narrow the levels
-    via `_detect_level` (when there's a `mode` arg).
+    The key shape is `('concerns', op_name, object_type, identity_key)`
+    so concerns are keyed by which op wrote them rather than by a
+    (level, impl) tuple. Polymorphic producers (e.g. stack_files for
+    both StackId and CalibrationStackId) emit one key per identity
+    they match — the dispatch picks the one whose object_type
+    appears in args, so a CalibrationStack run doesn't write under
+    StackId and vice versa.
     """
-    pres_entries = getattr(func, "_presentation_entries", None)
-    if not pres_entries:
+    identities = getattr(func, "_identities", None)
+    if not identities:
         return []
 
-    from products.registry import _extract_identity, _detect_level
+    from products.registry import _extract_identity
 
+    op_name = getattr(func, "__name__", "<unknown>")
     keys: list[tuple] = []
-    for entry in pres_entries:
-        identity_cls = entry.get("identity_cls")
-        object_type = entry.get("object_type")
-        if identity_cls is None or object_type is None:
-            continue
-        # Only include entries whose object_type matches a real arg
+    for identity_cls in identities:
+        object_type = identity_cls.object_type
+        # Only include entries whose object_type matches an actual arg
         # (a polymorphic producer with both Stack and CalibrationStack
-        # registrations should only fire for the one it's actually
-        # processing).
+        # registrations only fires for the one it's actually processing).
         if not any(isinstance(a, object_type) for a in args):
             continue
         try:
             obj_id = _extract_identity(identity_cls, func, args, kwargs)
         except Exception:
             continue
-        active_levels = _detect_level(func, args, kwargs, entry["levels"])
-        for impl in entry["implementations"]:
-            for level in active_levels:
-                keys.append((
-                    "concerns",
-                    object_type.__name__,
-                    str(level),
-                    str(impl),
-                    obj_id.cache_key(),
-                ))
+        keys.append((
+            "concerns",
+            op_name,
+            object_type.__name__,
+            obj_id.cache_key(),
+        ))
     return keys
 
 

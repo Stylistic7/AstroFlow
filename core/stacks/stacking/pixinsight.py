@@ -29,7 +29,6 @@ TILE_PYRAMID = PresentationType.TILE_PYRAMID
 
 log = structlog.get_logger()
 
-
 def _symlink_frames(filenames: list[str], dest_dir: str) -> None:
     for filename in filenames:
         assert filename, f"bad filename {filename}"
@@ -41,7 +40,6 @@ def _symlink_frames(filenames: list[str], dest_dir: str) -> None:
         dest_filename = os.path.join(dest_dir, os.path.basename(filename))
         print(f"symlinking {filename} -> {dest_filename}")
         os.symlink(filename, dest_filename)
-
 
 def _copy_frames_with_plate_solution(
     metadata: MetadataDict, dest_dir: str, downscale_factor: int = 1,
@@ -92,7 +90,6 @@ def _copy_frames_with_plate_solution(
                 for k, v in frame.plate_solution.header.items():
                     fits[0].header[k] = v
 
-
 def _setup_run(
     run: Run,
     calibration_stacks: CalibrationStacksDict,
@@ -123,7 +120,6 @@ def _setup_run(
 
     return filenames
 
-
 def _setup_stack(
     stack: BaseStack,
     calibration_stacks: CalibrationStacksDict,
@@ -138,7 +134,6 @@ def _setup_stack(
 
     return filenames
 
-
 def _mock_stacking(
     src_filename: str, dest_filename: str, metadata: dict[str, str]
 ) -> WithSidecar[XisfFilePath]:
@@ -152,7 +147,6 @@ def _mock_stacking(
         src_filename, dest_filename, add_noise=True, metadata=metadata
     )
     return WithSidecar(XisfFilePath(dest_filename))
-
 
 def _copy_wbpp_result(
     stacking_dir: str, dest_filename: str, metadata: dict[str, str]
@@ -177,7 +171,6 @@ def _copy_wbpp_result(
     update_header(dest_filename, metadata)
 
     return WithSidecar(XisfFilePath(dest_filename))
-
 
 def narrow_stack_config(stack: BaseStack, config: ProcessingConfig) -> ProcessingConfig:
     """Narrow `config` for cache-key hashing: keep only this stack's
@@ -209,14 +202,12 @@ def narrow_stack_config(stack: BaseStack, config: ProcessingConfig) -> Processin
         decisions=decisions_for_stack(config.decisions, stack.stable_hash),
     )
 
-
 def _stack_files_narrow(args, kwargs):
     """`stack_files` cache-key hook: drop the global cal_stacks and
     other-stack decisions so a new bias for an unrelated camera doesn't
     invalidate this stack's cached master."""
     stack, config, *rest = args
     return (stack, narrow_stack_config(stack, config), *rest), kwargs
-
 
 def _run_wbpp_stacking(
     stack: BaseStack, config: ProcessingConfig,
@@ -297,15 +288,10 @@ def _run_wbpp_stacking(
     _check_integration_time(stack, dest_filename)
     return result
 
-
 @node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD", auto_memory=True,
       cache_key_narrow=_stack_files_narrow)
-@makes_image(PIXINSIGHT, [MASTER],
-             identity=CalibrationStackId, presentations=[THUMBNAIL, TILE_PYRAMID],
-             file_type=XisfFilePath, display="Master")
-@makes_image(PIXINSIGHT, [MASTER],
-             identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
-             file_type=XisfFilePath, display="Master")
+@makes_image(identity=CalibrationStackId, display="Master")
+@makes_image(identity=StackId, display="Master")
 def stack_files(
     stack: BaseStack,
     config: ProcessingConfig,
@@ -316,15 +302,10 @@ def stack_files(
     but input frames are block-mean-downscaled 8x before WBPP runs."""
     return _run_wbpp_stacking(stack, config, stack_files.filename_fn(stack), downscale_factor=1)
 
-
 @node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD", auto_memory=True,
       cache_key_narrow=_stack_files_narrow)
-@makes_image(PIXINSIGHT, [DOWNSCALED_MASTER],
-             identity=CalibrationStackId, presentations=[THUMBNAIL, TILE_PYRAMID],
-             file_type=XisfFilePath, display="Downscaled Master")
-@makes_image(PIXINSIGHT, [DOWNSCALED_MASTER],
-             identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
-             file_type=XisfFilePath, display="Downscaled Master")
+@makes_image(identity=CalibrationStackId, display="Downscaled Master")
+@makes_image(identity=StackId, display="Downscaled Master")
 def stack_files_downscaled(
     stack: BaseStack,
     config: ProcessingConfig,
@@ -345,7 +326,6 @@ def stack_files_downscaled(
         stack, config, stack_files_downscaled.filename_fn(stack),
         downscale_factor=factor,
     )
-
 
 def _check_integration_time(stack: BaseStack, master_path) -> None:
     """Compare WBPP's recorded integration time against the input frames'
@@ -399,5 +379,4 @@ def _check_integration_time(stack: BaseStack, master_path) -> None:
         ratio=round(ratio, 4),
         frame_count=n_frames,
     )
-
 

@@ -38,7 +38,6 @@ function App() {
   const [computeGraphStatus, setComputeGraphStatus] = useState({});
   const [rayStatus, setRayStatus] = useState({});
   const [decisionOverrides, setDecisionOverrides] = useState([]);
-  const [validity, setValidity] = useState({});
   const [observingPlan, setObservingPlan] = useState({ entries: [] });
   const [sseConnected, setSseConnected] = useState(false);
   const [showQuarantined, setShowQuarantined] = useState(
@@ -48,14 +47,13 @@ function App() {
 
   useEffect(() => {
     const loadObjectData = async () => {
-      const [s, c, t, m, cart, cg, v] = await Promise.all([
+      const [s, c, t, m, cart, cg] = await Promise.all([
         fetch('/api/stacks').then(r => r.json()),
         fetch('/api/calibration_stacks').then(r => r.json()),
         fetch('/api/targets').then(r => r.json()),
         fetch('/api/mosaics').then(r => r.json()),
         fetch('/api/shopping_cart').then(r => r.json()),
         fetch('/api/compute_graph').then(r => r.json()),
-        fetch('/api/validity').then(r => r.json()).catch(() => ({})),
       ]);
 
       setStacks(s);
@@ -64,7 +62,6 @@ function App() {
       setMosaics(m);
       setShoppingCart(cart);
       setComputeGraph(cg);
-      setValidity(v);
 
       setDataIsAvailable(true);
     };
@@ -218,7 +215,6 @@ function App() {
             computeGraph,
             computeGraphStatus,
             rayStatus,
-            validity,
             isQuarantined,
             showQuarantined,
             toggleShowQuarantined,

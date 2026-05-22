@@ -29,11 +29,9 @@ log = structlog.get_logger()
 
 THUMBNAIL = PresentationType.THUMBNAIL
 
-
 @dataclass(frozen=True)
 class MergedImage:
     pass
-
 
 def _panel_count(image_metadata: ImageMetadata) -> int:
     """Number of mosaic panels contained in this intermediate.
@@ -46,10 +44,8 @@ def _panel_count(image_metadata: ImageMetadata) -> int:
     """
     return get_section(image_metadata.filename, "panel_count") or 1
 
-
 def _set_panel_count(path, count: int) -> None:
     set_section(Path(path), "panel_count", count)
-
 
 def _progress_tile_path(mosaic: Mosaic, filter: str, mode: str) -> Path:
     """Per-(mosaic, filter, mode) tile pyramid that the web server serves
@@ -59,7 +55,6 @@ def _progress_tile_path(mosaic: Mosaic, filter: str, mode: str) -> Path:
         Path(context.output_dir) / "Mosaic" / str(mode)
         / f"progress_{mosaic.stable_hash}_{filter}.tiff"
     )
-
 
 def _maybe_publish_progress(
     mode: str,
@@ -117,7 +112,6 @@ def _maybe_publish_progress(
                     output=str(output_filename), error=str(e))
 
     context[best_key] = {"path": str(output_filename), "panel_count": new_count}
-
 
 @node(resources={"PixInsight": 1}, auto_memory=True)
 @makes_image(PIXINSIGHT, [SUBFRAME], merged_filename_tiff,

@@ -10,11 +10,11 @@ from stacks.composite_stack import Stack
 from targets.types import Target
 from mosaics.types import Mosaic, Viewbox
 from mosaics.viewbox import compute_viewbox
-from products.registry import MediaType, get_filename_fn
+from products.registry import MediaType
 from products.identity import (
     StackId, CalibrationStackId, TargetId, MosaicChannelId, identity_for_stack,
 )
-from previews.types import QualityLevel, QUALITY_PRIORITY, MASTER, PIXINSIGHT, ALL_IMPLEMENTATIONS, ALL_QUALITY_LEVELS
+from previews.types import MASTER
 from mosaics.trimming import project_to_viewbox
 from metadata.sidecar_io import read_image_metadata
 from attributes.astrometric_attributes import _spherical_polygon_for_wcs
@@ -23,91 +23,23 @@ from decisions.decisions import ObjectType, get_decisions_for_object
 metadata_bp = Blueprint("metadata", __name__)
 
 
-# Map (implementation, quality) to the user-facing pipeline name that
-# produces that artifact slot. Used to project the legacy version
-# matrix into the pipeline-keyed view the UI now renders.
-#
-# Stays in this file because it's a presentation concern, not a
-# data-model concern: ops on disk don't know their pipeline, but the
-# version-matrix endpoint exists specifically to translate disk state
-# into UI-facing pipeline labels.
-#
-# When user pipelines arrive, this table won't scale — at that point
-# pipelines themselves should record their sink paths in a per-run
-# PipelineOutputIndex (planned in B-6) and this endpoint would read
-# from that instead.
-# Pipeline → (implementation, quality) of the pipeline's mosaic / target /
-# stack sink. Used by /api/pipeline_outputs to find each pipeline's final
-# artifact on disk for the version-thumbnail view.
-#
-# Hardcoded for the three built-in pipelines. When user-defined pipelines
-# arrive, this table won't scale — at that point pipelines should record
-# their sink paths in a per-run PipelineOutputIndex (planned in B-6) and
-# this map disappears in favour of reading from that index.
-_PIPELINE_FINAL_OUTPUT: dict[str, tuple[str, str]] = {
-    "PixInsight Master":     ("PixInsight", "Master"),
-    "PixInsight Downscaled": ("PixInsight", "DownscaledMaster"),
-    "Subframe":              ("PixInsight", "Subframe"),
-}
-
-
-def pipeline_to_impl_quality(pipeline: str) -> tuple[str, str]:
-    """Translate a user-facing pipeline name to the (impl, quality)
-    tuple that indexes the producer registry. Used by route handlers
-    that fall back to the static mapping when the PipelineOutputIndex
-    doesn't have a tap recorded yet."""
-    return _PIPELINE_FINAL_OUTPUT.get(pipeline, (PIXINSIGHT, MASTER))
-
-
 def tap_path_for(
     pipeline: str, display: str, object_type: str, object_id: str,
     filter: str | None,
 ) -> str | None:
-    """Find a tap point's on-disk path.
+    """Find a tap point's on-disk path via the PipelineOutputIndex.
 
-    Tries the PipelineOutputIndex first (authoritative when populated
-    by a recent pipeline trace); falls back to the static
-    (impl, quality) producer lookup. Returns None if no path is
-    known — caller should 404.
+    The index is populated at pipeline-trace time — every Node whose
+    task carries `_display` (set by `@makes_image(display=...)`)
+    gets recorded under (pipeline, object_type, object_id, display,
+    filter). Pipelines that haven't been traced for this object
+    return None; the caller should 404.
     """
     from pipelines.output_index import tap_path
     p = tap_path(pipeline, object_type, object_id, display, filter)
     if p and os.path.exists(p):
         return p
-    impl, level = pipeline_to_impl_quality(pipeline)
-    obj_cls = {
-        "stack": StackId,
-        "calibration_stack": CalibrationStackId,
-        "target": TargetId,
-        "mosaic": MosaicChannelId,
-    }.get(object_type)
-    if obj_cls is None:
-        return None
-    fn = get_filename_fn(MediaType.IMAGE, obj_cls, level, impl)
-    if fn is None:
-        return None
-    try:
-        if object_type == "mosaic":
-            m = context.mosaics.get(object_id)
-            if m is None: return None
-            path = fn(m.get(), filter)
-        elif object_type == "target":
-            t = context.targets.get(object_id)
-            if t is None: return None
-            path = fn(t.get(), filter)
-        elif object_type == "stack":
-            s = context.stacks.get(object_id)
-            if s is None: return None
-            path = fn(s.get())
-        elif object_type == "calibration_stack":
-            s = (context.calibration_stacks or {}).get(object_id)
-            if s is None: return None
-            path = fn(s)
-        else:
-            return None
-    except (ValueError, TypeError, KeyError):
-        return None
-    return str(path) if path and os.path.exists(path) else None
+    return None
 
 def _mosaic_filters(mosaic) -> list[str]:
     """All filters that any target in the mosaic has a stack in."""
@@ -272,62 +204,6 @@ def _resolve_object(object_type_str, object_id, filter=None):
     abort(400, f"Unknown object type: {object_type_str}")
 
 
-@metadata_bp.route("/api/validity/<object_type>/<object_id>")
-def validity_for_object(object_type: str, object_id: str):
-    """Return validity per quality level for a single object."""
-    from products import is_object_valid
-    result = {}
-    for level in ALL_QUALITY_LEVELS:
-        result[str(level)] = is_object_valid(object_type, object_id, str(level))
-    return jsonify(result)
-
-
-@metadata_bp.route("/api/validity")
-def validity_all():
-    """Return validity for all objects, keyed by type and ID.
-
-    Batch-fetches the validity dict and ui_targets/ui_mosaics in minimal
-    Ray calls, then computes hierarchy locally.
-    """
-    validity = context.get("validity", {})
-    ui_targets = context.ui_targets or {}
-    ui_mosaics = context.ui_mosaics or {}
-    stacks = context.stacks or {}
-
-    def stack_valid(stack_id, level):
-        return validity.get(("stack", stack_id, level)) is True
-
-    def target_valid(target_id, level):
-        target = ui_targets.get(target_id)
-        if not target or "stack_ids" not in target:
-            return False
-        return all(stack_valid(sid, level) for sid in target["stack_ids"])
-
-    def mosaic_valid(mosaic_id, level):
-        mosaic = ui_mosaics.get(mosaic_id)
-        if not mosaic or "target_ids" not in mosaic:
-            return False
-        return all(target_valid(tid, level) for tid in mosaic["target_ids"])
-
-    result = {}
-    for stack_id in stacks:
-        result[f"stack:{stack_id}"] = {
-            str(level): stack_valid(stack_id, str(level))
-            for level in ALL_QUALITY_LEVELS
-        }
-    for target_id in ui_targets:
-        result[f"target:{target_id}"] = {
-            str(level): target_valid(target_id, str(level))
-            for level in ALL_QUALITY_LEVELS
-        }
-    for mosaic_id in ui_mosaics:
-        result[f"mosaic:{mosaic_id}"] = {
-            str(level): mosaic_valid(mosaic_id, str(level))
-            for level in ALL_QUALITY_LEVELS
-        }
-    return jsonify(result)
-
-
 @metadata_bp.route("/api/metadata/<object_type>/<object_id>/<path:pipeline_and_display>/<filter>")
 @metadata_bp.route("/api/metadata/<object_type>/<object_id>/<path:pipeline_and_display>")
 def metadata(object_type: str, object_id: str, pipeline_and_display: str, filter: str | None = None):
@@ -364,90 +240,76 @@ _OBJECT_TYPE_MAP = {
 }
 
 
-def _resolve_versioned_object(object_type: str, object_id: str):
-    """Return (obj, filters, filename_candidates) for /api/object_versions.
-
-    `filename_candidates(impl, level, f) -> list[Path]` lists every path
-    that should count as "this version exists" — the canonical producer
-    output plus any object-specific fallbacks (e.g. mosaic in-progress
-    merge tiffs). The caller takes the first one that's on disk.
-    """
-    from pathlib import Path
-
-    obj_cls = _OBJECT_TYPE_MAP.get(object_type)
-    if obj_cls is None:
-        return None
-
-    if object_type == "mosaic":
-        mosaics = context.mosaics or {}
-        if object_id not in mosaics:
-            return None
-        mosaic = mosaics[object_id].get()
-        filters = _mosaic_filters(mosaic)
-        output_dir = context.output_dir
-
-        def filename_candidates(impl, level, f):
-            candidates = []
-            fn = get_filename_fn(MediaType.IMAGE, MosaicChannelId, level, impl)
-            if fn is not None:
-                candidates.append(fn(mosaic, f))
-            # merge_images writes a per-(mosaic, filter, level) progress
-            # tiff that's overwritten each step; surface it so the
-            # dashboard lights up before the final store runs.
-            if output_dir is not None:
-                candidates.append(
-                    Path(output_dir) / "Mosaic" / str(level)
-                    / f"progress_{mosaic.stable_hash}_{f}.tiff"
-                )
-            return candidates
-
-        return mosaic, filters, filename_candidates
-
+def _resolve_entity(object_type: str, object_id: str):
+    """Return the in-context entity (Stack, Target, Mosaic, etc.) for
+    an (object_type, object_id) pair, or None if not present. The
+    dashboard endpoint uses this to know which pipelines accept the
+    entity as input + to discover its filters."""
+    if object_type == "stack":
+        s = (context.stacks or {}).get(object_id)
+        return s.get() if s else None
+    if object_type == "calibration_stack":
+        return (context.calibration_stacks or {}).get(object_id)
     if object_type == "target":
-        targets = context.targets or {}
-        if object_id not in targets:
-            return None
-        target = targets[object_id].get()
+        t = (context.targets or {}).get(object_id)
+        return t.get() if t else None
+    if object_type == "mosaic":
+        m = (context.mosaics or {}).get(object_id)
+        return m.get() if m else None
+    return None
+
+
+def _entity_filters(entity, object_type: str) -> list[str]:
+    """Filters the dashboard's per-tap columns iterate over."""
+    if object_type == "mosaic":
+        return _mosaic_filters(entity)
+    if object_type == "target":
         stacks_dict = context.stacks or {}
-        filters = sorted({
+        return sorted({
             stacks_dict[sid].get().filter
-            for sid in target.stack_ids
+            for sid in entity.stack_ids
             if sid in stacks_dict and stacks_dict[sid].get().filter
         })
+    if object_type in ("stack", "calibration_stack"):
+        return [entity.filter] if getattr(entity, "filter", None) else []
+    return []
 
-        def filename_candidates(impl, level, f):
-            fn = get_filename_fn(MediaType.IMAGE, TargetId, level, impl)
-            return [fn(target, f)] if fn else []
 
-        return target, filters, filename_candidates
+def _ensure_pipelines_traced(object_type: str, object_id: str, entity) -> None:
+    """Trace every registered pipeline for `entity` so the
+    PipelineOutputIndex carries its tap-point structure. Tracing is
+    in-process and cheap — just walks the @pipeline body and records
+    Node identities. No Ray dispatch, no compute. Idempotent: trace
+    results overwrite previous entries with identical keys."""
+    from pipelines.registry import registered_pipelines
+    from pipelines.output_index import record as record_pipeline_output
+    from compute_graph.compute_graph import _record_pipeline_taps
+    from decisions.settings import ProcessingConfig, DevelopmentSettings
+    from cache.context_ref import ContextRef
+    from frozendict import frozendict as fd
 
-    if object_type == "stack":
-        stacks_dict = context.stacks or {}
-        if object_id not in stacks_dict:
-            return None
-        stack = stacks_dict[object_id].get()
-        filters = [stack.filter] if stack.filter else []
+    cfg = ProcessingConfig(
+        calibration_stacks=ContextRef.store_large(
+            context.calibration_stacks or {}
+        ),
+        development_settings=DevelopmentSettings(mock_pixinsight=False),
+        min_frames_in_stack=3,
+        decisions=fd(),
+    )
 
-        def filename_candidates(impl, level, f):
-            fn = get_filename_fn(MediaType.IMAGE, identity_for_stack(stack), level, impl)
-            return [fn(stack)] if fn else []
-
-        return stack, filters, filename_candidates
-
-    if object_type == "calibration_stack":
-        cal_stacks = context.calibration_stacks or {}
-        if object_id not in cal_stacks:
-            return None
-        stack = cal_stacks[object_id]
-        filters = [stack.filter] if stack.filter else []
-
-        def filename_candidates(impl, level, f):
-            fn = get_filename_fn(MediaType.IMAGE, identity_for_stack(stack), level, impl)
-            return [fn(stack)] if fn else []
-
-        return stack, filters, filename_candidates
-
-    return None
+    for (name, processes_class), pipeline_fn in registered_pipelines().items():
+        if processes_class is not type(entity):
+            continue
+        try:
+            graph = pipeline_fn(entity, cfg)
+        except Exception:
+            # A pipeline that can't trace this entity (missing
+            # context dependencies etc.) just doesn't contribute
+            # taps — caller still sees its name + empty taps.
+            continue
+        _record_pipeline_taps(
+            record_pipeline_output, name, object_type, object_id, graph,
+        )
 
 
 @metadata_bp.route("/api/pipeline_outputs/<object_type>/<object_id>")
@@ -462,13 +324,10 @@ def pipeline_outputs(object_type: str, object_id: str):
           {
             "name": "PixInsight Master",
             "taps": [
-              {
-                "display": "Master",
-                "outputs": [
-                  {"filter": "H", "exists": true, "mtime": 17...},
-                  {"filter": "S", "exists": false, "mtime": null},
-                ],
-              },
+              {"display": "Master", "outputs": [
+                {"filter": "H", "exists": true, "mtime": 17...},
+                {"filter": "S", "exists": false, "mtime": null},
+              ]},
               {"display": "Mosaic", "outputs": [...]},
             ],
           },
@@ -476,84 +335,51 @@ def pipeline_outputs(object_type: str, object_id: str):
         ],
       }
 
-    Each pipeline's `taps` are populated from the PipelineOutputIndex,
-    which the dispatcher rebuilds at trace time by walking the
-    pipeline's graph and recording every @makes_image Node whose task
-    has `_display` set. This is the only mechanism that scales to
-    user-defined pipelines — no static table can enumerate their
-    tap points.
-
-    For pipelines that haven't been traced yet (the index is empty
-    for this object), we synthesize a single fallback tap whose
-    display name matches the conventional sink for the pipeline's
-    object_type. The frontend rendering doesn't distinguish
-    fallback from traced entries.
+    Each pipeline's `taps` come straight out of the
+    PipelineOutputIndex, populated at pipeline-trace time. On
+    endpoint hit we lazily trace any registered pipeline whose
+    entries are missing for this object — tracing is in-process and
+    cheap, so unprocessed objects get their tap-point structure
+    surfaced even before any Ray dispatch happens. File existence
+    on disk determines `exists`/`mtime` per filter.
     """
-    from pipelines.registry import registered_pipeline_names
+    from pipelines.registry import registered_pipelines
     from pipelines.output_index import for_object
 
-    resolved = _resolve_versioned_object(object_type, object_id)
-    if resolved is None:
+    entity = _resolve_entity(object_type, object_id)
+    if entity is None:
         return abort(404)
-    _obj, filters, filename_candidates = resolved
 
+    filters = _entity_filters(entity, object_type)
     iter_filters = filters or [None]
-    # `indexed[pipeline][display][filter]` is the trace-recorded path
-    # for that tap point (or absent if the pipeline hasn't traced yet,
-    # or hasn't tagged any op with `display=`).
+
+    _ensure_pipelines_traced(object_type, object_id, entity)
     indexed = for_object(object_type, object_id)
 
-    # Default-display name to use for the fallback tap (when the index
-    # has no entries for a pipeline). Mosaic → "Mosaic"; everything
-    # else → "Master" matches the conventional sink labelling used by
-    # the built-in pipelines.
-    fallback_display = "Mosaic" if object_type == "mosaic" else "Master"
-    # Subframe pipeline's mosaic sink is labelled "Subframe" instead
-    # of "Mosaic" — the only pipeline-specific override needed for
-    # the fallback path.
-    subframe_fallback = "Subframe" if object_type == "mosaic" else "Master"
-
     pipelines = []
-    for name in sorted(registered_pipeline_names()):
-        impl, level = _PIPELINE_FINAL_OUTPUT.get(name, (PIXINSIGHT, MASTER))
+    # Every registered (name, class) entry whose class matches the
+    # entity gets a row — even pipelines with no traced taps appear
+    # in the dashboard (empty `taps` list), so the user sees the full
+    # available menu before queuing anything.
+    applicable = sorted({
+        name for (name, processes_class) in registered_pipelines().keys()
+        if processes_class is type(entity)
+    })
+    for name in applicable:
         traced_taps = indexed.get(name, {})
-
-        if traced_taps:
-            # Trace populated the index — use it directly.
-            tap_displays = sorted(traced_taps.keys())
-            taps = []
-            for display in tap_displays:
-                tap_paths = traced_taps[display]
-                outputs = []
-                for f in iter_filters:
-                    p = tap_paths.get(str(f))
-                    exists = p is not None and os.path.exists(p)
-                    outputs.append({
-                        "filter": f,
-                        "exists": exists,
-                        "mtime": os.path.getmtime(p) if exists else None,
-                    })
-                taps.append({"display": display, "outputs": outputs})
-        else:
-            # Fallback: synthesize one tap from the static (impl, level)
-            # mapping. Display name guesses at the conventional sink.
-            display = (
-                subframe_fallback if name == "Subframe" else fallback_display
-            )
+        taps = []
+        for display in sorted(traced_taps.keys()):
+            tap_paths = traced_taps[display]
             outputs = []
             for f in iter_filters:
-                candidates = filename_candidates(impl, level, f)
-                hit = next(
-                    (p for p in candidates if p is not None and os.path.exists(p)),
-                    None,
-                )
+                p = tap_paths.get(str(f))
+                exists = p is not None and os.path.exists(p)
                 outputs.append({
                     "filter": f,
-                    "exists": hit is not None,
-                    "mtime": os.path.getmtime(hit) if hit is not None else None,
+                    "exists": exists,
+                    "mtime": os.path.getmtime(p) if exists else None,
                 })
-            taps = [{"display": display, "outputs": outputs}]
-
+            taps.append({"display": display, "outputs": outputs})
         pipelines.append({"name": name, "taps": taps})
 
     return jsonify({"filters": filters, "pipelines": pipelines})
