@@ -4,7 +4,7 @@ from beartype import beartype
 from shapely import box  # type: ignore
 
 from geometry.projection import Projection
-from hashing import hash_dataclass
+from hashing import hash_dataclass, hash_list_int
 from targets.types import TargetHash
 from attributes import AstrometricAttributes, ChronologyAttributes
 from cache.content_hashed import ContentHashed
@@ -90,7 +90,12 @@ class Mosaic(
 
     def __hash__(self) -> int:
         assert self.content_hash, "Mosaic has empty content_hash"
-        return hash_dataclass(self)
+        # content_hash is precomputed and uniquely identifies this
+        # Mosaic. Hashing the whole dataclass — chasing strips,
+        # targets, polygons, healpix_cells, footprint — is O(mosaic
+        # size). When this gets called once per Node created in a
+        # pipeline trace, a big mosaic blows up to 20+ seconds.
+        return hash_list_int([self.content_hash])
 
     def __eq__(self, other) -> bool:
         if not isinstance(other, Mosaic):

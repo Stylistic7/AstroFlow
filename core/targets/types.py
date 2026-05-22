@@ -67,7 +67,11 @@ class Target(
 
     def __hash__(self) -> int:
         assert self.content_hash, "Target has empty content_hash"
-        return hash_dataclass(self)
+        # content_hash already captures every field; hash_dataclass
+        # would re-walk all of them (stack_ids, polygons, footprint,
+        # healpix_cells, ...) every time, blowing up trace cost by
+        # O(target size). Matches the pattern Stack already uses.
+        return hash_list_int([self.content_hash])
 
     def __eq__(self, other) -> bool:
         if not isinstance(other, Target):
