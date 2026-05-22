@@ -100,7 +100,13 @@ def for_mosaic(mosaic, config):
         ]
         if not placed:
             continue
-        merged = merge_images(mosaic, filter, mock, *placed)
+        # Single panel: skip merge_images. The placed image IS the
+        # whole-mosaic output for this filter; the store handles it
+        # directly. This keeps single-panel mosaics from spending a
+        # Ray task on a trivial copy.
+        merged = placed[0] if len(placed) == 1 else merge_images(
+            mosaic, filter, mock, *placed,
+        )
         out[filter] = store_mosaic_color_channel_xisf(
             mosaic, filter, mock, merged,
         )

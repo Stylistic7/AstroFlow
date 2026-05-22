@@ -122,19 +122,6 @@ def test_empty_frozendict_stable():
     assert hash_list([frozendict()]) == hash_list([frozendict()])
 
 
-def test_quality_level_stable():
-    """QualityLevel (StrEnum) must hash stably."""
-    from previews.types import QualityLevel
-    assert hash_list([QualityLevel.MASTER]) == hash_list([QualityLevel.MASTER])
-    assert hash_list([QualityLevel.MASTER]) != hash_list([QualityLevel.SUBFRAME])
-
-
-def test_implementation_stable():
-    from previews.types import PIXINSIGHT, OSS
-    assert hash_list([PIXINSIGHT]) == hash_list([PIXINSIGHT])
-    assert hash_list([PIXINSIGHT]) != hash_list([OSS])
-
-
 def test_set_order_independent():
     assert hash_list([{"c", "a", "b"}]) == hash_list([{"b", "c", "a"}])
 

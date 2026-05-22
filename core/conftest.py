@@ -103,6 +103,15 @@ def test_context(init_ray):
     assert ray.is_initialized()
     from testing.test_context import make_test_context
 
+    # The @lru_cache on `targets.target_channel._resolved_by_filter`
+    # is process-wide and keyed on the `target.stack_ids` tuple. Two
+    # tests in the same xdist worker that synthesize targets with
+    # identical stack_ids (e.g. "stack_a"/"stack_b") would get the
+    # prior test's stacks back. Clear before each test so resolution
+    # reflects the current `context.stacks`.
+    from targets.target_channel import _resolved_by_filter
+    _resolved_by_filter.cache_clear()
+
     test_context = make_test_context()
 
     yield test_context

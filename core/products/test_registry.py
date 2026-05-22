@@ -86,7 +86,6 @@ def test_presentation_cache_key_distinguishes_object_kind():
     depend on it — just sourced from self now)."""
     from dataclasses import dataclass
     from products.identity import ObjectId, PresentationType
-    from previews.types import PIXINSIGHT, SUBFRAME, MASTER
 
     @dataclass(frozen=True)
     class _A(ObjectId):

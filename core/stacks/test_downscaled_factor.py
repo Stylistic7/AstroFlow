@@ -114,16 +114,17 @@ def test_stack_files_downscaled_registered_for_both_identities():
     from stacks.stacking.pixinsight import stack_files_downscaled
     from products.identity import StackId, CalibrationStackId
 
-    keys = stack_files_downscaled.filename_fns.keys()
-    identities = {k[0] for k in keys}
+    # B-7-22: filename_fns is keyed by identity_cls only (no level
+    # axis); identities go in `_identities` for tap-point recording.
+    identities = set(stack_files_downscaled.filename_fns.keys())
     assert StackId in identities, (
         f"stack_files_downscaled should be registered for StackId, "
-        f"got keys: {list(keys)}"
+        f"got: {identities}"
     )
     assert CalibrationStackId in identities, (
         f"stack_files_downscaled should be registered for "
         f"CalibrationStackId so cal masters get downscaled too, "
-        f"got keys: {list(keys)}"
+        f"got: {identities}"
     )
 
 

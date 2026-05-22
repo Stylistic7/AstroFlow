@@ -132,11 +132,16 @@ def test_quarantine_triggers_restack(test_context) -> None:
     run_graph(build_compute_graph())
 
     # Locate the master file produced by stack_files (mock-stacked).
-    from products.registry import get_filename_fn, MediaType
-    from products.identity import StackId
-    from previews.types import QualityLevel
-    master_fn = get_filename_fn(MediaType.IMAGE, StackId, QualityLevel.MASTER)
-    master_path = master_fn(stack)
+    # Post-call-hash refactor (B-7-19) the filename is `<call_hash>.xisf`
+    # under `Stack/stack_files/`. Glob the directory for the only
+    # master that was produced — there's just one stack in this test.
+    from pathlib import Path
+    master_dir = Path(context.output_dir) / "Stack" / "stack_files"
+    masters = list(master_dir.glob("*.xisf"))
+    assert len(masters) == 1, (
+        f"Expected exactly one stack_files master, found: {masters}"
+    )
+    master_path = masters[0]
     assert master_path.exists(), f"No master at {master_path} after first run"
 
     def file_hash(p):
@@ -178,32 +183,36 @@ def test_quarantine_triggers_restack(test_context) -> None:
     time.sleep(1.05)
     run_graph(build_compute_graph())
 
-    assert master_path.exists()
-    new_mtime = master_path.stat().st_mtime
-    new_hash = file_hash(master_path)
-    new_meta_hash = sidecar_image_metadata_content_hash(master_path)
+    # Post B-7-19, filenames are call-hash-based: decision overrides
+    # flow into the cache_key_narrow → into the filename. A re-stack
+    # with new decisions writes a NEW file at a NEW call_hash; the
+    # original master file is left untouched (orphaned for GC). The
+    # invariant we lock down here is "a fresh master was produced
+    # whose content differs from the original."
+    masters_after = sorted(
+        master_dir.glob("*.xisf"), key=lambda p: p.stat().st_mtime,
+    )
+    new_masters = [m for m in masters_after if m != master_path]
+    assert len(new_masters) >= 1, (
+        f"Expected a new master file after quarantine + re-stack, "
+        f"found only: {[p.name for p in masters_after]}"
+    )
+    new_master_path = new_masters[-1]
+    new_hash = file_hash(new_master_path)
+    new_meta_hash = sidecar_image_metadata_content_hash(new_master_path)
 
-    assert new_mtime > original_mtime, (
-        f"Master mtime did not advance after quarantine "
-        f"({original_mtime} -> {new_mtime}); stack_files did not re-execute"
-    )
     assert new_hash != original_hash, (
-        "Master content unchanged after quarantine; stack_files "
-        "reused a stale cached result"
+        f"New master {new_master_path.name} has identical content to "
+        f"the original {master_path.name} — quarantine had no effect"
     )
-    # Locks in the sidecar-staleness fix: when stack_files rewrites the
-    # master, the cached_decorator's discard_sidecar hook clears the
-    # sidecar so compute_image_metadata re-derives image_metadata from
-    # the new file content.
     assert new_meta_hash is not None, (
-        "Expected compute_image_metadata to re-populate image_metadata "
-        "in the sidecar after the second stack run"
+        "Expected compute_image_metadata to populate image_metadata "
+        "in the new master's sidecar after the second stack run"
     )
     assert new_meta_hash != original_meta_hash, (
-        f"Sidecar image_metadata.content_hash unchanged after re-stack "
-        f"({original_meta_hash} -> {new_meta_hash}); compute_image_metadata "
-        f"returned a stale cached value instead of re-deriving from the "
-        f"new master file"
+        f"Sidecar image_metadata.content_hash on new master matches "
+        f"the original's ({original_meta_hash}); compute_image_metadata "
+        f"returned a stale cached value instead of deriving fresh."
     )
 
 

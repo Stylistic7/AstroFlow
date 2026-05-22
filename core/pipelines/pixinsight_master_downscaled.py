@@ -85,7 +85,9 @@ def for_mosaic(mosaic, config):
         ]
         if not placed:
             continue
-        merged = merge_images_downscaled_master(mosaic, filter, mock, *placed)
+        merged = placed[0] if len(placed) == 1 else merge_images_downscaled_master(
+            mosaic, filter, mock, *placed,
+        )
         out[filter] = store_mosaic_color_channel_downscaled_master(
             mosaic, filter, mock, merged,
         )

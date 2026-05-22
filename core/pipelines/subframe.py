@@ -87,7 +87,9 @@ def for_mosaic(mosaic, config):
         ]
         if not placed:
             continue
-        merged = merge_images_subframe(mosaic, filter, *placed)
+        merged = placed[0] if len(placed) == 1 else merge_images_subframe(
+            mosaic, filter, *placed,
+        )
         out[filter] = store_mosaic_color_channel_subframe(mosaic, filter, merged)
 
     return out
