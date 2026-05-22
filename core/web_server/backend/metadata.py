@@ -279,19 +279,23 @@ def _ensure_pipelines_traced(object_type: str, object_id: str, entity) -> None:
     """Trace every registered pipeline for `entity` so the
     PipelineOutputIndex carries its tap-point structure. Tracing is
     in-process and cheap — just walks the @pipeline body and records
-    Node identities. No Ray dispatch, no compute. Idempotent: trace
-    results overwrite previous entries with identical keys."""
+    Node identities. No Ray dispatch, no compute.
+
+    The web server runs in `LocalContext` (direct-to-SQLite, no Ray
+    init), so the cfg we pass to pipeline_fn must not wrap its
+    fields in `ContextRef` — that would call `ray.put`. Plain dict /
+    frozendict literals are enough: pipeline bodies use cfg only
+    structurally at trace time (e.g. `cfg.development_settings.
+    mock_pixinsight`), they don't invoke `cfg.get_calibration_stacks()`
+    until the graph runs."""
     from pipelines.registry import registered_pipelines
     from pipelines.output_index import record as record_pipeline_output
     from compute_graph.compute_graph import _record_pipeline_taps
     from decisions.settings import ProcessingConfig, DevelopmentSettings
-    from cache.context_ref import ContextRef
     from frozendict import frozendict as fd
 
     cfg = ProcessingConfig(
-        calibration_stacks=ContextRef.store_large(
-            context.calibration_stacks or {}
-        ),
+        calibration_stacks=context.calibration_stacks or fd(),
         development_settings=DevelopmentSettings(mock_pixinsight=False),
         min_frames_in_stack=3,
         decisions=fd(),
@@ -302,10 +306,14 @@ def _ensure_pipelines_traced(object_type: str, object_id: str, entity) -> None:
             continue
         try:
             graph = pipeline_fn(entity, cfg)
-        except Exception:
+        except Exception as e:
             # A pipeline that can't trace this entity (missing
             # context dependencies etc.) just doesn't contribute
-            # taps — caller still sees its name + empty taps.
+            # taps — caller still sees its name + empty taps. Log
+            # so we notice systematic trace failures.
+            import traceback
+            print(f"### pipeline trace failed: {name} for {object_type}/{object_id}: {e}")
+            traceback.print_exc()
             continue
         _record_pipeline_taps(
             record_pipeline_output, name, object_type, object_id, graph,
