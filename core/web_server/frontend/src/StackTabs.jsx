@@ -79,7 +79,7 @@ function BlinkQualityInfo({ stack_id }) {
   );
 }
 
-const StackTabs = ({ stack_type, stack, stack_id, implementation, quality }) => {
+const StackTabs = ({ stack_type, stack, stack_id, pipeline, display }) => {
   const [tabIndex, setTabIndex] = useState(0);
   const videoRef = useRef(null);
 
@@ -125,8 +125,8 @@ const StackTabs = ({ stack_type, stack, stack_id, implementation, quality }) => 
               <AstroFlowImage
                 objectType={stack_type}
                 objectId={stack_id}
-                qualityLevel={quality}
-                implementation={implementation}
+                pipeline={pipeline}
+                display={display}
                 showQualitySelector={false}
               />
             </Box>

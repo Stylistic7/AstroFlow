@@ -61,36 +61,26 @@ def select_file():
 def stacking_report(stack_id):
     """Stacker-agnostic summary read off the master file on disk.
 
-    Resolves the master path for (stack_id, quality, implementation)
-    via the producers registry, then parses the file's headers and
-    XISF properties into a uniform shape (StackingReport). Returns
-    `null` when the master hasn't been produced yet.
+    Resolves the master path via the PipelineOutputIndex (tap-keyed)
+    and parses the file's headers + XISF properties into a uniform
+    shape (StackingReport). Returns `null` when the tap point hasn't
+    produced an artifact yet.
 
-    Query params:
-      quality (default "Master")
-      implementation (default "PixInsight")
+    Query params (defaults reflect the PixInsight Master pipeline's
+    Master tap):
+      pipeline (default "PixInsight Master")
+      display  (default "Master")
     """
-    from products.registry import get_filename_fn, MediaType
-    from products.identity import identity_for_stack
-    from previews.types import QualityLevel, PIXINSIGHT, MASTER
     from stacks.stacking_report import read_stacking_report
+    from web_server.backend.metadata import tap_path_for
 
     if stack_id not in (context.stacks or {}):
         return jsonify({"error": "stack not found"}), 404
-    stack = context.stacks[stack_id].get()
 
-    quality_str = request.args.get("quality", "Master")
-    impl_str = request.args.get("implementation", "PixInsight")
-    try:
-        quality = quality_str
-        implementation = impl_str
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+    pipeline = request.args.get("pipeline", "PixInsight Master")
+    display = request.args.get("display", "Master")
 
-    filename_fn = get_filename_fn(MediaType.IMAGE, identity_for_stack(stack), quality, implementation)
-    if filename_fn is None:
-        return jsonify(None)
-    master_path = filename_fn(stack)
+    master_path = tap_path_for(pipeline, display, "stack", stack_id, None)
     if not master_path or not Path(master_path).exists():
         return jsonify(None)
 
@@ -109,22 +99,22 @@ def concerns_for_object(object_type, object_id):
     each carries `event` (title), `detail`, and `_concern`
     ("warning"/"error") plus any structured fields the emitter attached.
 
-    Query params (all required for full disambiguation):
-      quality (default "Master")
-      implementation (default "PixInsight")
+    Query params:
+      pipeline (default "PixInsight Master")  — selects the producer's
+        (impl, level) for the cache-key lookup. Concerns are still
+        written under the legacy (impl, level) shape by `@capture_logs`;
+        this endpoint translates pipeline → (impl, level) for the read.
+      display (default "Master")  — unused for the lookup, kept in the
+        signature so callers can pass the dashboard's selected tap.
       filter — required for object_type=mosaic
     """
     from products.identity import StackId, MosaicChannelId
-    from previews.types import QualityLevel, PIXINSIGHT, MASTER
     from context import get_cache
 
-    quality_str = request.args.get("quality", "Master")
-    impl_str = request.args.get("implementation", "PixInsight")
-    try:
-        quality = quality_str
-        implementation = impl_str
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+    from web_server.backend.metadata import pipeline_to_impl_quality
+    pipeline = request.args.get("pipeline", "PixInsight Master")
+    request.args.get("display", "Master")  # accepted but unused
+    implementation, quality = pipeline_to_impl_quality(pipeline)
 
     if object_type == "stack":
         if object_id not in (context.stacks or {}):

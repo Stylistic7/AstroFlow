@@ -9,20 +9,20 @@ import ConcernsDialog from './ConcernsDialog.jsx';
  * (e.g., WBPP dropped frames, plate-solving failed on most subframes).
  *
  * Yellow when the highest severity is warning, red when error.
- * Fetches /api/concerns/<type>/<id>?quality=&implementation=&filter=.
+ * Fetches /api/concerns/<type>/<id>?pipeline=&display=&filter=.
  *
  * Props:
  *   objectType: "stack" | "target" | "mosaic"
  *   objectId: the stable_hash of the object
- *   quality: e.g., "Master" (default)
- *   implementation: e.g., "PixInsight" (default)
+ *   pipeline: e.g., "PixInsight Master" (default)
+ *   display: e.g., "Master" (default)
  *   filter: required for objectType="mosaic"
  */
 export default function ConcernsBadge({
   objectType,
   objectId,
-  quality = "Master",
-  implementation = "PixInsight",
+  pipeline = "PixInsight Master",
+  display = "Master",
   filter,
 }) {
   const [concerns, setConcerns] = useState([]);
@@ -30,7 +30,7 @@ export default function ConcernsBadge({
 
   const load = useCallback(async () => {
     try {
-      const params = new URLSearchParams({ quality, implementation });
+      const params = new URLSearchParams({ pipeline, display });
       if (filter) params.set('filter', filter);
       const url = `/api/concerns/${objectType}/${objectId}?${params}`;
       const res = await fetch(url);
@@ -38,7 +38,7 @@ export default function ConcernsBadge({
       const data = await res.json();
       setConcerns(Array.isArray(data) ? data : []);
     } catch (e) { console.warn(e); }
-  }, [objectType, objectId, quality, implementation, filter]);
+  }, [objectType, objectId, pipeline, display, filter]);
 
   useEffect(() => { load(); }, [load]);
 

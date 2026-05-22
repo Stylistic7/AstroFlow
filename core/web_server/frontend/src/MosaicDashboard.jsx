@@ -1,13 +1,12 @@
-// MosaicDashboard.jsx — at-a-glance view of a mosaic, one row per
-// registered pipeline. Each row shows a thumbnail per filter; clicking
-// a thumbnail opens that pipeline's output in a full-screen viewer.
+// MosaicDashboard.jsx — at-a-glance view of a mosaic. One section per
+// registered pipeline, one ROW per tap point within that pipeline,
+// thumbnails per filter inside each row.
 //
 // Data source: `/api/pipeline_outputs/mosaic/<id>` returns one entry
-// per pipeline (PixInsight Master, PixInsight Downscaled, Subframe,
-// + any user-registered pipelines). The (implementation, quality)
-// fields on each pipeline entry are still threaded into thumbnail
-// URLs because the on-disk artifacts are still keyed that way; the
-// pipeline name is the user-facing label.
+// per pipeline, with that pipeline's tap points (display labels) and
+// per-(tap, filter) on-disk existence. Tap points are discovered at
+// pipeline-trace time from `@makes_image(display=...)` annotations,
+// so user pipelines surface in this dashboard automatically.
 import React, { useContext, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Box, Paper, Typography, Divider } from "@mui/material";
@@ -16,13 +15,17 @@ import AstroFlowContext from "./AstroFlowContext.jsx";
 
 
 function VersionThumbnail({
-    mosaicId, implementation, quality, filter, exists, mtime,
+    objectType, objectId, pipeline, display, filter, exists, mtime,
 }) {
     const navigate = useNavigate();
+    // Tap-keyed URLs: `(pipeline, display)` together identify the
+    // artifact within the pipeline's graph. `<path:>` on the backend
+    // lets the slash inside the joined segment pass through.
+    const tap = `${encodeURIComponent(pipeline)}/${encodeURIComponent(display)}`;
     const url = exists
-        ? `/thumbnail/mosaic/${mosaicId}/${implementation}/${quality}/${filter}?v=${mtime}`
+        ? `/tap/thumbnail/${objectType}/${objectId}/${tap}/${filter}?v=${mtime}`
         : null;
-    const href = `/mosaic/${mosaicId}/${implementation}/${quality}/${filter}`;
+    const href = `/${objectType}/${objectId}/${tap}/${filter}`;
 
     const sx = {
         width: 200,
@@ -45,7 +48,7 @@ function VersionThumbnail({
             {url ? (
                 <img
                     src={url}
-                    alt={`${filter}`}
+                    alt={`${display} — ${filter}`}
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                 />
             ) : (
@@ -67,34 +70,50 @@ function VersionThumbnail({
 }
 
 
-function PipelineSection({ mosaicId, pipeline, filters }) {
-    // outputs[i] aligns with filters[i] (backend guarantees same order).
-    const byFilter = {};
-    for (let i = 0; i < filters.length; i++) {
-        byFilter[filters[i]] = pipeline.outputs[i];
-    }
+function PipelineSection({ objectType, objectId, pipeline, filters }) {
     return (
         <Box sx={{ mb: 4 }}>
             <Typography variant="h6" sx={{ mb: 1, color: 'primary.main' }}>
                 {pipeline.name}
             </Typography>
             <Divider sx={{ mb: 2 }} />
-            <Box sx={{ display: 'flex', gap: 1, overflowX: 'auto', flex: 1 }}>
-                {filters.map((f) => {
-                    const o = byFilter[f] || { filter: f, exists: false };
-                    return (
-                        <VersionThumbnail
-                            key={f}
-                            mosaicId={mosaicId}
-                            implementation={pipeline.implementation}
-                            quality={pipeline.quality}
-                            filter={f}
-                            exists={o.exists}
-                            mtime={o.mtime}
-                        />
-                    );
-                })}
-            </Box>
+            {pipeline.taps.map((tap) => {
+                // outputs[i] aligns with filters[i] (backend
+                // guarantees same order within a tap).
+                const byFilter = {};
+                for (let i = 0; i < filters.length; i++) {
+                    byFilter[filters[i]] = tap.outputs[i];
+                }
+                return (
+                    <Box key={tap.display} sx={{ mb: 2 }}>
+                        <Typography variant="body2" sx={{
+                            color: 'text.secondary',
+                            mb: 0.5,
+                        }}>
+                            {tap.display}
+                        </Typography>
+                        <Box sx={{
+                            display: 'flex', gap: 1, overflowX: 'auto', flex: 1,
+                        }}>
+                            {filters.map((f) => {
+                                const o = byFilter[f] || { filter: f, exists: false };
+                                return (
+                                    <VersionThumbnail
+                                        key={f}
+                                        objectType={objectType}
+                                        objectId={objectId}
+                                        pipeline={pipeline.name}
+                                        display={tap.display}
+                                        filter={f}
+                                        exists={o.exists}
+                                        mtime={o.mtime}
+                                    />
+                                );
+                            })}
+                        </Box>
+                    </Box>
+                );
+            })}
         </Box>
     );
 }
@@ -145,7 +164,8 @@ export default function MosaicDashboard() {
                 pipelines.map((p) => (
                     <PipelineSection
                         key={p.name}
-                        mosaicId={mosaic_id}
+                        objectType="mosaic"
+                        objectId={mosaic_id}
                         pipeline={p}
                         filters={filters}
                     />

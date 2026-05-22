@@ -244,7 +244,7 @@ function App() {
                     <StackViewer />
                   </AppLayout>
                 } />
-                <Route path="/stack/:stack_id/:implementation/:quality" element={
+                <Route path="/stack/:stack_id/:pipeline/:display" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <StackViewer />
@@ -274,7 +274,7 @@ function App() {
                     <MosaicDashboard />
                   </AppLayout>
                 } />
-                <Route path="/mosaic/:mosaic_id/:implementation/:quality/:filter" element={
+                <Route path="/mosaic/:mosaic_id/:pipeline/:display/:filter" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <MosaicViewer />
@@ -286,7 +286,7 @@ function App() {
                     <StackViewer />
                   </AppLayout>
                 } />
-                <Route path="/target/:target_id/stack/:stack_id/:implementation/:quality" element={
+                <Route path="/target/:target_id/stack/:stack_id/:pipeline/:display" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <StackViewer />
@@ -310,7 +310,7 @@ function App() {
                     <StackViewer />
                   </AppLayout>
                 } />
-                <Route path="/mosaic/:mosaic_id/target/:target_id/stack/:stack_id/:implementation/:quality" element={
+                <Route path="/mosaic/:mosaic_id/target/:target_id/stack/:stack_id/:pipeline/:display" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <StackViewer />

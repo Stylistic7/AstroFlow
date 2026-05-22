@@ -12,10 +12,10 @@ import { format_duration } from './units.js';
  *
  * Props:
  *   stack_id: stable_hash of the stack
- *   quality: e.g. "Master"
- *   implementation: e.g. "PixInsight"
+ *   pipeline: e.g. "PixInsight Master"
+ *   display: e.g. "Master"
  */
-export default function StackingReportPanel({ stack_id, quality = "Master", implementation = "PixInsight" }) {
+export default function StackingReportPanel({ stack_id, pipeline = "PixInsight Master", display = "Master" }) {
   const [report, setReport] = useState(null);
 
   useEffect(() => {
@@ -24,8 +24,8 @@ export default function StackingReportPanel({ stack_id, quality = "Master", impl
       try {
         const res = await fetch(
           `/api/stack/${stack_id}/stacking_report`
-          + `?quality=${encodeURIComponent(quality)}`
-          + `&implementation=${encodeURIComponent(implementation)}`
+          + `?pipeline=${encodeURIComponent(pipeline)}`
+          + `&display=${encodeURIComponent(display)}`
         );
         if (!res.ok) return;
         const data = await res.json();
@@ -33,7 +33,7 @@ export default function StackingReportPanel({ stack_id, quality = "Master", impl
       } catch (e) { console.warn(e); }
     })();
     return () => { cancelled = true; };
-  }, [stack_id, quality, implementation]);
+  }, [stack_id, pipeline, display]);
 
   if (!report) return null;
 

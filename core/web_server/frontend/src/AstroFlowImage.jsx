@@ -1,41 +1,14 @@
-import { useContext, useEffect, useState } from "react";
 import TileViewer from "./TileViewer.jsx";
-import AstroFlowContext from "./AstroFlowContext.jsx";
-import QualityLevelSelector from "./QualityLevelSelector.jsx";
+
 
 /**
- * Hook to fetch available quality levels for an object.
- * Returns [qualityLevel, setQualityLevel, enrichedLevels].
+ * Thin wrapper around TileViewer (full-size) or a thumbnail <img>
+ * (small-size). Caller controls which tap point is shown via
+ * (pipeline, display) — passed straight through to TileViewer's URL
+ * construction. For the `size="small"` thumbnail variant, no
+ * (pipeline, display) is needed: a default-display thumbnail per
+ * object type is fine.
  */
-export function useQualityLevels(objectType, objectId, filter) {
-    const { validity } = useContext(AstroFlowContext);
-
-    const [qualityLevel, setQualityLevel] = useState(null);
-    const [availableLevels, setAvailableLevels] = useState([]);
-
-    useEffect(() => {
-        const url = filter !== undefined
-            ? `/api/available_qualities/${objectType}/${objectId}/${filter}`
-            : `/api/available_qualities/${objectType}/${objectId}`;
-        fetch(url)
-            .then((res) => res.ok ? res.json() : null)
-            .then((data) => {
-                if (!data) return;
-                setQualityLevel(data.quality_level);
-                setAvailableLevels(data.available || []);
-            })
-            .catch((e) => console.warn(e));
-    }, [objectType, objectId, filter]);
-
-    const objectValidity = validity[`${objectType}:${objectId}`] || {};
-    const enrichedLevels = availableLevels.map(l => ({
-        ...l,
-        valid: objectValidity[l.quality_level] ?? l.valid,
-    }));
-
-    return [qualityLevel, setQualityLevel, enrichedLevels];
-}
-
 export const AstroFlowImage = ({
     objectType,
     objectId,
@@ -43,18 +16,9 @@ export const AstroFlowImage = ({
     showPolygons = false,
     showPanelNumbers = false,
     size = "full",
-    showQualitySelector = true,
-    qualityLevel: qualityLevelProp = undefined,
-    onQualityChange = undefined,
-    implementation = undefined,
+    pipeline = undefined,
+    display = undefined,
 }) => {
-    // Use controlled props if provided, otherwise manage internally.
-    const [internalLevel, setInternalLevel, enrichedLevels] =
-        useQualityLevels(objectType, objectId, filter);
-
-    const qualityLevel = qualityLevelProp !== undefined ? qualityLevelProp : internalLevel;
-    const setQualityLevel = onQualityChange || setInternalLevel;
-
     const thumbnail_url = `/thumbnail/${objectType}/${objectId}${filter ? `/${filter}` : ''}`;
 
     return (
@@ -62,12 +26,12 @@ export const AstroFlowImage = ({
             <div style={{ flexGrow: 1, position: 'relative', overflow: 'hidden' }}>
                 {size === "full" ? (
                     <TileViewer
-                        key={`${objectType}:${objectId}:${filter}:${qualityLevel}:${implementation}`}
+                        key={`${objectType}:${objectId}:${filter}:${pipeline}:${display}`}
                         objectType={objectType}
                         imageHash={objectId}
                         filter={filter}
-                        qualityLevel={qualityLevel}
-                        implementation={implementation}
+                        pipeline={pipeline}
+                        display={display}
                         showPolygons={showPolygons}
                         showPanelNumbers={showPanelNumbers}
                     />
@@ -77,19 +41,6 @@ export const AstroFlowImage = ({
                         alt={`${objectType} ${objectId}`}
                         style={{ width: "100%", height: "auto" }}
                     />
-                )}
-
-                {showQualitySelector && (
-                    <div style={{
-                        position: 'absolute', top: 8, left: 8,
-                        pointerEvents: 'auto',
-                    }}>
-                        <QualityLevelSelector
-                            selected={qualityLevel}
-                            available={enrichedLevels}
-                            onSelect={setQualityLevel}
-                        />
-                    </div>
                 )}
             </div>
         </div>

@@ -28,11 +28,11 @@ import ToggleIconButton from "./ToggleIconButton";
 import WorkflowGraph from "./WorkflowGraph.jsx";
 import ConcernsBadge from "./ConcernsBadge.jsx";
 import darkTheme from "./theme.js";
-import { useVersionsMatrix, useVersionCycling, versionExists } from "./useVersions.js";
+import { useVersionsMatrix } from "./useVersions.js";
 
 
 export default function MosaicViewer() {
-    const { mosaic_id, implementation, quality, filter } = useParams();
+    const { mosaic_id, pipeline, display, filter } = useParams();
     const navigate = useNavigate();
     const { stacks, targets, mosaics, computeGraphStatus } = useContext(AstroFlowContext);
 
@@ -45,28 +45,12 @@ export default function MosaicViewer() {
 
     const versionsData = useVersionsMatrix("mosaic", mosaic_id, computeGraphStatus);
 
-    // Keyboard shortcuts:  [ ]  implementation,  { }  quality,  , .  filter.
-    const onCycle = useCallback(
-        ({ implementation: i, quality: q, filter: f }) =>
-            navigate(`/mosaic/${mosaic_id}/${i}/${q}/${f}`),
-        [navigate, mosaic_id],
-    );
-    useVersionCycling({
-        data: versionsData,
-        current: { implementation, quality, filter },
-        onChange: onCycle,
-    });
-
-    // The "Open in PixInsight" button needs to know whether the
-    // canonical Master output (or its in-progress fallback) exists for
-    // the current view; either path counts as available per the
-    // versions matrix.
-    const masterExists = versionExists(
-        versionsData.versions, implementation, "Master", filter,
-    );
-
     const openInPixInsight = () => {
-        fetch(`/api/open_mosaic_master/${mosaic_id}/${implementation}/${filter}`)
+        // Backend resolves (pipeline, display) → on-disk file via the
+        // PipelineOutputIndex. `<path:>` parsing carries the slash
+        // between pipeline and display segments.
+        const tap = `${encodeURIComponent(pipeline)}/${encodeURIComponent(display)}`;
+        fetch(`/api/open_mosaic_master/${mosaic_id}/${tap}/${filter}`)
             .then((r) => { if (!r.ok) console.warn("open_mosaic_master failed", r.status); })
             .catch(console.error);
     };
@@ -122,11 +106,10 @@ export default function MosaicViewer() {
 						<ShareIcon fontSize="small" />
 					</IconButton>
 				</Tooltip>
-				<Tooltip title={masterExists ? "Open in PixInsight" : "No master image available yet"}>
+				<Tooltip title="Open in PixInsight">
 					<span>
 						<IconButton
 							size="small"
-							disabled={!masterExists}
 							onClick={openInPixInsight}
 							sx={{ color: 'text.secondary' }}
 						>
@@ -137,8 +120,8 @@ export default function MosaicViewer() {
 				<ConcernsBadge
 					objectType="mosaic"
 					objectId={mosaic_id}
-					quality={quality}
-					implementation={implementation}
+					pipeline={pipeline}
+					display={display}
 					filter={filter}
 				/>
 			</Box>
@@ -177,8 +160,8 @@ export default function MosaicViewer() {
 						filter={filter}
 						showPolygons={showOutline}
 						showPanelNumbers={showPanelNumbers}
-						qualityLevel={quality}
-						implementation={implementation}
+						pipeline={pipeline}
+						display={display}
 						showQualitySelector={false}
 					/>
 				</Box>
@@ -195,7 +178,7 @@ export default function MosaicViewer() {
 				>
 					<WorkflowGraph
 						theme={darkTheme}
-						url={`/api/workflow_graph/mosaic/${mosaic_id}/${filter}/${quality}`}
+						url={`/api/workflow_graph/mosaic/${mosaic_id}/${filter}/${encodeURIComponent(pipeline)}`}
 					/>
 				</Box>
 			</Box>

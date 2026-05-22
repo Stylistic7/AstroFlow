@@ -380,53 +380,29 @@ def available_qualities(object_type: str, object_id: str, filter: str = None):
     })
 
 
-@metadata_bp.route("/api/metadata/<object_type>/<object_id>/<level_or_filter>")
-@metadata_bp.route("/api/metadata/<object_type>/<object_id>/<filter>/<level>")
-def metadata(object_type: str, object_id: str, level_or_filter: str = None, filter: str = None, level: str = None):
-    """Return polygons and image path for an object at a specific quality level.
+@metadata_bp.route("/api/metadata/<object_type>/<object_id>/<path:pipeline_and_display>/<filter>")
+@metadata_bp.route("/api/metadata/<object_type>/<object_id>/<path:pipeline_and_display>")
+def metadata(object_type: str, object_id: str, pipeline_and_display: str, filter: str | None = None):
+    """Polygons + image path for a specific (pipeline, display) tap.
 
-    Supports both:
-      /api/metadata/stack/:id/:level
-      /api/metadata/mosaic/:id/:filter/:level
+    `pipeline_and_display` is `<pipeline>/<display>` joined into one
+    `<path:>` segment so Flask doesn't have to know that pipeline
+    display names contain spaces.
     """
-    # Parse the URL segments. For two-segment paths, level_or_filter could be
-    # either a filter name or a quality level.
-    if level is not None:
-        # /api/metadata/:type/:id/:filter/:level
-        pass
-    elif level_or_filter is not None:
-        # /api/metadata/:type/:id/:level_or_filter
-        # Try to interpret as a quality level first.
-        try:
-            level = QualityLevel(level_or_filter)
-            level_or_filter = None
-        except ValueError:
-            filter = level_or_filter
-            level = None
+    pipeline, _, display = pipeline_and_display.rpartition("/")
+    if not pipeline or not display:
+        return abort(404)
 
-    implementation = PIXINSIGHT
     obj_type, args = _resolve_object(object_type, object_id, filter)
 
-    if level is not None:
-        quality_level = level if isinstance(level, str) else level
-    else:
-        # Fallback: find best quality.
-        result = _best_quality(obj_type, implementation, *args)
-        if result is None:
-            return abort(404)
-        quality_level, _ = result
+    path = tap_path_for(pipeline, display, object_type, object_id, filter)
+    image_path = path if path and os.path.exists(path) else None
 
-    # Get the image path for the requested level.
-    filename_fn = get_filename_fn(MediaType.IMAGE, obj_type, quality_level, implementation)
-    if filename_fn is None:
-        return abort(404)
-    filename = filename_fn(*args)
-    image_path = os.fspath(filename) if os.path.exists(filename) else None
-
-    objects = _get_polygons(obj_type, quality_level, *args)
+    objects = _get_polygons(obj_type, display, *args)
 
     return jsonify({
-        "quality_level": quality_str(level),
+        "display": display,
+        "pipeline": pipeline,
         "image_path": image_path,
         "objects": objects,
     })

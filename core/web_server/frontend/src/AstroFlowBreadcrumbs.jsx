@@ -24,9 +24,7 @@ import {
     useVersionsMatrix,
     usePipelines,
     pipelineOptions,
-    versionExists,
-    pipelineForUrlParams,
-    urlParamsForPipeline,
+    DEFAULT_DISPLAY_FOR_TYPE,
 } from './useVersions.js';
 import { filterLabel } from './filters.js';
 
@@ -118,7 +116,7 @@ export default function AstroFlowBreadcrumbs() {
     const navigate = useNavigate();
     const theme = useTheme();
 
-    const { implementation, quality, filter } = params;
+    const { pipeline, display, filter } = params;
 
     const mosaic = mosaics[params.mosaic_id];
     const target = targets[params.target_id];
@@ -168,7 +166,7 @@ export default function AstroFlowBreadcrumbs() {
         viewerObjectId = params.stack_id;
         viewerPathPrefix = stack_url;
         viewerHasFilter = false;
-    } else if (params.mosaic_id && implementation) {
+    } else if (params.mosaic_id && pipeline) {
         viewerObjectType = "mosaic";
         viewerObjectId = params.mosaic_id;
         viewerPathPrefix = mosaic_url;
@@ -191,10 +189,27 @@ export default function AstroFlowBreadcrumbs() {
     const implementations = pipelineOptions(allVersions, availablePipelines);
     const filters = versionsData.filters;
 
-    const goToVersion = (impl, q, f) =>
-        navigate(viewerHasFilter
-            ? `${viewerPathPrefix}/${impl}/${q}/${f}`
-            : `${viewerPathPrefix}/${impl}/${q}`);
+    // URLs are pipeline+display-keyed: /<obj>/<id>/<pipeline>/<display>[/<filter>].
+    // The pill-cycle callers pass the next pipeline name; we keep
+    // the current display (or fall back to the default for this
+    // object type) and re-navigate.
+    const goToPipeline = (nextPipeline, f) => {
+        const d = display || DEFAULT_DISPLAY_FOR_TYPE[viewerObjectType] || "Master";
+        const segs = [
+            viewerPathPrefix,
+            encodeURIComponent(nextPipeline),
+            encodeURIComponent(d),
+        ];
+        if (viewerHasFilter) segs.push(f);
+        navigate(segs.filter(Boolean).join("/"));
+    };
+    const goToFilter = (f) => {
+        if (!pipeline) return;
+        const d = display || DEFAULT_DISPLAY_FOR_TYPE[viewerObjectType] || "Master";
+        navigate(
+            `${viewerPathPrefix}/${encodeURIComponent(pipeline)}/${encodeURIComponent(d)}/${f}`,
+        );
+    };
 
     // Determine the deepest (most specific) object for the quarantine toggle.
     let quarantineObjectType = null;
@@ -320,38 +335,29 @@ export default function AstroFlowBreadcrumbs() {
                     <SquareFootIcon sx={{ marginRight: '0.5em' }} />
                     {capitalizeFirst(calStack.image_type)} calibration stack
                 </Link>}
-                {/* Pipeline pill. The viewer URL still carries
-                    (:implementation, :quality) for backend file lookup;
-                    we translate to/from pipeline name here so the user
-                    sees "PixInsight Master" instead of "PixInsight" +
-                    "Master" in two separate pills. */}
-                {implementation && implementations.length > 0 && (() => {
-                    const activePipeline = pipelineForUrlParams(implementation, quality);
-                    return (
-                        <PillCrumb
-                            icon={<BuildIcon sx={{ marginRight: '0.5em' }} />}
-                            options={implementations}
-                            active={activePipeline}
-                            exists={(p) => {
-                                const [i, q] = urlParamsForPipeline(p);
-                                return versionExists(allVersions, i, q, matchFilter);
-                            }}
-                            onPick={(p) => {
-                                const [i, q] = urlParamsForPipeline(p);
-                                goToVersion(i, q, filter);
-                            }}
-                            fontColor={fontColor}
-                            activeColor={theme.palette.text.primary}
-                        />
-                    );
-                })()}
+                {/* Pipeline pill — URL is pipeline-keyed; the pill
+                    just switches which pipeline's tap is displayed
+                    (carrying the current display label across, falling
+                    back to a sensible default for the object type if
+                    none was set). */}
+                {pipeline && implementations.length > 0 && (
+                    <PillCrumb
+                        icon={<BuildIcon sx={{ marginRight: '0.5em' }} />}
+                        options={implementations}
+                        active={pipeline}
+                        exists={() => true}
+                        onPick={(p) => goToPipeline(p, filter)}
+                        fontColor={fontColor}
+                        activeColor={theme.palette.text.primary}
+                    />
+                )}
                 {filter && filters.length > 0 && (
                     <PillCrumb
                         icon={<ColorLensIcon sx={{ marginRight: '0.5em' }} />}
                         options={filters}
                         active={filter}
-                        exists={(f) => versionExists(allVersions, implementation, quality, f)}
-                        onPick={(f) => goToVersion(implementation, quality, f)}
+                        exists={() => true}
+                        onPick={goToFilter}
                         fontColor={fontColor}
                         activeColor={theme.palette.text.primary}
                         formatOption={filterLabel}
