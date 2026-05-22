@@ -44,19 +44,24 @@ def test_downscaled_orion_mosaic(test_context):
 
     output = Path(context.output_dir)
 
-    # Light stack masters at DownscaledMaster come from the new
-    # `downscale_master` op composed on top of `stack_files`.
-    stack_masters = list(output.rglob("Stack/downscale_master/*.xisf"))
+    # Light stack masters come from `stack_files_downscaled` — WBPP
+    # ran on the already-downscaled input frames, so the output is
+    # at the smaller resolution directly.
+    stack_masters = list(output.rglob("Stack/stack_files_downscaled/*.xisf"))
     assert len(stack_masters) >= 1, f"Expected stack masters, found: {stack_masters}"
 
-    # Full-resolution masters ARE present — they're the upstream input
-    # the downscale_master op reads from. Same path as PI Master writes
-    # to, which is exactly what makes stack_files's diskcache shared
-    # across the two pipelines.
-    full_masters = list(output.rglob("Stack/stack_files/light*.xisf"))
-    assert len(full_masters) >= 1, (
-        f"Expected upstream full-res master, found: {full_masters}"
-    )
+    # Calibration masters also come out downscaled — the cal stacks
+    # are stacked by `stack_files_downscaled` so the cal frames used
+    # to calibrate the (downscaled) lights are themselves downscaled.
+    cal_masters = list(output.rglob("CalibrationStack/stack_files_downscaled/*.xisf"))
+    assert len(cal_masters) >= 1, f"Expected downscaled cal masters, found: {cal_masters}"
+
+    # No full-resolution masters: the downscaled pipeline never
+    # produces them (the speedup is the whole point — full-res
+    # would defeat it). PI Master pipeline would have to be queued
+    # separately to get full-res outputs.
+    full_res = list(output.rglob("Stack/stack_files/light*.xisf"))
+    assert len(full_res) == 0, f"Unexpected full-res masters: {full_res}"
 
     # Note: placement and merging are not tested here because mock
     # stacking doesn't re-solve WCS at downscaled resolution, causing

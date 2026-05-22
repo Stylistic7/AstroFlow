@@ -1,24 +1,23 @@
-"""PixInsight master at 8x downscaled resolution.
+"""PixInsight master pipeline at 8x downscaled resolution.
 
-Same algorithm as `PixInsight Master`, with one extra step inserted
-after stacking: `downscale_master` block-mean-downscales the
-full-resolution master to 8x. Gradient correction
-(`post_process_stack_downscaled`) then runs on the small image.
-
-Critical: `stack_files` is invoked with the SAME args as in the
-`PixInsight Master` pipeline, so the diskcache entry is shared
-between the two pipelines per (stack, config). Adding this mosaic to
-the cart with both pipelines runs `stack_files` exactly once and
-re-uses its master for both. The downscale step and everything
-downstream of it has its own cache entries, sized to the downscaled
-work.
+Same algorithm as `PixInsight Master`, but every input frame —
+lights AND the calibration masters they reference — is block-mean
+downscaled 8x BEFORE WBPP runs. The whole point of this pipeline
+is to cut WBPP/plate-solving/registration time by ~64x, which is
+only achievable if WBPP itself sees the small frames.
 
 The only structural difference from `pixinsight_master.py`:
 
-  PixInsight Master:                PixInsight Downscaled:
-    stack_files(s, config)            stack_files(s, config)
-                                      downscale_master(s, config)
-    post_process_stack(...)           post_process_stack_downscaled(...)
+  PixInsight Master:               PixInsight Downscaled:
+    calibrate(s, config)             calibrate(s, config,
+                                       stacker=stack_files_downscaled)
+    stack_files(s, config)           stack_files_downscaled(s, config)
+    post_process_stack(...)          post_process_stack_downscaled(...)
+
+Cal masters land in a different on-disk slot than the full-res ones
+(via the `stack_files_downscaled` op's filename_fn), so the two
+pipelines don't collide. Cache sharing across the two pipelines is
+NOT possible — they're literally different work.
 """
 from astroflow.pipeline import pipeline
 from mosaics.final_storage import store_mosaic_color_channel_xisf
@@ -28,9 +27,8 @@ from mosaics.types import Mosaic
 from previews.types import PIXINSIGHT, DOWNSCALED_MASTER
 from stacks.compute_graph import calibrate
 from stacks.composite_stack import Stack
-from stacks.downscale_master import downscale_master
 from stacks.post_processing.pixinsight import post_process_stack_downscaled
-from stacks.stacking.pixinsight import stack_files
+from stacks.stacking.pixinsight import stack_files_downscaled
 from targets.merging.pixinsight import merge_target_channel
 from targets.types import Target
 
@@ -40,13 +38,13 @@ _IMPL = PIXINSIGHT
 
 
 def _post_processed_master(s, config, mock):
-    """Calibrate → stack (full-res) → downscale → post-process the
-    downscaled image. The `stack_files` call is byte-identical to the
-    one in `PixInsight Master` — they share the diskcache entry."""
-    cal = calibrate(s, config)
-    master = stack_files(s, config, _after=(cal,))
-    downscaled = downscale_master(s, config, _after=(master,))
-    return post_process_stack_downscaled(s, mock, _after=(downscaled,))
+    """Calibrate (downscaled cal masters) → stack downscaled →
+    post-process. The `stack_files_downscaled` op handles the input-
+    frame downscale and the WBPP run; `post_process_stack_downscaled`
+    runs MSGC on the already-small master."""
+    cal = calibrate(s, config, stacker=stack_files_downscaled)
+    master = stack_files_downscaled(s, config, _after=(cal,))
+    return post_process_stack_downscaled(s, mock, _after=(master,))
 
 
 def _channels_for_target(target, config, mock):

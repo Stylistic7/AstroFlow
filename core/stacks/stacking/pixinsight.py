@@ -17,7 +17,7 @@ from decorators import node
 from decisions.settings import DevelopmentSettings, ProcessingConfig
 from decisions.resolve import resolve_calibration, resolve_decisions
 from decisions.compute_graph import ALL_EXCLUSION_TYPES
-from previews.types import PIXINSIGHT, MASTER
+from previews.types import PIXINSIGHT, MASTER, DOWNSCALED_MASTER, DOWNSCALE_FACTORS
 from products import makes_image
 from products.identity import (
     StackId, CalibrationStackId, identity_for_stack, PresentationType,
@@ -44,11 +44,19 @@ def _symlink_frames(filenames: list[str], dest_dir: str) -> None:
 
 
 def _copy_frames_with_plate_solution(
-    metadata: MetadataDict, dest_dir: str,
+    metadata: MetadataDict, dest_dir: str, downscale_factor: int = 1,
 ) -> None:
-    """Copy input frames into the WBPP working dir at full resolution.
-    Downscaling lives in a separate op (`downscale_master`) that runs
-    after `stack_files`; the legacy in-frame downscale is gone."""
+    """Stage input frames into the WBPP working dir.
+
+    `downscale_factor=1` (default): plain copy with plate-solution
+    header updates.  `downscale_factor>1`: each frame is block-mean
+    downscaled by that factor via `downscale_fits` and re-emitted in
+    its native uint16 ADU range, so WBPP runs on much smaller arrays
+    (8x on a side → 64x fewer pixels). The downscale is what makes
+    the PI Downscaled pipeline cheap — WBPP, plate-solving, and
+    registration all run on the small frames."""
+    from stacks.downscale import downscale_fits
+
     for frame in metadata.values():
         filename = frame.filename
         assert filename
@@ -59,6 +67,18 @@ def _copy_frames_with_plate_solution(
 
         dest_filename = os.path.join(dest_dir, os.path.basename(filename))
         os.makedirs(dest_dir, exist_ok=True)
+
+        if downscale_factor > 1:
+            log.info("Downscaling frame", filename=filename, factor=downscale_factor)
+            downscale_fits(filename, dest_filename, K=downscale_factor)
+            # Plate-solution header still propagates so WBPP / the
+            # downstream solver have CRVAL anchors.
+            if frame.plate_solution:
+                with pyfits.open(str(dest_filename), mode="update", mmap=False) as fits:
+                    fits[0].header["RA"] = frame.plate_solution.header["CRVAL1"]
+                    fits[0].header["DEC"] = frame.plate_solution.header["CRVAL2"]
+            continue
+
         print(f"copying {filename} -> {dest_filename}")
         copy_image(filename, dest_filename)
 
@@ -77,18 +97,21 @@ def _setup_run(
     run: Run,
     calibration_stacks: CalibrationStacksDict,
     dest_dir: str,
+    downscale_factor: int = 1,
 ) -> list[str]:
     filenames = [i.filename for i in run.metadata.values()]
     assert len(run.frames) == len(filenames)
 
-    _copy_frames_with_plate_solution(run.metadata, dest_dir)
+    _copy_frames_with_plate_solution(run.metadata, dest_dir, downscale_factor)
 
     def get_dependency_filename(d):
         if isinstance(d, StackIdDependency):
             cal_stack = calibration_stacks[d.stack_id]
-            # Calibration master path: same `stack_files` op that just
-            # produces the cal stack's master. `filename_fn` dispatches
-            # between StackId / CalibrationStackId polymorphism.
+            # Calibration master from the matching stacker op — when
+            # the run is downscaled, use the downscaled cal master
+            # (`stack_files_downscaled`); otherwise the full-res master.
+            if downscale_factor > 1:
+                return stack_files_downscaled.filename_fn(cal_stack)
             return stack_files.filename_fn(cal_stack)
         elif isinstance(d, FilenameDependency):
             return d.filename
@@ -105,12 +128,13 @@ def _setup_stack(
     stack: BaseStack,
     calibration_stacks: CalibrationStacksDict,
     dest_dir: str,
+    downscale_factor: int = 1,
 ) -> list[str]:
     filenames = []
     for i, run in enumerate(stack.contents.values()):
         run_dir = os.path.join(dest_dir, f"RUN_{i}")
         os.makedirs(run_dir, exist_ok=True)
-        filenames.extend(_setup_run(run, calibration_stacks, run_dir))
+        filenames.extend(_setup_run(run, calibration_stacks, run_dir, downscale_factor))
 
     return filenames
 
@@ -194,21 +218,19 @@ def _stack_files_narrow(args, kwargs):
     return (stack, narrow_stack_config(stack, config), *rest), kwargs
 
 
-@node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD", auto_memory=True,
-      cache_key_narrow=_stack_files_narrow)
-@makes_image(PIXINSIGHT, [MASTER],
-             identity=CalibrationStackId, presentations=[THUMBNAIL, TILE_PYRAMID],
-             file_type=XisfFilePath, display="Master")
-@makes_image(PIXINSIGHT, [MASTER],
-             identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
-             file_type=XisfFilePath, display="Master")
-def stack_files(
-    stack: BaseStack,
-    config: ProcessingConfig,
+def _run_wbpp_stacking(
+    stack: BaseStack, config: ProcessingConfig,
+    dest_filename: Path, downscale_factor: int,
 ) -> WithSidecar[XisfFilePath]:
-    # Resolve calibration (lazy, cached via decision framework).
+    """Shared body for `stack_files` and `stack_files_downscaled`.
+
+    Both ops do the same WBPP-driven stacking; the only difference is
+    whether the input frames (lights AND cal masters) are downscaled
+    by `downscale_factor` before being fed to WBPP. Output goes to
+    `dest_filename`, which the caller picked from its own filename_fn
+    (full-res master vs downscaled master).
+    """
     stack = resolve_calibration(stack, config.get_calibration_stacks(), config.decisions)
-    # Apply exclusion decisions to filter frames before stacking (light stacks only).
     if config.decisions and isinstance(stack, Stack):
         filtered = resolve_decisions(stack, ALL_EXCLUSION_TYPES, config.decisions, config.min_frames_in_stack)
         if filtered is None:
@@ -217,21 +239,17 @@ def stack_files(
 
     development_settings = config.development_settings
 
-    # Determine the output file, and the metadata it should have.
-    dest_filename = stack_files.filename_fn(stack)
     dest_filename_exists = os.path.exists(dest_filename)
     os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
-    log.info("Entering stack_files", stack=str(stack), dest_filename=dest_filename, dest_filename_exists=dest_filename_exists)
+    log.info("Entering stack_files", stack=str(stack),
+             dest_filename=dest_filename, dest_filename_exists=dest_filename_exists,
+             downscale_factor=downscale_factor)
 
     metadata = {
         "IMAGETYP": f"Master {stack.image_type}",
         "STBLHASH": stack.stable_hash,
     }
 
-    # Maybe skip stacking if the output file already exists.
-    # TODO: This is kind of dangerous, because the output filename only depends
-    # on the stack's own content hash -- the hash used by AstroFlowNode is more
-    # complete and includes this function's code, for example.
     if development_settings.dangerously_accept_existing_files and dest_filename_exists:
         log.info("Dangerously skipping stacking because file already exists", dest_filename=dest_filename)
         update_header(dest_filename, metadata)
@@ -239,15 +257,11 @@ def stack_files(
 
     calibration_stacks = config.get_calibration_stacks()
     min_frames_in_stack = config.min_frames_in_stack
-    log.info("Calibration stacks", keys=list(calibration_stacks.keys()))
 
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
         log.debug("Using temporary directory", tmp_dir=tmp_dir)
 
-        # `_setup_stack` defaults to full-resolution. The downscaled
-        # output is produced by a separate `downscale_master` op (see
-        # `stacks/downscale_master.py`), not by re-stacking at low res.
-        filenames = _setup_stack(stack, calibration_stacks, tmp_dir)
+        filenames = _setup_stack(stack, calibration_stacks, tmp_dir, downscale_factor)
 
         if len(filenames) < min_frames_in_stack:
             log.info("Not stacking, too few files", stack=str(stack), num_files=len(filenames))
@@ -262,8 +276,6 @@ def stack_files(
         # stale stack ever sneaks through with mixed exposures, fail
         # loud here rather than letting WBPP produce duplicate masters
         # downstream. Stack identification should make this unreachable.
-        # Tolerance matches ImagingAttributes — header float jitter is
-        # not a real mismatch.
         from attributes.imaging_attributes import EXPOSURE_TOLERANCE_SECONDS
         exposures = [
             float(m.header["EXPOSURE"])
@@ -278,12 +290,61 @@ def stack_files(
                 "WBPP would produce one master per exposure."
             )
 
-        log.info("Running WBPP", stack=str(stack))
+        log.info("Running WBPP", stack=str(stack), downscale_factor=downscale_factor)
         run_wbpp(Path(tmp_dir), Path(tmp_dir))
         result = _copy_wbpp_result(tmp_dir, dest_filename, metadata)
 
     _check_integration_time(stack, dest_filename)
     return result
+
+
+@node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD", auto_memory=True,
+      cache_key_narrow=_stack_files_narrow)
+@makes_image(PIXINSIGHT, [MASTER],
+             identity=CalibrationStackId, presentations=[THUMBNAIL, TILE_PYRAMID],
+             file_type=XisfFilePath, display="Master")
+@makes_image(PIXINSIGHT, [MASTER],
+             identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
+             file_type=XisfFilePath, display="Master")
+def stack_files(
+    stack: BaseStack,
+    config: ProcessingConfig,
+) -> WithSidecar[XisfFilePath]:
+    """Full-resolution PixInsight WBPP master for a light or
+    calibration stack. The downscaled pipeline uses the parallel
+    `stack_files_downscaled` op below — same calibration, same WBPP,
+    but input frames are block-mean-downscaled 8x before WBPP runs."""
+    return _run_wbpp_stacking(stack, config, stack_files.filename_fn(stack), downscale_factor=1)
+
+
+@node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD", auto_memory=True,
+      cache_key_narrow=_stack_files_narrow)
+@makes_image(PIXINSIGHT, [DOWNSCALED_MASTER],
+             identity=CalibrationStackId, presentations=[THUMBNAIL, TILE_PYRAMID],
+             file_type=XisfFilePath, display="Downscaled Master")
+@makes_image(PIXINSIGHT, [DOWNSCALED_MASTER],
+             identity=StackId, presentations=[THUMBNAIL, TILE_PYRAMID],
+             file_type=XisfFilePath, display="Downscaled Master")
+def stack_files_downscaled(
+    stack: BaseStack,
+    config: ProcessingConfig,
+) -> WithSidecar[XisfFilePath]:
+    """8x-downscaled PixInsight master.
+
+    Block-mean-downscales every input frame (lights AND the cal
+    masters this stack references — which themselves come from
+    `stack_files_downscaled` on the calibration stacks) BEFORE
+    WBPP runs. WBPP, plate-solving, and registration all run on
+    arrays 64x smaller, so the pipeline is ~64x faster than the
+    full-resolution `stack_files`. Output pixels are not bit-
+    identical to a block-mean of the full-res master — they're
+    the result of WBPP composing already-downscaled frames — but
+    the SNR / footprint is equivalent at the lower resolution."""
+    factor = DOWNSCALE_FACTORS[DOWNSCALED_MASTER]
+    return _run_wbpp_stacking(
+        stack, config, stack_files_downscaled.filename_fn(stack),
+        downscale_factor=factor,
+    )
 
 
 def _check_integration_time(stack: BaseStack, master_path) -> None:

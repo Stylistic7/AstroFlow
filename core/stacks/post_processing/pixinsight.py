@@ -82,10 +82,11 @@ def post_process_stack_downscaled(
     gradient removal cheaply (on the small image). Not pixel-identical
     to the full-res PostProcessed — `_post_process_stack`'s low-res
     solver branch (downscale_factor > 1) handles the tiny stars."""
-    # Downscaled master comes from `downscale_master`, the explicit
-    # post-stacking step the PixInsight Downscaled pipeline composes.
-    from stacks.downscale_master import downscale_master
-    master = downscale_master.filename_fn(stack)
+    # Downscaled master comes from `stack_files_downscaled` — WBPP
+    # ran on the already-downscaled input frames, so the output is
+    # already at the smaller resolution.
+    from stacks.stacking.pixinsight import stack_files_downscaled
+    master = stack_files_downscaled.filename_fn(stack)
 
     output_filename = post_process_stack_downscaled.filename_fn(stack)
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
