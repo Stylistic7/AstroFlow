@@ -275,19 +275,34 @@ def _entity_filters(entity, object_type: str) -> list[str]:
     return []
 
 
+# In-process memoisation of which (object_type, object_id) pairs
+# we've already traced this session. Pipeline code is immutable
+# during a run (per user policy), so an entity's tap-point structure
+# can't change after the first trace — re-tracing every request was
+# wasted work. The set is process-local; backend restart re-traces
+# on demand.
+_traced_objects: set[tuple[str, str]] = set()
+
+
 def _ensure_pipelines_traced(object_type: str, object_id: str, entity) -> None:
     """Trace every registered pipeline for `entity` so the
-    PipelineOutputIndex carries its tap-point structure. Tracing is
-    in-process and cheap — just walks the @pipeline body and records
-    Node identities. No Ray dispatch, no compute.
+    PipelineOutputIndex carries its tap-point structure. Idempotent
+    per backend session: an (object_type, object_id) pair traced
+    once will skip the trace on subsequent calls in the same
+    process.
 
-    The web server runs in `LocalContext` (direct-to-SQLite, no Ray
-    init), so the cfg we pass to pipeline_fn must not wrap its
-    fields in `ContextRef` — that would call `ray.put`. Plain dict /
-    frozendict literals are enough: pipeline bodies use cfg only
-    structurally at trace time (e.g. `cfg.development_settings.
-    mock_pixinsight`), they don't invoke `cfg.get_calibration_stacks()`
-    until the graph runs."""
+    Tracing itself is pure-Python — walks the @pipeline body,
+    records Node identities. No Ray dispatch, no compute. We pass
+    a `cfg` whose `calibration_stacks` is a plain dict (not a
+    `ContextRef`) so the trace path doesn't call `ray.put`; the
+    web server runs in `LocalContext` (direct-to-SQLite, no Ray
+    init by design) and pipeline bodies use cfg only structurally
+    at trace time.
+    """
+    key = (object_type, object_id)
+    if key in _traced_objects:
+        return
+
     from pipelines.registry import registered_pipelines
     from pipelines.output_index import record as record_pipeline_output
     from compute_graph.compute_graph import _record_pipeline_taps
@@ -318,6 +333,8 @@ def _ensure_pipelines_traced(object_type: str, object_id: str, entity) -> None:
         _record_pipeline_taps(
             record_pipeline_output, name, object_type, object_id, graph,
         )
+
+    _traced_objects.add(key)
 
 
 @metadata_bp.route("/api/pipeline_outputs/<object_type>/<object_id>")
