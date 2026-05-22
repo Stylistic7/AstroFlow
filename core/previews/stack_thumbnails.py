@@ -32,7 +32,6 @@ from file_io.generic import read_image
 from decisions.settings import ProcessingConfig
 from decisions.decisions import decisions_for_stack
 
-
 @ray.remote(num_cpus=0.1)
 @beartype
 def scatter_stack_thumbnails(
@@ -69,6 +68,12 @@ def scatter_stack_thumbnails(
     # videos still need eager generation, so this graph just builds
     # those. This removes the per-substack×flat calibrate_subframe loop
     # that dominated the cold start.
+    # TEMPORARY: stack-thumbnail video generation is disabled — the
+    # videos take too long and dominate cold start. gather_stack_
+    # thumbnails still runs (no-op) so graph structure/ordering is
+    # unchanged. Revert by deleting this early return.
+    return Graph({gather_stack_thumbnails: tasks})
+
     calibration_stacks = cal_stacks_ref.get() or {}
     for stack_hash, stack_ref in stacks.items():
         stack = stack_ref.get()
@@ -84,13 +89,11 @@ def scatter_stack_thumbnails(
 
     return Graph({gather_stack_thumbnails: tasks})
 
-
 def get_first_frame(stack: CalibrationStack) -> WithSidecar:
     # Use a sidecar file to avoid ever modifying the user's raw data files.
     metadata = stack.all_metadata()
     first_frame = stack.all_frames()[0]
     return WithSidecar(FitsFilePath(metadata[first_frame].filename))
-
 
 def get_best_light_frame(stack: Stack) -> WithSidecar:
     metadata = stack.all_metadata()
@@ -101,20 +104,15 @@ def get_best_light_frame(stack: Stack) -> WithSidecar:
         FitsFilePath(metadata[light_frames_by_stars[0]].filename)
     )
 
-
 @node
-@makes_image(ALL_IMPLEMENTATIONS, [SUBFRAME], get_best_light_frame,
-             identity=StackId, presentations=[THUMBNAIL])
+@makes_image(filename_fn=get_best_light_frame, identity=StackId)
 def stack_thumbnail(stack: Stack) -> WithSidecar:
     return get_best_light_frame(stack)
 
-
 @node
-@makes_image(ALL_IMPLEMENTATIONS, [SUBFRAME], get_first_frame,
-             identity=CalibrationStackId, presentations=[THUMBNAIL])
+@makes_image(filename_fn=get_first_frame, identity=CalibrationStackId)
 def calibration_stack_thumbnail(stack: CalibrationStack) -> WithSidecar:
     return get_first_frame(stack)
-
 
 def _annotate_frame(
     im: np.ndarray, num_stars: int, included: bool,
@@ -141,7 +139,6 @@ def _annotate_frame(
 
     return im
 
-
 def _stack_thumbnail_video_narrow(args, kwargs):
     """Cache-key hook: drop irrelevant cal_stacks and other-stack
     decisions from `config` for hashing. Function still receives the
@@ -152,10 +149,9 @@ def _stack_thumbnail_video_narrow(args, kwargs):
     stack, width, config, *rest = args
     return (stack, width, narrow_stack_config(stack, config), *rest), kwargs
 
-
 @node(resources={"fastest_storage": 0.001},
       cache_key_narrow=_stack_thumbnail_video_narrow)
-@makes_video(ALL_IMPLEMENTATIONS, [SUBFRAME], identity=StackId)
+@makes_video(identity=StackId)
 @create_video
 def stack_thumbnail_video(
     stack: Stack,
@@ -192,9 +188,8 @@ def stack_thumbnail_video(
 
         yield im
 
-
 @node(resources={"fastest_storage": 0.001})
-@makes_video(ALL_IMPLEMENTATIONS, [SUBFRAME], identity=CalibrationStackId)
+@makes_video(identity=CalibrationStackId)
 @create_video
 def calibration_stack_thumbnail_video(
     stack: CalibrationStack,
@@ -207,7 +202,6 @@ def calibration_stack_thumbnail_video(
             resize_array(read_image(metadata[frame].filename), width)
         )
         yield (im * 255.0).astype(np.uint8)
-
 
 @ray.remote(num_cpus=0.1)
 @beartype
