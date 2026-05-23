@@ -57,14 +57,33 @@ def _mosaic_filters(mosaic) -> list[str]:
     return sorted(filters, key=lambda f: (order.index(f) if f in order else len(order), f))
 
 
-def _get_polygons(identity_cls: type, level: str, *args) -> list[dict[str, Any]]:
-    """Compute projected polygons for an object at a given quality level."""
+def _viewbox_quality_for_pipeline(pipeline: str) -> str:
+    """Map a pipeline name to the viewbox-quality the pipeline's
+    outputs are computed at. `compute_viewbox` needs one of
+    ("Subframe", "Master", "DownscaledMaster") — these are the
+    on-disk canvas sizes the pipelines produce.
+
+    Heuristic on the pipeline display name: "Subframe" → Subframe,
+    contains "Downscaled" → DownscaledMaster, else Master. User
+    pipelines that produce different-sized canvases would want to
+    declare their viewbox quality explicitly via @pipeline; that's
+    a follow-up."""
+    if pipeline == "Subframe":
+        return "Subframe"
+    if "Downscaled" in pipeline:
+        return "DownscaledMaster"
+    return "Master"
+
+
+def _get_polygons(identity_cls: type, pipeline: str, *args) -> list[dict[str, Any]]:
+    """Compute projected polygons for an object at the pipeline's
+    output canvas resolution."""
     if identity_cls is CalibrationStackId:
         return []
 
     obj = args[0]
 
-    viewbox = compute_viewbox(level, obj)
+    viewbox = compute_viewbox(_viewbox_quality_for_pipeline(pipeline), obj)
 
     def project(object: Any, viewbox: Viewbox) -> dict[str, Any]:
         polygon = project_to_viewbox(object.footprint, viewbox)
@@ -222,7 +241,7 @@ def metadata(object_type: str, object_id: str, pipeline_and_display: str, filter
     path = tap_path_for(pipeline, display, object_type, object_id, filter)
     image_path = path if path and os.path.exists(path) else None
 
-    objects = _get_polygons(obj_type, display, *args)
+    objects = _get_polygons(obj_type, pipeline, *args)
 
     return jsonify({
         "display": display,
