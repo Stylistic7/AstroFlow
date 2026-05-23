@@ -35,7 +35,12 @@ export default function WorkflowGraph({ theme, url }) {
   const [nodeLabel, setNodeLabel] = useState(null);
 
   useEffect(() => {
-    fetch(url).then(r => r.json()).then(s => setComputeGraph(s));
+    // Guard against non-OK responses: under the dev server, a 404
+    // returns the SPA's index.html, and JSON-parsing HTML throws the
+    // misleading "Unexpected token '<'" error.
+    fetch(url)
+      .then(r => r.ok ? r.json() : null)
+      .then(s => { if (s) setComputeGraph(s); });
   }, [url, computeGraphStatus]);
 
 

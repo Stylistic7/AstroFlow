@@ -23,24 +23,32 @@ def compute_graph_status():
     return context.compute_graph_status or {}
 
 
-@compute_graphs_bp.route("/api/workflow_graph/stack/<stack_id>/<quality>")
-def workflow_graph_for_stack(stack_id, quality):
+# Workflow-graph routes. Today user pipelines don't call
+# `set_workflow_key(...)` from their bodies, so the `workflow_graphs`
+# context dict is empty and these routes return the empty-graph
+# sentinel. The pipeline / filter segments are accepted but unused;
+# they reserve the URL shape for when pipelines start tagging their
+# trace with workflow keys.
+@compute_graphs_bp.route("/api/workflow_graph/stack/<stack_id>")
+@compute_graphs_bp.route("/api/workflow_graph/stack/<stack_id>/<pipeline>")
+def workflow_graph_for_stack(stack_id, pipeline=None):
     wf = context["workflow_graphs"] or {}
-    ref = wf.get(("stack", stack_id, quality))
+    ref = wf.get(("stack", stack_id, pipeline)) if pipeline else None
     return ref.get() if ref is not None else _EMPTY_WORKFLOW_GRAPH
 
 
-@compute_graphs_bp.route("/api/workflow_graph/target/<target_id>/<quality>")
-def workflow_graph_for_target(target_id, quality):
+@compute_graphs_bp.route("/api/workflow_graph/target/<target_id>")
+@compute_graphs_bp.route("/api/workflow_graph/target/<target_id>/<pipeline>")
+def workflow_graph_for_target(target_id, pipeline=None):
     wf = context["workflow_graphs"] or {}
-    ref = wf.get(("target", target_id, quality))
+    ref = wf.get(("target", target_id, pipeline)) if pipeline else None
     return ref.get() if ref is not None else _EMPTY_WORKFLOW_GRAPH
 
 
-@compute_graphs_bp.route("/api/workflow_graph/mosaic/<mosaic_id>/<filter>/<quality>")
-def workflow_graph_for_mosaic(mosaic_id, filter, quality):
+@compute_graphs_bp.route("/api/workflow_graph/mosaic/<mosaic_id>/<filter>/<pipeline>")
+def workflow_graph_for_mosaic(mosaic_id, filter, pipeline):
     wf = context["workflow_graphs"] or {}
-    ref = wf.get(("mosaic", mosaic_id, filter, quality))
+    ref = wf.get(("mosaic", mosaic_id, filter, pipeline))
     return ref.get() if ref is not None else _EMPTY_WORKFLOW_GRAPH
 
 
