@@ -11,6 +11,7 @@ import SquareFootIcon from '@mui/icons-material/SquareFoot';
 import AutoAwesomeMosaicIcon from '@mui/icons-material/AutoAwesomeMosaic';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import BuildIcon from '@mui/icons-material/Build';
+import AltRouteIcon from '@mui/icons-material/AltRoute';
 import ColorLensIcon from '@mui/icons-material/ColorLens';
 import Link from '@mui/material/Link';
 import PanoramaHorizontalIcon from '@mui/icons-material/PanoramaHorizontal';
@@ -180,6 +181,15 @@ export default function AstroFlowBreadcrumbs() {
     const implementations = pipelineOptions(versionsData.pipelines, availablePipelines);
     const filters = versionsData.filters || [];
 
+    // Displays the current pipeline emits (the tap-point labels:
+    // "Mosaic", "Channel", "Post-Processed", "Subframe", ...). One
+    // pipeline can produce several taps, so the user picks which to
+    // view.
+    const currentPipelineData = versionsData.pipelines.find(
+        (p) => p.name === pipeline,
+    );
+    const displays = (currentPipelineData?.taps || []).map((t) => t.display);
+
     // URLs are pipeline+display-keyed: /<obj>/<id>/<pipeline>/<display>[/<filter>].
     // The pill-cycle callers pass the next pipeline name; we pick a
     // display that THAT pipeline actually emits. Carrying the current
@@ -213,6 +223,16 @@ export default function AstroFlowBreadcrumbs() {
         navigate(
             `${viewerPathPrefix}/${encodeURIComponent(pipeline)}/${encodeURIComponent(d)}/${f}`,
         );
+    };
+    const goToDisplay = (nextDisplay) => {
+        if (!pipeline) return;
+        const segs = [
+            viewerPathPrefix,
+            encodeURIComponent(pipeline),
+            encodeURIComponent(nextDisplay),
+        ];
+        if (viewerHasFilter) segs.push(filter);
+        navigate(segs.filter(Boolean).join("/"));
     };
 
     // Determine the deepest (most specific) object for the quarantine toggle.
@@ -351,6 +371,22 @@ export default function AstroFlowBreadcrumbs() {
                         active={pipeline}
                         exists={() => true}
                         onPick={(p) => goToPipeline(p, filter)}
+                        fontColor={fontColor}
+                        activeColor={theme.palette.text.primary}
+                    />
+                )}
+                {/* Display (tap-point) pill — selects which of the
+                    current pipeline's emitted taps ("Mosaic",
+                    "Channel", "Post-Processed", "Subframe", ...) the
+                    viewer renders. Pipelines that emit a single tap
+                    skip the pill (nothing to pick). */}
+                {display && displays.length > 1 && (
+                    <PillCrumb
+                        icon={<AltRouteIcon sx={{ marginRight: '0.5em' }} />}
+                        options={displays}
+                        active={display}
+                        exists={() => true}
+                        onPick={goToDisplay}
                         fontColor={fontColor}
                         activeColor={theme.palette.text.primary}
                     />
