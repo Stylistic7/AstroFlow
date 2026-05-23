@@ -134,8 +134,12 @@ def test_pixinsight_master_records_expected_graph_shape(test_context):
 
     counts = _count_by_op(g)
 
-    # Per-stack chain (2 stacks):
-    assert counts.get("calibrate", 0) == 2, counts
+    # Per-stack chain (2 stacks). After the resolution-agnostic
+    # refactor, calibration is no longer a separate `calibrate`
+    # @node — it's a trace-time topological walk that emits one
+    # `stack_files` per cal stack. With an empty
+    # CalibrationStacksDict, no cal stack_files nodes appear; only
+    # the two light-stack `stack_files` calls do.
     assert counts.get("stack_files", 0) == 2, counts
     assert counts.get("post_process_stack", 0) == 2, counts
     # Per-channel HDR-combine (2 channels):

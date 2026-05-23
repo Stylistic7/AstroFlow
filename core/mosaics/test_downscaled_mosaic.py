@@ -44,24 +44,14 @@ def test_downscaled_orion_mosaic(test_context):
 
     output = Path(context.output_dir)
 
-    # Light stack masters come from `stack_files_downscaled` — WBPP
-    # ran on the already-downscaled input frames, so the output is
-    # at the smaller resolution directly.
-    stack_masters = list(output.rglob("Stack/stack_files_downscaled/*.xisf"))
+    # Light stack masters and cal masters both land under the
+    # unified `stack_files` op output dir; the call_hash filename
+    # distinguishes downscaled vs full-res outputs when both
+    # pipelines are queued.
+    stack_masters = list(output.rglob("Stack/stack_files/*.xisf"))
     assert len(stack_masters) >= 1, f"Expected stack masters, found: {stack_masters}"
-
-    # Calibration masters also come out downscaled — the cal stacks
-    # are stacked by `stack_files_downscaled` so the cal frames used
-    # to calibrate the (downscaled) lights are themselves downscaled.
-    cal_masters = list(output.rglob("CalibrationStack/stack_files_downscaled/*.xisf"))
-    assert len(cal_masters) >= 1, f"Expected downscaled cal masters, found: {cal_masters}"
-
-    # No full-resolution masters: the downscaled pipeline never
-    # produces them (the speedup is the whole point — full-res
-    # would defeat it). PI Master pipeline would have to be queued
-    # separately to get full-res outputs.
-    full_res = list(output.rglob("Stack/stack_files/*.xisf"))
-    assert len(full_res) == 0, f"Unexpected full-res masters: {full_res}"
+    cal_masters = list(output.rglob("CalibrationStack/stack_files/*.xisf"))
+    assert len(cal_masters) >= 1, f"Expected cal masters, found: {cal_masters}"
 
     # Note: placement and merging are not tested here because mock
     # stacking doesn't re-solve WCS at downscaled resolution, causing
@@ -96,11 +86,13 @@ def test_downscaled_orion_mosaic_produces_tiled_tiff(test_context):
 
     print_tree(context.output_dir)
 
-    # Filenames are `<call_hash>.<ext>`; the per-pipeline op-name
-    # discriminates on disk. PI Downscaled writes to
-    # `store_mosaic_color_channel_downscaled_master/`.
+    # Filenames are `<call_hash>.<ext>`. PI Master and PI
+    # Downscaled now share the unified `store_mosaic_color_channel_xisf`
+    # op; per-pipeline discrimination comes from the call_hash
+    # (different upstream `merge_images` masters → different
+    # call_hashes → different filenames in the same op dir).
     output = Path(context.output_dir)
-    op_dir = "Mosaic/store_mosaic_color_channel_downscaled_master"
+    op_dir = "Mosaic/store_mosaic_color_channel_xisf"
     xisfs = list(output.rglob(f"{op_dir}/*.xisf"))
     tiffs = list(output.rglob(f"{op_dir}/*.tiff"))
 

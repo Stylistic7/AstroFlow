@@ -10,14 +10,13 @@ from file_io.generic import update_header, copy_image
 from file_io.xisf_file_io import read_xisf_total_exposure_time
 from stacks.run import Run
 from stacks.types import StackIdDependency, FilenameDependency
-from stacks.composite_stack import BaseStack, Stack, CalibrationStack, CalibrationStacksDict
+from stacks.composite_stack import BaseStack, Stack
 from pix.tasks import run_wbpp
 from metadata.classes import MetadataDict
 from decorators import node
-from decisions.settings import DevelopmentSettings, ProcessingConfig
-from decisions.resolve import resolve_calibration, resolve_decisions
+from decisions.settings import ProcessingConfig
+from decisions.resolve import resolve_decisions
 from decisions.compute_graph import ALL_EXCLUSION_TYPES
-from previews.types import DOWNSCALED_MASTER, DOWNSCALE_FACTORS
 from products import makes_image
 from products.identity import (
     StackId, CalibrationStackId, identity_for_stack, PresentationType,
@@ -42,19 +41,19 @@ def _symlink_frames(filenames: list[str], dest_dir: str) -> None:
         os.symlink(filename, dest_filename)
 
 def _copy_frames_with_plate_solution(
-    metadata: MetadataDict, dest_dir: str, downscale_factor: int = 1,
+    metadata: MetadataDict, dest_dir: str,
 ) -> None:
     """Stage input frames into the WBPP working dir.
 
-    `downscale_factor=1` (default): plain copy with plate-solution
-    header updates.  `downscale_factor>1`: each frame is block-mean
-    downscaled by that factor via `downscale_fits` and re-emitted in
-    its native uint16 ADU range, so WBPP runs on much smaller arrays
-    (8x on a side → 64x fewer pixels). The downscale is what makes
-    the PI Downscaled pipeline cheap — WBPP, plate-solving, and
-    registration all run on the small frames."""
-    from stacks.downscale import downscale_fits
-
+    Resolution-agnostic — `stack_files` no longer knows whether
+    frames are full-res or already-downscaled (the pipeline calls
+    `downscale_stack` upstream when it wants smaller frames). For
+    each frame: copy the file, drop a stale BAYERPAT, and write
+    plate-solution header info — full WCS when the frame's
+    `width_pixels` matches the plate-solution NAXIS1 (lossless
+    re-use); otherwise just RA/DEC hints (the frame was
+    downscaled after solving, so the WCS pixel grid no longer
+    matches, but RA/DEC still anchor WBPP's re-solve)."""
     for frame in metadata.values():
         filename = frame.filename
         assert filename
@@ -66,17 +65,6 @@ def _copy_frames_with_plate_solution(
         dest_filename = os.path.join(dest_dir, os.path.basename(filename))
         os.makedirs(dest_dir, exist_ok=True)
 
-        if downscale_factor > 1:
-            log.info("Downscaling frame", filename=filename, factor=downscale_factor)
-            downscale_fits(filename, dest_filename, K=downscale_factor)
-            # Plate-solution header still propagates so WBPP / the
-            # downstream solver have CRVAL anchors.
-            if frame.plate_solution:
-                with pyfits.open(str(dest_filename), mode="update", mmap=False) as fits:
-                    fits[0].header["RA"] = frame.plate_solution.header["CRVAL1"]
-                    fits[0].header["DEC"] = frame.plate_solution.header["CRVAL2"]
-            continue
-
         print(f"copying {filename} -> {dest_filename}")
         copy_image(filename, dest_filename)
 
@@ -85,38 +73,34 @@ def _copy_frames_with_plate_solution(
                 del fits[0].header["BAYERPAT"]
 
             if frame.plate_solution:
-                fits[0].header["RA"] = frame.plate_solution.header["CRVAL1"]
-                fits[0].header["DEC"] = frame.plate_solution.header["CRVAL2"]
-                for k, v in frame.plate_solution.header.items():
-                    fits[0].header[k] = v
+                ps_header = frame.plate_solution.header
+                fits[0].header["RA"] = ps_header["CRVAL1"]
+                fits[0].header["DEC"] = ps_header["CRVAL2"]
+                ps_naxis = ps_header.get("NAXIS1") or ps_header.get("IMAGEW")
+                if ps_naxis == frame.width_pixels:
+                    for k, v in ps_header.items():
+                        fits[0].header[k] = v
 
 def _setup_run(
     run: Run,
-    calibration_stacks: CalibrationStacksDict,
-    config: ProcessingConfig,
+    cal_master_by_id: dict,
     dest_dir: str,
-    downscale_factor: int = 1,
 ) -> list[str]:
+    """Stage one run's lights + symlink its resolved cal masters.
+
+    `cal_master_by_id` maps each `StackIdDependency.stack_id` to
+    the on-disk path of that cal master (a value supplied by the
+    pipeline as an upstream `stack_files` result, NOT recomputed
+    from `filename_fn`). FilenameDependencies (external
+    pre-stacked masters) still resolve inline."""
     filenames = [i.filename for i in run.metadata.values()]
     assert len(run.frames) == len(filenames)
 
-    _copy_frames_with_plate_solution(run.metadata, dest_dir, downscale_factor)
-
-    # Calibrate() builds its sub-graph by calling stack_files(
-    # cal_stack, cal_config) where cal_config = replace(config,
-    # decisions=fd()). The filename_fn computes its call_hash from
-    # those exact args (the cache_key_narrow hook runs once, on the
-    # un-narrowed input). Mirror that here — pre-narrowing would
-    # narrow twice and produce a different hash.
-    from frozendict import frozendict as fd
-    from dataclasses import replace
-    cal_config = replace(config, decisions=fd())
+    _copy_frames_with_plate_solution(run.metadata, dest_dir)
 
     def get_dependency_filename(d):
         if isinstance(d, StackIdDependency):
-            cal_stack = calibration_stacks[d.stack_id]
-            op = stack_files_downscaled if downscale_factor > 1 else stack_files
-            return op.filename_fn(cal_stack, cal_config)
+            return cal_master_by_id[d.stack_id]
         elif isinstance(d, FilenameDependency):
             return d.filename
 
@@ -129,16 +113,14 @@ def _setup_run(
 
 def _setup_stack(
     stack: BaseStack,
-    calibration_stacks: CalibrationStacksDict,
-    config: ProcessingConfig,
+    cal_master_by_id: dict,
     dest_dir: str,
-    downscale_factor: int = 1,
 ) -> list[str]:
     filenames = []
     for i, run in enumerate(stack.contents.values()):
         run_dir = os.path.join(dest_dir, f"RUN_{i}")
         os.makedirs(run_dir, exist_ok=True)
-        filenames.extend(_setup_run(run, calibration_stacks, config, run_dir, downscale_factor))
+        filenames.extend(_setup_run(run, cal_master_by_id, run_dir))
 
     return filenames
 
@@ -213,23 +195,24 @@ def narrow_stack_config(stack: BaseStack, config: ProcessingConfig) -> Processin
 def _stack_files_narrow(args, kwargs):
     """`stack_files` cache-key hook: drop the global cal_stacks and
     other-stack decisions so a new bias for an unrelated camera doesn't
-    invalidate this stack's cached master."""
+    invalidate this stack's cached master. cal_stack_ids and the
+    `*cal_masters` data-deps that follow are passed through — their
+    content_hashes flow into the call_hash, which is what makes
+    different upstream cal masters produce different output files."""
     stack, config, *rest = args
     return (stack, narrow_stack_config(stack, config), *rest), kwargs
 
 def _run_wbpp_stacking(
     stack: BaseStack, config: ProcessingConfig,
-    dest_filename: Path, downscale_factor: int,
+    cal_stack_ids: tuple[str, ...],
+    cal_masters: tuple,
+    dest_filename: Path,
 ) -> WithSidecar[XisfFilePath]:
-    """Shared body for `stack_files` and `stack_files_downscaled`.
-
-    Both ops do the same WBPP-driven stacking; the only difference is
-    whether the input frames (lights AND cal masters) are downscaled
-    by `downscale_factor` before being fed to WBPP. Output goes to
-    `dest_filename`, which the caller picked from its own filename_fn
-    (full-res master vs downscaled master).
-    """
-    stack = resolve_calibration(stack, config.get_calibration_stacks(), config.decisions)
+    """Shared body for `stack_files`. Resolution-agnostic — reads
+    `stack.contents` frame paths AS-IS (the pipeline calls
+    `downscale_stack` upstream if it wants smaller frames). Cal
+    master file paths come from the explicit `cal_masters` data
+    deps, parallel to `cal_stack_ids`."""
     if config.decisions and isinstance(stack, Stack):
         filtered = resolve_decisions(stack, ALL_EXCLUSION_TYPES, config.decisions, config.min_frames_in_stack)
         if filtered is None:
@@ -241,8 +224,7 @@ def _run_wbpp_stacking(
     dest_filename_exists = os.path.exists(dest_filename)
     os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
     log.info("Entering stack_files", stack=str(stack),
-             dest_filename=dest_filename, dest_filename_exists=dest_filename_exists,
-             downscale_factor=downscale_factor)
+             dest_filename=dest_filename, dest_filename_exists=dest_filename_exists)
 
     metadata = {
         "IMAGETYP": f"Master {stack.image_type}",
@@ -254,13 +236,13 @@ def _run_wbpp_stacking(
         update_header(dest_filename, metadata)
         return WithSidecar(dest_filename)
 
-    calibration_stacks = config.get_calibration_stacks()
     min_frames_in_stack = config.min_frames_in_stack
+    cal_master_by_id = dict(zip(cal_stack_ids, [m.filename for m in cal_masters]))
 
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
         log.debug("Using temporary directory", tmp_dir=tmp_dir)
 
-        filenames = _setup_stack(stack, calibration_stacks, config, tmp_dir, downscale_factor)
+        filenames = _setup_stack(stack, cal_master_by_id, tmp_dir)
 
         if len(filenames) < min_frames_in_stack:
             log.info("Not stacking, too few files", stack=str(stack), num_files=len(filenames))
@@ -289,7 +271,7 @@ def _run_wbpp_stacking(
                 "WBPP would produce one master per exposure."
             )
 
-        log.info("Running WBPP", stack=str(stack), downscale_factor=downscale_factor)
+        log.info("Running WBPP", stack=str(stack))
         run_wbpp(Path(tmp_dir), Path(tmp_dir))
         result = _copy_wbpp_result(tmp_dir, dest_filename, metadata)
 
@@ -303,36 +285,28 @@ def _run_wbpp_stacking(
 def stack_files(
     stack: BaseStack,
     config: ProcessingConfig,
+    cal_stack_ids: tuple[str, ...],
+    *cal_masters: WithSidecar,
 ) -> WithSidecar[XisfFilePath]:
-    """Full-resolution PixInsight WBPP master for a light or
-    calibration stack. The downscaled pipeline uses the parallel
-    `stack_files_downscaled` op below — same calibration, same WBPP,
-    but input frames are block-mean-downscaled 8x before WBPP runs."""
-    return _run_wbpp_stacking(stack, config, stack_files.filename_fn(stack, config), downscale_factor=1)
+    """Resolution-agnostic PixInsight WBPP master.
 
-@node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD", auto_memory=True,
-      cache_key_narrow=_stack_files_narrow)
-@makes_image(identity=CalibrationStackId, display="Downscaled Master")
-@makes_image(identity=StackId, display="Downscaled Master")
-def stack_files_downscaled(
-    stack: BaseStack,
-    config: ProcessingConfig,
-) -> WithSidecar[XisfFilePath]:
-    """8x-downscaled PixInsight master.
+    Frame paths are read from `stack.contents` AS-IS — if the
+    pipeline wants downscaled frames it wraps `stack` in
+    `downscale_stack` upstream (preserving `stable_hash`, so this
+    op's `@makes_image` identity routes to the same user-facing
+    stack regardless of resolution).
 
-    Block-mean-downscales every input frame (lights AND the cal
-    masters this stack references — which themselves come from
-    `stack_files_downscaled` on the calibration stacks) BEFORE
-    WBPP runs. WBPP, plate-solving, and registration all run on
-    arrays 64x smaller, so the pipeline is ~64x faster than the
-    full-resolution `stack_files`. Output pixels are not bit-
-    identical to a block-mean of the full-res master — they're
-    the result of WBPP composing already-downscaled frames — but
-    the SNR / footprint is equivalent at the lower resolution."""
-    factor = DOWNSCALE_FACTORS[DOWNSCALED_MASTER]
+    `cal_stack_ids` is a literal tuple parallel to `*cal_masters`:
+    each `cal_masters[i]` is the upstream `stack_files` output for
+    cal stack `cal_stack_ids[i]`. The body builds the
+    dependency-filename map by zipping. cal_masters' content_hashes
+    flow into the call_hash via `_make_call_hash_filename_fn`, so
+    PI Master and PI Downscaled — which call this op with the same
+    light stack but different cal masters — produce distinct output
+    files."""
     return _run_wbpp_stacking(
-        stack, config, stack_files_downscaled.filename_fn(stack, config),
-        downscale_factor=factor,
+        stack, config, cal_stack_ids, cal_masters,
+        stack_files.filename_fn(stack, config, cal_stack_ids, *cal_masters),
     )
 
 def _check_integration_time(stack: BaseStack, master_path) -> None:

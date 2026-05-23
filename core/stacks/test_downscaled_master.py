@@ -60,17 +60,9 @@ def test_downscaled_stack(test_context):
 
     print_tree(context.output_dir)
 
-    # Verify downscaled master was produced.
-    downscaled_masters = list(Path(context.output_dir).rglob("stack_files_downscaled/*.xisf"))
-    assert len(downscaled_masters) >= 1, f"Expected downscaled master files, found: {downscaled_masters}"
-
-    # PixInsight Downscaled does NOT produce a full-res master. WBPP
-    # runs on the already-downscaled input frames; the output goes
-    # straight to `Stack/stack_files_downscaled/...`. Pipelines that
-    # want both must queue both PixInsight Master AND PixInsight
-    # Downscaled — each runs its own WBPP.
-    full_res = list(Path(context.output_dir).rglob("Stack/stack_files/light*.xisf"))
-    assert len(full_res) == 0, (
-        f"PixInsight Downscaled should not have produced a full-res "
-        f"master, but found: {full_res}"
-    )
+    # Verify a master was produced. After the unify-downscaling refactor,
+    # the downscaled pipeline's output lands under `Stack/stack_files/`
+    # alongside any full-res masters from sibling pipelines — distinct
+    # call_hash filenames keep them from colliding.
+    masters = list(Path(context.output_dir).rglob("Stack/stack_files/*.xisf"))
+    assert len(masters) >= 1, f"Expected stack_files master files, found: {masters}"

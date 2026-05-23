@@ -66,11 +66,13 @@ def fully_resolve(
 
         <output_dir>/<object_type>/<op_name>/<identity_stem>.<ext>
 
-    `op_name` (the producer's `__name__`) is the entire on-disk
-    discriminator. Different ops writing the same identity-shape
-    land in different directories — pipelines that swap one op for
-    another (`stack_files` vs `stack_files_downscaled`) never
-    collide.
+    `op_name` (the producer's `__name__`) is the on-disk
+    directory; different ops writing the same identity-shape
+    land in different directories. Two pipelines calling the
+    SAME op (e.g. unified `stack_files`) with different upstream
+    data deps land in the same directory but get distinct
+    filenames via call_hash — the bound args' content_hashes
+    flow into the hash that names the file.
 
     Ops that produce per-pipeline variants of the same identity
     (`place_image` for Master vs Downscaled mosaics) encode the

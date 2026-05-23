@@ -126,17 +126,12 @@ def test_producers_for_returns_decoration_order():
     assert "stack_files" in stack_ops, (
         f"stack_files must register for StackId; got {stack_ops}"
     )
-    assert "stack_files_downscaled" in stack_ops, (
-        f"stack_files_downscaled must register for StackId; got {stack_ops}"
-    )
     assert "post_process_stack" in stack_ops
-    assert "post_process_stack_downscaled" in stack_ops
 
     cal_ops = {p.__name__ for p in producers_for(CalibrationStackId)}
     # stack_files registers for BOTH StackId and CalibrationStackId; the
     # polymorphic decoration appends to each identity's producer list.
     assert "stack_files" in cal_ops
-    assert "stack_files_downscaled" in cal_ops
 
 
 def test_real_run_subframe_producers_resolve_distinctly():

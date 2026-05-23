@@ -5,95 +5,19 @@ from spherical_geometry.polygon import SingleSphericalPolygon
 from beartype import beartype
 from decorators import node
 from stacks.composite_stack import Run, Stack, StacksDict, CalibrationStacksDict
-from stacks.types import StackIdDependency
 
 from stacks.convert_to_dict import convert_to_dict
-from dataclasses import replace
 from decisions.decisions import decisions_for_stack
 from decisions.subframe_selection import (
     effective_integration,
     get_light_frames_sorted_by_stars,
 )
 from dependency_graph import Graph
-
-
-@ray.remote(num_cpus=0.1)
-@beartype
-def calibration_done(stack: Stack) -> None:
-    pass
-
-
 from decisions.settings import ProcessingConfig
 from context import context
 import structlog
 
 log = structlog.get_logger()
-
-
-def _build_calibration_graph(stack: Stack, config: ProcessingConfig, stacker) -> Graph:
-    """Build the per-(bias, dark, flat) stacking sub-graph this
-    `stack`'s calibration depends on, terminating in a single
-    `calibration_done` sentinel that downstream nodes can `_after=`
-    on. `stacker` is the @node op that does the actual stacking —
-    `stack_files` (full-res) or `stack_files_downscaled` (8x). Cal
-    masters come out at the same resolution the light frames will
-    be calibrated against."""
-    from decisions.resolve import resolve_calibration
-    from frozendict import frozendict as fd
-
-    enriched = resolve_calibration(
-        stack, config.get_calibration_stacks(), config.decisions,
-    )
-    cal_config = replace(config, decisions=fd())
-
-    def visit(run: Run) -> dict:
-        """Recursively build stacking tasks for one run's cal deps."""
-        subgraph = {}
-        for dep in run.dependencies.values():
-            if not isinstance(dep, StackIdDependency):
-                continue
-            cal_stack = config.get_calibration_stacks()[dep.stack_id]
-            task = (stacker, cal_stack, cal_config)
-            cal_run = next(iter(cal_stack.contents.values()))
-            inner = visit(cal_run)
-            subgraph[task] = list(inner) if inner else []
-            subgraph |= inner
-        return subgraph
-
-    cal_tasks = {}
-    for run in enriched.contents.values():
-        cal_tasks |= visit(run)
-
-    if not cal_tasks:
-        return Graph({})
-
-    # Terminal sentinel: every leaf cal task funnels into one Node so
-    # the caller can wait on a single handle.
-    graph = Graph(cal_tasks)
-    has_dep = {d for ds in cal_tasks.values() for d in ds}
-    graph[(calibration_done, stack)] = set(cal_tasks) - has_dep
-    return graph
-
-
-@node
-def calibrate(stack: Stack, config: ProcessingConfig) -> Graph:
-    """Calibration sub-graph at full resolution. Used by the
-    PixInsight Master pipeline. The downscaled variant is
-    `calibrate_downscaled` — same shape, different cal-stack stacker."""
-    from stacks.stacking.pixinsight import stack_files
-    return _build_calibration_graph(stack, config, stack_files)
-
-
-@node
-def calibrate_downscaled(stack: Stack, config: ProcessingConfig) -> Graph:
-    """Calibration sub-graph at 8x downscale. Used by the
-    PixInsight Downscaled pipeline. Cal stacks are stacked via
-    `stack_files_downscaled`, which downscales bias/dark/flat
-    frames before WBPP so the cal masters come out at the small
-    resolution that the (downscaled) light frames will be
-    calibrated against."""
-    from stacks.stacking.pixinsight import stack_files_downscaled
-    return _build_calibration_graph(stack, config, stack_files_downscaled)
 
 
 # TODO: Calibrate the subframe returned here.

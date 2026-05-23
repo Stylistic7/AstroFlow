@@ -8,11 +8,11 @@ from pix.tasks import (
     MultiscaleGradientCorrection,
 )
 from decorators import node
+from metadata.classes import ImageMetadata
 from stacks.composite_stack import Stack
 from file_io.types import XisfFilePath, WithSidecar
 from products import makes_image
 from products.identity import StackId, PresentationType
-from previews.types import DOWNSCALE_FACTORS, DOWNSCALED_MASTER
 import structlog
 
 THUMBNAIL = PresentationType.THUMBNAIL
@@ -21,75 +21,62 @@ TILE_PYRAMID = PresentationType.TILE_PYRAMID
 log = structlog.get_logger()
 
 
-def _post_process_stack(master_path, stack: Stack, downscale_factor: int = 1) -> Image:
-    # Stack.filter is the authoritative grouping value; pix doesn't read
-    # FILTER from disk (the caller is the only thing that knows it).
-    image = Image.open(master_path, filter=stack.filter)
-
-    effective_scale = stack.image_scale * downscale_factor
-    julian_date = int(Time(stack.oldest_date).jd)
-
-    solver_kwargs = dict(
-        metadata_ra=stack.center[0],
-        metadata_dec=stack.center[1],
-        metadata_resolution=effective_scale / 3600.0,
-        metadata_observationTime=julian_date,
-        metadata_epoch=julian_date,
+def _solver_hints_from(master: ImageMetadata, stack: Stack) -> dict:
+    """Plate-solver hints for `master`. Read from the master's
+    already-computed plate solution (compute_image_metadata ran on
+    this file as part of the @makes_image trace-hook chain), so the
+    body doesn't need to know whether `master` came from a full-res
+    or downscaled stacker — the WCS encodes the actual arcsec/pixel
+    of THIS image."""
+    julian = int(Time(stack.oldest_date).jd)
+    if master.plate_solution is not None:
+        from astropy.wcs import WCS
+        wcs = WCS(master.plate_solution.header)
+        cx, cy = master.width_pixels / 2.0, master.height_pixels / 2.0
+        ra, dec = wcs.all_pix2world(cx, cy, 0)
+        # Pixel scale of the master in arcsec/pixel.
+        arcsec_per_pixel = abs(float(wcs.pixel_scale_matrix[0, 0])) * 3600.0
+    else:
+        ra, dec = stack.center
+        arcsec_per_pixel = stack.image_scale
+    return dict(
+        metadata_ra=float(ra), metadata_dec=float(dec),
+        metadata_resolution=arcsec_per_pixel / 3600.0,
+        metadata_observationTime=julian, metadata_epoch=julian,
     )
-
-    if downscale_factor > 1:
-        # Downscaled images have tiny stars — adjust solver for low resolution.
-        solver_kwargs |= dict(
-            solver_structureLayers=3,
-            solver_sensitivity=0.9,
-        )
-
-    solved = ImageSolver(image, **solver_kwargs)
-
-    calibrated = SpectrophotometricFluxCalibration(solved)
-    return MultiscaleGradientCorrection(calibrated)
 
 
 @node(resources={"PixInsight": 1}, auto_memory=True)
 @makes_image(identity=StackId, display="Post-Processed")
 def post_process_stack(
-    stack: Stack, mock_pixinsight: bool, master,
+    stack: Stack, mock_pixinsight: bool, master: ImageMetadata,
 ) -> WithSidecar[XisfFilePath]:
-    """Full-resolution PixInsight post-processing.
+    """PixInsight post-processing of a stacked master.
 
-    `master` is the upstream `stack_files` output (a WithSidecar)
-    passed as a data dep by the pipeline body — so this op doesn't
-    have to know stack_files's call args to find the master file.
+    `master` arrives as an `ImageMetadata` (the @makes_image trace
+    hook chains `compute_image_metadata` after every produced
+    artifact, so by the time the master reaches this op at runtime
+    it carries width_pixels, height_pixels, plate_solution, etc.).
+    The body reads everything it needs from `master` and never
+    needs to know HOW the master was produced — full-resolution
+    stacking, downscaled stacking, or any future variant all look
+    identical from here.
+
+    Output filename is the call_hash over the FULL bound args
+    including `master`. Two pipelines calling this op with the
+    same `stack` + `mock_pixinsight` but different upstream masters
+    produce DIFFERENT files: the masters' content_hashes differ,
+    so the call_hash differs, so the filename differs.
     """
-    # Literal args only — `master` is a data dep, and the recorder
-    # only sees the literals at trace time. Op body matches the
-    # recorder convention so the on-disk filename = the tap-index
-    # entry, byte-for-byte.
-    output_filename = post_process_stack.filename_fn(stack, mock_pixinsight)
+    output_filename = post_process_stack.filename_fn(
+        stack, mock_pixinsight, master,
+    )
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
 
-    result = _post_process_stack(master.filename, stack, downscale_factor=1)
-    result.save_to(output_filename, mock=mock_pixinsight)
-
-    return WithSidecar(XisfFilePath(output_filename))
-
-
-@node(resources={"PixInsight": 1}, auto_memory=True)
-@makes_image(identity=StackId, display="Post-Processed (Downscaled)")
-def post_process_stack_downscaled(
-    stack: Stack, mock_pixinsight: bool, master,
-) -> WithSidecar[XisfFilePath]:
-    """Same gradient correction as `post_process_stack`, but on the
-    already-downscaled master. `master` is the upstream
-    `stack_files_downscaled` output as a data dep — same pattern as
-    `post_process_stack` so the body doesn't have to look it up.
-    """
-    output_filename = post_process_stack_downscaled.filename_fn(stack, mock_pixinsight)
-    os.makedirs(os.path.dirname(output_filename), exist_ok=True)
-
-    result = _post_process_stack(
-        master.filename, stack,
-        downscale_factor=DOWNSCALE_FACTORS[DOWNSCALED_MASTER],
+    image = Image.open(master.filename, filter=stack.filter)
+    solved = ImageSolver(image, **_solver_hints_from(master, stack))
+    result = MultiscaleGradientCorrection(
+        SpectrophotometricFluxCalibration(solved)
     )
     result.save_to(output_filename, mock=mock_pixinsight)
 

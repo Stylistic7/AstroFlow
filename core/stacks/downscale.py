@@ -1,8 +1,17 @@
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 import numpy as np
 from astropy.io import fits
+from frozendict import frozendict
+
+from decorators import node
+from hashing import hash_list
+from metadata.classes import ImageMetadata, MetadataDict
+from stacks.composite_stack import BaseStack, Stack, CalibrationStack
+from stacks.run import BaseRun, Run, CalibrationRun, RunsDict
+from units import ArcsecondsPerPixel
 
 
 def downscale_fits(
@@ -120,3 +129,102 @@ def downscale_fits(
                 pass
 
     dst.writeto(out_path, overwrite=overwrite, output_verify="exception")
+
+
+def _downscaled_frame_content_hash(orig_content_hash: str, factor: int) -> str:
+    return hash_list([orig_content_hash, f"downscale-K{factor}"])
+
+
+def _downscale_frame(m: ImageMetadata, factor: int, dest_dir: Path) -> ImageMetadata:
+    """Block-mean-downscale a frame's FITS file to `dest_dir`.
+    Returns a fresh ImageMetadata pointing at the new file with a
+    derived content_hash. `stable_hash` is preserved so the frame
+    keeps its user-facing identity. The new file path is
+    content-addressed by the derived hash, so reruns reuse it."""
+    new_h = _downscaled_frame_content_hash(m.content_hash, factor)
+    new_path = dest_dir / f"{new_h}.fits"
+    if not new_path.exists():
+        downscale_fits(m.filename, new_path, K=factor)
+    return ImageMetadata(
+        content_hash=new_h,
+        stable_hash=m.stable_hash,
+        filename=new_path,
+        header=m.header,
+        width_pixels=m.width_pixels // factor,
+        height_pixels=m.height_pixels // factor,
+        channels=m.channels,
+        dtype=m.dtype,
+        # Plate solution is in sky coords; CRPIX/CD scaling for the
+        # smaller pixel grid would be more accurate, but WBPP only
+        # uses RA/DEC as a hint for re-solving on the downscaled
+        # frame, so the body in `_copy_frames_with_plate_solution`
+        # writes RA/DEC hints only when frame width disagrees with
+        # the plate-solution header's NAXIS1.
+        plate_solution=m.plate_solution,
+    )
+
+
+def _downscale_run(run: BaseRun, factor: int, dest_dir: Path) -> BaseRun:
+    """Build a new Run whose frames point at downscaled files.
+    `stable_hash` preserved (identity); `content_hash` derived
+    from the new frame hashes (so the run is materially different
+    for any downstream op that includes it in a call_hash)."""
+    new_meta = MetadataDict({})
+    new_frames = []
+    for orig_h, m in run.metadata.items():
+        new_m = _downscale_frame(m, factor, dest_dir)
+        new_meta[new_m.content_hash] = new_m
+        new_frames.append(new_m.content_hash)
+
+    overrides = dict(
+        frames=tuple(new_frames),
+        metadata=new_meta,
+        content_hash=hash_list(sorted(new_frames)),
+        width_pixels=run.width_pixels // factor,
+        height_pixels=run.height_pixels // factor,
+    )
+    # Light Runs carry AstrometricAttributes — scale image_scale.
+    if hasattr(run, "image_scale"):
+        overrides["image_scale"] = ArcsecondsPerPixel(
+            float(run.image_scale) * factor
+        )
+    return dataclasses.replace(run, **overrides)
+
+
+@node(auto_memory=True)
+def downscale_stack(stack: BaseStack, factor: int) -> BaseStack:
+    """Block-mean-downscale every frame in `stack` by `factor`.
+
+    Returns a new Stack with the SAME `stable_hash` as the input
+    (preserves the user-facing identity used by tap routing —
+    `/stack/<original_hash>/...` still surfaces taps from
+    pipelines that downscale before stacking) and a NEW
+    `content_hash` derived from the downscaled frames' content
+    (so downstream ops that include the stack in their call_hash
+    produce distinct outputs).
+
+    Pipeline-agnostic — works on `Stack` (light frames) and
+    `CalibrationStack` (bias/dark/flat) the same way."""
+    from context import context
+
+    if factor == 1:
+        return stack
+
+    dest_dir = Path(context.output_dir) / "downscale_stack"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    new_runs = RunsDict()
+    for run_key, run in stack.contents.items():
+        new_runs[run_key] = _downscale_run(run, factor, dest_dir)
+
+    overrides = dict(
+        contents=new_runs,
+        content_hash=hash_list(sorted(r.content_hash for r in new_runs.values())),
+        width_pixels=stack.width_pixels // factor,
+        height_pixels=stack.height_pixels // factor,
+    )
+    if hasattr(stack, "image_scale"):
+        overrides["image_scale"] = ArcsecondsPerPixel(
+            float(stack.image_scale) * factor
+        )
+    return dataclasses.replace(stack, **overrides)

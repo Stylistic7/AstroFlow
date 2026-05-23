@@ -95,13 +95,13 @@ def concerns_for_object(object_type, object_id):
     """Concerns reported by recent producer runs for this object.
 
     @capture_logs writes one entry per `(op_name, object_type, id)`
-    tuple — the producer's `__name__` discriminates between different
-    pipelines' producers, so PI Master's `post_process_stack` and PI
-    Downscaled's `post_process_stack_downscaled` keep their concerns
-    distinct. This endpoint scans every entry the running ops have
-    written for the requested object and returns the merged list;
-    mosaic concerns also bubble up the concerns from constituent
-    stacks at the requested filter.
+    tuple. PI Master and PI Downscaled now SHARE the same op
+    (`post_process_stack`), so their concerns merge under the same
+    op_name — distinct on-disk outputs come from the call_hash, not
+    a separate op name. This endpoint scans every entry for the
+    requested object and returns the merged list; mosaic concerns
+    also bubble up the concerns from constituent stacks at the
+    requested filter.
 
     Query params:
       filter — required for object_type=mosaic

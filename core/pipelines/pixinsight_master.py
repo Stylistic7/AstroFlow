@@ -22,22 +22,16 @@ from mosaics.final_storage import store_mosaic_color_channel_xisf
 from mosaics.merging.pixinsight import merge_images
 from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
-from stacks.compute_graph import calibrate
 from stacks.composite_stack import Stack
-from stacks.post_processing.pixinsight import post_process_stack
-from stacks.stacking.pixinsight import stack_files
+from stacks.pipelines import post_processed_master
 from targets.merging.pixinsight import merge_target_channel
 from targets.types import Target
 
 
 def _post_processed_master(s, config, mock):
-    """Calibrate → stack → post-process one stack. Returns the
-    post-processed master's `WithSidecar` handle. The master flows
-    into `post_process_stack` as a data dep (positional arg) —
-    no filename lookup."""
-    cal = calibrate(s, config)
-    master = stack_files(s, config, _after=(cal,))
-    return post_process_stack(s, mock, master)
+    """PI Master uses the unified stacking core with the IDENTITY
+    downscaler (no downscaling — frames go to WBPP at full res)."""
+    return post_processed_master(s, config, mock, downscaler=lambda x: x)
 
 
 def _channels_for_target(target, config, mock):

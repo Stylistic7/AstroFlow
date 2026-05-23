@@ -91,18 +91,14 @@ def test_display_attr_attached_to_ops():
     """@makes_image(display="X") sets `_display = "X"` on the wrapped
     function. The trace-time tap collector reads this attribute to
     decide which Nodes are user-visible taps."""
-    from stacks.stacking.pixinsight import stack_files, stack_files_downscaled
-    from stacks.post_processing.pixinsight import (
-        post_process_stack, post_process_stack_downscaled,
-    )
+    from stacks.stacking.pixinsight import stack_files
+    from stacks.post_processing.pixinsight import post_process_stack
     from mosaics.final_storage import (
         store_mosaic_color_channel_xisf, store_mosaic_color_channel_subframe,
     )
 
     assert stack_files._display == "Master"
-    assert stack_files_downscaled._display == "Downscaled Master"
     assert post_process_stack._display == "Post-Processed"
-    assert post_process_stack_downscaled._display == "Post-Processed (Downscaled)"
     assert store_mosaic_color_channel_xisf._display == "Mosaic"
     assert store_mosaic_color_channel_subframe._display == "Subframe"
 
@@ -112,10 +108,8 @@ def test_intermediate_ops_have_no_display():
     visible tap) MUST NOT carry `_display`. The dashboard only
     surfaces display-tagged ops."""
     from mosaics.placement.astroflow import place_image
-    from mosaics.merging.pixinsight import merge_images
 
     assert getattr(place_image, "_display", None) is None
-    assert getattr(merge_images, "_display", None) is None
 
 
 def test_output_index_round_trip(test_context):
@@ -140,6 +134,52 @@ def test_output_index_round_trip(test_context):
     assert "other" not in by_object
     by_other = output_index.for_object("mosaic", "other")
     assert by_other == {"PixInsight Master": {"Mosaic": {"H": "/tmp/other.xisf"}}}
+
+
+def test_recorder_disambiguates_repeated_same_key_taps(test_context):
+    """If a pipeline calls the same @makes_image atomic op more than
+    once with literals that produce the same `(type, id, display,
+    filter)` key (e.g. several `merge_images` calls for the same
+    (mosaic, filter) but distinct upstream inputs), the recorder
+    must register each call as a DISTINCT tap by appending a 1-based
+    ordinal suffix to the display string for occurrences after the
+    first. The first occurrence keeps the unsuffixed display name
+    so single-call pipelines aren't cluttered."""
+    from compute_graph.compute_graph import _record_pipeline_taps
+    from dependency_graph.classes import Node, Graph
+    from mosaics.merging.pixinsight import merge_images
+
+    output_index.clear()
+
+    # Build a fake mosaic-like with a stable_hash; the recorder only
+    # reads `stable_hash` off the first identity arg.
+    class FakeMosaic:
+        stable_hash = "mosaic-X"
+
+    mosaic = FakeMosaic()
+    # Two merge_images Nodes with identical literal args (mosaic,
+    # filter, mock). Their `*inputs` data-deps would differ at trace
+    # time; we don't need real inputs for the recorder test.
+    n1 = Node(merge_images, mosaic, "H", False, name="merge_a")
+    n2 = Node(merge_images, mosaic, "H", False, name="merge_b")
+    graph = Graph({n1: [], n2: []})
+
+    _record_pipeline_taps(
+        output_index.record_existence,
+        "Test Pipeline", "mosaic", mosaic.stable_hash, graph,
+    )
+
+    # MergedImageId.object_type is `MergedImage`, so the recorder
+    # keys taps under "mergedimage" — the cart-level "mosaic" type
+    # tag is separate.
+    by_object = output_index.for_object("mergedimage", mosaic.stable_hash)
+    assert "Test Pipeline" in by_object
+    displays = by_object["Test Pipeline"]
+    # First call keeps "Merged"; second is "Merged 2".
+    assert "Merged" in displays
+    assert "Merged 2" in displays
+    assert displays["Merged"]["H"] == output_index.PENDING
+    assert displays["Merged 2"]["H"] == output_index.PENDING
 
 
 # End-to-end recording verification is covered by the exhaustive

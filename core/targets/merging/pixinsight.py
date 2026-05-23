@@ -88,27 +88,17 @@ def merge_target_channel(
     config: ProcessingConfig,
     *masters,
 ) -> WithSidecar[XisfFilePath]:
-    """Full-resolution (target, filter) channel master (PI Master)."""
+    """HDR-combine per-stack masters into one (target, filter) channel.
+
+    Pipeline-agnostic. PI Master and PI Downscaled both call this
+    with their own per-stack post-processed masters as `*masters`;
+    those masters' content_hashes differ between pipelines, so the
+    call_hash (literals + masters) differs, so the output filename
+    differs. The framework's runtime tap-path recorder captures
+    the actual path the body writes to."""
     return _merge_target_channel_impl(
         target, filter, stacks, config, masters,
-        merge_target_channel.filename_fn(target, filter, stacks, config),
-    )
-
-
-@node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD",
-      auto_memory=True, cache_key_narrow=_merge_target_channel_narrow)
-@makes_image(identity=TargetChannelId, display="Channel")
-def merge_target_channel_downscaled_master(
-    target: Target, filter: str, stacks: tuple[Stack, ...],
-    config: ProcessingConfig,
-    *masters,
-) -> WithSidecar[XisfFilePath]:
-    """Downscaled-resolution (target, filter) channel master (PI
-    Downscaled). Same body as `merge_target_channel`; separate
-    op-name keeps the on-disk output in its own directory."""
-    return _merge_target_channel_impl(
-        target, filter, stacks, config, masters,
-        merge_target_channel_downscaled_master.filename_fn(
-            target, filter, stacks, config,
+        merge_target_channel.filename_fn(
+            target, filter, stacks, config, *masters,
         ),
     )

@@ -6,7 +6,7 @@ import pytz
 from compute_graph.compute_graph import build_compute_graph
 from testing import make_synthetic_frames, copy_testdata_frames
 
-from stacks.compute_graph import calibrate
+from stacks.calibration_selection import select_calibration_stacks
 from stacks.run import Run
 from stacks.composite_stack import Stack, CalibrationStack
 from stacks.types import StackHash, StackIdDependency
@@ -471,8 +471,11 @@ def test_stack_calibration_frames(test_context) -> None:
         development_settings=context.settings.development_settings,
         min_frames_in_stack=context.settings.clustering_settings.min_frames_in_stack,
     )
-    graph = ray.get(calibrate.remote(light_stacks[0], config))
-    print_graph(graph)
+    cal_list = select_calibration_stacks(light_stacks[0], config)
+    print("cal_stacks:", [str(cs) for cs in cal_list])
+    # Synthetic bias/dark/flat were planted above, plus possibly a
+    # dark needs the bias — non-empty either way.
+    assert len(cal_list) > 0
 
 
 @pytest.mark.exhaustive

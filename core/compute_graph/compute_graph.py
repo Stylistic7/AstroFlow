@@ -304,31 +304,53 @@ def main_processing_graph_done() -> None:
     pass
 
 
-def _record_pipeline_taps(record, pipeline_name, cart_type, cart_id, graph):
-    """Walk every Node in the pipeline's traced `graph` and record
-    tap-point paths in the PipelineOutputIndex.
+@ray.remote(num_cpus=0.01)
+def _register_tap_path_op(
+    pipeline_name: str, object_type: str, object_id: str,
+    display: str, filter: str | None, result,
+):
+    """Runtime helper: record the tap's actual on-disk path in the
+    PipelineOutputIndex after the upstream @makes_image op has
+    finished writing.
 
-    A tap point is any @makes_image-decorated op call whose task
-    carries a `_display` attribute (set by `@makes_image(display=...)`).
-    Intermediate ops (per-strip merge_images, per-panel place_image,
-    auto-chained compute_image_metadata) leave no `_display` and are
-    skipped.
+    `result` is the resolved upstream Node value — a `WithSidecar`
+    or `ImageMetadata` carrying a `.filename` attribute. The path
+    flows in via Ray's data-dep mechanism, so it's whatever the op
+    body actually wrote to (no trace-time prediction needed)."""
+    from pipelines.output_index import record_path
+    path = getattr(result, "filename", None) or result
+    record_path(
+        pipeline_name, object_type, object_id, display, filter, str(path),
+    )
+    return result
 
-    For each tap-point Node we:
-      1. Bind the Node's literal args to the producer function's
-         signature by parameter name.
-      2. Try each (identity_cls, level) the @makes_image registered;
-         extract that identity's fields from the bound args; if all
-         fields are present, call the resolved filename_fn to get
-         the on-disk path.
-      3. Record (pipeline_name, object_type_from_identity,
-         object_id_from_args, display, filter_from_args) → path.
 
-    Filtering by `(cart_type, cart_id)`: callers can be coarse — we
-    record EVERY tap whose identity matches; the cart entry's object
-    is the canonical id for object-scoped lookups but stack-level
-    taps under a mosaic cart entry are also useful (Master per
-    constituent stack, etc.), so we don't restrict.
+def _record_pipeline_taps(record_existence, pipeline_name, cart_type, cart_id, graph):
+    """Walk every Node in the pipeline's traced `graph`. For each
+    @makes_image tap point (Nodes whose task carries `_display`):
+
+    1. Register the tap's EXISTENCE in the PipelineOutputIndex
+       (`(pipeline, type, id, display, filter) → "pending"`). The UI
+       can render placeholders immediately.
+
+    2. Add a downstream `_register_tap_path_op` Node that depends on
+       the tap's result. When the tap finishes and the path is
+       known, this follow-up writes the real path to the index.
+
+    Same-key collisions (e.g. a pipeline that calls an atomic op
+    like `merge_images` more than once on the same (mosaic, filter))
+    are disambiguated by suffixing ` 2`, ` 3`, … to the display
+    string in the order the Nodes appear in the trace. The first
+    occurrence keeps the unmodified display name — single-merge
+    pipelines aren't cluttered with "Merged 1" when there's no
+    ambiguity to resolve.
+
+    The two-phase pattern (existence at trace, path at runtime) is
+    the framework's answer to "shared ops across pipelines must
+    produce distinct files even when literals match" — each tap's
+    on-disk filename is chosen by the op body using its full bound
+    args (including resolved data deps), and the runtime hook
+    captures that filename regardless of how the body computed it.
     """
     from dependency_graph.classes import Node
     import dataclasses
@@ -337,17 +359,17 @@ def _record_pipeline_taps(record, pipeline_name, cart_type, cart_id, graph):
     if graph is None:
         return
 
+    # Per-(type, id, display, filter) sequence count, so duplicate
+    # taps in the same trace get distinct display names.
+    seq: dict[tuple, int] = {}
+
     for n in list(graph.keys()):
         if not isinstance(n, Node):
             continue
         task = n.task
-        # Unwrap Ray remote → underlying function for signature + display.
         fn = getattr(task, "_function", task)
-        display = getattr(fn, "_display", None) or getattr(task, "_display", None)
-        if display is None:
-            continue
-        filename_fn = getattr(fn, "filename_fn", None) or getattr(task, "filename_fn", None)
-        if filename_fn is None:
+        base_display = getattr(fn, "_display", None) or getattr(task, "_display", None)
+        if base_display is None:
             continue
         try:
             sig = inspect.signature(fn)
@@ -356,19 +378,6 @@ def _record_pipeline_taps(record, pipeline_name, cart_type, cart_id, graph):
         params = list(sig.parameters.keys())
         arg_map = {params[i]: n.args[i]
                    for i in range(min(len(n.args), len(params)))}
-        # Recorder calls filename_fn with the Node's literal args.
-        # Convention: op bodies that write a file also compute their
-        # output path via filename_fn(*literal_args) — so the
-        # recorder-predicted path matches the runtime-written path
-        # byte-for-byte. Ops that need to discriminate across
-        # pipelines with identical literals (e.g. merge_target_channel
-        # called from PI Master vs PI Downscaled) split into per-
-        # pipeline ops; the op-name segment of the path keeps the
-        # outputs apart.
-        try:
-            path = str(filename_fn(*n.args))
-        except (TypeError, ValueError, KeyError):
-            continue
         for identity_cls in getattr(fn, "_identities", []):
             id_field_names = [f.name for f in dataclasses.fields(identity_cls)]
             try:
@@ -382,8 +391,28 @@ def _record_pipeline_taps(record, pipeline_name, cart_type, cart_id, graph):
                 else str(primary)
             )
             filter_value = arg_map.get("filter")
-            record(pipeline_name, object_type_name, object_id_value,
-                   display, filter_value, path)
+            key = (object_type_name, object_id_value, base_display, filter_value)
+            seq[key] = seq.get(key, 0) + 1
+            display = (
+                base_display if seq[key] == 1
+                else f"{base_display} {seq[key]}"
+            )
+            record_existence(
+                pipeline_name, object_type_name, object_id_value,
+                display, filter_value,
+            )
+            # Schedule a runtime task that, when n's result is
+            # available, writes the real path to the tap index. The
+            # task depends on n via the graph adjacency (one entry,
+            # ordering = data flow). Its literal args bake in the
+            # identity; its data-dep is the tap's result.
+            register_node = Node(
+                _register_tap_path_op,
+                pipeline_name, object_type_name, object_id_value,
+                display, filter_value,
+                name=f"_register_tap_{n.name}",
+            )
+            graph[register_node] = [n]
             break  # one identity matched; don't double-record
 
 
@@ -429,7 +458,7 @@ def build_main_processing_graph(
         )
 
     from pipelines.registry import get_pipeline
-    from pipelines.output_index import record as record_pipeline_output
+    from pipelines.output_index import record_existence
     graph = Graph({})
     tasks = []
     for entry in shopping_cart:
@@ -454,7 +483,7 @@ def build_main_processing_graph(
         # `_display`-tagged Node — this is the only mechanism that
         # scales to user-defined pipelines (no static table edits).
         _record_pipeline_taps(
-            record_pipeline_output, pipeline_name, type, id, result,
+            record_existence, pipeline_name, type, id, result,
         )
 
     graph[main_processing_graph_done] = tasks

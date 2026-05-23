@@ -53,7 +53,7 @@ def _blend_pair_numpy(image_0, image_1):
 
 
 @node(resources={"fastest_storage": 0.001})
-@makes_image(identity=MergedImageId)
+@makes_image(identity=MergedImageId, display="Merged")
 def merge_images_subframe(
     mosaic: Mosaic, filter: str, *inputs,
 ) -> WithSidecar[TiffFilePath]:
@@ -165,31 +165,19 @@ def _intermediate_metadata(path: Path, a, b) -> ImageMetadata:
 
 
 @node(resources={"PixInsight": 1}, auto_memory=True)
-@makes_image(identity=MergedImageId)
+@makes_image(identity=MergedImageId, display="Merged")
 def merge_images(
     mosaic: Mosaic, filter: str, mock_pixinsight: bool,
     *inputs,
 ) -> WithSidecar[XisfFilePath]:
-    """Full-resolution PI Master mosaic merge. Takes every panel as
-    a variadic data dep; does pairwise PhotometricMosaic inside one
-    Ray task. One call per (mosaic, filter); on-disk filename is
-    `merge_images/<call_hash(mosaic, filter, mock)>.xisf`."""
+    """Pairwise PhotometricMosaic merge across all panel inputs.
+
+    Pipeline-agnostic. PI Master and PI Downscaled both call this
+    with their own placed-image inputs; `*inputs` differs between
+    them, so the call_hash differs, so the on-disk filename
+    differs. The framework's runtime tap-path hook captures the
+    actual path."""
     return _merge_images_pi_impl(
         mosaic, filter, mock_pixinsight, inputs,
-        merge_images.filename_fn(mosaic, filter, mock_pixinsight),
-    )
-
-
-@node(resources={"PixInsight": 1}, auto_memory=True)
-@makes_image(identity=MergedImageId)
-def merge_images_downscaled_master(
-    mosaic: Mosaic, filter: str, mock_pixinsight: bool,
-    *inputs,
-) -> WithSidecar[XisfFilePath]:
-    """Downscaled-resolution PI Downscaled mosaic merge. Same body;
-    separate op-name keeps the on-disk output in
-    `merge_images_downscaled_master/`."""
-    return _merge_images_pi_impl(
-        mosaic, filter, mock_pixinsight, inputs,
-        merge_images_downscaled_master.filename_fn(mosaic, filter, mock_pixinsight),
+        merge_images.filename_fn(mosaic, filter, mock_pixinsight, *inputs),
     )

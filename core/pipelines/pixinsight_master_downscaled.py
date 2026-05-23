@@ -6,41 +6,38 @@ downscaled 8x BEFORE WBPP runs. The whole point of this pipeline
 is to cut WBPP/plate-solving/registration time by ~64x, which is
 only achievable if WBPP itself sees the small frames.
 
-Structurally the only differences from `pixinsight_master.py` are
-which upstream stack-side ops it composes:
-
-  PixInsight Master:                    PixInsight Downscaled:
-    calibrate(...)                        calibrate_downscaled(...)
-    stack_files(...)                      stack_files_downscaled(...)
-    post_process_stack(...)               post_process_stack_downscaled(...)
-
-`merge_target_channel`, `place_image`, `merge_images`, and
-`store_mosaic_color_channel_xisf` are SHARED — the data deps
-(different per-stack masters, different viewbox) keep the outputs
-in distinct on-disk files via the call-hash filename.
+Structurally identical to `pixinsight_master.py`: it imports the
+SAME `post_processed_master` shared core and passes a
+non-identity `downscaler`. Every op downstream — `stack_files`,
+`post_process_stack`, `merge_target_channel`, `merge_images`,
+`store_mosaic_color_channel_xisf` — is the same op. The
+framework distinguishes the two pipelines' outputs via the
+call_hash: each op's bound args include its upstream data deps,
+whose content_hashes differ between the two pipelines, so the
+on-disk filenames differ.
 """
 from astroflow.pipeline import pipeline
-from mosaics.final_storage import store_mosaic_color_channel_downscaled_master
-from mosaics.merging.pixinsight import merge_images_downscaled_master
+from mosaics.final_storage import store_mosaic_color_channel_xisf
+from mosaics.merging.pixinsight import merge_images
 from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
-from stacks.compute_graph import calibrate_downscaled
 from stacks.composite_stack import Stack
-from stacks.post_processing.pixinsight import post_process_stack_downscaled
-from stacks.stacking.pixinsight import stack_files_downscaled
-from targets.merging.pixinsight import merge_target_channel_downscaled_master
+from stacks.downscale import downscale_stack
+from stacks.pipelines import post_processed_master
+from targets.merging.pixinsight import merge_target_channel
 from targets.types import Target
 
 
 def _post_processed_master(s, config, mock):
-    cal = calibrate_downscaled(s, config)
-    master = stack_files_downscaled(s, config, _after=(cal,))
-    return post_process_stack_downscaled(s, mock, master)
+    return post_processed_master(
+        s, config, mock,
+        downscaler=lambda x: downscale_stack(x, 8),
+    )
 
 
 def _channels_for_target(target, config, mock):
     return {
-        filter: merge_target_channel_downscaled_master(
+        filter: merge_target_channel(
             target, filter, target.stacks_for(filter), config,
             *[_post_processed_master(s, config, mock)
               for s in target.stacks_for(filter)],
@@ -85,10 +82,10 @@ def for_mosaic(mosaic, config):
         ]
         if not placed:
             continue
-        merged = placed[0] if len(placed) == 1 else merge_images_downscaled_master(
+        merged = placed[0] if len(placed) == 1 else merge_images(
             mosaic, filter, mock, *placed,
         )
-        out[filter] = store_mosaic_color_channel_downscaled_master(
+        out[filter] = store_mosaic_color_channel_xisf(
             mosaic, filter, mock, merged,
         )
 
