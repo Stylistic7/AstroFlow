@@ -30,8 +30,19 @@ import functools
 from typing import Callable
 
 from decorators.decorators import node
-from dependency_graph.tracing import trace
+from dependency_graph.tracing import trace, set_workflow_key
 from pipelines.registry import _REGISTRY
+
+
+# URL-friendly tag for each entity class. Workflow-graph keys are
+# stored as `(type_tag, id, pipeline_name)`, mirroring the cart-entry
+# tuple shape, so the web server's `/api/workflow_graph/<type>/<id>/<pipeline>`
+# routes look up cleanly.
+_TYPE_TAG = {
+    "Stack": "stack",
+    "Target": "target",
+    "Mosaic": "mosaic",
+}
 
 
 def pipeline(display_name: str, processes: type) -> Callable:
@@ -47,8 +58,24 @@ def pipeline(display_name: str, processes: type) -> Callable:
         @functools.wraps(fn)
         def runner(*args, **kwargs):
             """Build and return the pipeline's `Graph` by running the
-            user's body under a fresh trace context."""
-            return trace(fn, *args, **kwargs)
+            user's body under a fresh trace context.
+
+            Tags the trace with `(type_tag, entity.stable_hash,
+            pipeline_name)` so the dispatcher's `store_workflow_graph`
+            hook picks up where to store the workflow representation
+            — that's what the web server's
+            `/api/workflow_graph/<type>/<id>/<pipeline>` endpoints
+            look up."""
+            type_tag = _TYPE_TAG.get(processes.__name__)
+            entity = args[0] if args else None
+            entity_id = getattr(entity, "stable_hash", None)
+
+            def keyed_fn(*a, **kw):
+                if type_tag and entity_id:
+                    set_workflow_key(type_tag, entity_id, display_name)
+                return fn(*a, **kw)
+
+            return trace(keyed_fn, *args, **kwargs)
 
         runner._function = fn
         runner._is_pipeline = True
