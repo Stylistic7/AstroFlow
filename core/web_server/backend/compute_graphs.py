@@ -45,10 +45,14 @@ def workflow_graph_for_target(target_id, pipeline=None):
     return ref.get() if ref is not None else _EMPTY_WORKFLOW_GRAPH
 
 
-@compute_graphs_bp.route("/api/workflow_graph/mosaic/<mosaic_id>/<filter>/<pipeline>")
-def workflow_graph_for_mosaic(mosaic_id, filter, pipeline):
+@compute_graphs_bp.route("/api/workflow_graph/mosaic/<mosaic_id>")
+@compute_graphs_bp.route("/api/workflow_graph/mosaic/<mosaic_id>/<pipeline>")
+def workflow_graph_for_mosaic(mosaic_id, pipeline=None):
+    """Pipeline traces produce one graph per mosaic (all filters
+    together), so the key is `(mosaic, id, pipeline)` — no filter
+    segment."""
     wf = context["workflow_graphs"] or {}
-    ref = wf.get(("mosaic", mosaic_id, filter, pipeline))
+    ref = wf.get(("mosaic", mosaic_id, pipeline)) if pipeline else None
     return ref.get() if ref is not None else _EMPTY_WORKFLOW_GRAPH
 
 

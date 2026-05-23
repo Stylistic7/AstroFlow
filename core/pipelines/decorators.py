@@ -45,6 +45,23 @@ _TYPE_TAG = {
 }
 
 
+def _snapshot_workflow_graph(key: tuple, graph) -> None:
+    """Build a topology-only workflow graph from `graph` and store
+    it under `key`. Uses a stub `GraphRuntime` with no recorded
+    results, so every node shows as 'NO_STATE_RUNTIME' — the viewer
+    renders the structure without per-node state.
+
+    Identical storage shape to the runtime-driven `store_workflow_
+    graph`, so the web server's
+    `/api/workflow_graph/<type>/<id>/<pipeline>` endpoints don't
+    have to special-case anything.
+    """
+    from dependency_graph.graph_runtime import GraphRuntime
+    from dependency_graph.workflow_graph_adapter import store_workflow_graph
+    rt = GraphRuntime(graph)
+    store_workflow_graph(key, rt)
+
+
 def pipeline(display_name: str, processes: type) -> Callable:
     """Decorator: register the wrapped function as an entry point for
     pipeline `display_name`, handling cart entries whose object class
@@ -60,12 +77,19 @@ def pipeline(display_name: str, processes: type) -> Callable:
             """Build and return the pipeline's `Graph` by running the
             user's body under a fresh trace context.
 
-            Tags the trace with `(type_tag, entity.stable_hash,
-            pipeline_name)` so the dispatcher's `store_workflow_graph`
-            hook picks up where to store the workflow representation
-            — that's what the web server's
-            `/api/workflow_graph/<type>/<id>/<pipeline>` endpoints
-            look up."""
+            After the trace completes, snapshot a topology-only
+            workflow graph and store it under
+            `(type_tag, entity.stable_hash, pipeline_name)` so the
+            stack / target / mosaic viewers can render the pipeline's
+            structure without waiting for runtime state.
+
+            State updates are a follow-up: today the dispatcher
+            splices each pipeline's graph into the main compute
+            graph rather than dispatching it as a child runtime, so
+            the per-pipeline `graph_update_fn` registered by
+            `set_workflow_key` doesn't fire at runtime. The topology
+            snapshot at least gives the viewer something to render.
+            """
             type_tag = _TYPE_TAG.get(processes.__name__)
             entity = args[0] if args else None
             entity_id = getattr(entity, "stable_hash", None)
@@ -75,7 +99,12 @@ def pipeline(display_name: str, processes: type) -> Callable:
                     set_workflow_key(type_tag, entity_id, display_name)
                 return fn(*a, **kw)
 
-            return trace(keyed_fn, *args, **kwargs)
+            graph = trace(keyed_fn, *args, **kwargs)
+            if graph is not None and type_tag and entity_id:
+                _snapshot_workflow_graph(
+                    (type_tag, entity_id, display_name), graph,
+                )
+            return graph
 
         runner._function = fn
         runner._is_pipeline = True
