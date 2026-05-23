@@ -181,11 +181,24 @@ export default function AstroFlowBreadcrumbs() {
     const filters = versionsData.filters || [];
 
     // URLs are pipeline+display-keyed: /<obj>/<id>/<pipeline>/<display>[/<filter>].
-    // The pill-cycle callers pass the next pipeline name; we keep
-    // the current display (or fall back to the default for this
-    // object type) and re-navigate.
+    // The pill-cycle callers pass the next pipeline name; we pick a
+    // display that THAT pipeline actually emits. Carrying the current
+    // display across pipelines lets you land on combos like
+    // (PixInsight Downscaled, Subframe) which never produce a file —
+    // the dashboard's tap-keyed URL then 404s.
+    //
+    // Selection order: keep current `display` IF the new pipeline
+    // emits it; else fall back to the new pipeline's first tap; else
+    // the per-type default.
     const goToPipeline = (nextPipeline, f) => {
-        const d = display || DEFAULT_DISPLAY_FOR_TYPE[viewerObjectType] || "Master";
+        const nextPipelineData = versionsData.pipelines.find(
+            (p) => p.name === nextPipeline,
+        );
+        const validDisplays = (nextPipelineData?.taps || []).map((t) => t.display);
+        const d = (display && validDisplays.includes(display)) ? display
+            : (validDisplays[0]
+               || DEFAULT_DISPLAY_FOR_TYPE[viewerObjectType]
+               || "Master");
         const segs = [
             viewerPathPrefix,
             encodeURIComponent(nextPipeline),
