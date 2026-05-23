@@ -2,7 +2,7 @@
 // (mosaic × implementation × quality × filter). The dashboard
 // (MosaicDashboard.jsx) is the entry point; this is what you see
 // after clicking a thumbnail.
-import React, { useCallback, useContext, useState } from "react";
+import React, { useCallback, useContext, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 
 import {
@@ -44,6 +44,30 @@ export default function MosaicViewer() {
     const mosaic = mosaics?.[mosaic_id];
 
     const versionsData = useVersionsMatrix("mosaic", mosaic_id, computeGraphStatus);
+
+    // The URL might land on a (pipeline, display) combo this mosaic
+    // doesn't actually have — typically because the user switched
+    // pipelines on an older build of the breadcrumb (which used to
+    // carry the current display across pipelines blindly). Redirect
+    // to a valid (pipeline, display) for THIS pipeline so the page
+    // doesn't 404-loop on every tile-metadata fetch.
+    useEffect(() => {
+        if (!pipeline || !display) return;
+        const pipelines = versionsData.pipelines || [];
+        if (pipelines.length === 0) return;  // matrix still loading
+        const current = pipelines.find((p) => p.name === pipeline);
+        if (!current) return;  // unknown pipeline; let the user see the empty state
+        const validDisplays = (current.taps || []).map((t) => t.display);
+        if (validDisplays.includes(display)) return;
+        // Pick the first display this pipeline actually emits.
+        const replacement = validDisplays[0];
+        if (!replacement) return;
+        navigate(
+            `/mosaic/${mosaic_id}/${encodeURIComponent(pipeline)}`
+            + `/${encodeURIComponent(replacement)}/${filter}`,
+            { replace: true },
+        );
+    }, [pipeline, display, filter, mosaic_id, versionsData, navigate]);
 
     const openInPixInsight = () => {
         // Backend resolves (pipeline, display) → on-disk file via the
