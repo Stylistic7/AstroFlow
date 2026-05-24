@@ -263,39 +263,74 @@ def build_preview_graph(
         min_frames_in_stack=min_frames_in_stack,
     )
 
-    # Auto-preview: the 'Subframe' pipeline is dispatched over every
-    # mosaic — semantically "every mosaic is implicitly in the cart
-    # with the Subframe pipeline." The user never queues these.
-    from pipelines.registry import get_pipeline
-    from mosaics.types import Mosaic
-    subframe_pipeline = get_pipeline("Subframe", processes=Mosaic)
-
     graph = Graph({})
     tasks = [(scatter_stack_thumbnails, cal_stacks_ref, objects.stacks)]
 
     # Subframe pipeline body resolves `mosaic.targets` against
-    # `context.targets`; populate it here so the trace runs cleanly.
+    # `context.targets`; populate it here so each `run_pipeline`
+    # task's trace has access to it.
     from context import local_context as context
     context.targets = objects.targets
 
+    # Auto-preview: the 'Subframe' pipeline is dispatched over every
+    # mosaic — semantically "every mosaic is implicitly in the cart
+    # with the Subframe pipeline." Same per-pipeline sub-runtime
+    # pattern as the cart-driven main-processing graph (see
+    # `run_pipeline` above), so each Subframe trace's
+    # `node_status_fn` / `graph_update_fn` fires inside its own
+    # sub-runtime.
     for mosaic_ref in objects.mosaics.values():
-        _splice(graph, tasks, subframe_pipeline(mosaic_ref.get(), config))
+        mosaic = mosaic_ref.get()
+        task = (run_pipeline, mosaic, config, "Subframe", "mosaic")
+        graph[task] = set()
+        tasks.append(task)
 
     graph[preview_graph_done] = tasks
     return graph
 
 
-def _splice(graph: "Graph", tasks: list, sub_graph) -> None:
-    """Splice a pipeline's recorded Graph into the outer graph + add
-    its sinks (nodes with no dependents) to the outer task list."""
-    if sub_graph is None:
-        return
-    for node, deps in sub_graph.items():
-        graph[node] = deps
-    depended_on = {d for ds in sub_graph.values() for d in ds}
-    for node in sub_graph:
-        if node not in depended_on:
-            tasks.append(node)
+@ray.remote(num_cpus=0.1)
+def run_pipeline(entity, cfg, pipeline_name: str, type_tag: str) -> "Graph":
+    """Trace one pipeline at runtime and return its Graph as a
+    dynamic sub-graph.
+
+    Returning a Graph from a `@ray.remote` task is how `run_graph`
+    spins up a child `GraphRuntime` for the work the pipeline
+    represents. That sub-runtime reads the tracer's per-pipeline
+    `node_status_fn` (= `store_node_status`) and `graph_update_fn`
+    (= `partial(store_workflow_graph, pipeline_key)`) straight off
+    the returned Graph — so per-pipeline live state updates fire
+    naturally as nodes complete inside this pipeline's sub-runtime,
+    without any extra plumbing at the parent.
+
+    Replaces the old `_splice` pattern, which flattened every
+    pipeline's traced Graph into one big parent dict and dropped
+    the per-Graph callbacks on the floor."""
+    from pipelines.registry import get_pipeline
+    from pipelines.output_index import record_existence
+    from stacks.composite_stack import Stack
+    from targets.types import Target
+    from mosaics.types import Mosaic
+
+    type_to_class = {"stack": Stack, "target": Target, "mosaic": Mosaic}
+    pipeline_fn = get_pipeline(pipeline_name, processes=type_to_class[type_tag])
+    graph = pipeline_fn(entity, cfg)
+    if graph is None:
+        # Some pipelines (MASTER-mode mosaics with missing panels)
+        # legitimately bail. Surface an empty graph so the parent
+        # task's `node_completed` still gets a Graph value and
+        # closes out the cart entry cleanly.
+        from dependency_graph import Graph
+        return Graph({})
+    # Walk the traced graph for @makes_image(display=...) tap
+    # points: register their existence in the PipelineOutputIndex
+    # (for dashboard discovery) AND splice in the runtime
+    # `_register_tap_path_op` Nodes that record each tap's actual
+    # on-disk path once the producing op completes.
+    _record_pipeline_taps(
+        record_existence, pipeline_name, type_tag, entity.stable_hash, graph,
+    )
+    return graph
 
 
 @ray.remote(num_cpus=0.1)
@@ -457,36 +492,32 @@ def build_main_processing_graph(
             decisions=decisions,
         )
 
-    from pipelines.registry import get_pipeline
-    from pipelines.output_index import record_existence
+    from pipelines.registry import registered_pipelines
+    registered = registered_pipelines()
     graph = Graph({})
-    tasks = []
+    pipeline_tasks = []
     for entry in shopping_cart:
-        # Cart entries: `(type, id, pipeline_name)`. Pipelines are
-        # graph builders — call in-process, splice the recorded Graph
-        # into the outer graph.
+        # Cart entries: `(type, id, pipeline_name)`. Each entry
+        # becomes a `run_pipeline` Ray task that traces the
+        # pipeline body at runtime and returns its Graph as a
+        # dynamic sub-graph. The returned Graph carries the
+        # tracer's per-pipeline callbacks (`set_workflow_key`),
+        # so the per-pipeline workflow-graph state updates fire
+        # naturally without any plumbing here.
         type, id, pipeline_name = entry
         if id not in objects_by_type[type]:
             log.warning("Cart entry refers to missing object", entry=entry)
             continue
-        entity = objects_by_type[type][id].get()
-        cfg = config_for(id if type == "stack" else None)
-        try:
-            pipeline_fn = get_pipeline(pipeline_name, processes=type_to_class[type])
-        except KeyError:
+        if (pipeline_name, type_to_class[type]) not in registered:
             log.warning("Unknown pipeline in cart", entry=entry)
             continue
-        result = pipeline_fn(entity, cfg)
-        _splice(graph, tasks, result)
-        # Walk the traced graph for @makes_image(display=...) tap
-        # points and index them. View-side endpoints surface every
-        # `_display`-tagged Node — this is the only mechanism that
-        # scales to user-defined pipelines (no static table edits).
-        _record_pipeline_taps(
-            record_existence, pipeline_name, type, id, result,
-        )
+        entity = objects_by_type[type][id].get()
+        cfg = config_for(id if type == "stack" else None)
+        task = (run_pipeline, entity, cfg, pipeline_name, type)
+        graph[task] = set()
+        pipeline_tasks.append(task)
 
-    graph[main_processing_graph_done] = tasks
+    graph[main_processing_graph_done] = pipeline_tasks
     return graph
 
 
