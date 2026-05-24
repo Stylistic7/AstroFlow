@@ -11,24 +11,29 @@ registered in every process, including Ray workers running the
 dispatcher.
 """
 from astroflow.pipeline import pipeline
+from stacks.calibration_selection import calibrate, calibration_stacks_for
 from stacks.composite_stack import Stack
 from stacks.downscale import downscale_stack
-from stacks.pipelines import post_processed_master
+from stacks.post_processing.pixinsight import post_process_stack
+from stacks.stacking.pixinsight import stack_files
 
 
 @pipeline("Shared-Op Test Master", processes=Stack)
 def shared_op_test_master(stack, config):
-    return post_processed_master(
-        stack, config, False, downscaler=lambda x: x,
-    )
+    cal_masters = calibrate(stack, config)
+    master = stack_files(stack, config, *cal_masters)
+    return post_process_stack(stack, False, master)
 
 
 @pipeline("Shared-Op Test Downscaled", processes=Stack)
 def shared_op_test_downscaled(stack, config):
-    # SAME `post_processed_master` core, SAME downstream ops as Master.
-    # Only the `downscaler` differs — `downscale_stack(x, 8)` preserves
-    # `stable_hash` but yields a new `content_hash`, so every
-    # downstream call_hash differs and outputs land in distinct files.
-    return post_processed_master(
-        stack, config, False, downscaler=lambda x: downscale_stack(x, 8),
-    )
+    # SAME `post_process_stack` op as the Master pipeline. Only
+    # the upstream master differs (downscaled vs full-res). The
+    # framework must distinguish the two calls via call_hash and
+    # write to distinct files.
+    cal_masters = []
+    for cs in calibration_stacks_for(stack, config):
+        cal_masters.append(stack_files(downscale_stack(cs, 8), config, *cal_masters))
+    s = downscale_stack(stack, 8)
+    master = stack_files(s, config, *cal_masters)
+    return post_process_stack(s, False, master)

@@ -290,6 +290,17 @@ def build_preview_graph(
 
 
 @ray.remote(num_cpus=0.1)
+@beartype
+def run_pipeline_done() -> None:
+    """Per-pipeline terminal sentinel. `GraphRuntime` asserts a
+    sub-graph has exactly one node with no descendants; a real
+    pipeline trace has many (per-filter sinks, register-tap-path
+    nodes, etc.), so we funnel them all into this no-op so the
+    sub-runtime has a single completion handle."""
+    pass
+
+
+@ray.remote(num_cpus=0.1)
 def run_pipeline(entity, cfg, pipeline_name: str, type_tag: str) -> "Graph":
     """Trace one pipeline at runtime and return its Graph as a
     dynamic sub-graph.
@@ -330,6 +341,14 @@ def run_pipeline(entity, cfg, pipeline_name: str, type_tag: str) -> "Graph":
     _record_pipeline_taps(
         record_existence, pipeline_name, type_tag, entity.stable_hash, graph,
     )
+    # GraphRuntime asserts a sub-graph has exactly one terminal
+    # node. Funnel every current terminal into a sentinel so the
+    # child sub-runtime has a single completion handle (parent's
+    # `run_pipeline` task is `mark_done`'d with this sentinel's
+    # result — None, since the parent only cares about ordering).
+    depended_on = {d for ds in graph.values() for d in ds}
+    terminals = [n for n in graph if n not in depended_on]
+    graph[run_pipeline_done] = terminals
     return graph
 
 

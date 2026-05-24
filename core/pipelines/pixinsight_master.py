@@ -7,100 +7,98 @@ combine, photometric mosaic place + merge. Three entry points:
 * `for_target(target, config)` → per-filter channel masters.
 * `for_mosaic(mosaic, config)` → per-filter mosaic outputs (headline).
 
-All ops compose by data flow — each consumer receives its upstream's
-`WithSidecar` handle as a positional arg. No `filename_fn` lookups
-inside op bodies; no mode/level threading. Different pipelines that
-share the same op + same args share the cache; otherwise the per-
-op call-hash filename keeps outputs from colliding.
-
-To fork this pipeline (e.g. swap MSGC for GraXpert), copy this file
-to `~/AstroFlow/pipelines/<YourName>.py`, change the `@pipeline("…")`
-display name, and edit the call you want to replace.
+To fork this pipeline (e.g. swap MultiscaleGradientCorrection for
+GraXpert), copy this file to `~/AstroFlow/pipelines/<YourName>.py`,
+change the `@pipeline("…")` display name, and edit the call you
+want to replace.
 """
 from astroflow.pipeline import pipeline
 from mosaics.final_storage import store_mosaic_color_channel_xisf
 from mosaics.merging.pixinsight import merge_images
 from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
+from stacks.calibration_selection import calibrate
 from stacks.composite_stack import Stack
-from stacks.pipelines import post_processed_master
+from stacks.post_processing.pixinsight import post_process_stack
+from stacks.stacking.pixinsight import stack_files
 from targets.merging.pixinsight import merge_target_channel
 from targets.types import Target
 
 
-def _post_processed_master(s, config, mock):
-    """PI Master uses the unified stacking core with the IDENTITY
-    downscaler (no downscaling — frames go to WBPP at full res)."""
-    return post_processed_master(s, config, mock, downscaler=lambda x: x)
+def _post_processed_master(stack, config, mock):
+    """Calibrate → stack → post-process one stack. No per-stack
+    transformation, so `calibrate(...)` does the cal-master
+    building in one call. Shared across the stack / target /
+    mosaic entry points."""
+    cal_masters = calibrate(stack, config)
+    master = stack_files(stack, config, *cal_masters)
+    return post_process_stack(stack, mock, master)
 
 
 def _channels_for_target(target, config, mock):
-    """Per-filter HDR-combined channel masters. Spreads the per-stack
-    masters as variadic args (`*masters`) so each one shows up as a
-    top-level Node dep at trace time — the trace doesn't introspect
-    nested tuples for Node handles."""
-    return {
-        filter: merge_target_channel(
-            target, filter, target.stacks_for(filter), config,
-            *[_post_processed_master(s, config, mock)
-              for s in target.stacks_for(filter)],
+    """Per-filter HDR-combined channel masters for one target."""
+    channels = {}
+    for filter in target.filters:
+        stacks = target.stacks_for(filter)
+        masters = [_post_processed_master(s, config, mock) for s in stacks]
+        channels[filter] = merge_target_channel(
+            target, filter, stacks, config, *masters,
         )
-        for filter in target.filters
-    }
+    return channels
 
 
 @pipeline("PixInsight Master", processes=Stack)
 def for_stack(stack, config):
-    return _post_processed_master(
-        stack, config, config.development_settings.mock_pixinsight,
-    )
+    """One stack's post-processed master."""
+    mock = config.development_settings.mock_pixinsight
+    return _post_processed_master(stack, config, mock)
 
 
 @pipeline("PixInsight Master", processes=Target)
 def for_target(target, config):
-    return _channels_for_target(
-        target, config, config.development_settings.mock_pixinsight,
-    )
+    """Per-filter channel masters for one target."""
+    mock = config.development_settings.mock_pixinsight
+    return _channels_for_target(target, config, mock)
 
 
 @pipeline("PixInsight Master", processes=Mosaic)
 def for_mosaic(mosaic, config):
-    """Build a complete mosaic. Returns `{filter: sink_metadata}`.
-    Missing panels are skipped — the trace merges what's present.
-
-    Per filter: place every panel into the mosaic viewbox, then
-    spread all placed handles into ONE `merge_images` call. The
-    op's body does the pairwise PhotometricMosaic tree inside a
-    single Ray task — necessary because every pairwise call would
-    share `(mosaic, filter, mock)` literals and collide on the
-    call-hash filename otherwise."""
+    """Build a complete mosaic, end to end. Returns
+    `{filter: store_handle}`. Missing panels are skipped (the
+    pipeline merges what's present)."""
     mock = config.development_settings.mock_pixinsight
     targets_by_id = {t.id: t for t in mosaic.targets}
 
-    channels = {
-        (target.id, filter): sink
-        for target in mosaic.targets
-        for filter, sink in _channels_for_target(target, config, mock).items()
-    }
+    channels = {}
+    for target in mosaic.targets:
+        for filter, sink in _channels_for_target(target, config, mock).items():
+            channels[(target.id, filter)] = sink
 
     out = {}
     for filter in mosaic.filters:
         viewbox = mosaic.viewbox("Master")
-        placed = [
-            place_image(mosaic, targets_by_id[tid], filter, viewbox,
-                        channels[(tid, filter)])
-            for strip in mosaic.strips
-            for tid in strip if (tid, filter) in channels
-        ]
-        if not placed:
+
+        # Merge per strip first, then merge strips together.
+        rows = []
+        for strip in mosaic.strips:
+            placed = [
+                place_image(mosaic, targets_by_id[tid], filter, viewbox,
+                            channels[(tid, filter)])
+                for tid in strip if (tid, filter) in channels
+            ]
+            if not placed:
+                continue
+            row = placed[0]
+            for p in placed[1:]:
+                row = merge_images(mosaic, filter, mock, row, p)
+            rows.append(row)
+        if not rows:
             continue
-        # Single panel: skip merge_images. The placed image IS the
-        # whole-mosaic output for this filter; the store handles it
-        # directly. This keeps single-panel mosaics from spending a
-        # Ray task on a trivial copy.
-        merged = placed[0] if len(placed) == 1 else merge_images(
-            mosaic, filter, mock, *placed,
-        )
+
+        merged = rows[0]
+        for r in rows[1:]:
+            merged = merge_images(mosaic, filter, mock, merged, r)
+
         out[filter] = store_mosaic_color_channel_xisf(
             mosaic, filter, mock, merged,
         )

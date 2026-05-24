@@ -204,15 +204,16 @@ def _stack_files_narrow(args, kwargs):
 
 def _run_wbpp_stacking(
     stack: BaseStack, config: ProcessingConfig,
-    cal_stack_ids: tuple[str, ...],
     cal_masters: tuple,
     dest_filename: Path,
 ) -> WithSidecar[XisfFilePath]:
     """Shared body for `stack_files`. Resolution-agnostic — reads
     `stack.contents` frame paths AS-IS (the pipeline calls
     `downscale_stack` upstream if it wants smaller frames). Cal
-    master file paths come from the explicit `cal_masters` data
-    deps, parallel to `cal_stack_ids`."""
+    master file paths come from `cal_masters`; each master's
+    `STBLHASH` header (written by `_run_wbpp_stacking` on the
+    upstream call) names the cal stack it was built from, so the
+    body builds the `dep.stack_id → file` map internally."""
     if config.decisions and isinstance(stack, Stack):
         filtered = resolve_decisions(stack, ALL_EXCLUSION_TYPES, config.decisions, config.min_frames_in_stack)
         if filtered is None:
@@ -237,7 +238,14 @@ def _run_wbpp_stacking(
         return WithSidecar(dest_filename)
 
     min_frames_in_stack = config.min_frames_in_stack
-    cal_master_by_id = dict(zip(cal_stack_ids, [m.filename for m in cal_masters]))
+    # Each cal master file has STBLHASH (= the cal stack's stable_hash)
+    # in its FITS/XISF header, so read it back to build the
+    # dependency-id → file-path map without the pipeline having to
+    # thread parallel id/master lists through the call.
+    from file_io.generic import read_header
+    cal_master_by_id = {
+        read_header(m.filename)["STBLHASH"]: m.filename for m in cal_masters
+    }
 
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
         log.debug("Using temporary directory", tmp_dir=tmp_dir)
@@ -285,7 +293,6 @@ def _run_wbpp_stacking(
 def stack_files(
     stack: BaseStack,
     config: ProcessingConfig,
-    cal_stack_ids: tuple[str, ...],
     *cal_masters: WithSidecar,
 ) -> WithSidecar[XisfFilePath]:
     """Resolution-agnostic PixInsight WBPP master.
@@ -296,17 +303,19 @@ def stack_files(
     op's `@makes_image` identity routes to the same user-facing
     stack regardless of resolution).
 
-    `cal_stack_ids` is a literal tuple parallel to `*cal_masters`:
-    each `cal_masters[i]` is the upstream `stack_files` output for
-    cal stack `cal_stack_ids[i]`. The body builds the
-    dependency-filename map by zipping. cal_masters' content_hashes
-    flow into the call_hash via `_make_call_hash_filename_fn`, so
-    PI Master and PI Downscaled — which call this op with the same
-    light stack but different cal masters — produce distinct output
-    files."""
+    `*cal_masters` is the cal masters this stack's runs depend on
+    (any order; one per (bias, dark, flat) the stack references).
+    Each master file carries its source cal stack's `stable_hash`
+    in its FITS/XISF `STBLHASH` header — the body reads that to
+    map masters to dependencies internally.
+
+    The masters' content_hashes flow into this op's call_hash via
+    `_make_call_hash_filename_fn`, so calling this op with the
+    same light stack but different cal masters produces distinct
+    output files."""
     return _run_wbpp_stacking(
-        stack, config, cal_stack_ids, cal_masters,
-        stack_files.filename_fn(stack, config, cal_stack_ids, *cal_masters),
+        stack, config, cal_masters,
+        stack_files.filename_fn(stack, config, *cal_masters),
     )
 
 def _check_integration_time(stack: BaseStack, master_path) -> None:

@@ -79,17 +79,28 @@ def for_mosaic(mosaic, config):
     out = {}
     for filter in mosaic.filters:
         viewbox = mosaic.viewbox("Subframe")
-        placed = [
-            place_image(mosaic, targets_by_id[tid], filter, viewbox,
-                        channels[(tid, filter)])
-            for strip in mosaic.strips
-            for tid in strip if (tid, filter) in channels
-        ]
-        if not placed:
+
+        # Merge per strip first, then merge strips together.
+        rows = []
+        for strip in mosaic.strips:
+            placed = [
+                place_image(mosaic, targets_by_id[tid], filter, viewbox,
+                            channels[(tid, filter)])
+                for tid in strip if (tid, filter) in channels
+            ]
+            if not placed:
+                continue
+            row = placed[0]
+            for p in placed[1:]:
+                row = merge_images_subframe(mosaic, filter, row, p)
+            rows.append(row)
+        if not rows:
             continue
-        merged = placed[0] if len(placed) == 1 else merge_images_subframe(
-            mosaic, filter, *placed,
-        )
+
+        merged = rows[0]
+        for r in rows[1:]:
+            merged = merge_images_subframe(mosaic, filter, merged, r)
+
         out[filter] = store_mosaic_color_channel_subframe(mosaic, filter, merged)
 
     return out
