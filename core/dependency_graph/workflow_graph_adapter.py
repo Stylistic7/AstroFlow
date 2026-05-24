@@ -157,76 +157,18 @@ def _build_subskeleton(
     indent: int,
 ) -> list[dict]:
     """Build the skeleton entries that live inside the lexical
-    group at `group_prefix`. Walks every Node whose `_group_path`
-    starts with `group_prefix`; nodes whose path matches exactly
-    appear as direct entries, nodes whose path is deeper get
-    grouped under synthetic `type: "group"` entries at this
-    level."""
+    group at `group_prefix` — returned as ROOTS at this level
+    (each root's `next` array nests its dependents recursively).
+
+    Walks every Node whose `_group_path` starts with
+    `group_prefix`. Nodes whose path matches exactly appear as
+    direct entries; nodes whose path is deeper get grouped under
+    synthetic `type: "group"` entries at this level."""
     L = len(group_prefix)
     graph = rt.graph
 
-    # Nodes within this group's scope (prefix matches), partitioned
-    # into "direct" (path is exactly group_prefix) and deeper
-    # (grouped by the next-segment of their path).
-    in_scope = [n for n in graph if _group_path_of(n)[:L] == group_prefix]
-    direct = [n for n in in_scope if len(_group_path_of(n)) == L]
-    subgroup_members: dict[tuple, list] = {}
-    for n in in_scope:
-        if len(_group_path_of(n)) > L:
-            seg = _group_path_of(n)[L]
-            subgroup_members.setdefault(seg, []).append(n)
-
-    # entry_id → entry dict, in insertion order.
-    entries: dict[str, dict] = {}
-
-    # Direct nodes — same as the legacy flat path, plus the
-    # existing sub-runtime "group" treatment for nodes whose
-    # task returned a Graph at runtime.
-    for n in direct:
-        nid = node_to_id(n)
-        if n in subgraphs_by_parent:
-            sub_rt = subgraphs_by_parent[n]
-            entries[nid] = {
-                "id": nid,
-                "type": "group",
-                "definition": _build_subskeleton(
-                    sub_rt, subgraphs_by_parent, group_prefix=(), indent=indent + 2,
-                ),
-            }
-        else:
-            entries[nid] = {"id": nid, "type": "execution"}
-
-    # Synthetic lexical-group entries — one per distinct next
-    # segment. Recurse into each with a deeper group_prefix; the
-    # returned definition is the group's contents (which may itself
-    # contain further nested groups).
-    for seg in sorted(subgroup_members.keys()):
-        gid = _synthetic_group_id(seg)
-        entries[gid] = {
-            "id": gid,
-            "type": "group",
-            "definition": _build_subskeleton(
-                rt, subgraphs_by_parent,
-                group_prefix=group_prefix + (seg,),
-                indent=indent + 2,
-            ),
-        }
-
-    # Project every dep edge onto THIS level. For an edge
-    # `from_node → to_node`, both endpoints must live at or below
-    # `group_prefix`; the edge belongs at this level iff the
-    # nearest common group containing both is exactly
-    # `group_prefix`. Each endpoint maps either to its own entry
-    # (if its group path matches the prefix exactly) or to the
-    # synthetic-group entry one level deeper (if its path is
-    # deeper). The frontend then renders inter-group edges
-    # between collapsed group nodes and intra-group edges inside
-    # each group's `definition`.
-    def project(n):
-        path = _group_path_of(n)
-        if len(path) == L:
-            return node_to_id(n)
-        return _synthetic_group_id(path[L])
+    def gp(n):
+        return _group_path_of(n)
 
     def common_prefix_len(a, b):
         i = 0
@@ -234,33 +176,111 @@ def _build_subskeleton(
             i += 1
         return i
 
-    seen_edges: set[tuple] = set()
-    for from_node, deps in graph.items():
-        fp = _group_path_of(from_node)
-        if fp[:L] != group_prefix:
-            continue
-        for to_node in deps:
-            tp = _group_path_of(to_node)
-            if tp[:L] != group_prefix:
-                continue
-            if common_prefix_len(fp, tp) != L:
-                continue  # belongs in a deeper level's skeleton
-            from_id = project(from_node)
-            to_id = project(to_node)
-            if from_id == to_id:
-                continue
-            if from_id not in entries or to_id not in entries:
-                continue
-            edge_key = (from_id, to_id)
-            if edge_key in seen_edges:
-                continue
-            seen_edges.add(edge_key)
-            entries[from_id].setdefault("next", []).append({
-                "id": to_id,
-                "type": entries[to_id]["type"],
-            })
+    in_scope = [n for n in graph if gp(n)[:L] == group_prefix]
+    direct = sorted(n for n in in_scope if len(gp(n)) == L)
+    subgroup_members: dict[tuple, list] = {}
+    for n in in_scope:
+        if len(gp(n)) > L:
+            seg = gp(n)[L]
+            subgroup_members.setdefault(seg, []).append(n)
 
-    return list(entries.values())
+    # entry_id → ("node", Node) or ("group_segment", segment)
+    entry_kind: dict[str, tuple] = {}
+    ordered_ids: list[str] = []  # stable insertion order
+    for n in direct:
+        nid = node_to_id(n)
+        entry_kind[nid] = ("node", n)
+        ordered_ids.append(nid)
+    for seg in sorted(subgroup_members.keys()):
+        gid = _synthetic_group_id(seg)
+        entry_kind[gid] = ("group_segment", seg)
+        ordered_ids.append(gid)
+
+    # Project a Node onto its representative entry at THIS level
+    # (its own id if its group_path matches `group_prefix`
+    # exactly, else the synthetic group id one segment deeper).
+    def project(n):
+        path = gp(n)
+        if len(path) == L:
+            return node_to_id(n)
+        return _synthetic_group_id(path[L])
+
+    # Build forward adjacency at this level: dep_id → set of
+    # dependent_ids (downstream). `rt.graph` is upstream-keyed
+    # (node → deps), but the viewer's `next` array is downstream,
+    # so we flip here.
+    forward: dict[str, set[str]] = defaultdict(set)
+    for node, deps in graph.items():
+        if gp(node)[:L] != group_prefix:
+            continue
+        for dep in deps:
+            if gp(dep)[:L] != group_prefix:
+                continue
+            # The edge belongs at this level iff the nearest
+            # common group containing both endpoints is exactly
+            # `group_prefix`. Deeper-shared edges show up in the
+            # deeper level's recursion.
+            if common_prefix_len(gp(node), gp(dep)) != L:
+                continue
+            node_id = project(node)
+            dep_id = project(dep)
+            if node_id == dep_id:
+                continue
+            if node_id not in entry_kind or dep_id not in entry_kind:
+                continue
+            forward[dep_id].add(node_id)
+
+    # Roots at this level: entries with no incoming downstream
+    # edge. The skeleton starts here; dependents nest under
+    # `next` recursively.
+    has_incoming = {dependent for s in forward.values() for dependent in s}
+    roots = [eid for eid in ordered_ids if eid not in has_incoming]
+
+    # Recursive tree-flat build with dedupe — same shape the
+    # pre-grouping `build_skeleton` produced for the legacy flat
+    # path, just one level deep into either direct nodes or
+    # synthetic group containers.
+    existing: dict[str, dict] = {}
+
+    def build_entry(entry_id: str) -> dict:
+        if entry_id in existing:
+            return {
+                "id": entry_id,
+                "type": existing[entry_id]["type"],
+            }
+        kind, payload = entry_kind[entry_id]
+        if kind == "node":
+            node = payload
+            if node in subgraphs_by_parent:
+                sub_rt = subgraphs_by_parent[node]
+                result = {
+                    "id": entry_id,
+                    "type": "group",
+                    "definition": _build_subskeleton(
+                        sub_rt, subgraphs_by_parent,
+                        group_prefix=(), indent=indent + 2,
+                    ),
+                }
+            else:
+                result = {"id": entry_id, "type": "execution"}
+        else:  # synthetic lexical group
+            seg = payload
+            result = {
+                "id": entry_id,
+                "type": "group",
+                "definition": _build_subskeleton(
+                    rt, subgraphs_by_parent,
+                    group_prefix=group_prefix + (seg,),
+                    indent=indent + 2,
+                ),
+            }
+        children = [build_entry(c) for c in sorted(forward.get(entry_id, set()))]
+        if children:
+            result["next"] = children
+        existing[entry_id] = result
+        return result
+
+    return [build_entry(r) for r in roots]
 
 
 def build_skeleton(
