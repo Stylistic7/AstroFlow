@@ -38,16 +38,26 @@ def _index_key(object_type, object_id):
 
 def _register(pipeline_name, object_type, object_id, display, filter, value):
     """Internal: write `value` to the tap key + ensure the per-object
-    secondary index has this tap. Used by both phases."""
+    secondary index has this tap. Used by both phases.
+
+    The secondary index is a LIST (not a set) so taps preserve the
+    order they were registered in. The recorder visits Nodes in
+    trace-insertion order (`graph.keys()` on a dict subclass), and
+    its suffix counter ("Merged" → "Merged 2" → ...) increments
+    per visit — so the list naturally orders taps in graph-reach
+    order, which is also numerical order for the suffix series."""
     from context import context
     key = _tap_key(pipeline_name, object_type, object_id, display, filter)
     context[key] = value
 
     idx_key = _index_key(object_type, object_id)
-    keys = context.get(idx_key) or set()
+    keys = context.get(idx_key)
+    # Tolerate legacy set-typed entries left in the cache from
+    # before this index became a list.
+    if not isinstance(keys, list):
+        keys = list(keys) if keys else []
     if key not in keys:
-        keys = set(keys)
-        keys.add(key)
+        keys = list(keys) + [key]
         context[idx_key] = keys
 
 
@@ -96,7 +106,10 @@ def for_object(
     `"pending"` — callers distinguish by string comparison."""
     from context import context
     idx_key = _index_key(object_type, object_id)
-    keys = context.get(idx_key) or set()
+    keys = context.get(idx_key) or []
+    # Legacy set-typed entries from older versions still iterate
+    # fine — the first re-trace re-registers via `_register`,
+    # which upgrades the entry to a list (in graph-reach order).
     result: dict[str, dict[str, dict[str, str]]] = {}
     for key in keys:
         if not isinstance(key, tuple) or len(key) != 6:

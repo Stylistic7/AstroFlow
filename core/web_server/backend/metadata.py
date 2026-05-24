@@ -457,7 +457,12 @@ def pipeline_outputs(object_type: str, object_id: str):
     for name in applicable:
         traced_taps = indexed.get(name, {})
         taps = []
-        for display in sorted(traced_taps.keys()):
+        # Preserve insertion order of `traced_taps` — that's
+        # graph-reach order (each tap is registered the first
+        # time the recorder visits its Node during trace), which
+        # also numerically orders the per-display suffix series
+        # ("Merged" before "Merged 2" before "Merged 10").
+        for display in traced_taps.keys():
             tap_paths = traced_taps[display]
             outputs = []
             for f in iter_filters:
