@@ -1,3 +1,5 @@
+import os
+import uuid
 from pathlib import Path
 import numpy as np
 from typing import Any
@@ -6,6 +8,23 @@ import json
 
 from file_io.types import ImageGeometry
 from file_io.normalize_header import normalize_header
+
+
+def _atomic_imwrite(filename: Path, image: np.ndarray, **kwargs) -> None:
+    """tifffile.imwrite via a sibling tmp file + atomic rename.
+
+    Readers see either the previous version of `filename` (if any)
+    or the complete new version — never a half-written file mid-
+    rename. UUID-suffixed tmp name keeps independent writers from
+    stepping on each other's in-flight tmp files."""
+    filename.parent.mkdir(parents=True, exist_ok=True)
+    tmp = filename.with_name(f".{filename.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        tifffile.imwrite(tmp, image, **kwargs)
+        os.replace(tmp, filename)
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def read_tiff_header(filename: Path) -> dict:
@@ -34,11 +53,9 @@ def write_tiff_image(
 ) -> None:
     if metadata is None:
         metadata = {}
-
     tile_kwargs = {"tile": tile} if tile is not None else {}
-    filename.parent.mkdir(parents=True, exist_ok=True)
-    tifffile.imwrite(
-        filename,
+    _atomic_imwrite(
+        Path(filename),
         image,
         compression="deflate",
         description=json.dumps(metadata, ensure_ascii=True),
@@ -56,8 +73,8 @@ def update_tiff_header(filename: Path, metadata_in: dict[str, Any]) -> None:
         )
 
     metadata |= metadata_in
-    tifffile.imwrite(
-        filename,
+    _atomic_imwrite(
+        Path(filename),
         image,
         compression="deflate",
         description=json.dumps(metadata, ensure_ascii=True),

@@ -15,7 +15,7 @@ from pix.tasks import run_wbpp
 from metadata.classes import ImageMetadata, MetadataDict
 from decorators import node
 from decisions.settings import ProcessingConfig
-from decisions.resolve import resolve_decisions
+from decisions.resolve import resolve_calibration, resolve_decisions
 from decisions.compute_graph import ALL_EXCLUSION_TYPES
 from products import makes_image
 from products.identity import (
@@ -214,6 +214,13 @@ def _run_wbpp_stacking(
     `STBLHASH` header (written by `_run_wbpp_stacking` on the
     upstream call) names the cal stack it was built from, so the
     body builds the `dep.stack_id → file` map internally."""
+    # Enrich the stack's runs with their cal dependencies, so
+    # `_setup_run`'s `run.dependencies.values()` walk can match
+    # `dep.stack_id` to the cal master file from `cal_masters`.
+    # Idempotent if already enriched.
+    stack = resolve_calibration(
+        stack, config.get_calibration_stacks(), config.decisions,
+    )
     if config.decisions and isinstance(stack, Stack):
         filtered = resolve_decisions(stack, ALL_EXCLUSION_TYPES, config.decisions, config.min_frames_in_stack)
         if filtered is None:

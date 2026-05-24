@@ -27,10 +27,10 @@ from pathlib import Path
 from typing import Callable, Optional
 
 import numpy as np
-import tifffile
 
 from hashing import hash_source_code
 from file_io.generic import read_image
+from file_io.tiff_file_io import write_tiff_image
 from previews.operations import autostretch
 from protocols import CacheProtocol
 
@@ -45,8 +45,7 @@ def default_make_tile_pyramid(source_path: Path, dest_path: Path) -> None:
     """
     arr = autostretch(read_image(source_path))
     arr = (arr * 255.0).astype(np.uint8)
-    dest_path.parent.mkdir(parents=True, exist_ok=True)
-    tifffile.imwrite(dest_path, arr, tile=(256, 256), compression="deflate")
+    write_tiff_image(dest_path, arr, tile=(256, 256))
 
 
 def make_create_tile_pyramid_decorator(

@@ -91,15 +91,22 @@ def workflow_group(name: str):
             if _TRACE.get() is None:
                 return fn(*args, **kwargs)
             parent = _GROUP_STACK.get()
-            # Args + kwargs go into the hash so two distinct calls
-            # of the same `@workflow_group`-decorated helper
-            # (e.g. `_post_processed_master(stack_a, ...)` and
-            # `_post_processed_master(stack_b, ...)`) produce
-            # distinct group ids — otherwise they'd collide into
-            # one group with all their Nodes piled together.
-            group_id = str(hash_list_int(
-                [name, parent, list(args), sorted(kwargs.items())]
-            ))
+            # Per-call key so two distinct calls of the same
+            # `@workflow_group` helper produce distinct group ids.
+            # Most pipeline helpers take their primary entity
+            # (stack / target / mosaic) as the first arg, all of
+            # which expose a precomputed `stable_hash` string —
+            # using that directly avoids the O(cal_stacks) cost
+            # of recursive arg hashing through ProcessingConfig.
+            # Falls back to a full args hash for callers whose
+            # first arg has no stable_hash.
+            if args and hasattr(args[0], "stable_hash"):
+                call_key = args[0].stable_hash
+            else:
+                call_key = hash_list_int(
+                    [list(args), sorted(kwargs.items())]
+                )
+            group_id = str(hash_list_int([name, parent, call_key]))
             token = _GROUP_STACK.set(parent + ((name, group_id),))
             try:
                 return fn(*args, **kwargs)
