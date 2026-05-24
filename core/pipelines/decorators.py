@@ -62,6 +62,68 @@ def _snapshot_workflow_graph(key: tuple, graph) -> None:
     store_workflow_graph(key, rt)
 
 
+def _filter_of(node) -> str | None:
+    """Inspect a Node's literal args and return the value bound to
+    the `filter` parameter (if any). Used to group sinks by filter
+    when slicing a pipeline's graph into per-channel views."""
+    import inspect
+    fn = getattr(node.task, "_function", node.task)
+    try:
+        sig = inspect.signature(fn)
+    except (TypeError, ValueError):
+        return None
+    params = list(sig.parameters.keys())
+    arg_map = {params[i]: node.args[i]
+               for i in range(min(len(node.args), len(params)))}
+    return arg_map.get("filter")
+
+
+def _ancestor_closure(roots, graph) -> set:
+    """Set of every node reachable from any node in `roots` by
+    walking dep edges (graph[node] is its deps)."""
+    seen = set()
+    stack = list(roots)
+    while stack:
+        n = stack.pop()
+        if n in seen:
+            continue
+        seen.add(n)
+        for dep in graph.get(n, []):
+            stack.append(dep)
+    return seen
+
+
+def _snapshot_per_filter_workflow_graphs(base_key: tuple, graph) -> None:
+    """Slice `graph` into per-filter subgraphs and snapshot each
+    under `(*base_key, filter)`.
+
+    For mosaic pipelines (and any pipeline whose sinks carry a
+    `filter` literal), a sink is a node with no descendants. We
+    group sinks by filter, compute each filter's ancestor closure,
+    and snapshot it as its own workflow graph. The per-(pipeline,
+    filter) viewer page then shows only the work that produces
+    that one channel."""
+    from dependency_graph import Graph
+
+    has_deps = set()
+    for deps in graph.values():
+        for d in deps:
+            has_deps.add(d)
+    sinks = [n for n in graph if n not in has_deps]
+
+    sinks_by_filter: dict[str, list] = {}
+    for s in sinks:
+        f = _filter_of(s)
+        if f is None:
+            continue
+        sinks_by_filter.setdefault(str(f), []).append(s)
+
+    for filter_key, filter_sinks in sinks_by_filter.items():
+        keep = _ancestor_closure(filter_sinks, graph)
+        sub = Graph({n: list(graph.get(n, [])) for n in keep})
+        _snapshot_workflow_graph((*base_key, filter_key), sub)
+
+
 def pipeline(display_name: str, processes: type) -> Callable:
     """Decorator: register the wrapped function as an entry point for
     pipeline `display_name`, handling cart entries whose object class
@@ -101,9 +163,9 @@ def pipeline(display_name: str, processes: type) -> Callable:
 
             graph = trace(keyed_fn, *args, **kwargs)
             if graph is not None and type_tag and entity_id:
-                _snapshot_workflow_graph(
-                    (type_tag, entity_id, display_name), graph,
-                )
+                base_key = (type_tag, entity_id, display_name)
+                _snapshot_workflow_graph(base_key, graph)
+                _snapshot_per_filter_workflow_graphs(base_key, graph)
             return graph
 
         runner._function = fn

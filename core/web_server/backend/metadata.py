@@ -323,10 +323,11 @@ def _ensure_pipelines_traced(object_type: str, object_id: str, entity) -> None:
         return
 
     from pipelines.registry import registered_pipelines
-    from pipelines.output_index import record as record_pipeline_output
+    from pipelines.output_index import record_existence
     from compute_graph.compute_graph import _record_pipeline_taps
     from decisions.settings import ProcessingConfig, DevelopmentSettings
     from frozendict import frozendict as fd
+    from stacks.downscale import TRACE_ONLY as _DOWNSCALE_TRACE_ONLY
 
     cfg = ProcessingConfig(
         calibration_stacks=context.calibration_stacks or fd(),
@@ -335,23 +336,34 @@ def _ensure_pipelines_traced(object_type: str, object_id: str, entity) -> None:
         decisions=fd(),
     )
 
-    for (name, processes_class), pipeline_fn in registered_pipelines().items():
-        if processes_class is not type(entity):
-            continue
-        try:
-            graph = pipeline_fn(entity, cfg)
-        except Exception as e:
-            # A pipeline that can't trace this entity (missing
-            # context dependencies etc.) just doesn't contribute
-            # taps — caller still sees its name + empty taps. Log
-            # so we notice systematic trace failures.
-            import traceback
-            print(f"### pipeline trace failed: {name} for {object_type}/{object_id}: {e}")
-            traceback.print_exc()
-            continue
-        _record_pipeline_taps(
-            record_pipeline_output, name, object_type, object_id, graph,
-        )
+    # `downscale_stack` is a regular function (runs at trace time);
+    # in its normal mode it stat()s every frame on disk and writes
+    # any missing downscaled FITS — necessary for the background
+    # Ray dispatch path, ruinous on the HTTP path (tens of thousands
+    # of stat() calls over network storage). TRACE_ONLY skips that
+    # work so the endpoint only constructs the Stack metadata
+    # needed to enumerate tap points.
+    _tok = _DOWNSCALE_TRACE_ONLY.set(True)
+    try:
+        for (name, processes_class), pipeline_fn in registered_pipelines().items():
+            if processes_class is not type(entity):
+                continue
+            try:
+                graph = pipeline_fn(entity, cfg)
+            except Exception as e:
+                # A pipeline that can't trace this entity (missing
+                # context dependencies etc.) just doesn't contribute
+                # taps — caller still sees its name + empty taps. Log
+                # so we notice systematic trace failures.
+                import traceback
+                print(f"### pipeline trace failed: {name} for {object_type}/{object_id}: {e}")
+                traceback.print_exc()
+                continue
+            _record_pipeline_taps(
+                record_existence, name, object_type, object_id, graph,
+            )
+    finally:
+        _DOWNSCALE_TRACE_ONLY.reset(_tok)
 
     _traced_objects.add(key)
 
@@ -399,6 +411,27 @@ def pipeline_outputs(object_type: str, object_id: str):
 
     _ensure_pipelines_traced(object_type, object_id, entity)
     indexed = for_object(object_type, object_id)
+
+    # Aggregate taps from "child" identity types that share the
+    # same `object_id` (the cart entity's stable_hash). Example:
+    # `merge_images` registers under `MergedImageId` whose
+    # `object_type=MergedImage`, but its `mosaic` field's
+    # `stable_hash` matches the mosaic the cart is on — so its
+    # "Merged" taps belong in the mosaic dashboard alongside the
+    # `MosaicChannelId`-keyed "Mosaic" taps. Each cart type lists
+    # the identity-type buckets that should fold in.
+    _related_object_types = {
+        "mosaic": ("mergedimage",),
+        "target": ("targetchannel",),
+        "stack": ("calibratedstack", "uncorrectedrun"),
+    }
+    for extra_type in _related_object_types.get(object_type, ()):
+        extra = for_object(extra_type, object_id)
+        # `indexed` shape: {pipeline_name: {display: {filter: path_or_pending}}}.
+        # Merge per pipeline; display names are already disambiguated
+        # by the trace-time recorder so collisions don't happen.
+        for pn, displays in extra.items():
+            indexed.setdefault(pn, {}).update(displays)
 
     pipelines = []
     # Every registered (name, class) entry whose class matches the

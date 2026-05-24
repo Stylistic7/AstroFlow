@@ -202,7 +202,11 @@ export default function MosaicViewer() {
 				>
 					<WorkflowGraph
 						theme={darkTheme}
-						url={`/api/workflow_graph/mosaic/${mosaic_id}/${encodeURIComponent(pipeline)}`}
+						url={
+							`/api/workflow_graph/mosaic/${mosaic_id}`
+							+ `/${encodeURIComponent(pipeline)}`
+							+ (filter ? `/${encodeURIComponent(filter)}` : "")
+						}
 					/>
 				</Box>
 			</Box>

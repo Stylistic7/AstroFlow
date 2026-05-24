@@ -16,8 +16,6 @@ _TILE_SIZE = 2048  # pixels
 def compute_viewbox(
     quality: str, object: AstrometricAttributes,
 ) -> Viewbox:
-    print(f"### Entering compute_viewbox for object {object} quality {quality}")
-
     def round_to_nearest_multiple(number: float, multiple: int) -> int:
         return int(np.ceil(number / multiple) * multiple)
 
@@ -51,12 +49,6 @@ def compute_viewbox(
 
     num_tiles_y = int(np.ceil(num_pixels_y / _TILE_SIZE))
     num_tiles_x = int(np.ceil(num_pixels_x / _TILE_SIZE))
-
-    print(
-        f"### viewbox x_min {x_min} x_span {x_span} "
-        f"y_min {y_min} y_span {y_span} resolution {resolution} "
-        f"num_pixels_x {num_pixels_x}"
-    )
 
     return Viewbox(
         projection=projection,

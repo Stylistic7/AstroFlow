@@ -36,7 +36,10 @@ function VersionThumbnail({
         borderColor: 'divider',
         overflow: 'hidden',
         position: 'relative',
-        cursor: exists ? 'pointer' : 'default',
+        // Always clickable — even when the file isn't yet on disk,
+        // the per-(pipeline, display, filter) viewer page is useful
+        // for inspecting the workflow graph + tracking progress.
+        cursor: 'pointer',
         backgroundColor: exists ? 'transparent' : 'rgba(255,255,255,0.04)',
         display: 'flex',
         alignItems: 'center',
@@ -44,7 +47,7 @@ function VersionThumbnail({
     };
 
     return (
-        <Box sx={sx} onClick={exists ? () => navigate(href) : undefined}>
+        <Box sx={sx} onClick={() => navigate(href)}>
             {url ? (
                 <img
                     src={url}

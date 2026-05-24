@@ -68,6 +68,21 @@ class Node:
 
     def __eq__(self, other: Any) -> bool:
         assert isinstance(other, Node)
+        if not hasattr(self.task, "_function"):
+            raise AttributeError(
+                f"Node.task missing `_function` attr — task is a bare "
+                f"{type(self.task).__name__} ({self.task!r}); expected a "
+                f"@ray.remote RemoteFunction or @node wrapper. Node name="
+                f"{self.name!r}, args={self.args!r}. A pipeline or graph "
+                f"builder created a Node with an undecorated callable."
+            )
+        if not hasattr(other.task, "_function"):
+            raise AttributeError(
+                f"Other Node.task missing `_function` attr — task is a bare "
+                f"{type(other.task).__name__} ({other.task!r}); expected a "
+                f"@ray.remote RemoteFunction or @node wrapper. Other Node "
+                f"name={other.name!r}, args={other.args!r}."
+            )
         return (
             self.task._function.__module__ == other.task._function.__module__
             and self.task._function.__name__ == other.task._function.__name__
@@ -87,6 +102,15 @@ class Node:
 
     def __hash__(self) -> int:
         if not hasattr(self, '_hash_cache'):
+            if not hasattr(self.task, "_function"):
+                raise AttributeError(
+                    f"Node.task missing `_function` attr — task is a bare "
+                    f"{type(self.task).__name__} ({self.task!r}); expected a "
+                    f"@ray.remote RemoteFunction or @node wrapper. Node "
+                    f"name={self.name!r}, args={self.args!r}. A pipeline or "
+                    f"graph builder created a Node with an undecorated "
+                    f"callable."
+                )
             object.__setattr__(self, '_hash_cache', hash_list_int(
                 [
                     self.task._function.__module__,
