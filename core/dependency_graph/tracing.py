@@ -37,9 +37,76 @@ _TRACE: contextvars.ContextVar[Graph | None] = contextvars.ContextVar(
     "graph_trace", default=None
 )
 
+# Stack of (group_name, group_id) pairs for the active lexical
+# `@workflow_group` scope. Each entry corresponds to one
+# @workflow_group-decorated function currently on the call stack;
+# `record()` reads this and tags every new Node with the full path,
+# which the workflow-graph serializer uses to build collapsible
+# group nodes in the viewer.
+_GROUP_STACK: contextvars.ContextVar[tuple] = contextvars.ContextVar(
+    "workflow_group_stack", default=()
+)
+
 
 def tracing_active() -> bool:
     return _TRACE.get() is not None
+
+
+def workflow_group(name: str):
+    """Decorator: mark a plain Python helper as a lexical
+    workflow-graph group. Every `record()` call made during one
+    invocation of the wrapped function (including via nested
+    helpers and @node wrappers) tags its new Node with this
+    group's name; the workflow-graph serializer renders the
+    tagged Nodes as a single collapsible group in the viewer.
+
+    Pure UI grouping — does not change graph topology, runtime
+    behavior, or caching. The decorated function still returns
+    whatever it would normally return. Outside an active trace
+    the decorator is a no-op (just calls the function directly).
+
+    Example:
+
+        @workflow_group("Calibrate")
+        def _build_cal_masters(stack, config):
+            cal_masters = []
+            for cs in calibration_stacks_for(stack, config):
+                cal_masters.append(stack_files(
+                    downscale_stack(cs, 8), config, *cal_masters,
+                ))
+            return cal_masters
+
+    Groups can nest — a helper decorated with `@workflow_group`
+    that's called inside another `@workflow_group`-decorated
+    helper inherits the outer group as a prefix on its Nodes'
+    `_group_path`.
+
+    The `group_id` is a deterministic hash of `(name, parent_path)`
+    so re-traces of the same lexical structure produce the same
+    ids; the viewer's expanded/collapsed state stays stable
+    across reruns."""
+    def decorate(fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            if _TRACE.get() is None:
+                return fn(*args, **kwargs)
+            parent = _GROUP_STACK.get()
+            # Args + kwargs go into the hash so two distinct calls
+            # of the same `@workflow_group`-decorated helper
+            # (e.g. `_post_processed_master(stack_a, ...)` and
+            # `_post_processed_master(stack_b, ...)`) produce
+            # distinct group ids — otherwise they'd collide into
+            # one group with all their Nodes piled together.
+            group_id = str(hash_list_int(
+                [name, parent, list(args), sorted(kwargs.items())]
+            ))
+            token = _GROUP_STACK.set(parent + ((name, group_id),))
+            try:
+                return fn(*args, **kwargs)
+            finally:
+                _GROUP_STACK.reset(token)
+        return wrapper
+    return decorate
 
 
 def record(task: Callable, *args: Any, _after: tuple = ()) -> Node:
@@ -78,6 +145,13 @@ def record(task: Callable, *args: Any, _after: tuple = ()) -> Node:
     ]))
 
     node = Node(task, *literals, name=name)
+    # Tag with the active `@workflow_group` scope (if any) so the
+    # workflow-graph serializer can group lexically-related Nodes
+    # under a single collapsible entry in the viewer. The tag is
+    # a plain instance attribute — Node has no __slots__ and
+    # __eq__/__hash__ ignore it, so two structurally identical
+    # calls in different groups still dedupe correctly.
+    node._group_path = _GROUP_STACK.get()
     g[node] = list(deps)
     return node
 

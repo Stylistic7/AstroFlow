@@ -13,6 +13,7 @@ change the `@pipeline("…")` display name, and edit the call you
 want to replace.
 """
 from astroflow.pipeline import pipeline
+from dependency_graph.tracing import workflow_group
 from mosaics.final_storage import store_mosaic_color_channel_xisf
 from mosaics.merging.pixinsight import merge_images
 from mosaics.placement.astroflow import place_image
@@ -25,6 +26,7 @@ from targets.merging.pixinsight import merge_target_channel
 from targets.types import Target
 
 
+@workflow_group("Per-Stack Chain")
 def _post_processed_master(stack, config, mock):
     """Calibrate → stack → post-process one stack. No per-stack
     transformation, so `calibrate(...)` does the cal-master
@@ -35,6 +37,7 @@ def _post_processed_master(stack, config, mock):
     return post_process_stack(stack, mock, master)
 
 
+@workflow_group("Channel")
 def _channels_for_target(target, config, mock):
     """Per-filter HDR-combined channel masters for one target."""
     channels = {}

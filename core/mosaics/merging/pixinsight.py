@@ -63,7 +63,12 @@ def merge_images_subframe(
     convention as `merge_images`: one output file per (mosaic, filter)
     in `merge_images_subframe/`."""
     assert len(inputs) >= 1
-    output_filename = merge_images_subframe.filename_fn(mosaic, filter)
+    # `*inputs` MUST flow into the call_hash — otherwise every
+    # pairwise `merge_images_subframe(mosaic, filter, row, p)`
+    # call in the sequential reduce produces the same filename,
+    # multiple writers race on it, and downstream readers see
+    # half-written zlib streams (corrupt TIFF).
+    output_filename = merge_images_subframe.filename_fn(mosaic, filter, *inputs)
     Path(output_filename).parent.mkdir(parents=True, exist_ok=True)
 
     paths = [i.filename.resolve(strict=True) for i in inputs]

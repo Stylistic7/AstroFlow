@@ -12,7 +12,7 @@ from stacks.run import Run
 from stacks.types import StackIdDependency, FilenameDependency
 from stacks.composite_stack import BaseStack, Stack
 from pix.tasks import run_wbpp
-from metadata.classes import MetadataDict
+from metadata.classes import ImageMetadata, MetadataDict
 from decorators import node
 from decisions.settings import ProcessingConfig
 from decisions.resolve import resolve_decisions
@@ -293,7 +293,7 @@ def _run_wbpp_stacking(
 def stack_files(
     stack: BaseStack,
     config: ProcessingConfig,
-    *cal_masters: WithSidecar,
+    *cal_masters: ImageMetadata,
 ) -> WithSidecar[XisfFilePath]:
     """Resolution-agnostic PixInsight WBPP master.
 

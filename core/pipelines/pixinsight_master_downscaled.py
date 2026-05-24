@@ -17,6 +17,7 @@ GraXpert, or change the downscale factor), copy this file to
 replace.
 """
 from astroflow.pipeline import pipeline
+from dependency_graph.tracing import workflow_group
 from mosaics.final_storage import store_mosaic_color_channel_xisf
 from mosaics.merging.pixinsight import merge_images
 from mosaics.placement.astroflow import place_image
@@ -30,6 +31,7 @@ from targets.merging.pixinsight import merge_target_channel
 from targets.types import Target
 
 
+@workflow_group("Per-Stack Chain")
 def _post_processed_master(stack, config, mock):
     """Downscale every stack (cal AND light) by 8x, then stack +
     post-process. The downscale step is applied explicitly to
@@ -45,6 +47,7 @@ def _post_processed_master(stack, config, mock):
     return post_process_stack(s_downscaled, mock, master)
 
 
+@workflow_group("Channel")
 def _channels_for_target(target, config, mock):
     """Per-filter HDR-combined channel masters for one target."""
     channels = {}
