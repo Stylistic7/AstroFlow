@@ -185,7 +185,16 @@ def place_image(
     interp = _make_interpolator(image_metadata.filename)
     image = _project_in_tiles(viewbox, interp, wcs, skip_empty=False)
 
-    output_filename = place_image.filename_fn(mosaic, target, filter, viewbox)
+    # `image_metadata` MUST flow into the call_hash. Three
+    # pipelines (Subframe, PI Master, PI Downscaled) place the
+    # same target panel into the same viewbox at the same filter,
+    # differing only in their upstream master. Omitting
+    # `image_metadata` here collapses all three onto a single
+    # output filename — multiple writers race, downstream readers
+    # see half-written zlib streams (corrupt TIFF).
+    output_filename = place_image.filename_fn(
+        mosaic, target, filter, viewbox, image_metadata,
+    )
 
     if not np.any(image):
         raise ProjectionFailedException(
