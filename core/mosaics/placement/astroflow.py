@@ -32,7 +32,6 @@ class ProjectionFailedException(Exception):
     pass
 
 _GB = 1024 ** 3
-_PLACE_TILE_MEMORY_REQUIREMENT = 128 * 1024 * 1024  # 128 MB
 
 log = structlog.get_logger()
 
@@ -43,7 +42,6 @@ class PlacedImage:
 def round_to_nearest_multiple(number: float, multiple: int) -> int:
     return int(np.ceil(number / multiple) * multiple)
 
-@ray.remote(memory=_PLACE_TILE_MEMORY_REQUIREMENT, scheduling_strategy="SPREAD")
 @beartype
 def place_tile(
     viewbox: Viewbox,
@@ -117,7 +115,13 @@ def _project_in_tiles(
     wcs: WCS,
     skip_empty: bool = True,
 ):
-    wcs_ref = ray.put(wcs)
+    """Project every tile of the source image into `viewbox`.
+    `interp` and `wcs` stay in this worker's Python heap; per-tile
+    work runs on a thread pool sharing both references. The
+    interpolation call (`interp((source_ys, source_xs))`) is
+    numpy-heavy and releases the GIL, so threads get real
+    parallelism without copying anything."""
+    from concurrent.futures import ThreadPoolExecutor
 
     projected_image = np.zeros(
         (
@@ -127,27 +131,24 @@ def _project_in_tiles(
         dtype=np.float32,
     )
 
-    interp_ref = ray.put(interp)
-    remaining_refs = [
-        place_tile.remote(
-            viewbox, tile_y, tile_x, wcs_ref, interp_ref, skip_empty
-        )
-        for tile_y, tile_x in product(
-            range(viewbox.num_tiles_y), range(viewbox.num_tiles_x)
-        )
-    ]
-    while remaining_refs:
-        ready_refs, remaining_refs = ray.wait(remaining_refs, num_returns=1)
-        tile_y, tile_x, tile_data = ray.get(ready_refs[0])
-        if tile_data is None:
-            continue
-
-        tile_y_idx = tile_y * viewbox.tile_height
-        tile_x_idx = tile_x * viewbox.tile_width
-        projected_image[
-            tile_y_idx : tile_y_idx + viewbox.tile_height,
-            tile_x_idx : tile_x_idx + viewbox.tile_width,
-        ] = tile_data
+    tiles = list(product(
+        range(viewbox.num_tiles_y), range(viewbox.num_tiles_x),
+    ))
+    with ThreadPoolExecutor() as ex:
+        for tile_y, tile_x, tile_data in ex.map(
+            lambda tx: place_tile(
+                viewbox, tx[0], tx[1], wcs, interp, skip_empty,
+            ),
+            tiles,
+        ):
+            if tile_data is None:
+                continue
+            tile_y_idx = tile_y * viewbox.tile_height
+            tile_x_idx = tile_x * viewbox.tile_width
+            projected_image[
+                tile_y_idx : tile_y_idx + viewbox.tile_height,
+                tile_x_idx : tile_x_idx + viewbox.tile_width,
+            ] = tile_data
 
     return projected_image[0 : viewbox.num_pixels_y, 0 : viewbox.num_pixels_x]
 
