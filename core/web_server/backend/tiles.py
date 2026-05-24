@@ -189,7 +189,7 @@ def serve_tile_tap(
     pipeline, _, display = pipeline_and_display.rpartition("/")
     if not pipeline or not display:
         return abort(404)
-    path = _tap_tile_pyramid_path(pipeline, display, object_type, object_id, filter)
+    path = _tile_pyramid_path_for_tap(object_type, object_id, pipeline, display, filter)
     return _serve_tile_response(path, object_type, object_id, x, y, z)
 
 
