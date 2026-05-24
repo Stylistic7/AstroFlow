@@ -97,29 +97,27 @@ def _snapshot_per_filter_workflow_graphs(base_key: tuple, graph) -> None:
     """Slice `graph` into per-filter subgraphs and snapshot each
     under `(*base_key, filter)`.
 
-    For mosaic pipelines (and any pipeline whose sinks carry a
-    `filter` literal), a sink is a node with no descendants. We
-    group sinks by filter, compute each filter's ancestor closure,
-    and snapshot it as its own workflow graph. The per-(pipeline,
-    filter) viewer page then shows only the work that produces
-    that one channel."""
+    Walks EVERY node (not just sinks) looking for a `filter` literal
+    in its args — `@makes_image`'s trace hook chains a
+    `compute_image_metadata` Node downstream of every tap, so the
+    sinks are typically those chained nodes (no `filter`
+    parameter), and `merge_target_channel`, `merge_images`,
+    `store_mosaic_color_channel_xisf`, `place_image`, etc. — the
+    nodes that DO carry a `filter` literal — live one step
+    upstream. For each filter we union ancestor closures from
+    every filter-bearing node; the result is the subgraph that
+    contributed to producing that one channel."""
     from dependency_graph import Graph
 
-    has_deps = set()
-    for deps in graph.values():
-        for d in deps:
-            has_deps.add(d)
-    sinks = [n for n in graph if n not in has_deps]
-
-    sinks_by_filter: dict[str, list] = {}
-    for s in sinks:
-        f = _filter_of(s)
+    nodes_by_filter: dict[str, list] = {}
+    for n in graph:
+        f = _filter_of(n)
         if f is None:
             continue
-        sinks_by_filter.setdefault(str(f), []).append(s)
+        nodes_by_filter.setdefault(str(f), []).append(n)
 
-    for filter_key, filter_sinks in sinks_by_filter.items():
-        keep = _ancestor_closure(filter_sinks, graph)
+    for filter_key, filter_nodes in nodes_by_filter.items():
+        keep = _ancestor_closure(filter_nodes, graph)
         sub = Graph({n: list(graph.get(n, [])) for n in keep})
         _snapshot_workflow_graph((*base_key, filter_key), sub)
 
