@@ -23,6 +23,19 @@ from decisions.decisions import ObjectType, get_decisions_for_object
 metadata_bp = Blueprint("metadata", __name__)
 
 
+# URL-side object types map to one or more identity object_types
+# that share the same `stable_hash`. The PipelineOutputIndex keys
+# taps under each identity's `object_type.__name__.lower()`, but
+# URLs only carry the cart-level type — so look up across all
+# related identity types when resolving a tap's on-disk path.
+# Same mapping the dashboard endpoint uses below.
+_RELATED_OBJECT_TYPES = {
+    "mosaic": ("mosaic", "mergedimage"),
+    "target": ("target", "targetchannel"),
+    "stack": ("stack", "calibratedstack", "uncorrectedrun"),
+}
+
+
 def tap_path_for(
     pipeline: str, display: str, object_type: str, object_id: str,
     filter: str | None,
@@ -31,14 +44,17 @@ def tap_path_for(
 
     The index is populated at pipeline-trace time — every Node whose
     task carries `_display` (set by `@makes_image(display=...)`)
-    gets recorded under (pipeline, object_type, object_id, display,
-    filter). Pipelines that haven't been traced for this object
-    return None; the caller should 404.
+    gets recorded under (pipeline, identity_type, object_id, display,
+    filter). URLs carry the cart-level type (mosaic / target / stack),
+    which may not match the identity's type — e.g. a `Merged` tap on
+    a mosaic is keyed under `mergedimage`, not `mosaic`. Try each
+    related identity type until one hits.
     """
     from pipelines.output_index import tap_path
-    p = tap_path(pipeline, object_type, object_id, display, filter)
-    if p and os.path.exists(p):
-        return p
+    for ident_type in _RELATED_OBJECT_TYPES.get(object_type, (object_type,)):
+        p = tap_path(pipeline, ident_type, object_id, display, filter)
+        if p and os.path.exists(p):
+            return p
     return None
 
 def _mosaic_filters(mosaic) -> list[str]:
@@ -413,19 +429,15 @@ def pipeline_outputs(object_type: str, object_id: str):
     indexed = for_object(object_type, object_id)
 
     # Aggregate taps from "child" identity types that share the
-    # same `object_id` (the cart entity's stable_hash). Example:
-    # `merge_images` registers under `MergedImageId` whose
-    # `object_type=MergedImage`, but its `mosaic` field's
-    # `stable_hash` matches the mosaic the cart is on — so its
-    # "Merged" taps belong in the mosaic dashboard alongside the
-    # `MosaicChannelId`-keyed "Mosaic" taps. Each cart type lists
-    # the identity-type buckets that should fold in.
-    _related_object_types = {
-        "mosaic": ("mergedimage",),
-        "target": ("targetchannel",),
-        "stack": ("calibratedstack", "uncorrectedrun"),
-    }
-    for extra_type in _related_object_types.get(object_type, ()):
+    # same `object_id`. Example: `merge_images` registers under
+    # `MergedImageId` whose `object_type=MergedImage`, but its
+    # `mosaic` field's `stable_hash` matches the mosaic the cart
+    # is on — so its "Merged" taps belong in the mosaic dashboard
+    # alongside the `MosaicChannelId`-keyed "Mosaic" taps. Skip
+    # the URL type itself (already in `indexed`).
+    for extra_type in _RELATED_OBJECT_TYPES.get(object_type, ()):
+        if extra_type == object_type:
+            continue
         extra = for_object(extra_type, object_id)
         # `indexed` shape: {pipeline_name: {display: {filter: path_or_pending}}}.
         # Merge per pipeline; display names are already disambiguated
