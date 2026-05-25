@@ -37,10 +37,55 @@ def node_to_id(node: Node) -> str:
     return str(node.task._function.__name__) + "_" + str(hash(node))
 
 
+def _filter_of(node: Node) -> str | None:
+    """Value bound to the `filter` parameter in `node.args`, if any.
+    Pipeline ops carry `filter` as a literal arg on sinks like
+    `merge_target_channel`, `place_image`, `merge_images`,
+    `store_mosaic_color_channel_xisf`."""
+    import inspect
+    fn = getattr(node.task, "_function", node.task)
+    try:
+        sig = inspect.signature(fn)
+    except (TypeError, ValueError):
+        return None
+    params = list(sig.parameters.keys())
+    arg_map = {params[i]: node.args[i]
+               for i in range(min(len(node.args), len(node.args), len(params)))}
+    f = arg_map.get("filter")
+    return None if f is None else str(f)
+
+
+def _filter_membership(graph) -> dict[Node, set[str]]:
+    """Per-node set of filters whose ancestor closure reaches the
+    node. A node with empty set is "global" (no filter-bearing
+    descendant) and should remain visible in every per-filter
+    slice."""
+    sinks_by_filter: dict[str, list] = {}
+    for n in graph:
+        f = _filter_of(n)
+        if f is not None:
+            sinks_by_filter.setdefault(f, []).append(n)
+    membership: dict[Node, set[str]] = {n: set() for n in graph}
+    for filter_key, sinks in sinks_by_filter.items():
+        seen: set = set()
+        stack = list(sinks)
+        while stack:
+            n = stack.pop()
+            if n in seen:
+                continue
+            seen.add(n)
+            membership.setdefault(n, set()).add(filter_key)
+            for dep in graph.get(n, []):
+                stack.append(dep)
+    return membership
+
+
 def gather_group_meta(
     rt: GraphRuntime,
     subgraphs_by_parent: dict[Node, GraphRuntime],
 ) -> dict[str, dict]:
+    filters_by_node = _filter_membership(rt.graph)
+
     def state_string(rt, node):
         result = rt.results.get(node, NeverRun)
         return (
@@ -77,6 +122,7 @@ def gather_group_meta(
         meta = {
             "displayName": node.task._function.__name__,
             "state": state_string(rt, node),
+            "filters": sorted(filters_by_node.get(node, ())),
             "options": {
                 "imageUrl": f"/api/open_image/{filename}",
             },
@@ -95,7 +141,10 @@ def gather_group_meta(
                 meta["state"] = "FAILED"
         return meta
 
-    meta = {node_to_id(n): recurse(rt, n) for n in rt.graph}
+    meta = {
+        node_to_id(n): recurse(rt, n)
+        for n in rt.graph if not _is_transparent(n)
+    }
 
     # Synthetic lexical-group entries: every distinct prefix of
     # every Node's `_group_path` gets its own meta entry, keyed by
@@ -115,6 +164,8 @@ def gather_group_meta(
 
     by_prefix: dict[tuple, list] = {}  # prefix tuple → nodes inside
     for n in rt.graph:
+        if _is_transparent(n):
+            continue
         path = _group_path_of(n)
         for k in range(1, len(path) + 1):
             by_prefix.setdefault(path[:k], []).append(n)
@@ -124,9 +175,13 @@ def gather_group_meta(
         if gid in meta:
             continue
         member_states = [state_string(rt, m) for m in members]
+        group_filters: set = set()
+        for m in members:
+            group_filters |= filters_by_node.get(m, set())
         meta[gid] = {
             "displayName": prefix[-1][0],  # the group name
             "state": aggregate_state(member_states),
+            "filters": sorted(group_filters),
             "hasControlNode": True,
             "groupMeta": {node_to_id(m): meta[node_to_id(m)] for m in members
                           if node_to_id(m) in meta},
@@ -148,6 +203,43 @@ def _synthetic_group_id(segment: tuple) -> str:
     is a `(name, group_id)` pair from a Node's `_group_path`."""
     name, gid = segment
     return f"group_{name}_{gid}"
+
+
+# Ops the workflow-graph viewer hides — uninteresting glue Nodes
+# the trace machinery adds automatically (single-input, single-
+# output, no semantic content the user cares about). Their incoming
+# edges are stitched directly to their outgoing edges, so an A →
+# compute_image_metadata → B chain renders as A → B.
+_TRANSPARENT_OP_NAMES = frozenset({
+    "compute_image_metadata",   # @makes_image trace hook
+    "_register_tap_path_op",    # tap-path recorder
+})
+
+
+def _is_transparent(node: Node) -> bool:
+    try:
+        return node.task._function.__name__ in _TRANSPARENT_OP_NAMES
+    except AttributeError:
+        return False
+
+
+def _resolve_through_transparent(dep, graph, _seen=None) -> set:
+    """Walk back through transparent nodes; return the set of
+    non-transparent upstreams. A transparent node's contribution
+    to the rendered graph is its closest non-transparent
+    ancestor(s) — so an edge X → transparent → Y becomes an edge
+    X → Y."""
+    if _seen is None:
+        _seen = set()
+    if dep in _seen:
+        return set()
+    _seen.add(dep)
+    if not _is_transparent(dep):
+        return {dep}
+    upstreams = set()
+    for d in graph.get(dep, []):
+        upstreams |= _resolve_through_transparent(d, graph, _seen)
+    return upstreams
 
 
 def _build_subskeleton(
@@ -176,7 +268,10 @@ def _build_subskeleton(
             i += 1
         return i
 
-    in_scope = [n for n in graph if gp(n)[:L] == group_prefix]
+    in_scope = [
+        n for n in graph
+        if gp(n)[:L] == group_prefix and not _is_transparent(n)
+    ]
     direct = sorted(n for n in in_scope if len(gp(n)) == L)
     subgroup_members: dict[tuple, list] = {}
     for n in in_scope:
@@ -208,12 +303,19 @@ def _build_subskeleton(
     # Build forward adjacency at this level: dep_id → set of
     # dependent_ids (downstream). `rt.graph` is upstream-keyed
     # (node → deps), but the viewer's `next` array is downstream,
-    # so we flip here.
+    # so we flip here. Transparent deps are resolved through to
+    # their non-transparent ancestors, so an edge X →
+    # compute_image_metadata → Y renders as X → Y.
     forward: dict[str, set[str]] = defaultdict(set)
     for node, deps in graph.items():
+        if _is_transparent(node):
+            continue
         if gp(node)[:L] != group_prefix:
             continue
+        resolved_deps = set()
         for dep in deps:
+            resolved_deps |= _resolve_through_transparent(dep, graph)
+        for dep in resolved_deps:
             if gp(dep)[:L] != group_prefix:
                 continue
             # The edge belongs at this level iff the nearest

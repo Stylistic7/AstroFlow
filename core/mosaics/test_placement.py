@@ -87,17 +87,14 @@ def _make_interpolator(image: np.ndarray) -> RegularGridInterpolator:
 
 
 # ---------------------------------------------------------------------------
-# place_tile tests (imported without Ray decorator)
+# place_tile tests
 # ---------------------------------------------------------------------------
 
-# Import the raw function body — place_tile is @ray.remote, but we can
-# call the underlying function directly via ._function for testing.
 from mosaics.placement import place_tile
 
 
 def _call_place_tile(viewbox, tile_y, tile_x, wcs, interp, skip_empty=False):
-    """Call place_tile's underlying function without Ray."""
-    return place_tile._function(viewbox, tile_y, tile_x, wcs, interp, skip_empty)
+    return place_tile(viewbox, tile_y, tile_x, wcs, interp, skip_empty)
 
 
 class TestPlaceTile:

@@ -31,7 +31,7 @@ from targets.merging.pixinsight import merge_target_channel
 from targets.types import Target
 
 
-@workflow_group("Per-Stack Chain")
+@workflow_group
 def _post_processed_master(stack, config, mock):
     """Downscale every stack (cal AND light) by 8x, then stack +
     post-process. The downscale step is applied explicitly to
@@ -47,7 +47,7 @@ def _post_processed_master(stack, config, mock):
     return post_process_stack(s_downscaled, mock, master)
 
 
-@workflow_group("Channel")
+@workflow_group
 def _channels_for_target(target, config, mock):
     """Per-filter HDR-combined channel masters for one target."""
     channels = {}

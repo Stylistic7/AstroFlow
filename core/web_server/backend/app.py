@@ -111,6 +111,14 @@ else:
         static_folder=f"{base_path}/core/web_server/backend/static",
     )
 
+from flask_cors import CORS
+# Global CORS: tags every response (including `abort(404)` 404s and
+# `redirect(...)` 307s from `stateful_route`) with the right headers,
+# and handles OPTIONS preflights without each view needing its own
+# decorator. The per-route `@cross_origin` inside `stateful_route` is
+# idempotent with this.
+CORS(app, resources={r"/*": {"origins": "*"}})
+
 app.register_blueprint(files_bp)
 app.register_blueprint(tiles_bp)
 app.register_blueprint(metadata_bp)

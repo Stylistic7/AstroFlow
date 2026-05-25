@@ -26,7 +26,7 @@ from targets.merging.pixinsight import merge_target_channel
 from targets.types import Target
 
 
-@workflow_group("Per-Stack Chain")
+@workflow_group
 def _post_processed_master(stack, config, mock):
     """Calibrate → stack → post-process one stack. No per-stack
     transformation, so `calibrate(...)` does the cal-master
@@ -37,7 +37,7 @@ def _post_processed_master(stack, config, mock):
     return post_process_stack(stack, mock, master)
 
 
-@workflow_group("Channel")
+@workflow_group
 def _channels_for_target(target, config, mock):
     """Per-filter HDR-combined channel masters for one target."""
     channels = {}

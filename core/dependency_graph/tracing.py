@@ -52,13 +52,14 @@ def tracing_active() -> bool:
     return _TRACE.get() is not None
 
 
-def workflow_group(name: str):
+def workflow_group(fn):
     """Decorator: mark a plain Python helper as a lexical
     workflow-graph group. Every `record()` call made during one
     invocation of the wrapped function (including via nested
-    helpers and @node wrappers) tags its new Node with this
-    group's name; the workflow-graph serializer renders the
-    tagged Nodes as a single collapsible group in the viewer.
+    helpers and @node wrappers) tags its new Node with the
+    function's name; the workflow-graph serializer renders the
+    tagged Nodes as a single collapsible group in the viewer,
+    labeled with the function's `__name__`.
 
     Pure UI grouping — does not change graph topology, runtime
     behavior, or caching. The decorated function still returns
@@ -67,7 +68,7 @@ def workflow_group(name: str):
 
     Example:
 
-        @workflow_group("Calibrate")
+        @workflow_group
         def _build_cal_masters(stack, config):
             cal_masters = []
             for cs in calibration_stacks_for(stack, config):
@@ -81,39 +82,39 @@ def workflow_group(name: str):
     helper inherits the outer group as a prefix on its Nodes'
     `_group_path`.
 
-    The `group_id` is a deterministic hash of `(name, parent_path)`
-    so re-traces of the same lexical structure produce the same
-    ids; the viewer's expanded/collapsed state stays stable
-    across reruns."""
-    def decorate(fn):
-        @functools.wraps(fn)
-        def wrapper(*args, **kwargs):
-            if _TRACE.get() is None:
-                return fn(*args, **kwargs)
-            parent = _GROUP_STACK.get()
-            # Per-call key so two distinct calls of the same
-            # `@workflow_group` helper produce distinct group ids.
-            # Most pipeline helpers take their primary entity
-            # (stack / target / mosaic) as the first arg, all of
-            # which expose a precomputed `stable_hash` string —
-            # using that directly avoids the O(cal_stacks) cost
-            # of recursive arg hashing through ProcessingConfig.
-            # Falls back to a full args hash for callers whose
-            # first arg has no stable_hash.
-            if args and hasattr(args[0], "stable_hash"):
-                call_key = args[0].stable_hash
-            else:
-                call_key = hash_list_int(
-                    [list(args), sorted(kwargs.items())]
-                )
-            group_id = str(hash_list_int([name, parent, call_key]))
-            token = _GROUP_STACK.set(parent + ((name, group_id),))
-            try:
-                return fn(*args, **kwargs)
-            finally:
-                _GROUP_STACK.reset(token)
-        return wrapper
-    return decorate
+    The `group_id` is a deterministic hash of (function-name,
+    parent_path, per-call key) so re-traces of the same lexical
+    structure produce the same ids; the viewer's expanded/
+    collapsed state stays stable across reruns."""
+    name = fn.__name__
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        if _TRACE.get() is None:
+            return fn(*args, **kwargs)
+        parent = _GROUP_STACK.get()
+        # Per-call key so two distinct calls of the same
+        # `@workflow_group` helper produce distinct group ids.
+        # Most pipeline helpers take their primary entity
+        # (stack / target / mosaic) as the first arg, all of
+        # which expose a precomputed `stable_hash` string — using
+        # that directly avoids the O(cal_stacks) cost of recursive
+        # arg hashing through ProcessingConfig. Falls back to a
+        # full args hash for callers whose first arg has no
+        # stable_hash.
+        if args and hasattr(args[0], "stable_hash"):
+            call_key = args[0].stable_hash
+        else:
+            call_key = hash_list_int(
+                [list(args), sorted(kwargs.items())]
+            )
+        group_id = str(hash_list_int([name, parent, call_key]))
+        token = _GROUP_STACK.set(parent + ((name, group_id),))
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            _GROUP_STACK.reset(token)
+    return wrapper
 
 
 def record(task: Callable, *args: Any, _after: tuple = ()) -> Node:
@@ -133,6 +134,11 @@ def record(task: Callable, *args: Any, _after: tuple = ()) -> Node:
     an upstream node (the master file on disk). Including `_after` in
     the node-name hash ensures that two calls with identical data deps
     but different ordering deps don't dedup.
+
+    When the constructed Node equals one already in the graph, the
+    canonical key is returned (so downstream dep lists hold canonical
+    objects) and its `_group_path` is cleared to `()` — a shared
+    computation belongs to no single lexical group.
     """
     g = _TRACE.get()
     if g is None:
@@ -152,12 +158,13 @@ def record(task: Callable, *args: Any, _after: tuple = ()) -> Node:
     ]))
 
     node = Node(task, *literals, name=name)
-    # Tag with the active `@workflow_group` scope (if any) so the
-    # workflow-graph serializer can group lexically-related Nodes
-    # under a single collapsible entry in the viewer. The tag is
-    # a plain instance attribute — Node has no __slots__ and
-    # __eq__/__hash__ ignore it, so two structurally identical
-    # calls in different groups still dedupe correctly.
+    if node in g:
+        canonical = next(k for k in g if k == node)
+        canonical._group_path = ()
+        return canonical
+    # `_group_path` tags the Node with the active `@workflow_group`
+    # scope for UI grouping. Plain instance attribute — Node has no
+    # __slots__ and __eq__/__hash__ ignore it.
     node._group_path = _GROUP_STACK.get()
     g[node] = list(deps)
     return node

@@ -62,64 +62,6 @@ def _snapshot_workflow_graph(key: tuple, graph) -> None:
     store_workflow_graph(key, rt)
 
 
-def _filter_of(node) -> str | None:
-    """Inspect a Node's literal args and return the value bound to
-    the `filter` parameter (if any). Used to group sinks by filter
-    when slicing a pipeline's graph into per-channel views."""
-    import inspect
-    fn = getattr(node.task, "_function", node.task)
-    try:
-        sig = inspect.signature(fn)
-    except (TypeError, ValueError):
-        return None
-    params = list(sig.parameters.keys())
-    arg_map = {params[i]: node.args[i]
-               for i in range(min(len(node.args), len(params)))}
-    return arg_map.get("filter")
-
-
-def _ancestor_closure(roots, graph) -> set:
-    """Set of every node reachable from any node in `roots` by
-    walking dep edges (graph[node] is its deps)."""
-    seen = set()
-    stack = list(roots)
-    while stack:
-        n = stack.pop()
-        if n in seen:
-            continue
-        seen.add(n)
-        for dep in graph.get(n, []):
-            stack.append(dep)
-    return seen
-
-
-def _snapshot_per_filter_workflow_graphs(base_key: tuple, graph) -> None:
-    """Slice `graph` into per-filter subgraphs and snapshot each
-    under `(*base_key, filter)`.
-
-    Walks EVERY node (not just sinks) looking for a `filter` literal
-    in its args — `@makes_image`'s trace hook chains a
-    `compute_image_metadata` Node downstream of every tap, so the
-    sinks are typically those chained nodes (no `filter`
-    parameter), and `merge_target_channel`, `merge_images`,
-    `store_mosaic_color_channel_xisf`, `place_image`, etc. — the
-    nodes that DO carry a `filter` literal — live one step
-    upstream. For each filter we union ancestor closures from
-    every filter-bearing node; the result is the subgraph that
-    contributed to producing that one channel."""
-    from dependency_graph import Graph
-
-    nodes_by_filter: dict[str, list] = {}
-    for n in graph:
-        f = _filter_of(n)
-        if f is None:
-            continue
-        nodes_by_filter.setdefault(str(f), []).append(n)
-
-    for filter_key, filter_nodes in nodes_by_filter.items():
-        keep = _ancestor_closure(filter_nodes, graph)
-        sub = Graph({n: list(graph.get(n, [])) for n in keep})
-        _snapshot_workflow_graph((*base_key, filter_key), sub)
 
 
 def pipeline(display_name: str, processes: type) -> Callable:
@@ -138,17 +80,11 @@ def pipeline(display_name: str, processes: type) -> Callable:
             user's body under a fresh trace context.
 
             After the trace completes, snapshot a topology-only
-            workflow graph and store it under
-            `(type_tag, entity.stable_hash, pipeline_name)` so the
-            stack / target / mosaic viewers can render the pipeline's
-            structure without waiting for runtime state.
-
-            State updates are a follow-up: today the dispatcher
-            splices each pipeline's graph into the main compute
-            graph rather than dispatching it as a child runtime, so
-            the per-pipeline `graph_update_fn` registered by
-            `set_workflow_key` doesn't fire at runtime. The topology
-            snapshot at least gives the viewer something to render.
+            workflow graph so the stack / target / mosaic viewers
+            can render the pipeline's structure immediately. The
+            runtime overwrites this with a live snapshot via
+            `set_workflow_key`'s `graph_update_fn` once nodes start
+            completing.
             """
             type_tag = _TYPE_TAG.get(processes.__name__)
             entity = args[0] if args else None
@@ -163,7 +99,6 @@ def pipeline(display_name: str, processes: type) -> Callable:
             if graph is not None and type_tag and entity_id:
                 base_key = (type_tag, entity_id, display_name)
                 _snapshot_workflow_graph(base_key, graph)
-                _snapshot_per_filter_workflow_graphs(base_key, graph)
             return graph
 
         runner._function = fn
