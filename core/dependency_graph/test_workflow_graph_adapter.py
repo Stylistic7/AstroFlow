@@ -120,23 +120,23 @@ def test_simple_graph(test_context) -> None:
     assert workflow_graph == {
         "skeleton": [
             {
-                "id": "first_remote_task_5853681373678254252",
+                "id": "first_remote_task_5853681373678254252@root",
                 "next": [
                     {
-                        "id": "first_remote_task_9127585202725469312",
+                        "id": "first_remote_task_9127585202725469312@root",
                         "next": [
                             {
-                                "id": "second_remote_task_4535734521694034287",
+                                "id": "second_remote_task_4535734521694034287@root",
                                 "type": "execution",
                             }
                         ],
                         "type": "execution",
                     },
                     {
-                        "id": "second_remote_task_515883902965165000",
+                        "id": "second_remote_task_515883902965165000@root",
                         "next": [
                             {
-                                "id": "second_remote_task_4535734521694034287",
+                                "id": "second_remote_task_4535734521694034287@root",
                                 "type": "execution",
                             }
                         ],
@@ -147,28 +147,28 @@ def test_simple_graph(test_context) -> None:
             }
         ],
         "state": {
-            "first_remote_task_5853681373678254252": {
+            "first_remote_task_5853681373678254252@root": {
                 "description": "A",
                 "displayName": "first_remote_task",
                 "options": {"imageUrl": "/api/open_image/None"},
                 "state": "SUCCEEDED",
                 "filters": [],
             },
-            "first_remote_task_9127585202725469312": {
+            "first_remote_task_9127585202725469312@root": {
                 "description": "B",
                 "displayName": "first_remote_task",
                 "options": {"imageUrl": "/api/open_image/None"},
                 "state": "SUCCEEDED",
                 "filters": [],
             },
-            "second_remote_task_515883902965165000": {
+            "second_remote_task_515883902965165000@root": {
                 "description": "C",
                 "displayName": "second_remote_task",
                 "options": {"imageUrl": "/api/open_image/None"},
                 "state": "SUCCEEDED",
                 "filters": [],
             },
-            "second_remote_task_4535734521694034287": {
+            "second_remote_task_4535734521694034287@root": {
                 "description": "D",
                 "displayName": "second_remote_task",
                 "options": {"imageUrl": "/api/open_image/None"},
@@ -204,48 +204,48 @@ def test_graph_with_subgraph(test_context) -> None:
     assert workflow_graph == {
         "skeleton": [
             {
-                "id": "first_remote_task_5853681373678254252",
+                "id": "first_remote_task_5853681373678254252@root",
                 "next": [
                     {
-                        "id": "first_remote_task_9127585202725469312",
+                        "id": "first_remote_task_9127585202725469312@root",
                         "next": [
                             {
                                 "definition": [
                                     {
-                                        "id": "process_1249338321095799059",
+                                        "id": "process_1249338321095799059@root",
                                         "next": [
                                             {
-                                                "id": "gather_953911728064552612",
+                                                "id": "gather_953911728064552612@root",
                                                 "type": "execution",
                                             }
                                         ],
                                         "type": "execution",
                                     },
                                     {
-                                        "id": "process_233701171574273295",
+                                        "id": "process_233701171574273295@root",
                                         "next": [
                                             {
-                                                "id": "gather_953911728064552612",
+                                                "id": "gather_953911728064552612@root",
                                                 "type": "execution",
                                             }
                                         ],
                                         "type": "execution",
                                     },
                                     {
-                                        "id": "process_769528195660308509",
+                                        "id": "process_769528195660308509@root",
                                         "next": [
                                             {
-                                                "id": "gather_953911728064552612",
+                                                "id": "gather_953911728064552612@root",
                                                 "type": "execution",
                                             }
                                         ],
                                         "type": "execution",
                                     },
                                 ],
-                                "id": "build_dynamic_graph_8873703331677539195",
+                                "id": "build_dynamic_graph_8873703331677539195@root",
                                 "next": [
                                     {
-                                        "id": "second_remote_task_5285937878639420607",
+                                        "id": "second_remote_task_5285937878639420607@root",
                                         "type": "execution",
                                     }
                                 ],
@@ -255,10 +255,10 @@ def test_graph_with_subgraph(test_context) -> None:
                         "type": "execution",
                     },
                     {
-                        "id": "second_remote_task_515883902965165000",
+                        "id": "second_remote_task_515883902965165000@root",
                         "next": [
                             {
-                                "id": "build_dynamic_graph_8873703331677539195",
+                                "id": "build_dynamic_graph_8873703331677539195@root",
                                 "type": "group",
                             }
                         ],
@@ -269,31 +269,31 @@ def test_graph_with_subgraph(test_context) -> None:
             }
         ],
         "state": {
-            "build_dynamic_graph_8873703331677539195": {
+            "build_dynamic_graph_8873703331677539195@root": {
                 "description": "D",
                 "displayName": "build_dynamic_graph",
                 "groupMeta": {
-                    "gather_953911728064552612": {
+                    "gather_953911728064552612@root": {
                         "displayName": "gather",
                         "options": {"imageUrl": "/api/open_image/None"},
                         "state": "SUCCEEDED",
                         "filters": [],
                     },
-                    "process_1249338321095799059": {
+                    "process_1249338321095799059@root": {
                         "description": "0",
                         "displayName": "process",
                         "options": {"imageUrl": "/api/open_image/None"},
                         "state": "SUCCEEDED",
                         "filters": [],
                     },
-                    "process_769528195660308509": {
+                    "process_769528195660308509@root": {
                         "description": "2",
                         "displayName": "process",
                         "options": {"imageUrl": "/api/open_image/None"},
                         "state": "SUCCEEDED",
                         "filters": [],
                     },
-                    "process_233701171574273295": {
+                    "process_233701171574273295@root": {
                         "description": "1",
                         "displayName": "process",
                         "options": {"imageUrl": "/api/open_image/None"},
@@ -306,28 +306,28 @@ def test_graph_with_subgraph(test_context) -> None:
                 "state": "SUCCEEDED",
                 "filters": [],
             },
-            "first_remote_task_5853681373678254252": {
+            "first_remote_task_5853681373678254252@root": {
                 "description": "A",
                 "displayName": "first_remote_task",
                 "options": {"imageUrl": "/api/open_image/None"},
                 "state": "SUCCEEDED",
                 "filters": [],
             },
-            "first_remote_task_9127585202725469312": {
+            "first_remote_task_9127585202725469312@root": {
                 "description": "B",
                 "displayName": "first_remote_task",
                 "options": {"imageUrl": "/api/open_image/None"},
                 "state": "SUCCEEDED",
                 "filters": [],
             },
-            "second_remote_task_515883902965165000": {
+            "second_remote_task_515883902965165000@root": {
                 "description": "C",
                 "displayName": "second_remote_task",
                 "options": {"imageUrl": "/api/open_image/None"},
                 "state": "SUCCEEDED",
                 "filters": [],
             },
-            "second_remote_task_5285937878639420607": {
+            "second_remote_task_5285937878639420607@root": {
                 "description": "E",
                 "displayName": "second_remote_task",
                 "options": {"imageUrl": "/api/open_image/None"},
@@ -359,50 +359,50 @@ def test_graph_with_nested_subgraph(test_context) -> None:
     assert workflow_graph == {
         "skeleton": [
             {
-                "id": "first_remote_task_5853681373678254252",
+                "id": "first_remote_task_5853681373678254252@root",
                 "next": [
                     {
                         "definition": [
                             {
-                                "id": "first_remote_task_6887003575492202486",
+                                "id": "first_remote_task_6887003575492202486@root",
                                 "next": [
                                     {
                                         "definition": [
                                             {
-                                                "id": "process_1249338321095799059",
+                                                "id": "process_1249338321095799059@root",
                                                 "next": [
                                                     {
-                                                        "id": "gather_953911728064552612",
+                                                        "id": "gather_953911728064552612@root",
                                                         "type": "execution",
                                                     }
                                                 ],
                                                 "type": "execution",
                                             },
                                             {
-                                                "id": "process_233701171574273295",
+                                                "id": "process_233701171574273295@root",
                                                 "next": [
                                                     {
-                                                        "id": "gather_953911728064552612",
+                                                        "id": "gather_953911728064552612@root",
                                                         "type": "execution",
                                                     }
                                                 ],
                                                 "type": "execution",
                                             },
                                             {
-                                                "id": "process_769528195660308509",
+                                                "id": "process_769528195660308509@root",
                                                 "next": [
                                                     {
-                                                        "id": "gather_953911728064552612",
+                                                        "id": "gather_953911728064552612@root",
                                                         "type": "execution",
                                                     }
                                                 ],
                                                 "type": "execution",
                                             },
                                         ],
-                                        "id": "build_dynamic_graph_8489924182449729796",
+                                        "id": "build_dynamic_graph_8489924182449729796@root",
                                         "next": [
                                             {
-                                                "id": "second_remote_task_1495977790541020021",
+                                                "id": "second_remote_task_1495977790541020021@root",
                                                 "type": "execution",
                                             }
                                         ],
@@ -412,10 +412,10 @@ def test_graph_with_nested_subgraph(test_context) -> None:
                                 "type": "execution",
                             }
                         ],
-                        "id": "build_outer_dynamic_graph_158261362583886983",
+                        "id": "build_outer_dynamic_graph_158261362583886983@root",
                         "next": [
                             {
-                                "id": "second_remote_task_515883902965165000",
+                                "id": "second_remote_task_515883902965165000@root",
                                 "type": "execution",
                             }
                         ],
@@ -426,35 +426,35 @@ def test_graph_with_nested_subgraph(test_context) -> None:
             }
         ],
         "state": {
-            "build_outer_dynamic_graph_158261362583886983": {
+            "build_outer_dynamic_graph_158261362583886983@root": {
                 "description": "outer",
                 "displayName": "build_outer_dynamic_graph",
                 "groupMeta": {
-                    "build_dynamic_graph_8489924182449729796": {
+                    "build_dynamic_graph_8489924182449729796@root": {
                         "description": "inner",
                         "displayName": "build_dynamic_graph",
                         "groupMeta": {
-                            "gather_953911728064552612": {
+                            "gather_953911728064552612@root": {
                                 "displayName": "gather",
                                 "options": {"imageUrl": "/api/open_image/None"},
                                 "state": "SUCCEEDED",
                                 "filters": [],
                             },
-                            "process_1249338321095799059": {
+                            "process_1249338321095799059@root": {
                                 "description": "0",
                                 "displayName": "process",
                                 "options": {"imageUrl": "/api/open_image/None"},
                                 "state": "SUCCEEDED",
                                 "filters": [],
                             },
-                            "process_769528195660308509": {
+                            "process_769528195660308509@root": {
                                 "description": "2",
                                 "displayName": "process",
                                 "options": {"imageUrl": "/api/open_image/None"},
                                 "state": "SUCCEEDED",
                                 "filters": [],
                             },
-                            "process_233701171574273295": {
+                            "process_233701171574273295@root": {
                                 "description": "1",
                                 "displayName": "process",
                                 "options": {"imageUrl": "/api/open_image/None"},
@@ -467,14 +467,14 @@ def test_graph_with_nested_subgraph(test_context) -> None:
                         "state": "SUCCEEDED",
                         "filters": [],
                     },
-                    "first_remote_task_6887003575492202486": {
+                    "first_remote_task_6887003575492202486@root": {
                         "description": "1",
                         "displayName": "first_remote_task",
                         "options": {"imageUrl": "/api/open_image/None"},
                         "state": "SUCCEEDED",
                         "filters": [],
                     },
-                    "second_remote_task_1495977790541020021": {
+                    "second_remote_task_1495977790541020021@root": {
                         "description": "2",
                         "displayName": "second_remote_task",
                         "options": {"imageUrl": "/api/open_image/None"},
@@ -487,14 +487,14 @@ def test_graph_with_nested_subgraph(test_context) -> None:
                 "state": "SUCCEEDED",
                 "filters": [],
             },
-            "first_remote_task_5853681373678254252": {
+            "first_remote_task_5853681373678254252@root": {
                 "description": "A",
                 "displayName": "first_remote_task",
                 "options": {"imageUrl": "/api/open_image/None"},
                 "state": "SUCCEEDED",
                 "filters": [],
             },
-            "second_remote_task_515883902965165000": {
+            "second_remote_task_515883902965165000@root": {
                 "description": "C",
                 "displayName": "second_remote_task",
                 "options": {"imageUrl": "/api/open_image/None"},
@@ -529,13 +529,13 @@ def test_dry_run(test_context):
     assert workflow_graph == {
         "skeleton": [
             {
-                "id": "first_remote_task_5853681373678254252",
+                "id": "first_remote_task_5853681373678254252@root",
                 "next": [
                     {
-                        "id": "task_raises_exception_7987921158939132894",
+                        "id": "task_raises_exception_7987921158939132894@root",
                         "next": [
                             {
-                                "id": "downstream_task_7387449625048986638",
+                                "id": "downstream_task_7387449625048986638@root",
                                 "type": "execution",
                             }
                         ],
@@ -545,10 +545,10 @@ def test_dry_run(test_context):
                 "type": "execution",
             },
             {
-                "id": "second_remote_task_676171833471223058",
+                "id": "second_remote_task_676171833471223058@root",
                 "next": [
                     {
-                        "id": "task_raises_exception_7987921158939132894",
+                        "id": "task_raises_exception_7987921158939132894@root",
                         "type": "execution",
                     }
                 ],
@@ -556,28 +556,28 @@ def test_dry_run(test_context):
             },
         ],
         "state": {
-            "downstream_task_7387449625048986638": {
+            "downstream_task_7387449625048986638@root": {
                 "description": "D",
                 "displayName": "downstream_task",
                 "options": {"imageUrl": "/api/open_image/None"},
                 "state": "NO_STATE_RUNTIME",
                 "filters": [],
             },
-            "first_remote_task_5853681373678254252": {
+            "first_remote_task_5853681373678254252@root": {
                 "description": "A",
                 "displayName": "first_remote_task",
                 "options": {"imageUrl": "/api/open_image/None"},
                 "state": "NO_STATE_RUNTIME",
                 "filters": [],
             },
-            "second_remote_task_676171833471223058": {
+            "second_remote_task_676171833471223058@root": {
                 "description": "B",
                 "displayName": "second_remote_task",
                 "options": {"imageUrl": "/api/open_image/None"},
                 "state": "NO_STATE_RUNTIME",
                 "filters": [],
             },
-            "task_raises_exception_7987921158939132894": {
+            "task_raises_exception_7987921158939132894@root": {
                 "displayName": "task_raises_exception",
                 "options": {"imageUrl": "/api/open_image/None"},
                 "state": "NO_STATE_RUNTIME",
@@ -596,13 +596,13 @@ def test_dry_run(test_context):
     assert workflow_graph == {
         "skeleton": [
             {
-                "id": "first_remote_task_5853681373678254252",
+                "id": "first_remote_task_5853681373678254252@root",
                 "next": [
                     {
-                        "id": "task_raises_exception_7987921158939132894",
+                        "id": "task_raises_exception_7987921158939132894@root",
                         "next": [
                             {
-                                "id": "downstream_task_7387449625048986638",
+                                "id": "downstream_task_7387449625048986638@root",
                                 "type": "execution",
                             }
                         ],
@@ -612,10 +612,10 @@ def test_dry_run(test_context):
                 "type": "execution",
             },
             {
-                "id": "second_remote_task_676171833471223058",
+                "id": "second_remote_task_676171833471223058@root",
                 "next": [
                     {
-                        "id": "task_raises_exception_7987921158939132894",
+                        "id": "task_raises_exception_7987921158939132894@root",
                         "type": "execution",
                     }
                 ],
@@ -623,28 +623,28 @@ def test_dry_run(test_context):
             },
         ],
         "state": {
-            "downstream_task_7387449625048986638": {
+            "downstream_task_7387449625048986638@root": {
                 "description": "D",
                 "displayName": "downstream_task",
                 "options": {"imageUrl": "/api/open_image/None"},
                 "state": "SKIPPED",
                 "filters": [],
             },
-            "first_remote_task_5853681373678254252": {
+            "first_remote_task_5853681373678254252@root": {
                 "description": "A",
                 "displayName": "first_remote_task",
                 "options": {"imageUrl": "/api/open_image/None"},
                 "state": "SUCCEEDED",
                 "filters": [],
             },
-            "second_remote_task_676171833471223058": {
+            "second_remote_task_676171833471223058@root": {
                 "description": "B",
                 "displayName": "second_remote_task",
                 "options": {"imageUrl": "/api/open_image/None"},
                 "state": "SUCCEEDED",
                 "filters": [],
             },
-            "task_raises_exception_7987921158939132894": {
+            "task_raises_exception_7987921158939132894@root": {
                 "displayName": "task_raises_exception",
                 "options": {"imageUrl": "/api/open_image/None"},
                 "state": "FAILED",
@@ -674,28 +674,28 @@ def test_nested_subgraph_exception(test_context):
     assert workflow_graph == {
         "skeleton": [
             {
-                "id": "first_remote_task_622694496276132102",
+                "id": "first_remote_task_622694496276132102@root",
                 "next": [
                     {
                         "definition": [
                             {
-                                "id": "first_remote_task_4354636849745123453",
+                                "id": "first_remote_task_4354636849745123453@root",
                                 "next": [
                                     {
                                         "definition": [
                                             {
-                                                "id": "first_remote_task_585718492867373215",
+                                                "id": "first_remote_task_585718492867373215@root",
                                                 "next": [
                                                     {
                                                         "definition": [
                                                             {
-                                                                "id": "first_remote_task_1266614367364410665",
+                                                                "id": "first_remote_task_1266614367364410665@root",
                                                                 "next": [
                                                                     {
-                                                                        "id": "task_raises_exception_7987921158939132894",
+                                                                        "id": "task_raises_exception_7987921158939132894@root",
                                                                         "next": [
                                                                             {
-                                                                                "id": "downstream_task_1729752314654233457",
+                                                                                "id": "downstream_task_1729752314654233457@root",
                                                                                 "type": "execution",
                                                                             }
                                                                         ],
@@ -705,10 +705,10 @@ def test_nested_subgraph_exception(test_context):
                                                                 "type": "execution",
                                                             }
                                                         ],
-                                                        "id": "build_subgraph_raise_exception_73064815128233683",
+                                                        "id": "build_subgraph_raise_exception_73064815128233683@root",
                                                         "next": [
                                                             {
-                                                                "id": "downstream_task_996890076328576708",
+                                                                "id": "downstream_task_996890076328576708@root",
                                                                 "type": "execution",
                                                             }
                                                         ],
@@ -718,10 +718,10 @@ def test_nested_subgraph_exception(test_context):
                                                 "type": "execution",
                                             }
                                         ],
-                                        "id": "build_subgraph_raise_exception_8677713435736951116",
+                                        "id": "build_subgraph_raise_exception_8677713435736951116@root",
                                         "next": [
                                             {
-                                                "id": "downstream_task_761239220978431871",
+                                                "id": "downstream_task_761239220978431871@root",
                                                 "type": "execution",
                                             }
                                         ],
@@ -731,10 +731,10 @@ def test_nested_subgraph_exception(test_context):
                                 "type": "execution",
                             }
                         ],
-                        "id": "build_subgraph_raise_exception_8675553929825435414",
+                        "id": "build_subgraph_raise_exception_8675553929825435414@root",
                         "next": [
                             {
-                                "id": "downstream_task_1247900954076572334",
+                                "id": "downstream_task_1247900954076572334@root",
                                 "type": "execution",
                             }
                         ],
@@ -745,19 +745,19 @@ def test_nested_subgraph_exception(test_context):
             }
         ],
         "state": {
-            "build_subgraph_raise_exception_8675553929825435414": {
+            "build_subgraph_raise_exception_8675553929825435414@root": {
                 "description": "2",
                 "displayName": "build_subgraph_raise_exception",
                 "groupMeta": {
-                    "build_subgraph_raise_exception_8677713435736951116": {
+                    "build_subgraph_raise_exception_8677713435736951116@root": {
                         "description": "1",
                         "displayName": "build_subgraph_raise_exception",
                         "groupMeta": {
-                            "build_subgraph_raise_exception_73064815128233683": {
+                            "build_subgraph_raise_exception_73064815128233683@root": {
                                 "description": "0",
                                 "displayName": "build_subgraph_raise_exception",
                                 "groupMeta": {
-                                    "downstream_task_1729752314654233457": {
+                                    "downstream_task_1729752314654233457@root": {
                                         "description": "depth_0",
                                         "displayName": "downstream_task",
                                         "options": {
@@ -766,7 +766,7 @@ def test_nested_subgraph_exception(test_context):
                                         "state": "NO_STATE_RUNTIME",
                                         "filters": [],
                                     },
-                                    "first_remote_task_1266614367364410665": {
+                                    "first_remote_task_1266614367364410665@root": {
                                         "description": "depth_0",
                                         "displayName": "first_remote_task",
                                         "options": {
@@ -775,7 +775,7 @@ def test_nested_subgraph_exception(test_context):
                                         "state": "NO_STATE_RUNTIME",
                                         "filters": [],
                                     },
-                                    "task_raises_exception_7987921158939132894": {
+                                    "task_raises_exception_7987921158939132894@root": {
                                         "displayName": "task_raises_exception",
                                         "options": {
                                             "imageUrl": "/api/open_image/None"
@@ -789,14 +789,14 @@ def test_nested_subgraph_exception(test_context):
                                 "state": "NO_STATE_RUNTIME",
                                 "filters": [],
                             },
-                            "downstream_task_996890076328576708": {
+                            "downstream_task_996890076328576708@root": {
                                 "description": "depth_1",
                                 "displayName": "downstream_task",
                                 "options": {"imageUrl": "/api/open_image/None"},
                                 "state": "NO_STATE_RUNTIME",
                                 "filters": [],
                             },
-                            "first_remote_task_585718492867373215": {
+                            "first_remote_task_585718492867373215@root": {
                                 "description": "depth_1",
                                 "displayName": "first_remote_task",
                                 "options": {"imageUrl": "/api/open_image/None"},
@@ -809,14 +809,14 @@ def test_nested_subgraph_exception(test_context):
                         "state": "NO_STATE_RUNTIME",
                         "filters": [],
                     },
-                    "downstream_task_761239220978431871": {
+                    "downstream_task_761239220978431871@root": {
                         "description": "depth_2",
                         "displayName": "downstream_task",
                         "options": {"imageUrl": "/api/open_image/None"},
                         "state": "NO_STATE_RUNTIME",
                         "filters": [],
                     },
-                    "first_remote_task_4354636849745123453": {
+                    "first_remote_task_4354636849745123453@root": {
                         "description": "depth_2",
                         "displayName": "first_remote_task",
                         "options": {"imageUrl": "/api/open_image/None"},
@@ -829,14 +829,14 @@ def test_nested_subgraph_exception(test_context):
                 "state": "NO_STATE_RUNTIME",
                 "filters": [],
             },
-            "downstream_task_1247900954076572334": {
+            "downstream_task_1247900954076572334@root": {
                 "description": "depth_3",
                 "displayName": "downstream_task",
                 "options": {"imageUrl": "/api/open_image/None"},
                 "state": "NO_STATE_RUNTIME",
                 "filters": [],
             },
-            "first_remote_task_622694496276132102": {
+            "first_remote_task_622694496276132102@root": {
                 "description": "depth_3",
                 "displayName": "first_remote_task",
                 "options": {"imageUrl": "/api/open_image/None"},
@@ -859,28 +859,28 @@ def test_nested_subgraph_exception(test_context):
     assert workflow_graph == {
         "skeleton": [
             {
-                "id": "first_remote_task_622694496276132102",
+                "id": "first_remote_task_622694496276132102@root",
                 "next": [
                     {
                         "definition": [
                             {
-                                "id": "first_remote_task_4354636849745123453",
+                                "id": "first_remote_task_4354636849745123453@root",
                                 "next": [
                                     {
                                         "definition": [
                                             {
-                                                "id": "first_remote_task_585718492867373215",
+                                                "id": "first_remote_task_585718492867373215@root",
                                                 "next": [
                                                     {
                                                         "definition": [
                                                             {
-                                                                "id": "first_remote_task_1266614367364410665",
+                                                                "id": "first_remote_task_1266614367364410665@root",
                                                                 "next": [
                                                                     {
-                                                                        "id": "task_raises_exception_7987921158939132894",
+                                                                        "id": "task_raises_exception_7987921158939132894@root",
                                                                         "next": [
                                                                             {
-                                                                                "id": "downstream_task_1729752314654233457",
+                                                                                "id": "downstream_task_1729752314654233457@root",
                                                                                 "type": "execution",
                                                                             }
                                                                         ],
@@ -890,10 +890,10 @@ def test_nested_subgraph_exception(test_context):
                                                                 "type": "execution",
                                                             }
                                                         ],
-                                                        "id": "build_subgraph_raise_exception_73064815128233683",
+                                                        "id": "build_subgraph_raise_exception_73064815128233683@root",
                                                         "next": [
                                                             {
-                                                                "id": "downstream_task_996890076328576708",
+                                                                "id": "downstream_task_996890076328576708@root",
                                                                 "type": "execution",
                                                             }
                                                         ],
@@ -903,10 +903,10 @@ def test_nested_subgraph_exception(test_context):
                                                 "type": "execution",
                                             }
                                         ],
-                                        "id": "build_subgraph_raise_exception_8677713435736951116",
+                                        "id": "build_subgraph_raise_exception_8677713435736951116@root",
                                         "next": [
                                             {
-                                                "id": "downstream_task_761239220978431871",
+                                                "id": "downstream_task_761239220978431871@root",
                                                 "type": "execution",
                                             }
                                         ],
@@ -916,10 +916,10 @@ def test_nested_subgraph_exception(test_context):
                                 "type": "execution",
                             }
                         ],
-                        "id": "build_subgraph_raise_exception_8675553929825435414",
+                        "id": "build_subgraph_raise_exception_8675553929825435414@root",
                         "next": [
                             {
-                                "id": "downstream_task_1247900954076572334",
+                                "id": "downstream_task_1247900954076572334@root",
                                 "type": "execution",
                             }
                         ],
@@ -930,19 +930,19 @@ def test_nested_subgraph_exception(test_context):
             }
         ],
         "state": {
-            "build_subgraph_raise_exception_8675553929825435414": {
+            "build_subgraph_raise_exception_8675553929825435414@root": {
                 "description": "2",
                 "displayName": "build_subgraph_raise_exception",
                 "groupMeta": {
-                    "build_subgraph_raise_exception_8677713435736951116": {
+                    "build_subgraph_raise_exception_8677713435736951116@root": {
                         "description": "1",
                         "displayName": "build_subgraph_raise_exception",
                         "groupMeta": {
-                            "build_subgraph_raise_exception_73064815128233683": {
+                            "build_subgraph_raise_exception_73064815128233683@root": {
                                 "description": "0",
                                 "displayName": "build_subgraph_raise_exception",
                                 "groupMeta": {
-                                    "downstream_task_1729752314654233457": {
+                                    "downstream_task_1729752314654233457@root": {
                                         "description": "depth_0",
                                         "displayName": "downstream_task",
                                         "options": {
@@ -951,7 +951,7 @@ def test_nested_subgraph_exception(test_context):
                                         "state": "SKIPPED",
                                         "filters": [],
                                     },
-                                    "first_remote_task_1266614367364410665": {
+                                    "first_remote_task_1266614367364410665@root": {
                                         "description": "depth_0",
                                         "displayName": "first_remote_task",
                                         "options": {
@@ -960,7 +960,7 @@ def test_nested_subgraph_exception(test_context):
                                         "state": "SUCCEEDED",
                                         "filters": [],
                                     },
-                                    "task_raises_exception_7987921158939132894": {
+                                    "task_raises_exception_7987921158939132894@root": {
                                         "displayName": "task_raises_exception",
                                         "options": {
                                             "imageUrl": "/api/open_image/None"
@@ -974,14 +974,14 @@ def test_nested_subgraph_exception(test_context):
                                 "state": "FAILED",
                                 "filters": [],
                             },
-                            "downstream_task_996890076328576708": {
+                            "downstream_task_996890076328576708@root": {
                                 "description": "depth_1",
                                 "displayName": "downstream_task",
                                 "options": {"imageUrl": "/api/open_image/None"},
                                 "state": "SKIPPED",
                                 "filters": [],
                             },
-                            "first_remote_task_585718492867373215": {
+                            "first_remote_task_585718492867373215@root": {
                                 "description": "depth_1",
                                 "displayName": "first_remote_task",
                                 "options": {"imageUrl": "/api/open_image/None"},
@@ -994,14 +994,14 @@ def test_nested_subgraph_exception(test_context):
                         "state": "FAILED",
                         "filters": [],
                     },
-                    "downstream_task_761239220978431871": {
+                    "downstream_task_761239220978431871@root": {
                         "description": "depth_2",
                         "displayName": "downstream_task",
                         "options": {"imageUrl": "/api/open_image/None"},
                         "state": "SKIPPED",
                         "filters": [],
                     },
-                    "first_remote_task_4354636849745123453": {
+                    "first_remote_task_4354636849745123453@root": {
                         "description": "depth_2",
                         "displayName": "first_remote_task",
                         "options": {"imageUrl": "/api/open_image/None"},
@@ -1014,14 +1014,14 @@ def test_nested_subgraph_exception(test_context):
                 "state": "FAILED",
                 "filters": [],
             },
-            "downstream_task_1247900954076572334": {
+            "downstream_task_1247900954076572334@root": {
                 "description": "depth_3",
                 "displayName": "downstream_task",
                 "options": {"imageUrl": "/api/open_image/None"},
                 "state": "SKIPPED",
                 "filters": [],
             },
-            "first_remote_task_622694496276132102": {
+            "first_remote_task_622694496276132102@root": {
                 "description": "depth_3",
                 "displayName": "first_remote_task",
                 "options": {"imageUrl": "/api/open_image/None"},
@@ -1057,48 +1057,48 @@ def test_graph_with_subgraph_dry_run(test_context) -> None:
     assert workflow_graph == {
         "skeleton": [
             {
-                "id": "first_remote_task_5853681373678254252",
+                "id": "first_remote_task_5853681373678254252@root",
                 "next": [
                     {
-                        "id": "first_remote_task_9127585202725469312",
+                        "id": "first_remote_task_9127585202725469312@root",
                         "next": [
                             {
                                 "definition": [
                                     {
-                                        "id": "process_1249338321095799059",
+                                        "id": "process_1249338321095799059@root",
                                         "next": [
                                             {
-                                                "id": "gather_953911728064552612",
+                                                "id": "gather_953911728064552612@root",
                                                 "type": "execution",
                                             }
                                         ],
                                         "type": "execution",
                                     },
                                     {
-                                        "id": "process_233701171574273295",
+                                        "id": "process_233701171574273295@root",
                                         "next": [
                                             {
-                                                "id": "gather_953911728064552612",
+                                                "id": "gather_953911728064552612@root",
                                                 "type": "execution",
                                             }
                                         ],
                                         "type": "execution",
                                     },
                                     {
-                                        "id": "process_769528195660308509",
+                                        "id": "process_769528195660308509@root",
                                         "next": [
                                             {
-                                                "id": "gather_953911728064552612",
+                                                "id": "gather_953911728064552612@root",
                                                 "type": "execution",
                                             }
                                         ],
                                         "type": "execution",
                                     },
                                 ],
-                                "id": "build_dynamic_graph_612779823428977686",
+                                "id": "build_dynamic_graph_612779823428977686@root",
                                 "next": [
                                     {
-                                        "id": "second_remote_task_4535734521694034287",
+                                        "id": "second_remote_task_4535734521694034287@root",
                                         "type": "execution",
                                     }
                                 ],
@@ -1108,10 +1108,10 @@ def test_graph_with_subgraph_dry_run(test_context) -> None:
                         "type": "execution",
                     },
                     {
-                        "id": "second_remote_task_515883902965165000",
+                        "id": "second_remote_task_515883902965165000@root",
                         "next": [
                             {
-                                "id": "build_dynamic_graph_612779823428977686",
+                                "id": "build_dynamic_graph_612779823428977686@root",
                                 "type": "group",
                             }
                         ],
@@ -1122,30 +1122,30 @@ def test_graph_with_subgraph_dry_run(test_context) -> None:
             }
         ],
         "state": {
-            "build_dynamic_graph_612779823428977686": {
+            "build_dynamic_graph_612779823428977686@root": {
                 "displayName": "build_dynamic_graph",
                 "groupMeta": {
-                    "gather_953911728064552612": {
+                    "gather_953911728064552612@root": {
                         "displayName": "gather",
                         "options": {"imageUrl": "/api/open_image/None"},
                         "state": "NO_STATE_RUNTIME",
                         "filters": [],
                     },
-                    "process_1249338321095799059": {
+                    "process_1249338321095799059@root": {
                         "description": "0",
                         "displayName": "process",
                         "options": {"imageUrl": "/api/open_image/None"},
                         "state": "NO_STATE_RUNTIME",
                         "filters": [],
                     },
-                    "process_769528195660308509": {
+                    "process_769528195660308509@root": {
                         "description": "2",
                         "displayName": "process",
                         "options": {"imageUrl": "/api/open_image/None"},
                         "state": "NO_STATE_RUNTIME",
                         "filters": [],
                     },
-                    "process_233701171574273295": {
+                    "process_233701171574273295@root": {
                         "description": "1",
                         "displayName": "process",
                         "options": {"imageUrl": "/api/open_image/None"},
@@ -1158,28 +1158,28 @@ def test_graph_with_subgraph_dry_run(test_context) -> None:
                 "state": "NO_STATE_RUNTIME",
                 "filters": [],
             },
-            "first_remote_task_5853681373678254252": {
+            "first_remote_task_5853681373678254252@root": {
                 "description": "A",
                 "displayName": "first_remote_task",
                 "options": {"imageUrl": "/api/open_image/None"},
                 "state": "NO_STATE_RUNTIME",
                 "filters": [],
             },
-            "first_remote_task_9127585202725469312": {
+            "first_remote_task_9127585202725469312@root": {
                 "description": "B",
                 "displayName": "first_remote_task",
                 "options": {"imageUrl": "/api/open_image/None"},
                 "state": "NO_STATE_RUNTIME",
                 "filters": [],
             },
-            "second_remote_task_515883902965165000": {
+            "second_remote_task_515883902965165000@root": {
                 "description": "C",
                 "displayName": "second_remote_task",
                 "options": {"imageUrl": "/api/open_image/None"},
                 "state": "NO_STATE_RUNTIME",
                 "filters": [],
             },
-            "second_remote_task_4535734521694034287": {
+            "second_remote_task_4535734521694034287@root": {
                 "description": "D",
                 "displayName": "second_remote_task",
                 "options": {"imageUrl": "/api/open_image/None"},
@@ -1212,50 +1212,50 @@ def test_nested_graph_update_fn(test_context) -> None:
     assert context["outer"] == {
         "skeleton": [
             {
-                "id": "first_remote_task_5853681373678254252",
+                "id": "first_remote_task_5853681373678254252@root",
                 "next": [
                     {
                         "definition": [
                             {
-                                "id": "first_remote_task_6887003575492202486",
+                                "id": "first_remote_task_6887003575492202486@root",
                                 "next": [
                                     {
                                         "definition": [
                                             {
-                                                "id": "process_1249338321095799059",
+                                                "id": "process_1249338321095799059@root",
                                                 "next": [
                                                     {
-                                                        "id": "gather_953911728064552612",
+                                                        "id": "gather_953911728064552612@root",
                                                         "type": "execution",
                                                     }
                                                 ],
                                                 "type": "execution",
                                             },
                                             {
-                                                "id": "process_233701171574273295",
+                                                "id": "process_233701171574273295@root",
                                                 "next": [
                                                     {
-                                                        "id": "gather_953911728064552612",
+                                                        "id": "gather_953911728064552612@root",
                                                         "type": "execution",
                                                     }
                                                 ],
                                                 "type": "execution",
                                             },
                                             {
-                                                "id": "process_769528195660308509",
+                                                "id": "process_769528195660308509@root",
                                                 "next": [
                                                     {
-                                                        "id": "gather_953911728064552612",
+                                                        "id": "gather_953911728064552612@root",
                                                         "type": "execution",
                                                     }
                                                 ],
                                                 "type": "execution",
                                             },
                                         ],
-                                        "id": "build_dynamic_graph_8489924182449729796",
+                                        "id": "build_dynamic_graph_8489924182449729796@root",
                                         "next": [
                                             {
-                                                "id": "second_remote_task_1495977790541020021",
+                                                "id": "second_remote_task_1495977790541020021@root",
                                                 "type": "execution",
                                             }
                                         ],
@@ -1265,10 +1265,10 @@ def test_nested_graph_update_fn(test_context) -> None:
                                 "type": "execution",
                             }
                         ],
-                        "id": "build_outer_dynamic_graph_158261362583886983",
+                        "id": "build_outer_dynamic_graph_158261362583886983@root",
                         "next": [
                             {
-                                "id": "second_remote_task_515883902965165000",
+                                "id": "second_remote_task_515883902965165000@root",
                                 "type": "execution",
                             }
                         ],
@@ -1279,35 +1279,35 @@ def test_nested_graph_update_fn(test_context) -> None:
             }
         ],
         "state": {
-            "build_outer_dynamic_graph_158261362583886983": {
+            "build_outer_dynamic_graph_158261362583886983@root": {
                 "description": "outer",
                 "displayName": "build_outer_dynamic_graph",
                 "groupMeta": {
-                    "build_dynamic_graph_8489924182449729796": {
+                    "build_dynamic_graph_8489924182449729796@root": {
                         "description": "inner",
                         "displayName": "build_dynamic_graph",
                         "groupMeta": {
-                            "gather_953911728064552612": {
+                            "gather_953911728064552612@root": {
                                 "displayName": "gather",
                                 "options": {"imageUrl": "/api/open_image/None"},
                                 "state": "SUCCEEDED",
                                 "filters": [],
                             },
-                            "process_1249338321095799059": {
+                            "process_1249338321095799059@root": {
                                 "description": "0",
                                 "displayName": "process",
                                 "options": {"imageUrl": "/api/open_image/None"},
                                 "state": "SUCCEEDED",
                                 "filters": [],
                             },
-                            "process_769528195660308509": {
+                            "process_769528195660308509@root": {
                                 "description": "2",
                                 "displayName": "process",
                                 "options": {"imageUrl": "/api/open_image/None"},
                                 "state": "SUCCEEDED",
                                 "filters": [],
                             },
-                            "process_233701171574273295": {
+                            "process_233701171574273295@root": {
                                 "description": "1",
                                 "displayName": "process",
                                 "options": {"imageUrl": "/api/open_image/None"},
@@ -1320,14 +1320,14 @@ def test_nested_graph_update_fn(test_context) -> None:
                         "state": "SUCCEEDED",
                         "filters": [],
                     },
-                    "first_remote_task_6887003575492202486": {
+                    "first_remote_task_6887003575492202486@root": {
                         "description": "1",
                         "displayName": "first_remote_task",
                         "options": {"imageUrl": "/api/open_image/None"},
                         "state": "SUCCEEDED",
                         "filters": [],
                     },
-                    "second_remote_task_1495977790541020021": {
+                    "second_remote_task_1495977790541020021@root": {
                         "description": "2",
                         "displayName": "second_remote_task",
                         "options": {"imageUrl": "/api/open_image/None"},
@@ -1340,14 +1340,14 @@ def test_nested_graph_update_fn(test_context) -> None:
                 "state": "SUCCEEDED",
                 "filters": [],
             },
-            "first_remote_task_5853681373678254252": {
+            "first_remote_task_5853681373678254252@root": {
                 "description": "A",
                 "displayName": "first_remote_task",
                 "options": {"imageUrl": "/api/open_image/None"},
                 "state": "SUCCEEDED",
                 "filters": [],
             },
-            "second_remote_task_515883902965165000": {
+            "second_remote_task_515883902965165000@root": {
                 "description": "C",
                 "displayName": "second_remote_task",
                 "options": {"imageUrl": "/api/open_image/None"},
@@ -1360,45 +1360,45 @@ def test_nested_graph_update_fn(test_context) -> None:
     assert context["inner"] == {
         "skeleton": [
             {
-                "id": "first_remote_task_6887003575492202486",
+                "id": "first_remote_task_6887003575492202486@root",
                 "next": [
                     {
                         "definition": [
                             {
-                                "id": "process_1249338321095799059",
+                                "id": "process_1249338321095799059@root",
                                 "next": [
                                     {
-                                        "id": "gather_953911728064552612",
+                                        "id": "gather_953911728064552612@root",
                                         "type": "execution",
                                     }
                                 ],
                                 "type": "execution",
                             },
                             {
-                                "id": "process_233701171574273295",
+                                "id": "process_233701171574273295@root",
                                 "next": [
                                     {
-                                        "id": "gather_953911728064552612",
+                                        "id": "gather_953911728064552612@root",
                                         "type": "execution",
                                     }
                                 ],
                                 "type": "execution",
                             },
                             {
-                                "id": "process_769528195660308509",
+                                "id": "process_769528195660308509@root",
                                 "next": [
                                     {
-                                        "id": "gather_953911728064552612",
+                                        "id": "gather_953911728064552612@root",
                                         "type": "execution",
                                     }
                                 ],
                                 "type": "execution",
                             },
                         ],
-                        "id": "build_dynamic_graph_8489924182449729796",
+                        "id": "build_dynamic_graph_8489924182449729796@root",
                         "next": [
                             {
-                                "id": "second_remote_task_1495977790541020021",
+                                "id": "second_remote_task_1495977790541020021@root",
                                 "type": "execution",
                             }
                         ],
@@ -1409,31 +1409,31 @@ def test_nested_graph_update_fn(test_context) -> None:
             }
         ],
         "state": {
-            "build_dynamic_graph_8489924182449729796": {
+            "build_dynamic_graph_8489924182449729796@root": {
                 "description": "inner",
                 "displayName": "build_dynamic_graph",
                 "groupMeta": {
-                    "gather_953911728064552612": {
+                    "gather_953911728064552612@root": {
                         "displayName": "gather",
                         "options": {"imageUrl": "/api/open_image/None"},
                         "state": "SUCCEEDED",
                         "filters": [],
                     },
-                    "process_1249338321095799059": {
+                    "process_1249338321095799059@root": {
                         "description": "0",
                         "displayName": "process",
                         "options": {"imageUrl": "/api/open_image/None"},
                         "state": "SUCCEEDED",
                         "filters": [],
                     },
-                    "process_769528195660308509": {
+                    "process_769528195660308509@root": {
                         "description": "2",
                         "displayName": "process",
                         "options": {"imageUrl": "/api/open_image/None"},
                         "state": "SUCCEEDED",
                         "filters": [],
                     },
-                    "process_233701171574273295": {
+                    "process_233701171574273295@root": {
                         "description": "1",
                         "displayName": "process",
                         "options": {"imageUrl": "/api/open_image/None"},
@@ -1446,14 +1446,14 @@ def test_nested_graph_update_fn(test_context) -> None:
                 "state": "SUCCEEDED",
                 "filters": [],
             },
-            "first_remote_task_6887003575492202486": {
+            "first_remote_task_6887003575492202486@root": {
                 "description": "1",
                 "displayName": "first_remote_task",
                 "options": {"imageUrl": "/api/open_image/None"},
                 "state": "SUCCEEDED",
                 "filters": [],
             },
-            "second_remote_task_1495977790541020021": {
+            "second_remote_task_1495977790541020021@root": {
                 "description": "2",
                 "displayName": "second_remote_task",
                 "options": {"imageUrl": "/api/open_image/None"},

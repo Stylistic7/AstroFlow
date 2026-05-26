@@ -138,7 +138,10 @@ def record(task: Callable, *args: Any, _after: tuple = ()) -> Node:
     When the constructed Node equals one already in the graph, the
     canonical key is returned (so downstream dep lists hold canonical
     objects) and its `_group_path` is cleared to `()` — a shared
-    computation belongs to no single lexical group.
+    computation has no single canonical lexical scope. The render-
+    time `duplicate_shared_into_consumer_scopes` transform (in
+    `graph_transforms.py`) decides where to render shared Nodes
+    by looking at their consumers' scopes.
     """
     g = _TRACE.get()
     if g is None:
@@ -163,8 +166,8 @@ def record(task: Callable, *args: Any, _after: tuple = ()) -> Node:
         canonical._group_path = ()
         return canonical
     # `_group_path` tags the Node with the active `@workflow_group`
-    # scope for UI grouping. Plain instance attribute — Node has no
-    # __slots__ and __eq__/__hash__ ignore it.
+    # scope. Plain instance attribute — Node has no __slots__ and
+    # __eq__/__hash__ ignore it.
     node._group_path = _GROUP_STACK.get()
     g[node] = list(deps)
     return node

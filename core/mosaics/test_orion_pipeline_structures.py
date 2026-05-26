@@ -46,40 +46,11 @@ def _count_by_op(graph) -> dict[str, int]:
     return counts
 
 
-def _nodes_by_group_name(graph) -> dict[str, list[Node]]:
-    """Bucket every Node by the outermost segment of its
-    `_group_path`. Empty-path Nodes go under `""`."""
-    by_group: dict[str, list[Node]] = defaultdict(list)
-    seen = set()
-    for k, deps in graph.items():
-        for n in [k, *deps]:
-            if not isinstance(n, Node) or id(n) in seen:
-                continue
-            seen.add(id(n))
-            path = getattr(n, "_group_path", ())
-            label = path[0][0] if path else ""
-            by_group[label].append(n)
-    return by_group
-
-
-def _cross_group_edges(graph) -> list[tuple[Node, Node]]:
-    """Edges (downstream, upstream) where the two endpoints'
-    `_group_path` first segments differ. These are the only
-    pairs the viewer renders as inter-group edges."""
-    edges = []
-    for node, deps in graph.items():
-        if not isinstance(node, Node):
-            continue
-        np = getattr(node, "_group_path", ())
-        n_seg = np[0] if np else None
-        for dep in deps:
-            if not isinstance(dep, Node):
-                continue
-            dp = getattr(dep, "_group_path", ())
-            d_seg = dp[0] if dp else None
-            if n_seg != d_seg:
-                edges.append((node, dep))
-    return edges
+def _path_of(node) -> tuple:
+    """A Node's lexical scope. `record()` sets `_group_path` to
+    the active `@workflow_group` stack; on shared re-record the
+    canonical's `_group_path` is cleared to `()`."""
+    return getattr(node, "_group_path", ())
 
 
 def _make_config(*, mock_pixinsight: bool = False) -> ProcessingConfig:
@@ -154,40 +125,36 @@ def test_pi_master_orion_op_counts(test_context):
     assert counts["store_mosaic_color_channel_xisf"] == 1, counts
 
 
-def _format_group_path(node) -> str:
-    """Render a Node's `_group_path` as `name#abcd/name#efgh`. The
-    short hash suffix on each segment disambiguates instances of
-    the same lexical group — e.g. `_channels_for_target` is called
-    once per target, so without the suffix all four instances
-    would render identically and cross-target edges would look
-    like intra-group edges."""
-    path = getattr(node, "_group_path", ())
-    if not path:
+def _format_scope(scope: tuple) -> str:
+    """Render one scope as `name#abcd/name#efgh`. The short hash
+    suffix on each segment disambiguates instances of the same
+    lexical group (e.g. `_channels_for_target` is called once per
+    target — without the suffix all four instances would render
+    identically)."""
+    if not scope:
         return "<top>"
-    return "/".join(f"{name}#{gid[:4]}" for name, gid in path)
+    return "/".join(f"{name}#{gid[:4]}" for name, gid in scope)
 
 
 def _print_full_topology(label: str, graph) -> None:
-    """Dump every Node grouped by lexical group_path, then every
-    edge as `downstream <- upstream` annotated with each
-    endpoint's op name + group path. Lets a human eyeball the
-    full structure of a small graph like the Orion mosaic."""
-    # Bucket Nodes by full group_path (so nested groups are
-    # distinct, not lumped under the outermost segment).
-    by_path: dict[tuple, list] = defaultdict(list)
+    """Dump every Node grouped by its lexical scope, then every
+    underlying edge `downstream <- upstream` annotated with each
+    endpoint's op name + scope. Lets a human eyeball the
+    structure of a small traced graph (e.g. the Orion mosaic)
+    before any rendering transforms are applied."""
+    by_scope: dict[tuple, list] = defaultdict(list)
     seen = set()
     for k, deps in graph.items():
         for n in [k, *deps]:
             if not isinstance(n, Node) or n in seen:
                 continue
             seen.add(n)
-            by_path[getattr(n, "_group_path", ())].append(n)
+            by_scope[_path_of(n)].append(n)
 
-    print(f"\n=== {label}: Nodes by group path ===")
-    for path in sorted(by_path.keys(), key=lambda p: tuple(s[0] for s in p)):
-        label_path = _format_group_path(next(iter(by_path[path])))
-        print(f"  [{label_path}]")
-        for n in sorted(by_path[path], key=lambda n: n.task._function.__name__):
+    print(f"\n=== {label}: Nodes by scope ===")
+    for scope in sorted(by_scope.keys(), key=lambda p: tuple(s[0] for s in p)):
+        print(f"  [{_format_scope(scope)}]")
+        for n in sorted(by_scope[scope], key=lambda n: n.task._function.__name__):
             primary = n.args[0] if n.args else "-"
             primary_repr = (
                 f"{type(primary).__name__}({primary.stable_hash[:8]})"
@@ -207,12 +174,11 @@ def _print_full_topology(label: str, graph) -> None:
             if key in seen_edges:
                 continue
             seen_edges.add(key)
-            d_path = _format_group_path(node)
-            u_path = _format_group_path(dep)
-            marker = " *" if d_path != u_path else ""
-            print(f"  [{d_path}] {node.task._function.__name__} "
-                  f"<- [{u_path}] {dep.task._function.__name__}{marker}")
-    print(f"({len(seen_edges)} edges; * marks cross-group)")
+            d_scope = _format_scope(_path_of(node))
+            u_scope = _format_scope(_path_of(dep))
+            print(f"  [{d_scope}] {node.task._function.__name__} "
+                  f"<- [{u_scope}] {dep.task._function.__name__}")
+    print(f"({len(seen_edges)} edges)")
 
 
 @pytest.mark.exhaustive
@@ -244,27 +210,22 @@ def _canonical_nodes(graph) -> list[Node]:
 
 
 @pytest.mark.exhaustive
-def test_pi_master_orion_group_structure(test_context):
-    """Structural invariants of the PI Master trace on Orion.
+def test_pi_master_orion_traced_group_structure(test_context):
+    """Structural invariants of the RAW traced graph (pre any
+    `sanitize_for_display` transforms). With `record()` clearing
+    `_group_path` to `()` on shared re-record:
 
-    Locks in the dedup-clears-group-path semantics of `record()`:
-    a Node re-recorded under a different lexical scope has its
-    `_group_path` cleared to `()`, so no spurious `_channels_for_target`
-    ↔ `_channels_for_target` cross-edges appear in the viewer.
-
-    Specifically, on the 4-pane Orion mosaic with bias/dark/flat
-    cal stacks shared across every pane:
-
-    1. The 3 cal-master `stack_files` Nodes sit at `_group_path = ()`
-       (shared across all four `_post_processed_master` recordings).
-    2. Each of the 4 light-master `stack_files` is inside exactly
-       one `_channels_for_target/_post_processed_master` scope.
-    3. There is one `_channels_for_target` instance per target
-       (4 total), and `merge_target_channel` Nodes live one per
-       instance.
-    4. No edge crosses from one `_channels_for_target` instance
-       to another — shared computation must travel through a
-       top-level Node."""
+    1. The 3 cal-master `stack_files` Nodes end up with
+       `_group_path = ()` (top-level / no canonical home — they
+       were re-recorded inside multiple `_post_processed_master`
+       calls). The render-time
+       `duplicate_shared_into_consumer_scopes` transform decides
+       where to actually display them.
+    2. Each of the 4 light-master `stack_files` has scope
+       `(_channels_for_target, _post_processed_master)` — recorded
+       once, never re-recorded.
+    3. One `_channels_for_target` instance per target (4 total),
+       with `merge_target_channel` at `(_channels_for_target,)`."""
     mosaic = _identify(test_context)
     config = _make_config()
 
@@ -275,19 +236,20 @@ def test_pi_master_orion_group_structure(test_context):
     for n in _canonical_nodes(g):
         nodes_by_op[n.task._function.__name__].append(n)
 
-    # 1. Cal masters at top level.
+    # 1. Cal masters cleared to top-level scope.
     cal_stack_files = [
         n for n in nodes_by_op["stack_files"]
         if type(n.args[0]).__name__ == "CalibrationStack"
     ]
     assert len(cal_stack_files) == 3, cal_stack_files
     for n in cal_stack_files:
-        assert n._group_path == (), (
-            f"cal-master stack_files should sit at top level (shared "
-            f"across targets clears _group_path), got {n._group_path}"
+        assert _path_of(n) == (), (
+            f"cal-master stack_files re-recorded under multiple "
+            f"scopes should have _group_path cleared to (); got "
+            f"{_path_of(n)}"
         )
 
-    # 2. Light masters one per _post_processed_master.
+    # 2. Light masters: one (cft, ppm) scope each.
     light_stack_files = [
         n for n in nodes_by_op["stack_files"]
         if type(n.args[0]).__name__ == "Stack"
@@ -295,48 +257,60 @@ def test_pi_master_orion_group_structure(test_context):
     assert len(light_stack_files) == 4, light_stack_files
     ppm_ids = set()
     for n in light_stack_files:
-        path = n._group_path
-        assert len(path) == 2, (
-            f"light stack_files should be inside _channels_for_target/"
-            f"_post_processed_master, got group_path={path}"
-        )
+        path = _path_of(n)
+        assert len(path) == 2, path
         assert path[0][0] == "_channels_for_target"
         assert path[1][0] == "_post_processed_master"
         ppm_ids.add(path[1][1])
-    # Each light has a distinct _post_processed_master instance.
     assert len(ppm_ids) == 4, ppm_ids
 
-    # 3. One _channels_for_target instance per target, with one
-    #    merge_target_channel each.
+    # 3. One `_channels_for_target` instance per target, one
+    #    merge_target_channel per instance.
     mtc = nodes_by_op["merge_target_channel"]
     assert len(mtc) == 4, mtc
     cft_ids = set()
     for n in mtc:
-        path = n._group_path
+        path = _path_of(n)
         assert len(path) == 1 and path[0][0] == "_channels_for_target", path
         cft_ids.add(path[0][1])
     assert len(cft_ids) == 4, cft_ids
 
-    # 4. No edges cross between two different _channels_for_target
-    #    instances. (Edges to top-level / from outer scope are fine.)
-    for node, deps in g.items():
-        if not isinstance(node, Node):
-            continue
-        n_outer = node._group_path[0] if node._group_path else None
-        n_in_cft = n_outer and n_outer[0] == "_channels_for_target"
-        for dep in deps:
-            if not isinstance(dep, Node):
-                continue
-            d_outer = dep._group_path[0] if dep._group_path else None
-            d_in_cft = d_outer and d_outer[0] == "_channels_for_target"
-            if n_in_cft and d_in_cft and n_outer[1] != d_outer[1]:
-                raise AssertionError(
-                    f"Cross-target edge: "
-                    f"{node.task._function.__name__} in "
-                    f"_channels_for_target#{n_outer[1][:4]} "
-                    f"<- {dep.task._function.__name__} in "
-                    f"_channels_for_target#{d_outer[1][:4]}"
-                )
+
+@pytest.mark.exhaustive
+def test_pi_master_orion_sanitized_duplicates_cal_masters(test_context):
+    """After `sanitize_for_display`, the VisualGraph has cal-master
+    `stack_files` duplicated into each `_post_processed_master`
+    scope — that's the visual-duplication the user wants in the
+    DAG viewer. Each canonical cal-master Node maps to 4
+    VisualNodes (one per Orion target's stack)."""
+    from dependency_graph.visual_graph import to_visual_graph
+    from dependency_graph.graph_transforms import sanitize_for_display
+
+    mosaic = _identify(test_context)
+    config = _make_config()
+
+    import pipelines.pixinsight_master as pi
+    g = trace(pi.for_mosaic._function, mosaic, config)
+
+    vg = sanitize_for_display(to_visual_graph(g))
+
+    # Group VisualNodes by canonical for cal-master ops.
+    by_canonical: dict[Node, list] = defaultdict(list)
+    for vn in vg:
+        if vn.op_name == "stack_files" and type(vn.canonical.args[0]).__name__ == "CalibrationStack":
+            by_canonical[vn.canonical].append(vn)
+    assert len(by_canonical) == 3, list(by_canonical.keys())
+    for canonical, copies in by_canonical.items():
+        scopes = {c.scope for c in copies}
+        assert len(scopes) == 4, (
+            f"cal-master {canonical.task._function.__name__} should be "
+            f"duplicated into 4 _post_processed_master scopes; got "
+            f"{len(scopes)}: {scopes}"
+        )
+        for s in scopes:
+            assert len(s) == 2
+            assert s[0][0] == "_channels_for_target"
+            assert s[1][0] == "_post_processed_master"
 
 
 # ---------------------------------------------------------------------------
@@ -443,15 +417,22 @@ def test_pi_master_graph_update_fn_reflects_runtime_state(test_context):
     snapshot = ref.get()
     assert snapshot is not None and "state" in snapshot
 
-    leaf_state = snapshot["state"].get(node_to_id(leaf))
-    assert leaf_state is not None, (
+    # State entries are keyed by `_entry_id(node, scope) =
+    # <node_to_id>@<scope_suffix>`. Find the rendering(s) of the
+    # leaf in the snapshot.
+    leaf_renderings = [
+        m for k, m in snapshot["state"].items()
+        if k.partition("@")[0] == node_to_id(leaf)
+    ]
+    assert leaf_renderings, (
         f"leaf {node_to_id(leaf)} missing from snapshot state; "
         f"snapshot state keys: {list(snapshot['state'].keys())[:8]}…"
     )
-    assert leaf_state["state"] == "SUCCEEDED", (
-        f"leaf was _mark_done'd but snapshot shows state="
-        f"{leaf_state['state']}: {leaf_state}"
-    )
+    for r in leaf_renderings:
+        assert r["state"] == "SUCCEEDED", (
+            f"leaf was _mark_done'd but snapshot shows state="
+            f"{r['state']}: {r}"
+        )
 
 
 @pytest.mark.exhaustive
@@ -616,6 +597,88 @@ def test_pi_master_filter_sliced_snapshot_shows_succeeded(test_context):
         f"every node from the full snapshot. Missing: "
         f"{set(full_snapshot['state']) - set(sliced['state'])}"
     )
+
+
+@pytest.mark.exhaustive
+def test_pi_master_cal_masters_visually_duplicated_per_stack(test_context):
+    """The viewer renders each cal-master `stack_files` Node ONCE
+    per consuming `_post_processed_master` scope — visual
+    duplication eliminates the criss-cross fan-out from a single
+    top-level cal-master to all four `_channels_for_target`
+    groups. Underlying execution is unchanged; one Node, multiple
+    rendered entries."""
+    mosaic = _identify(test_context)
+    config = _make_config()
+
+    import pipelines.pixinsight_master as pi
+    pi.for_mosaic(mosaic, config)
+
+    key = ("mosaic", mosaic.stable_hash, "PixInsight Master")
+    snapshot = context["workflow_graphs"][key].get()
+
+    # Group state entries by the canonical node_to_id (the prefix
+    # before `@`). Each cal-master Node should have 4 renderings.
+    by_canonical: dict[str, list[str]] = defaultdict(list)
+    for entry_id, meta in snapshot["state"].items():
+        if meta.get("hasControlNode"):
+            continue  # synthetic group entry, not a Node rendering
+        canonical = entry_id.partition("@")[0]
+        by_canonical[canonical].append(entry_id)
+
+    cal_renderings = [
+        eids for canonical, eids in by_canonical.items()
+        if canonical.startswith("stack_files_") and len(eids) > 1
+    ]
+    assert len(cal_renderings) == 3, (
+        f"expected 3 cal-master stack_files Nodes each rendered "
+        f"multiply; got {len(cal_renderings)}. by_canonical: "
+        f"{ {k: len(v) for k, v in by_canonical.items() if k.startswith('stack_files_')} }"
+    )
+    for eids in cal_renderings:
+        assert len(eids) == 4, (
+            f"each cal-master should render 4 times (one per stack); "
+            f"got {len(eids)} entries: {eids}"
+        )
+
+
+@pytest.mark.exhaustive
+def test_pi_master_run_pipeline_done_hidden_from_skeleton(test_context):
+    """`run_pipeline_done` is a sub-runtime terminator added by the
+    `run_pipeline` Ray task — not part of the user's pipeline code.
+    The `remove_transparent_nodes` transform strips it; the
+    sanitized snapshot has no trace of it in skeleton or state."""
+    from dependency_graph.workflow_graph_adapter import to_workflow_graph
+    from compute_graph.compute_graph import run_pipeline_done
+
+    mosaic = _identify(test_context)
+    config = _make_config()
+
+    import pipelines.pixinsight_master as pi
+    pipeline_graph = pi.for_mosaic(mosaic, config)
+
+    # Mimic what `run_pipeline` does: tack the terminator onto the
+    # pipeline's Graph and wrap it in a runtime.
+    depended_on = {d for ds in pipeline_graph.values() for d in ds}
+    terminals = [n for n in pipeline_graph if n not in depended_on]
+    pipeline_graph[run_pipeline_done] = terminals
+    rt = GraphRuntime(pipeline_graph)
+
+    wf = to_workflow_graph(rt)
+
+    def walk(entries):
+        for e in entries:
+            yield e["id"]
+            yield from walk(e.get("definition", []))
+            yield from walk(e.get("next", []))
+
+    for eid in walk(wf["skeleton"]):
+        assert "run_pipeline_done" not in eid, (
+            f"run_pipeline_done leaked into the rendered skeleton: {eid}"
+        )
+    for eid in wf["state"]:
+        assert "run_pipeline_done" not in eid, (
+            f"run_pipeline_done leaked into the rendered state: {eid}"
+        )
 
 
 @pytest.mark.exhaustive

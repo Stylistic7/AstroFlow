@@ -634,6 +634,7 @@ def test_trace(test_context) -> None:
         )
 
 
+@pytest.mark.exhaustive
 @pytest.mark.timeout(600)
 def test_recursive_graph(test_context) -> None:
     dynamic_graph_task = (build_recursive_graph, 5, 10)

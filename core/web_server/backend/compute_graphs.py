@@ -1,5 +1,5 @@
 import ray
-from flask import Blueprint, Response
+from flask import Blueprint, Response, request
 import json
 import subprocess
 
@@ -55,16 +55,60 @@ def workflow_graph_for_mosaic(mosaic_id, pipeline=None, filter=None):
     segment slices the snapshot to nodes whose ancestor closure
     reaches a `filter`-bearing sink — sliced on read here rather
     than written as a separate snapshot, so `graph_update_fn`
-    stays filter-unaware."""
-    wf = context["workflow_graphs"] or {}
+    stays filter-unaware.
+
+    Query param `?raw=1` skips the `sanitize_for_display` transform
+    pipeline and serializes the trace's raw graph (transparent ops
+    visible, shared Nodes not duplicated). Re-traces the pipeline
+    on the spot, so it's slower but only used for debugging when
+    the sanitized view looks wrong."""
     if not pipeline:
         return _EMPTY_WORKFLOW_GRAPH
-    snapshot = _resolve_ref(wf.get(("mosaic", mosaic_id, pipeline)))
+    raw = request.args.get("raw") == "1"
+    if raw:
+        snapshot = _build_raw_workflow_graph(mosaic_id, pipeline)
+    else:
+        wf = context["workflow_graphs"] or {}
+        snapshot = _resolve_ref(wf.get(("mosaic", mosaic_id, pipeline)))
     if snapshot is None:
         return _EMPTY_WORKFLOW_GRAPH
     if filter:
         snapshot = _slice_workflow_graph_by_filter(snapshot, filter)
     return _strip_server_internal_fields(snapshot)
+
+
+def _build_raw_workflow_graph(mosaic_id: str, pipeline_name: str) -> dict | None:
+    """Re-trace `pipeline_name` for the mosaic and serialize WITHOUT
+    the sanitize-for-display transforms. Returns `None` if the
+    mosaic or pipeline isn't found.
+
+    Local imports keep the heavy module deps off the import-time
+    fast path."""
+    from dependency_graph.graph_runtime import GraphRuntime
+    from dependency_graph.workflow_graph_adapter import to_workflow_graph
+    from decisions.settings import ProcessingConfig
+    from mosaics.types import Mosaic
+    from pipelines.registry import get_pipeline
+
+    mosaic_ref = (context["mosaics"] or {}).get(mosaic_id)
+    if mosaic_ref is None:
+        return None
+    mosaic = mosaic_ref.get()
+    settings = context["settings"]
+    config = ProcessingConfig(
+        calibration_stacks=context["calibration_stacks"] or {},
+        development_settings=settings.development_settings,
+        min_frames_in_stack=settings.clustering_settings.min_frames_in_stack,
+    )
+    try:
+        runner = get_pipeline(pipeline_name, processes=Mosaic)
+    except Exception:
+        return None
+    graph = runner(mosaic, config)
+    if graph is None:
+        return None
+    rt = GraphRuntime(graph)
+    return to_workflow_graph(rt, raw=True)
 
 
 def _slice_workflow_graph_by_filter(snapshot: dict, filter: str) -> dict:
@@ -139,11 +183,18 @@ def _json_default(obj):
 
 @compute_graphs_bp.route("/api/node_status/<node_id>")
 def node_status(node_id):
+    # Skeleton ids are mangled `<node_to_id>@<scope_suffix>` so the
+    # same underlying Node can render in multiple consumer groups
+    # (visual duplication). Status entries are keyed by the
+    # canonical `node_to_id` alone — one Node has one status — so
+    # strip the scope suffix before lookup.
+    node_id = node_id.partition("@")[0]
     return json.dumps(context[("node_status", node_id)], default=_json_default)
 
 
 @compute_graphs_bp.route("/api/open_node_result_path/<node_id>")
 def open_node_result_path(node_id):
+    node_id = node_id.partition("@")[0]
     status = context[("node_status", node_id)]
     if "path" in status:
         filename = str(status["path"])
