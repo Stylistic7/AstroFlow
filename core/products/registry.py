@@ -332,6 +332,7 @@ def _bind_producer(
     filename_fn: FilenameFn | None,
     identity: "type[ObjectId]",
     display: str | None = None,
+    final: bool = False,
 ):
     """Register a function as the producer of `identity`-shaped
     artifacts. The on-disk path is keyed by the producer's
@@ -351,6 +352,15 @@ def _bind_producer(
     those entries per-pipeline. Skip for intermediate ops
     (per-strip merges, per-panel placements) that shouldn't appear
     as tap points.
+
+    `final` (default False): marks an op as producing a truly-final
+    deliverable that should survive when the user archives a cart
+    item with "keep finals only". Orthogonal to `display`: many
+    display-labeled ops (e.g. `place_image`, partial `merge_images`)
+    are large intermediates and stay `final=False`; only the
+    pipeline-specific carry-through that re-stores the merged result
+    under a clean identity should be `final=True`. Read by the
+    sweep CLI to decide what to preserve across cart turnover.
 
     Usage::
 
@@ -455,6 +465,10 @@ def _bind_producer(
                 wrapped._display = display
             if hasattr(inner_func, '_display'):
                 wrapped._display = inner_func._display
+            if final:
+                wrapped._final = True
+            if getattr(inner_func, '_final', False):
+                wrapped._final = True
 
         # Register the wrapped op for view-side enumeration.
         _producers[media_type].setdefault(identity, []).append(wrapped)
@@ -468,6 +482,7 @@ def makes_image(
     filename_fn: FilenameFn | None = None,
     identity: type[ObjectId] = None,
     display: str | None = None,
+    final: bool = False,
 ):
     """Decorate an op as the producer of `identity`-shaped images.
 
@@ -494,7 +509,7 @@ def makes_image(
     """
     return _bind_producer(
         MediaType.IMAGE, filename_fn,
-        identity=identity, display=display,
+        identity=identity, display=display, final=final,
     )
 
 
@@ -502,6 +517,7 @@ def makes_video(
     filename_fn: FilenameFn | None = None,
     identity: type[ObjectId] = None,
     display: str | None = None,
+    final: bool = False,
 ):
     """Video counterpart of @makes_image. Same signature; produces a
     video artifact at
@@ -509,5 +525,5 @@ def makes_video(
     """
     return _bind_producer(
         MediaType.VIDEO, filename_fn,
-        identity=identity, display=display,
+        identity=identity, display=display, final=final,
     )

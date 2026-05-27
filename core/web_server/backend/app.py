@@ -233,14 +233,59 @@ def add_to_shopping_cart(object_type, object_id, pipeline_name):
 
 @app.route("/api/shopping_cart/<object_type>/<object_id>/<path:pipeline_name>", methods=["DELETE"])
 def remove_from_shopping_cart(object_type, object_id, pipeline_name):
+    """Remove an item from the live cart. Accepts an optional
+    `preserve` body field — `"all" | "finals" | "none"` (default
+    `"none"`) — that controls whether the item's outputs are
+    snapshotted into `context.archive`. See `state.archive` for
+    the preservation semantics."""
     from web_server.backend.announcer import announce
     from state.actor import state as state_handle
-    cart = list(context.shopping_cart or [])
+    from state.archive import apply_remove_from_cart
+    payload = request.get_json(silent=True) or {}
+    preserve = payload.get("preserve", "none")
     entry = (object_type, object_id, pipeline_name)
-    if entry in cart:
-        cart.remove(entry)
-        context.shopping_cart = cart
-        state_handle.drain_and_restart()
+    apply_remove_from_cart(entry, preserve=preserve)
+    state_handle.drain_and_restart()
+    announce("reload_data")
+    return Response(status=204)
+
+
+@app.route("/api/archive")
+def get_archive():
+    """Snapshot of `context.archive` for the UI's archive panel.
+    Each entry is `[object_type, object_id, pipeline_name, [paths]]`.
+    """
+    from state.archive import get_archive as _get
+    return list(_get())
+
+
+@app.route(
+    "/api/archive/<object_type>/<object_id>/<path:pipeline_name>",
+    methods=["DELETE"],
+)
+def remove_from_archive(object_type, object_id, pipeline_name):
+    """Drop an archive entry. Its preserved paths immediately
+    become orphan-eligible on the next sweep."""
+    from web_server.backend.announcer import announce
+    from state.archive import apply_remove_from_archive
+    apply_remove_from_archive((object_type, object_id, pipeline_name))
+    announce("reload_data")
+    return Response(status=204)
+
+
+@app.route(
+    "/api/archive/<object_type>/<object_id>/<path:pipeline_name>/to_cart",
+    methods=["POST"],
+)
+def move_archive_to_cart(object_type, object_id, pipeline_name):
+    """Re-activate an archived item: drop its archive entry and
+    add it back to the live cart. The pipeline reruns under cart
+    semantics (re-stacked / re-merged with current frames)."""
+    from web_server.backend.announcer import announce
+    from state.actor import state as state_handle
+    from state.archive import apply_move_archive_to_cart
+    apply_move_archive_to_cart((object_type, object_id, pipeline_name))
+    state_handle.drain_and_restart()
     announce("reload_data")
     return Response(status=204)
 

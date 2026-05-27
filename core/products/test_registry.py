@@ -155,3 +155,34 @@ def test_real_run_subframe_producers_resolve_distinctly():
         f"CalibratedStackId producers ({cal}) and UncorrectedRunId "
         f"producers ({unc}) must be distinct sets"
     )
+
+
+# --- final=True on @makes_image marks the user's deliverable --------
+
+def test_final_kwarg_propagates_to_wrapped_op():
+    """`@makes_image(final=True)` sets `_final` on the wrapped op so
+    the sweep CLI's `paths_for_item(finals_only=True)` filter can
+    identify keepers. Unmarked ops should lack `_final` (or have it
+    False)."""
+    from mosaics.final_storage import (
+        store_mosaic_color_channel_xisf,
+        store_mosaic_color_channel_subframe,
+        store_mosaic_color_channel_oss,
+    )
+    from stacks.post_processing.pixinsight import post_process_stack
+
+    for op in (
+        store_mosaic_color_channel_xisf,
+        store_mosaic_color_channel_subframe,
+        store_mosaic_color_channel_oss,
+    ):
+        assert getattr(op, "_final", False) is True, (
+            f"{op.__name__} should be marked final=True"
+        )
+
+    # post_process_stack is a per-Stack intermediate from the mosaic
+    # user's perspective — should NOT be marked final.
+    assert not getattr(post_process_stack, "_final", False), (
+        "post_process_stack must not be final (intermediate from "
+        "the mosaic user's perspective)"
+    )

@@ -426,19 +426,33 @@ def _add_to_shopping_cart(
 def _remove_from_shopping_cart(
     state: State, action: Action
 ) -> tuple[State, list[Action]]:
-    if not context.shopping_cart:
-        context.shopping_cart = []
-
-    print(f"### _remove_from_shopping_cart item {action['item']}")
-    print(f"### current shopping cart is {context.shopping_cart}")
-    if action["item"] in context.shopping_cart:
-        new_cart = list(context.shopping_cart)
-        new_cart.remove(action["item"])
-        context.shopping_cart = new_cart
-
+    """Remove an item from the live cart. The action's optional
+    `preserve` field (`"all" | "finals" | "none"`, default
+    `"none"`) controls whether the item's outputs are snapshotted
+    into `context.archive`. See `state.archive` for semantics."""
+    from state.archive import apply_remove_from_cart
+    preserve = action.get("preserve", "none")
+    apply_remove_from_cart(action["item"], preserve=preserve)
     # TODO: Consider canceling running graphs when items are removed from
     # the shopping cart.
     return state, []
+
+
+def _remove_from_archive(
+    state: State, action: Action
+) -> tuple[State, list[Action]]:
+    from state.archive import apply_remove_from_archive
+    apply_remove_from_archive(action["item"])
+    return state, []
+
+
+def _move_archive_to_cart(
+    state: State, action: Action
+) -> tuple[State, list[Action]]:
+    from state.archive import apply_move_archive_to_cart
+    apply_move_archive_to_cart(action["item"])
+    new_action = dict(type="run_processing_graph", item=action["item"])
+    return state, [new_action]
 
 
 def _graph_done(state: State, action: Action) -> tuple[State, list[Action]]:
@@ -459,6 +473,8 @@ _HANDLERS = {
     "prepare_pix": _prepare_pix,
     "add_to_shopping_cart": _add_to_shopping_cart,
     "remove_from_shopping_cart": _remove_from_shopping_cart,
+    "remove_from_archive": _remove_from_archive,
+    "move_archive_to_cart": _move_archive_to_cart,
     "start_gunicorn": _start_gunicorn,
     "stop_gunicorn": _stop_gunicorn,
     "start_ray_head_node": _start_ray_head_node,

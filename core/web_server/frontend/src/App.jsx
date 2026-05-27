@@ -34,6 +34,7 @@ function App() {
   const [targets, setTargets] = useState({});
   const [mosaics, setMosaics] = useState({});
   const [shoppingCart, setShoppingCart] = useState([]);
+  const [archive, setArchive] = useState([]);
   const [computeGraph, setComputeGraph] = useState({});
   const [computeGraphStatus, setComputeGraphStatus] = useState({});
   const [rayStatus, setRayStatus] = useState({});
@@ -47,12 +48,13 @@ function App() {
 
   useEffect(() => {
     const loadObjectData = async () => {
-      const [s, c, t, m, cart, cg] = await Promise.all([
+      const [s, c, t, m, cart, arch, cg] = await Promise.all([
         fetch('/api/stacks').then(r => r.json()),
         fetch('/api/calibration_stacks').then(r => r.json()),
         fetch('/api/targets').then(r => r.json()),
         fetch('/api/mosaics').then(r => r.json()),
         fetch('/api/shopping_cart').then(r => r.json()),
+        fetch('/api/archive').then(r => r.json()).catch(() => []),
         fetch('/api/compute_graph').then(r => r.json()),
       ]);
 
@@ -61,6 +63,7 @@ function App() {
       setTargets(t);
       setMosaics(m);
       setShoppingCart(cart);
+      setArchive(arch);
       setComputeGraph(cg);
 
       setDataIsAvailable(true);
@@ -212,6 +215,7 @@ function App() {
             targets,
             mosaics,
             shoppingCart,
+            archive,
             computeGraph,
             computeGraphStatus,
             rayStatus,
