@@ -114,20 +114,68 @@ def _build_raw_workflow_graph(mosaic_id: str, pipeline_name: str) -> dict | None
 def _slice_workflow_graph_by_filter(snapshot: dict, filter: str) -> dict:
     """Prune the snapshot's `state` and `skeleton` to entries whose
     `filters` list contains `filter` (or is empty — empty means
-    "shared / global", visible in every slice)."""
+    "shared / global", visible in every slice).
+
+    Group entries' `state` is RE-AGGREGATED from their surviving
+    children, so a group that contained a FAILED descendant only
+    reachable through a hidden filter shows the state of what's
+    still visible (instead of the pre-computed cross-filter
+    aggregate the snapshot baked in)."""
     state = snapshot.get("state", {})
 
-    def visible(node_id):
-        filters = state.get(node_id, {}).get("filters", [])
+    def visible(meta):
+        filters = (meta or {}).get("filters", [])
         return not filters or filter in filters
 
-    new_state = {nid: m for nid, m in state.items() if visible(nid)}
+    def aggregate(states):
+        if not states:
+            return "NO_STATE_RUNTIME"
+        if "FAILED" in states:
+            return "FAILED"
+        if any(s not in ("SUCCEEDED", "SKIPPED", "NO_STATE_RUNTIME") for s in states):
+            return "RUNNING"
+        succeeded = any(s in ("SUCCEEDED", "SKIPPED") for s in states)
+        not_run = any(s == "NO_STATE_RUNTIME" for s in states)
+        if succeeded and not_run:
+            return "RUNNING"
+        if succeeded:
+            return "SUCCEEDED"
+        return "NO_STATE_RUNTIME"
+
+    def slice_meta(m):
+        """Return a copy of `m` with its `groupMeta` filtered to
+        visible children, and its `state` recomputed from those
+        surviving children's states. Returns None if `m` itself
+        isn't visible."""
+        if not visible(m):
+            return None
+        out = dict(m)
+        gm = m.get("groupMeta")
+        if gm:
+            new_gm = {}
+            for k, child in gm.items():
+                sliced = slice_meta(child)
+                if sliced is not None:
+                    new_gm[k] = sliced
+            out["groupMeta"] = new_gm
+            if new_gm:
+                out["state"] = aggregate([c.get("state") for c in new_gm.values()])
+        return out
+
+    new_state: dict[str, dict] = {}
+    for nid, m in state.items():
+        sliced = slice_meta(m)
+        if sliced is not None:
+            new_state[nid] = sliced
+
+    def visible_id(node_id):
+        return visible(state.get(node_id, {}))
 
     def prune(entries):
         out = []
         for e in entries:
             nid = e.get("id")
-            if nid is not None and not visible(nid):
+            if nid is not None and not visible_id(nid):
                 continue
             new_e = dict(e)
             if "next" in new_e:
