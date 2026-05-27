@@ -38,9 +38,24 @@ export default function WorkflowGraph({ theme, url }) {
     // Guard against non-OK responses: under the dev server, a 404
     // returns the SPA's index.html, and JSON-parsing HTML throws the
     // misleading "Unexpected token '<'" error.
+    //
+    // Skip state updates when the fresh response is content-identical
+    // to the cached one. Without this, every `computeGraphStatus`
+    // bump fires `setComputeGraph` with a new object reference even
+    // when the underlying graph hasn't changed; the dagSpec effect
+    // below then re-runs and the DAG library replays its initial
+    // collapsed→expanded animation, producing a visible flash.
     fetch(url)
       .then(r => r.ok ? r.json() : null)
-      .then(s => { if (s) setComputeGraph(s); });
+      .then(s => {
+        if (!s) return;
+        setComputeGraph(prev => {
+          if (prev && JSON.stringify(prev) === JSON.stringify(s)) {
+            return prev;
+          }
+          return s;
+        });
+      });
   }, [url, computeGraphStatus]);
 
 
