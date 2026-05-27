@@ -26,16 +26,17 @@ def _solver_hints_from(master: ImageMetadata, stack: Stack) -> dict:
     already-computed plate solution (compute_image_metadata ran on
     this file as part of the @makes_image trace-hook chain), so the
     body doesn't need to know whether `master` came from a full-res
-    or downscaled stacker — the WCS encodes the actual arcsec/pixel
-    of THIS image."""
-    julian = int(Time(stack.oldest_date).jd)
+    or downscaled stacker — the `image_scale` field encodes the
+    actual arcsec/pixel of THIS image."""
+    julian = float(Time(stack.oldest_date).jd)
     if master.plate_solution is not None:
-        from astropy.wcs import WCS
-        wcs = WCS(master.plate_solution.header)
-        cx, cy = master.width_pixels / 2.0, master.height_pixels / 2.0
-        ra, dec = wcs.all_pix2world(cx, cy, 0)
-        # Pixel scale of the master in arcsec/pixel.
-        arcsec_per_pixel = abs(float(wcs.pixel_scale_matrix[0, 0])) * 3600.0
+        # `PlateSolution.image_scale` is the true pixel scale (with
+        # rotation accounted for); using `wcs.pixel_scale_matrix[0,0]`
+        # only reads the diagonal CD-matrix component, which collapses
+        # to near-zero for rotated images and produces wildly wrong
+        # hints.
+        ra, dec = master.plate_solution.center
+        arcsec_per_pixel = master.plate_solution.image_scale
     else:
         ra, dec = stack.center
         arcsec_per_pixel = stack.image_scale
