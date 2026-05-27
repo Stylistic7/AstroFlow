@@ -203,18 +203,33 @@ def set_workflow_key(*key_parts: Any) -> None:
     `graph_update_fn=partial(...)` and `node_status_fn=...` at Graph
     construction time.
 
+    Two callbacks fire on every node completion:
+      * `store_workflow_graph` — viewer snapshot of the workflow DAG.
+      * `store_cart_snapshot` — flat list of resolved on-disk paths
+        the cart item has produced so far. Read by the sweep CLI
+        and the cart→archive flow.
+
     Mutates the active `Graph` in place — both attributes are mutable
     per `classes.py`.
     """
     g = _TRACE.get()
     if g is None:
         raise RuntimeError("set_workflow_key() called outside a trace")
-    # Local import: workflow_graph_adapter imports from this module
-    # transitively, so import at call time to avoid a cycle.
+    # Local imports: workflow_graph_adapter and runtime_snapshot
+    # both import from this module transitively, so import at call
+    # time to avoid a cycle.
     from dependency_graph.workflow_graph_adapter import (
         store_node_status, store_workflow_graph,
     )
-    g.graph_update_fn = partial(store_workflow_graph, tuple(key_parts))
+    from dependency_graph.runtime_snapshot import store_cart_snapshot
+
+    key = tuple(key_parts)
+
+    def _compound_update(rt):
+        store_workflow_graph(key, rt)
+        store_cart_snapshot(key, rt)
+
+    g.graph_update_fn = _compound_update
     g.node_status_fn = store_node_status
 
 
