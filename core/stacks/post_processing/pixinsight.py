@@ -6,7 +6,9 @@ from pix.tasks import (
     ImageSolver,
     SpectrophotometricFluxCalibration,
     MultiscaleGradientCorrection,
+    GradientCorrection,
 )
+from pix.tasks.filters import normalize_filter
 from decorators import node
 from metadata.classes import ImageMetadata
 from stacks.composite_stack import Stack
@@ -76,9 +78,15 @@ def post_process_stack(
 
     image = Image.open(master.filename, filter=stack.filter)
     solved = ImageSolver(image, **_solver_hints_from(master, stack))
-    result = MultiscaleGradientCorrection(
-        SpectrophotometricFluxCalibration(solved)
-    )
+    if normalize_filter(stack.filter) == "S":
+        # MultiscaleGradientCorrection has no MARS reference data for
+        # SII, so it fails deterministically on S-filter masters. Use
+        # the classic GradientCorrection (no external data) instead.
+        result = GradientCorrection(solved)
+    else:
+        result = MultiscaleGradientCorrection(
+            SpectrophotometricFluxCalibration(solved)
+        )
     result.save_to(output_filename, mock=mock_pixinsight)
 
     return WithSidecar(XisfFilePath(output_filename))
