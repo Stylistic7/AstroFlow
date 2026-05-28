@@ -152,15 +152,7 @@ def _project_in_tiles(
 
     return projected_image[0 : viewbox.num_pixels_y, 0 : viewbox.num_pixels_x]
 
-# Explicit memory ceiling (not auto_memory) because place_image spawns
-# place_tile subtasks and waits for them internally via ray.wait().
-# auto_memory's p95 captured the TOTAL RSS while the parent sat waiting
-# (including the interpolator + accumulated tile results ≈ 10 GB) and
-# then reserved that much — which starved the subtasks of scheduling
-# headroom and deadlocked the cluster. 2 GB covers the parent's own
-# footprint (interpolator + output buffer) while leaving room for many
-# concurrent place_tile subtasks.
-@node
+@node(auto_memory=True)
 @makes_image(identity=PlacedImageId)
 def place_image(
     mosaic: Mosaic, target: Target, filter: str, viewbox: Viewbox,
