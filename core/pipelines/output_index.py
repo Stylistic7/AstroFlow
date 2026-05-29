@@ -18,9 +18,11 @@ Storage uses two diskcache keys per tap:
   `for_object` reads O(taps for this object) instead of scanning
   the full diskcache.
 
-Each tap is what a pipeline author explicitly marked as user-visible.
-Intermediate ops (per-strip merge_images, per-panel place_image)
-leave no `_display` and don't appear here.
+Each tap is what a pipeline author explicitly marked as user-visible
+via `@makes_image(display=...)`. Ops with no `_display` (e.g. per-panel
+`place_image`) don't appear here. Note `merge_images` DOES carry
+`display="Merged"`, so the progressive strip merges show up as the
+"Merged", "Merged 2", … taps.
 """
 
 _PREFIX = "_pipeline_output"

@@ -27,25 +27,65 @@ from pathlib import Path
 from typing import Callable, Optional
 
 import numpy as np
+import pyvips
 
 from hashing import hash_source_code
 from file_io.generic import read_image
-from file_io.tiff_file_io import write_tiff_image
 from previews.operations import autostretch
 from protocols import CacheProtocol
 
 
 def default_make_tile_pyramid(source_path: Path, dest_path: Path) -> None:
-    """Read an image and write a tiled TIFF suitable for serving via large_image.
+    """Read an image and write a *pyramidal* tiled TIFF for serving via
+    large_image / pyvips.
 
-    Autostretches the source, scales to uint8, writes a tiled TIFF
-    with 256x256 tiles and deflate compression. The output is not
-    multi-resolution (no pyramid overviews) — large_image / vips can
-    still serve it cleanly, computing downsampled tiles on the fly.
+    Autostretches the source to uint8, then writes a tiled,
+    multi-resolution TIFF: 256x256 tiles, deflate compression, and
+    factor-2 overview levels stored as extra IFDs. large_image reads
+    the overviews as zoom levels, and the coarsest level doubles as a
+    fast-read thumbnail — so neither a low-zoom tile nor a thumbnail
+    needs to decode the full-resolution image.
     """
-    arr = autostretch(read_image(source_path))
-    arr = (arr * 255.0).astype(np.uint8)
-    write_tiff_image(dest_path, arr, tile=(256, 256))
+    arr = np.ascontiguousarray((autostretch(read_image(source_path)) * 255.0).astype(np.uint8))
+    height, width = arr.shape[:2]
+    bands = 1 if arr.ndim == 2 else arr.shape[2]
+    image = pyvips.Image.new_from_memory(arr.tobytes(), width, height, bands, "uchar")
+    tmp = dest_path.with_suffix(dest_path.suffix + ".tmp")
+    image.tiffsave(
+        str(tmp), tile=True, pyramid=True, compression="deflate",
+        tile_width=256, tile_height=256, bigtiff=True,
+    )
+    os.replace(tmp, dest_path)
+
+
+_THUMBNAIL_MIN_PX = 1200
+
+
+def pyramid_thumbnail(tile_pyramid_path, min_px: int = _THUMBNAIL_MIN_PX) -> bytes:
+    """PNG bytes of the smallest stored pyramid level whose min dimension
+    is >= `min_px`, read verbatim — the browser scales it for display, so
+    there is no server-side resize. Reads only that one level (a few MB),
+    never the full-resolution image.
+
+    For a legacy single-resolution `.tiff` (no overviews) it shrink-on-
+    loads via libvips instead, so it still never materializes full res."""
+    path = os.fspath(tile_pyramid_path)
+    base = pyvips.Image.tiffload(path, page=0)
+    try:
+        n_pages = base.get("n-pages")
+    except pyvips.Error:
+        n_pages = 1
+    if n_pages > 1:
+        # Pyramid levels are factor-2 (page 0 = full res). Pick the
+        # deepest level still >= min_px on its short edge.
+        level, dim = 0, min(base.width, base.height)
+        while level + 1 < n_pages and dim // 2 >= min_px:
+            level += 1
+            dim //= 2
+        image = pyvips.Image.tiffload(path, page=level)
+    else:
+        image = pyvips.Image.thumbnail(path, min_px)
+    return image.write_to_buffer(".png")
 
 
 def make_create_tile_pyramid_decorator(

@@ -2,6 +2,7 @@ import io
 import os
 import dataclasses
 import threading
+from pathlib import Path
 
 import flask
 from flask import Blueprint, abort
@@ -152,7 +153,18 @@ def get_thumbnail_by_id(identity: ObjectId):
     if candidates:
         # Largest, fresher wins.
         candidates.sort(key=lambda t: (t[0], t[1]), reverse=True)
-        _size, _mtime, producer, _path = candidates[0]
+        _size, _mtime, producer, path = candidates[0]
+        # Prefer the pyramidal `.tiff` sibling — serve a small stored
+        # level instead of decoding the (possibly multi-GB) source.
+        tiff = Path(path).with_suffix(".tiff")
+        if tiff.exists():
+            from previews.create_tile_pyramid import pyramid_thumbnail
+            try:
+                return _png_response(pyramid_thumbnail(tiff), producer.__name__)
+            except Exception:
+                pass
+        # No pyramid (e.g. a raw-frame placeholder for an un-built
+        # object) — fall back to the lightweight read+resize path.
         thumbnail = _thumbnail_for(identity, producer)
         if thumbnail:
             return _png_response(thumbnail, producer.__name__)
@@ -191,24 +203,25 @@ def thumbnail_tap(
 ):
     """Thumbnail for a specific (pipeline, tap) of an object.
 
-    Path comes from the PipelineOutputIndex via tap_path_for.
+    Served straight from the tap's pyramidal `.tiff` (a small stored
+    level), never by decoding the full-resolution master.
     `<path:pipeline_and_display>` is `<pipeline>/<display>` joined
     into one URL segment so Flask doesn't need to know that pipeline
     display names contain spaces."""
-    from web_server.backend.metadata import tap_path_for
-    from previews.operations import resize_array, autostretch, array_to_png
+    from web_server.backend.tiles import _tile_pyramid_path_for_tap
+    from previews.create_tile_pyramid import pyramid_thumbnail
     pipeline, _, display = pipeline_and_display.rpartition("/")
     if not pipeline or not display:
         return abort(404)
-    path = tap_path_for(pipeline, display, object_type, object_id, filter)
-    if not path or not os.path.exists(path):
+    tiff = _tile_pyramid_path_for_tap(
+        object_type, object_id, pipeline, display, filter,
+    )
+    if tiff is None:
         return abort(404)
     try:
-        thumbnail = _make_thumbnail(path, resize_array, autostretch, array_to_png)
+        thumbnail = pyramid_thumbnail(tiff)
     except Exception:
         return abort(500)
-    if thumbnail is None:
-        return abort(404)
     return _png_response(thumbnail, display)
 
 

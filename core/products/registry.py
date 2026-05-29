@@ -218,19 +218,15 @@ def _make_call_hash_filename_fn(func: Callable, file_type: type):
     return fn
 
 
-# Auto-generated tile pyramids — anything large enough that scrolling
-# at full resolution would be sluggish gets one. ~8 megapixels is the
-# 4K-display threshold; below that an autostretch + array_to_png
-# thumbnail covers all the cases we care about.
-_TILE_PYRAMID_MIN_PIXELS = 8 * 1024 * 1024
+def _make_tile_pyramid(result) -> "Path | None":
+    """Build a pyramidal tile-pyramid `.tiff` sibling for `result`.
 
-
-def _make_tile_pyramid_if_warranted(result) -> "Path | None":
-    """Build a tile pyramid sibling for `result` iff the image is
-    large enough to justify one. ndarray results are returned by
-    cheap subframe-preview ops — already small, no pyramid needed.
-    File-based results get a `.tiff` sibling when the file's image
-    dimensions exceed 8 megapixels."""
+    The pyramid is the single human-facing artifact: a true
+    multi-resolution TIFF that backs both 1:1 zoom (tiles) and
+    thumbnails (its coarsest level). Always built for file-backed
+    outputs, regardless of size — for a tiny image it is simply one
+    tile. ndarray results (cheap subframe previews) have no on-disk
+    file, so they're skipped."""
     if isinstance(result, np.ndarray):
         return None
     if isinstance(result, tempfile._TemporaryFileWrapper):
@@ -239,19 +235,10 @@ def _make_tile_pyramid_if_warranted(result) -> "Path | None":
         source = Path(os.fspath(result))
     if not source.exists():
         return None
-    # Skip generation if the file itself is already a tiff (it's the
-    # tile pyramid).
+    # The file may already be a tiff (e.g. Subframe mosaics write one
+    # directly) — it serves as its own pyramid.
     if source.suffix.lower() in (".tif", ".tiff"):
         return source
-    # Cheap size check — header-only read.
-    try:
-        from file_io.generic import read_image_geometry
-        geom = read_image_geometry(source)
-        pixels = geom.width_pixels * geom.height_pixels
-    except Exception:
-        pixels = None
-    if pixels is not None and pixels < _TILE_PYRAMID_MIN_PIXELS:
-        return None
     tile_path = source.with_suffix(".tiff")
     try:
         from previews.create_tile_pyramid import default_make_tile_pyramid
@@ -289,18 +276,18 @@ def _generate_presentations(
     func: Callable, result, args: tuple, kwargs: dict,
     identities: list[type],
 ) -> None:
-    """Auto-generate sibling artifacts: a tile pyramid TIFF next to
-    the master output (when the image is large enough to justify
-    one). The web server's bare-thumbnail route lazy-generates the
-    thumbnail PNG on miss from either the pyramid or the master,
-    so we don't pre-build it here.
+    """Auto-generate the sibling pyramidal tile-pyramid TIFF next to
+    every file-backed output. That pyramid is the human-facing
+    artifact: the web server serves both tiles (1:1 zoom) and
+    thumbnails (a coarse pyramid level) from it, so we don't pre-build
+    a separate thumbnail PNG here.
 
     Iterated over each (identity) the @makes_image stack contributed
     — for polymorphic ops the same result is keyed under each
     identity it can be looked up by."""
     if result is None:
         return
-    tile_path = _make_tile_pyramid_if_warranted(result)
+    tile_path = _make_tile_pyramid(result)
     if tile_path is None:
         return
     op_name = func.__name__
