@@ -10,6 +10,7 @@ from pix import Image
 from products import makes_image
 from products.identity import MosaicChannelId, PresentationType
 from decorators import node
+from decisions.settings import ProcessingConfig
 
 THUMBNAIL = PresentationType.THUMBNAIL
 TILE_PYRAMID = PresentationType.TILE_PYRAMID
@@ -17,10 +18,18 @@ from file_io.types import FitsFilePath, TiffFilePath, XisfFilePath, WithSidecar
 from metadata.classes import ImageMetadata
 
 
-@node(resources={"PixInsight": 1}, auto_memory=True)
+def _store_xisf_narrow(args, kwargs):
+    """Cache-key hook: project `config` to its only dependency here,
+    `mock_pixinsight` (in its arg slot)."""
+    mosaic, filter, config, input = args
+    return (mosaic, filter, config.development_settings.mock_pixinsight, input), kwargs
+
+
+@node(resources={"PixInsight": 1}, auto_memory=True,
+      cache_key_narrow=_store_xisf_narrow)
 @makes_image(identity=MosaicChannelId, display="Mosaic", final=True)
 def store_mosaic_color_channel_xisf(
-    mosaic: Mosaic, filter: str, mock_pixinsight: bool,
+    mosaic: Mosaic, filter: str, config: ProcessingConfig,
     input: ImageMetadata,
 ) -> WithSidecar[XisfFilePath]:
     """Persist the merged per-filter PixInsight mosaic master.
@@ -30,9 +39,11 @@ def store_mosaic_color_channel_xisf(
     upstream `merge_images` result) → different bound-args
     call_hash → different output filename. The framework's
     runtime tap-path recorder (in `compute_graph._record_pipeline_
-    taps`) captures whatever path the body wrote to."""
+    taps`) captures whatever path the body wrote to. Takes the whole
+    `config`; the cache key is narrowed to just `mock_pixinsight`."""
+    mock_pixinsight = config.development_settings.mock_pixinsight
     output = store_mosaic_color_channel_xisf.filename_fn(
-        mosaic, filter, mock_pixinsight, input,
+        mosaic, filter, config, input,
     )
     output.parent.mkdir(parents=True, exist_ok=True)
     image = Image.open(input.filename, filter=filter)

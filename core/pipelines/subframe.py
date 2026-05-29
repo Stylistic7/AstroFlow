@@ -67,7 +67,6 @@ def for_target(target, config):
 def for_mosaic(mosaic, config):
     """Subframe preview mosaic, end to end. Returns
     `{filter: sink_metadata}`."""
-    del config
     targets_by_id = {t.id: t for t in mosaic.targets}
 
     channels = {
@@ -85,7 +84,7 @@ def for_mosaic(mosaic, config):
         for strip in mosaic.strips:
             placed = [
                 place_image(mosaic, targets_by_id[tid], filter, viewbox,
-                            channels[(tid, filter)])
+                            config, channels[(tid, filter)])
                 for tid in strip if (tid, filter) in channels
             ]
             if not placed:

@@ -32,7 +32,7 @@ from targets.types import Target
 
 
 @workflow_group
-def _post_processed_master(stack, config, mock):
+def _post_processed_master(stack, config):
     """Downscale every stack (cal AND light) by 8x, then stack +
     post-process. The downscale step is applied explicitly to
     each cal stack inside the loop so it's easy to swap for a
@@ -44,16 +44,16 @@ def _post_processed_master(stack, config, mock):
         cal_masters.append(stack_files(cs_downscaled, config, *cal_masters))
     s_downscaled = downscale_stack(stack, 8)
     master = stack_files(s_downscaled, config, *cal_masters)
-    return post_process_stack(s_downscaled, mock, master)
+    return post_process_stack(s_downscaled, config, master)
 
 
 @workflow_group
-def _channels_for_target(target, config, mock):
+def _channels_for_target(target, config):
     """Per-filter HDR-combined channel masters for one target."""
     channels = {}
     for filter in target.filters:
         stacks = target.stacks_for(filter)
-        masters = [_post_processed_master(s, config, mock) for s in stacks]
+        masters = [_post_processed_master(s, config) for s in stacks]
         channels[filter] = merge_target_channel(
             target, filter, stacks, config, *masters,
         )
@@ -63,15 +63,13 @@ def _channels_for_target(target, config, mock):
 @pipeline("PixInsight Downscaled", processes=Stack)
 def for_stack(stack, config):
     """One stack's post-processed downscaled master."""
-    mock = config.development_settings.mock_pixinsight
-    return _post_processed_master(stack, config, mock)
+    return _post_processed_master(stack, config)
 
 
 @pipeline("PixInsight Downscaled", processes=Target)
 def for_target(target, config):
     """Per-filter downscaled channel masters for one target."""
-    mock = config.development_settings.mock_pixinsight
-    return _channels_for_target(target, config, mock)
+    return _channels_for_target(target, config)
 
 
 @pipeline("PixInsight Downscaled", processes=Mosaic)
@@ -79,12 +77,11 @@ def for_mosaic(mosaic, config):
     """Build a downscaled mosaic, end to end. Returns
     `{filter: store_handle}`. Missing panels are skipped (the
     pipeline merges what's present)."""
-    mock = config.development_settings.mock_pixinsight
     targets_by_id = {t.id: t for t in mosaic.targets}
 
     channels = {}
     for target in mosaic.targets:
-        for filter, sink in _channels_for_target(target, config, mock).items():
+        for filter, sink in _channels_for_target(target, config).items():
             channels[(target.id, filter)] = sink
 
     out = {}
@@ -96,24 +93,24 @@ def for_mosaic(mosaic, config):
         for strip in mosaic.strips:
             placed = [
                 place_image(mosaic, targets_by_id[tid], filter, viewbox,
-                            channels[(tid, filter)])
+                            config, channels[(tid, filter)])
                 for tid in strip if (tid, filter) in channels
             ]
             if not placed:
                 continue
             row = placed[0]
             for p in placed[1:]:
-                row = merge_images(mosaic, filter, mock, row, p)
+                row = merge_images(mosaic, filter, config, row, p)
             rows.append(row)
         if not rows:
             continue
 
         merged = rows[0]
         for r in rows[1:]:
-            merged = merge_images(mosaic, filter, mock, merged, r)
+            merged = merge_images(mosaic, filter, config, merged, r)
 
         out[filter] = store_mosaic_color_channel_xisf(
-            mosaic, filter, mock, merged,
+            mosaic, filter, config, merged,
         )
 
     return out

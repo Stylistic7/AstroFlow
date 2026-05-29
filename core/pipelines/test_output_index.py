@@ -148,6 +148,7 @@ def test_recorder_disambiguates_repeated_same_key_taps(test_context):
     from compute_graph.compute_graph import _record_pipeline_taps
     from dependency_graph.classes import Node, Graph
     from mosaics.merging.pixinsight import merge_images
+    from decisions.settings import ProcessingConfig
 
     output_index.clear()
 
@@ -157,11 +158,12 @@ def test_recorder_disambiguates_repeated_same_key_taps(test_context):
         stable_hash = "mosaic-X"
 
     mosaic = FakeMosaic()
+    cfg = ProcessingConfig()
     # Two merge_images Nodes with identical literal args (mosaic,
-    # filter, mock). Their `*inputs` data-deps would differ at trace
+    # filter, config). Their `*inputs` data-deps would differ at trace
     # time; we don't need real inputs for the recorder test.
-    n1 = Node(merge_images, mosaic, "H", False, name="merge_a")
-    n2 = Node(merge_images, mosaic, "H", False, name="merge_b")
+    n1 = Node(merge_images, mosaic, "H", cfg, name="merge_a")
+    n2 = Node(merge_images, mosaic, "H", cfg, name="merge_b")
     graph = Graph({n1: [], n2: []})
 
     _record_pipeline_taps(

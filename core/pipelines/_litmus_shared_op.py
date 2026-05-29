@@ -22,7 +22,7 @@ from stacks.stacking.pixinsight import stack_files
 def shared_op_test_master(stack, config):
     cal_masters = calibrate(stack, config)
     master = stack_files(stack, config, *cal_masters)
-    return post_process_stack(stack, False, master)
+    return post_process_stack(stack, config, master)
 
 
 @pipeline("Shared-Op Test Downscaled", processes=Stack)
@@ -36,4 +36,4 @@ def shared_op_test_downscaled(stack, config):
         cal_masters.append(stack_files(downscale_stack(cs, 8), config, *cal_masters))
     s = downscale_stack(stack, 8)
     master = stack_files(s, config, *cal_masters)
-    return post_process_stack(s, False, master)
+    return post_process_stack(s, config, master)

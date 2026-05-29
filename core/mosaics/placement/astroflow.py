@@ -1,12 +1,14 @@
 import os
 import warnings
 import ray
+import cv2
 import numpy as np
 from beartype import beartype
 from astropy.wcs import WCS, FITSFixedWarning  # type: ignore
 
 warnings.filterwarnings("ignore", category=FITSFixedWarning)
 from scipy.interpolate import RegularGridInterpolator  # type: ignore
+from scipy.ndimage import binary_fill_holes  # type: ignore
 from itertools import product
 from pathlib import Path
 from typing import Any
@@ -23,6 +25,7 @@ from file_io.types import TiffFilePath, WithSidecar
 from context import context
 from mosaics.types import Mosaic, Viewbox
 from decorators import node
+from decisions.settings import ProcessingConfig
 from metadata.classes import ImageMetadata
 from plate_solving import PlateSolution
 from products import makes_image
@@ -152,13 +155,41 @@ def _project_in_tiles(
 
     return projected_image[0 : viewbox.num_pixels_y, 0 : viewbox.num_pixels_x]
 
-@node(auto_memory=True)
+def _erode_edges(image: np.ndarray, px: int) -> np.ndarray:
+    """Shape-following inward erosion of the valid-data (non-zero) region
+    by `px` pixels. Removes the registration interpolation/partial-coverage
+    rolloff at frame borders before the mosaic merge — PhotometricMosaic
+    samples the overlap, and un-eroded edge pixels cause seam artifacts.
+
+    `image != 0` is the footprint (the interpolator zero-fills outside it);
+    `binary_fill_holes` keeps interior zeros from carving craters; the
+    distance transform gives an exact Euclidean inward shave following the
+    footprint's actual shape (not a rectangle crop). `px <= 0` is a no-op."""
+    if px <= 0:
+        return image
+    mask = binary_fill_holes(image != 0)
+    dist = cv2.distanceTransform(mask.astype(np.uint8), cv2.DIST_L2, 5)
+    return np.where(dist >= px, image, 0.0).astype(np.float32)
+
+
+def _place_image_narrow(args, kwargs):
+    """Cache-key hook: project `config` to its only dependency here,
+    `edge_erosion_px`, in its arg slot. `config` is a literal that sits
+    BEFORE the trailing `image_metadata` data-dependency (the graph
+    appends dep results last), so it's the second-to-last positional."""
+    mosaic, target, filter, viewbox, config, image_metadata = args
+    return (mosaic, target, filter, viewbox,
+            config.edge_erosion_px, image_metadata), kwargs
+
+
+@node(auto_memory=True, cache_key_narrow=_place_image_narrow)
 @makes_image(identity=PlacedImageId)
 def place_image(
     mosaic: Mosaic, target: Target, filter: str, viewbox: Viewbox,
-    image_metadata: ImageMetadata,
+    config: ProcessingConfig, image_metadata: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
-    """Project one panel's master into the mosaic's viewbox.
+    """Project one panel's master into the mosaic's viewbox, then erode
+    its valid-data edge.
 
     Pipeline-agnostic: the downscaling — if any — is fully captured
     by the `viewbox` size and by the upstream master (already
@@ -166,7 +197,10 @@ def place_image(
     just projects whatever it's given. PlacedImageId includes the
     viewbox, and the on-disk filename includes a viewbox content-
     hash prefix so PI Master and PI Downscaled outputs land in
-    distinct files."""
+    distinct files.
+
+    Takes the whole `config`; the cache key is narrowed to just
+    `edge_erosion_px` (the only field this op depends on)."""
     assert image_metadata.plate_solution is not None, (
         f"place_image requires a plate solution on {image_metadata.filename}; "
         "DONTSOLV synthetic frames cannot be placed."
@@ -177,6 +211,7 @@ def place_image(
     wcs = WCS(image_metadata.plate_solution.header)
     interp = _make_interpolator(image_metadata.filename)
     image = _project_in_tiles(viewbox, interp, wcs, skip_empty=False)
+    image = _erode_edges(image, config.edge_erosion_px)
 
     # `image_metadata` MUST flow into the call_hash. Three
     # pipelines (Subframe, PI Master, PI Downscaled) place the
@@ -186,7 +221,7 @@ def place_image(
     # output filename — multiple writers race, downstream readers
     # see half-written zlib streams (corrupt TIFF).
     output_filename = place_image.filename_fn(
-        mosaic, target, filter, viewbox, image_metadata,
+        mosaic, target, filter, viewbox, config, image_metadata,
     )
 
     if not np.any(image):

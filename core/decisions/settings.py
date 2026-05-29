@@ -64,6 +64,12 @@ class ProcessingConfig:
     development_settings: "DevelopmentSettings" = field(default_factory=lambda: DevelopmentSettings())
     min_frames_in_stack: int = 5
     decisions: frozendict = field(default_factory=frozendict)
+    # Pixels to erode off each placed frame's valid-data edge before the
+    # mosaic merge (PhotometricMosaic samples the overlap; un-eroded
+    # registration rolloff causes seam artifacts). Consumed only by
+    # place_image, which narrows the cache key to just this field — so
+    # adding/changing it never touches stack_files etc. (see _StackKey).
+    edge_erosion_px: int = 10
 
     def get_calibration_stacks(self):
         """Dereference calibration_stacks (may be a ContextRef or a plain dict)."""

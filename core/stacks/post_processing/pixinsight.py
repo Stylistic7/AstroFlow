@@ -10,6 +10,7 @@ from pix.tasks import (
 )
 from pix.tasks.filters import normalize_filter
 from decorators import node
+from decisions.settings import ProcessingConfig
 from metadata.classes import ImageMetadata
 from stacks.composite_stack import Stack
 from file_io.types import XisfFilePath, WithSidecar
@@ -49,10 +50,19 @@ def _solver_hints_from(master: ImageMetadata, stack: Stack) -> dict:
     )
 
 
-@node(resources={"PixInsight": 1}, auto_memory=True)
+def _post_process_narrow(args, kwargs):
+    """Cache-key hook: this op's only `config` dependency is the
+    `mock_pixinsight` flag, so project `config` to that bool (in its
+    arg slot). Keeps the key independent of unrelated config fields."""
+    stack, config, master = args
+    return (stack, config.development_settings.mock_pixinsight, master), kwargs
+
+
+@node(resources={"PixInsight": 1}, auto_memory=True,
+      cache_key_narrow=_post_process_narrow)
 @makes_image(identity=StackId, display="Post-Processed")
 def post_process_stack(
-    stack: Stack, mock_pixinsight: bool, master: ImageMetadata,
+    stack: Stack, config: ProcessingConfig, master: ImageMetadata,
 ) -> WithSidecar[XisfFilePath]:
     """PixInsight post-processing of a stacked master.
 
@@ -65,14 +75,16 @@ def post_process_stack(
     stacking, downscaled stacking, or any future variant all look
     identical from here.
 
-    Output filename is the call_hash over the FULL bound args
-    including `master`. Two pipelines calling this op with the
-    same `stack` + `mock_pixinsight` but different upstream masters
-    produce DIFFERENT files: the masters' content_hashes differ,
-    so the call_hash differs, so the filename differs.
+    Takes the whole `config` (uniform with the other heavyweight ops)
+    and narrows the cache key to just `mock_pixinsight`. The filename
+    is the call_hash over the narrowed bound args + `master`; two
+    pipelines with the same `stack` + mock but different upstream
+    masters produce different files (the masters' content_hashes
+    differ).
     """
+    mock_pixinsight = config.development_settings.mock_pixinsight
     output_filename = post_process_stack.filename_fn(
-        stack, mock_pixinsight, master,
+        stack, config, master,
     )
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
 

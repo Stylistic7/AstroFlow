@@ -2,6 +2,9 @@ import tempfile
 import os
 from pathlib import Path
 import errno
+from dataclasses import dataclass
+from typing import Any
+from frozendict import frozendict
 import astropy.io.fits as pyfits  # type: ignore
 
 import file_io
@@ -14,7 +17,7 @@ from stacks.composite_stack import BaseStack, Stack
 from pix.tasks import run_wbpp
 from metadata.classes import ImageMetadata, MetadataDict
 from decorators import node
-from decisions.settings import ProcessingConfig
+from decisions.settings import ProcessingConfig, DevelopmentSettings
 from decisions.resolve import resolve_calibration, resolve_decisions
 from decisions.compute_graph import ALL_EXCLUSION_TYPES
 from products import makes_image
@@ -162,33 +165,44 @@ def _copy_wbpp_result(
 
     return WithSidecar(XisfFilePath(dest_filename))
 
-def narrow_stack_config(stack: BaseStack, config: ProcessingConfig) -> ProcessingConfig:
-    """Narrow `config` for cache-key hashing: keep only this stack's
-    decision overrides; drop `calibration_stacks` from the key entirely.
+@dataclass(frozen=True)
+class _StackKey:
+    """Cache-key projection of `ProcessingConfig` — exactly the fields a
+    stacked/merged master's *output* depends on.
 
-    Why no cal_stacks filtering:
-    - `resolve_decision` caches the default in the context actor on the
-      first ask. Once it picks a bias / dark / flat, the choice is sticky
-      — new candidates don't re-bid. So the resolved deps for this stack
-      are fully determined by `(stack, this-stack's-decisions, context)`.
-    - The candidate set isn't an input to the cached result; only the
-      sticky pick is.
-    - Therefore `cal_stacks` doesn't need to be in the cache key at all.
-      Adding a bias for any camera no longer invalidates this stack's
-      cached master.
+    Field names, order, and values mirror the historical narrowed
+    `ProcessingConfig` (calibration_stacks=None, development_settings,
+    min_frames_in_stack, decisions). `make_hashable` hashes dataclasses
+    structurally (by field name + value, ignoring the class), so this
+    yields a byte-identical cache key to the old narrowing — no re-stack.
+    And because it is its own type, new `ProcessingConfig` fields can never
+    perturb stacking's key (protobuf-style: unknown fields are ignored).
 
-    The function still receives the full `ProcessingConfig` at runtime —
-    `resolve_calibration` needs the full set to look up the picked dep
-    by id. This narrowing affects only the cache key.
+    `calibration_stacks` is carried as `None` — sticky resolution means
+    the candidate set isn't an output dependency; the `None` both
+    preserves the historical key and documents the deliberate exclusion.
     """
-    from dataclasses import replace
+    calibration_stacks: Any
+    development_settings: DevelopmentSettings
+    min_frames_in_stack: int
+    decisions: frozendict
+
+
+def narrow_stack_config(stack: BaseStack, config: ProcessingConfig) -> _StackKey:
+    """Project `config` onto stacking's cache-dependency surface
+    (`_StackKey`). Key-only: callers still receive the full
+    `ProcessingConfig` at runtime (`resolve_calibration` needs
+    `calibration_stacks`); only the hash surrogate is narrowed.
+    Returning a dedicated projection type — rather than a narrowed
+    `ProcessingConfig` — is what lets `ProcessingConfig` gain fields
+    without re-keying every cached master.
+    """
     from decisions.decisions import decisions_for_stack
 
-    return replace(
-        config,
-        # Constant marker — drops cal_stacks from the hash without
-        # changing the field's presence on the dataclass.
+    return _StackKey(
         calibration_stacks=None,
+        development_settings=config.development_settings,
+        min_frames_in_stack=config.min_frames_in_stack,
         decisions=decisions_for_stack(config.decisions, stack.stable_hash),
     )
 

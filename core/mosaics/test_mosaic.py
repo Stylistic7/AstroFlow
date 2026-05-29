@@ -120,13 +120,14 @@ def test_orion_mosaic(test_context) -> None:
     # call_hashes → different files inside the same op directory.
     assert_files("PlacedImage/place_image/*.tiff", 8, {"FILTER": "H"})
 
-    # Master-pipeline mosaic merge: ONE call per (mosaic, filter),
-    # pairwise PhotometricMosaic done inside the op body. The
-    # intermediate tree nodes don't surface as separate output files.
-    assert_files("MergedImage/merge_images/*.xisf", 1, {"FILTER": "H"})
+    # Master-pipeline mosaic merge: pairwise PhotometricMosaic over the
+    # 4 panels in a 2x2 layout → 2 within-strip + 1 cross-strip = 3
+    # merge_images nodes, each writing its own output file (matches
+    # test_orion_pipeline_structures' op counts).
+    assert_files("MergedImage/merge_images/*.xisf", 3, {"FILTER": "H"})
 
-    # Subframe-pipeline mosaic merge (numpy TIFF). Same shape: one call.
-    assert_files("MergedImage/merge_images_subframe/*.tiff", 1,
+    # Subframe-pipeline mosaic merge (numpy TIFF). Same pairwise shape: 3.
+    assert_files("MergedImage/merge_images_subframe/*.tiff", 3,
                  {"FILTER": "H"})
 
     assert_files("Mosaic/store_mosaic_color_channel_subframe/*.tiff", 1, {"FILTER": "H"})

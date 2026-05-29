@@ -15,6 +15,7 @@ from metadata.classes import ImageMetadata
 from mosaics.types import Mosaic
 from previews.create_tile_pyramid import default_make_tile_pyramid
 from decorators import node
+from decisions.settings import ProcessingConfig
 from file_io.tiff_file_io import write_tiff_image
 from file_io.types import XisfFilePath, TiffFilePath, WithSidecar
 from products import makes_image
@@ -169,10 +170,19 @@ def _intermediate_metadata(path: Path, a, b) -> ImageMetadata:
     return _Stub(filename=path, stable_hash=hash_list([a.stable_hash, b.stable_hash]))
 
 
-@node(resources={"PixInsight": 1}, auto_memory=True)
+def _merge_images_narrow(args, kwargs):
+    """Cache-key hook: project `config` to its only dependency here,
+    `mock_pixinsight` (in its arg slot), so the key stays independent
+    of unrelated config fields."""
+    mosaic, filter, config, *inputs = args
+    return (mosaic, filter, config.development_settings.mock_pixinsight, *inputs), kwargs
+
+
+@node(resources={"PixInsight": 1}, auto_memory=True,
+      cache_key_narrow=_merge_images_narrow)
 @makes_image(identity=MergedImageId, display="Merged")
 def merge_images(
-    mosaic: Mosaic, filter: str, mock_pixinsight: bool,
+    mosaic: Mosaic, filter: str, config: ProcessingConfig,
     *inputs,
 ) -> WithSidecar[XisfFilePath]:
     """Pairwise PhotometricMosaic merge across all panel inputs.
@@ -182,7 +192,8 @@ def merge_images(
     them, so the call_hash differs, so the on-disk filename
     differs. The framework's runtime tap-path hook captures the
     actual path."""
+    mock_pixinsight = config.development_settings.mock_pixinsight
     return _merge_images_pi_impl(
         mosaic, filter, mock_pixinsight, inputs,
-        merge_images.filename_fn(mosaic, filter, mock_pixinsight, *inputs),
+        merge_images.filename_fn(mosaic, filter, config, *inputs),
     )
