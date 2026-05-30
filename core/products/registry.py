@@ -1,15 +1,48 @@
+"""Image-lifecycle and producer-registry helpers.
+
+Public surface — all consumed by `@node` (decorators/decorators.py),
+which is the sole orchestrator that calls these in the right order with
+the right shared artifacts.
+
+Each helper has a single concern. None of them queries another's state
+via attribute lookup; everything is passed in explicitly. The reason is
+historical: the old `@makes_image` decorator coordinated with `@node`
+through attribute attachment and closure-timing assumptions, which
+silently produced wrong call_hashes (see 2026-05-29).
+
+Helpers:
+
+  * `validate_identities(func, identities)` — raise `TypeError` if any
+    identity's fields aren't a subset of the function's parameters.
+  * `build_filename_fns(func, identities, canonical_call_hash)` —
+    construct one resolved `filename_fn` per identity plus a polymorphic
+    dispatcher. Returns `(filename_fns_dict, dispatcher_fn)`.
+  * `makes_image_wrap(func, *, canonical_call_hash, identities)` —
+    wrap `func` so that after the function returns, the result file's
+    `content_hash` header is stamped to the call_hash and presentation
+    artifacts (tile pyramid sibling) are generated. Single concern:
+    image lifecycle after the body runs.
+  * `register_producer(wrapper, identities, media_type=MediaType.IMAGE)` —
+    add the final wrapper to the `_producers[media_type][identity]`
+    list for view-side enumeration.
+
+Also kept here: the producer registry itself (`_producers`,
+`producers_for`), file-type inference utilities, the tile pyramid
+generator, and the trace hook that auto-chains `compute_image_metadata`.
+"""
 import dataclasses
 import inspect
 import os
 import tempfile
 import typing
 from enum import Enum
+from functools import wraps
 from pathlib import Path
-from typing import Callable, Union
+from typing import Any, Callable, Union
 
 import numpy as np
 
-from file_io.types import ContentHashable
+from file_io.types import ContentHashable, WithSidecar
 from products.identity import ObjectId, PresentationType
 from context import context
 
@@ -22,23 +55,25 @@ class MediaType(str, Enum):
 type FilenameFn = Union[str, Callable[..., Path]]
 
 
-# Per-identity producer list. @makes_image / @makes_video appends to
-# `_producers[media_type][identity]` so view-side endpoints that need
-# "every op that writes a StackId-shaped image" (the bare-thumbnail
-# regen path) can enumerate them. Order is decoration order.
+# ---------------------------------------------------------------------
+# Producer registry
+# ---------------------------------------------------------------------
+
+# `_producers[media_type][identity]` — every op `@node(identity=X)`
+# appends itself so view-side endpoints can enumerate "every op that
+# produces an X-shaped image."
 _producers: dict[MediaType, dict[type, list[Callable]]] = {
     MediaType.IMAGE: {},
     MediaType.VIDEO: {},
 }
 
-
 _producers_imported = False
 
 
 def _ensure_producers_imported():
-    """Import every module that calls @makes_image / @makes_video so
-    their decoration side-effects run before any producers_for()
-    lookup. Idempotent; pays the import cost exactly once."""
+    """Trigger imports of every module containing `@node(identity=...)`
+    so decoration side-effects (which populate `_producers`) run before
+    any `producers_for()` lookup. Idempotent; pays the import cost once."""
     global _producers_imported
     if _producers_imported:
         return
@@ -51,35 +86,103 @@ def producers_for(
     identity: type[ObjectId], media_type: MediaType = MediaType.IMAGE,
 ) -> list[Callable]:
     """Every op registered to produce `identity`-shaped artifacts of
-    `media_type`. Returns the @makes_image-decorated functions in
-    decoration order. Polymorphic ops (stack_files registered for
-    both StackId and CalibrationStackId) appear in each identity's
-    list."""
+    `media_type`. Returns the wrappers in registration order."""
     _ensure_producers_imported()
     return list(_producers[media_type].get(identity, []))
+
+
+def register_producer(
+    wrapper: Callable,
+    identities: list[type[ObjectId]],
+    media_type: MediaType = MediaType.IMAGE,
+) -> None:
+    """Add `wrapper` to `_producers[media_type][identity]` for each
+    identity. The wrapper is the FINAL `@node`-wrapped callable (so
+    view-side lookups get `.remote`, `.filename_fn`, etc.).
+
+    Single concern: registry maintenance. No filename construction, no
+    validation — those happen elsewhere."""
+    for identity in identities:
+        _producers[media_type].setdefault(identity, []).append(wrapper)
+
+
+def image_producer(
+    identity: type[ObjectId],
+    *,
+    display: str | None = None,
+    final: bool = False,
+):
+    """Lightweight `@image_producer(identity=X)` for non-cached, non-Ray
+    functions that still need to be discoverable via `producers_for(X)`.
+
+    Use this for ndarray-returning preview helpers called inline from
+    `@node` tasks. The wrapper function is identical to the original
+    (no extra runtime behavior) — it just attaches `_identities` and
+    registers in `_producers` so the view-side enumeration treats it
+    as a producer of `X`-shaped images.
+
+    Most ops should use `@node(identity=X, ...)` instead, which builds
+    the full cached / file-routing / lifecycle pipeline. Reserve this
+    for the rare op that genuinely doesn't need any of that machinery.
+    """
+    def decorator(func):
+        func._identities = (
+            getattr(func, '_identities', []) + [identity]
+        )
+        if display is not None:
+            func._display = display
+        if final:
+            func._final = True
+        register_producer(func, [identity])
+        return func
+    return decorator
+
+
+# ---------------------------------------------------------------------
+# File-type inference + path resolution
+# ---------------------------------------------------------------------
+
+_FILE_TYPE_SUFFIX = {
+    'FitsFilePath': '.fits',
+    'XisfFilePath': '.xisf',
+    'TiffFilePath': '.tiff',
+}
+
+
+def _infer_file_type(func: Callable):
+    """Inspect the producer's return annotation to pick the on-disk file
+    type. Supports `-> XisfFilePath` and `-> WithSidecar[XisfFilePath]`.
+
+    Returns None for ops without an annotated file type (`ndarray` returns,
+    ungenericised `WithSidecar`, etc.) — they don't get an auto-generated
+    filename_fn."""
+    try:
+        sig = inspect.signature(func)
+    except (TypeError, ValueError):
+        return None
+    ret = sig.return_annotation
+    if ret is inspect.Signature.empty:
+        return None
+    if getattr(ret, '__name__', None) in _FILE_TYPE_SUFFIX:
+        return ret
+    for a in typing.get_args(ret):
+        if getattr(a, '__name__', None) in _FILE_TYPE_SUFFIX:
+            return a
+    return None
 
 
 def fully_resolve(
     identity_cls: type, filename_fn: FilenameFn, op_name: str,
 ):
-    """Resolve a filename_fn against the output-directory layout:
+    """Wrap `filename_fn` so its output is prefixed with the output-dir
+    routing path:
 
-        <output_dir>/<object_type>/<op_name>/<identity_stem>.<ext>
+        <output_dir>/<object_type>/<op_name>/<filename_fn(...)>
 
-    `op_name` (the producer's `__name__`) is the on-disk
-    directory; different ops writing the same identity-shape
-    land in different directories. Two pipelines calling the
-    SAME op (e.g. unified `stack_files`) with different upstream
-    data deps land in the same directory but get distinct
-    filenames via call_hash — the bound args' content_hashes
-    flow into the hash that names the file.
-
-    Ops that produce per-pipeline variants of the same identity
-    (`place_image` for Master vs Downscaled mosaics) encode the
-    variant directly in the identity's `filename_stem()` (e.g.
-    viewbox dimensions). No mode/impl discriminator threading
-    through the trace.
-    """
+    `op_name` (the producer's `__name__`) is the on-disk directory;
+    different ops writing the same identity-shape land in different
+    directories. Selection-style absolute paths are passed through
+    unchanged (used for raw-frame producers)."""
     object_type_name = identity_cls.object_type.__name__
 
     def inner(*args, **kwargs):
@@ -91,9 +194,6 @@ def fully_resolve(
             "state_machine._populate_context must run before any "
             "filename can be fully resolved."
         )
-        # Selection-style filename_fns return absolute paths to
-        # existing raw frames; mangling those would invent paths
-        # that don't exist. Pass through unchanged.
         path_str = os.fspath(filename)
         if os.path.isabs(path_str):
             return filename
@@ -106,6 +206,7 @@ def _extract_identity(
     identity_cls: type[ObjectId],
     func: Callable, args: tuple, kwargs: dict,
 ) -> ObjectId:
+    """Pull identity-field values out of a call's bound args."""
     sig = inspect.signature(func)
     bound = sig.bind(*args, **kwargs)
     bound.apply_defaults()
@@ -114,177 +215,175 @@ def _extract_identity(
     return identity_cls(**id_kwargs)
 
 
-_FILE_TYPE_SUFFIX = {
-    'FitsFilePath': '.fits',
-    'XisfFilePath': '.xisf',
-    'TiffFilePath': '.tiff',
-}
+# ---------------------------------------------------------------------
+# Validation + filename construction (called by @node)
+# ---------------------------------------------------------------------
+
+def validate_identities(func: Callable, identities: list[type[ObjectId]]) -> None:
+    """Raise TypeError if any identity has fields that aren't parameter
+    names on `func`. Called by `@node` at decoration time.
+
+    `@makes_image` cannot be applied to a Ray-task wrapper (the order
+    needs `@node` outside), so the older `_is_task` check is no longer
+    relevant — `@node` is the sole entry point now."""
+    raw_func = func.__wrapped__ if hasattr(func, '__wrapped__') else func
+    producer_params = set(inspect.signature(raw_func).parameters.keys())
+    for identity in identities:
+        id_fields = {f.name for f in dataclasses.fields(identity)}
+        missing = id_fields - producer_params
+        if missing:
+            raise TypeError(
+                f"{identity.__name__} has fields {missing} that don't "
+                f"match any parameter of "
+                f"{getattr(func, '__name__', '...')}. ObjectId field "
+                f"names must be a subset of producer parameter names."
+            )
 
 
-def _infer_file_type(func: Callable):
-    """Inspect the producer's return annotation to pick the on-disk
-    file type. Supports:
+def build_filename_fns(
+    func: Callable,
+    identities: list[type[ObjectId]],
+    canonical_call_hash: Callable,
+) -> tuple[dict, Callable] | tuple[None, None]:
+    """Construct one resolved `filename_fn` per identity, plus a
+    polymorphic dispatcher.
 
-      def f(...) -> XisfFilePath: ...
-      def f(...) -> WithSidecar[XisfFilePath]: ...
+    Each per-identity filename_fn:
+      1. Calls `canonical_call_hash(*args, **kwargs)` to get the
+         op's call_hash for THIS call.
+      2. Returns `<call_hash>.<ext>`.
+      3. `fully_resolve` wraps that to prepend the output-dir routing.
 
-    Returns None for ops without an annotated file type (`ndarray`
-    returns, ungenericised `WithSidecar`, etc.) — those ops don't get
-    an auto-generated filename_fn and must supply one explicitly."""
-    try:
-        sig = inspect.signature(func)
-    except (TypeError, ValueError):
-        return None
-    ret = sig.return_annotation
-    if ret is inspect.Signature.empty:
-        return None
-    # Direct file-type annotation.
-    if getattr(ret, '__name__', None) in _FILE_TYPE_SUFFIX:
-        return ret
-    # Generic wrapper (e.g. `WithSidecar[XisfFilePath]`): unwrap to
-    # the parameter.
-    args = typing.get_args(ret)
-    for a in args:
-        if getattr(a, '__name__', None) in _FILE_TYPE_SUFFIX:
-            return a
-    return None
+    The dispatcher picks the right per-identity fn by inspecting the
+    first arg's type (`isinstance(first, identity.object_type)`).
+    Polymorphic ops (e.g. `stack_files` registered for both StackId and
+    CalibrationStackId) dispatch by Stack vs CalibrationStack at call time.
+
+    Returns `(None, None)` if the function has no inferable file type
+    (e.g. `-> ndarray`). In that case the caller may attach a custom
+    filename_fn out-of-band, or skip filename infrastructure entirely.
+    """
+    file_type = _infer_file_type(func.__wrapped__ if hasattr(func, '__wrapped__') else func)
+    if file_type is None:
+        return None, None
+    suffix = _FILE_TYPE_SUFFIX.get(file_type.__name__)
+    if suffix is None:
+        return None, None
+    op_name = func.__name__
+
+    def call_hash_fn(*args, **kwargs):
+        return file_type(
+            f"{canonical_call_hash(*args, **kwargs)}{suffix}"
+        )
+
+    filename_fns = {
+        identity: fully_resolve(identity, call_hash_fn, op_name)
+        for identity in identities
+    }
+    return filename_fns, _make_dispatcher(filename_fns)
 
 
-def _make_dispatch_filename_fn(func: Callable):
-    """Dispatch entry point for polymorphic producers.
+def _make_dispatcher(filename_fns: dict) -> Callable:
+    """Pick the right filename_fn by inspecting the first arg's type.
 
     `stack_files` registers for both `StackId` and `CalibrationStackId`;
-    each registration carries its own resolved filename_fn that routes
-    to a different `<object_type>` directory. At call time we pick the
-    fn whose `identity_cls.object_type` matches the first arg's type —
-    `Stack → StackId` path, `CalibrationStack → CalibrationStackId`
-    path. The call_hash inside is identical (same args yield same
-    hash), only the directory segment differs.
-    """
+    each carries its own resolved fn pointing at a different
+    `<object_type>` directory. The call_hash inside is identical (same
+    args, same hash), only the routing differs."""
     def dispatch(*args, **kwargs):
         if not args:
-            for fn in func.filename_fns.values():
+            for fn in filename_fns.values():
                 return fn(*args, **kwargs)
-            raise RuntimeError(f"{func.__name__}: no filename_fn registered")
+            raise RuntimeError("no filename_fn registered")
         first = args[0]
-        # Match on `identity_cls.object_type` — the class the identity
-        # is the artifact-type-id for. StackId.object_type = Stack;
-        # CalibrationStackId.object_type = CalibrationStack. A Stack
-        # instance matches StackId; a CalibrationStack instance
-        # (which doesn't subclass Stack) matches CalibrationStackId.
-        for identity_cls, resolved in func.filename_fns.items():
+        for identity_cls, resolved in filename_fns.items():
             ot = identity_cls.object_type
             if ot is None:
                 continue
             if isinstance(first, ot):
                 return resolved(*args, **kwargs)
-        # Nothing matched — fall back to the first registered fn.
-        for fn in func.filename_fns.values():
+        for fn in filename_fns.values():
             return fn(*args, **kwargs)
-        raise RuntimeError(f"{func.__name__}: no filename_fn matched")
+        raise RuntimeError("no filename_fn matched")
     return dispatch
 
 
-def _make_call_hash_filename_fn(func: Callable, file_type: type):
-    """Build a `filename_fn` that returns `<call_hash>.<ext>`.
+# ---------------------------------------------------------------------
+# Image lifecycle (stamp + presentations) — runs as a post-call wrapper
+# ---------------------------------------------------------------------
 
-    The call_hash matches the one `@node`'s cache layer uses for
-    `func`, so the on-disk filename is byte-for-byte aligned with
-    the cache entry — same args produce the same filename across
-    pipelines, and editing `func`'s source produces a fresh
-    filename (old files orphan, the user GC-passes them later).
+def makes_image_wrap(
+    func: Callable,
+    *,
+    canonical_call_hash: Callable,
+    identities: list[type[ObjectId]],
+) -> Callable:
+    """Wrap `func` so that after a successful call:
 
-    `file_type` is the typed Path subclass (XisfFilePath etc.)
-    determined from `func`'s return annotation; the suffix comes
-    from the global `_FILE_TYPE_SUFFIX` map.
+      1. The result file's `content_hash` header is stamped with
+         `canonical_call_hash(*args)` — the canonical call_hash for
+         this invocation.
+      2. The result's stale sidecar is discarded (if any).
+      3. Presentations (tile-pyramid TIFF sibling) are generated.
+
+    Single concern: image lifecycle after the body runs. Doesn't touch
+    caching, doesn't attach any attributes to the wrapper, doesn't
+    register in `_producers`. Those are owned by `@node` (orchestration)
+    and `register_producer` (registry) respectively.
     """
-    from hashing import hash_call, hash_source_code
-    suffix = _FILE_TYPE_SUFFIX.get(file_type.__name__)
-    if suffix is None:
-        return None
+    from file_io.sidecar import discard_sidecar
 
-    def fn(*args, **kwargs):
-        # Resolve fn_hash + narrow hook lazily — the @node wrapper
-        # attaches them, and @makes_image is applied INSIDE @node so
-        # the attributes are present by the time filename_fn is
-        # called.  Narrow-wrapped ops (`cache_key_narrow=`) feed
-        # their narrowed args through the same hash as the cache.
-        fn_hash = getattr(func, '_fn_hash', None) or hash_source_code(func)
-        narrow = getattr(func, '_cache_key_narrow', None)
-        if narrow is not None:
-            args, kwargs = narrow(args, kwargs)
-        call_hash = hash_call(fn_hash, *args, **kwargs)
-        return file_type(f"{call_hash}{suffix}")
-    return fn
+    @wraps(func)
+    def wrapped(*args, **kwargs):
+        result = func(*args, **kwargs)
+        if result is None:
+            return result
+        # Stamp content_hash = canonical_call_hash(args). Pure Merkle
+        # convention: every @node-produced file's header carries the
+        # call_hash that produced it, so downstream consumers reading
+        # content_hash get a value derivable from the trace alone.
+        call_hash = canonical_call_hash(*args, **kwargs)
+        _stamp_content_hash(result, call_hash)
+        if not isinstance(result, np.ndarray):
+            discard_sidecar(result)
+        _generate_presentations(func, result, args, kwargs, identities)
+        return result
+
+    return wrapped
 
 
-def _make_tile_pyramid(result) -> "Path | None":
-    """Build a pyramidal tile-pyramid `.tiff` sibling for `result`.
-
-    The pyramid is the single human-facing artifact: a true
-    multi-resolution TIFF that backs both 1:1 zoom (tiles) and
-    thumbnails (its coarsest level). Always built for file-backed
-    outputs, regardless of size — for a tiny image it is simply one
-    tile. ndarray results (cheap subframe previews) have no on-disk
-    file, so they're skipped."""
-    if isinstance(result, np.ndarray):
-        return None
-    if isinstance(result, tempfile._TemporaryFileWrapper):
-        source = Path(result.name)
-    else:
-        source = Path(os.fspath(result))
-    if not source.exists():
-        return None
-    # The file may already be a tiff (e.g. Subframe mosaics write one
-    # directly) — it serves as its own pyramid.
-    if source.suffix.lower() in (".tif", ".tiff"):
-        return source
-    tile_path = source.with_suffix(".tiff")
+def _stamp_content_hash(result: Any, call_hash: str) -> None:
+    """Stamp `call_hash` into the result file's native header as
+    `content_hash`. Skips non-file results silently. Swallows write
+    errors — the system still works if the header write fails (the next
+    `get_content_hash` falls back to `hash_of_image_data`)."""
+    target = result
+    if isinstance(target, WithSidecar):
+        target = target.path
+    if not isinstance(target, Path):
+        return
     try:
-        from previews.create_tile_pyramid import default_make_tile_pyramid
-        default_make_tile_pyramid(source, tile_path)
-    except Exception as e:
-        print(f"### Failed to make tile pyramid for {source}: {e}")
-        return None
-    return tile_path
+        from file_io.generic import set_content_hash
+        set_content_hash(target, call_hash)
+    except (OSError, ValueError):
+        pass
 
 
-def _make_thumbnail(result, resize_array, autostretch, array_to_png, width=1920):
-    """Build a 1920px-wide PNG thumbnail from `result`. 1920 is a
-    pragmatic balance: it looks sharp at any common dashboard size
-    and survives a full-window zoom on a 2560-wide laptop; above
-    that width the tile pyramid (auto-generated for images >8 MP)
-    takes over. Result types: an ndarray (returned directly), a
-    tempfile, or a Path-like on-disk image file."""
-    if isinstance(result, np.ndarray):
-        return array_to_png(
-            autostretch(np.clip(resize_array(result, width), 0.0, 1.0))
-        )
-    if isinstance(result, tempfile._TemporaryFileWrapper):
-        filename = result.name
-    else:
-        filename = os.fspath(result)
-    if os.path.exists(filename):
-        from file_io.generic import read_image
-        return array_to_png(
-            autostretch(np.clip(resize_array(read_image(filename), width), 0.0, 1.0))
-        )
-    return None
-
+# ---------------------------------------------------------------------
+# Presentation generation (tile pyramid)
+# ---------------------------------------------------------------------
 
 def _generate_presentations(
     func: Callable, result, args: tuple, kwargs: dict,
     identities: list[type],
 ) -> None:
     """Auto-generate the sibling pyramidal tile-pyramid TIFF next to
-    every file-backed output. That pyramid is the human-facing
-    artifact: the web server serves both tiles (1:1 zoom) and
-    thumbnails (a coarse pyramid level) from it, so we don't pre-build
-    a separate thumbnail PNG here.
+    every file-backed output. That pyramid is the human-facing artifact:
+    the web server serves both tiles (1:1 zoom) and thumbnails (a coarse
+    pyramid level) from it.
 
-    Iterated over each (identity) the @makes_image stack contributed
-    — for polymorphic ops the same result is keyed under each
-    identity it can be looked up by."""
+    Iterated over each identity the op produces — for polymorphic ops
+    the same result is keyed under each identity it can be looked up by."""
     if result is None:
         return
     tile_path = _make_tile_pyramid(result)
@@ -302,215 +401,62 @@ def _generate_presentations(
         context[key] = str(tile_path)
 
 
+def _make_tile_pyramid(result) -> "Path | None":
+    """Build a pyramidal tile-pyramid `.tiff` sibling for `result`.
+
+    The pyramid is the single human-facing artifact: a true multi-
+    resolution TIFF that backs both 1:1 zoom (tiles) and thumbnails
+    (its coarsest level). Always built for file-backed outputs."""
+    if isinstance(result, np.ndarray):
+        return None
+    if isinstance(result, tempfile._TemporaryFileWrapper):
+        source = Path(result.name)
+    else:
+        source = Path(os.fspath(result))
+    if not source.exists():
+        return None
+    if source.suffix.lower() in (".tif", ".tiff"):
+        return source
+    tile_path = source.with_suffix(".tiff")
+    try:
+        from previews.create_tile_pyramid import default_make_tile_pyramid
+        default_make_tile_pyramid(source, tile_path)
+    except Exception as e:
+        print(f"### Failed to make tile pyramid for {source}: {e}")
+        return None
+    return tile_path
+
+
+def _make_thumbnail(result, resize_array, autostretch, array_to_png, width=1920):
+    """Build a 1920px-wide PNG thumbnail from `result`. Used by legacy
+    callers; new code reads thumbnails from the tile pyramid's coarsest
+    level instead."""
+    if isinstance(result, np.ndarray):
+        return array_to_png(
+            autostretch(np.clip(resize_array(result, width), 0.0, 1.0))
+        )
+    if isinstance(result, tempfile._TemporaryFileWrapper):
+        filename = result.name
+    else:
+        filename = os.fspath(result)
+    if os.path.exists(filename):
+        from file_io.generic import read_image
+        return array_to_png(
+            autostretch(np.clip(resize_array(read_image(filename), width), 0.0, 1.0))
+        )
+    return None
+
+
+# ---------------------------------------------------------------------
+# Trace-time hooks
+# ---------------------------------------------------------------------
+
 def _chain_compute_image_metadata(handle):
-    """Trace-time hook: every @makes_image-decorated op produces a
-    file whose canonical downstream consumer is its ImageMetadata,
-    so the wrapper records a `compute_image_metadata` node downstream
-    automatically. User pipelines skip the
-    `compute_image_metadata(stack(...))` boilerplate. Invoked by
-    `cached_decorator`'s trace branch through `_trace_hooks`."""
+    """Trace-time hook: every `@node(identity=...)` op produces a file
+    whose canonical downstream consumer is its `ImageMetadata`, so we
+    auto-chain a `compute_image_metadata` node after the producer.
+    User pipelines skip the `compute_image_metadata(stack(...))`
+    boilerplate."""
     from dependency_graph.tracing import record
     from metadata.image_metadata import compute_image_metadata
     return record(compute_image_metadata, handle)
-
-
-def _bind_producer(
-    media_type: MediaType,
-    filename_fn: FilenameFn | None,
-    identity: "type[ObjectId]",
-    display: str | None = None,
-    final: bool = False,
-):
-    """Register a function as the producer of `identity`-shaped
-    artifacts. The on-disk path is keyed by the producer's
-    `__name__`:
-
-        <output_dir>/<object_type>/<op_name>/<identity_stem>.<ext>
-
-    File type is inferred from the function's return annotation:
-    `-> XisfFilePath` or `-> WithSidecar[XisfFilePath]` etc. Ops
-    returning ndarray have no on-disk path; they must supply an
-    explicit `filename_fn` if they need one (the subframe-thumbnail
-    ops use this).
-
-    `display` (optional): user-visible tap-point label. The
-    pipeline-trace tap collector reads `_display` and records every
-    tagged Node in the PipelineOutputIndex; the dashboard surfaces
-    those entries per-pipeline. Skip for intermediate ops
-    (per-strip merges, per-panel placements) that shouldn't appear
-    as tap points.
-
-    `final` (default False): marks an op as producing a truly-final
-    deliverable that should survive when the user archives a cart
-    item with "keep finals only". Orthogonal to `display`: many
-    display-labeled ops (e.g. `place_image`, partial `merge_images`)
-    are large intermediates and stay `final=False`; only the
-    pipeline-specific carry-through that re-stores the merged result
-    under a clean identity should be `final=True`. Read by the
-    sweep CLI to decide what to preserve across cart turnover.
-
-    Usage::
-
-        @node(...)
-        @makes_image(identity=StackId, display="Master")
-        def stack_files(stack, config) -> WithSidecar[XisfFilePath]:
-            ...
-    """
-    assert identity is not None, "@makes_image/@makes_video requires identity="
-
-    def decorator(func: Callable[..., Path]):
-        # @makes_image must wrap the raw function, not the Ray-task
-        # wrapper. cached_decorator sets `_is_task = True` on its
-        # output — spotting it on `func` means the decorators are
-        # in the wrong order.
-        if getattr(func, '_is_task', False):
-            deco = "makes_image" if media_type == MediaType.IMAGE else "makes_video"
-            raise TypeError(
-                f"@{deco} must be applied inside @node, not outside. "
-                f"Got @{deco}(identity={identity.__name__}) wrapping "
-                f"a Ray task. Correct order:\n"
-                f"    @node(...)\n"
-                f"    @{deco}(...)\n"
-                f"    def {getattr(func, '__name__', '...')}(...): ..."
-            )
-
-        # Validate identity fields match producer params at decoration time.
-        id_fields = {f.name for f in dataclasses.fields(identity)}
-        raw_func = func._original if hasattr(func, '_original') else func
-        raw_func = raw_func.__wrapped__ if hasattr(raw_func, '__wrapped__') else raw_func
-        producer_params = set(inspect.signature(raw_func).parameters.keys())
-        missing = id_fields - producer_params
-        if missing:
-            raise TypeError(
-                f"{identity.__name__} has fields {missing} that don't match "
-                f"any parameter of {getattr(func, '__name__', '...')}. "
-                f"ObjectId field names must be a subset of producer parameter names."
-            )
-
-        if not hasattr(func, '_identities'):
-            func._identities = []
-        func._identities.append(identity)
-
-        op_name = func.__name__
-
-        # Each @makes_image registration produces a fully-resolved
-        # filename_fn that routes to `<output_dir>/<identity.object_type>
-        # /<op_name>/<call_hash>.<ext>`. Polymorphic ops (stack_files
-        # for both StackId and CalibrationStackId) need one per
-        # identity because the object_type segment differs. The
-        # call_hash itself is identical — same op, same args, just
-        # routed to different directories.
-        local_filename_fn = filename_fn
-        if local_filename_fn is None:
-            file_type = _infer_file_type(raw_func)
-            if file_type is not None:
-                local_filename_fn = _make_call_hash_filename_fn(func, file_type)
-        if local_filename_fn is not None:
-            if not hasattr(func, 'filename_fns'):
-                func.filename_fns = {}
-            func.filename_fns[identity] = fully_resolve(
-                identity, local_filename_fn, op_name,
-            )
-            # `func.filename_fn` is the dispatch entry point: tries
-            # each registered identity's resolved fn and returns the
-            # first that produces a path matching the args' shape.
-            func.filename_fn = _make_dispatch_filename_fn(func)
-
-        # Wrap once; stacked decorators (polymorphic identities) share
-        # the closure-captured `identities` list and skip re-wrapping.
-        if getattr(func, '_makes_image_wrapped', False):
-            wrapped = func
-        else:
-            from functools import wraps
-            from file_io.sidecar import discard_sidecar
-            inner_func = func
-            identities = func._identities
-
-            @wraps(inner_func)
-            def wrapped(*args, **kwargs):
-                result = inner_func(*args, **kwargs)
-                if result is not None:
-                    if not isinstance(result, np.ndarray):
-                        discard_sidecar(result)
-                    _generate_presentations(
-                        inner_func, result, args, kwargs, identities,
-                    )
-                return result
-
-            wrapped._identities = identities
-            wrapped._makes_image_wrapped = True
-            # Trace-time hook: when this op is called inside a
-            # @pipeline trace, auto-chain a compute_image_metadata
-            # node downstream so user pipelines don't have to write
-            # the boilerplate themselves.
-            wrapped._trace_hooks = [_chain_compute_image_metadata]
-            if hasattr(inner_func, 'filename_fns'):
-                wrapped.filename_fns = inner_func.filename_fns
-            if hasattr(inner_func, 'filename_fn'):
-                wrapped.filename_fn = inner_func.filename_fn
-            if display is not None:
-                wrapped._display = display
-            if hasattr(inner_func, '_display'):
-                wrapped._display = inner_func._display
-            if final:
-                wrapped._final = True
-            if getattr(inner_func, '_final', False):
-                wrapped._final = True
-
-        # Register the wrapped op for view-side enumeration.
-        _producers[media_type].setdefault(identity, []).append(wrapped)
-
-        return wrapped
-
-    return decorator
-
-
-def makes_image(
-    filename_fn: FilenameFn | None = None,
-    identity: type[ObjectId] = None,
-    display: str | None = None,
-    final: bool = False,
-):
-    """Decorate an op as the producer of `identity`-shaped images.
-
-    Output goes to
-    `<output_dir>/<object_type>/<op_name>/<identity_stem>.<ext>`.
-    The extension comes from the function's return-type annotation
-    (`-> WithSidecar[XisfFilePath]` etc.).
-
-    Tile pyramids are auto-generated next to large outputs (over 8
-    megapixels — the 4K display threshold). The web server's bare-
-    thumbnail route lazy-generates a 1920px-wide PNG on miss.
-
-    Usage::
-
-        @node(...)
-        @makes_image(identity=StackId, display="Master")
-        def stack_files(stack, config) -> WithSidecar[XisfFilePath]:
-            ...
-
-    Per-pipeline variants are encoded by the identity itself (e.g.
-    `PlacedImageId.filename_stem()` includes viewbox dimensions, so
-    PI Master and PI Downscaled place_image outputs naturally land
-    in distinct files). Ops never take a `mode` arg.
-    """
-    return _bind_producer(
-        MediaType.IMAGE, filename_fn,
-        identity=identity, display=display, final=final,
-    )
-
-
-def makes_video(
-    filename_fn: FilenameFn | None = None,
-    identity: type[ObjectId] = None,
-    display: str | None = None,
-    final: bool = False,
-):
-    """Video counterpart of @makes_image. Same signature; produces a
-    video artifact at
-    `<output_dir>/<object_type>/<op_name>/<identity_stem>.<ext>`.
-    """
-    return _bind_producer(
-        MediaType.VIDEO, filename_fn,
-        identity=identity, display=display, final=final,
-    )

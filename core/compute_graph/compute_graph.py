@@ -432,7 +432,8 @@ def _record_pipeline_taps(record_existence, pipeline_name, cart_type, cart_id, g
         params = list(sig.parameters.keys())
         arg_map = {params[i]: n.args[i]
                    for i in range(min(len(n.args), len(params)))}
-        for identity_cls in getattr(fn, "_identities", []):
+        identities = getattr(fn, "_identities", None) or getattr(task, "_identities", [])
+        for identity_cls in identities:
             id_field_names = [f.name for f in dataclasses.fields(identity_cls)]
             try:
                 id_values = [arg_map[name] for name in id_field_names]

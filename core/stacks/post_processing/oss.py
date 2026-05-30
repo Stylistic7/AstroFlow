@@ -14,7 +14,6 @@ import plate_solving
 from decorators import node
 from file_io.generic import read_image
 from file_io.types import FitsFilePath, WithSidecar
-from products import makes_image
 from products.identity import StackId, PresentationType
 
 THUMBNAIL = PresentationType.THUMBNAIL
@@ -23,8 +22,11 @@ from stacks.composite_stack import Stack
 
 log = structlog.get_logger()
 
-@node(auto_memory=True)
-@makes_image(identity=StackId, display="Post-Processed")
+@node(
+    identity=StackId,
+    display="Post-Processed",
+    auto_memory=True,
+)
 def post_process_stack_oss(
     stack: Stack, mock_pixinsight: bool, master,
 ) -> WithSidecar[FitsFilePath]:

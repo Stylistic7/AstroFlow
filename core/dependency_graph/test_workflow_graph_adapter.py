@@ -17,7 +17,6 @@ T = TypeVar("T")
 
 cached = make_cached_decorator(
     cache_provider=get_cache,
-    call_hasher=hash_call,
     debug=True,
 )
 

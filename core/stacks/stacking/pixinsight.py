@@ -20,7 +20,6 @@ from decorators import node
 from decisions.settings import ProcessingConfig, DevelopmentSettings
 from decisions.resolve import resolve_calibration, resolve_decisions
 from decisions.compute_graph import ALL_EXCLUSION_TYPES
-from products import makes_image
 from products.identity import (
     StackId, CalibrationStackId, identity_for_stack, PresentationType,
 )
@@ -307,10 +306,15 @@ def _run_wbpp_stacking(
     _check_integration_time(stack, dest_filename)
     return result
 
-@node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD", auto_memory=True,
-      cache_key_narrow=_stack_files_narrow)
-@makes_image(identity=CalibrationStackId, display="Master")
-@makes_image(identity=StackId, display="Master")
+@node(
+    identity=[CalibrationStackId, StackId],
+    display="Master",
+    final=True,
+    cache_key_narrow=_stack_files_narrow,
+    resources={"PixInsight": 1},
+    scheduling_strategy="SPREAD",
+    auto_memory=True,
+)
 def stack_files(
     stack: BaseStack,
     config: ProcessingConfig,

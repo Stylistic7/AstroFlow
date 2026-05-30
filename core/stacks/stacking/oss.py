@@ -28,7 +28,6 @@ from decorators import node
 from file_io.generic import read_image, read_header
 from file_io.types import FitsFilePath, WithSidecar
 from previews.types import DOWNSCALED_MASTER, DOWNSCALE_FACTORS
-from products import makes_image
 from products.identity import (
     StackId, CalibrationStackId, identity_for_stack, PresentationType,
 )
@@ -174,9 +173,12 @@ def _stack_files_oss_narrow(args, kwargs):
     stack, config, *rest = args
     return (stack, narrow_stack_config(stack, config), *rest), kwargs
 
-@node(auto_memory=True, cache_key_narrow=_stack_files_oss_narrow)
-@makes_image(identity=CalibrationStackId)
-@makes_image(identity=StackId)
+@node(
+    identity=[CalibrationStackId, StackId],
+    final=True,
+    cache_key_narrow=_stack_files_oss_narrow,
+    auto_memory=True,
+)
 def stack_files_oss(
     stack: BaseStack,
     config: ProcessingConfig,

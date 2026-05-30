@@ -8,13 +8,13 @@ from stacks.composite_stack import Stack, CalibrationStack
 from decisions.subframe_selection import get_light_frames_sorted_by_stars
 from stacks.run import Run
 from stacks.types import StackHash, StackIdDependency
-from products import makes_image
+from products.registry import image_producer
 from products.identity import PresentationType
 from previews.identity import CalibratedStackId, UncorrectedRunId
 
 THUMBNAIL = PresentationType.THUMBNAIL
 
-@makes_image(identity=CalibratedStackId)
+@image_producer(identity=CalibratedStackId)
 @measure_performance
 def flat_corrected_stack(
     stack: Stack, substack: Run, flat_stack: Run,
@@ -34,7 +34,7 @@ def flat_corrected_stack(
 
     return calibrate_subframe(light_frame, dependencies)
 
-@makes_image(identity=UncorrectedRunId)
+@image_producer(identity=UncorrectedRunId)
 def uncorrected_run_thumbnail(
     stack: Stack, substack: Run,
 ) -> np.ndarray:

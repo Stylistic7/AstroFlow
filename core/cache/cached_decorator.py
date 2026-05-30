@@ -1,3 +1,23 @@
+"""Single-concern: cache a function's results.
+
+`cached.remote(func, *, canonical_call_hash, **ray_opts)` builds a Ray-
+remote wrapper that:
+
+1. Computes a cache key from args via `canonical_call_hash(*args, **kwargs)`.
+2. Returns the cached result if present.
+3. Otherwise runs `func`, stores the result under that key, and returns it.
+
+That's the entire concern. There is no filename construction, no content-
+hash stamping, no identity routing, no narrowing logic — all of those are
+image-lifecycle concerns owned elsewhere (`makes_image_wrap`) and
+orchestrated by `@node`, which passes the resulting `canonical_call_hash`
+closure in.
+
+This file used to interleave caching with the call-hash construction and
+the on-disk filename_fn build. Those were folded out so that this module
+can't silently disagree with the filename about which call_hash it's
+using — the only call_hash that exists is the one its caller provides.
+"""
 import ray
 import inspect
 from functools import wraps
@@ -9,11 +29,9 @@ from beartype import beartype as _beartype
 from dataclasses import dataclass
 from ray.runtime_context import get_runtime_context
 
-from hashing import hash_source_code
-from cache.context_ref import ContextRef
-from protocols import CacheProtocol
+from cache.context_ref import ContextRef, strip_refs
 from cache.types import NeverRun
-from cache.context_ref import strip_refs
+from protocols import CacheProtocol
 
 
 import os
@@ -35,21 +53,14 @@ def _cached_path_missing(cached: Any) -> Optional[Path]:
     Handles bare Path / FitsFilePath / XisfFilePath / TiffFilePath
     (all subclass `Path`) plus `WithSidecar` wrappers around them, and
     any result type carrying a `.filename: Path` (e.g. ImageMetadata).
-    Anything else (numpy arrays, dicts, plain strings, ContextRefs)
-    is left alone — only file-path returns are validated.
 
     Lets the cache self-heal when an output file gets deleted out from
-    under us — the next read on a stale entry is treated as a miss and
-    the producer re-runs, rather than handing back a dangling path.
+    under us — the next read on a stale entry is treated as a miss.
     """
     from file_io.types import WithSidecar
-
     if isinstance(cached, WithSidecar):
         cached = cached.path
     if not isinstance(cached, Path):
-        # Result types like ImageMetadata wrap a path in `.filename`.
-        # If that file is gone, the cached metadata is stale — fall
-        # through to the missing-path branch.
         inner = getattr(cached, "filename", None)
         if isinstance(inner, Path):
             cached = inner
@@ -66,7 +77,6 @@ def _is_head_node() -> bool:
     node_id = get_runtime_context().get_node_id()
     for n in ray.nodes():
         if n["Alive"] and n["NodeID"] == node_id:
-            # Ray marks the head with this internal resource
             return "node:__internal_head__" in n["Resources"]
     raise RuntimeError("Current node not found in ray.nodes()")
 
@@ -90,15 +100,16 @@ def _bind_args(
     return bound
 
 
-# TODO: Consider removing `injected_context` if it's not used anywhere. The
-# original intent was to handle context for subgraphs, like temporary
-# directories.
 def make_cached_decorator(
     cache_provider: Callable[[], CacheProtocol],
-    call_hasher: Optional[Callable[[str, Any], str]],
     memory_estimator: Optional[Callable[[Callable, tuple, dict], int]] = None,
-    debug=False,
+    debug: bool = False,
 ):
+    """Build a `cached` object. Use `cached.remote(func, canonical_call_hash=...)`
+    to decorate a function. The caller (`@node`) computes
+    `canonical_call_hash` and passes it in; this module never builds one
+    of its own, eliminating the possibility of two competing call_hash
+    definitions for the same op."""
     cache: CacheProtocol | None = None
 
     def _resolve_cache():
@@ -111,29 +122,21 @@ def make_cached_decorator(
         if debug:
             print(*args, **kwargs)
 
-    def decorate(func: Callable, ray_opts: dict) -> Callable:
-        fn_hash = hash_source_code(func)
-        # Pull out the optional cache-key narrowing hook. Functions opt in
-        # by passing `cache_key_narrow=...` to @node(); the hook receives
-        # `(args, kwargs)` and returns `(args, kwargs)` to be hashed
-        # *instead of* the actual call args. Function execution still
-        # gets the full original args — only the cache key uses the
-        # narrowed view. See docs in the per-function narrow modules.
-        cache_key_narrow = ray_opts.pop("cache_key_narrow", None)
+    def decorate(
+        func: Callable,
+        *,
+        canonical_call_hash: Callable,
+        ray_opts: dict,
+    ) -> Callable:
+        """Wrap `func` with caching keyed by `canonical_call_hash(args)`."""
         func = _beartype(func)
 
-        def _get_cache_key_and_result(bound):
-            if cache_key_narrow is not None:
-                hash_args, hash_kwargs = cache_key_narrow(bound.args, bound.kwargs)
-            else:
-                hash_args, hash_kwargs = bound.args, bound.kwargs
-            call_hash = call_hasher(fn_hash, *hash_args, **hash_kwargs)
+        def _key_and_lookup(bound):
+            call_hash = canonical_call_hash(*bound.args, **bound.kwargs)
             key = (func.__name__, call_hash)
-
             if key not in _resolve_cache():
                 debug_print(f"cache miss: {key}")
                 return key, call_hash, False, None
-
             start_time = time.time()
             cached = strip_refs(_resolve_cache()[key])
             elapsed_time = time.time() - start_time
@@ -146,15 +149,13 @@ def make_cached_decorator(
                 debug_print(
                     f"### cache key {key} contained large object, {size_mb:0.3f} MB"
                 )
-
             missing = _cached_path_missing(cached)
             if missing is not None:
                 debug_print(
-                    f"cache hit on stale entry: {key} -> {missing} no longer "
-                    f"on disk, treating as miss"
+                    f"cache hit on stale entry: {key} -> {missing} no "
+                    f"longer on disk, treating as miss"
                 )
                 return key, call_hash, False, None
-
             debug_print(f"cache hit: {key}")
             return key, call_hash, True, cached
 
@@ -166,20 +167,14 @@ def make_cached_decorator(
         ):
             if debug:
                 assert _is_head_node()
-
             bound = _bind_args(func, args, kwargs, injected_context)
-            key, call_hash, valid, cached_result = _get_cache_key_and_result(
-                bound
-            )
-
+            key, call_hash, valid, cached_result = _key_and_lookup(bound)
             if valid:
                 if isinstance(cached_result, ContextRef):
                     assert cached_result.ref is None
                 return cached_result
-
             if dry_run:
                 return NeverRun
-
             if TRACE_TASKS:
                 print(f">>> {func.__name__} (cache miss, running)")
             start_time = time.time()
@@ -187,7 +182,6 @@ def make_cached_decorator(
             elapsed_time = time.time() - start_time
             if TRACE_TASKS:
                 print(f"<<< {func.__name__} ({elapsed_time:.3f}s)")
-
             if elapsed_time > 0.5:
                 debug_print(
                     f"### fn {func.__name__} was slow to run, took {elapsed_time=} s"
@@ -199,38 +193,30 @@ def make_cached_decorator(
                 )
             if isinstance(result, Path) and not result.exists():
                 raise FileNotFoundError(result)
-
             debug_print(
-                f"storing: {key} as {type(result)} into cache {_resolve_cache().directory}"
+                f"storing: {key} as {type(result)} into cache "
+                f"{_resolve_cache().directory}"
             )
             _resolve_cache()[key] = strip_refs(result)
-
             return result
 
         inner.__name__ = func.__name__
         inner.__qualname__ = func.__qualname__
         inner.__module__ = func.__module__
 
-        # Pull our own kwargs out of ray_opts before handing to ray.remote
-        # (which would reject unknown kwargs).
         auto_memory = ray_opts.pop("auto_memory", False)
-
         ray_opts.setdefault("scheduling_strategy", "SPREAD")
         ray_opts.setdefault("max_retries", 3)
         ray_opts.setdefault("retry_exceptions", True)
-
         ray_func = ray.remote(**ray_opts)(inner)
 
         @wraps(func)
         def wrapper(*args, **kwargs):
-            # Implicit recording: inside a `@graph_builder` / `@pipeline`
+            # Trace-mode recording: inside a `@graph_builder` / `@pipeline`
             # trace, calling a @node op as plain Python emits a `Node`
-            # handle into the active Graph instead of erroring. Outside
-            # a trace, the original behaviour is preserved.
+            # handle into the active Graph instead of erroring.
             from dependency_graph.tracing import _TRACE, record
             if _TRACE.get() is not None:
-                # `_after` is a magic kwarg for ordering-only deps; pop
-                # it before validating that user kwargs are absent.
                 _after = kwargs.pop("_after", ())
                 if kwargs:
                     raise NotImplementedError(
@@ -239,13 +225,6 @@ def make_cached_decorator(
                         "are supported in trace context."
                     )
                 handle = record(wrapper, *args, _after=_after)
-                # Generic post-record hooks: each `_trace_hook` is a
-                # callable `Node -> Node` that records additional graph
-                # nodes downstream of this call and returns the new
-                # sink. Lets decorators like `@makes_image` chain on
-                # their own canonical downstream ops (e.g.
-                # `compute_image_metadata`) without this module knowing
-                # what's being chained.
                 for hook in getattr(wrapper, "_trace_hooks", ()):
                     handle = hook(handle)
                 return handle
@@ -259,65 +238,28 @@ def make_cached_decorator(
                     f"{func.__name__} uses auto_memory=True but this "
                     f"make_cached_decorator was built without a memory_estimator."
                 )
-
             def _auto_memory_remote(*args, **kwargs):
                 estimate = memory_estimator(func, args, kwargs)
                 return ray_func.options(memory=estimate).remote(*args, **kwargs)
-
             wrapper.remote = _auto_memory_remote
         else:
             wrapper.remote = ray_func.remote
+
         wrapper.options = ray_func.options
         wrapper._original = func
         wrapper._function = func
         wrapper._is_task = True
-        # Expose `fn_hash` and the cache_key_narrow hook so
-        # @makes_image's filename_fn can compute the same call_hash
-        # @node uses for its cache key. Narrow-wrapped ops would
-        # diverge otherwise: cache hashes the narrowed args while
-        # filename_fn would hash the raw args. Both must match for
-        # the on-disk filename to be the cache entry's locator.
-        wrapper._fn_hash = fn_hash
-        wrapper._cache_key_narrow = cache_key_narrow
 
-        # Forward all custom attributes from inner decorators (e.g.
-        # filename_fn, filename_fns, _display, _trace_hooks) so they
-        # survive the cached.remote wrapping.
-        wrapper.__dict__.update(func.__dict__)
-
-        # Re-register the @node-wrapped function under each identity
-        # `func` registered for, so view-side enumeration via
-        # producers_for(identity) gets the @node-wrapped callable
-        # (with `.remote` and `_function`) instead of the inner
-        # wrapper. Only @makes_image-decorated functions are in the
-        # producer list — non-producer @node ops (e.g. graph builders
-        # like calibrate) skip this step.
-        if getattr(func, '_makes_image_wrapped', False):
-            import products.registry as _registry_module
-            for ops in _registry_module._producers.values():
-                for inner in ops.values():
-                    inner[:] = [wrapper if op is func else op for op in inner]
-
-        def is_cached(
-            *args, injected_context: Optional[dict] = None, **kwargs
-        ) -> bool:
+        def is_cached(*args, injected_context=None, **kwargs) -> bool:
             bound = _bind_args(func, args, kwargs, injected_context)
-            _, _, valid, _ = _get_cache_key_and_result(bound)
+            _, _, valid, _ = _key_and_lookup(bound)
             return valid
-
         wrapper.is_cached = is_cached
 
-        def invalidate(
-            *args, injected_context: Optional[dict] = None, **kwargs
-        ) -> bool:
-            """Drop this call's cache entry. Returns True iff a key was deleted.
-
-            Uses the same key-derivation as `is_cached` (including any
-            cache_key_narrow hook), so callers can target the same entry
-            without knowing the underlying hash.
-            """
+        def invalidate(*args, injected_context=None, **kwargs) -> bool:
+            """Drop this call's cache entry. Returns True iff a key was deleted."""
             bound = _bind_args(func, args, kwargs, injected_context)
-            key, _, valid, _ = _get_cache_key_and_result(bound)
+            key, _, valid, _ = _key_and_lookup(bound)
             if not valid:
                 return False
             cache = _resolve_cache()
@@ -326,45 +268,42 @@ def make_cached_decorator(
                 return True
             except KeyError:
                 return False
-
         wrapper.invalidate = invalidate
-
-        def concerns(
-            *args, injected_context: Optional[dict] = None, **kwargs
-        ) -> list[dict]:
-            """Concerns reported by the most recent run with these inputs.
-
-            Looks up the per-object key written by `@capture_logs` when
-            the wrapped function is a registered producer. Returns a
-            (possibly empty) list of structlog event dicts; each carries
-            `event` (title), `detail`, and `_concern` ("warning"/"error")
-            plus any structured fields the caller attached. Returns []
-            when the function isn't a registered producer.
-            """
-            from dependency_graph.logging import _concerns_keys_for
-            bound = _bind_args(func, args, kwargs, injected_context)
-            if cache_key_narrow is not None:
-                hash_args, hash_kwargs = cache_key_narrow(bound.args, bound.kwargs)
-            else:
-                hash_args, hash_kwargs = bound.args, bound.kwargs
-            keys = _concerns_keys_for(func, hash_args, hash_kwargs)
-            cache = _resolve_cache()
-            for key in keys:
-                if key in cache:
-                    return cache[key]
-            return []
-
-        wrapper.concerns = concerns
 
         return wrapper
 
     class CachedTask:
-        def __call__(self, func: Callable) -> Callable:
-            return decorate(func, ray_opts={})
+        """Use `cached.remote(func, canonical_call_hash=..., **ray_opts)`
+        to wrap a function. The caller (`@node`) is responsible for
+        constructing `canonical_call_hash`.
 
-        def remote(self, func: Callable = None, **ray_opts):
+        For test code and other direct callers, `canonical_call_hash` may
+        be omitted (or `None`); a default that hashes
+        `(hash_source_code(func), *args, **kwargs)` with no narrowing is
+        built automatically. Production code always goes through `@node`,
+        which supplies an explicit `canonical_call_hash` that includes
+        the op's narrow hook.
+        """
+
+        def remote(self, func=None, *, canonical_call_hash=None, cache_key_narrow=None, **ray_opts):
+            def go(f):
+                cch = canonical_call_hash or _default_canonical_call_hash(f, cache_key_narrow)
+                return decorate(f, canonical_call_hash=cch, ray_opts=ray_opts)
             if func is None:
-                return lambda f: decorate(f, ray_opts)
-            return decorate(func, ray_opts)
+                return go
+            return go(func)
 
     return CachedTask()
+
+
+def _default_canonical_call_hash(func, cache_key_narrow):
+    """Build a default `canonical_call_hash` for direct `cached.remote`
+    callers that didn't supply one. Production code (`@node`) builds its
+    own; this is a convenience for tests and stand-alone usage."""
+    from hashing import hash_call, hash_source_code
+    fn_hash = hash_source_code(func)
+    def canonical_call_hash(*args, **kwargs):
+        if cache_key_narrow is not None:
+            args, kwargs = cache_key_narrow(args, kwargs)
+        return hash_call(fn_hash, *args, **kwargs)
+    return canonical_call_hash

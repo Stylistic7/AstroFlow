@@ -18,7 +18,6 @@ from decorators import node
 from decisions.settings import ProcessingConfig
 from file_io.tiff_file_io import write_tiff_image
 from file_io.types import XisfFilePath, TiffFilePath, WithSidecar
-from products import makes_image
 from products.identity import MosaicChannelId, MergedImageId, PresentationType
 from hashing import hash_list
 
@@ -53,8 +52,11 @@ def _blend_pair_numpy(image_0, image_1):
     return output
 
 
-@node(resources={"fastest_storage": 0.001})
-@makes_image(identity=MergedImageId, display="Merged")
+@node(
+    identity=MergedImageId,
+    display="Merged",
+    resources={"fastest_storage": 0.001},
+)
 def merge_images_subframe(
     mosaic: Mosaic, filter: str, *inputs,
 ) -> WithSidecar[TiffFilePath]:
@@ -178,9 +180,13 @@ def _merge_images_narrow(args, kwargs):
     return (mosaic, filter, config.development_settings.mock_pixinsight, *inputs), kwargs
 
 
-@node(resources={"PixInsight": 1}, auto_memory=True,
-      cache_key_narrow=_merge_images_narrow)
-@makes_image(identity=MergedImageId, display="Merged")
+@node(
+    identity=MergedImageId,
+    display="Merged",
+    cache_key_narrow=_merge_images_narrow,
+    resources={"PixInsight": 1},
+    auto_memory=True,
+)
 def merge_images(
     mosaic: Mosaic, filter: str, config: ProcessingConfig,
     *inputs,

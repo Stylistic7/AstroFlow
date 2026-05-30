@@ -16,7 +16,6 @@ from decorators import node
 from file_io.types import XisfFilePath, WithSidecar
 from pix import Image
 from pix.tasks import HDRComposition, StarAlignment
-from products import makes_image
 from products.identity import (
     PresentationType,
     TargetChannelId,
@@ -80,9 +79,14 @@ def _merge_target_channel_impl(
     return WithSidecar(XisfFilePath(output_filename))
 
 
-@node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD",
-      auto_memory=True, cache_key_narrow=_merge_target_channel_narrow)
-@makes_image(identity=TargetChannelId, display="Channel")
+@node(
+    identity=TargetChannelId,
+    display="Channel",
+    cache_key_narrow=_merge_target_channel_narrow,
+    resources={"PixInsight": 1},
+    scheduling_strategy="SPREAD",
+    auto_memory=True,
+)
 def merge_target_channel(
     target: Target, filter: str, stacks: tuple[Stack, ...],
     config: ProcessingConfig,

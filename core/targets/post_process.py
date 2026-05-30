@@ -20,7 +20,6 @@ from pix.tasks import (
 from file_io.types import XisfFilePath, WithSidecar
 from decorators import node
 from targets.types import Target
-from products import makes_image
 from products.identity import TargetId
 
 
@@ -69,8 +68,12 @@ def _post_process_target(images: ImageList, target: Target) -> tuple[Image, Imag
     return None
 
 
-@node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD", auto_memory=True)
-@makes_image(identity=TargetId)
+@node(
+    identity=TargetId,
+    resources={"PixInsight": 1},
+    scheduling_strategy="SPREAD",
+    auto_memory=True,
+)
 def post_process_target(
     target: Target,
     channels,  # dict[str, WithSidecar]: per-filter channel masters
@@ -106,8 +109,7 @@ def post_process_target(
     return None
 
 
-@node
-@makes_image(identity=TargetId)
+@node(identity=TargetId)
 def post_process_target_oss(target: Target, mock_pixinsight: bool = False) -> None:
     """Stub: target post-processing for the OSS pipeline (TODO)."""
     return None

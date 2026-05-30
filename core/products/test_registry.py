@@ -161,9 +161,9 @@ def test_real_run_subframe_producers_resolve_distinctly():
 
 def test_final_kwarg_propagates_to_wrapped_op():
     """`@makes_image(final=True)` sets `_final` on the wrapped op so
-    `runtime_snapshot.store_cart_snapshot` can route the produced
-    path into the snapshot's `finals` subset. Unmarked ops should
-    lack `_final` (or have it False)."""
+    `dependency_graph.trace_paths.paths_for_cart_item(...,
+    finals_only=True)` can filter to the user's preserve-on-archive
+    set. Unmarked ops should lack `_final` (or have it False)."""
     from mosaics.final_storage import (
         store_mosaic_color_channel_xisf,
         store_mosaic_color_channel_subframe,

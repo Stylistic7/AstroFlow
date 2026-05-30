@@ -22,7 +22,6 @@ from decisions.settings import ProcessingConfig
 from decorators import node
 from file_io.generic import read_image
 from file_io.types import FitsFilePath, WithSidecar
-from products import makes_image
 from products.identity import (
     PresentationType,
     TargetChannelId,
@@ -43,8 +42,11 @@ log = structlog.get_logger()
 # 65535. Treat anything ≥ this fraction of the per-image max as saturated.
 _SATURATION_FRACTION = 0.999
 
-@node(auto_memory=True, cache_key_narrow=_merge_target_channel_narrow)
-@makes_image(identity=TargetChannelId)
+@node(
+    identity=TargetChannelId,
+    cache_key_narrow=_merge_target_channel_narrow,
+    auto_memory=True,
+)
 def merge_target_channel_oss(
     target: Target, filter: str, stacks: tuple[Stack, ...],
     config: ProcessingConfig,

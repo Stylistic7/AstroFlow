@@ -23,7 +23,7 @@ from previews.operations import autostretch
 from stacks.composite_stack import Stack
 from decisions.subframe_selection import get_light_frames_sorted_by_stars
 from decisions.resolve import is_frame_included, resolve_calibration
-from products import makes_image, makes_video
+from products.registry import MediaType
 from products.identity import StackId, CalibrationStackId, PresentationType
 
 THUMBNAIL = PresentationType.THUMBNAIL
@@ -103,13 +103,11 @@ def get_best_light_frame(stack: Stack) -> WithSidecar:
         FitsFilePath(metadata[light_frames_by_stars[0]].filename)
     )
 
-@node
-@makes_image(filename_fn=get_best_light_frame, identity=StackId)
+@node(identity=StackId, filename_fn=get_best_light_frame)
 def stack_thumbnail(stack: Stack) -> WithSidecar:
     return get_best_light_frame(stack)
 
-@node
-@makes_image(filename_fn=get_first_frame, identity=CalibrationStackId)
+@node(identity=CalibrationStackId, filename_fn=get_first_frame)
 def calibration_stack_thumbnail(stack: CalibrationStack) -> WithSidecar:
     return get_first_frame(stack)
 
@@ -148,9 +146,12 @@ def _stack_thumbnail_video_narrow(args, kwargs):
     stack, width, config, *rest = args
     return (stack, width, narrow_stack_config(stack, config), *rest), kwargs
 
-@node(resources={"fastest_storage": 0.001},
-      cache_key_narrow=_stack_thumbnail_video_narrow)
-@makes_video(identity=StackId)
+@node(
+    identity=StackId,
+    media_type=MediaType.VIDEO,
+    cache_key_narrow=_stack_thumbnail_video_narrow,
+    resources={"fastest_storage": 0.001},
+)
 @create_video
 def stack_thumbnail_video(
     stack: Stack,
@@ -187,8 +188,11 @@ def stack_thumbnail_video(
 
         yield im
 
-@node(resources={"fastest_storage": 0.001})
-@makes_video(identity=CalibrationStackId)
+@node(
+    identity=CalibrationStackId,
+    media_type=MediaType.VIDEO,
+    resources={"fastest_storage": 0.001},
+)
 @create_video
 def calibration_stack_thumbnail_video(
     stack: CalibrationStack,

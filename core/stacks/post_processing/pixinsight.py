@@ -14,7 +14,6 @@ from decisions.settings import ProcessingConfig
 from metadata.classes import ImageMetadata
 from stacks.composite_stack import Stack
 from file_io.types import XisfFilePath, WithSidecar
-from products import makes_image
 from products.identity import StackId, PresentationType
 import structlog
 
@@ -58,9 +57,13 @@ def _post_process_narrow(args, kwargs):
     return (stack, config.development_settings.mock_pixinsight, master), kwargs
 
 
-@node(resources={"PixInsight": 1}, auto_memory=True,
-      cache_key_narrow=_post_process_narrow)
-@makes_image(identity=StackId, display="Post-Processed")
+@node(
+    identity=StackId,
+    display="Post-Processed",
+    cache_key_narrow=_post_process_narrow,
+    resources={"PixInsight": 1},
+    auto_memory=True,
+)
 def post_process_stack(
     stack: Stack, config: ProcessingConfig, master: ImageMetadata,
 ) -> WithSidecar[XisfFilePath]:

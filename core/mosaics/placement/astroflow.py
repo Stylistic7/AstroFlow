@@ -28,7 +28,6 @@ from decorators import node
 from decisions.settings import ProcessingConfig
 from metadata.classes import ImageMetadata
 from plate_solving import PlateSolution
-from products import makes_image
 from products.identity import PlacedImageId
 
 class ProjectionFailedException(Exception):
@@ -182,8 +181,11 @@ def _place_image_narrow(args, kwargs):
             config.edge_erosion_px, image_metadata), kwargs
 
 
-@node(auto_memory=True, cache_key_narrow=_place_image_narrow)
-@makes_image(identity=PlacedImageId)
+@node(
+    identity=PlacedImageId,
+    cache_key_narrow=_place_image_narrow,
+    auto_memory=True,
+)
 def place_image(
     mosaic: Mosaic, target: Target, filter: str, viewbox: Viewbox,
     config: ProcessingConfig, image_metadata: ImageMetadata,

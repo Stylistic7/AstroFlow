@@ -7,7 +7,6 @@ from file_io.generic import read_image
 from file_io.tiff_file_io import write_tiff_image
 from previews.operations import autostretch
 from pix import Image
-from products import makes_image
 from products.identity import MosaicChannelId, PresentationType
 from decorators import node
 from decisions.settings import ProcessingConfig
@@ -25,9 +24,14 @@ def _store_xisf_narrow(args, kwargs):
     return (mosaic, filter, config.development_settings.mock_pixinsight, input), kwargs
 
 
-@node(resources={"PixInsight": 1}, auto_memory=True,
-      cache_key_narrow=_store_xisf_narrow)
-@makes_image(identity=MosaicChannelId, display="Mosaic", final=True)
+@node(
+    identity=MosaicChannelId,
+    display="Mosaic",
+    final=True,
+    cache_key_narrow=_store_xisf_narrow,
+    resources={"PixInsight": 1},
+    auto_memory=True,
+)
 def store_mosaic_color_channel_xisf(
     mosaic: Mosaic, filter: str, config: ProcessingConfig,
     input: ImageMetadata,
@@ -51,8 +55,12 @@ def store_mosaic_color_channel_xisf(
     return WithSidecar(output)
 
 
-@node(resources={"fastest_storage": 0.001})
-@makes_image(identity=MosaicChannelId, display="Subframe", final=True)
+@node(
+    identity=MosaicChannelId,
+    display="Subframe",
+    final=True,
+    resources={"fastest_storage": 0.001},
+)
 def store_mosaic_color_channel_subframe(
     mosaic: Mosaic, filter: str, input: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
@@ -71,8 +79,11 @@ def store_mosaic_color_channel_subframe(
     return WithSidecar(output)
 
 
-@node
-@makes_image(identity=MosaicChannelId, display="Mosaic", final=True)
+@node(
+    identity=MosaicChannelId,
+    display="Mosaic",
+    final=True,
+)
 def store_mosaic_color_channel_oss(
     mosaic: Mosaic, filter: str, input: ImageMetadata,
 ) -> WithSidecar[FitsFilePath]:

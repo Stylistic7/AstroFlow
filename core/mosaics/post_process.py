@@ -19,7 +19,6 @@ from pix.tasks import (
 from file_io.types import XisfFilePath, WithSidecar
 from decorators import node
 from mosaics.types import Mosaic
-from products import makes_image
 from products.identity import MosaicId
 from astropy.time import Time
 
@@ -53,8 +52,11 @@ def _post_process_mosaic(images: ImageList, mosaic: Mosaic) -> Image | None:
     return None
 
 
-@node(resources={"PixInsight": 1}, auto_memory=True)
-@makes_image(identity=MosaicId)
+@node(
+    identity=MosaicId,
+    resources={"PixInsight": 1},
+    auto_memory=True,
+)
 def post_process_mosaic(
     mosaic: Mosaic,
     channels,  # dict[str, WithSidecar]: per-filter mosaic-channel masters

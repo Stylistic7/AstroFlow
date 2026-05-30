@@ -1,3 +1,31 @@
+"""The single `@node` decorator.
+
+`@node` is the only public decorator for declaring a cached, Ray-remote
+op. It accepts every knob — Ray options, narrowing, image-producer
+declarations — as keyword arguments and orchestrates the inner layers
+by computing every shared artifact ONCE and passing them in as explicit
+arguments. The inner layers don't read each other's attributes — every
+coordination point is a function parameter.
+
+Concerns split:
+
+  * `cached.remote` (cache/cached_decorator.py): caching only. Receives
+    `canonical_call_hash` and uses it for the cache key. Doesn't know
+    about filenames, content_hashes, identities.
+
+  * `makes_image_wrap` (products/registry.py): image lifecycle only.
+    Wraps the function so that after the body returns, the file's
+    `content_hash` header is stamped and presentations are generated.
+    Doesn't touch the cache.
+
+  * `@node` (this file): the sole orchestrator. Parses kwargs once,
+    computes shared artifacts (`fn_hash`, `canonical_call_hash`,
+    `filename_fns`), composes the layers passing artifacts as args,
+    attaches public-API attributes (`filename_fn`, `_identities`, etc.)
+    on the final wrapper, registers in `_producers`.
+
+The only logic that spans multiple decorators lives here.
+"""
 from beartype import beartype as _beartype
 
 from cache.cached_decorator import make_cached_decorator
@@ -7,12 +35,11 @@ from previews.create_video import make_create_video_decorator
 from profiling.measure_performance import make_measure_performance_decorator
 from profiling.memory_estimate import estimate_memory
 from dependency_graph.logging import make_capture_logs_decorator
-from hashing import hash_call
+from hashing import hash_call, hash_source_code
 from context import context, get_cache
 
 cached = make_cached_decorator(
     cache_provider=get_cache,
-    call_hasher=hash_call,
     memory_estimator=estimate_memory,
     debug=False,
 )
@@ -26,38 +53,159 @@ capture_logs = make_capture_logs_decorator(context)
 
 
 class _Node:
-    """Composite decorator: @beartype → @capture_logs → @measure_performance → @cached.remote.
+    """Single decorator for cached Ray-remote ops.
 
-    Usage:
+    Examples:
+
+        # Pure cached compute (no on-disk file).
         @node
-        def my_function(...) -> SomeType:
-            ...
+        def helper(stack): ...
 
         @node(num_cpus=0.25)
-        def my_function(...) -> SomeType:
-            ...
+        def small_compute(x): ...
 
         @node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD")
-        def my_function(...) -> SomeType:
-            ...
-    """
-    def __call__(self, func=None, **ray_opts):
-        if func is not None:
-            # Bare @node — func is the decorated function
-            return self._wrap(func, ray_opts={})
-        # @node(**kwargs) — return a decorator
-        return lambda f: self._wrap(f, ray_opts)
+        def pi_op(...): ...
 
-    def _wrap(self, func, ray_opts):
-        # capture_logs needs the same narrow hook so its log/concerns
-        # cache keys agree with the cached layer's. cached.remote pops
-        # the kwarg from ray_opts during its own wrapping; peek it
-        # without consuming so both layers see the same callable.
-        cache_key_narrow = ray_opts.get("cache_key_narrow")
-        wrapped = _beartype(func)
+        # Image producer (replaces the old `@makes_image` decorator).
+        @node(
+            identity=StackId,
+            final=True,
+            display="Master",
+            cache_key_narrow=_narrow,
+            resources={"PixInsight": 1},
+            auto_memory=True,
+        )
+        def stack_files(stack, config, *cal_masters): ...
+
+        # Polymorphic identity (one op produces files routed under two
+        # ObjectType directories — e.g. stack_files for Stack and
+        # CalibrationStack).
+        @node(
+            identity=[StackId, CalibrationStackId],
+            cache_key_narrow=_narrow,
+            final=True,
+        )
+        def stack_files(...): ...
+    """
+
+    def __call__(self, func=None, **kwargs):
+        if func is not None:
+            # Bare `@node` — `func` is the decorated callable.
+            return self._wrap(func, {})
+        # `@node(**kwargs)` — return a decorator.
+        return lambda f: self._wrap(f, kwargs)
+
+    def _wrap(self, func, all_kwargs):
+        # ---- 1. Parse kwargs ------------------------------------------
+        ray_opts = dict(all_kwargs)
+        identity = ray_opts.pop("identity", None)
+        final = ray_opts.pop("final", False)
+        display = ray_opts.pop("display", None)
+        media_type = ray_opts.pop("media_type", None)
+        custom_filename_fn = ray_opts.pop("filename_fn", None)
+        cache_key_narrow = ray_opts.pop("cache_key_narrow", None)
+        identities = _normalize_identities(identity)
+        # Default media_type = IMAGE; only resolve when there are
+        # identities to register (avoids pulling the products.registry
+        # module — and its mosaics/targets/stacks transitive imports —
+        # into the import path of every bare `@node` decoration).
+        if identities and media_type is None:
+            from products.registry import MediaType
+            media_type = MediaType.IMAGE
+
+        # ---- 2. Compute shared artifacts ------------------------------
+        fn_hash = hash_source_code(func)
+
+        def canonical_call_hash(*args, **kwargs):
+            """The op's call_hash. Used by both the cache layer (cache
+            key + content_hash stamp) and the on-disk filename_fn. They
+            share THIS closure — same `cache_key_narrow`, same `fn_hash`
+            — by construction, so drift between cache key and filename
+            is structurally impossible."""
+            if cache_key_narrow is not None:
+                args, kwargs = cache_key_narrow(args, kwargs)
+            return hash_call(fn_hash, *args, **kwargs)
+
+        filename_fn = None
+        filename_fns = None
+        if identities:
+            from products.registry import (
+                validate_identities, build_filename_fns, fully_resolve,
+            )
+            validate_identities(func, identities)
+            if custom_filename_fn is not None:
+                # Caller passed an explicit `filename_fn=` (rare, used by
+                # selection-style ops that return absolute paths to raw
+                # frames). Apply it per identity; skip the call_hash
+                # convention entirely.
+                filename_fns = {
+                    identity: fully_resolve(
+                        identity, custom_filename_fn, func.__name__,
+                    )
+                    for identity in identities
+                }
+                from products.registry import _make_dispatcher
+                filename_fn = _make_dispatcher(filename_fns)
+            else:
+                filename_fns, filename_fn = build_filename_fns(
+                    func, identities, canonical_call_hash,
+                )
+
+        # ---- 3. Compose layers ----------------------------------------
+        # Each layer is single-concern. None of them queries another's
+        # state via attribute lookup — coordination flows through the
+        # explicit arguments below.
+        wrapped = func
+
+        if identities:
+            from products.registry import makes_image_wrap
+            wrapped = makes_image_wrap(
+                wrapped,
+                canonical_call_hash=canonical_call_hash,
+                identities=identities,
+            )
+
         wrapped = capture_logs(wrapped, cache_key_narrow=cache_key_narrow)
         wrapped = measure_performance(wrapped, ray_opts=ray_opts)
-        return cached.remote(wrapped, **ray_opts)
+        wrapper = cached.remote(
+            wrapped,
+            canonical_call_hash=canonical_call_hash,
+            **ray_opts,
+        )
+
+        # ---- 4. Attach public-API attributes on the final wrapper -----
+        # These are the ATTRIBUTES users access on the wrapper. The
+        # inner layers don't read them — they had everything they needed
+        # passed in as args. These exist purely so external code (user
+        # pipelines, the trace, the runtime, the view-side enumeration)
+        # can introspect the op.
+        wrapper._fn_hash = fn_hash
+        wrapper._cache_key_narrow = cache_key_narrow
+
+        if identities:
+            wrapper.filename_fn = filename_fn
+            wrapper.filename_fns = filename_fns
+            wrapper._identities = identities
+            wrapper._final = final
+            if display is not None:
+                wrapper._display = display
+            from products.registry import (
+                _chain_compute_image_metadata, register_producer,
+            )
+            wrapper._trace_hooks = [_chain_compute_image_metadata]
+            register_producer(wrapper, identities, media_type=media_type)
+
+        return wrapper
+
+
+def _normalize_identities(identity):
+    """Accept None, a single identity class, or a list — return a list."""
+    if identity is None:
+        return []
+    if isinstance(identity, (list, tuple)):
+        return list(identity)
+    return [identity]
 
 
 node = _Node()

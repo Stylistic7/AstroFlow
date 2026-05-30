@@ -2,14 +2,12 @@ import ray
 import diskcache
 
 from cache.cached_decorator import make_cached_decorator
-from hashing import hash_call
 from context import context, get_cache
 from targets.types import TargetsDict
 
 
 locally_cached = make_cached_decorator(
     cache_provider=get_cache,
-    call_hasher=hash_call,
     debug=True,
 )
 

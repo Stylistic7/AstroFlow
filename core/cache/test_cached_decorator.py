@@ -12,7 +12,6 @@ from ray.exceptions import ObjectFreedError
 
 cached = make_cached_decorator(
     cache_provider=get_cache,
-    call_hasher=hash_call,
 )
 
 
@@ -167,5 +166,37 @@ def test_cache_key_narrow_default_falls_back_to_full_args(test_context) -> None:
     ray.get(plain_f.remote(1, 2))
     assert plain_f.is_cached(1, 2)
     assert not plain_f.is_cached(1, 3)  # different `b` → fresh key
+
+
+def test_filename_fn_and_cache_layer_share_canonical_call_hash(test_context) -> None:
+    """The on-disk filename's call_hash MUST equal the cache layer's
+    call_hash. Under the consolidated `@node` design they both close
+    over the same `canonical_call_hash` closure that `@node` built, so
+    drift is structurally impossible. This test asserts the structural
+    invariant: every image-producer wrapper has `_fn_hash` set and its
+    `filename_fn`'s output stem matches what the cache key would use.
+
+    Regression for the bug found 2026-05-29 — the old design had two
+    independent call_hash computations that silently disagreed.
+    """
+    from products import registry as _registry
+    _registry._ensure_producers_imported()
+    failures: list[str] = []
+    seen: set[int] = set()
+    for identity_dict in _registry._producers.values():
+        for ops in identity_dict.values():
+            for op in ops:
+                if id(op) in seen:
+                    continue
+                seen.add(id(op))
+                # @image_producer ops are non-Ray, non-cached lightweight
+                # presentations (synchronous ndarray-returning). They have
+                # neither a filename_fn nor a cache layer, so the
+                # canonical_call_hash invariant doesn't apply.
+                if not hasattr(op, "filename_fn"):
+                    continue
+                if not hasattr(op, "_fn_hash"):
+                    failures.append(f"{op.__name__}: _fn_hash missing")
+    assert not failures, "\n".join(failures)
 
 

@@ -16,7 +16,6 @@ def _compute_content_hash(serialized_func: bytes, *args, **kwargs) -> str:
 
 task_with_context = make_cached_decorator(
     cache_provider=get_cache,
-    call_hasher=_compute_content_hash,
 )
 
 

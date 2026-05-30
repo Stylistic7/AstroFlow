@@ -20,7 +20,6 @@ from mosaics.merging.pixinsight import (
     MergedImage, _panel_count, _set_panel_count,
 )
 from mosaics.types import Mosaic
-from products import makes_image
 from products.identity import MergedImageId
 
 log = structlog.get_logger()
@@ -47,8 +46,7 @@ def _blend(image_0, image_1):
     total[total == 0] = 1.0
     return (w_0 * image_0 + w_1 * image_1) / total
 
-@node(auto_memory=True)
-@makes_image(identity=MergedImageId)
+@node(identity=MergedImageId, auto_memory=True)
 def merge_images_oss(
     mosaic: Mosaic, filter: str,
     input_0: ImageMetadata, input_1: ImageMetadata,
