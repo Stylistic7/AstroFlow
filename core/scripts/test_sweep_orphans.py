@@ -1,26 +1,25 @@
-"""End-to-end test of the sweep CLI's orphan classification.
+"""End-to-end tests of the sweep CLI's orphan classification.
 
-Populates a temp output_dir with referenced + unreferenced files,
-writes a cart-item snapshot directly to the diskcache, and
-asserts that `_walk_orphans` returns exactly the unreferenced
-files.
+The live set is now derived by tracing each cart item's pipeline (see
+`dependency_graph.trace_paths.paths_for_cart_item`) and unioning with
+`context.archive`'s inline paths. These tests monkeypatch
+`paths_for_cart_item` so we can exercise classification logic without
+a real pipeline; a separate exhaustive test (`@pytest.mark.exhaustive`
+below) drives the full Orion mosaic to validate the integration.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
 
 from context import local_context as context
-from dependency_graph.runtime_snapshot import (
-    SNAPSHOT_KEY_PREFIX,
-    clear_cart_snapshot,
-)
 from scripts import sweep_orphans
 
 
 @pytest.fixture
-def temp_output_dir(tmp_path, monkeypatch):
+def temp_output_dir(tmp_path):
     """Set `context.output_dir` to a fresh tmp dir for the test."""
     original = context.output_dir
     context.output_dir = str(tmp_path)
@@ -30,24 +29,27 @@ def temp_output_dir(tmp_path, monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _clean_cart_and_archive():
-    """Reset cart, archive, and any test-key snapshots around
-    each test."""
+    """Reset cart and archive around each test."""
     original_cart = context.shopping_cart
     original_archive = context.archive
     context.shopping_cart = []
     context.archive = []
-    test_keys = [
-        ("mosaic", "2", "P"),
-        ("stack", "xyz", "P"),
-        ("stack", "1", "P"),
-    ]
-    for k in test_keys:
-        clear_cart_snapshot(k)
     yield
     context.shopping_cart = original_cart
     context.archive = original_archive
-    for k in test_keys:
-        clear_cart_snapshot(k)
+
+
+@pytest.fixture
+def fake_trace(monkeypatch):
+    """Stub `paths_for_cart_item` so cart items resolve to a fixed
+    list. Caller mutates `bank[item] = [paths]`."""
+    bank: dict[tuple, list[str]] = {}
+
+    def fake(item, *, finals_only=False):
+        return list(bank.get(tuple(item), []))
+
+    monkeypatch.setattr(sweep_orphans, "paths_for_cart_item", fake)
+    return bank
 
 
 def _make_file(path: Path, size: int = 100) -> Path:
@@ -56,19 +58,12 @@ def _make_file(path: Path, size: int = 100) -> Path:
     return path
 
 
-def _write_snapshot(item, *, all_paths, final_paths=None):
-    context[(SNAPSHOT_KEY_PREFIX,) + tuple(item)] = {
-        "all": [str(p) for p in all_paths],
-        "finals": [str(p) for p in (final_paths or [])],
-    }
-
-
-def test_walk_orphans_returns_unreferenced_files_only(temp_output_dir):
+def test_walk_and_classify_returns_unreferenced_files_only(temp_output_dir):
     live_path = _make_file(temp_output_dir / "mosaic" / "live.xisf")
     orphan_path = _make_file(temp_output_dir / "mosaic" / "orphan.xisf")
     live = {str(live_path)}
 
-    orphans = sweep_orphans._walk_orphans(temp_output_dir, live)
+    orphans, _ = sweep_orphans._walk_and_classify(temp_output_dir, live)
     paths = {p for p, _ in orphans}
 
     assert paths == {str(orphan_path)}
@@ -94,13 +89,12 @@ def test_live_set_includes_archive_paths_and_their_siblings(
     assert str(tile) in live
 
 
-def test_live_set_reads_cart_snapshots(temp_output_dir):
-    """Cart items contribute paths via their saved snapshot —
-    NOT via pipeline tracing."""
+def test_live_set_traces_cart_items(temp_output_dir, fake_trace):
+    """Cart items contribute their traced paths to the live set."""
     live_path = temp_output_dir / "stack" / "master.xisf"
     _make_file(live_path)
     item = ("stack", "xyz", "P")
-    _write_snapshot(item, all_paths=[live_path])
+    fake_trace[item] = [str(live_path)]
     context.shopping_cart = [item]
 
     live = sweep_orphans._live_set()
@@ -108,46 +102,276 @@ def test_live_set_reads_cart_snapshots(temp_output_dir):
     assert str(live_path) in live
 
 
-def test_cart_item_without_snapshot_contributes_nothing(temp_output_dir):
-    """An item in the cart with no snapshot (never run yet)
-    contributes no paths. Files on disk under its output dir
-    that don't appear elsewhere are orphans."""
+def test_cart_item_with_empty_trace_contributes_nothing(temp_output_dir):
+    """An item in the cart whose trace returns [] (entity missing
+    from context) contributes no paths."""
     orphan = _make_file(temp_output_dir / "stack" / "stranded.xisf")
     item = ("stack", "xyz", "P")
+    # No monkeypatch → real paths_for_cart_item runs; returns []
+    # because entity isn't in context.
     context.shopping_cart = [item]
 
     live = sweep_orphans._live_set()
-    orphans = sweep_orphans._walk_orphans(temp_output_dir, live)
+    orphans, _ = sweep_orphans._walk_and_classify(temp_output_dir, live)
 
     assert {p for p, _ in orphans} == {str(orphan)}
 
 
-def test_full_sweep_classifies_correctly(temp_output_dir):
-    """End-to-end: cart's snapshot references one master,
-    archive preserves another, a third file is neither —
-    only the third shows up as an orphan."""
+def test_full_sweep_classifies_correctly(temp_output_dir, fake_trace):
+    """End-to-end: cart's trace returns one master, archive preserves
+    another, a third file is neither — only the third shows up as an
+    orphan."""
     cart_path = _make_file(temp_output_dir / "a" / "cart.xisf")
     archive_path = _make_file(temp_output_dir / "b" / "archive.xisf")
     orphan_path = _make_file(temp_output_dir / "c" / "orphan.xisf")
 
     cart_item = ("stack", "1", "P")
-    _write_snapshot(cart_item, all_paths=[cart_path])
+    fake_trace[cart_item] = [str(cart_path)]
     context.shopping_cart = [cart_item]
     context.archive = [("mosaic", "2", "P", [str(archive_path)])]
 
     live = sweep_orphans._live_set()
-    orphans = sweep_orphans._walk_orphans(temp_output_dir, live)
+    orphans, _ = sweep_orphans._walk_and_classify(temp_output_dir, live)
     orphan_paths = {p for p, _ in orphans}
 
     assert orphan_paths == {str(orphan_path)}
 
 
-def test_walk_orphans_returns_sizes(temp_output_dir):
+def test_walk_and_classify_returns_sizes(temp_output_dir):
     p = _make_file(temp_output_dir / "x.bin", size=512)
-    orphans = sweep_orphans._walk_orphans(temp_output_dir, set())
+    orphans, _ = sweep_orphans._walk_and_classify(temp_output_dir, set())
     assert orphans == [(str(p), 512)]
 
 
-def test_walk_orphans_with_no_output_dir_returns_empty():
+def test_walk_and_classify_with_no_output_dir_returns_empty():
     """If output_dir is None (pre-init), sweep is a no-op."""
-    assert sweep_orphans._walk_orphans(None, set()) == []
+    orphans, by_dir = sweep_orphans._walk_and_classify(None, set())
+    assert orphans == []
+    assert by_dir == {}
+
+
+def test_include_scopes_to_named_dirs(temp_output_dir, fake_trace):
+    """--include restricts classification to the named op directories;
+    files outside are neither live nor orphan, just ignored."""
+    included = _make_file(temp_output_dir / "PlacedImage" / "place_image" / "a.tiff")
+    excluded = _make_file(temp_output_dir / "Stack" / "stack_files" / "b.xisf")
+
+    orphans, by_dir = sweep_orphans._walk_and_classify(
+        temp_output_dir, set(), include={"PlacedImage/place_image"},
+    )
+    paths = {p for p, _ in orphans}
+
+    assert str(included) in paths
+    assert str(excluded) not in paths
+    assert "PlacedImage/place_image" in by_dir
+    assert "Stack/stack_files" not in by_dir
+
+
+# ---------------------------------------------------------------------
+# Exhaustive lifecycle: full Orion mosaic, trace == disk, cart→archive
+# ---------------------------------------------------------------------
+
+import datetime
+from dataclasses import replace
+
+from compute_graph.compute_graph import build_compute_graph
+from decisions.helpers import set_flat
+from decisions.settings import DevelopmentSettings
+from dependency_graph import run_graph
+from dependency_graph.trace_paths import paths_for_cart_item
+from mosaics.orion_mosaic import add_orion_mosaic_images
+from state import archive as archive_mod
+
+
+def _override_flats_for_all_stacks():
+    """Copy of the helper from `mosaics/test_mosaic.py` — assigns the
+    flat cal stack to every light stack run so the master pipeline
+    can resolve a flat. Duplicated rather than imported so this file
+    doesn't take a structural dependency on a sibling test module."""
+    flat_stack_id = next(
+        (sid for sid, s in context.calibration_stacks.items()
+         if s.image_type == "flat"),
+        None,
+    )
+    assert flat_stack_id is not None, "No flat calibration stack found"
+    for stack_ref in context.stacks.values():
+        stack = stack_ref.get()
+        for run_hash in stack.contents:
+            set_flat(stack.stable_hash, run_hash, flat_stack_id)
+
+
+def _disable_preview_graph():
+    """Suppress the auto-dispatched Subframe preview graph for the
+    duration of this test. With preview off, every on-disk output is
+    from the explicit cart's Master pipeline — making the trace ==
+    disk comparison clean (no Subframe outputs to bookkeep)."""
+    settings = context.settings
+    dev = replace(settings.development_settings, skip_preview_graph=True)
+    context.settings = replace(settings, development_settings=dev)
+
+
+def _master_pipeline_op_dirs() -> tuple[str, ...]:
+    """Directories the Master pipeline writes primary outputs into.
+    Used to filter disk-scan results for the trace==disk comparison."""
+    return (
+        "CalibrationStack/stack_files",
+        "Stack/stack_files",
+        "Stack/post_process_stack",
+        "TargetChannel/merge_target_channel",
+        "PlacedImage/place_image",
+        "MergedImage/merge_images",
+        "Mosaic/store_mosaic_color_channel_xisf",
+    )
+
+
+def _gather_disk_primaries(output_dir: Path) -> set[str]:
+    """All on-disk primary outputs (xisf + tiff), excluding sidecars
+    and tile-pyramid siblings of xisf primaries.
+
+    Tile pyramids and primary tiffs share the `.tiff` extension; the
+    disambiguation rule: a `.tiff` whose stem matches a `.xisf` in
+    the same directory is a pyramid (the pyramid sits next to its
+    primary). Standalone `.tiff` files (no co-located .xisf) are
+    primaries (PlacedImage/place_image)."""
+    primaries: set[str] = set()
+    for d in _master_pipeline_op_dirs():
+        full_dir = output_dir / d
+        if not full_dir.exists():
+            continue
+        xisf_stems = {p.stem for p in full_dir.glob("*.xisf")}
+        for p in full_dir.iterdir():
+            if p.suffix == ".xisf":
+                primaries.add(str(p))
+            elif p.suffix == ".tiff" and p.stem not in xisf_stems:
+                primaries.add(str(p))
+            # .json sidecars and pyramid .tiffs (stem matches an
+            # .xisf) are intentionally excluded.
+    return primaries
+
+
+@pytest.mark.exhaustive
+def test_orion_mosaic_trace_matches_disk_and_archive_lifecycle(test_context) -> None:
+    """End-to-end validation of the pure-Merkle tracing-based live set.
+
+    Phase 1 — Build & run the Orion mosaic Master pipeline. Assert
+    `paths_for_cart_item` predicts EXACTLY the set of primary files
+    on disk (trace == disk). This is the core correctness check for
+    the convention `content_hash := producer.call_hash`: if the
+    trace's call_hashes diverge from the runtime's at any node, the
+    set difference will be non-empty.
+
+    Phase 2 — Move the cart item to `archive` with `preserve="finals"`.
+    Assert the archive entry contains `stack_files` masters and the
+    final `store_mosaic_color_channel_xisf`, and nothing in between.
+
+    Phase 3 — Run the sweep. Assert intermediates (post_process_stack,
+    place_image, merge_images, merge_target_channel) are orphans;
+    finals remain live.
+    """
+    _disable_preview_graph()
+    add_orion_mosaic_images()
+
+    # First pass: identification + cal-stack discovery.
+    graph = build_compute_graph()
+    run_graph(graph)
+
+    mosaic = next(iter(context.mosaics.values())).get()
+    item = ("mosaic", mosaic.stable_hash, "PixInsight Master")
+
+    # Second pass: actually run the Master pipeline.
+    context.shopping_cart = [item]
+    _override_flats_for_all_stacks()
+    graph = build_compute_graph()
+    run_graph(graph)
+
+    # --- Phase 1: trace == disk ---------------------------------------
+    traced = {str(p) for p in paths_for_cart_item(item)}
+    on_disk = _gather_disk_primaries(Path(context.output_dir))
+
+    only_traced = traced - on_disk
+    only_disk = on_disk - traced
+
+    if only_traced or only_disk:
+        # Bucket both sides by op-directory so it's obvious where the
+        # divergence is: is it one specific op that's off, or does the
+        # mismatch cascade from the top? Print compactly so the test
+        # log stays readable.
+        from collections import defaultdict
+        def bucket(paths):
+            b = defaultdict(list)
+            for p in sorted(paths):
+                rel = os.path.relpath(p, str(context.output_dir))
+                b[os.path.dirname(rel)].append(os.path.basename(p))
+            return b
+        msg = ["DIVERGENCE between trace and disk:"]
+        msg.append(f"  trace produced {len(traced)} paths, disk has {len(on_disk)}")
+        for op_dir, names in sorted(bucket(only_traced).items()):
+            msg.append(f"  TRACE only [{op_dir}] ({len(names)}): {names[:3]}")
+        for op_dir, names in sorted(bucket(only_disk).items()):
+            msg.append(f"  DISK  only [{op_dir}] ({len(names)}): {names[:3]}")
+        for op_dir, names in sorted(bucket(traced & on_disk).items()):
+            msg.append(f"  MATCH      [{op_dir}] ({len(names)})")
+        pytest.fail("\n".join(msg))
+
+    # --- Phase 2: cart → archive with preserve="finals" --------------
+    archive_mod.apply_remove_from_cart(item, preserve="finals")
+
+    assert list(context.shopping_cart or []) == []
+    assert len(context.archive or []) == 1
+    archived_entry = context.archive[0]
+    assert tuple(archived_entry[:3]) == item
+    archived_paths = set(archived_entry[3])
+
+    # `finals_only=True` trace should equal what the archive captured.
+    finals_traced = {
+        str(p) for p in paths_for_cart_item(item, finals_only=True)
+    }
+    assert archived_paths == finals_traced
+
+    # `stack_files` is now `final=True` — must be in the archive set.
+    assert any("Stack/stack_files" in p for p in archived_paths)
+    assert any(
+        "Mosaic/store_mosaic_color_channel_xisf" in p
+        for p in archived_paths
+    )
+    # Intermediates must NOT be in finals.
+    for non_final_dir in (
+        "Stack/post_process_stack",
+        "PlacedImage/place_image",
+        "MergedImage/merge_images",
+        "TargetChannel/merge_target_channel",
+    ):
+        assert not any(non_final_dir in p for p in archived_paths), (
+            f"{non_final_dir} should not be in finals"
+        )
+
+    # --- Phase 3: sweep classifies correctly --------------------------
+    live = sweep_orphans._live_set()
+    orphans, _by_dir = sweep_orphans._walk_and_classify(
+        Path(context.output_dir), live,
+    )
+    orphan_paths = {p for p, _ in orphans}
+
+    # Every archived (finals) path is live (covered by archive entry).
+    for f in archived_paths:
+        assert f in live, f"Archived path {f} missing from live set"
+        assert f not in orphan_paths, (
+            f"Archived path {f} unexpectedly orphan"
+        )
+
+    # Every Master intermediate primary is an orphan.
+    intermediates_on_disk = {
+        p for p in on_disk
+        if any(d in p for d in (
+            "Stack/post_process_stack",
+            "PlacedImage/place_image",
+            "MergedImage/merge_images",
+            "TargetChannel/merge_target_channel",
+        ))
+    }
+    assert intermediates_on_disk, "Test setup didn't produce intermediates"
+    missing_from_orphans = intermediates_on_disk - orphan_paths
+    assert not missing_from_orphans, (
+        f"{len(missing_from_orphans)} intermediates not marked orphan "
+        f"(first 3): {sorted(missing_from_orphans)[:3]}"
+    )

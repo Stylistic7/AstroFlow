@@ -199,37 +199,30 @@ def trace(
 def set_workflow_key(*key_parts: Any) -> None:
     """Inside a `@graph_builder` (or `@pipeline`) body, attach the
     standard workflow-progress callbacks to the active trace's `Graph`,
-    keyed on `key_parts`. Replaces the older pattern of passing
-    `graph_update_fn=partial(...)` and `node_status_fn=...` at Graph
-    construction time.
+    keyed on `key_parts`.
 
-    Two callbacks fire on every node completion:
-      * `store_workflow_graph` — viewer snapshot of the workflow DAG.
-      * `store_cart_snapshot` — flat list of resolved on-disk paths
-        the cart item has produced so far. Read by the sweep CLI
-        and the cart→archive flow.
+    `store_workflow_graph` fires on every node completion to update the
+    viewer snapshot of the workflow DAG. The sweep CLI and cart→archive
+    flow no longer rely on a per-cart-item path snapshot — they re-trace
+    the pipeline on demand (see `dependency_graph/trace_paths.py`), which
+    is bit-for-bit equivalent to the runtime under the pure-Merkle
+    content_hash convention (every `@makes_image` output has
+    `content_hash := producer.call_hash` stamped in its file header).
 
-    Mutates the active `Graph` in place — both attributes are mutable
-    per `classes.py`.
+    Mutates the active `Graph` in place.
     """
     g = _TRACE.get()
     if g is None:
         raise RuntimeError("set_workflow_key() called outside a trace")
-    # Local imports: workflow_graph_adapter and runtime_snapshot
-    # both import from this module transitively, so import at call
-    # time to avoid a cycle.
+    # Local import: workflow_graph_adapter imports from this module
+    # transitively, so import at call time to avoid a cycle.
     from dependency_graph.workflow_graph_adapter import (
         store_node_status, store_workflow_graph,
     )
-    from dependency_graph.runtime_snapshot import store_cart_snapshot
+    from functools import partial
 
     key = tuple(key_parts)
-
-    def _compound_update(rt):
-        store_workflow_graph(key, rt)
-        store_cart_snapshot(key, rt)
-
-    g.graph_update_fn = _compound_update
+    g.graph_update_fn = partial(store_workflow_graph, key)
     g.node_status_fn = store_node_status
 
 

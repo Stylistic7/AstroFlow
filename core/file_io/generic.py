@@ -232,11 +232,9 @@ def _(filename: TiffFilePath) -> str:
 
 @get_content_hash.register
 def _(wrapped: WithSidecar) -> str:
-    from file_io.sidecar import get_section
-    ch = get_section(wrapped.path, "content_hash")
-    if ch is not None:
-        return ch
-    return hash_of_image_data(wrapped.path)
+    # Dispatch through to the wrapped Path so the native file header
+    # is the single source of truth for content_hash (matches set_content_hash).
+    return get_content_hash(wrapped.path)
 
 
 @singledispatch
@@ -262,5 +260,6 @@ def _(filename: TiffFilePath, content_hash: str) -> None:
 
 @set_content_hash.register
 def _(wrapped: WithSidecar, content_hash: str) -> None:
-    from file_io.sidecar import set_section
-    set_section(wrapped.path, "content_hash", content_hash)
+    # Single source of truth: native file header (via the wrapped Path's
+    # type dispatch). No sidecar copy; matches get_content_hash above.
+    set_content_hash(wrapped.path, content_hash)

@@ -66,7 +66,10 @@ class TestFileIO(unittest.TestCase):
             self.assertEqual(header["CONTHASH"], "foo")
             self.assertEqual(header["FLOATVAL"], 1.234)
 
-    def test_sidecar(self):
+    def test_set_content_hash_lands_in_native_header(self):
+        """`set_content_hash` for `WithSidecar` dispatches through to
+        the wrapped Path and lands in the XISF native header — single
+        source of truth, no companion sidecar file."""
         input_filename = Path(
             "testdata/output/Stacks/Great Nebula in Orion/masters/master_light_Great Nebula in Orion_RA_82.70_DEC_-5.60_ZWO ASI6200MM Pro_2.21aspp_1.57deg_H_77ade5e8fa458f7f.xisf"
         )
@@ -75,14 +78,14 @@ class TestFileIO(unittest.TestCase):
             shutil.copy(input_filename, output_file.path)
             set_content_hash(output_file, "foo")
 
-            sidecar_path = sidecar_path_for(output_file.path)
-            self.assertTrue(os.path.exists(sidecar_path))
-
             update_header(output_file, {"FLOATVAL": 1.234})
             header = read_header(output_file)
             self.assertEqual(header["FLOATVAL"], 1.234)
 
             self.assertEqual(get_content_hash(output_file), "foo")
+            # Header carries the content_hash directly; get_content_hash
+            # reads it without falling back to pixel-rehashing.
+            self.assertEqual(read_header(output_file.path)["CONTHASH"], "foo")
 
     def test_copy(self):
         input_filename = Path(

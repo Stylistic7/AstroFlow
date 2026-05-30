@@ -1,19 +1,15 @@
 """Unit tests for the two-tier cart helper.
 
-Snapshots are written directly to the LocalContext-backed
-diskcache (the cart→archive flow reads them via
-`runtime_snapshot.load_cart_snapshot`); this isolates the
-state transitions from the real pipeline runtime.
+`apply_remove_from_cart` traces the pipeline at archive time to populate
+the archive entry's paths (replacing the old per-cart-item snapshot
+mechanism). These tests monkeypatch `paths_for_cart_item` so the cart→
+archive state transitions can be exercised without a real pipeline.
 """
 from __future__ import annotations
 
 import pytest
 
 from context import local_context as context
-from dependency_graph.runtime_snapshot import (
-    SNAPSHOT_KEY_PREFIX,
-    clear_cart_snapshot,
-)
 from state import archive
 
 
@@ -23,47 +19,49 @@ ITEM_B = ("stack", "def", "PixInsight Downscaled")
 
 @pytest.fixture(autouse=True)
 def _clean_cart_and_archive():
-    """Reset both lists and any test-key snapshots between cases."""
+    """Reset both lists between cases."""
     original_cart = context.shopping_cart
     original_archive = context.archive
     context.shopping_cart = []
     context.archive = []
-    clear_cart_snapshot(ITEM_A)
-    clear_cart_snapshot(ITEM_B)
     yield
     context.shopping_cart = original_cart
     context.archive = original_archive
-    clear_cart_snapshot(ITEM_A)
-    clear_cart_snapshot(ITEM_B)
 
 
-def _write_snapshot(item, *, all_paths, final_paths):
-    """Write a snapshot directly under the diskcache key
-    `store_cart_snapshot` would have used."""
-    context[(SNAPSHOT_KEY_PREFIX,) + tuple(item)] = {
-        "all": list(all_paths), "finals": list(final_paths),
-    }
+@pytest.fixture
+def fake_trace(monkeypatch):
+    """Stub `paths_for_cart_item` so archive transitions get fixed,
+    inspectable path lists without needing a real pipeline. Returns
+    the dict the test mutates to control what each item resolves to:
+    `{item: {"all": [...], "finals": [...]}}`."""
+    bank: dict[tuple, dict[str, list[str]]] = {}
+
+    def fake(item, *, finals_only=False):
+        entry = bank.get(tuple(item), {})
+        key = "finals" if finals_only else "all"
+        return [p for p in entry.get(key, [])]
+
+    monkeypatch.setattr(archive, "paths_for_cart_item", fake)
+    return bank
 
 
-def test_remove_with_preserve_none_drops_cart_and_snapshot():
-    """preserve='none' clears the cart entry AND the live
-    snapshot (its paths become orphan-eligible)."""
-    _write_snapshot(ITEM_A, all_paths=["/a"], final_paths=[])
+def test_remove_with_preserve_none_drops_cart(fake_trace):
+    """preserve='none' clears the cart entry and creates no archive
+    entry (no trace needed)."""
+    fake_trace[ITEM_A] = {"all": ["/a"], "finals": []}
     context.shopping_cart = [ITEM_A]
 
     archive.apply_remove_from_cart(ITEM_A, preserve="none")
 
     assert list(context.shopping_cart or []) == []
     assert list(context.archive or []) == []
-    from dependency_graph.runtime_snapshot import load_cart_snapshot
-    assert load_cart_snapshot(ITEM_A) is None
 
 
-def test_remove_with_preserve_all_archives_full_snapshot():
-    """preserve='all' moves the snapshot's `all` list into the
-    archive entry."""
+def test_remove_with_preserve_all_archives_all_traced_paths(fake_trace):
+    """preserve='all' moves every traced path into the archive entry."""
     paths = ["/out/master.xisf", "/out/intermediate.xisf"]
-    _write_snapshot(ITEM_A, all_paths=paths, final_paths=["/out/master.xisf"])
+    fake_trace[ITEM_A] = {"all": paths, "finals": ["/out/master.xisf"]}
     context.shopping_cart = [ITEM_A]
 
     archive.apply_remove_from_cart(ITEM_A, preserve="all")
@@ -74,13 +72,12 @@ def test_remove_with_preserve_all_archives_full_snapshot():
     assert list(arch[0][3]) == paths
 
 
-def test_remove_with_preserve_finals_archives_only_finals():
+def test_remove_with_preserve_finals_archives_only_finals(fake_trace):
     finals = ["/out/master.xisf"]
-    _write_snapshot(
-        ITEM_A,
-        all_paths=["/out/intermediate", *finals],
-        final_paths=finals,
-    )
+    fake_trace[ITEM_A] = {
+        "all": ["/out/intermediate", *finals],
+        "finals": finals,
+    }
     context.shopping_cart = [ITEM_A]
 
     archive.apply_remove_from_cart(ITEM_A, preserve="finals")
@@ -90,9 +87,10 @@ def test_remove_with_preserve_finals_archives_only_finals():
     assert list(arch[0][3]) == finals
 
 
-def test_remove_with_no_snapshot_skips_archive_entry():
-    """If the item has never run (no snapshot exists), there's
-    nothing to preserve — don't create an empty archive entry."""
+def test_remove_with_unresolvable_item_skips_archive_entry(fake_trace):
+    """If `paths_for_cart_item` returns [] (entity missing from
+    context — stale cart entry), don't create an empty archive entry."""
+    # No bank entry → trace returns [].
     context.shopping_cart = [ITEM_A]
 
     archive.apply_remove_from_cart(ITEM_A, preserve="all")
@@ -100,24 +98,11 @@ def test_remove_with_no_snapshot_skips_archive_entry():
     assert list(context.archive or []) == []
 
 
-def test_remove_with_empty_snapshot_skips_archive_entry():
-    """Snapshot exists but is empty (pipeline started and was
-    interrupted before any node completed). Don't archive
-    nothing."""
-    _write_snapshot(ITEM_A, all_paths=[], final_paths=[])
-    context.shopping_cart = [ITEM_A]
-
-    archive.apply_remove_from_cart(ITEM_A, preserve="all")
-
-    assert list(context.archive or []) == []
-
-
-def test_remove_replaces_existing_archive_entry():
-    """Re-archiving an already-archived item replaces its
-    preserved paths with the fresh snapshot rather than
-    duplicating the entry."""
+def test_remove_replaces_existing_archive_entry(fake_trace):
+    """Re-archiving an already-archived item replaces its preserved
+    paths with the fresh trace rather than duplicating the entry."""
     new_paths = ["/out/new.xisf"]
-    _write_snapshot(ITEM_A, all_paths=new_paths, final_paths=[])
+    fake_trace[ITEM_A] = {"all": new_paths, "finals": []}
     context.shopping_cart = [ITEM_A]
     context.archive = [(*ITEM_A, ["/out/old.xisf"])]
 

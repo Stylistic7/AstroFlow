@@ -4,27 +4,29 @@
 When the user removes an item from the cart, they pick what to do
 with the outputs that pipeline already produced:
 
-  * `"all"` — every path the pipeline wrote (per the cart item's
-    live snapshot from `runtime_snapshot.store_cart_snapshot`)
-    goes into the archive entry. Disk is preserved unconditionally.
+  * `"all"` — every path the pipeline writes (per a fresh trace of
+    the cart item's pipeline) goes into the archive entry. Disk is
+    preserved unconditionally.
   * `"finals"` — only paths produced by `@makes_image(final=True)`
-    ops are kept (the snapshot's `finals` subset).
+    ops are kept.
   * `"none"` — no archive entry; every output for this item is
     orphan-eligible.
+
+Paths are computed by tracing the pipeline against the current
+context (see `dependency_graph.trace_paths.paths_for_cart_item`).
+Tracing is deterministic and statically complete under the pure-
+Merkle `content_hash := producer.call_hash` convention — no per-
+run snapshot needed.
 
 Archive entries are `(object_type, object_id, pipeline, paths)`
 4-tuples — the same shape as cart entries plus an inline frozen
 list of preserved paths. The sweep CLI reads them as part of the
-live-set union. The cart item's live snapshot is consumed and
-cleared on removal.
+live-set union.
 """
 from __future__ import annotations
 
 from context import local_context as context
-from dependency_graph.runtime_snapshot import (
-    clear_cart_snapshot,
-    load_cart_snapshot,
-)
+from dependency_graph.trace_paths import paths_for_cart_item
 
 
 CartItem = tuple[str, str, str]
@@ -34,12 +36,13 @@ ArchiveEntry = tuple[str, str, str, list[str]]
 def apply_remove_from_cart(item: CartItem, preserve: str = "none") -> None:
     """Remove `item` from `context.shopping_cart` and, depending on
     `preserve` (`"all" | "finals" | "none"`), append a preservation
-    entry to `context.archive`. The cart item's live snapshot is
-    consumed (read into the archive entry, or discarded) and
-    cleared.
+    entry to `context.archive`. Paths are obtained by tracing the
+    pipeline at archive time.
 
     Idempotent on the cart side: removing an item that isn't in
-    the cart is a no-op.
+    the cart is a no-op. If the entity is no longer in context (a
+    stale cart entry), no archive entry is created — the trace
+    returns `[]`.
     """
     if preserve not in ("all", "finals", "none"):
         raise ValueError(
@@ -52,17 +55,16 @@ def apply_remove_from_cart(item: CartItem, preserve: str = "none") -> None:
         context.shopping_cart = cart
 
     if preserve != "none":
-        snap = load_cart_snapshot(tuple(item))
-        paths = []
-        if snap is not None:
-            paths = list(snap["all"] if preserve == "all" else snap["finals"])
+        paths = [
+            str(p) for p in paths_for_cart_item(
+                tuple(item), finals_only=(preserve == "finals"),
+            )
+        ]
         if paths:
             archive = list(context.archive or [])
             archive = [a for a in archive if tuple(a[:3]) != tuple(item)]
             archive.append((item[0], item[1], item[2], paths))
             context.archive = archive
-
-    clear_cart_snapshot(tuple(item))
 
 
 def apply_remove_from_archive(item: CartItem) -> None:
@@ -76,8 +78,8 @@ def apply_remove_from_archive(item: CartItem) -> None:
 
 def apply_move_archive_to_cart(item: CartItem) -> None:
     """Re-activate an archived item: drop its archive entry and
-    add it back to the cart. The pipeline will repopulate the
-    cart item's snapshot on its next run."""
+    add it back to the cart. The pipeline regenerates outputs
+    on its next run."""
     apply_remove_from_archive(item)
     cart = list(context.shopping_cart or [])
     if tuple(item) not in cart:
