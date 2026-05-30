@@ -1,4 +1,4 @@
-"""Unit tests for trace-time content_hash propagation.
+"""Unit tests for trace-time content_hash propagation and @node-caching.
 
 The pure-Merkle invariant requires that the tracer's `_TracedOutput`
 proxy hashes to its `content_hash` field (= the upstream's `call_hash`)
@@ -6,10 +6,16 @@ through the same `_maybe_use_content_hash` path the runtime uses for
 real upstream `Path`/`ImageMetadata` values. If that fails, every
 downstream call_hash diverges from runtime and the sweep produces
 wrong filenames.
+
+Plus: `_traced_paths` (the cached `@node` wrapping the actual trace) must
+cache hits cheaply and invalidate when the pipeline source changes —
+the trick that turns 17 s repeat-traces into sub-ms cache hits.
 """
 from __future__ import annotations
 
-from dependency_graph.trace_paths import _TracedOutput
+import ray
+
+from dependency_graph.trace_paths import _TracedOutput, _traced_paths
 from hashing import hash_call
 from hashing.hashing import _maybe_use_content_hash
 
@@ -51,3 +57,56 @@ def test_proxy_produces_same_call_hash_as_raw_string():
     h_via_string = hash_call(fn_hash, "literal_arg", "upstream_call_hash_xyz")
 
     assert h_via_proxy == h_via_string
+
+
+def test_traced_paths_is_node_wrapped(test_context):
+    """Sanity: `_traced_paths` is a `@node`, so the cache machinery is
+    available (`.remote`, `.is_cached`). Without these, the whole
+    'cache the trace' design collapses."""
+    assert hasattr(_traced_paths, "remote")
+    assert hasattr(_traced_paths, "is_cached")
+
+
+def test_traced_paths_caches_result_for_same_inputs(test_context):
+    """Calling `_traced_paths` twice with identical args is a cache hit
+    on the second call. Verified via `.is_cached`."""
+    args = (
+        "no_such_pipeline",  # unknown name → function short-circuits to []
+        "entity-A", "config-A", "metadata-A", "source-hash-A",
+    )
+    # First call: cache miss; result is [] (unknown pipeline). Stored.
+    result = ray.get(_traced_paths.remote(*args))
+    assert result == []
+
+    # Same args → cache hit.
+    assert _traced_paths.is_cached(*args)
+
+
+def test_traced_paths_invalidates_on_pipeline_source_hash_change(test_context):
+    """The whole point of the `pipeline_source_hash` arg: changing it
+    must produce a fresh cache key (i.e. miss on the new value)."""
+    base = (
+        "no_such_pipeline", "entity-A", "config-A", "metadata-A",
+    )
+    ray.get(_traced_paths.remote(*base, "source-hash-A"))
+    assert _traced_paths.is_cached(*base, "source-hash-A")
+
+    # Edit to the pipeline body → caller passes a new source hash.
+    # That call must miss (different cache key), then store its own entry.
+    assert not _traced_paths.is_cached(*base, "source-hash-B")
+    ray.get(_traced_paths.remote(*base, "source-hash-B"))
+    assert _traced_paths.is_cached(*base, "source-hash-B")
+    # Original entry is untouched — both coexist.
+    assert _traced_paths.is_cached(*base, "source-hash-A")
+
+
+def test_traced_paths_invalidates_on_metadata_change(test_context):
+    """Changing the `metadata_ref` arg's content_hash invalidates the
+    cache. This is the mechanism by which adding/removing subframes or
+    external masters triggers a re-trace."""
+    base = (
+        "no_such_pipeline", "entity-A", "config-A",
+    )
+    ray.get(_traced_paths.remote(*base, "metadata-v1", "source-hash"))
+    assert _traced_paths.is_cached(*base, "metadata-v1", "source-hash")
+    assert not _traced_paths.is_cached(*base, "metadata-v2", "source-hash")

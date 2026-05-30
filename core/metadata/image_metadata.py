@@ -91,7 +91,12 @@ def scatter_compute_image_metadata(*filenames_in: list[Path]) -> Graph:
     # TODO: Don't do anything if the directory's modification time hasn't
     # changed since the last time it was listed.
     for dir in context.input_dirs:
-        artifacts_for_dir = set(find_image_files(dir))
+        # Include user-supplied external masters (`Calibration Masters/
+        # MasterDark*.fit` etc.) in the same sweep as raw subframes. Their
+        # ImageMetadata flowing into the diskcache is what makes the trace
+        # @node's cache key (which embeds metadata_ref.content_hash)
+        # invalidate when the user drops in a fresh master.
+        artifacts_for_dir = set(find_image_files(dir, include_masters=True))
         log.info("Found image files in directory", directory=str(dir), count=len(artifacts_for_dir))
         filenames.update(artifacts_for_dir)
 
@@ -174,6 +179,21 @@ def compute_image_metadata(
 @beartype
 @measure_performance
 def load_metadata() -> ContextRef[MetadataDict]:
+    """Build the canonical MetadataDict from cached compute_image_metadata
+    entries.
+
+    Includes both raw subframes AND user-supplied external masters under
+    `input_dirs`. The master inclusion lets the trace @node's cache key
+    (which embeds `metadata_ref.content_hash`) invalidate when the user
+    drops a fresh master file in. Downstream consumers that only want
+    light frames already filter internally: `clustering/spatial.py` gates
+    spatial_groups on `is_light_frame and not is_master`, and
+    `identify_calibration_stacks` re-applies `not is_master` as a
+    second-line defense for masters with misleading headers.
+
+    The input_dirs gate prevents AstroFlow-produced masters in
+    `output_dir` from ever entering — only user-supplied files participate.
+    """
     quarantined_files = context.quarantined_files or set()
 
     # TODO: This won't support disconnected storage media.
@@ -191,8 +211,6 @@ def load_metadata() -> ContextRef[MetadataDict]:
             if value.content_hash in quarantined_files:
                 continue
             if not is_input_file(value.filename):
-                continue
-            if image_types.is_master(value.header):
                 continue
             if not os.path.exists(value.filename):
                 continue
