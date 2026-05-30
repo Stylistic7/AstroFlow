@@ -1,8 +1,12 @@
 import faulthandler
 import os
+import shutil
 import signal
+import subprocess
 import threading
+import time
 from dataclasses import dataclass
+from glob import glob
 from typing import Any
 
 import psutil
@@ -12,6 +16,67 @@ import pytest
 # Dump stack traces of all threads on SIGUSR1 — lets us diagnose hangs
 # by sending kill -USR1 <pid>.
 faulthandler.register(signal.SIGUSR1)
+
+
+def pytest_configure(config):
+    """Aggressively reset Ray state at session start.
+
+    Stale `raylet` / `gcs_server` / `default_worker` / `ray::` processes
+    from prior runs (orphaned by `ray stop` failures, killed pytest
+    workers, or test crashes) plus `/tmp/ray*` session dirs are the
+    leading cause of `ActorDiedError: ContextActor` / `LocalRayletDied`
+    on this machine. We can't fix Ray itself; we can ensure every
+    pytest invocation starts from as clean a slate as we can manage
+    without a reboot. ~1-2 seconds, idempotent.
+
+    Bypass with `ASTROFLOW_SKIP_RAY_CLEAN=1` for the rare developer-
+    debugging case where you want to inspect a live ray session.
+    """
+    if os.environ.get("ASTROFLOW_SKIP_RAY_CLEAN") == "1":
+        return
+    # Only run on the xdist controller (worker_id "master"). Each
+    # xdist worker also calls pytest_configure, but we only want to
+    # wipe state once at the very start.
+    if hasattr(config, "workerinput"):
+        return
+
+    print("\n[ray-clean] resetting Ray state…", flush=True)
+    # 1. Try graceful `ray stop` first (best-effort).
+    subprocess.run(
+        ["ray", "stop", "--force"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        timeout=10, check=False,
+    )
+    # 2. Kill anything that survived.
+    for pat in (
+        "raylet", "gcs_server", "plasma_store", "default_worker",
+        "ray::", "ray/_private/runtime_env", "log_monitor",
+        "dashboard_agent.py", "monitor.py",
+    ):
+        subprocess.run(
+            ["pkill", "-9", "-f", pat],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    # 3. Wipe Ray's on-disk session state. Each Ray session writes a
+    # session_<timestamp> directory full of sockets, plasma files, and
+    # process-supervisor state. When Ray re-initializes it does NOT
+    # clean these — they pile up and confuse port allocation.
+    for root in ("/tmp/ray", "/tmp/ray-gw0", "/tmp/ray-gw1", "/tmp/ray-gw2",
+                 "/tmp/ray-gw3", "/tmp/ray-gw4", "/tmp/ray-gw5",
+                 "/tmp/ray-gw6", "/tmp/ray-gw7"):
+        shutil.rmtree(root, ignore_errors=True)
+    # Glob for any other ray-named dirs created by xdist workers under
+    # different prefixes.
+    for path in glob("/tmp/ray*") + glob("/tmp/ray-*"):
+        shutil.rmtree(path, ignore_errors=True)
+    # macOS puts per-user temp under /var/folders/.../T/.
+    for path in glob("/var/folders/*/*/T/ray*"):
+        shutil.rmtree(path, ignore_errors=True)
+    # 4. Brief settle so killed processes finish exiting before any
+    # test's `init_ray` fixture tries to allocate ports they held.
+    time.sleep(0.5)
+    print("[ray-clean] done", flush=True)
 
 
 def pytest_collection_modifyitems(config, items):
