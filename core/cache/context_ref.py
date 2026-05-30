@@ -118,11 +118,38 @@ class ContextRef(Generic[T]):
 
         Uses obj.content_hash if the object already carries one (i.e. it is a
         ContentHashed dataclass), otherwise derives the hash from the object.
+
+        Verifies the write landed in the durable cache by reading back. In
+        multi-machine setups we hit a silent-drop race: 278 concurrent set
+        RPCs from a remote worker through the 64-way-concurrent ContextActor
+        would leave 2-4 entries missing in the head's diskcache, breaking
+        downstream `store_targets` / `identify_mosaics`. A read-back catches
+        the drop at the source; one retry handles it.
         """
         from context import context
+        import time
 
         ref = ray.put(obj)
-        context[cache_key] = obj
+
+        attempts = 0
+        while True:
+            context[cache_key] = obj
+            attempts += 1
+            # Read back through the same RPC path the consumer will use.
+            if context[cache_key] is not None:
+                if attempts > 1:
+                    print(
+                        f"### ContextRef.store: write to {cache_key} required "
+                        f"{attempts} attempts to land in durable cache"
+                    )
+                break
+            if attempts >= 3:
+                raise RuntimeError(
+                    f"ContextRef.store: failed to land {cache_key} in the "
+                    f"durable cache after {attempts} attempts. Write returned "
+                    f"normally each time but the value was absent on read-back."
+                )
+            time.sleep(0.05 * attempts)
 
         if hasattr(obj, "content_hash") and obj.content_hash:
             content_hash = obj.content_hash
