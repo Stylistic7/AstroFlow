@@ -137,6 +137,124 @@ def test_orion_mosaic_versions_endpoint(client, with_orion_mosaic):
 
 
 @pytest.mark.exhaustive
+def test_metadata_route_trace_cache_actually_hits_on_second_call(client, with_orion_mosaic):
+    """Diagnostic: prove (or disprove) that the trace `@node` cache is
+    actually being hit on repeat requests, and identify which sub-step
+    of the request path dominates wall-clock.
+
+    The user-reported failure mode: first request 78 s, then raylet OOM.
+    Earlier benchmark showed the trace itself was ~17 s; the endpoint
+    is doing more than just the trace. This test times each piece
+    separately so we can see where the 60+ extra seconds go.
+    """
+    import time
+    from dependency_graph.trace_paths import (
+        _resolve_pipeline_call, _traced_paths, traced_paths_for,
+    )
+    from hashing import hash_source_code
+    from metadata.image_metadata import load_metadata
+    import ray
+
+    mosaics = client.get("/api/mosaics").get_json()
+    mosaic_id = next(iter(mosaics.keys()))
+    stacks = client.get("/api/stacks").get_json()
+    filter_ = next(
+        (s["filter"] for s in stacks.values() if s.get("filter")),
+        "L",
+    )
+    url = f"/api/metadata/mosaic/{mosaic_id}/PixInsight Downscaled/Merged/{filter_}"
+    item = ("mosaic", mosaic_id, "PixInsight Downscaled")
+
+    def time_it(label, fn):
+        t0 = time.perf_counter()
+        result = fn()
+        dt = time.perf_counter() - t0
+        print(f"[diag] {label:40s} {dt*1000:8.1f} ms")
+        return result, dt
+
+    # Sub-step 1: resolve pipeline call (cheap pure Python).
+    (fn, entity, config), _ = time_it("_resolve_pipeline_call",
+        lambda: _resolve_pipeline_call(item))
+    assert fn is not None
+
+    # Sub-step 2: hash_source_code (cheap, memoized after first).
+    _, _ = time_it("hash_source_code", lambda: hash_source_code(fn))
+    pipeline_source_hash = hash_source_code(fn)
+
+    # Sub-step 3: load_metadata.remote (the suspect — reads ALL
+    # compute_image_metadata entries from diskcache, builds the dict,
+    # stores via store_large, returns ContextRef).
+    md_ref_1, t_lm1 = time_it("load_metadata.remote #1",
+        lambda: ray.get(load_metadata.remote()))
+    md_ref_2, t_lm2 = time_it("load_metadata.remote #2",
+        lambda: ray.get(load_metadata.remote()))
+    print(f"[diag] metadata_ref #1 content_hash = {md_ref_1.content_hash}")
+    print(f"[diag] metadata_ref #2 content_hash = {md_ref_2.content_hash}")
+    assert md_ref_1.content_hash == md_ref_2.content_hash, (
+        f"load_metadata produced different content_hashes on back-to-back "
+        f"calls — the trace cache key will change every request"
+    )
+
+    args = ("PixInsight Downscaled", entity, config, md_ref_1, pipeline_source_hash)
+
+    # Sub-step 4: is_cached check (should be cheap diskcache lookup).
+    cached_before, _ = time_it("is_cached BEFORE first trace",
+        lambda: _traced_paths.is_cached(*args))
+    print(f"[diag]   = {cached_before}")
+
+    # Sub-step 5: traced_paths_for (the bulk — Ray submit + trace + cache write).
+    paths, t_traced1 = time_it("traced_paths_for #1 (cold)",
+        lambda: traced_paths_for(item))
+    print(f"[diag]   returned {len(paths)} paths")
+
+    cached_after, _ = time_it("is_cached AFTER first trace",
+        lambda: _traced_paths.is_cached(*args))
+    print(f"[diag]   = {cached_after}")
+    assert cached_after, "trace cache not populated by first call"
+
+    paths2, t_traced2 = time_it("traced_paths_for #2 (warm)",
+        lambda: traced_paths_for(item))
+
+    paths3, t_traced3 = time_it("traced_paths_for #3 (warm)",
+        lambda: traced_paths_for(item))
+
+    # Sub-step 6: end-to-end through Flask.
+    _, t_get1 = time_it("client.GET (cold)", lambda: client.get(url))
+    _, t_get2 = time_it("client.GET (warm)", lambda: client.get(url))
+    _, t_get3 = time_it("client.GET (warm)", lambda: client.get(url))
+
+    print(f"\n[diag] === Summary ===")
+    print(f"[diag] load_metadata.remote:        {t_lm1*1000:.1f} ms (first), {t_lm2*1000:.1f} ms (second)")
+    print(f"[diag] traced_paths_for cold:       {t_traced1*1000:.1f} ms")
+    print(f"[diag] traced_paths_for warm:       {t_traced2*1000:.1f} ms, {t_traced3*1000:.1f} ms")
+    print(f"[diag] /api/metadata cold:          {t_get1*1000:.1f} ms")
+    print(f"[diag] /api/metadata warm:          {t_get2*1000:.1f} ms, {t_get3*1000:.1f} ms")
+    print(f"[diag] load_metadata as % of warm request:"
+          f" {100*t_lm1/t_get2:.1f}%")
+    print(f"[diag] # compute_image_metadata cache entries: "
+          f"{_count_compute_image_metadata_entries()}")
+
+    # The actual claim under test. If caching is working, warm calls
+    # should be at least 10× faster than cold.
+    assert t_get2 < t_get1 / 10 or t_get2 < 0.5, (
+        f"warm GET ({t_get2*1000:.0f}ms) not >10x faster than cold "
+        f"({t_get1*1000:.0f}ms); cache isn't doing its job"
+    )
+
+
+def _count_compute_image_metadata_entries():
+    """Count compute_image_metadata entries in the diskcache without
+    fetching values."""
+    from context import local_context
+    n = 0
+    for c in (local_context._cache, local_context._durable):
+        for key in c.iterkeys():
+            if isinstance(key, tuple) and len(key) > 0 and key[0] == "compute_image_metadata":
+                n += 1
+    return n
+
+
+@pytest.mark.exhaustive
 def test_metadata_route_with_pipeline_returns_200(client, with_orion_mosaic):
     """Regression for the 2026-05-30 production crash on
     /api/metadata/mosaic/.../<pipeline>/<display>/<filter>.
