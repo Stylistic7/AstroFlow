@@ -110,3 +110,42 @@ def test_master_integration_absent_remains_none():
     assert "master_integration_s" not in obj
     restored = image_metadata_from_obj(obj, meta.filename)
     assert restored.master_integration_s is None
+
+
+def test_unpickle_old_pickle_with_fewer_slots():
+    """Old diskcache pickles predate defect_candidates + master_integration_s.
+    Loading them via cloudpickle must NOT leave the new slots unset —
+    otherwise the next pickle (e.g. ray.get_matching transport) blows up
+    with `AttributeError: 'ImageMetadata' object has no attribute
+    'defect_candidates'`. The __setstate__ override pads missing trailing
+    slots with their declared defaults.
+    """
+    import pickle
+    from dataclasses import fields
+    from metadata.classes import ImageMetadata
+
+    meta = _make_metadata()
+    full_state = [getattr(meta, f.name) for f in fields(ImageMetadata)]
+
+    # Simulate an old pickle whose state list is two fields shorter —
+    # i.e. predates defect_candidates and master_integration_s.
+    truncated = full_state[:-2]
+
+    # Build a fresh instance and apply the truncated state directly,
+    # mimicking what cloudpickle does on restore.
+    fresh = ImageMetadata.__new__(ImageMetadata)
+    fresh.__setstate__(truncated)
+
+    # New fields must be set to their defaults, not missing.
+    assert fresh.defect_candidates is None
+    assert fresh.master_integration_s is None
+    # Old fields must round-trip exactly.
+    assert fresh.content_hash == meta.content_hash
+    assert fresh.width_pixels == meta.width_pixels
+
+    # And critically: the restored instance must be re-pickleable.
+    repickled = pickle.dumps(fresh)
+    restored = pickle.loads(repickled)
+    assert restored.defect_candidates is None
+    assert restored.master_integration_s is None
+    assert restored.content_hash == meta.content_hash

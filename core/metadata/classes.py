@@ -1,5 +1,5 @@
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import MISSING, dataclass, fields
 from typing import NewType
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
@@ -12,6 +12,17 @@ if TYPE_CHECKING:
 
 
 FrameHash = NewType("FrameHash", str)
+
+
+def _field_default(f) -> Any:
+    if f.default is not MISSING:
+        return f.default
+    if f.default_factory is not MISSING:
+        return f.default_factory()
+    raise TypeError(
+        f"Old ImageMetadata pickle is missing the required (no-default) "
+        f"field {f.name!r}; cannot forward-migrate without manual rebuild."
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +55,22 @@ class ImageMetadata:
     #   * (future) Siril, OSS, etc.: per-stacker readers added as needed
     # Read via file_io.master_integration.read_master_integration_seconds.
     master_integration_s: float | None = None
+
+    def __setstate__(self, state: list) -> None:
+        # Forward-compatible unpickling for slotted dataclasses: when an
+        # old pickle has fewer entries than the current field list (a new
+        # optional field was added after pickling), pad the trailing
+        # slots with their declared defaults instead of leaving them
+        # unset. Without this, accessing the new attribute raises
+        # AttributeError, and any downstream pickle of the restored
+        # instance (e.g., ray transport) also fails. The default
+        # `_dataclass_setstate` just zips and stops at the shorter side.
+        field_list = fields(type(self))
+        if len(state) < len(field_list):
+            missing = field_list[len(state):]
+            state = list(state) + [_field_default(f) for f in missing]
+        for f, value in zip(field_list, state):
+            object.__setattr__(self, f.name, value)
 
     @property
     def pixels(self) -> int:
