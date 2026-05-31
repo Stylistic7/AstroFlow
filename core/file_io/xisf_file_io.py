@@ -58,8 +58,16 @@ def read_xisf_total_exposure_time(filename: Path | str) -> Optional[float]:
 
     Parses the XML directly to keep this useful even when the `xisf`
     Python library doesn't expose Properties.
+
+    Returns None on missing-file / wrong-magic / parse-failure — any
+    "we can't read PCL" reason collapses into the same None signal that
+    means "no WBPP data available" to callers.
     """
-    with open(filename, "rb") as f:
+    try:
+        f = open(filename, "rb")
+    except (FileNotFoundError, OSError):
+        return None
+    with f:
         if f.read(8) != b"XISF0100":
             return None
         xml_len = struct.unpack("<I", f.read(4))[0]

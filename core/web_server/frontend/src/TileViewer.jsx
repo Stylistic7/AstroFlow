@@ -164,20 +164,40 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
 
 /** Draw an exposure-duration clock face — same dial style as
     ExposureDurationWidget — into a PIXI Graphics, centered at (cx, cy)
-    with the given pixel radius. `hours` is clamped to [0, 12). */
-function drawExposureClock(g, cx, cy, radius, hours) {
+    with the given pixel radius.
+
+    `hours` (blue wedge): total raw integration across every subframe,
+    upper bound. Clamped to [0, 12).
+
+    `wbppHours` (green wedge, optional): the value WBPP actually used
+    after its own rejection pass (XISF PCL:TotalExposureTime). Drawn
+    on top of the blue wedge so the green visible region is "what was
+    kept" and the surrounding blue is "what was rejected." When null,
+    only the blue wedge renders. */
+function drawExposureClock(g, cx, cy, radius, hours, wbppHours = null) {
   // Background disc.
   g.beginFill(0x333333);
   g.drawCircle(cx, cy, radius);
   g.endFill();
 
-  // Wedge for the integration. ExposureDurationWidget paints the same
-  // value twice (red then blue) so the visible colour is blue.
+  // Blue wedge for the raw total integration.
   const fraction = Math.min(Math.max(hours, 0), 11.999) / 12;
   if (fraction > 0) {
     const start = -Math.PI / 2;
     const end = start + 2 * Math.PI * fraction;
     g.beginFill(0x4278f5);
+    g.moveTo(cx, cy);
+    g.arc(cx, cy, radius, start, end);
+    g.lineTo(cx, cy);
+    g.endFill();
+  }
+
+  // Green wedge for the WBPP-effective integration, drawn ON TOP.
+  if (wbppHours != null && wbppHours > 0) {
+    const wbppFraction = Math.min(Math.max(wbppHours, 0), 11.999) / 12;
+    const start = -Math.PI / 2;
+    const end = start + 2 * Math.PI * wbppFraction;
+    g.beginFill(0x4caf50);
     g.moveTo(cx, cy);
     g.arc(cx, cy, radius, start, end);
     g.lineTo(cx, cy);
@@ -262,6 +282,18 @@ const ImperativeViewport = ({ objectType, imageHash, filter, tap, port, imageWid
         showQuarantined || !isQuarantined(poly.type, poly.stable_hash)
       );
 
+      // Per-stack WBPP-effective exposure (XISF PCL:TotalExposureTime,
+      // in seconds), riding on output polygons from the backend. Built
+      // once here and looked up by stack hash in the input-polygon loop
+      // below to add the green wedge to each exposure clock.
+      const wbppExposureByStack = {};
+      for (const poly of metadata.objects) {
+        if (poly.polygon_type === 'output'
+            && poly.wbpp_exposure_s != null) {
+          wbppExposureByStack[poly.stable_hash] = poly.wbpp_exposure_s;
+        }
+      }
+
       const typeColors = {
         stack: '#0000ff',
         target: '#0000ff',
@@ -331,17 +363,25 @@ const ImperativeViewport = ({ objectType, imageHash, filter, tap, port, imageWid
           // in metadata.py), so the active stack is referenced
           // explicitly via active_stack_hash.
           const stack = poly.active_stack_hash ? stacks?.[poly.active_stack_hash] : null;
-          if (stack && typeof stack.integration === 'number') {
+          // `raw_integration_s` (blue): total across every subframe.
+          // Falls back to `integration` (AstroFlow-effective) if the
+          // backend hasn't been updated yet.
+          const totalSeconds = stack
+            ? (stack.raw_integration_s ?? stack.integration)
+            : null;
+          if (typeof totalSeconds === 'number') {
             const clockRadius = imageWidth / 80;
             const offset = poly.has_decisions ? dotRadius * 2.5 : 0;
             const clock = new PIXI.Graphics();
             clock.zIndex = 10000;
+            const wbppSeconds = wbppExposureByStack[poly.active_stack_hash];
             drawExposureClock(
               clock,
               maxX - offset - clockRadius,
               minY + clockRadius,
               clockRadius,
-              stack.integration / 3600,
+              totalSeconds / 3600,
+              wbppSeconds != null ? wbppSeconds / 3600 : null,
             );
             viewport.addChild(clock);
           }

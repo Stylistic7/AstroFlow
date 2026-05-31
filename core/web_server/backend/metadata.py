@@ -18,6 +18,7 @@ from products.identity import (
 from previews.types import MASTER
 from mosaics.trimming import project_to_viewbox
 from metadata.sidecar_io import read_image_metadata
+from file_io.xisf_file_io import read_xisf_total_exposure_time
 from attributes.astrometric_attributes import _spherical_polygon_for_wcs
 from decisions.decisions import ObjectType, get_decisions_for_object
 
@@ -216,6 +217,21 @@ def _get_polygons(identity_cls: type, pipeline: str, *args) -> list[dict[str, An
                     # traced_paths_for returns paths as `str` (cache-friendly
                     # serialization); read_image_metadata expects a Path.
                     meta = read_image_metadata(Path(master_path))
+                    # Effective integration time WBPP actually used after
+                    # its own rejection pass. Returned as XISF Property
+                    # `PCL:TotalExposureTime`, separate from FITS
+                    # keywords, so we parse it directly (sub-ms read, no
+                    # pixel I/O). None for non-XISF / non-PixInsight
+                    # stackers; frontend renders blue-only in that case.
+                    #
+                    # TODO: next time we do a full cache wipe, move this
+                    # into `compute_image_metadata` so `PCL:TotalExposureTime`
+                    # lands on `ImageMetadata` (as a dedicated field or
+                    # folded into `header`) and gets cached alongside the
+                    # rest of the metadata, instead of being re-read from
+                    # disk on every web request. Can't do it earlier
+                    # without forcing everyone's cache to invalidate.
+                    wbpp_exposure_s = read_xisf_total_exposure_time(Path(master_path))
                     if meta and meta.plate_solution:
                         from astropy.wcs import WCS
                         wcs = WCS(pyfits.Header(meta.plate_solution.header))
@@ -225,6 +241,7 @@ def _get_polygons(identity_cls: type, pipeline: str, *args) -> list[dict[str, An
                             "type": "stack",
                             "polygon_type": "output",
                             "stable_hash": active_stack.stable_hash,
+                            "wbpp_exposure_s": wbpp_exposure_s,
                             "target_id": t,
                             "points": list(output_poly.exterior.coords),
                         })

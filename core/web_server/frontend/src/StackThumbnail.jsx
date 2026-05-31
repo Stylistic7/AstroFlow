@@ -117,8 +117,7 @@ export default function StackThumbnail({ stack_id, width, handleClick, children 
 			}}>
 				<ExposureDurationWidget
 					key={`exposure_duration_${stack_id}`}
-					totalExposureDuration={stack.integration / 3600.0}
-					selectedExposureDuration={stack.integration / 3600.0}
+					totalExposureDuration={(stack.raw_integration_s ?? stack.integration) / 3600.0}
 					stack={stack}
 					sx={{ width: "2em" }}
 				/>

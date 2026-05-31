@@ -62,6 +62,13 @@ def prepare_stack_for_ui(
         # signal — what the viewer's exposure clock should reflect.
         # Run-level views still derive raw per-frame data themselves.
         "integration": effective_integration(stack),
+        # `raw_integration_s` is the raw sum of EXPOSURE across every
+        # subframe, with no quality filter applied. Used as the upper
+        # bound (blue polygon) in the dual exposure widget on the
+        # mosaic view, against which the WBPP-effective value
+        # (`wbpp_exposure_s` carried in the /api/metadata output
+        # polygon) is compared.
+        "raw_integration_s": stack.integration,
         "mean_temperature": stack.mean_temperature,
         "image_scale": stack.image_scale,
         "rotation_angle": stack.rotation_angle,

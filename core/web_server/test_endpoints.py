@@ -306,6 +306,36 @@ def test_metadata_route_master_path_is_passed_as_path_not_str(client, with_orion
 
 
 @pytest.mark.exhaustive
+def test_stacks_endpoint_returns_raw_integration_s(client, with_orion_mosaic):
+    """The blue (raw total) polygon in the dual exposure widget reads
+    from `stack.raw_integration_s`. Verify the field is present and
+    equals the sum of EXPOSURE across every subframe in the stack."""
+    from context import local_context as ctx
+
+    stacks = client.get("/api/stacks").get_json()
+    assert stacks, "no stacks in /api/stacks response"
+
+    ctx_stacks = ctx.stacks or {}
+    checked = 0
+    for stack_id, served in stacks.items():
+        assert "raw_integration_s" in served, (
+            f"stack {stack_id} missing raw_integration_s: {served!r}"
+        )
+        stack_obj = ctx_stacks[stack_id].get()
+        expected = sum(
+            m.header.get("EXPOSURE", 0)
+            for s in stack_obj.contents.values()
+            for m in s.metadata.values()
+        )
+        assert abs(served["raw_integration_s"] - expected) < 1e-3, (
+            f"stack {stack_id} raw_integration_s={served['raw_integration_s']} "
+            f"!= sum(EXPOSURE)={expected}"
+        )
+        checked += 1
+    assert checked > 0, "no stacks were actually checked"
+
+
+@pytest.mark.exhaustive
 def test_metadata_route_with_pipeline_returns_200(client, with_orion_mosaic):
     """Regression for the 2026-05-30 production crash on
     /api/metadata/mosaic/.../<pipeline>/<display>/<filter>.
