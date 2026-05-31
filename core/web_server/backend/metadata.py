@@ -126,9 +126,16 @@ def _get_polygons(identity_cls: type, pipeline: str, *args) -> list[dict[str, An
         # Output polygon comes from the stacked master's WCS regardless of
         # the displayed level. At Subframe level the per-stack filename is a
         # raw frame, not a Path, and read_image_metadata would reject it.
-        # `stack_files` is the canonical full-res master producer.
-        from stacks.stacking.pixinsight import stack_files
-        master_fn = stack_files.filename_fn
+        # `stack_files` is the canonical full-res master producer; its
+        # filename for a specific stack within this mosaic is resolved
+        # through `traced_path_for` (cached across requests via the
+        # underlying @node).
+        from dependency_graph.trace_paths import traced_path_for
+        cart_item = (
+            type(obj).__name__.lower(),  # "mosaic" / "target"
+            obj.stable_hash,
+            pipeline,
+        )
         overrides = context.settings.decision_overrides
         from decisions.compute_graph import _is_quarantined
 
@@ -195,8 +202,11 @@ def _get_polygons(identity_cls: type, pipeline: str, *args) -> list[dict[str, An
             # only when both the master image AND its computed metadata
             # exist — green always means "this is exactly where the
             # stacked image sits on disk."
-            if active_stack and master_fn:
-                master_path = master_fn(active_stack)
+            if active_stack:
+                master_path = traced_path_for(
+                    cart_item, "stack_files",
+                    stack=active_stack.stable_hash,
+                )
                 if master_path and os.path.exists(master_path):
                     meta = read_image_metadata(master_path)
                     if meta and meta.plate_solution:

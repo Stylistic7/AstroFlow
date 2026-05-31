@@ -137,6 +137,46 @@ def test_orion_mosaic_versions_endpoint(client, with_orion_mosaic):
 
 
 @pytest.mark.exhaustive
+def test_metadata_route_with_pipeline_returns_200(client, with_orion_mosaic):
+    """Regression for the 2026-05-30 production crash on
+    /api/metadata/mosaic/.../<pipeline>/<display>/<filter>.
+
+    The bug: `_get_polygons` called `stack_files.filename_fn(active_stack)`
+    with only the stack, but post-@node-refactor that goes through
+    `cache_key_narrow` → `_stack_files_narrow(args, kwargs)` which does
+    `stack, config, *rest = args` — unpacks with 1 arg, ValueError, 500.
+
+    Fix: look up the master path via `traced_path_for(cart_item,
+    "stack_files", stack=...)` instead, which goes through the cached
+    pipeline trace. This test exercises the same URL shape from the
+    production traceback and asserts the route doesn't 500.
+    """
+    mosaics = client.get("/api/mosaics").get_json()
+    mosaic_id = next(iter(mosaics.keys()))
+
+    # Find a real filter so the URL is well-formed (the route's pipeline
+    # / display / filter components otherwise hit divergent code paths).
+    stacks = client.get("/api/stacks").get_json()
+    filter_ = next(
+        (s["filter"] for s in stacks.values() if s.get("filter")),
+        "L",
+    )
+
+    # Same URL shape that crashed in production. The display name
+    # ("Merged") doesn't need to correspond to a real tap on disk —
+    # the route returns polygons either way; we just care that it
+    # doesn't 500 inside _get_polygons.
+    resp = client.get(
+        f"/api/metadata/mosaic/{mosaic_id}/PixInsight Downscaled/Merged/{filter_}"
+    )
+    assert resp.status_code == 200, (
+        f"got {resp.status_code}: {resp.data[:300]!r}"
+    )
+    data = resp.get_json()
+    assert "objects" in data, f"missing 'objects' in response: {data}"
+
+
+@pytest.mark.exhaustive
 def test_lazy_thumbnails_regenerate_on_miss(client, with_orion_mosaic):
     """Thumbnails are no longer eagerly generated; the web server must
     rebuild them on first request. Proves all three regen shapes:

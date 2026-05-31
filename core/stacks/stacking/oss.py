@@ -41,16 +41,24 @@ from decisions.settings import ProcessingConfig
 
 log = structlog.get_logger()
 
-def _load_calibration(cal_stack, implementation):
+def _load_calibration(cal_stack, config, implementation):
     """Read a calibration master via its producer's filename_fn,
     selected by `implementation`. Returns the array or None when no
-    master exists for that backend."""
+    master exists for that backend.
+
+    `config` is passed through because `cache_key_narrow` (and the
+    underlying `canonical_call_hash`) requires (stack, config) at
+    minimum; the OSS variant doesn't take `*cal_masters`, so its
+    signature is just (stack, config); the PixInsight variant accepts
+    `*cal_masters` and we leave that empty for cal-of-cal lookups
+    (matches what runtime does for bias→dark/flat dependency).
+    """
     if implementation == OSS:
         from stacks.stacking.oss import stack_files_oss
-        path = stack_files_oss.filename_fn(cal_stack)
+        path = stack_files_oss.filename_fn(cal_stack, config)
     else:
         from stacks.stacking.pixinsight import stack_files
-        path = stack_files.filename_fn(cal_stack)
+        path = stack_files.filename_fn(cal_stack, config)
     return read_image(path) if path and os.path.exists(path) else None
 
 def _calibrate(data, bias, dark, flat):
@@ -193,7 +201,7 @@ def stack_files_oss(
             raise ValueError(f"Stack {stack} has no frames after applying decisions")
         stack = filtered
 
-    dest_filename = stack_files_oss.filename_fn(stack)
+    dest_filename = stack_files_oss.filename_fn(stack, config)
     os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
     log.info("OSS stacking", stack=str(stack), dest=str(dest_filename))
 
@@ -207,8 +215,8 @@ def stack_files_oss(
                 continue
             cal_stack = config.get_calibration_stacks()[dep.stack_id]
             cal_data = (
-                _load_calibration(cal_stack, OSS)
-                or _load_calibration(cal_stack, PIXINSIGHT)
+                _load_calibration(cal_stack, config, OSS)
+                or _load_calibration(cal_stack, config, PIXINSIGHT)
             )
             if cal_data is None:
                 continue

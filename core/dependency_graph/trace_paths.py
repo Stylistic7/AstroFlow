@@ -86,7 +86,7 @@ def paths_for_cart_item(
     _, _, pipeline_name = item
 
     try:
-        tagged: list[tuple[str, bool]] = ray.get(_traced_paths.remote(
+        tagged: list[dict] = ray.get(_traced_paths.remote(
             pipeline_name, entity, config, metadata_ref, pipeline_source_hash,
         ))
     except Exception:
@@ -94,8 +94,54 @@ def paths_for_cart_item(
         # degrade to "no live paths" rather than crashing the caller.
         return []
 
-    return [Path(p) for p, is_final in tagged
-            if not finals_only or is_final]
+    return [Path(e["path"]) for e in tagged
+            if not finals_only or e["is_final"]]
+
+
+def traced_path_for(
+    item: tuple[str, str, str],
+    op_name: str,
+    **identity_kwargs: str,
+) -> "Path | None":
+    """Find the path produced by `op_name` for a specific entity in
+    `item`'s traced pipeline.
+
+    `item` is the canonical cart-entry tuple `(object_type, object_id,
+    pipeline_name)`. `identity_kwargs` are stable-hash values for the
+    op's identity fields — e.g. `traced_path_for(item, "stack_files",
+    stack=active_stack.stable_hash)`.
+
+    Returns the first matching path, or None if no matching node exists
+    in the trace (or the trace itself fails). Uses the same cached
+    `_traced_paths` @node as `paths_for_cart_item` — first call per
+    (pipeline, entity, config, metadata, source) is slow, subsequent
+    lookups are diskcache-fast.
+    """
+    import ray
+    from hashing import hash_source_code
+    from metadata.image_metadata import load_metadata
+
+    fn, entity, config = _resolve_pipeline_call(item)
+    if fn is None:
+        return None
+
+    metadata_ref = ray.get(load_metadata.remote())
+    pipeline_source_hash = hash_source_code(fn)
+    _, _, pipeline_name = item
+
+    try:
+        tagged: list[dict] = ray.get(_traced_paths.remote(
+            pipeline_name, entity, config, metadata_ref, pipeline_source_hash,
+        ))
+    except Exception:
+        return None
+
+    for e in tagged:
+        if e["op_name"] != op_name:
+            continue
+        if all(e["identity"].get(k) == v for k, v in identity_kwargs.items()):
+            return Path(e["path"])
+    return None
 
 
 @node
@@ -105,13 +151,14 @@ def _traced_paths(
     config,
     metadata_ref,
     pipeline_source_hash: str,
-) -> list[tuple[str, bool]]:
-    """Cacheable core of `paths_for_cart_item`.
+) -> list[dict]:
+    """Cacheable core of `paths_for_cart_item` and `traced_path_for`.
 
-    Returns `(path_str, is_final)` tuples for every filename_fn-resolvable
-    node in the pipeline's trace. Tagging both modes (finals-only and
-    everything) in one cache entry means a single trace serves both
-    sweep_orphans and archive transitions.
+    Returns one dict per filename_fn-resolvable node:
+    `{"path", "op_name", "identity", "is_final"}`. Tagging every
+    relevant axis in one cache entry means a single trace serves all
+    consumers (sweep_orphans wants finals_only; the web server's
+    metadata route wants identity-based lookup; archive wants finals).
 
     `pipeline_source_hash` is an invalidation key only — looked up at
     runtime via `pipeline_name` (the source hash is captured here purely
@@ -198,15 +245,22 @@ def _resolve_pipeline_call(
     return fn, entity, config
 
 
-def _walk_and_resolve_filenames_tagged(graph) -> list[tuple[str, bool]]:
+def _walk_and_resolve_filenames_tagged(graph) -> list[dict]:
     """Topologically walk `graph`, computing each filename_fn-bearing
     node's filename and threading `_TracedOutput` proxies through to
     downstream nodes' filename_fn calls.
 
-    Returns `(path_str, is_final)` for every resolved filename. The
-    `is_final` flag mirrors the producer's `_final` attribute (set by
-    `@node(final=True)`). Returning both modes lets callers filter for
-    `finals_only` without re-tracing.
+    Returns one dict per resolved filename:
+        {
+            "path": str,           # absolute on-disk path
+            "op_name": str,        # producer's __name__ (e.g. "stack_files")
+            "identity": dict,      # {field_name: stable_hash_of_arg}
+            "is_final": bool,      # producer's `_final` attribute
+        }
+    Identity is what makes `traced_path_for(item, "stack_files",
+    stack=H)`-style lookups possible: callers can pick out a specific
+    (op, entity) combination from the trace without rehashing or
+    re-tracing.
 
     Non-filename_fn nodes (`compute_image_metadata`,
     `get_stack_subframe_image`, helpers like `calibrate`) don't write
@@ -218,13 +272,13 @@ def _walk_and_resolve_filenames_tagged(graph) -> list[tuple[str, bool]]:
     """
     order = _topological_order(graph)
     node_hash: dict[Any, str] = {}
-    out: list[tuple[str, bool]] = []
+    out: list[dict] = []
 
-    for node in order:
-        if hasattr(node.task, "filename_fn"):
-            args = _resolve_args(node, graph, node_hash)
+    for n in order:
+        if hasattr(n.task, "filename_fn"):
+            args = _resolve_args(n, graph, node_hash)
             try:
-                path = node.task.filename_fn(*args)
+                path = n.task.filename_fn(*args)
             except (AttributeError, KeyError, TypeError):
                 # Missing upstream proxy or unhashable arg — skip the
                 # subtree from here (downstream nodes that depend on us
@@ -232,27 +286,79 @@ def _walk_and_resolve_filenames_tagged(graph) -> list[tuple[str, bool]]:
                 continue
             # Filename is `<output_dir>/.../<call_hash>.<ext>`. The
             # stem is exactly the call_hash.
-            node_hash[node] = Path(path).stem
-            is_final = bool(getattr(node.task, "_final", False))
-            out.append((str(path), is_final))
+            node_hash[n] = Path(path).stem
+            out.append({
+                "path": str(path),
+                "op_name": _op_name_for_node(n),
+                "identity": _identity_for_node(n),
+                "is_final": bool(getattr(n.task, "_final", False)),
+            })
         else:
             # Pass-through propagation for helpers without filename_fn.
-            deps = list(graph.get(node, []) or [])
+            deps = list(graph.get(n, []) or [])
             inherited = next(
                 (node_hash[d] for d in deps if d in node_hash), None,
             )
             if inherited is not None:
-                node_hash[node] = inherited
+                node_hash[n] = inherited
             else:
                 # Leaf-level resolver (best-effort). E.g.
                 # `get_stack_subframe_image(stack)` returns a raw frame
                 # path; its content_hash lives on the corresponding
                 # ImageMetadata in `stack.all_metadata()`.
-                leaf_hash = _resolve_leaf_content_hash(node)
+                leaf_hash = _resolve_leaf_content_hash(n)
                 if leaf_hash is not None:
-                    node_hash[node] = leaf_hash
+                    node_hash[n] = leaf_hash
 
     return out
+
+
+def _op_name_for_node(n) -> str:
+    fn = getattr(n.task, "_function", n.task)
+    return getattr(fn, "__name__", "") or getattr(n.task, "__name__", "")
+
+
+def _identity_for_node(n) -> dict:
+    """Extract `{identity_field: stable_hash}` for the first applicable
+    identity registered on `n.task`. Returns `{}` when no identity can
+    be resolved (no _identities, or args don't bind cleanly).
+
+    Mirrors compute_graph._record_pipeline_taps's binding pattern: each
+    identity_cls's field names are treated as positional-parameter names
+    on the producer; values come from `n.args` by parameter position.
+    `stable_hash` is preferred over the raw object so the cached trace
+    result stays small and easy to compare.
+    """
+    import dataclasses
+    task = n.task
+    fn = getattr(task, "_function", task)
+    identities = getattr(task, "_identities", None) or []
+    if not identities:
+        return {}
+    try:
+        sig = inspect.signature(fn)
+    except (TypeError, ValueError):
+        return {}
+    params = list(sig.parameters.keys())
+    arg_map = {
+        params[i]: n.args[i]
+        for i in range(min(len(n.args), len(params)))
+    }
+    # First identity that can bind wins. Ops registered for multiple
+    # identities (stack_files for CalibrationStackId + StackId) all
+    # share the same arg layout — the field names are the same — so
+    # either binds equivalently.
+    for identity_cls in identities:
+        id_fields = [f.name for f in dataclasses.fields(identity_cls)]
+        try:
+            vals = {name: arg_map[name] for name in id_fields}
+        except KeyError:
+            continue
+        return {
+            k: (getattr(v, "stable_hash", None) or str(v))
+            for k, v in vals.items()
+        }
+    return {}
 
 
 def _resolve_args(
