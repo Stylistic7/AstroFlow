@@ -60,3 +60,47 @@ def test_pyramid_thumbnail_handles_legacy_single_resolution_tiff(tmp_path):
     assert png[:8] == b"\x89PNG\r\n\x1a\n"
     arr2 = cv2.imdecode(np.frombuffer(png, np.uint8), cv2.IMREAD_UNCHANGED)
     assert 0 < min(arr2.shape[:2]) <= 1200
+
+
+def test_pyramid_thumbnail_autostretches_float32_so_data_isnt_binary(tmp_path):
+    """Regression: place_image + merge_images_subframe write raw float32
+    TIFFs with pixel values up to ~65535. Without autostretching first,
+    pyvips' default linear-to-uint8 scale clips every data pixel above
+    255 to 255 — every "active" pixel becomes pure white, producing the
+    white-on-black binary look the user reported.
+
+    Verify a float32 source with a realistic raw-frame distribution
+    (mostly-zero background + data pixels around 500-1000 with stars up
+    to 65535) renders as a real grayscale, not a binary mask.
+    """
+    side = 1024
+    arr = np.zeros((side, side), dtype=np.float32)
+    yy, xx = np.ogrid[:side, :side]
+    mask = (yy - side // 2) ** 2 + (xx - side // 2) ** 2 < (side // 2 - 30) ** 2
+    rng = np.random.default_rng(0)
+    arr[mask] = 800 + rng.normal(0, 40, size=mask.sum()).astype(np.float32)
+    # A couple of bright stars to give the stretch real headroom.
+    for _ in range(5):
+        cy = int(rng.integers(side // 4, 3 * side // 4))
+        cx = int(rng.integers(side // 4, 3 * side // 4))
+        arr[cy - 3:cy + 4, cx - 3:cx + 4] = 65535
+    src = tmp_path / "raw_float.tiff"
+    tifffile.imwrite(str(src), arr, compression="deflate")
+
+    png = pyramid_thumbnail(src, min_px=800)
+    decoded = cv2.imdecode(np.frombuffer(png, np.uint8), cv2.IMREAD_UNCHANGED)
+
+    # The bug signature: virtually every data pixel ends up at uint8 max.
+    # The fix: data pixels spread across many uint8 values.
+    data_pixels = decoded[decoded > 0]
+    assert len(data_pixels) > 0, "thumbnail has no non-zero pixels at all"
+    unique = len(np.unique(data_pixels))
+    assert unique >= 20, (
+        f"expected >=20 unique non-zero values in thumbnail, got {unique} "
+        f"— autostretch likely didn't run, image is effectively binary"
+    )
+    frac_at_max = float(np.mean(data_pixels == 255))
+    assert frac_at_max < 0.5, (
+        f"{frac_at_max:.1%} of non-zero pixels saturated to 255 "
+        f"(the binary-mask symptom)"
+    )

@@ -68,9 +68,20 @@ def pyramid_thumbnail(tile_pyramid_path, min_px: int = _THUMBNAIL_MIN_PX) -> byt
     never the full-resolution image.
 
     For a legacy single-resolution `.tiff` (no overviews) it shrink-on-
-    loads via libvips instead, so it still never materializes full res."""
+    loads via libvips instead, so it still never materializes full res.
+
+    Float-format sources (e.g. raw place_image / merge_images_subframe
+    TIFFs that carry real raw-pixel values up to 65535) need an
+    autostretch before any uint8 conversion — pyvips' default linear
+    scale clips everything > 255 to white, which is why every data
+    pixel ends up at 255 for those sources. Pre-autostretched uint8
+    sources (e.g. store_mosaic_color_channel_subframe) take the fast
+    pyvips path unchanged.
+    """
     path = os.fspath(tile_pyramid_path)
     base = pyvips.Image.tiffload(path, page=0)
+    if base.format in ("float", "double"):
+        return _autostretched_thumbnail_png(path, min_px)
     try:
         n_pages = base.get("n-pages")
     except pyvips.Error:
@@ -86,6 +97,28 @@ def pyramid_thumbnail(tile_pyramid_path, min_px: int = _THUMBNAIL_MIN_PX) -> byt
     else:
         image = pyvips.Image.thumbnail(path, min_px)
     return image.write_to_buffer(".png")
+
+
+def _autostretched_thumbnail_png(path: str, min_px: int) -> bytes:
+    """Autostretch a float source to uint8, downscale to `min_px` on
+    the short edge, return PNG bytes. Used for raw float TIFFs (place_image
+    / merge_images_subframe) that pyvips can't render correctly without a
+    prior intensity remap."""
+    import cv2
+    arr = read_image(Path(path))
+    arr_u8 = (autostretch(arr) * 255.0).astype(np.uint8)
+    h, w = arr_u8.shape[:2]
+    short = min(h, w)
+    if short > min_px:
+        scale = min_px / short
+        arr_u8 = cv2.resize(
+            arr_u8, (int(w * scale), int(h * scale)),
+            interpolation=cv2.INTER_AREA,
+        )
+    ok, buf = cv2.imencode(".png", arr_u8)
+    if not ok:
+        raise RuntimeError(f"cv2 failed to encode PNG for {path}")
+    return buf.tobytes()
 
 
 def make_create_tile_pyramid_decorator(
