@@ -220,4 +220,13 @@ def load_metadata() -> ContextRef[MetadataDict]:
         except Exception as e:
             log.warning("Rejecting bad metadata key", key=key, error=str(e), value_type=type(value).__name__)
 
-    return ContextRef.store_large(metadata)
+    ref = ContextRef.store_large(metadata)
+    # Publish the (small) ContextRef under a fixed key so other callers
+    # can grab it via one cheap RPC instead of re-running this whole
+    # scan. `load_metadata` itself is ~20-30 s on a populated cache
+    # (every entry gets an os.path.exists), and the trace's @node cache
+    # key needs metadata_ref.content_hash, so without this publish the
+    # web server pays the full scan cost on every request before it
+    # can even check whether the trace is cached.
+    context["metadata_ref"] = ref
+    return ref

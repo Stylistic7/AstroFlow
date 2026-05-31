@@ -73,49 +73,26 @@ def paths_for_cart_item(
     (~17 s for a large mosaic); every subsequent call with identical
     inputs is a diskcache hit.
     """
-    import ray
-    from hashing import hash_source_code
-    from metadata.image_metadata import load_metadata
-
-    fn, entity, config = _resolve_pipeline_call(item)
-    if fn is None:
-        return []
-
-    metadata_ref = ray.get(load_metadata.remote())
-    pipeline_source_hash = hash_source_code(fn)
-    _, _, pipeline_name = item
-
-    try:
-        tagged: list[dict] = ray.get(_traced_paths.remote(
-            pipeline_name, entity, config, metadata_ref, pipeline_source_hash,
-        ))
-    except Exception:
-        # Trace failures (half-built context, decorator bug, etc.)
-        # degrade to "no live paths" rather than crashing the caller.
-        return []
-
-    return [Path(e["path"]) for e in tagged
+    return [Path(e["path"]) for e in traced_paths_for(item)
             if not finals_only or e["is_final"]]
 
 
-def traced_path_for(
-    item: tuple[str, str, str],
-    op_name: str,
-    **identity_kwargs: str,
-) -> "Path | None":
-    """Find the path produced by `op_name` for a specific entity in
-    `item`'s traced pipeline.
+def traced_paths_for(item: tuple[str, str, str]) -> list[dict]:
+    """Return the raw trace result for `item`: one dict per
+    filename_fn-resolvable node, with keys `path`, `op_name`,
+    `identity`, `is_final`.
 
-    `item` is the canonical cart-entry tuple `(object_type, object_id,
-    pipeline_name)`. `identity_kwargs` are stable-hash values for the
-    op's identity fields — e.g. `traced_path_for(item, "stack_files",
-    stack=active_stack.stable_hash)`.
+    One Ray round-trip per call. Use this when you need to look up
+    multiple paths from the same cart item — hoist it out of any loop,
+    iterate the returned list in pure Python.
 
-    Returns the first matching path, or None if no matching node exists
-    in the trace (or the trace itself fails). Uses the same cached
-    `_traced_paths` @node as `paths_for_cart_item` — first call per
-    (pipeline, entity, config, metadata, source) is slow, subsequent
-    lookups are diskcache-fast.
+    `paths_for_cart_item` and `traced_path_for` are thin convenience
+    wrappers; prefer this helper directly when you're doing per-entity
+    lookups within a single request (e.g. the web server iterating
+    over a mosaic's targets).
+
+    Returns `[]` if the entity isn't in context, the pipeline isn't
+    registered, or the trace itself fails.
     """
     import ray
     from hashing import hash_source_code
@@ -123,20 +100,48 @@ def traced_path_for(
 
     fn, entity, config = _resolve_pipeline_call(item)
     if fn is None:
-        return None
+        return []
 
-    metadata_ref = ray.get(load_metadata.remote())
+    # Prefer the published ContextRef (cheap diskcache read or one
+    # actor RPC; the ref itself is small). Fall back to a fresh scan
+    # only when nothing has published yet (first ever call before any
+    # regroup cycle has run). load_metadata is ~20-30 s on a populated
+    # cache, and we need its result on every call here to form the
+    # trace @node's cache key — without the published ref the cache
+    # might be hot but the web server still pays the full scan cost.
+    metadata_ref = context.get("metadata_ref")
+    if metadata_ref is None:
+        metadata_ref = ray.get(load_metadata.remote())
+
     pipeline_source_hash = hash_source_code(fn)
     _, _, pipeline_name = item
 
     try:
-        tagged: list[dict] = ray.get(_traced_paths.remote(
+        return ray.get(_traced_paths.remote(
             pipeline_name, entity, config, metadata_ref, pipeline_source_hash,
         ))
     except Exception:
-        return None
+        return []
 
-    for e in tagged:
+
+def traced_path_for(
+    item: tuple[str, str, str],
+    op_name: str,
+    **identity_kwargs: str,
+) -> "Path | None":
+    """Find the single path produced by `op_name` for a specific entity
+    in `item`'s traced pipeline.
+
+    `identity_kwargs` are stable-hash values for the op's identity
+    fields — e.g. `traced_path_for(item, "stack_files",
+    stack=active_stack.stable_hash)`.
+
+    Returns the first matching path, or None on miss. Convenience
+    wrapper for one-shot lookups; if you're doing multiple lookups
+    from the same cart item, call `traced_paths_for(item)` once and
+    iterate.
+    """
+    for e in traced_paths_for(item):
         if e["op_name"] != op_name:
             continue
         if all(e["identity"].get(k) == v for k, v in identity_kwargs.items()):

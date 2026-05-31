@@ -128,14 +128,21 @@ def _get_polygons(identity_cls: type, pipeline: str, *args) -> list[dict[str, An
         # raw frame, not a Path, and read_image_metadata would reject it.
         # `stack_files` is the canonical full-res master producer; its
         # filename for a specific stack within this mosaic is resolved
-        # through `traced_path_for` (cached across requests via the
-        # underlying @node).
-        from dependency_graph.trace_paths import traced_path_for
+        # through the cached pipeline trace. Compute the trace ONCE
+        # per request and index it by stack hash — the per-target loop
+        # below then does pure in-memory dict lookups (was: one Ray
+        # round-trip per target, which scaled badly for big mosaics).
+        from dependency_graph.trace_paths import traced_paths_for
         cart_item = (
             type(obj).__name__.lower(),  # "mosaic" / "target"
             obj.stable_hash,
             pipeline,
         )
+        master_path_by_stack: dict[str, str] = {
+            e["identity"]["stack"]: e["path"]
+            for e in traced_paths_for(cart_item)
+            if e["op_name"] == "stack_files" and "stack" in e["identity"]
+        }
         overrides = context.settings.decision_overrides
         from decisions.compute_graph import _is_quarantined
 
@@ -203,10 +210,7 @@ def _get_polygons(identity_cls: type, pipeline: str, *args) -> list[dict[str, An
             # exist — green always means "this is exactly where the
             # stacked image sits on disk."
             if active_stack:
-                master_path = traced_path_for(
-                    cart_item, "stack_files",
-                    stack=active_stack.stable_hash,
-                )
+                master_path = master_path_by_stack.get(active_stack.stable_hash)
                 if master_path and os.path.exists(master_path):
                     meta = read_image_metadata(master_path)
                     if meta and meta.plate_solution:
