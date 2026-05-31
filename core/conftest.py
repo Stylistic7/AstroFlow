@@ -18,29 +18,20 @@ import pytest
 faulthandler.register(signal.SIGUSR1)
 
 
-def pytest_configure(config):
-    """Aggressively reset Ray state at session start.
+def _ray_clean(label: str) -> None:
+    """Aggressively reset Ray state. Used at session start AND end so
+    that (a) each pytest invocation begins from a clean slate, and (b)
+    after the suite finishes, the user can launch the live app
+    immediately without leftover test-cluster state interfering.
 
     Stale `raylet` / `gcs_server` / `default_worker` / `ray::` processes
-    from prior runs (orphaned by `ray stop` failures, killed pytest
-    workers, or test crashes) plus `/tmp/ray*` session dirs are the
-    leading cause of `ActorDiedError: ContextActor` / `LocalRayletDied`
-    on this machine. We can't fix Ray itself; we can ensure every
-    pytest invocation starts from as clean a slate as we can manage
-    without a reboot. ~1-2 seconds, idempotent.
-
-    Bypass with `ASTROFLOW_SKIP_RAY_CLEAN=1` for the rare developer-
-    debugging case where you want to inspect a live ray session.
+    plus `/tmp/ray*` session dirs are the leading cause of
+    `ActorDiedError: ContextActor` / `LocalRayletDied` on this machine.
+    We can't fix Ray itself; we can ensure both ends of every pytest
+    run are as clean as we can manage without a reboot. ~1-2 seconds,
+    idempotent.
     """
-    if os.environ.get("ASTROFLOW_SKIP_RAY_CLEAN") == "1":
-        return
-    # Only run on the xdist controller (worker_id "master"). Each
-    # xdist worker also calls pytest_configure, but we only want to
-    # wipe state once at the very start.
-    if hasattr(config, "workerinput"):
-        return
-
-    print("\n[ray-clean] resetting Ray state…", flush=True)
+    print(f"\n[ray-clean:{label}] resetting Ray state…", flush=True)
     # 1. Try graceful `ray stop` first (best-effort).
     subprocess.run(
         ["ray", "stop", "--force"],
@@ -73,10 +64,38 @@ def pytest_configure(config):
     # macOS puts per-user temp under /var/folders/.../T/.
     for path in glob("/var/folders/*/*/T/ray*"):
         shutil.rmtree(path, ignore_errors=True)
-    # 4. Brief settle so killed processes finish exiting before any
-    # test's `init_ray` fixture tries to allocate ports they held.
+    # 4. Brief settle so killed processes finish exiting before
+    # anything (a test's `init_ray` fixture at start; the user's live
+    # app at end) tries to allocate ports they held.
     time.sleep(0.5)
-    print("[ray-clean] done", flush=True)
+    print(f"[ray-clean:{label}] done", flush=True)
+
+
+def pytest_configure(config):
+    """Reset Ray state at session start.
+
+    Bypass with `ASTROFLOW_SKIP_RAY_CLEAN=1` for the rare developer-
+    debugging case where you want to inspect a live ray session.
+    """
+    if os.environ.get("ASTROFLOW_SKIP_RAY_CLEAN") == "1":
+        return
+    # Only run on the xdist controller. Each xdist worker also calls
+    # pytest_configure, but we only want to wipe state once at the
+    # very start.
+    if hasattr(config, "workerinput"):
+        return
+    _ray_clean("start")
+
+
+def pytest_unconfigure(config):
+    """Reset Ray state at session END so the user can launch the live
+    app immediately without leftover test-cluster state. Same bypass
+    flag as the start hook; same xdist-controller-only gate."""
+    if os.environ.get("ASTROFLOW_SKIP_RAY_CLEAN") == "1":
+        return
+    if hasattr(config, "workerinput"):
+        return
+    _ray_clean("end")
 
 
 def pytest_collection_modifyitems(config, items):
