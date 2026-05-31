@@ -1,5 +1,6 @@
 import math
 import os
+from pathlib import Path
 import astropy.io.fits as pyfits
 from flask import Blueprint, jsonify, abort
 from typing import Any
@@ -212,7 +213,9 @@ def _get_polygons(identity_cls: type, pipeline: str, *args) -> list[dict[str, An
             if active_stack:
                 master_path = master_path_by_stack.get(active_stack.stable_hash)
                 if master_path and os.path.exists(master_path):
-                    meta = read_image_metadata(master_path)
+                    # traced_paths_for returns paths as `str` (cache-friendly
+                    # serialization); read_image_metadata expects a Path.
+                    meta = read_image_metadata(Path(master_path))
                     if meta and meta.plate_solution:
                         from astropy.wcs import WCS
                         wcs = WCS(pyfits.Header(meta.plate_solution.header))

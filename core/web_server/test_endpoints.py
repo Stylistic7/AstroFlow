@@ -255,6 +255,57 @@ def _count_compute_image_metadata_entries():
 
 
 @pytest.mark.exhaustive
+def test_metadata_route_master_path_is_passed_as_path_not_str(client, with_orion_mosaic):
+    """Regression for the 2026-05-30 beartype error on a cache HIT:
+
+        BeartypeCallHintParamViolation: ... parameter
+        filename='/Volumes/.../ef4cde65...xisf' violates type hint
+        <class 'pathlib._local.Path'>, as str ... not instance of <Path>
+
+    `traced_paths_for` returns paths as `str` (cache-friendly), but
+    `read_image_metadata` is beartype-annotated `Path`. The route must
+    wrap the str before passing it down. This test forces the route to
+    take the `os.path.exists -> read_image_metadata` branch by mocking
+    os.path.exists to True for any master path the trace returns; if
+    the str/Path conversion is missing, beartype raises and the route
+    500s.
+    """
+    import os
+    from unittest.mock import patch
+
+    mosaics = client.get("/api/mosaics").get_json()
+    mosaic_id = next(iter(mosaics.keys()))
+    stacks = client.get("/api/stacks").get_json()
+    filter_ = next(
+        (s["filter"] for s in stacks.values() if s.get("filter")),
+        "L",
+    )
+
+    real_exists = os.path.exists
+    def _exists_true_for_traced(path):
+        # Pretend any traced stack_files path exists, so the route
+        # actually invokes read_image_metadata.
+        if isinstance(path, str) and "stack_files" in path:
+            return True
+        return real_exists(path)
+
+    # We can't stub read_image_metadata to None because the route
+    # accesses meta.plate_solution after; instead let it actually run
+    # (it'll fail on the missing file with a different exception that
+    # the route silently ignores). The point of this test is purely
+    # that beartype doesn't reject the call signature.
+    with patch("web_server.backend.metadata.os.path.exists",
+               side_effect=_exists_true_for_traced):
+        resp = client.get(
+            f"/api/metadata/mosaic/{mosaic_id}/PixInsight Downscaled/Merged/{filter_}"
+        )
+
+    assert resp.status_code == 200, (
+        f"got {resp.status_code}: {resp.data[:400]!r}"
+    )
+
+
+@pytest.mark.exhaustive
 def test_metadata_route_with_pipeline_returns_200(client, with_orion_mosaic):
     """Regression for the 2026-05-30 production crash on
     /api/metadata/mosaic/.../<pipeline>/<display>/<filter>.
