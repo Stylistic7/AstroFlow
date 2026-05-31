@@ -28,6 +28,23 @@ class ImageMetadata:
 
     plate_solution: PlateSolution | None = None
 
+    # Camera fingerprint: flat pixel indices (y*width + x) → R-strength
+    # for the top-K single-pixel defect candidates in this frame. None
+    # for biases (too short to express hot-pixel signal), masters,
+    # multi-channel RGB renders, and any frame the detector can't
+    # safely process (non-uint16, sub-tile). Populated by
+    # calibration.sensor_fingerprint.extract_defects.
+    defect_candidates: dict[int, float] | None = None
+
+    # Stacker-asserted effective integration time AFTER the stacker's
+    # own rejection pass. Populated when a readable source is present;
+    # None for raw subframes (where header EXPTIME is the truth) and
+    # for masters from stackers we don't yet know how to read.
+    #   * PixInsight masters: XISF Property `PCL:TotalExposureTime`
+    #   * (future) Siril, OSS, etc.: per-stacker readers added as needed
+    # Read via file_io.master_integration.read_master_integration_seconds.
+    master_integration_s: float | None = None
+
     @property
     def pixels(self) -> int:
         return self.width_pixels * self.height_pixels

@@ -76,3 +76,37 @@ def test_dtype_round_trip():
         obj = image_metadata_to_obj(meta)
         restored = image_metadata_from_obj(obj, meta.filename)
         assert restored.dtype == dt
+
+
+def test_defect_candidates_round_trip():
+    candidates = {1234: 8123.5, 99999: 12300.0, 4242: 5000.25}
+    meta = _make_metadata(defect_candidates=candidates)
+    obj = image_metadata_to_obj(meta)
+    # JSON requires string keys; verify intermediate form and final restoration.
+    assert obj["defect_candidates"] == {"1234": 8123.5, "99999": 12300.0, "4242": 5000.25}
+    restored = image_metadata_from_obj(obj, meta.filename)
+    assert restored.defect_candidates == candidates
+
+
+def test_defect_candidates_absent_remains_none():
+    meta = _make_metadata()
+    obj = image_metadata_to_obj(meta)
+    assert "defect_candidates" not in obj
+    restored = image_metadata_from_obj(obj, meta.filename)
+    assert restored.defect_candidates is None
+
+
+def test_master_integration_round_trip():
+    meta = _make_metadata(master_integration_s=3600.5)
+    obj = image_metadata_to_obj(meta)
+    assert obj["master_integration_s"] == 3600.5
+    restored = image_metadata_from_obj(obj, meta.filename)
+    assert restored.master_integration_s == 3600.5
+
+
+def test_master_integration_absent_remains_none():
+    meta = _make_metadata()
+    obj = image_metadata_to_obj(meta)
+    assert "master_integration_s" not in obj
+    restored = image_metadata_from_obj(obj, meta.filename)
+    assert restored.master_integration_s is None

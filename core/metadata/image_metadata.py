@@ -5,7 +5,9 @@ from pathlib import Path
 from beartype import beartype
 
 from file_io.find_image_files import find_image_files
-from file_io.generic import read_header, get_content_hash, read_image_geometry
+from file_io.generic import read_header, get_content_hash, read_image_geometry, read_image
+from file_io.master_integration import read_master_integration_seconds
+from calibration.sensor_fingerprint import extract_defects
 import metadata.image_types as image_types
 from metadata.classes import ImageMetadata, MetadataDict
 import plate_solving
@@ -157,6 +159,9 @@ def compute_image_metadata(
     else:
         plate_solution = None
 
+    defect_candidates = _maybe_extract_defects(filename, header, geometry)
+    master_integration_s = read_master_integration_seconds(filename, header)
+
     result = ImageMetadata(
         content_hash=content_hash,
         stable_hash=stable_hash,
@@ -167,10 +172,46 @@ def compute_image_metadata(
         channels=geometry.channels,
         dtype=geometry.dtype,
         plate_solution=plate_solution,
+        defect_candidates=defect_candidates,
+        master_integration_s=master_integration_s,
     )
 
     write_image_metadata(result)
     return result
+
+
+def _maybe_extract_defects(
+    filename: Path, header: dict, geometry
+) -> dict[int, float] | None:
+    """Run the hot-pixel detector only on frame types where it's meaningful.
+
+    Lights/darks/flats with raw uint16 mono pixels carry stable defect
+    signal. Biases are too short (RTS noise dominates), masters are
+    post-rejection float32 (the raw defects are gone), and anything
+    multi-channel is debayered/rendered. For all those cases, return
+    None and skip the pixel read entirely.
+    """
+    import numpy as np
+
+    if geometry.channels != 1 or geometry.dtype != np.dtype(np.uint16):
+        return None
+    if image_types.is_master(header):
+        return None
+    if not (
+        image_types.is_light_frame(header)
+        or image_types.is_dark_frame(header)
+        or image_types.is_flat_frame(header)
+    ):
+        return None
+    try:
+        image = read_image(filename)
+    except (ValueError, OSError) as e:
+        log.warning(
+            "Skipping defect extraction; image read failed",
+            filename=str(filename), error=str(e),
+        )
+        return None
+    return extract_defects(image)
 
 
 

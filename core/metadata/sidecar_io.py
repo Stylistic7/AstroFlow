@@ -47,7 +47,7 @@ def _deserialize_header(header: dict[str, Any]) -> dict[str, Any]:
 @beartype
 def image_metadata_to_obj(meta: ImageMetadata) -> dict[str, Any]:
     """Serialize ImageMetadata to a JSON-safe dict (excluding filename and plate_solution)."""
-    return {
+    obj: dict[str, Any] = {
         "content_hash": meta.content_hash,
         "stable_hash": meta.stable_hash,
         "header": _serialize_header(meta.header),
@@ -56,6 +56,14 @@ def image_metadata_to_obj(meta: ImageMetadata) -> dict[str, Any]:
         "channels": meta.channels,
         "dtype": str(meta.dtype),
     }
+    if meta.defect_candidates is not None:
+        # JSON object keys must be strings; cast on the way out and back.
+        obj["defect_candidates"] = {
+            str(k): v for k, v in meta.defect_candidates.items()
+        }
+    if meta.master_integration_s is not None:
+        obj["master_integration_s"] = meta.master_integration_s
+    return obj
 
 
 @beartype
@@ -72,6 +80,12 @@ def image_metadata_from_obj(
             plate_solution = plate_solving._plate_solution_from_obj(ps_obj)
 
     content_hash = obj["content_hash"]
+
+    raw_defects = obj.get("defect_candidates")
+    defect_candidates: dict[int, float] | None = None
+    if raw_defects is not None:
+        defect_candidates = {int(k): float(v) for k, v in raw_defects.items()}
+
     return ImageMetadata(
         content_hash=content_hash,
         stable_hash=obj.get("stable_hash", content_hash),
@@ -82,6 +96,8 @@ def image_metadata_from_obj(
         channels=obj["channels"],
         dtype=np.dtype(obj["dtype"]),
         plate_solution=plate_solution,
+        defect_candidates=defect_candidates,
+        master_integration_s=obj.get("master_integration_s"),
     )
 
 
