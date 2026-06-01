@@ -18,7 +18,6 @@ from products.identity import (
 from previews.types import MASTER
 from mosaics.trimming import project_to_viewbox
 from metadata.sidecar_io import read_image_metadata
-from file_io.xisf_file_io import read_xisf_total_exposure_time
 from attributes.astrometric_attributes import _spherical_polygon_for_wcs
 from decisions.decisions import ObjectType, get_decisions_for_object
 
@@ -217,21 +216,25 @@ def _get_polygons(identity_cls: type, pipeline: str, *args) -> list[dict[str, An
                     # traced_paths_for returns paths as `str` (cache-friendly
                     # serialization); read_image_metadata expects a Path.
                     meta = read_image_metadata(Path(master_path))
-                    # Effective integration time WBPP actually used after
-                    # its own rejection pass. Returned as XISF Property
-                    # `PCL:TotalExposureTime`, separate from FITS
-                    # keywords, so we parse it directly (sub-ms read, no
-                    # pixel I/O). None for non-XISF / non-PixInsight
-                    # stackers; frontend renders blue-only in that case.
-                    #
-                    # TODO: next time we do a full cache wipe, move this
-                    # into `compute_image_metadata` so `PCL:TotalExposureTime`
-                    # lands on `ImageMetadata` (as a dedicated field or
-                    # folded into `header`) and gets cached alongside the
-                    # rest of the metadata, instead of being re-read from
-                    # disk on every web request. Can't do it earlier
-                    # without forcing everyone's cache to invalidate.
-                    wbpp_exposure_s = read_xisf_total_exposure_time(Path(master_path))
+                    # Stacker-reported post-rejection integration time.
+                    # `master_integration_s` is populated by the
+                    # `read_master_integration_seconds` dispatcher at
+                    # ingestion (PixInsight today via XISF Property
+                    # `PCL:TotalExposureTime`; Siril / OSS as readers
+                    # are added). None when no stacker has touched the
+                    # master yet, or the stacker doesn't expose a
+                    # survivor total → frontend renders blue-only.
+                    # NOTE: deliberately NOT routed through
+                    # `effective_integration` here — that would fall
+                    # back to AstroFlow's quality-filter prediction
+                    # when the stacker number is absent, and the green
+                    # wedge specifically means "what the stacker kept,"
+                    # not "AstroFlow's best estimate." The single-value
+                    # canonical accessor lives elsewhere (suggestion
+                    # icon, /api/stacks integration).
+                    wbpp_exposure_s = (
+                        meta.master_integration_s if meta is not None else None
+                    )
                     if meta and meta.plate_solution:
                         from astropy.wcs import WCS
                         wcs = WCS(pyfits.Header(meta.plate_solution.header))

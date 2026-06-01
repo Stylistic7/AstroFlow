@@ -1,11 +1,19 @@
+import os
 from math import ceil
+from pathlib import Path
 from statistics import median
 
+import structlog
+
 from context import context
+from decisions.subframe_selection import effective_integration
+from metadata.classes import ImageMetadata
+from metadata.sidecar_io import read_image_metadata
 from stacks.composite_stack import Stack
-from decisions.subframe_selection import _DEFAULT_QUALITY_THRESHOLD
 
 from suggestions.types import Suggestion, SuggestionKind
+
+log = structlog.get_logger()
 
 
 PER_FILTER_PRESET_S: dict[str, int] = {
@@ -18,29 +26,20 @@ FILTER_PRIORITY: tuple[str, ...] = ("H", "S", "O", "L", "R", "G", "B")
 COMPLETION_THRESHOLD: float = 0.9  # emit COMPLETION when current < 90% of peer max
 
 
-def _surviving_exposure(stack: Stack) -> tuple[float, list[float]]:
-    """Exposure of frames that survive the default subframe quality threshold.
+def _captured_exposures(stack: Stack) -> list[float]:
+    """Raw per-frame EXPOSURE values across every captured frame.
 
-    Side-effect-free: duplicates the filter logic from select_subframes without
-    publishing decision points.
-
-    Returns (total_seconds, [per_frame_exposure_seconds]).
+    Used by `_per_frame_default` to suggest a future capture cadence —
+    a question about the user's CAPTURE habits, NOT about which frames
+    a stacker keeps. Deliberately unfiltered: a low-star-count frame
+    still tells you what cadence the user typically shoots at.
     """
     metadata = stack.all_metadata()
-    all_frames = stack.all_frames()
-    if not all_frames:
-        return 0.0, []
-    star_counts = [metadata[f].plate_solution.num_stars for f in all_frames]
-    if not star_counts:
-        return 0.0, []
-    threshold_stars = int(_DEFAULT_QUALITY_THRESHOLD * max(star_counts))
-    surviving = [
-        float(metadata[f].header.get("EXPOSURE", 0))
-        for f in all_frames
-        if metadata[f].plate_solution.num_stars >= threshold_stars
-        and "EXPOSURE" in metadata[f].header
+    return [
+        float(metadata[f].header["EXPOSURE"])
+        for f in stack.all_frames()
+        if "EXPOSURE" in metadata[f].header
     ]
-    return float(sum(surviving)), surviving
 
 
 def _per_frame_default(per_frame_list: list[float], filter: str) -> float:
@@ -51,18 +50,72 @@ def _per_frame_default(per_frame_list: list[float], filter: str) -> float:
     return float(PER_FILTER_PRESET_S.get(filter, DEFAULT_PRESET_S))
 
 
+def _master_meta_by_stack(
+    cart_item: tuple[str, str, str],
+) -> dict[str, ImageMetadata]:
+    """For a `(object_type, object_id, pipeline_name)` cart entry, return
+    `{stack.stable_hash: ImageMetadata}` for every stack whose master
+    exists on disk under this pipeline. One trace round-trip; pure
+    in-memory mapping afterward.
+
+    Stacks without a built master, or whose pipeline output isn't
+    resolvable yet, are absent from the mapping — caller falls back
+    to AstroFlow's predicted-effective for those.
+    """
+    from dependency_graph.trace_paths import traced_paths_for
+
+    try:
+        trace = traced_paths_for(cart_item)
+    except Exception as e:
+        log.warning("trace failed; using predicted-effective fallback",
+                    cart_item=cart_item, error=str(e))
+        return {}
+
+    out: dict[str, ImageMetadata] = {}
+    for entry in trace:
+        if entry["op_name"] != "stack_files":
+            continue
+        stack_hash = entry["identity"].get("stack")
+        if not stack_hash or stack_hash in out:
+            continue
+        path = entry["path"]
+        if not os.path.exists(path):
+            continue
+        meta = read_image_metadata(Path(path))
+        if meta is not None:
+            out[stack_hash] = meta
+    return out
+
+
 def generate_suggestions(allowed_filters: frozenset[str]) -> list[Suggestion]:
     """Build suggestion list from Shopping Cart mosaics.
 
     Pure read — no writes to context, no decisions published.
+
+    Per-stack effective integration prefers the stacker's own
+    post-rejection number (via `effective_integration` consulting the
+    master's `ImageMetadata.master_integration_s`); falls back to
+    AstroFlow's quality-filter prediction when no master is available.
+    Per-frame cadence is the raw EXPOSURE median across all captured
+    frames — a property of capture habits, not stacker rejection.
     """
     cart = context.shopping_cart or []
-    mosaic_ids_in_cart = {entry[1] for entry in cart if entry[0] == "mosaic"}
+    # One mosaic_id -> (cart_item) map. If the user has the same mosaic
+    # in the cart under multiple pipelines (rare), the first entry wins
+    # for master lookup; the trade-off is documented in the plan.
+    mosaic_cart_item: dict[str, tuple[str, str, str]] = {}
+    for entry in cart:
+        if not (isinstance(entry, (list, tuple)) and len(entry) >= 3):
+            continue
+        if entry[0] != "mosaic":
+            continue
+        mosaic_cart_item.setdefault(entry[1], tuple(entry[:3]))
+
     mosaics_dict = context.mosaics or {}
     mosaics = {
         mid: ref.get()
         for mid, ref in mosaics_dict.items()
-        if mid in mosaic_ids_in_cart
+        if mid in mosaic_cart_item
     }
     targets = context.targets or {}
     stacks = context.stacks or {}
@@ -70,6 +123,8 @@ def generate_suggestions(allowed_filters: frozenset[str]) -> list[Suggestion]:
     suggestions: list[Suggestion] = []
 
     for mosaic_id, mosaic in mosaics.items():
+        master_meta_by_stack = _master_meta_by_stack(mosaic_cart_item[mosaic_id])
+
         # per_panel[target_id][filter] = (total_exposure_s, [per_frame_s])
         per_panel: dict[str, dict[str, tuple[float, list[float]]]] = {}
         panel_targets = {}
@@ -83,9 +138,13 @@ def generate_suggestions(allowed_filters: frozenset[str]) -> list[Suggestion]:
                 if stack_id not in stacks:
                     continue
                 stack = stacks[stack_id].get()
-                total_s, per_frame = _surviving_exposure(stack)
+                total_s = effective_integration(
+                    stack,
+                    master_meta=master_meta_by_stack.get(stack.stable_hash),
+                )
                 if total_s <= 0:
                     continue
+                per_frame = _captured_exposures(stack)
                 f = stack.filter
                 existing = per_panel[target_id].get(f)
                 if existing is None:

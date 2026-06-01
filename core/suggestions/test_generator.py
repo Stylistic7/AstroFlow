@@ -117,6 +117,96 @@ def test_missing_channel_emitted_when_panel_lacks_filter():
     assert missing[0].target_exposure_s == 9000.0  # 30 * 300
 
 
+def test_completion_uses_stacker_reported_integration_when_master_available():
+    """When a stack's master carries `master_integration_s` (i.e. the
+    stacker has run and reported its own post-rejection total), the
+    suggestion's current_exposure_s reflects that number — NOT
+    AstroFlow's predicted-effective sum across raw frames. This is the
+    whole point of routing through `effective_integration`.
+    """
+    # Panel A: predicted-effective would be 60 * 300 = 18000s.
+    # Panel B: predicted-effective would be 24 * 300 = 7200s.
+    # But the stacker dropped some frames on each, reporting:
+    #   master A → 15000s  (kept 50/60 frames)
+    #   master B →  6000s  (kept 20/24 frames)
+    # Suggestion math should use the stacker numbers as ground truth:
+    # peer max = 15000s, B's shortfall = 9000s, default_frame_count =
+    # ceil(9000/300) = 30.
+    stack_a = _stack("stack_a", "H", [100] * 60, [300] * 60)
+    stack_b = _stack("stack_b", "H", [100] * 24, [300] * 24)
+    target_a = _target("t_a", "PanelA", [stack_a.stable_hash])
+    target_b = _target("t_b", "PanelB", [stack_b.stable_hash])
+    mosaic = _mosaic("m1", [target_a.stable_hash, target_b.stable_hash])
+
+    ctx = _ctx(
+        shopping_cart=[("mosaic", mosaic.stable_hash, "PixInsight")],
+        mosaics=[mosaic],
+        targets=[target_a, target_b],
+        stacks=[stack_a, stack_b],
+    )
+
+    fake_master_meta_by_stack = {
+        "stack_a": SimpleNamespace(master_integration_s=15000.0),
+        "stack_b": SimpleNamespace(master_integration_s=6000.0),
+    }
+
+    with patch("suggestions.generator.context", ctx), \
+         patch("suggestions.generator._master_meta_by_stack",
+               return_value=fake_master_meta_by_stack):
+        sugs = generate_suggestions(ALL_FILTERS)
+
+    assert len(sugs) == 1
+    s = sugs[0]
+    assert s.kind == SuggestionKind.COMPLETION
+    assert s.target_id == "t_b"
+    # Stacker's number, not 7200s (predicted-effective on raw frames).
+    assert s.current_exposure_s == 6000.0
+    assert s.target_exposure_s == 15000.0
+    assert s.default_frame_count == 30  # ceil((15000 - 6000) / 300)
+
+
+def test_per_frame_default_uses_all_captured_frames_not_just_keepers():
+    """Per-frame cadence answers "what's the user's capture habit?" —
+    it should reflect every captured EXPOSURE, including frames whose
+    star count would otherwise be filtered out. Previously the median
+    was over star-count keepers only, which biased the suggested
+    cadence on capture sessions with mixed conditions."""
+    # Panel A: all 60 frames at 300s (high stars).
+    # Panel B: 10 frames at 300s (high stars), 10 frames at 60s (low stars).
+    # Predicted-effective on B with _DEFAULT_QUALITY_THRESHOLD=0.0 keeps
+    # everything (sum = 3600s). Peer max = 18000. New per-frame default
+    # for the COMPLETION on B should be the median over ALL captured
+    # EXPOSUREs in B's stack, not over keepers — that's max(60, 300) by
+    # count-1 in the existing data ordering. With 10×300 + 10×60 the
+    # median is 180 (average of the two middle values).
+    stack_a = _stack("stack_a", "H", [100] * 60, [300] * 60)
+    stack_b = _stack(
+        "stack_b", "H",
+        num_stars_per_frame=[100] * 10 + [5] * 10,        # low-star frames
+        exposure_per_frame_s=[300.0] * 10 + [60.0] * 10,  # mixed cadence
+    )
+    target_a = _target("t_a", "PanelA", [stack_a.stable_hash])
+    target_b = _target("t_b", "PanelB", [stack_b.stable_hash])
+    mosaic = _mosaic("m1", [target_a.stable_hash, target_b.stable_hash])
+    ctx = _ctx(
+        shopping_cart=[("mosaic", mosaic.stable_hash, "PixInsight")],
+        mosaics=[mosaic],
+        targets=[target_a, target_b],
+        stacks=[stack_a, stack_b],
+    )
+
+    with patch("suggestions.generator.context", ctx):
+        sugs = generate_suggestions(ALL_FILTERS)
+
+    b_completion = next(
+        s for s in sugs
+        if s.target_id == "t_b" and s.kind == SuggestionKind.COMPLETION
+    )
+    # statistics.median of [300]*10 + [60]*10 = (60 + 300) / 2 = 180.0,
+    # rounded → 180. Validates the cadence is over ALL captured frames.
+    assert b_completion.default_exposure_per_frame_s == 180.0
+
+
 def test_filter_not_in_allowed_set_is_suppressed():
     # Panel A has H + G (moon's out, G is not allowed).
     stack_a_h = _stack("a_h", "H", [100] * 30, [300] * 30)

@@ -1,4 +1,86 @@
 import datetime
+from dataclasses import dataclass
+from typing import Any
+from unittest.mock import MagicMock
+
+from decisions.subframe_selection import (
+    effective_integration,
+    predicted_effective_integration,
+)
+
+
+@dataclass(frozen=True)
+class _StubMeta:
+    """Minimal ImageMetadata stand-in for effective_integration tests.
+
+    Real ImageMetadata is a slotted dataclass with ~10 required fields;
+    `effective_integration` only ever touches `master_integration_s`,
+    so a plain stub is the smallest correct test double.
+    """
+    master_integration_s: float | None = None
+    header: dict[str, Any] = None
+    plate_solution: Any = None
+
+
+def _stub_stack(per_frame_exposures: list[float], stars_per_frame: list[int]):
+    """Build a minimal Stack-like object with two methods the
+    predicted-effective path consults: `all_metadata()` and
+    `all_frames()`. Frame keys are stringified indices."""
+    assert len(per_frame_exposures) == len(stars_per_frame)
+    frames = [f"f{i}" for i in range(len(per_frame_exposures))]
+    metadata = {
+        f: MagicMock(
+            header={"EXPOSURE": exp},
+            plate_solution=MagicMock(num_stars=stars),
+        )
+        for f, exp, stars in zip(frames, per_frame_exposures, stars_per_frame)
+    }
+    stack = MagicMock()
+    stack.all_frames.return_value = frames
+    stack.all_metadata.return_value = metadata
+    return stack
+
+
+def test_predicted_effective_integration_sums_passing_frames():
+    """All frames clear the default threshold (which is 0.0 — keep
+    everything), so predicted_effective_integration sums every EXPOSURE."""
+    stack = _stub_stack([60.0, 120.0, 300.0], [100, 80, 50])
+    assert predicted_effective_integration(stack) == 480.0
+
+
+def test_predicted_effective_integration_empty_stack_is_zero():
+    stack = _stub_stack([], [])
+    assert predicted_effective_integration(stack) == 0.0
+
+
+def test_effective_integration_prefers_master_integration_s():
+    """When a master ImageMetadata carries master_integration_s, the
+    canonical accessor returns that — the stacker's own number is
+    ground truth."""
+    stack = _stub_stack([60.0, 120.0, 300.0], [100, 100, 100])
+    master = _StubMeta(master_integration_s=1234.5)
+    # Predicted would be 480; the master overrides it.
+    assert effective_integration(stack, master_meta=master) == 1234.5
+
+
+def test_effective_integration_falls_back_when_master_is_none():
+    """No master at all → use AstroFlow's prediction."""
+    stack = _stub_stack([60.0, 120.0, 300.0], [100, 100, 100])
+    assert effective_integration(stack, master_meta=None) == 480.0
+    # And the default arg makes the call site backwards-compatible.
+    assert effective_integration(stack) == 480.0
+
+
+def test_effective_integration_falls_back_when_master_lacks_field():
+    """A master without master_integration_s populated (e.g. non-XISF
+    stacker, or stacker that doesn't expose a survivor total) → use
+    AstroFlow's prediction. This protects callers in transitional
+    states where a master exists but the dispatcher couldn't pull a
+    number out of it."""
+    stack = _stub_stack([60.0, 120.0, 300.0], [100, 100, 100])
+    master = _StubMeta(master_integration_s=None)
+    assert effective_integration(stack, master_meta=master) == 480.0
+
 
 # from compute_graph import build_compute_graph
 # from context import context

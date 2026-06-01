@@ -82,11 +82,17 @@ def _compute_threshold_stars(metadata, all_frames, threshold: float) -> int:
     return int(threshold * max(star_counts))
 
 
-def effective_integration(stack: Stack) -> float:
-    """Total exposure in seconds across frames that survive the default
-    subframe-quality filter. Side-effect-free: mirrors `select_subframes`'
-    inclusion math without publishing decisions or applying overrides.
-    Used by the UI to display "usable signal" rather than raw integration."""
+def predicted_effective_integration(stack: Stack) -> float:
+    """AstroFlow's PRE-STACKING prediction of usable integration: the
+    sum of EXPOSURE across frames that pass the default subframe-quality
+    filter. Side-effect-free; mirrors `select_subframes`' inclusion math
+    without publishing decisions or applying overrides.
+
+    Distinct from `effective_integration`, which prefers the stacker's
+    own post-rejection number when a master is available — this is the
+    fallback used when no master exists yet (or the stacker doesn't
+    expose a survivor total).
+    """
     metadata = stack.all_metadata()
     all_frames = stack.all_frames()
     if not all_frames:
@@ -99,6 +105,23 @@ def effective_integration(stack: Stack) -> float:
         for f in all_frames
         if metadata[f].plate_solution.num_stars >= threshold_stars
     ))
+
+
+def effective_integration(
+    stack: Stack, master_meta: ImageMetadata | None = None,
+) -> float:
+    """How much usable signal does this stack have?
+
+    Prefers the stacker's own post-rejection integration time when a
+    master ImageMetadata is available with `master_integration_s`
+    populated (e.g., PixInsight's `PCL:TotalExposureTime`). Otherwise
+    falls back to AstroFlow's pre-stacking prediction. One canonical
+    accessor so every consumer — API `integration` field, suggestion
+    completion bar, dual-exposure widget — agrees on a single number.
+    """
+    if master_meta is not None and master_meta.master_integration_s is not None:
+        return float(master_meta.master_integration_s)
+    return predicted_effective_integration(stack)
 
 
 def select_subframes(
