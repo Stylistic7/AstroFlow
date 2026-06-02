@@ -103,13 +103,12 @@ def identify_stacks(
     if excluded:
         excluded_meta = [metadata_in[h] for h in excluded]
         pct = 100 * len(excluded) / max(1, len(light_frames))
-        (log.warning if pct < 5 else log.error)(
-            "Light frames excluded from stack identification "
-            "(no camera fingerprint)",
+        log.info(
+            "Excluded frames (no camera fingerprint)",
             count=len(excluded),
             total=len(light_frames),
             percent=round(pct, 2),
-            sample_paths=[str(m.filename) for m in excluded_meta[:20]],
+            sample=str(excluded_meta[0].filename) if excluded_meta else None,
         )
     excluded_set = set(excluded)
     light_frames = tuple(h for h in light_frames if h not in excluded_set)
