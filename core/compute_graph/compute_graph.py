@@ -129,8 +129,20 @@ def scatter_spatial_groups(
     metadata_ref: ContextRef[MetadataDict],
     clustering_settings: ClusteringSettings,
     decision_overrides,
-    spatial_groups,
+    *ancestor_results,
 ) -> Graph:
+    from clustering.fingerprint import FingerprintMap
+
+    # Two ancestor results in non-deterministic order: the spatial-group
+    # list from cluster_by_image_center and the global FingerprintMap
+    # from identify_camera_fingerprints. Discriminate by type.
+    spatial_groups = next(
+        r for r in ancestor_results if not isinstance(r, FingerprintMap)
+    )
+    fingerprint_map = next(
+        r for r in ancestor_results if isinstance(r, FingerprintMap)
+    )
+
     graph = Graph({})
 
     identify_cal_stacks_task = (
@@ -138,6 +150,7 @@ def scatter_spatial_groups(
         metadata_ref,
         clustering_settings.max_run_gap,
         clustering_settings.min_frames_in_stack,
+        fingerprint_map,
     )
 
     graph[associate_calibration_stacks] = {identify_cal_stacks_task}
@@ -155,7 +168,7 @@ def scatter_spatial_groups(
             g,
             clustering_settings.min_frames_in_stack,
             clustering_settings.max_run_gap,
-            clustering_settings.fingerprint_min_anchor_size,
+            fingerprint_map,
         )
 
         target_task = Node(identify_targets, clustering_settings.angular_tolerance, name=str(i))
@@ -210,11 +223,18 @@ def build_regroup_graph(
     decision_overrides,
     metadata_ref: ContextRef[MetadataDict],
 ) -> Graph:
+    from stacks.identification import identify_camera_fingerprints
+
     cluster_task = (
         cluster_by_image_center,
         metadata_ref,
         clustering_settings.overlap_fraction,
         clustering_settings.min_component_members,
+    )
+    fingerprint_task = (
+        identify_camera_fingerprints,
+        metadata_ref,
+        clustering_settings.fingerprint_min_anchor_size,
     )
     scatter_task = (
         scatter_spatial_groups,
@@ -226,7 +246,8 @@ def build_regroup_graph(
     return Graph(
         {
             cluster_task: {},
-            scatter_task: {cluster_task},
+            fingerprint_task: {},
+            scatter_task: {cluster_task, fingerprint_task},
         }
     )
 

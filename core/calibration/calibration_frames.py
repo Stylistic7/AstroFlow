@@ -24,39 +24,31 @@ log = structlog.get_logger()
 
 def _group_by_camera(
     metadata: MetadataDict,
+    fingerprint_map,
 ) -> tuple[
     dict[tuple, set[FrameHash]],
     dict[tuple, tuple[int, ...]],
 ]:
     """Group calibration frames by physical camera identity.
 
-    The key is `(INSTRUME, consensus_tuple)`; consensus_tuple is the
-    canonical defect fingerprint (same value for every frame from the
-    same physical sensor) or `()` for frames that lack a usable
-    fingerprint — biases (no defect_candidates), low-defect flats, and
-    noise-fingerprint frames.
+    The key is `(INSTRUME, consensus_tuple)`. Frames in `fingerprint_map`
+    use the consensus from that map (built globally upstream for light
+    frames). Calibration-only frames — biases, low-defect flats — fall
+    back to `(INSTRUME, ())`; the empty consensus tells downstream
+    `CalibrationStack.from_run` to leave `camera_id_hash=None`.
 
     Returns:
         frames_for_camera: camera_key -> set of frame hashes
-        consensus_for_camera: camera_key -> consensus tuple (the second
-            tuple element from the key; surfaced separately so callers
-            can pass it to CalibrationStack.from_run).
+        consensus_for_camera: camera_key -> consensus tuple
     """
-    by_instrume: dict[str, list[FrameHash]] = {}
-    for h, m in metadata.items():
-        instr = m.header.get("INSTRUME") or ""
-        by_instrume.setdefault(instr, []).append(FrameHash(h))
-
     frames_for_camera: dict[tuple, set[FrameHash]] = {}
     consensus_for_camera: dict[tuple, tuple[int, ...]] = {}
-    for instr, hashes in by_instrume.items():
-        frame_sets = {h: metadata[h].defect_candidates for h in hashes}
-        # Match identify_stacks defaults; same library function.
-        for cluster_frames, consensus in clustering.cluster_by_fingerprint(frame_sets):
-            key = (instr, consensus)
-            bucket = frames_for_camera.setdefault(key, set())
-            bucket.update(cluster_frames)
-            consensus_for_camera[key] = consensus
+    for h, m in metadata.items():
+        instr = m.header.get("INSTRUME") or ""
+        consensus = fingerprint_map.get(FrameHash(h), ())
+        key = (instr, consensus)
+        frames_for_camera.setdefault(key, set()).add(FrameHash(h))
+        consensus_for_camera[key] = consensus
     return frames_for_camera, consensus_for_camera
 
 
@@ -64,7 +56,8 @@ def _group_by_camera(
 def identify_calibration_stacks(
     metadata_ref: ContextRef[MetadataDict],
     max_run_gap,
-    min_frames_in_stack: int = 2,
+    min_frames_in_stack: int,
+    fingerprint_map,
 ) -> CalibrationStacksDict:
     log.info("Identifying calibration stacks")
     metadata = metadata_ref.get()
@@ -114,7 +107,9 @@ def identify_calibration_stacks(
     # the same physical sensor (or from the same INSTRUME bucket if no
     # fingerprint is available — biases need session-affinity attribution
     # to choose between sensors of the same model, deferred).
-    frames_for_camera, consensus_for_camera = _group_by_camera(metadata)
+    frames_for_camera, consensus_for_camera = _group_by_camera(
+        metadata, fingerprint_map
+    )
     frames_for_exposure = group_by_header(metadata.values(), "EXPOSURE", 0.0)
     frames_for_filter = group_by_header(metadata.values(), "FILTER", "")
 

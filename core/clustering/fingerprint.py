@@ -57,10 +57,31 @@ from beartype import beartype
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import connected_components
 
+from hashing import hash_list_int
 from metadata.classes import FrameHash
 
 
 log = structlog.get_logger()
+
+
+class FingerprintMap(dict[FrameHash, tuple[int, ...]]):
+    """Frame-hash → canonical camera-consensus pixel tuple.
+
+    Built once globally over ALL fingerprintable light frames so that
+    same-camera frames spread across many pointings still aggregate into
+    one cluster. Frames absent from the map have no confident camera
+    attribution (low-defect, noise fingerprint, or bias).
+
+    Hashable so @node caches keyed on it stay coherent.
+    """
+
+    def __hash__(self):  # type: ignore[override]
+        return hash_list_int([
+            (h, c) for h, c in sorted(self.items())
+        ])
+
+    def __str__(self):
+        return f"FingerprintMap({len(self)})"
 
 
 _DEFAULT_MIN_DEFECT = 100

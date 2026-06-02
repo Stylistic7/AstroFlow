@@ -7,6 +7,7 @@ from frozendict import frozendict
 
 from typing import Iterator
 import clustering
+from clustering.fingerprint import FingerprintMap
 from stacks.composite_stack import Stack, StacksDict
 from metadata.classes import FrameHash, MetadataDict
 from cache.context_ref import ContextRef
@@ -25,25 +26,28 @@ from decisions.decisions import (
 log = structlog.get_logger()
 
 
-def _build_camera_fingerprint_map(
-    metadata: MetadataDict,
-    *,
-    min_anchor_size: int,
-) -> tuple[dict[FrameHash, tuple[int, ...]], list[FrameHash]]:
-    """Cluster light frames by hot-pixel fingerprint within each
-    (INSTRUME, NAXIS, XPIXSZ) bucket.
+@node
+def identify_camera_fingerprints(
+    metadata_ref: ContextRef[MetadataDict],
+    fingerprint_min_anchor_size: int,
+) -> FingerprintMap:
+    """Cluster ALL light frames by hot-pixel fingerprint to assign each
+    frame to a physical camera. Runs once, ABOVE the spatial-group split,
+    so the clusterer sees the camera's full frame population — per-spatial-
+    group clustering would never reach `min_anchor_size` for a camera
+    spread across many pointings.
 
-    Returns:
-        fingerprint_map: per-frame canonical consensus tuple. The hash of
-            this tuple becomes the camera identity for any Stack containing
-            the frame. Same value across every member of the same physical
-            sensor cluster.
-        excluded: frames that lack a confident camera attribution (too few
-            defects, or noise-fingerprint singletons). The caller drops
-            these from stack identification.
+    Returns a `FingerprintMap` containing only frames whose attribution
+    was confident. Frames absent from the map (low-defect flats, noise
+    fingerprints, or biases) are excluded downstream by `identify_stacks`.
     """
+    metadata = metadata_ref.get()
+    log.info("Identifying camera fingerprints", num_frames=len(metadata))
+
     by_pre_group: dict[tuple, list[FrameHash]] = {}
     for h, m in metadata.items():
+        if m.defect_candidates is None:
+            continue
         key = (
             m.header.get("INSTRUME"),
             m.header.get("NAXIS1"),
@@ -53,19 +57,22 @@ def _build_camera_fingerprint_map(
         )
         by_pre_group.setdefault(key, []).append(h)
 
-    fingerprint_map: dict[FrameHash, tuple[int, ...]] = {}
-    excluded: list[FrameHash] = []
+    fp = FingerprintMap()
     for hashes in by_pre_group.values():
         frame_sets = {h: metadata[h].defect_candidates for h in hashes}
         for cluster_frames, consensus in clustering.cluster_by_fingerprint(
-            frame_sets, min_anchor_size=min_anchor_size
+            frame_sets, min_anchor_size=fingerprint_min_anchor_size,
         ):
-            if consensus:
-                for h in cluster_frames:
-                    fingerprint_map[h] = consensus
-            else:
-                excluded.extend(cluster_frames)
-    return fingerprint_map, excluded
+            if not consensus:
+                continue
+            for h in cluster_frames:
+                fp[h] = consensus
+    log.info(
+        "Camera fingerprints identified",
+        attributed=len(fp),
+        total=len(metadata),
+    )
+    return fp
 
 
 @node
@@ -75,28 +82,20 @@ def identify_stacks(
     light_frames: tuple[FrameHash, ...],
     min_frames_in_stack: int,
     max_run_gap,
-    fingerprint_min_anchor_size: int,
+    fingerprint_map: FingerprintMap,
 ) -> StacksDict:
     log.info("Identifying stacks", num_frames=len(light_frames))
     metadata_in = metadata_ref.get()
 
-    # TODO: Maybe implement a version of cluster_continuous() that repeatedly
-    # subdivides by independent 1D variables.
-    metadata = MetadataDict(
-        {h: i for h, i in metadata_in.items() if h in light_frames}
-    )
-
-    # Identify the physical camera that produced each light frame by
-    # clustering on hot-pixel-defect overlap. Frames whose fingerprint
-    # is absent or too sparse to attribute confidently are EXCLUDED
-    # from stack identification entirely — we don't form Stacks from
-    # frames we can't attribute to a camera. The bar is empirical:
-    # ~0.12% on the validation library; if this jumps to several
-    # percent, investigate (extract_defects regression or a new
-    # camera/rig mix that the clusterer can't separate).
-    fingerprint_map, excluded = _build_camera_fingerprint_map(
-        metadata, min_anchor_size=fingerprint_min_anchor_size,
-    )
+    # Frames whose fingerprint clustering didn't yield a confident
+    # camera identity are EXCLUDED from stack identification entirely.
+    # The fingerprint map was clustered globally upstream (see
+    # `identify_camera_fingerprints`), so the count here reflects real
+    # attribution failures, not a per-scale-group sample-size problem.
+    # Empirically ~0.12% on the validation library; if this jumps to
+    # several percent, investigate (extract_defects regression or a
+    # new camera/rig mix that the clusterer can't separate).
+    excluded = [h for h in light_frames if h not in fingerprint_map]
     if excluded:
         excluded_meta = [metadata_in[h] for h in excluded]
         pct = 100 * len(excluded) / max(1, len(light_frames))
@@ -111,7 +110,7 @@ def identify_stacks(
     excluded_set = set(excluded)
     light_frames = tuple(h for h in light_frames if h not in excluded_set)
     metadata = MetadataDict(
-        {h: i for h, i in metadata.items() if h not in excluded_set}
+        {h: i for h, i in metadata_in.items() if h in light_frames}
     )
 
     @beartype
