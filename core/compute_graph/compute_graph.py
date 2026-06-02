@@ -131,16 +131,17 @@ def scatter_spatial_groups(
     decision_overrides,
     *ancestor_results,
 ) -> Graph:
-    from clustering.fingerprint import FingerprintMap
+    from cache.context_ref import ContextRef
 
-    # Two ancestor results in non-deterministic order: the spatial-group
-    # list from cluster_by_image_center and the global FingerprintMap
-    # from identify_camera_fingerprints. Discriminate by type.
+    # Two ancestor results in non-deterministic order:
+    #   - cluster_by_image_center returns list[tuple[str, ...]]
+    #   - identify_camera_fingerprints returns ContextRef[FingerprintMap]
+    # Discriminate by type.
     spatial_groups = next(
-        r for r in ancestor_results if not isinstance(r, FingerprintMap)
+        r for r in ancestor_results if not isinstance(r, ContextRef)
     )
-    fingerprint_map = next(
-        r for r in ancestor_results if isinstance(r, FingerprintMap)
+    fingerprint_map_ref = next(
+        r for r in ancestor_results if isinstance(r, ContextRef)
     )
 
     graph = Graph({})
@@ -150,7 +151,7 @@ def scatter_spatial_groups(
         metadata_ref,
         clustering_settings.max_run_gap,
         clustering_settings.min_frames_in_stack,
-        fingerprint_map,
+        fingerprint_map_ref,
     )
 
     graph[associate_calibration_stacks] = {identify_cal_stacks_task}
@@ -168,7 +169,7 @@ def scatter_spatial_groups(
             g,
             clustering_settings.min_frames_in_stack,
             clustering_settings.max_run_gap,
-            fingerprint_map,
+            fingerprint_map_ref,
         )
 
         target_task = Node(identify_targets, clustering_settings.angular_tolerance, name=str(i))

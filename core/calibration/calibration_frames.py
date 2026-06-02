@@ -57,10 +57,11 @@ def identify_calibration_stacks(
     metadata_ref: ContextRef[MetadataDict],
     max_run_gap,
     min_frames_in_stack: int,
-    fingerprint_map,
+    fingerprint_map_ref,
 ) -> CalibrationStacksDict:
     log.info("Identifying calibration stacks")
     metadata = metadata_ref.get()
+    fingerprint_map = fingerprint_map_ref.get()
 
     # Filter out any frames that look like already-stacked masters (by
     # filename, BITPIX, or PROGRAM signature). `find_image_files` excludes

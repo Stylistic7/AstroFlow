@@ -30,16 +30,19 @@ log = structlog.get_logger()
 def identify_camera_fingerprints(
     metadata_ref: ContextRef[MetadataDict],
     fingerprint_min_anchor_size: int,
-) -> FingerprintMap:
+) -> ContextRef[FingerprintMap]:
     """Cluster ALL light frames by hot-pixel fingerprint to assign each
     frame to a physical camera. Runs once, ABOVE the spatial-group split,
     so the clusterer sees the camera's full frame population — per-spatial-
     group clustering would never reach `min_anchor_size` for a camera
     spread across many pointings.
 
-    Returns a `FingerprintMap` containing only frames whose attribution
-    was confident. Frames absent from the map (low-defect flats, noise
-    fingerprints, or biases) are excluded downstream by `identify_stacks`.
+    Returns a `ContextRef[FingerprintMap]`. The map contains only frames
+    whose attribution was confident; frames absent from the map (low-
+    defect flats, noise fingerprints, or biases) are excluded downstream
+    by `identify_stacks`. Wrapping in a ContextRef keeps downstream
+    @node cache keys cheap to compute — 347+ identify_stacks tasks all
+    consume the same ref, so we hash the FingerprintMap content once.
     """
     metadata = metadata_ref.get()
     log.info("Identifying camera fingerprints", num_frames=len(metadata))
@@ -72,7 +75,7 @@ def identify_camera_fingerprints(
         attributed=len(fp),
         total=len(metadata),
     )
-    return fp
+    return ContextRef.store_large(fp)
 
 
 @node
@@ -82,10 +85,11 @@ def identify_stacks(
     light_frames: tuple[FrameHash, ...],
     min_frames_in_stack: int,
     max_run_gap,
-    fingerprint_map: FingerprintMap,
+    fingerprint_map_ref: ContextRef[FingerprintMap],
 ) -> StacksDict:
     log.info("Identifying stacks", num_frames=len(light_frames))
     metadata_in = metadata_ref.get()
+    fingerprint_map = fingerprint_map_ref.get()
 
     # Frames whose fingerprint clustering didn't yield a confident
     # camera identity are EXCLUDED from stack identification entirely.
