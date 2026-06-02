@@ -25,6 +25,49 @@ from decisions.decisions import (
 log = structlog.get_logger()
 
 
+def _build_camera_fingerprint_map(
+    metadata: MetadataDict,
+    *,
+    min_anchor_size: int,
+) -> tuple[dict[FrameHash, tuple[int, ...]], list[FrameHash]]:
+    """Cluster light frames by hot-pixel fingerprint within each
+    (INSTRUME, NAXIS, XPIXSZ) bucket.
+
+    Returns:
+        fingerprint_map: per-frame canonical consensus tuple. The hash of
+            this tuple becomes the camera identity for any Stack containing
+            the frame. Same value across every member of the same physical
+            sensor cluster.
+        excluded: frames that lack a confident camera attribution (too few
+            defects, or noise-fingerprint singletons). The caller drops
+            these from stack identification.
+    """
+    by_pre_group: dict[tuple, list[FrameHash]] = {}
+    for h, m in metadata.items():
+        key = (
+            m.header.get("INSTRUME"),
+            m.header.get("NAXIS1"),
+            m.header.get("NAXIS2"),
+            m.header.get("XPIXSZ"),
+            m.header.get("YPIXSZ"),
+        )
+        by_pre_group.setdefault(key, []).append(h)
+
+    fingerprint_map: dict[FrameHash, tuple[int, ...]] = {}
+    excluded: list[FrameHash] = []
+    for hashes in by_pre_group.values():
+        frame_sets = {h: metadata[h].defect_candidates for h in hashes}
+        for cluster_frames, consensus in clustering.cluster_by_fingerprint(
+            frame_sets, min_anchor_size=min_anchor_size
+        ):
+            if consensus:
+                for h in cluster_frames:
+                    fingerprint_map[h] = consensus
+            else:
+                excluded.extend(cluster_frames)
+    return fingerprint_map, excluded
+
+
 @node
 def identify_stacks(
     metadata_ref: ContextRef[MetadataDict],
@@ -32,6 +75,7 @@ def identify_stacks(
     light_frames: tuple[FrameHash, ...],
     min_frames_in_stack: int,
     max_run_gap,
+    fingerprint_min_anchor_size: int,
 ) -> StacksDict:
     log.info("Identifying stacks", num_frames=len(light_frames))
     metadata_in = metadata_ref.get()
@@ -40,6 +84,34 @@ def identify_stacks(
     # subdivides by independent 1D variables.
     metadata = MetadataDict(
         {h: i for h, i in metadata_in.items() if h in light_frames}
+    )
+
+    # Identify the physical camera that produced each light frame by
+    # clustering on hot-pixel-defect overlap. Frames whose fingerprint
+    # is absent or too sparse to attribute confidently are EXCLUDED
+    # from stack identification entirely — we don't form Stacks from
+    # frames we can't attribute to a camera. The bar is empirical:
+    # ~0.12% on the validation library; if this jumps to several
+    # percent, investigate (extract_defects regression or a new
+    # camera/rig mix that the clusterer can't separate).
+    fingerprint_map, excluded = _build_camera_fingerprint_map(
+        metadata, min_anchor_size=fingerprint_min_anchor_size,
+    )
+    if excluded:
+        excluded_meta = [metadata_in[h] for h in excluded]
+        pct = 100 * len(excluded) / max(1, len(light_frames))
+        (log.warning if pct < 5 else log.error)(
+            "Light frames excluded from stack identification "
+            "(no camera fingerprint)",
+            count=len(excluded),
+            total=len(light_frames),
+            percent=round(pct, 2),
+            sample_paths=[str(m.filename) for m in excluded_meta[:20]],
+        )
+    excluded_set = set(excluded)
+    light_frames = tuple(h for h in light_frames if h not in excluded_set)
+    metadata = MetadataDict(
+        {h: i for h, i in metadata.items() if h not in excluded_set}
     )
 
     @beartype
@@ -55,7 +127,11 @@ def identify_stacks(
     @beartype
     def camera_clusters(
         frames: tuple[FrameHash, ...],
-    ) -> Iterator[tuple[FrameHash, ...]]:
+    ) -> Iterator[tuple[tuple[FrameHash, ...], tuple[int, ...]]]:
+        # Two-level discrete clustering: first by header (INSTRUME, NAXIS,
+        # XPIXSZ) — cheap and exact — then by camera fingerprint (looked
+        # up from `fingerprint_map`, which was clustered once upfront).
+        # Same-model bodies separate at the fingerprint step.
         cameras = [
             (
                 metadata[k].content_hash,
@@ -65,14 +141,16 @@ def identify_stacks(
                     metadata[k].header["NAXIS2"],
                     metadata[k].header["XPIXSZ"],
                     metadata[k].header["YPIXSZ"],
+                    fingerprint_map[k],
                 ),
             )
             for k in frames
         ]
         for cluster in clustering.cluster_discrete(cameras):
-            frames, cameras = zip(*cluster)
-            assert len(set(cameras)) == 1
-            yield frames
+            cluster_frames, keys = zip(*cluster)
+            assert len(set(keys)) == 1
+            camera_consensus = keys[0][-1]
+            yield cluster_frames, camera_consensus
 
     @beartype
     def rotation_clusters(
@@ -122,13 +200,16 @@ def identify_stacks(
 
     new_stacks = StacksDict()
     for scale_frames in scale_clusters():
-        for camera_frames in camera_clusters(scale_frames):
+        for camera_frames, camera_consensus in camera_clusters(scale_frames):
             for rotation_frames in rotation_clusters(camera_frames):
                 for filter_frames in filter_clusters(rotation_frames):
                     for exposure_frames in exposure_clusters(filter_frames):
                         if len(exposure_frames) >= min_frames_in_stack:
                             new_stack = Stack.from_frames(
-                                exposure_frames, metadata=metadata, max_run_gap=max_run_gap
+                                exposure_frames,
+                                metadata=metadata,
+                                max_run_gap=max_run_gap,
+                                camera_consensus=camera_consensus,
                             )
                             if new_stack is not None:
                                 new_stacks[new_stack.stable_hash] = ContextRef.store(

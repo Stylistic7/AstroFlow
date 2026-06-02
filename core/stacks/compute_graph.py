@@ -56,6 +56,10 @@ def prepare_stack_for_ui(
         "name": stack.name,
         "image_type": stack.image_type,
         "camera": stack.camera,
+        "camera_id_hash": stack.camera_id_hash,
+        "camera_id_short": (
+            stack.camera_id_hash[:8] if stack.camera_id_hash else None
+        ),
         "filter": stack.filter,
         "exposure": stack.exposure,
         # `integration` is the *effective* (post-subframe-selection)

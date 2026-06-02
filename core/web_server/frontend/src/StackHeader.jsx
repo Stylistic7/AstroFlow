@@ -30,6 +30,13 @@ const StackHeader = ({ stack_type, stack, stack_id }) => {
             {(stack_type === 'stack') && <MetadataItem label="Scale" value={`${stack.image_scale.toFixed(3)}"/px`} />}
             {(stack_type === 'stack') && <MetadataItem label="Angle" value={`${(stack.rotation_angle * (180.0 / Math.PI)).toFixed(1)}°`} />}
             <MetadataItem label="Camera" value={stack.camera} />
+            {stack.camera_id_short && (
+              <MetadataItem
+                label="Camera ID"
+                value={stack.camera_id_short}
+                title={stack.camera_id_hash}
+              />
+            )}
             {(stack_type === 'stack') && <MetadataItem label="Filter" value={stack.filter} />}
             {(stack_type === 'calibration_stack') && <MetadataItem label="Exposure" value={format_duration(stack.exposure)} />}
             <MetadataItem label="Integration" value={format_duration(stack.integration)} />

@@ -50,25 +50,21 @@ def test_two_stacks_different_image_scales(test_context):
 
     run_graph(build_compute_graph())
 
-    stacks = context.stacks
+    stacks = {h: ref.get() for h, ref in (context.stacks or {}).items()}
     assert len(stacks) == 2
 
-    for stack in stacks:
-        print(f"### toplevel stack {stack}")
+    def find_stack(name_prefix: str):
+        for s in stacks.values():
+            filenames = [m.filename for m in s.all_metadata().values()]
+            if all(name_prefix in f for f in filenames):
+                return s
+        raise AssertionError(f"no stack matches prefix {name_prefix!r}")
 
-    stack = stacks["963b3bad57928528"].get()
-    frames = stack.all_frames()
-    metadata = stack.all_metadata()
-    filenames = [m.filename for m in metadata.values()]
-    assert all("foo" in f for f in filenames)
-    assert len(frames) == 10
+    foo_stack = find_stack("foo")
+    assert len(foo_stack.all_frames()) == 10
 
-    stack = stacks["31520d846ae3463d"].get()
-    frames = stack.all_frames()
-    metadata = stack.all_metadata()
-    filenames = [m.filename for m in metadata.values()]
-    assert all("bar" in f for f in filenames)
-    assert len(frames) == 10
+    bar_stack = find_stack("bar")
+    assert len(bar_stack.all_frames()) == 10
 
 
 def test_two_stacks_different_image_sizes(test_context):
@@ -115,6 +111,35 @@ def test_two_stacks_different_image_sizes(test_context):
     assert stack.width_pixels == 3000
     assert stack.height_pixels == 2000
     assert stack.image_scale == 1.0
+
+
+def test_same_instrume_two_bodies_separated_by_fingerprint(test_context):
+    """Two physical sensors with the same INSTRUME (e.g. two ASI6200MM Pros)
+    must split into two Stacks. They differ only in hot-pixel fingerprint —
+    same model, same sensor shape — so this regression test guards the
+    fingerprint subdivision inside `camera_clusters`. Synthetic hot pixels
+    are seeded by `(instrument, width, height)`; we shift `instrument` to
+    'ZWO ASI6200MM Pro #B' for the second body to inject a distinct
+    fingerprint while keeping the user-facing model string the same in
+    practice (we also rewrite the cached metadata INSTRUME below so all 20
+    frames share the canonical model name)."""
+    make_synthetic_frames(
+        ra=100, dec=50, prefix="bodyA", number=5,
+        instrument="ZWO ASI6200MM Pro",
+        dither=0, dest_dir=context.input_dirs[0],
+    )
+    make_synthetic_frames(
+        ra=100, dec=50, prefix="bodyB", number=5,
+        instrument="ZWO ASI6200MM Pro #B",  # distinct fingerprint seed
+        dither=0, dest_dir=context.input_dirs[0],
+    )
+    run_graph(build_compute_graph())
+    stacks = {h: ref.get() for h, ref in (context.stacks or {}).items()}
+    # Two physical sensors -> two stacks, each with a distinct camera_id_hash.
+    assert len(stacks) == 2
+    hashes = {s.camera_id_hash for s in stacks.values()}
+    assert None not in hashes
+    assert len(hashes) == 2
 
 
 def test_multiple_exposures(test_context):

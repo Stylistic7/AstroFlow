@@ -6,3 +6,10 @@ from .angles import (
     angular_spread_mod_pi,
     angular_mean_mod_pi,
 )
+from .fingerprint import (
+    build_overlap,
+    initial_clusters,
+    anchor_reassign,
+    consensus_pixels_for_cluster,
+    cluster_by_fingerprint,
+)

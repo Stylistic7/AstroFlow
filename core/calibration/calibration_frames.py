@@ -22,6 +22,44 @@ import structlog
 log = structlog.get_logger()
 
 
+def _group_by_camera(
+    metadata: MetadataDict,
+) -> tuple[
+    dict[tuple, set[FrameHash]],
+    dict[tuple, tuple[int, ...]],
+]:
+    """Group calibration frames by physical camera identity.
+
+    The key is `(INSTRUME, consensus_tuple)`; consensus_tuple is the
+    canonical defect fingerprint (same value for every frame from the
+    same physical sensor) or `()` for frames that lack a usable
+    fingerprint — biases (no defect_candidates), low-defect flats, and
+    noise-fingerprint frames.
+
+    Returns:
+        frames_for_camera: camera_key -> set of frame hashes
+        consensus_for_camera: camera_key -> consensus tuple (the second
+            tuple element from the key; surfaced separately so callers
+            can pass it to CalibrationStack.from_run).
+    """
+    by_instrume: dict[str, list[FrameHash]] = {}
+    for h, m in metadata.items():
+        instr = m.header.get("INSTRUME") or ""
+        by_instrume.setdefault(instr, []).append(FrameHash(h))
+
+    frames_for_camera: dict[tuple, set[FrameHash]] = {}
+    consensus_for_camera: dict[tuple, tuple[int, ...]] = {}
+    for instr, hashes in by_instrume.items():
+        frame_sets = {h: metadata[h].defect_candidates for h in hashes}
+        # Match identify_stacks defaults; same library function.
+        for cluster_frames, consensus in clustering.cluster_by_fingerprint(frame_sets):
+            key = (instr, consensus)
+            bucket = frames_for_camera.setdefault(key, set())
+            bucket.update(cluster_frames)
+            consensus_for_camera[key] = consensus
+    return frames_for_camera, consensus_for_camera
+
+
 @node
 def identify_calibration_stacks(
     metadata_ref: ContextRef[MetadataDict],
@@ -70,42 +108,52 @@ def identify_calibration_stacks(
         }
 
     frames_for_image_type = group_by_header(metadata.values(), "IMAGETYP", "")
-    frames_for_camera = group_by_header(metadata.values(), "INSTRUME", "")
+    # `camera_key` here is the synthetic tuple `(INSTRUME, consensus_tuple)`
+    # where `consensus_tuple` is empty for biases / low-defect frames that
+    # cannot be fingerprinted. Frames sharing the same camera_key are from
+    # the same physical sensor (or from the same INSTRUME bucket if no
+    # fingerprint is available — biases need session-affinity attribution
+    # to choose between sensors of the same model, deferred).
+    frames_for_camera, consensus_for_camera = _group_by_camera(metadata)
     frames_for_exposure = group_by_header(metadata.values(), "EXPOSURE", 0.0)
     frames_for_filter = group_by_header(metadata.values(), "FILTER", "")
 
-    def new_stack(frames: list[FrameHash]) -> CalibrationStack:
+    def new_stack(
+        frames: list[FrameHash],
+        camera_consensus: tuple[int, ...],
+    ) -> CalibrationStack:
         run = ray.get(calibration_run_from_frames.remote(frames, metadata))
         assert run.image_type in ["bias", "dark", "flat"]
-        return CalibrationStack.from_run(run)
+        return CalibrationStack.from_run(run, camera_consensus=camera_consensus)
 
     stacks = CalibrationStacksDict()
-    for camera in frames_for_camera:
+    for camera_key in frames_for_camera:
+        consensus = consensus_for_camera[camera_key]
         bias_frames = frames_for_image_type.get(
             "bias", set()
-        ) & frames_for_camera.get(camera, set())
+        ) & frames_for_camera.get(camera_key, set())
         for run in get_runs(bias_frames):
-            stack = new_stack(run)
+            stack = new_stack(run, consensus)
             stacks[StackHash(stack.stable_hash)] = stack
 
         for exposure in frames_for_exposure:
             dark_frames = (
                 frames_for_image_type.get("dark", set())
-                & frames_for_camera.get(camera, set())
+                & frames_for_camera.get(camera_key, set())
                 & frames_for_exposure.get(exposure, set())
             )
             for run in get_runs(dark_frames):
-                stack = new_stack(run)
+                stack = new_stack(run, consensus)
                 stacks[StackHash(stack.stable_hash)] = stack
 
         for filter in frames_for_filter:
             flat_frames = (
                 frames_for_image_type.get("flat", set())
-                & frames_for_camera.get(camera, set())
+                & frames_for_camera.get(camera_key, set())
                 & frames_for_filter.get(filter, set())
             )
             for run in get_runs(flat_frames):
-                stack = new_stack(run)
+                stack = new_stack(run, consensus)
                 stacks[StackHash(stack.stable_hash)] = stack
 
     log.info("Calibration stacks identified", keys=list(stacks.keys()))

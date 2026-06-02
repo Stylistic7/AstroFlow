@@ -17,6 +17,13 @@ class ClusteringSettings:
     angular_tolerance: Radians = field(default_factory=lambda: Radians(math.radians(10.0)))
     max_run_gap: datetime.timedelta = field(default_factory=lambda: datetime.timedelta(hours=8))
     min_frames_in_stack: int = 5
+    # Minimum cluster size for the fingerprint-based camera identifier
+    # to count a cluster as a real camera (and not fold it into the
+    # no-fingerprint bucket). Default 20 was validated on a 16k-frame
+    # real library: it rejects noise-fingerprint singletons while
+    # comfortably accepting any real camera (smallest validated: 142
+    # frames). Tests override via test_context.
+    fingerprint_min_anchor_size: int = 20
 
     def __hash__(self):
         return hash_dataclass(self)

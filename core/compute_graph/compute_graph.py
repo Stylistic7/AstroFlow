@@ -155,6 +155,7 @@ def scatter_spatial_groups(
             g,
             clustering_settings.min_frames_in_stack,
             clustering_settings.max_run_gap,
+            clustering_settings.fingerprint_min_anchor_size,
         )
 
         target_task = Node(identify_targets, clustering_settings.angular_tolerance, name=str(i))

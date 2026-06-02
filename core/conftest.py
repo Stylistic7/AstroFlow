@@ -240,7 +240,10 @@ def identified_testdata(init_ray, tmp_path_factory):
     context.input_dirs = [input_dir]
     context.output_dir = output_dir
     context.settings = Settings(
-        clustering_settings=ClusteringSettings(min_frames_in_stack=3),
+        clustering_settings=ClusteringSettings(
+            min_frames_in_stack=3,
+            fingerprint_min_anchor_size=3,
+        ),
         development_settings=DevelopmentSettings(
             mock_pixinsight=True,
         ),

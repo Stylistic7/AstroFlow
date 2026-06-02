@@ -231,6 +231,21 @@ def make_synthetic_frames(
                 low=0, high=2, size=image_data.shape, dtype=image_data.dtype
             )
 
+        # Inject deterministic hot pixels so the defect-fingerprint
+        # extractor produces overlapping, stable defect sets across all
+        # frames from this "camera" (= instrument + sensor shape). Without
+        # this, fingerprint clustering would see only random noise outliers
+        # and exclude every synthetic frame as no-fingerprint.
+        if image_type != "Bias":
+            _hot_seed = xxhash.xxh64(
+                f"{instrument}|{width_pixels}x{height_pixels}"
+            ).intdigest()
+            _hot_rng = np.random.default_rng(_hot_seed)
+            n_hot = 1200
+            xs = _hot_rng.integers(0, width_pixels, size=n_hot)
+            ys = _hot_rng.integers(0, height_pixels, size=n_hot)
+            image_data[ys, xs] = np.iinfo(np.uint16).max
+
         if content_hashes is not None:
             content_hash = content_hashes[i]
         else:
@@ -297,6 +312,13 @@ def make_synthetic_frames(
         else:
             plate_solution = None
 
+        # Extract defects from the synthetic image so the cached metadata
+        # mirrors what the production pipeline would have produced.
+        # Without this, defect_candidates would stay None and every
+        # synthetic light would be excluded by `_build_camera_fingerprint_map`.
+        from calibration.sensor_fingerprint import extract_defects
+        defect_candidates = extract_defects(image_data) if image_type != "Bias" else None
+
         metadata = ImageMetadata(
             content_hash=content_hash,
             stable_hash=content_hash,
@@ -307,6 +329,7 @@ def make_synthetic_frames(
             channels=1,
             dtype=np.dtype(np.uint16),
             plate_solution=plate_solution,
+            defect_candidates=defect_candidates,
         )
 
         fn_hash = hash_source_code(compute_image_metadata)

@@ -32,6 +32,10 @@ def make_test_context() -> tuple[
     context.settings = Settings(
         clustering_settings=ClusteringSettings(
             min_frames_in_stack=3,
+            # Synthetic test cameras typically have just a handful of
+            # frames; the production default (20) would fold every test
+            # cluster into the no-fingerprint bucket.
+            fingerprint_min_anchor_size=3,
         ),
         development_settings=DevelopmentSettings(
             mock_pixinsight=True,

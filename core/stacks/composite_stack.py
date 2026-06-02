@@ -21,6 +21,25 @@ from cache.content_hashed import ContentHashed
 from cache.context_ref import ContextRef
 
 
+def _camera_id_hash_from(
+    imaging: "ImagingAttributes", consensus: tuple[int, ...]
+) -> str | None:
+    """Stable hash binding camera identity to (model, sensor shape, defect
+    consensus). None if consensus is empty (no fingerprint → no known camera).
+
+    Includes camera + sensor shape to disambiguate the (extraordinarily
+    unlikely) case where two different sensors land on the same consensus
+    pixel tuple by chance.
+    """
+    if not consensus:
+        return None
+    return hash_list([
+        imaging.camera,
+        (imaging.height_pixels, imaging.width_pixels),
+        consensus,
+    ])
+
+
 @beartype
 @dataclass(frozen=True)
 class BaseStack(
@@ -31,6 +50,10 @@ class BaseStack(
 ):
     """Common base for all stacks (light and calibration). Contains Runs."""
     contents: RunsDict
+    # Hash of the canonical defect-fingerprint consensus for this Stack's
+    # camera. None for bias-only calibration stacks (no defect signal) and
+    # for any other stack whose frames lack a confident camera identity.
+    camera_id_hash: str | None = None
 
     def all_frames(self) -> list[FrameHash]:
         all_frames = []
@@ -63,7 +86,11 @@ class Stack(BaseStack, AstrometricAttributes):
 
     @classmethod
     def from_frames(
-        cls, frames: Sequence[FrameHash], metadata: MetadataDict, max_run_gap
+        cls,
+        frames: Sequence[FrameHash],
+        metadata: MetadataDict,
+        max_run_gap,
+        camera_consensus: tuple[int, ...] = (),
     ) -> Optional["Stack"]:
         metadata_list = [i for h, i in metadata.items() if h in frames]
 
@@ -109,6 +136,9 @@ class Stack(BaseStack, AstrometricAttributes):
 
         content_hash = hash_list(sorted(r.content_hash for r in contents.values()))
 
+        camera_id_hash = _camera_id_hash_from(
+            imaging_attributes, camera_consensus
+        )
         attributes: dict[str, Any] = (
             asdict(chronology_attributes)
             | asdict(imaging_attributes)
@@ -117,6 +147,7 @@ class Stack(BaseStack, AstrometricAttributes):
                 "content_hash": content_hash,
                 "contents": contents,
                 "state": frozendict(),
+                "camera_id_hash": camera_id_hash,
             }
         )
 
@@ -154,7 +185,12 @@ class CalibrationStack(BaseStack):
     """Calibration stack (bias/dark/flat) — no astrometric attributes."""
 
     @classmethod
-    def from_run(cls, run: BaseRun) -> "CalibrationStack":
+    def from_run(
+        cls,
+        run: BaseRun,
+        camera_consensus: tuple[int, ...] = (),
+    ) -> "CalibrationStack":
+        camera_id_hash = _camera_id_hash_from(run, camera_consensus)
         return cls(
             content_hash=run.content_hash,
             image_type=run.image_type,
@@ -170,6 +206,7 @@ class CalibrationStack(BaseStack):
             newest_date=run.newest_date,
             state=frozendict(),
             contents=RunsDict({run.stable_hash: run}),
+            camera_id_hash=camera_id_hash,
         )
 
     def __hash__(self):
