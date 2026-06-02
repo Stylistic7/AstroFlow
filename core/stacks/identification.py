@@ -49,6 +49,7 @@ def build_fingerprint_map(
         )
         by_pre_group.setdefault(key, []).append(h)
 
+    import gc
     fp = FingerprintMap()
     for hashes in by_pre_group.values():
         frame_sets = {h: metadata[h].defect_candidates for h in hashes}
@@ -59,6 +60,12 @@ def build_fingerprint_map(
                 continue
             for h in cluster_frames:
                 fp[h] = consensus
+        # Each pre_group's clustering allocates ~1 GB of sparse matrices
+        # (X, O) inside cluster_by_fingerprint. Force a collection between
+        # pre_groups so peak resident memory tracks the largest single
+        # pre_group, not the sum.
+        del frame_sets
+        gc.collect()
     log.info(
         "Camera fingerprints identified",
         attributed=len(fp),

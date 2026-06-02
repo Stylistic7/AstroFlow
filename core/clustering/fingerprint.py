@@ -108,34 +108,49 @@ def build_overlap(
         O: (n_frames, n_frames) integer overlap counts, diagonal zeroed
         frame_list: row-index order of X/O
         col_to_pixel: column-index order of X (column k corresponds to pixel id col_to_pixel[k])
+
+    Memory note: for ~16k frames × ~1000 defects each, the COO triple is
+    ~16M entries. Holding `rows`/`cols` as Python lists of int costs
+    ~28 bytes per entry (~900 MB); pre-allocated numpy arrays are 4 bytes
+    each (~128 MB). The order-of-magnitude difference matters on
+    multi-camera production libraries.
     """
     frame_list = tuple(frame_sets.keys())
+    # Allocate the COO triple up front using numpy. Lower bound on size
+    # is total defect count across all frames.
+    total = sum(len(frame_sets[h]) for h in frame_list)
+    rows = np.empty(total, dtype=np.int32)
+    cols = np.empty(total, dtype=np.int32)
     pixel_to_col: dict[int, int] = {}
-    rows: list[int] = []
-    cols: list[int] = []
+    idx = 0
     for i, h in enumerate(frame_list):
         for p in frame_sets[h]:
             c = pixel_to_col.get(p)
             if c is None:
                 c = len(pixel_to_col)
                 pixel_to_col[p] = c
-            rows.append(i)
-            cols.append(c)
+            rows[idx] = i
+            cols[idx] = c
+            idx += 1
     n_pixels = len(pixel_to_col)
-    data = np.ones(len(rows), dtype=np.int32)
+    # csr_matrix accepts ones-implicit binary via data=np.ones.
+    data = np.ones(total, dtype=np.int32)
     X = csr_matrix(
         (data, (rows, cols)),
         shape=(len(frame_list), n_pixels),
         dtype=np.int32,
     )
+    # Build col_to_pixel before releasing pixel_to_col so we don't hold
+    # both a dict and a tuple of comparable size.
+    col_to_pixel_arr = np.empty(n_pixels, dtype=np.int64)
+    for p, c in pixel_to_col.items():
+        col_to_pixel_arr[c] = p
+    del pixel_to_col
+    del rows, cols, data
     O = (X @ X.T).tocsr()
     O.setdiag(0)
     O.eliminate_zeros()
-    # Inverse of pixel_to_col: column index -> pixel id.
-    col_to_pixel = tuple(
-        p for p, _ in sorted(pixel_to_col.items(), key=lambda kv: kv[1])
-    )
-    return X, O, frame_list, col_to_pixel
+    return X, O, frame_list, tuple(col_to_pixel_arr.tolist())
 
 
 @beartype
@@ -181,28 +196,33 @@ def anchor_reassign(
         if not anchors:
             return labels
         # Build M (n_anchors, n_frames) where M[k, f] = 1/|anchor_k| if frame f is in anchor k.
-        ar_rows: list[int] = []
-        ar_cols: list[int] = []
-        ar_vals: list[float] = []
+        # Allocate numpy arrays up front instead of Python lists of int/float.
+        ar_rows = np.empty(n_frames, dtype=np.int32)
+        ar_cols = np.empty(n_frames, dtype=np.int32)
+        ar_vals = np.empty(n_frames, dtype=np.float32)
+        idx = 0
         for k, c in enumerate(anchors):
             members = np.where(labels == c)[0]
             inv = 1.0 / len(members)
-            for m in members.tolist():
-                ar_rows.append(k)
-                ar_cols.append(m)
-                ar_vals.append(inv)
+            end = idx + len(members)
+            ar_rows[idx:end] = k
+            ar_cols[idx:end] = members
+            ar_vals[idx:end] = inv
+            idx = end
         M = csr_matrix(
-            (ar_vals, (ar_rows, ar_cols)),
+            (ar_vals[:idx], (ar_rows[:idx], ar_cols[:idx])),
             shape=(len(anchors), n_frames),
             dtype=np.float32,
         )
+        del ar_rows, ar_cols, ar_vals
         # avg overlap of each frame with each anchor's members.
         scores = (M @ O).toarray().T  # shape (n_frames, n_anchors)
+        del M
         best_k = scores.argmax(axis=1)
         max_score = scores.max(axis=1)
-        new_labels = np.array(
-            [anchors[k] for k in best_k.tolist()], dtype=labels.dtype
-        )
+        del scores
+        anchors_arr = np.array(anchors, dtype=labels.dtype)
+        new_labels = anchors_arr[best_k]
         guard = max_score < min_avg_score
         new_labels[guard] = labels[guard]
         if np.array_equal(new_labels, labels):
