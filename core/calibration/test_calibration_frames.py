@@ -667,3 +667,56 @@ def test_generic_grouping(test_context) -> None:
 
     stack = next(iter(stacks.values())).get()
     assert len(stack.contents) == 1
+
+
+def test_darks_from_two_bodies_split_by_camera_id_hash(test_context) -> None:
+    """Two physical bodies of the same model produce distinct dark
+    fingerprints, so their darks land in separate CalibrationStacks
+    each carrying its own camera_id_hash."""
+    make_synthetic_frames(
+        prefix="bodyA_lights", number=5, ra=100, dec=50, dither=0,
+        instrument="ZWO ASI6200MM Pro",
+        dest_dir=context.input_dirs[0],
+    )
+    make_synthetic_frames(
+        prefix="bodyA_darks", number=5, image_type="Dark",
+        instrument="ZWO ASI6200MM Pro",
+        temperature=-15, dest_dir=context.input_dirs[0],
+    )
+    make_synthetic_frames(
+        prefix="bodyB_lights", number=5, ra=200, dec=-50, dither=0,
+        instrument="ZWO ASI6200MM Pro #B",  # distinct fingerprint seed
+        dest_dir=context.input_dirs[0],
+    )
+    make_synthetic_frames(
+        prefix="bodyB_darks", number=5, image_type="Dark",
+        instrument="ZWO ASI6200MM Pro #B",
+        temperature=-15, dest_dir=context.input_dirs[0],
+    )
+
+    run_graph(build_compute_graph())
+
+    cal_stacks = list(context.calibration_stacks.values())
+    dark_stacks = [s for s in cal_stacks if s.image_type == "dark"]
+    assert len(dark_stacks) == 2
+    dark_hashes = {s.camera_id_hash for s in dark_stacks}
+    assert None not in dark_hashes
+    assert len(dark_hashes) == 2
+
+
+def test_bias_only_stack_has_no_camera_id_hash(test_context) -> None:
+    """Biases have no defect_candidates so their CalibrationStack
+    carries `camera_id_hash=None`."""
+    copy_testdata_frames(target_name="NGC7635", dest_dir=context.input_dirs[0])
+    make_synthetic_frames(
+        number=5, image_type="Bias",
+        instrument="ZWO ASI6200MM Pro",
+        width_pixels=9576, height_pixels=6388, temperature=-15,
+        dest_dir=context.input_dirs[0],
+    )
+    run_graph(build_compute_graph())
+    bias_stacks = [
+        s for s in context.calibration_stacks.values() if s.image_type == "bias"
+    ]
+    assert len(bias_stacks) == 1
+    assert bias_stacks[0].camera_id_hash is None

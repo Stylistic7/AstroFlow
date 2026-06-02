@@ -26,25 +26,14 @@ from decisions.decisions import (
 log = structlog.get_logger()
 
 
-@node
-def identify_camera_fingerprints(
-    metadata_ref: ContextRef[MetadataDict],
+def build_fingerprint_map(
+    metadata: MetadataDict,
     fingerprint_min_anchor_size: int,
-) -> ContextRef[FingerprintMap]:
-    """Cluster ALL light frames by hot-pixel fingerprint to assign each
-    frame to a physical camera. Runs once, ABOVE the spatial-group split,
-    so the clusterer sees the camera's full frame population — per-spatial-
-    group clustering would never reach `min_anchor_size` for a camera
-    spread across many pointings.
-
-    Returns a `ContextRef[FingerprintMap]`. The map contains only frames
-    whose attribution was confident; frames absent from the map (low-
-    defect flats, noise fingerprints, or biases) are excluded downstream
-    by `identify_stacks`. Wrapping in a ContextRef keeps downstream
-    @node cache keys cheap to compute — 347+ identify_stacks tasks all
-    consume the same ref, so we hash the FingerprintMap content once.
-    """
-    metadata = metadata_ref.get()
+) -> FingerprintMap:
+    """Pure helper: cluster `metadata` by hot-pixel fingerprint and
+    return per-frame consensus tuples. Frames with None defect_candidates
+    or whose cluster is below `fingerprint_min_anchor_size` after global
+    clustering are omitted (caller treats them as no-camera-identity)."""
     log.info("Identifying camera fingerprints", num_frames=len(metadata))
 
     by_pre_group: dict[tuple, list[FrameHash]] = {}
@@ -74,6 +63,30 @@ def identify_camera_fingerprints(
         "Camera fingerprints identified",
         attributed=len(fp),
         total=len(metadata),
+    )
+    return fp
+
+
+@node
+def identify_camera_fingerprints(
+    metadata_ref: ContextRef[MetadataDict],
+    fingerprint_min_anchor_size: int,
+) -> ContextRef[FingerprintMap]:
+    """Cluster ALL light frames by hot-pixel fingerprint to assign each
+    frame to a physical camera. Runs once, ABOVE the spatial-group split,
+    so the clusterer sees the camera's full frame population — per-spatial-
+    group clustering would never reach `min_anchor_size` for a camera
+    spread across many pointings.
+
+    Returns a `ContextRef[FingerprintMap]`. The map contains only frames
+    whose attribution was confident; frames absent from the map (low-
+    defect flats, noise fingerprints, or biases) are excluded downstream
+    by `identify_stacks`. Wrapping in a ContextRef keeps downstream
+    @node cache keys cheap to compute — 347+ identify_stacks tasks all
+    consume the same ref, so we hash the FingerprintMap content once.
+    """
+    fp = build_fingerprint_map(
+        metadata_ref.get(), fingerprint_min_anchor_size
     )
     return ContextRef.store_large(fp)
 

@@ -3,6 +3,7 @@ import pytest
 from compute_graph import build_compute_graph
 from context import context
 from dependency_graph import run_graph
+from metadata.classes import MetadataDict
 from testing import make_synthetic_frames
 
 
@@ -113,6 +114,51 @@ def test_two_stacks_different_image_sizes(test_context):
     assert stack.image_scale == 1.0
 
 
+def test_identify_camera_fingerprints_builds_map_keyed_by_consensus(test_context):
+    """`identify_camera_fingerprints` returns a FingerprintMap where
+    same-camera frames share the same consensus tuple and different-
+    camera frames have different consensus tuples. Built ONCE globally,
+    not per spatial group — that's why it can attribute a camera
+    spread across many pointings."""
+    from stacks.identification import build_fingerprint_map
+
+    make_synthetic_frames(
+        ra=100, dec=50, prefix="bodyA", number=5,
+        instrument="ZWO ASI6200MM Pro",
+        dither=0, dest_dir=context.input_dirs[0],
+    )
+    make_synthetic_frames(
+        ra=200, dec=-50, prefix="bodyB", number=5,
+        instrument="ZWO ASI6200MM Pro #B",
+        dither=0, dest_dir=context.input_dirs[0],
+    )
+
+    # Drive metadata loading without running identification.
+    run_graph(build_compute_graph())
+
+    metadata = context["metadata_ref"].get()
+    light_metadata = MetadataDict({
+        h: m for h, m in metadata.items()
+        if m.header.get("IMAGETYP", "").lower() == "light"
+    })
+
+    fp = build_fingerprint_map(light_metadata, fingerprint_min_anchor_size=3)
+
+    by_prefix = {"bodyA": [], "bodyB": []}
+    for h, m in light_metadata.items():
+        for prefix in by_prefix:
+            if prefix in str(m.filename):
+                by_prefix[prefix].append(h)
+
+    a_consensuses = {fp.get(h) for h in by_prefix["bodyA"]}
+    b_consensuses = {fp.get(h) for h in by_prefix["bodyB"]}
+    # All A frames share one consensus; all B frames share another.
+    assert len(a_consensuses) == 1 and None not in a_consensuses
+    assert len(b_consensuses) == 1 and None not in b_consensuses
+    # A and B have DIFFERENT consensuses (different bodies).
+    assert a_consensuses != b_consensuses
+
+
 def test_same_instrume_two_bodies_separated_by_fingerprint(test_context):
     """Two physical sensors with the same INSTRUME (e.g. two ASI6200MM Pros)
     must split into two Stacks. They differ only in hot-pixel fingerprint —
@@ -140,6 +186,55 @@ def test_same_instrume_two_bodies_separated_by_fingerprint(test_context):
     hashes = {s.camera_id_hash for s in stacks.values()}
     assert None not in hashes
     assert len(hashes) == 2
+
+
+def test_frames_without_defect_candidates_are_excluded(test_context):
+    """A frame whose sidecar predates the defect_candidates field arrives
+    with defect_candidates=None — the global fingerprint pass can't
+    attribute it, so identify_stacks excludes it. Real-world trigger:
+    legacy sidecars (e.g. Starbase zips) that weren't migrated.
+    """
+    # 5 normal frames + 1 frame with no fingerprint.
+    make_synthetic_frames(
+        ra=100, dec=50, prefix="good", number=5,
+        dither=0, dest_dir=context.input_dirs[0],
+    )
+    make_synthetic_frames(
+        ra=100, dec=50, prefix="bad", number=1,
+        dither=0, dest_dir=context.input_dirs[0],
+    )
+    # Strip defect_candidates from the "bad" frame in the cache.
+    from context import context as ctx
+    from dataclasses import replace
+    from metadata.classes import ImageMetadata
+    for key in list(ctx.get_matching(("compute_image_metadata",)).keys()):
+        v = ctx[key]
+        if isinstance(v, ImageMetadata) and "bad" in str(v.filename):
+            ctx[key] = replace(v, defect_candidates=None)
+
+    run_graph(build_compute_graph())
+    stacks = {h: ref.get() for h, ref in (context.stacks or {}).items()}
+    # One stack from the 5 "good" frames. The "bad" frame was excluded.
+    assert len(stacks) == 1
+    stack = next(iter(stacks.values()))
+    all_files = [m.filename for m in stack.all_metadata().values()]
+    assert all("good" in f for f in all_files)
+    assert not any("bad" in f for f in all_files)
+
+
+def test_prepare_stack_for_ui_emits_camera_id(test_context):
+    """The UI dict for a Stack exposes both the full camera_id_hash and
+    a short 8-char prefix for header display."""
+    make_synthetic_frames(
+        ra=100, dec=50, prefix="ui", number=5,
+        dither=0, dest_dir=context.input_dirs[0],
+    )
+    run_graph(build_compute_graph())
+    stack = next(iter(context.stacks.values())).get()
+    ui = next(iter(context.ui_stacks.values()))
+    assert ui["camera_id_hash"] is not None
+    assert ui["camera_id_hash"] == stack.camera_id_hash
+    assert ui["camera_id_short"] == stack.camera_id_hash[:8]
 
 
 def test_multiple_exposures(test_context):

@@ -282,10 +282,15 @@ def associate_calibration_stacks(
     cal_stacks: CalibrationStacksDict,
 ) -> CalibrationStacksDict:
     # Associate calibration stacks with each other (e.g., bias for darks/flats).
-    # Extract runs, associate, then re-wrap.
+    # Extract runs, associate, then re-wrap. Preserve camera_id_hash from
+    # the original stack — the rebuilt run carries no consensus, so
+    # from_run() would otherwise drop the camera identity.
     runs = RunsDict({k: next(iter(s.contents.values())) for k, s in cal_stacks.items()})
     associated = associate_with_stacks(runs, cal_stacks)
     return CalibrationStacksDict({
-        k: CalibrationStack.from_run(associated[k])
+        k: replace(
+            CalibrationStack.from_run(associated[k]),
+            camera_id_hash=cal_stacks[k].camera_id_hash,
+        )
         for k in cal_stacks
     })
