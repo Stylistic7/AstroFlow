@@ -1,4 +1,5 @@
 """MultiscaleGradientCorrection — gradient correction using MARS database."""
+
 import re
 from typing import Any
 
@@ -23,13 +24,19 @@ _DEFAULT_PARAMETERS = {
 }
 
 _MARS_FILTER_MAP = {
-    "L": "L", "R": "R", "G": "G", "B": "B",
-    "H": "Ha", "O": "OIII", "S": "SII",
+    "L": "L",
+    "R": "R",
+    "G": "G",
+    "B": "B",
+    "H": "Ha",
+    "O": "OIII",
+    "S": "SII",
 }
 
 
 def MultiscaleGradientCorrection(image: Image, **kwargs: Any) -> Image:
     from pix.tasks.filters import normalize_filter
+
     filter_key = normalize_filter(image.filter) or "Ha"
     mars_filter = _MARS_FILTER_MAP.get(filter_key, "Ha")
 
@@ -38,11 +45,16 @@ def MultiscaleGradientCorrection(image: Image, **kwargs: Any) -> Image:
         _DEFAULT_PARAMETERS | {"grayMARSFilter": mars_filter} | kwargs,
         [image.view_id],
     )
-    image.recipe.add_step(Step(
-        javascript=js,
-        name="MultiscaleGradientCorrection",
-        error_patterns=[re.compile(r'\*\*\* Error:.*lacks flux calibration metadata')],
-    ))
+    image.recipe.add_step(
+        Step(
+            javascript=js,
+            name="MultiscaleGradientCorrection",
+            error_patterns=[
+                re.compile(r"\*\*\* Error:.*lacks flux calibration metadata"),
+                re.compile("No reference data found for filter"),
+            ],
+        )
+    )
     return Image(
         view_id=image.view_id,
         recipe=image.recipe,
