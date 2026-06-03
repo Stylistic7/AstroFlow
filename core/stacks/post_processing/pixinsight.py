@@ -1,9 +1,8 @@
 import os
-from astropy.time import Time
 
 from pix import Image
 from pix.tasks import (
-    ImageSolver,
+    WriteAstrometricSolution,
     SpectrophotometricFluxCalibration,
     MultiscaleGradientCorrection,
     GradientCorrection,
@@ -21,32 +20,6 @@ THUMBNAIL = PresentationType.THUMBNAIL
 TILE_PYRAMID = PresentationType.TILE_PYRAMID
 
 log = structlog.get_logger()
-
-
-def _solver_hints_from(master: ImageMetadata, stack: Stack) -> dict:
-    """Plate-solver hints for `master`. Read from the master's
-    already-computed plate solution (compute_image_metadata ran on
-    this file as part of the @makes_image trace-hook chain), so the
-    body doesn't need to know whether `master` came from a full-res
-    or downscaled stacker — the `image_scale` field encodes the
-    actual arcsec/pixel of THIS image."""
-    julian = float(Time(stack.oldest_date).jd)
-    if master.plate_solution is not None:
-        # `PlateSolution.image_scale` is the true pixel scale (with
-        # rotation accounted for); using `wcs.pixel_scale_matrix[0,0]`
-        # only reads the diagonal CD-matrix component, which collapses
-        # to near-zero for rotated images and produces wildly wrong
-        # hints.
-        ra, dec = master.plate_solution.center
-        arcsec_per_pixel = master.plate_solution.image_scale
-    else:
-        ra, dec = stack.center
-        arcsec_per_pixel = stack.image_scale
-    return dict(
-        metadata_ra=float(ra), metadata_dec=float(dec),
-        metadata_resolution=arcsec_per_pixel / 3600.0,
-        metadata_observationTime=julian, metadata_epoch=julian,
-    )
 
 
 def _post_process_narrow(args, kwargs):
@@ -78,13 +51,31 @@ def post_process_stack(
     stacking, downscaled stacking, or any future variant all look
     identical from here.
 
-    Takes the whole `config` (uniform with the other heavyweight ops)
-    and narrows the cache key to just `mock_pixinsight`. The filename
-    is the call_hash over the narrowed bound args + `master`; two
-    pipelines with the same `stack` + mock but different upstream
-    masters produce different files (the masters' content_hashes
-    differ).
+    Pipeline: inject solve-field's WCS into PI's native astrometric
+    solution format, then run SPCC + MultiscaleGradientCorrection
+    (or GradientCorrection for S filter, which has no MARS
+    reference data).
+
+    We deliberately do NOT run PI's `ImageSolver` — its pair-RANSAC
+    star matching fails deterministically on dense Milky Way fields
+    after the 8× downscale, while astrometry.net's `solve-field`
+    (which `compute_image_metadata` already ran on this master and
+    cached as `master.plate_solution`) uses quad-hashing and handles
+    those fields trivially. Reusing that solution is both faster
+    (~10s vs 30-60s for ImageSolver+retries) and strictly more
+    reliable: any master that reached this op is, by construction,
+    one solve-field successfully plate-solved.
     """
+    if master.plate_solution is None:
+        # `compute_image_metadata` already raises PlateSolveFailedException
+        # when solve-field can't solve a light frame, so a master with no
+        # plate solution reaching this op would be a bug upstream. Fail
+        # loud rather than producing a master without a WCS.
+        raise ValueError(
+            f"post_process_stack: master {master.filename} has no "
+            f"plate_solution; cannot inject WCS"
+        )
+
     mock_pixinsight = config.development_settings.mock_pixinsight
     output_filename = post_process_stack.filename_fn(
         stack, config, master,
@@ -92,15 +83,16 @@ def post_process_stack(
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
 
     image = Image.open(master.filename, filter=stack.filter)
-    solved = ImageSolver(image, **_solver_hints_from(master, stack))
+    image = WriteAstrometricSolution(image, master.plate_solution.header)
+
     if normalize_filter(stack.filter) == "S":
         # MultiscaleGradientCorrection has no MARS reference data for
         # SII, so it fails deterministically on S-filter masters. Use
         # the classic GradientCorrection (no external data) instead.
-        result = GradientCorrection(solved)
+        result = GradientCorrection(image)
     else:
         result = MultiscaleGradientCorrection(
-            SpectrophotometricFluxCalibration(solved)
+            SpectrophotometricFluxCalibration(image)
         )
     result.save_to(output_filename, mock=mock_pixinsight)
 

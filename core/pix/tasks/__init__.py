@@ -2,6 +2,7 @@ from .blurxterminator import BlurXTerminator
 from .starxterminator import StarXTerminator
 from .noisexterminator import NoiseXTerminator
 from .image_solver import ImageSolver
+from .write_astrometric_solution import WriteAstrometricSolution
 from .star_alignment import StarAlignment
 from .hdr_composition import HDRComposition
 from .channel_combination import ChannelCombination

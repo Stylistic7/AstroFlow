@@ -6,37 +6,33 @@ compose this themselves by passing per-filter `mosaic_channel`
 outputs as data deps to a `combine_mosaic` op. Not in the active
 pipeline trace path yet.
 """
+from pathlib import Path
+
 import structlog
 
 from pix import Image, ImageList
 from pix.tasks import (
     ChannelCombination,
     SpectrophotometricColorCalibration,
-    ImageSolver,
+    WriteAstrometricSolution,
     StarXTerminator,
     LinearFit,
 )
+import plate_solving
 from file_io.types import XisfFilePath, WithSidecar
 from decorators import node
 from mosaics.types import Mosaic
 from products.identity import MosaicId
-from astropy.time import Time
 
 log = structlog.get_logger()
 
 
-def _post_process_mosaic(images: ImageList, mosaic: Mosaic) -> Image | None:
+def _post_process_mosaic(
+    images: ImageList, mosaic: Mosaic, wcs_header: dict,
+) -> Image | None:
     if "RGB" in images:
         rgb = ChannelCombination(images.channels("RGB"))
-        julian_date = int(Time(mosaic.oldest_date).jd)
-        rgb = ImageSolver(
-            rgb,
-            metadata_ra=mosaic.center[0],
-            metadata_dec=mosaic.center[1],
-            metadata_resolution=mosaic.image_scale / 3600.0,
-            metadata_observationTime=julian_date,
-            metadata_epoch=julian_date,
-        )
+        rgb = WriteAstrometricSolution(rgb, wcs_header)
         rgb = SpectrophotometricColorCalibration(rgb)
         stars, starless = StarXTerminator(rgb)
         return stars
@@ -71,7 +67,19 @@ def post_process_mosaic(
     image_paths = [channels[f].filename for f in filter_list]
     images = Image.open_many(image_paths, filters=filter_list)
 
-    result = _post_process_mosaic(images, mosaic)
+    # Each per-filter mosaic-channel master already has a solve-field plate
+    # solution in its sidecar (`compute_image_metadata` runs after every
+    # produced artifact via the @makes_image trace hook). ChannelCombination
+    # of mono channels inherits WCS from the active view (first channel),
+    # so the first channel's solution IS the combined RGB's solution.
+    ps = plate_solving.solve_field(Path(image_paths[0]))
+    if ps is None:
+        raise ValueError(
+            f"post_process_mosaic: first channel master has no plate "
+            f"solution: {image_paths[0]}"
+        )
+
+    result = _post_process_mosaic(images, mosaic, ps.header)
     if result is None:
         return None
 

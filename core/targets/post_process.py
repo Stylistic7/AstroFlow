@@ -5,37 +5,32 @@ target master (RGB / SHO). Not in the active pipeline trace path
 yet; the new architecture would have a pipeline body wire the
 per-filter `merge_target_channel` outputs as data deps.
 """
-from astropy.time import Time
+from pathlib import Path
 
 from pix import Image, ImageList
 from pix.tasks import (
     ChannelCombination,
     SpectrophotometricColorCalibration,
-    ImageSolver,
+    WriteAstrometricSolution,
     StarXTerminator,
     LinearFit,
     StarAlignment,
     LRGBCombination,
 )
+import plate_solving
 from file_io.types import XisfFilePath, WithSidecar
 from decorators import node
 from targets.types import Target
 from products.identity import TargetId
 
 
-def _post_process_target(images: ImageList, target: Target) -> tuple[Image, Image] | None:
+def _post_process_target(
+    images: ImageList, target: Target, wcs_header: dict,
+) -> tuple[Image, Image] | None:
     if "LRGB" in images:
         aligned = StarAlignment(images.channels("LRGB"))
         rgb = LRGBCombination([aligned[i] for i in range(len(aligned))])
-        julian_date = int(Time(target.oldest_date).jd)
-        solved = ImageSolver(
-            rgb,
-            metadata_ra=target.center[0],
-            metadata_dec=target.center[1],
-            metadata_resolution=target.image_scale / 3600.0,
-            metadata_observationTime=julian_date,
-            metadata_epoch=julian_date,
-        )
+        solved = WriteAstrometricSolution(rgb, wcs_header)
         calibrated = SpectrophotometricColorCalibration(solved, saturationThreshold=1.0)
         stars, starless = StarXTerminator(calibrated)
         return stars, starless
@@ -43,15 +38,7 @@ def _post_process_target(images: ImageList, target: Target) -> tuple[Image, Imag
     if "RGB" in images:
         aligned = StarAlignment(images.channels("RGB"))
         rgb = ChannelCombination(aligned)
-        julian_date = int(Time(target.oldest_date).jd)
-        solved = ImageSolver(
-            rgb,
-            metadata_ra=target.center[0],
-            metadata_dec=target.center[1],
-            metadata_resolution=target.image_scale / 3600.0,
-            metadata_observationTime=julian_date,
-            metadata_epoch=julian_date,
-        )
+        solved = WriteAstrometricSolution(rgb, wcs_header)
         calibrated = SpectrophotometricColorCalibration(solved)
         stars, starless = StarXTerminator(calibrated)
         return stars, starless
@@ -89,7 +76,20 @@ def post_process_target(
     image_paths = [channels[f].filename for f in filter_list]
     images = Image.open_many(image_paths, filters=filter_list)
 
-    result = _post_process_target(images, target)
+    # Each per-filter channel master already has a solve-field plate solution
+    # in its sidecar (`compute_image_metadata` runs after every produced
+    # artifact via the @makes_image trace hook). StarAlignment registers all
+    # channels to the first one as reference, and ChannelCombination /
+    # LRGBCombination inherit WCS from the active view — so the first
+    # channel's solution IS the combined image's solution.
+    ps = plate_solving.solve_field(Path(image_paths[0]))
+    if ps is None:
+        raise ValueError(
+            f"post_process_target: first channel master has no plate "
+            f"solution: {image_paths[0]}"
+        )
+
+    result = _post_process_target(images, target, ps.header)
     if result is None:
         return None
 

@@ -67,8 +67,24 @@ _default_parameters = {
     "rejectionLimit": 0.30,
     "catalogId": "GaiaDR3SP",
     "minMagnitude": 0.00,
-    "limitMagnitude": 12.00,
-    "autoLimitMagnitude": True,
+    # Fixed magnitude limit of 14, with auto-selection disabled.
+    #
+    # PixInsight's auto-magnitude selection picks a bright cutoff (~8-9) when
+    # the master's sky background is high (moon, light pollution), leaving too
+    # few catalog stars in the cross-matchable bright tail and tripping
+    # "Insufficient data: only N sample(s) available; at least 5 are required"
+    # — a catastrophic failure for multi-day mosaic pipelines since one fail
+    # in `post_process_stack` derails the entire mosaic-stitching path.
+    #
+    # mag 14 gives ~6× more catalog candidates than PixInsight's UI default of
+    # 12 (each magnitude step ≈ 2.5×). Gaia DR3 BP/RP spectra are still
+    # high-S/N at mag 14 (mission spec is reliable spectra to ~mag 13.5; the
+    # rejection-band beyond it falls inside `rejectionLimit=0.30`). The cost
+    # is negligible — local XPSD query, PSF fitting still capped at
+    # `psfMaxStars=24576`, downstream quality filters (`psfMinSNR=40`,
+    # `rejectionLimit`) drop low-S/N matches regardless of limit.
+    "limitMagnitude": 14.00,
+    "autoLimitMagnitude": False,
     "psfStructureLayers": 5,
     "saturationThreshold": 0.75,
     "saturationRelative": True,
