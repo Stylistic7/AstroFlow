@@ -323,16 +323,21 @@ def makes_image_wrap(
       1. The result file's `content_hash` header is stamped with
          `canonical_call_hash(*args)` — the canonical call_hash for
          this invocation.
-      2. The result's stale sidecar is discarded (if any).
-      3. Presentations (tile-pyramid TIFF sibling) are generated.
+      2. Presentations (tile-pyramid TIFF sibling) are generated.
 
     Single concern: image lifecycle after the body runs. Doesn't touch
     caching, doesn't attach any attributes to the wrapper, doesn't
     register in `_producers`. Those are owned by `@node` (orchestration)
     and `register_producer` (registry) respectively.
-    """
-    from file_io.sidecar import discard_sidecar
 
+    Does NOT touch the result's sidecar. Under content-addressed naming
+    every section in the sidecar describes the content at this path,
+    and the path uniquely identifies the content (call_hash → filename →
+    `CONTHASH` stamp), so nothing in the sidecar is stale after a
+    re-write of the same call. The only marker that conceivably needed
+    clearing was `broken`; that's now self-invalidating via mtime
+    comparison in `compute_image_metadata`.
+    """
     @wraps(func)
     def wrapped(*args, **kwargs):
         result = func(*args, **kwargs)
@@ -344,8 +349,6 @@ def makes_image_wrap(
         # content_hash get a value derivable from the trace alone.
         call_hash = canonical_call_hash(*args, **kwargs)
         _stamp_content_hash(result, call_hash)
-        if not isinstance(result, np.ndarray):
-            discard_sidecar(result)
         _generate_presentations(func, result, args, kwargs, identities)
         return result
 

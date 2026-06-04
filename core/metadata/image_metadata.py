@@ -129,9 +129,16 @@ def compute_image_metadata(
     from file_io.sidecar import get_section, set_section
 
     # Skip files previously marked as broken (e.g., truncated downloads).
-    if get_section(filename, "broken") is not None:
-        log.warning("Skipping broken file", filename=str(filename))
-        raise ValueError(f"Skipping broken file: {filename}")
+    # The marker is self-invalidating: a producer rewrite touches the
+    # file's mtime, so a marker older than the file is treated as stale
+    # and the next read gets to retry. This lets us avoid touching the
+    # sidecar at all on producer body-run (no `discard_sidecar`).
+    broken = get_section(filename, "broken")
+    if broken is not None:
+        broken_at = broken.get("set_at", 0.0) if isinstance(broken, dict) else 0.0
+        if filename.stat().st_mtime <= broken_at:
+            log.warning("Skipping broken file", filename=str(filename))
+            raise ValueError(f"Skipping broken file: {filename}")
 
     cached = read_image_metadata(filename)
     if cached is not None:
@@ -144,7 +151,7 @@ def compute_image_metadata(
         geometry = read_image_geometry(filename)
     except (ValueError, OSError) as e:
         log.error("File is broken, marking for skip", filename=str(filename), error=str(e))
-        set_section(filename, "broken", {"error": str(e)})
+        set_section(filename, "broken", {"error": str(e), "set_at": filename.stat().st_mtime})
         return None
     stable_hash = header.get("STBLHASH", content_hash)
 

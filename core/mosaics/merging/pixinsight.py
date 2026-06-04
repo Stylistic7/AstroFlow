@@ -33,10 +33,11 @@ def _panel_count(image_metadata: ImageMetadata) -> int:
     """Number of mosaic panels contained in this intermediate.
 
     Placed images set `panel_count=1` in their sidecar; merges record
-    the sum of their inputs. `discard_sidecar` is surgical about which
-    sections it drops, so `panel_count` survives across producer reruns.
-    Missing entry defaults to 1, keeping the chain monotonic for any
-    pre-existing files left over from before this mechanism existed.
+    the sum of their inputs. The `@makes_image` lifecycle no longer
+    touches sidecars on producer body-run, so `panel_count` survives
+    across reruns by default. Missing entry defaults to 1, keeping the
+    chain monotonic for any pre-existing files left over from before
+    this mechanism existed.
     """
     return get_section(image_metadata.filename, "panel_count") or 1
 
