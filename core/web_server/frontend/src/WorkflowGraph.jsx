@@ -1076,7 +1076,12 @@ export default function WorkflowGraph({ theme, url }) {
   return <>
     <div className="WorkflowGraph">
       <div className="example-wrapper">
-        <google-workflow-graph ref={graphRef}></google-workflow-graph>
+        {/* Key the Angular Element by `url` so a filter/pipeline switch
+            (new url) tears down and recreates it. Reassigning `dagSpec`
+            on an existing element via Object.assign does not always
+            re-trigger the Angular change detection, so the graph would
+            stay frozen on its first-mount data otherwise. */}
+        <google-workflow-graph key={url} ref={graphRef}></google-workflow-graph>
         <workflow-graph-color-theme-loader />
       </div>
     </div>
