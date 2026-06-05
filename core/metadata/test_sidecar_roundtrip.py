@@ -1,10 +1,18 @@
 """Unit tests for ImageMetadata sidecar serialization round-trip."""
 import datetime
 import numpy as np
+import pytest
 from pathlib import Path
 
 from metadata.classes import ImageMetadata
-from metadata.sidecar_io import image_metadata_to_obj, image_metadata_from_obj, _serialize_header, _deserialize_header
+from metadata.sidecar_io import (
+    image_metadata_to_obj,
+    image_metadata_from_obj,
+    _serialize_header,
+    _deserialize_header,
+    read_defect_candidates,
+    write_defect_candidates,
+)
 
 
 def _make_metadata(**overrides) -> ImageMetadata:
@@ -78,22 +86,62 @@ def test_dtype_round_trip():
         assert restored.dtype == dt
 
 
-def test_defect_candidates_round_trip():
-    candidates = {1234: 8123.5, 99999: 12300.0, 4242: 5000.25}
-    meta = _make_metadata(defect_candidates=candidates)
-    obj = image_metadata_to_obj(meta)
-    # JSON requires string keys; verify intermediate form and final restoration.
-    assert obj["defect_candidates"] == {"1234": 8123.5, "99999": 12300.0, "4242": 5000.25}
-    restored = image_metadata_from_obj(obj, meta.filename)
-    assert restored.defect_candidates == candidates
-
-
-def test_defect_candidates_absent_remains_none():
+def test_defect_candidates_not_in_image_metadata_obj():
+    """`defect_candidates` no longer rides inside `image_metadata`; it
+    lives in its own top-level sidecar section now."""
     meta = _make_metadata()
     obj = image_metadata_to_obj(meta)
     assert "defect_candidates" not in obj
     restored = image_metadata_from_obj(obj, meta.filename)
-    assert restored.defect_candidates is None
+    assert not hasattr(restored, "defect_candidates")
+
+
+def test_defect_candidates_section_round_trip(tmp_path):
+    """`write_defect_candidates` / `read_defect_candidates` round-trip on
+    the new top-level section."""
+    fits = tmp_path / "frame.fits"
+    fits.write_bytes(b"x")  # dummy data file, sidecar lives at .json sibling
+    candidates = {1234: 8123.5, 99999: 12300.0, 4242: 5000.25}
+
+    write_defect_candidates(fits, candidates)
+    restored = read_defect_candidates(fits)
+    assert restored == candidates
+
+
+def test_defect_candidates_absent_returns_none(tmp_path):
+    fits = tmp_path / "no_defects.fits"
+    fits.write_bytes(b"x")
+    assert read_defect_candidates(fits) is None
+
+
+def test_read_defect_candidates_legacy_nested_fallback(tmp_path):
+    """Pre-migration sidecars had `defect_candidates` nested inside the
+    `image_metadata` section. The reader still finds it there until the
+    migration script runs."""
+    from file_io.sidecar import set_section
+
+    fits = tmp_path / "legacy.fits"
+    fits.write_bytes(b"x")
+    set_section(fits, "image_metadata", {
+        "content_hash": "abc",
+        "stable_hash": "stable",
+        "header": {},
+        "width_pixels": 100,
+        "height_pixels": 100,
+        "channels": 1,
+        "dtype": "uint16",
+        "defect_candidates": {"42": 1.5, "100": 2.5},
+    })
+
+    restored = read_defect_candidates(fits)
+    assert restored == {42: 1.5, 100: 2.5}
+
+
+def test_write_defect_candidates_none_is_noop(tmp_path):
+    fits = tmp_path / "none.fits"
+    fits.write_bytes(b"x")
+    write_defect_candidates(fits, None)
+    assert read_defect_candidates(fits) is None
 
 
 def test_master_integration_round_trip():
@@ -113,12 +161,11 @@ def test_master_integration_absent_remains_none():
 
 
 def test_unpickle_old_pickle_with_fewer_slots():
-    """Old diskcache pickles predate defect_candidates + master_integration_s.
-    Loading them via cloudpickle must NOT leave the new slots unset —
-    otherwise the next pickle (e.g. ray.get_matching transport) blows up
-    with `AttributeError: 'ImageMetadata' object has no attribute
-    'defect_candidates'`. The __setstate__ override pads missing trailing
-    slots with their declared defaults.
+    """Old diskcache pickles predate `master_integration_s` (the last
+    surviving optional field). Loading them via cloudpickle must NOT
+    leave the new slot unset — otherwise the next pickle (e.g. ray
+    transport) blows up. The __setstate__ override pads missing
+    trailing slots with their declared defaults.
     """
     import pickle
     from dataclasses import fields
@@ -127,17 +174,14 @@ def test_unpickle_old_pickle_with_fewer_slots():
     meta = _make_metadata()
     full_state = [getattr(meta, f.name) for f in fields(ImageMetadata)]
 
-    # Simulate an old pickle whose state list is two fields shorter —
-    # i.e. predates defect_candidates and master_integration_s.
-    truncated = full_state[:-2]
+    # Simulate an old pickle whose state list is one field shorter —
+    # i.e. predates master_integration_s.
+    truncated = full_state[:-1]
 
-    # Build a fresh instance and apply the truncated state directly,
-    # mimicking what cloudpickle does on restore.
     fresh = ImageMetadata.__new__(ImageMetadata)
     fresh.__setstate__(truncated)
 
-    # New fields must be set to their defaults, not missing.
-    assert fresh.defect_candidates is None
+    # The trailing new field must be filled with its default.
     assert fresh.master_integration_s is None
     # Old fields must round-trip exactly.
     assert fresh.content_hash == meta.content_hash
@@ -146,6 +190,36 @@ def test_unpickle_old_pickle_with_fewer_slots():
     # And critically: the restored instance must be re-pickleable.
     repickled = pickle.dumps(fresh)
     restored = pickle.loads(repickled)
-    assert restored.defect_candidates is None
     assert restored.master_integration_s is None
     assert restored.content_hash == meta.content_hash
+
+
+def test_unpickle_newer_pickle_with_extra_trailing_slot():
+    """Symmetric to the previous test: a pickle written by an OLDER
+    code version that still had `defect_candidates` as a trailing slot
+    must load cleanly under the new code where that slot has been
+    removed. The __setstate__ override truncates extra trailing
+    entries to match the current field list.
+    """
+    import pickle
+    from dataclasses import fields
+    from metadata.classes import ImageMetadata
+
+    meta = _make_metadata()
+    current_state = [getattr(meta, f.name) for f in fields(ImageMetadata)]
+
+    # Simulate an older pickle that still carried `defect_candidates`
+    # at the position right before `master_integration_s`. We mimic
+    # this by inserting one extra entry into the state list. The
+    # __setstate__ should truncate to the current field count.
+    extra = {42: 1.0, 100: 2.0}  # what defect_candidates would have been
+    legacy_state = current_state[:-1] + [extra] + current_state[-1:]
+
+    fresh = ImageMetadata.__new__(ImageMetadata)
+    fresh.__setstate__(legacy_state)
+
+    # Current fields round-trip correctly.
+    assert fresh.content_hash == meta.content_hash
+    assert fresh.master_integration_s == meta.master_integration_s
+    # Re-pickle works.
+    pickle.loads(pickle.dumps(fresh))

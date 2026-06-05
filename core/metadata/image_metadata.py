@@ -9,7 +9,7 @@ from file_io.generic import read_header, get_content_hash, read_image_geometry, 
 from file_io.master_integration import read_master_integration_seconds
 from calibration.sensor_fingerprint import extract_defects
 import metadata.image_types as image_types
-from metadata.classes import ImageMetadata, MetadataDict
+from metadata.classes import ImageMetadata, MetadataDict, DefectsDict
 import plate_solving
 from dependency_graph import Graph
 from context import context
@@ -102,8 +102,17 @@ def scatter_compute_image_metadata(*filenames_in: list[Path]) -> Graph:
         log.info("Found image files in directory", directory=str(dir), count=len(artifacts_for_dir))
         filenames.update(artifacts_for_dir)
 
+    compute_tasks = {(compute_image_metadata, Path(f)) for f in filenames}
+    # `load_defects` runs after `load_metadata` so they share the same
+    # one-time cache scan ordering. Together they publish both
+    # `metadata_ref` and `defects_ref` into context before the regroup
+    # graph starts. `load_defects` is the single terminal node — its
+    # return value becomes the subgraph's `final_result`.
     graph = Graph(
-        {load_metadata: {(compute_image_metadata, Path(f)) for f in filenames}}
+        {
+            load_metadata: compute_tasks,
+            load_defects: {load_metadata},
+        }
     )
 
     return graph
@@ -125,7 +134,9 @@ def compute_image_metadata(
     filename = filename.resolve()
 
     # Cold-start optimization: try to reconstruct from sidecar without FITS I/O.
-    from metadata.sidecar_io import read_image_metadata, write_image_metadata
+    from metadata.sidecar_io import (
+        read_image_metadata, write_image_metadata, write_defect_candidates,
+    )
     from file_io.sidecar import get_section, set_section
 
     # Skip files previously marked as broken (e.g., truncated downloads).
@@ -179,11 +190,15 @@ def compute_image_metadata(
         channels=geometry.channels,
         dtype=geometry.dtype,
         plate_solution=plate_solution,
-        defect_candidates=defect_candidates,
         master_integration_s=master_integration_s,
     )
 
     write_image_metadata(result)
+    # Defect candidates are written separately so that downstream
+    # consumers that only need ImageMetadata (i.e. every node except
+    # `identify_camera_fingerprints`) don't pay the ~1.8 GB deserialize
+    # cost in their worker heaps. See `metadata/classes.py:DefectsDict`.
+    write_defect_candidates(filename, defect_candidates)
     return result
 
 
@@ -278,3 +293,60 @@ def load_metadata() -> ContextRef[MetadataDict]:
     # can even check whether the trace is cached.
     context["metadata_ref"] = ref
     return ref
+
+
+@ray.remote(num_cpus=0.1)
+@beartype
+@measure_performance
+def load_defects(
+    metadata_ref: ContextRef[MetadataDict],
+) -> ContextRef[MetadataDict]:
+    """Build the canonical DefectsDict from cached sidecars and publish
+    it via `context["defects_ref"]`.
+
+    Reads only the `defect_candidates` sidecar section. Used by
+    `identify_camera_fingerprints` (the only op that needs per-frame
+    defects); every other op skips this fetch and stays small.
+
+    **Returns the upstream `metadata_ref` unchanged** so that this task
+    can sit as the chain-terminal of `scatter_compute_image_metadata`
+    without altering the value that downstream chain consumers receive
+    (`build_regroup_graph`, ad-hoc test fixtures, etc.). The
+    DefectsDict itself flows out of band via `context["defects_ref"]`.
+    Same input-dirs gate as `load_metadata`: only user-supplied
+    frames participate.
+    """
+    from metadata.sidecar_io import read_defect_candidates
+
+    quarantined_files = context.quarantined_files or set()
+    input_dirs = [str(Path(d).resolve()) for d in (context.input_dirs or [])]
+
+    def is_input_file(filename) -> bool:
+        resolved = str(Path(filename).resolve())
+        return any(resolved.startswith(d) for d in input_dirs)
+
+    defects = DefectsDict()
+    for key, value in context.get_matching(("compute_image_metadata",)).items():
+        try:
+            if not isinstance(value.content_hash, str):
+                continue
+            if value.content_hash in quarantined_files:
+                continue
+            if not is_input_file(value.filename):
+                continue
+            if not os.path.exists(value.filename):
+                continue
+            if value.content_hash in defects:
+                continue
+            d = read_defect_candidates(Path(value.filename))
+            if d is not None:
+                defects[value.content_hash] = d
+        except Exception as e:
+            log.warning(
+                "Rejecting bad defects key", key=key,
+                error=str(e), value_type=type(value).__name__,
+            )
+
+    ref = ContextRef.store_large(defects)
+    context["defects_ref"] = ref
+    return metadata_ref

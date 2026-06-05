@@ -56,11 +56,6 @@ def image_metadata_to_obj(meta: ImageMetadata) -> dict[str, Any]:
         "channels": meta.channels,
         "dtype": str(meta.dtype),
     }
-    if meta.defect_candidates is not None:
-        # JSON object keys must be strings; cast on the way out and back.
-        obj["defect_candidates"] = {
-            str(k): v for k, v in meta.defect_candidates.items()
-        }
     if meta.master_integration_s is not None:
         obj["master_integration_s"] = meta.master_integration_s
     return obj
@@ -81,11 +76,6 @@ def image_metadata_from_obj(
 
     content_hash = obj["content_hash"]
 
-    raw_defects = obj.get("defect_candidates")
-    defect_candidates: dict[int, float] | None = None
-    if raw_defects is not None:
-        defect_candidates = {int(k): float(v) for k, v in raw_defects.items()}
-
     return ImageMetadata(
         content_hash=content_hash,
         stable_hash=obj.get("stable_hash", content_hash),
@@ -96,7 +86,6 @@ def image_metadata_from_obj(
         channels=obj["channels"],
         dtype=np.dtype(obj["dtype"]),
         plate_solution=plate_solution,
-        defect_candidates=defect_candidates,
         master_integration_s=obj.get("master_integration_s"),
     )
 
@@ -115,3 +104,47 @@ def read_image_metadata(filename: Path) -> ImageMetadata | None:
         return None
 
     return image_metadata_from_obj(obj, filename)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# defect_candidates: lifted off ImageMetadata into its own sidecar section
+# so that workers that don't need it (every op except
+# `identify_camera_fingerprints`) skip the ~1.8 GB deserialize cost.
+# Same payload format as before — `{str(pixel_index): float(strength)}` —
+# just hoisted from `image_metadata.defect_candidates` to a top-level
+# `defect_candidates` section.
+# ─────────────────────────────────────────────────────────────────────────
+
+@beartype
+def write_defect_candidates(
+    filename: Path, defects: dict[int, float] | None,
+) -> None:
+    """Write per-frame defect candidates to the top-level
+    `defect_candidates` sidecar section. None → no-op (caller should
+    skip; the absence of the section IS the signal)."""
+    if defects is None:
+        return
+    set_section(
+        filename, "defect_candidates",
+        {str(k): float(v) for k, v in defects.items()},
+    )
+
+
+@beartype
+def read_defect_candidates(filename: Path) -> dict[int, float] | None:
+    """Read per-frame defect candidates from the sidecar.
+
+    Tries the new top-level section first, falls back to the legacy nested
+    location (`image_metadata.defect_candidates`) for sidecars written by
+    pre-migration code. Returns None when neither exists.
+    """
+    raw = get_section(filename, "defect_candidates")
+    if raw is None:
+        # Legacy shape: nested inside `image_metadata`. Drop the fallback
+        # after the migration script has run and stabilized.
+        im = get_section(filename, "image_metadata")
+        if isinstance(im, dict):
+            raw = im.get("defect_candidates")
+    if raw is None:
+        return None
+    return {int(k): float(v) for k, v in raw.items()}

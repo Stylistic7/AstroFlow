@@ -39,14 +39,6 @@ class ImageMetadata:
 
     plate_solution: PlateSolution | None = None
 
-    # Camera fingerprint: flat pixel indices (y*width + x) → R-strength
-    # for the top-K single-pixel defect candidates in this frame. None
-    # for biases (too short to express hot-pixel signal), masters,
-    # multi-channel RGB renders, and any frame the detector can't
-    # safely process (non-uint16, sub-tile). Populated by
-    # calibration.sensor_fingerprint.extract_defects.
-    defect_candidates: dict[int, float] | None = None
-
     # Stacker-asserted effective integration time AFTER the stacker's
     # own rejection pass. Populated when a readable source is present;
     # None for raw subframes (where header EXPTIME is the truth) and
@@ -57,15 +49,25 @@ class ImageMetadata:
     master_integration_s: float | None = None
 
     def __setstate__(self, state: list) -> None:
-        # Forward-compatible unpickling for slotted dataclasses: when an
-        # old pickle has fewer entries than the current field list (a new
-        # optional field was added after pickling), pad the trailing
-        # slots with their declared defaults instead of leaving them
-        # unset. Without this, accessing the new attribute raises
-        # AttributeError, and any downstream pickle of the restored
-        # instance (e.g., ray transport) also fails. The default
-        # `_dataclass_setstate` just zips and stops at the shorter side.
+        # Backward- AND forward-compatible unpickling for slotted dataclasses.
+        #
+        # Forward: an old pickle missing a trailing slot (a new optional
+        # field was added later) is padded with the declared default.
+        #
+        # Backward: when `defect_candidates` was lifted off ImageMetadata
+        # into a separate ContextRef, that field — which used to sit
+        # between `plate_solution` and `master_integration_s` — was
+        # removed. Pickles of that older shape have one extra entry at
+        # the legacy position; we strip it so the surviving fields land
+        # in the right slots. Without this targeted fix, naïve zip
+        # alignment would mis-assign `master_integration_s` to the
+        # discarded defect_candidates dict.
         field_list = fields(type(self))
+        names = [f.name for f in field_list]
+        if len(state) == len(field_list) + 1 and "defect_candidates" not in names:
+            legacy_idx = names.index("master_integration_s")
+            state = list(state)
+            del state[legacy_idx]  # drop the orphaned defect_candidates slot
         if len(state) < len(field_list):
             missing = field_list[len(state):]
             state = list(state) + [_field_default(f) for f in missing]
@@ -95,3 +97,26 @@ class MetadataDict(dict[FrameHash, ImageMetadata]):
 
     def __str__(self):
         return f"MetadataDict({len(self)})"
+
+
+class DefectsDict(dict[FrameHash, dict[int, float]]):
+    """Per-frame hot-pixel defect candidates, lifted off `ImageMetadata`
+    into a separately-fetched blob so workers that don't need it (every
+    op except `identify_camera_fingerprints`) don't pay the ~1.8 GB
+    deserialize cost.
+
+    Frames absent from the map have no defect_candidates — equivalent
+    to the legacy `defect_candidates is None` shape.
+
+    Hashable for `ContextRef`-friendly cache keys: sort entries, hash
+    the (frame_hash, sorted-defects-tuple) pairs. Mirrors
+    `FingerprintMap.__hash__`."""
+
+    def __hash__(self):  # type: ignore[override]
+        return hash_list_int([
+            (h, tuple(sorted(d.items())))
+            for h, d in sorted(self.items())
+        ])
+
+    def __str__(self):
+        return f"DefectsDict({len(self)})"
