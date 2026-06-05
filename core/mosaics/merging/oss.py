@@ -50,12 +50,12 @@ def _blend(image_0, image_1):
 def merge_images_oss(
     mosaic: Mosaic, filter: str,
     input_0: ImageMetadata, input_1: ImageMetadata,
-) -> WithSidecar:
+) -> WithSidecar[FitsFilePath]:
     """Distance-weighted blend of two placed-image inputs (OSS path).
     Pipeline-agnostic: PI Master and PI Downscaled both call this
     with their own placed inputs; the inputs' content_hashes differ,
     so `merged_filename_fits` lands them in different files."""
-    output_filename = merge_images_oss.filename_fn(mosaic, filter)
+    output_filename = merge_images_oss.filename_fn(mosaic, filter, input_0, input_1)
     Path(output_filename).parent.mkdir(parents=True, exist_ok=True)
 
     image_0 = read_image(input_0.filename.resolve(strict=True)).astype(np.float32)
