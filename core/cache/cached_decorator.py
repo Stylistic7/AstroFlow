@@ -216,8 +216,10 @@ def make_cached_decorator(
             # trace, calling a @node op as plain Python emits a `Node`
             # handle into the active Graph instead of erroring.
             from dependency_graph.tracing import _TRACE, record
+            from cache.ephemeral_scope import _EPHEMERAL_SCOPE
             if _TRACE.get() is not None:
                 _after = kwargs.pop("_after", ())
+                ephemeral = bool(kwargs.pop("_ephemeral", _EPHEMERAL_SCOPE.get()))
                 if kwargs:
                     raise NotImplementedError(
                         f"{func.__name__} called with kwargs inside a "
@@ -225,6 +227,8 @@ def make_cached_decorator(
                         "are supported in trace context."
                     )
                 handle = record(wrapper, *args, _after=_after)
+                if ephemeral:
+                    handle._ephemeral = True
                 for hook in getattr(wrapper, "_trace_hooks", ()):
                     handle = hook(handle)
                 return handle

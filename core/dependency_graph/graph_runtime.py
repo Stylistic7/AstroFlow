@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import inspect
 from collections import Counter, defaultdict
-from typing import Any
+from typing import Any, Callable
 
 from dependency_graph.classes import (
     Graph,
@@ -36,6 +36,7 @@ class GraphRuntime:
         graph: Graph,
         parent: GraphRuntime | None = None,
         parent_node: Node | None = None,
+        cleanup_fn: Callable[[Node, Any, list], None] | None = None,
     ) -> None:
         canonical = canonicalize_graph(graph)
 
@@ -106,6 +107,23 @@ class GraphRuntime:
             or (parent.node_status_fn if parent else None)
         )
 
+        # Ephemeral output cleanup. Nodes flagged `_ephemeral` (by the
+        # trace-mode wrapper in `cache/cached_decorator.py` when the call
+        # was inside an `ephemeral_intermediates()` scope) get their
+        # on-disk output reclaimed after every dependent has completed.
+        # `cleanup_fn` is the actual delete-the-file callable —
+        # `cleanup_ephemeral_artifact` in `cache/ephemeral_cleanup.py`
+        # in production, mockable for tests.
+        self.cleanup_fn: Callable[[Node, Any, list], None] | None = (
+            cleanup_fn
+            if cleanup_fn is not None
+            else (parent.cleanup_fn if parent else None)
+        )
+        self._ephemeral: set[Node] = {
+            n for n in self._graph if getattr(n, "_ephemeral", False)
+        }
+        self._cleaned: set[Node] = set()
+
     @property
     def graph(self) -> dict[Node, list[Node]]:
         """The dependency graph dict. Used by workflow_graph_adapter."""
@@ -164,6 +182,34 @@ class GraphRuntime:
             args += self.ancestor_results(node)
         return args
 
+    def _maybe_clean_predecessors(self, node: Node) -> None:
+        """Fire `cleanup_fn` for any ephemeral predecessor of `node` whose
+        every dependent is now done. Safety guard: terminal predecessors
+        (zero dependents in this runtime) are never auto-cleaned — that
+        protects users who accidentally put a `final=True` op inside an
+        `ephemeral_intermediates()` block.
+        """
+        if self.cleanup_fn is None:
+            return
+        for dep in self._graph.get(node, ()):
+            if dep not in self._ephemeral or dep in self._cleaned:
+                continue
+            dependents = self._dependents.get(dep, set())
+            if not dependents:
+                continue
+            if all(d in self._done for d in dependents):
+                self._cleaned.add(dep)
+                try:
+                    self.cleanup_fn(
+                        dep, self.results.get(dep), self.make_fn_args(dep),
+                    )
+                except Exception as e:
+                    import structlog
+                    structlog.get_logger().warning(
+                        "ephemeral cleanup hook raised",
+                        node=str(dep), error=str(e),
+                    )
+
     def _mark_done(self, node: Node, result: Any, logs: list[Any]) -> None:
         self.results[node] = result
         self.logs[node] = logs
@@ -178,6 +224,8 @@ class GraphRuntime:
                 and all(d in self._done for d in self._graph[dependent])
             ):
                 self._ready.add(dependent)
+
+        self._maybe_clean_predecessors(node)
 
         # Opportunistically compute the output filename for the workflow UI.
         if hasattr(node.task, "filename_fn"):

@@ -128,6 +128,34 @@ class GraphCancelled(Exception):
     pass
 
 
+def _apply_preflight(graph: Graph) -> Graph:
+    """Predict every node's call_hash statically, check disk for
+    `final=True` / terminal outputs, and return a filtered Graph that
+    contains only the nodes that actually need to run. Falls out of
+    content-addressing — see `dependency_graph/preflight.py` for the
+    proof sketch. Errors are swallowed: preflight is an optimization,
+    never load-bearing for correctness.
+    """
+    if not graph:
+        return graph
+    try:
+        from dependency_graph.preflight import (
+            predict_call_hashes, nodes_to_dispatch,
+        )
+        predicted = predict_call_hashes(graph)
+        to_run = nodes_to_dispatch(graph, predicted)
+    except Exception as e:
+        print(f"### preflight skipped due to {type(e).__name__}: {e}")
+        return graph
+    if len(to_run) == len(graph):
+        return graph
+    return Graph(
+        {n: [d for d in graph[n] if d in to_run] for n in to_run},
+        graph_update_fn=getattr(graph, "graph_update_fn", None),
+        node_status_fn=getattr(graph, "node_status_fn", None),
+    )
+
+
 def run_graph(
     graph: Graph,
     dry_run: bool = False,
@@ -136,12 +164,17 @@ def run_graph(
     trace: bool = False,
     debug: bool = False,
     drain_event: "threading.Event | None" = None,
+    preflight: bool = True,
 ) -> tuple[Any, "RunStats"]:
     num_nodes_run: int = 0
     last_status_time: float = 0
     trace_list = []
 
-    root = GraphRuntime(graph)
+    if preflight:
+        graph = _apply_preflight(graph)
+
+    from cache.ephemeral_cleanup import cleanup_ephemeral_artifact
+    root = GraphRuntime(graph, cleanup_fn=cleanup_ephemeral_artifact)
 
     # Constants; tune per cluster/workload
     MAX_IN_FLIGHT = 4 * int(ray.cluster_resources().get("CPU", 1))
