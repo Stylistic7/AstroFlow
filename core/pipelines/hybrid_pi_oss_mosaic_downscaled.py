@@ -16,7 +16,7 @@ full-resolution run.
 
 Three entry points, matching the PI Downscaled pipeline.
 """
-from astroflow.pipeline import pipeline
+from astroflow.pipeline import ephemeral_intermediates, pipeline
 from dependency_graph.tracing import workflow_group
 from mosaics.final_storage import store_mosaic_color_channel_xisf
 from mosaics.merging.oss import merge_images_oss
@@ -91,28 +91,33 @@ def for_mosaic(mosaic, config):
     for filter in mosaic.filters:
         viewbox = mosaic.viewbox("DownscaledMaster")
 
-        rows = []
-        for strip in mosaic.strips:
-            placed = [
-                place_image(mosaic, targets_by_id[tid], filter, viewbox,
-                            config, channels[(tid, filter)])
-                for tid in strip if (tid, filter) in channels
-            ]
-            if not placed:
+        # Multi-GB placed and merged intermediates fill the storage volume
+        # faster than they're useful. The tile-pyramid `.tiff` siblings the
+        # UI serves survive cleanup; the final `store_*` master lives on
+        # outside this block.
+        with ephemeral_intermediates():
+            rows = []
+            for strip in mosaic.strips:
+                placed = [
+                    place_image(mosaic, targets_by_id[tid], filter, viewbox,
+                                config, channels[(tid, filter)])
+                    for tid in strip if (tid, filter) in channels
+                ]
+                if not placed:
+                    continue
+                row = placed[0]
+                for p in placed[1:]:
+                    # The one differing line vs PI Downscaled: distance-
+                    # weighted feather + flux equalization instead of
+                    # PhotometricMosaic.
+                    row = merge_images_oss(mosaic, filter, row, p)
+                rows.append(row)
+            if not rows:
                 continue
-            row = placed[0]
-            for p in placed[1:]:
-                # The one differing line vs PI Downscaled: distance-
-                # weighted feather + flux equalization instead of
-                # PhotometricMosaic.
-                row = merge_images_oss(mosaic, filter, row, p)
-            rows.append(row)
-        if not rows:
-            continue
 
-        merged = rows[0]
-        for r in rows[1:]:
-            merged = merge_images_oss(mosaic, filter, merged, r)
+            merged = rows[0]
+            for r in rows[1:]:
+                merged = merge_images_oss(mosaic, filter, merged, r)
 
         out[filter] = store_mosaic_color_channel_xisf(
             mosaic, filter, config, merged,
