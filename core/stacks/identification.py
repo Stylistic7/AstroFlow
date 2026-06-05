@@ -9,7 +9,7 @@ from typing import Iterator
 import clustering
 from clustering.fingerprint import FingerprintMap
 from stacks.composite_stack import Stack, StacksDict
-from metadata.classes import FrameHash, MetadataDict
+from metadata.classes import DefectsDict, FrameHash, MetadataDict
 from cache.context_ref import ContextRef
 from context import context
 from decorators import node
@@ -28,17 +28,22 @@ log = structlog.get_logger()
 
 def build_fingerprint_map(
     metadata: MetadataDict,
+    defects: DefectsDict,
     fingerprint_min_anchor_size: int,
 ) -> FingerprintMap:
     """Pure helper: cluster `metadata` by hot-pixel fingerprint and
-    return per-frame consensus tuples. Frames with None defect_candidates
-    or whose cluster is below `fingerprint_min_anchor_size` after global
-    clustering are omitted (caller treats them as no-camera-identity)."""
-    log.info("Identifying camera fingerprints", num_frames=len(metadata))
+    return per-frame consensus tuples. Frames not in `defects` (no
+    defect_candidates extracted at ingestion) or whose cluster is below
+    `fingerprint_min_anchor_size` after global clustering are omitted
+    (caller treats them as no-camera-identity)."""
+    log.info(
+        "Identifying camera fingerprints",
+        num_frames=len(metadata), num_with_defects=len(defects),
+    )
 
     by_pre_group: dict[tuple, list[FrameHash]] = {}
     for h, m in metadata.items():
-        if m.defect_candidates is None:
+        if h not in defects:
             continue
         key = (
             m.header.get("INSTRUME"),
@@ -52,7 +57,7 @@ def build_fingerprint_map(
     import gc
     fp = FingerprintMap()
     for hashes in by_pre_group.values():
-        frame_sets = {h: metadata[h].defect_candidates for h in hashes}
+        frame_sets = {h: defects[h] for h in hashes}
         for cluster_frames, consensus in clustering.cluster_by_fingerprint(
             frame_sets, min_anchor_size=fingerprint_min_anchor_size,
         ):
@@ -77,6 +82,7 @@ def build_fingerprint_map(
 @node
 def identify_camera_fingerprints(
     metadata_ref: ContextRef[MetadataDict],
+    defects_ref: ContextRef[DefectsDict],
     fingerprint_min_anchor_size: int,
 ) -> ContextRef[FingerprintMap]:
     """Cluster ALL light frames by hot-pixel fingerprint to assign each
@@ -84,6 +90,11 @@ def identify_camera_fingerprints(
     so the clusterer sees the camera's full frame population — per-spatial-
     group clustering would never reach `min_anchor_size` for a camera
     spread across many pointings.
+
+    The defects-per-frame blob comes through a separate ContextRef so
+    that downstream nodes (like `identify_stacks`) that don't need it
+    don't pay the ~1.8 GB deserialize cost. Only THIS task pulls the
+    full defects blob into memory.
 
     Returns a `ContextRef[FingerprintMap]`. The map contains only frames
     whose attribution was confident; frames absent from the map (low-
@@ -93,7 +104,7 @@ def identify_camera_fingerprints(
     consume the same ref, so we hash the FingerprintMap content once.
     """
     fp = build_fingerprint_map(
-        metadata_ref.get(), fingerprint_min_anchor_size
+        metadata_ref.get(), defects_ref.get(), fingerprint_min_anchor_size,
     )
     return ContextRef.store_large(fp)
 

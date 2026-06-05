@@ -5,7 +5,7 @@ from beartype import beartype
 
 from context import context
 from cache.context_ref import ContextRef
-from metadata.classes import MetadataDict
+from metadata.classes import DefectsDict, MetadataDict
 from metadata.image_metadata import scatter_compute_image_metadata
 from clustering import cluster_by_image_center
 from calibration import (
@@ -224,7 +224,15 @@ def build_regroup_graph(
     decision_overrides,
     metadata_ref: ContextRef[MetadataDict],
 ) -> Graph:
+    # `scatter_compute_image_metadata` runs `load_metadata` then
+    # `load_defects` (which publishes `defects_ref` into context as a
+    # side effect and returns `metadata_ref` unchanged). By the time
+    # this builder fires, both refs are in context. `metadata_ref`
+    # flows in as our positional ancestor; `defects_ref` is read from
+    # context.
     from stacks.identification import identify_camera_fingerprints
+
+    defects_ref: ContextRef[DefectsDict] = context["defects_ref"]
 
     cluster_task = (
         cluster_by_image_center,
@@ -235,6 +243,7 @@ def build_regroup_graph(
     fingerprint_task = (
         identify_camera_fingerprints,
         metadata_ref,
+        defects_ref,
         clustering_settings.fingerprint_min_anchor_size,
     )
     scatter_task = (

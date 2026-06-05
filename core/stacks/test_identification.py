@@ -137,12 +137,15 @@ def test_identify_camera_fingerprints_builds_map_keyed_by_consensus(test_context
     run_graph(build_compute_graph())
 
     metadata = context["metadata_ref"].get()
+    defects = context["defects_ref"].get()
     light_metadata = MetadataDict({
         h: m for h, m in metadata.items()
         if m.header.get("IMAGETYP", "").lower() == "light"
     })
 
-    fp = build_fingerprint_map(light_metadata, fingerprint_min_anchor_size=3)
+    fp = build_fingerprint_map(
+        light_metadata, defects, fingerprint_min_anchor_size=3,
+    )
 
     by_prefix = {"bodyA": [], "bodyB": []}
     for h, m in light_metadata.items():
@@ -189,10 +192,10 @@ def test_same_instrume_two_bodies_separated_by_fingerprint(test_context):
 
 
 def test_frames_without_defect_candidates_are_excluded(test_context):
-    """A frame whose sidecar predates the defect_candidates field arrives
-    with defect_candidates=None — the global fingerprint pass can't
-    attribute it, so identify_stacks excludes it. Real-world trigger:
-    legacy sidecars (e.g. Starbase zips) that weren't migrated.
+    """A frame whose sidecar predates the defect_candidates extraction
+    arrives missing from the global DefectsDict — the fingerprint pass
+    can't attribute it, so identify_stacks excludes it. Real-world
+    trigger: legacy sidecars (e.g. Starbase zips) that weren't migrated.
     """
     # 5 normal frames + 1 frame with no fingerprint.
     make_synthetic_frames(
@@ -203,14 +206,20 @@ def test_frames_without_defect_candidates_are_excluded(test_context):
         ra=100, dec=50, prefix="bad", number=1,
         dither=0, dest_dir=context.input_dirs[0],
     )
-    # Strip defect_candidates from the "bad" frame in the cache.
+    # Strip the `defect_candidates` sidecar section from the "bad"
+    # frame so `load_defects` omits it from DefectsDict (the new shape's
+    # equivalent of the legacy `defect_candidates=None`).
+    from pathlib import Path
     from context import context as ctx
-    from dataclasses import replace
     from metadata.classes import ImageMetadata
+    from file_io.sidecar import update_sidecar
     for key in list(ctx.get_matching(("compute_image_metadata",)).keys()):
         v = ctx[key]
         if isinstance(v, ImageMetadata) and "bad" in str(v.filename):
-            ctx[key] = replace(v, defect_candidates=None)
+            update_sidecar(
+                Path(v.filename),
+                lambda root: root["astroflow"].pop("defect_candidates", None),
+            )
 
     run_graph(build_compute_graph())
     stacks = {h: ref.get() for h, ref in (context.stacks or {}).items()}
