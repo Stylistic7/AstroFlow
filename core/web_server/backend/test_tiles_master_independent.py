@@ -126,3 +126,13 @@ class TestTapPathForExistenceGate:
         assert _tap_path_unchecked(
             "PI", "Merged", "mosaic", "id", "H",
         ) == str(master)
+
+    def test_unchecked_variant_filters_pending_sentinel(self, monkeypatch):
+        """PipelineOutputIndex uses the literal string `"pending"` for
+        taps that were traced but whose path hasn't been resolved yet.
+        That's not a real path — must not flow through as if it were."""
+        from pipelines.output_index import PENDING
+        self._patch_tap_path(monkeypatch, PENDING)
+        from web_server.backend.metadata import _tap_path_unchecked, tap_path_for
+        assert _tap_path_unchecked("PI", "Merged", "mosaic", "id", "H") is None
+        assert tap_path_for("PI", "Merged", "mosaic", "id", "H") is None

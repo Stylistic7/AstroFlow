@@ -52,15 +52,19 @@ def _tap_path_unchecked(
     a mosaic is keyed under `mergedimage`, not `mosaic`. Try each
     related identity type until one hits.
 
+    The PipelineOutputIndex uses `"pending"` as a sentinel for taps
+    that were traced but whose path hasn't been resolved yet; that
+    isn't a real path and gets filtered out here too.
+
     Use this when you need the path string regardless of whether the
     master is currently on disk — e.g. to derive a `.tiff` sibling for
     tile-serving when ephemeral cleanup may have reclaimed the master.
     For "is this tap currently available" semantics use `tap_path_for`.
     """
-    from pipelines.output_index import tap_path
+    from pipelines.output_index import tap_path, PENDING
     for ident_type in _RELATED_OBJECT_TYPES.get(object_type, (object_type,)):
         p = tap_path(pipeline, ident_type, object_id, display, filter)
-        if p:
+        if p and p != PENDING:
             return p
     return None
 
