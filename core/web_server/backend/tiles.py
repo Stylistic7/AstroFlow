@@ -70,12 +70,15 @@ def _tile_pyramid_path_for_tap(
     filter: str | None,
 ):
     """Find the tile pyramid for a specific (pipeline, tap) — the
-    `.tiff` sibling of the master file. Path resolution goes through
-    the PipelineOutputIndex via `tap_path_for`; if the master exists,
-    its sibling tiff is the tile pyramid."""
+    `.tiff` sibling of the master file. Path resolution uses
+    `_tap_path_unchecked` and gates solely on `.tiff` existence, so a
+    tile request still resolves when the master FITS/XISF has been
+    reclaimed by ephemeral cleanup."""
     from pathlib import Path
-    from web_server.backend.metadata import tap_path_for
-    master = tap_path_for(pipeline, display, object_type, object_id, filter)
+    from web_server.backend.metadata import _tap_path_unchecked
+    master = _tap_path_unchecked(
+        pipeline, display, object_type, object_id, filter,
+    )
     if master is None:
         return None
     tiff = Path(str(master)).with_suffix(".tiff")

@@ -37,11 +37,12 @@ _RELATED_OBJECT_TYPES = {
 }
 
 
-def tap_path_for(
+def _tap_path_unchecked(
     pipeline: str, display: str, object_type: str, object_id: str,
     filter: str | None,
 ) -> str | None:
-    """Find a tap point's on-disk path via the PipelineOutputIndex.
+    """Look up a tap's on-disk path via the PipelineOutputIndex WITHOUT
+    checking whether the file exists.
 
     The index is populated at pipeline-trace time — every Node whose
     task carries `_display` (set by `@makes_image(display=...)`)
@@ -50,13 +51,32 @@ def tap_path_for(
     which may not match the identity's type — e.g. a `Merged` tap on
     a mosaic is keyed under `mergedimage`, not `mosaic`. Try each
     related identity type until one hits.
+
+    Use this when you need the path string regardless of whether the
+    master is currently on disk — e.g. to derive a `.tiff` sibling for
+    tile-serving when ephemeral cleanup may have reclaimed the master.
+    For "is this tap currently available" semantics use `tap_path_for`.
     """
     from pipelines.output_index import tap_path
     for ident_type in _RELATED_OBJECT_TYPES.get(object_type, (object_type,)):
         p = tap_path(pipeline, ident_type, object_id, display, filter)
-        if p and os.path.exists(p):
+        if p:
             return p
     return None
+
+
+def tap_path_for(
+    pipeline: str, display: str, object_type: str, object_id: str,
+    filter: str | None,
+) -> str | None:
+    """Find a tap point's on-disk path via the PipelineOutputIndex,
+    returning None if the master no longer exists on disk.
+
+    Existence-gated wrapper around `_tap_path_unchecked` — preserves
+    "tap is available" semantics for download / metadata callers.
+    """
+    p = _tap_path_unchecked(pipeline, display, object_type, object_id, filter)
+    return p if p and os.path.exists(p) else None
 
 def _mosaic_filters(mosaic) -> list[str]:
     """All filters that any target in the mosaic has a stack in."""
