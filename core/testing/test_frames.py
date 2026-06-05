@@ -314,8 +314,11 @@ def make_synthetic_frames(
 
         # Extract defects from the synthetic image so the cached metadata
         # mirrors what the production pipeline would have produced.
-        # Without this, defect_candidates would stay None and every
-        # synthetic light would be excluded by `_build_camera_fingerprint_map`.
+        # Without this, no defects would be recorded for the synthetic
+        # frames and every synthetic light would be excluded by
+        # `build_fingerprint_map`. defects are now lifted off
+        # `ImageMetadata` into a separate `defects_ref`; we write them
+        # to the sidecar's `defect_candidates` section below.
         from calibration.sensor_fingerprint import extract_defects
         defect_candidates = extract_defects(image_data) if image_type != "Bias" else None
 
@@ -329,7 +332,6 @@ def make_synthetic_frames(
             channels=1,
             dtype=np.dtype(np.uint16),
             plate_solution=plate_solution,
-            defect_candidates=defect_candidates,
         )
 
         fn_hash = hash_source_code(compute_image_metadata)
@@ -350,7 +352,9 @@ def make_synthetic_frames(
 
         # Write a sidecar so compute_image_metadata can short-circuit
         # without reading the FITS file or invoking solve-field.
-        from metadata.sidecar_io import write_image_metadata
+        from metadata.sidecar_io import (
+            write_image_metadata, write_defect_candidates,
+        )
         sidecar_metadata = ImageMetadata(
             content_hash=content_hash,
             stable_hash=content_hash,
@@ -363,6 +367,7 @@ def make_synthetic_frames(
             plate_solution=plate_solution,
         )
         write_image_metadata(sidecar_metadata)
+        write_defect_candidates(Path(fits_filename), defect_candidates)
         if plate_solution is not None:
             from file_io.sidecar import set_section
             set_section(
