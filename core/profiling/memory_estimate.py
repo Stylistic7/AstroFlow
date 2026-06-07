@@ -46,11 +46,20 @@ _DEFAULT_MEMORY_UNKNOWN = 16 * _GB
 
 
 def _pixel_count(args, kwargs) -> int:
-    """Sum `width_pixels × height_pixels` across every ImageMetadata
-    instance reachable in args/kwargs. Walks one level into tuples,
-    lists, and dicts (so `masters=(ImageMetadata, ...)` data deps
-    are caught). Returns 0 if no images are visible — falls back to
-    op-name default in that case."""
+    """Sum pixel counts across every dimensioned object reachable in
+    args/kwargs:
+    * `ImageMetadata`-like: `width_pixels × height_pixels` (input
+      images);
+    * `Viewbox`-like: `num_pixels_x × num_pixels_y` (output canvas —
+      `place_image` is dominated by this, not by its input master,
+      so without this leg same-input runs with very different
+      viewboxes share a bucket and the p95 of the bigger-viewbox
+      case gets pulled down by the smaller).
+
+    Walks one level into tuples, lists, and dicts (so
+    `masters=(ImageMetadata, ...)` data deps are caught). Returns 0
+    if no dimensioned objects are visible — falls back to op-name
+    default in that case."""
     total = 0
     seen = set()
 
@@ -63,6 +72,11 @@ def _pixel_count(args, kwargs) -> int:
         hp = getattr(v, "height_pixels", None)
         if isinstance(wp, int) and isinstance(hp, int):
             total += wp * hp
+            return
+        npx = getattr(v, "num_pixels_x", None)
+        npy = getattr(v, "num_pixels_y", None)
+        if isinstance(npx, int) and isinstance(npy, int):
+            total += npx * npy
             return
         # Also accept WithSidecar-wrapped ImageMetadata: the .path or
         # .metadata might carry the dims.
