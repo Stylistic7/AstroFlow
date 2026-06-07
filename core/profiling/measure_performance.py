@@ -133,11 +133,23 @@ def make_measure_performance_decorator(cache: CacheProtocol):
 
             from profiling.memory_estimate import pixel_bucket, _pixel_count
             pixels = _pixel_count(args, kwargs)
+            final_peak = max(peak_rss, process.memory_info().rss)
             record = {
                 "wall_time_s": time.perf_counter() - wall_start,
                 "cpu_time_s": time.process_time() - cpu_start,
-                "peak_rss_delta_b": max(peak_rss, process.memory_info().rss)
-                - baseline_rss,
+                # Absolute peak RSS, not delta-from-baseline. The worker
+                # is reused across tasks and Python doesn't return freed
+                # memory to the OS, so a delta-based measurement reads
+                # ~0 once the worker has handled a few tasks even though
+                # actual RSS is huge. Ray's memory= reservation needs to
+                # match the WORKER's total footprint, not the marginal
+                # cost of one call in a hot worker — so we record the
+                # absolute peak and let estimate_memory schedule against
+                # that. Legacy "peak_rss_delta_b" is kept for one
+                # release as a fallback in estimate_memory; new samples
+                # populate "peak_rss_b" and that field wins when present.
+                "peak_rss_b": final_peak,
+                "peak_rss_delta_b": final_peak - baseline_rss,
                 "images": image_stats_by_arg,
                 "image_totals": image_totals,
                 # Pixel-count bucket so estimate_memory() can scale

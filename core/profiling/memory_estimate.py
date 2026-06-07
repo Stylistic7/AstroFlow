@@ -42,7 +42,7 @@ _DEFAULT_MEMORY_BY_OP = {
     "store_mosaic_color_channel_xisf": 16 * _GB,
     "merge_images":                    16 * _GB,
 }
-_DEFAULT_MEMORY_UNKNOWN = 4 * _GB
+_DEFAULT_MEMORY_UNKNOWN = 16 * _GB
 
 
 def _pixel_count(args, kwargs) -> int:
@@ -172,10 +172,15 @@ def estimate_memory(fn: Callable, args: tuple, kwargs: dict) -> int:
     # legacy sample (pre-bucket recording) — treat as bucket -1
     # (unknown). Legacy samples are still useful as a last-resort
     # fallback when nothing better exists.
+    #
+    # Prefer the absolute "peak_rss_b" over the legacy
+    # "peak_rss_delta_b" — see measure_performance.py for why deltas
+    # underestimate in reused workers.
     by_bucket: dict[int, list[float]] = {}
     for s in samples:
         b = s.get("pixel_bucket", -1)
-        by_bucket.setdefault(b, []).append(s["peak_rss_delta_b"])
+        rss = s.get("peak_rss_b", s.get("peak_rss_delta_b", 0))
+        by_bucket.setdefault(b, []).append(rss)
 
     # Try this call's bucket, then nearby buckets (larger first —
     # over-estimating memory is safer than under).
