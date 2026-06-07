@@ -16,7 +16,7 @@ GraXpert, or change the downscale factor), copy this file to
 `@pipeline("…")` display name, and edit the call you want to
 replace.
 """
-from astroflow.pipeline import pipeline
+from astroflow.pipeline import ephemeral_intermediates, pipeline
 from dependency_graph.tracing import workflow_group
 from mosaics.final_storage import store_mosaic_color_channel_xisf
 from mosaics.merging.pixinsight import merge_images
@@ -88,26 +88,31 @@ def for_mosaic(mosaic, config):
     for filter in mosaic.filters:
         viewbox = mosaic.viewbox("DownscaledMaster")
 
-        # Merge per strip first, then merge strips together.
-        rows = []
-        for strip in mosaic.strips:
-            placed = [
-                place_image(mosaic, targets_by_id[tid], filter, viewbox,
-                            config, channels[(tid, filter)])
-                for tid in strip if (tid, filter) in channels
-            ]
-            if not placed:
+        # Placed-panel and intermediate-merge images are multi-GB each
+        # and only feed the final `store_*` — everything inside this
+        # block cleans up once it's been consumed. `store_*` is
+        # `final=True`, so the persisted mosaic survives.
+        with ephemeral_intermediates():
+            # Merge per strip first, then merge strips together.
+            rows = []
+            for strip in mosaic.strips:
+                placed = [
+                    place_image(mosaic, targets_by_id[tid], filter, viewbox,
+                                config, channels[(tid, filter)])
+                    for tid in strip if (tid, filter) in channels
+                ]
+                if not placed:
+                    continue
+                row = placed[0]
+                for p in placed[1:]:
+                    row = merge_images(mosaic, filter, config, row, p)
+                rows.append(row)
+            if not rows:
                 continue
-            row = placed[0]
-            for p in placed[1:]:
-                row = merge_images(mosaic, filter, config, row, p)
-            rows.append(row)
-        if not rows:
-            continue
 
-        merged = rows[0]
-        for r in rows[1:]:
-            merged = merge_images(mosaic, filter, config, merged, r)
+            merged = rows[0]
+            for r in rows[1:]:
+                merged = merge_images(mosaic, filter, config, merged, r)
 
         out[filter] = store_mosaic_color_channel_xisf(
             mosaic, filter, config, merged,
