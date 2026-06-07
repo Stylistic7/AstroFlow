@@ -34,13 +34,15 @@ def _concerns_keys_for(func: Callable, args: tuple, kwargs: dict) -> list[tuple]
     such functions still live in the per-call log, just not surfaced
     per-object.
 
-    The key shape is `('concerns', op_name, object_type, identity_key)`
-    so concerns are keyed by which op wrote them rather than by a
-    (level, impl) tuple. Polymorphic producers (e.g. stack_files for
-    both StackId and CalibrationStackId) emit one key per identity
-    they match — the dispatch picks the one whose object_type
-    appears in args, so a CalibrationStack run doesn't write under
-    StackId and vice versa.
+    The key shape is `('concerns', object_type, identity_key)` and
+    the stored value is a dict `{op_name: [concerns...]}` keyed by
+    which op wrote each batch. Direct lookup by object replaces the
+    earlier op-in-key shape that forced `/api/concerns` to scan the
+    full cache to find every op that contributed. Polymorphic
+    producers (e.g. stack_files for both StackId and
+    CalibrationStackId) emit one key per identity they match — the
+    dispatch picks the one whose object_type appears in args, so a
+    CalibrationStack run doesn't write under StackId and vice versa.
     """
     identities = getattr(func, "_identities", None)
     if not identities:
@@ -48,7 +50,6 @@ def _concerns_keys_for(func: Callable, args: tuple, kwargs: dict) -> list[tuple]
 
     from products.registry import _extract_identity
 
-    op_name = getattr(func, "__name__", "<unknown>")
     keys: list[tuple] = []
     for identity_cls in identities:
         object_type = identity_cls.object_type
@@ -63,7 +64,6 @@ def _concerns_keys_for(func: Callable, args: tuple, kwargs: dict) -> list[tuple]
             continue
         keys.append((
             "concerns",
-            op_name,
             object_type.__name__,
             obj_id.cache_key(),
         ))
@@ -131,12 +131,19 @@ def make_capture_logs_decorator(cache):
                     call_hash = hash_call(fn_hash, *hash_args, **hash_kwargs)
                     cache[("logs", func.__name__, call_hash)] = captured_logs
 
-                # Always overwrite per-object concerns (even with []) so
-                # a successful re-run that emitted no concerns clears
-                # the previous run's. Skip if not a registered producer.
+                # Always overwrite this op's slot in the per-object
+                # concerns dict (even with []) so a successful re-run
+                # that emitted no concerns clears the previous run's.
+                # Skip if not a registered producer.
                 concerns = [e for e in captured_logs if e.get("_concern")]
+                op_name = func.__name__
                 for key in _concerns_keys_for(func, args, kwargs):
-                    cache[key] = concerns
+                    with cache.transact():
+                        existing = cache.get(key, {})
+                        if not isinstance(existing, dict):
+                            existing = {}
+                        existing[op_name] = concerns
+                        cache[key] = existing
 
             return result
 

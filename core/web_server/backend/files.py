@@ -94,14 +94,11 @@ def stacking_report(stack_id):
 def concerns_for_object(object_type, object_id):
     """Concerns reported by recent producer runs for this object.
 
-    @capture_logs writes one entry per `(op_name, object_type, id)`
-    tuple. PI Master and PI Downscaled now SHARE the same op
-    (`post_process_stack`), so their concerns merge under the same
-    op_name — distinct on-disk outputs come from the call_hash, not
-    a separate op name. This endpoint scans every entry for the
-    requested object and returns the merged list; mosaic concerns
-    also bubble up the concerns from constituent stacks at the
-    requested filter.
+    @capture_logs writes one entry per object at key
+    `('concerns', object_type, identity_key)` with value
+    `{op_name: [concerns...]}`. Direct O(1) lookup — no cache scan.
+    Mosaic concerns also bubble up the concerns from constituent
+    stacks at the requested filter.
 
     Query params:
       filter — required for object_type=mosaic
@@ -113,20 +110,14 @@ def concerns_for_object(object_type, object_id):
     filter_arg = request.args.get("filter", "")
 
     def concerns_for_key(object_type_name: str, identity_key: tuple) -> list[dict]:
-        """Sweep every cache entry of the shape
-        `('concerns', op_name, object_type_name, identity_key)` and
-        return the merged list. We don't know which ops have written —
-        any producer that ran and called `capture_logs.concern` could
-        have, so we pattern-match the keys."""
+        """Direct lookup at `('concerns', object_type, identity_key)`.
+        Value is `{op_name: [concerns...]}`; we flatten across ops."""
+        entry = cache.get(("concerns", object_type_name, identity_key), {})
+        if not isinstance(entry, dict):
+            return []
         out: list[dict] = []
-        for key in list(cache.iterkeys() if hasattr(cache, "iterkeys") else []):
-            if (
-                isinstance(key, tuple) and len(key) == 4
-                and key[0] == "concerns"
-                and key[2] == object_type_name
-                and key[3] == identity_key
-            ):
-                out.extend(cache.get(key, []))
+        for op_concerns in entry.values():
+            out.extend(op_concerns)
         return out
 
     if object_type == "stack":
