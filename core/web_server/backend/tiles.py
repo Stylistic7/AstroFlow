@@ -17,17 +17,10 @@ import os
 import threading
 
 import large_image
-from flask import Blueprint, send_file, abort, jsonify
+from flask import Blueprint, request, send_file, abort, jsonify
 
-from context import local_context as context
-from stacks.composite_stack import Stack, CalibrationStack
-from targets.types import Target
-from mosaics.types import Mosaic
-from products.registry import MediaType
-from products.identity import (
-    StackId, CalibrationStackId, TargetChannelId, MosaicChannelId,
-)
 from web_server.backend.router import stateful_route
+from web_server.backend._route import tap_route
 
 
 tiles_bp = Blueprint("tiles", __name__)
@@ -38,31 +31,6 @@ tiles_bp = Blueprint("tiles", __name__)
 # atomic in CPython and the worst case is briefly opening a handle twice.
 _handle_cache: dict = {}
 _handle_cache_lock = threading.Lock()
-
-
-_TYPE_MAP = {
-    "stack": StackId,
-    "calibration_stack": CalibrationStackId,
-    "target": TargetChannelId,
-    "mosaic": MosaicChannelId,
-}
-
-
-def _resolve_obj_args(object_type: str, object_id: str, filter: str | None):
-    """Look up the object and return the (identity_cls, obj_args) tuple
-    that the producer's filename_fn / tile_pyramid_fn expects."""
-    obj_cls = _TYPE_MAP.get(object_type)
-    if obj_cls is None:
-        raise ValueError(f"Unknown object_type {object_type}")
-
-    if object_type == "stack":
-        return obj_cls, (context.stacks[object_id].get(),)
-    if object_type == "calibration_stack":
-        return obj_cls, (context.calibration_stacks[object_id],)
-    if object_type == "target":
-        return obj_cls, (context.targets[object_id].get(), filter)
-    if object_type == "mosaic":
-        return obj_cls, (context.mosaics[object_id].get(), filter)
 
 
 def _tile_pyramid_path_for_tap(
@@ -110,24 +78,13 @@ def _get_handle(tile_pyramid_path):
 
 
 @stateful_route(
-    tiles_bp.route("/tap/tile_metadata/<object_type>/<object_id>/<path:pipeline_and_display>/<filter>"),
+    tap_route(tiles_bp, "/tap/tile_metadata", hierarchy=("object_type", "object_id")),
     sharding_key="object_id",
 )
 def tile_metadata_tap(
-    object_type: str, object_id: str, pipeline_and_display: str, filter: str,
+    object_type: str, object_id: str, pipeline: str, display: str, filter: str,
     backend_port: int = None,
 ):
-    """tile_metadata for a specific (pipeline, tap) of an object.
-
-    `pipeline_and_display` is `<pipeline>/<display>` — joined into one
-    path segment so Flask doesn't have to know that pipeline names
-    contain spaces. The PipelineOutputIndex (populated at pipeline-
-    trace time) tells us which file backs the tap; the tile pyramid
-    is its `.tiff` sibling.
-    """
-    pipeline, _, display = pipeline_and_display.rpartition("/")
-    if not pipeline or not display:
-        return abort(404)
     path = _tile_pyramid_path_for_tap(object_type, object_id, pipeline, display, filter)
     return _tile_metadata_response(path, backend_port)
 
@@ -149,49 +106,20 @@ def _tile_metadata_response(path, backend_port):
 
 
 @stateful_route(
-    tiles_bp.route(
-        "/tile/<object_type>/<object_id>/<filter>/<level>/<int:z>/<int:x>/<int:y>.png"
-    ),
-    sharding_key="object_id",
-)
-def serve_tile(
-    object_type: str, object_id: str, filter: str, level: str,
-    z: str, x: str, y: str,
-):
-    path = _tile_pyramid_path_for(object_type, object_id, filter, level)
-    return _serve_tile_response(path, object_type, object_id, x, y, z)
-
-
-@stateful_route(
-    tiles_bp.route(
-        "/tile/<object_type>/<object_id>/<implementation>/<level>/<filter>/<int:z>/<int:x>/<int:y>.png"
-    ),
-    sharding_key="object_id",
-)
-def serve_tile_specific(
-    object_type: str, object_id: str, implementation: str, level: str, filter: str,
-    z: str, x: str, y: str,
-):
-    """Tile pinned to a specific implementation. Legacy URL shape;
-    new callers should use the tap-keyed route below."""
-    path = _tile_pyramid_path_for(object_type, object_id, filter, level, implementation)
-    return _serve_tile_response(path, object_type, object_id, x, y, z)
-
-
-@stateful_route(
-    tiles_bp.route(
-        "/tap/tile/<object_type>/<object_id>/<path:pipeline_and_display>/<filter>/<int:z>/<int:x>/<int:y>.png"
-    ),
+    tap_route(tiles_bp, "/tap/tile", hierarchy=("object_type", "object_id")),
     sharding_key="object_id",
 )
 def serve_tile_tap(
-    object_type: str, object_id: str, pipeline_and_display: str, filter: str,
-    z: str, x: str, y: str,
+    object_type: str, object_id: str, pipeline: str, display: str, filter: str,
 ):
-    """Single tile from a tap-point's tile pyramid."""
-    pipeline, _, display = pipeline_and_display.rpartition("/")
-    if not pipeline or not display:
-        return abort(404)
+    """Single tile from a tap-point's tile pyramid. Tile coords arrive
+    as `?z=&x=&y=` so the URL itself stays canonical (URL ends with the
+    view triple — see grammar lint)."""
+    z = request.args.get("z")
+    x = request.args.get("x")
+    y = request.args.get("y")
+    if z is None or x is None or y is None:
+        return abort(400)
     path = _tile_pyramid_path_for_tap(object_type, object_id, pipeline, display, filter)
     return _serve_tile_response(path, object_type, object_id, x, y, z)
 
