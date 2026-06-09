@@ -12,20 +12,19 @@ import { useParams, useNavigate } from "react-router-dom";
 import { Box, Paper, Typography, Divider } from "@mui/material";
 
 import AstroFlowContext from "./AstroFlowContext.jsx";
+import { buildUrl, buildApiUrl } from "./urls.js";
 
 
 function VersionThumbnail({
     objectType, objectId, pipeline, display, filter, exists, mtime,
 }) {
     const navigate = useNavigate();
-    // Tap-keyed URLs: `(pipeline, display)` together identify the
-    // artifact within the pipeline's graph. `<path:>` on the backend
-    // lets the slash inside the joined segment pass through.
-    const tap = `${encodeURIComponent(pipeline)}/${encodeURIComponent(display)}`;
+    const hierarchy = [{ type: objectType, id: objectId }];
+    const view = { pipeline, display, filter };
     const url = exists
-        ? `/tap/thumbnail/${objectType}/${objectId}/${tap}/${filter}?v=${mtime}`
+        ? `${buildApiUrl('/tap/thumbnail', hierarchy, view)}?v=${mtime}`
         : null;
-    const href = `/${objectType}/${objectId}/${tap}/${filter}`;
+    const href = buildUrl({ hierarchy, view });
 
     const sx = {
         width: 200,

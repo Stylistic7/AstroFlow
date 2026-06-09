@@ -1,5 +1,5 @@
 import React, { useContext } from "react";
-import { useParams, useLocation } from "react-router-dom";
+import { useParams } from "react-router-dom";
 
 import StackThumbnail from "./StackThumbnail.jsx";
 import DecisionBadge from "./DecisionBadge.jsx";
@@ -8,15 +8,26 @@ import SuggestionBadge from "./suggestions/SuggestionBadge.jsx";
 import QuarantineToggle from "./QuarantineToggle.jsx";
 import ShoppingCartMenu from "./ShoppingCartMenu.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
+import { buildUrl } from './urls.js';
 
 
 export default function TargetPanel() {
 	const { stacks, targets, isQuarantined } = useContext(AstroFlowContext);
 
 	const params = useParams();
-	const location = useLocation();
 
 	const target = targets[params.target_id];
+
+	const hierarchy = [];
+	if (params.mosaic_id) hierarchy.push({ type: 'mosaic', id: params.mosaic_id });
+	hierarchy.push({ type: 'target', id: params.target_id });
+
+	const handleStackClick = (stack_id) => (event) => {
+		const url = buildUrl({
+			hierarchy: [...hierarchy, { type: 'stack', id: stack_id }],
+		});
+		window.open(url, '_blank');
+	};
 
 	return (
 		<div>
@@ -39,7 +50,7 @@ export default function TargetPanel() {
 							key={"cell_" + stack_id}
 							stacks={stacks}
 							stack_id={stack_id}
-							handleClick={event => window.open(`${location.pathname}/stack/${stack_id}`, '_blank')}
+							handleClick={handleStackClick(stack_id)}
 						>
 							<DecisionBadge objectType="stack" objectId={stack_id} />
 							<ConcernsBadge objectType="stack" objectId={stack_id} />
