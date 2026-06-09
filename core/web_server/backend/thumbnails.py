@@ -195,24 +195,21 @@ def mosaic_thumbnail(mosaic_id: str, filter: str):
     return get_thumbnail_by_id(MosaicChannelId(mosaic=mosaic, filter=filter))
 
 
-@thumbnails_bp.route("/tap/thumbnail/<object_type>/<object_id>/<path:pipeline_and_display>/<filter>")
-@thumbnails_bp.route("/tap/thumbnail/<object_type>/<object_id>/<path:pipeline_and_display>")
+@thumbnails_bp.route("/tap/thumbnail/<object_type>/<object_id>/<pipeline>/<display>/<filter>")
+@thumbnails_bp.route("/tap/thumbnail/<object_type>/<object_id>/<pipeline>/<display>")
 def thumbnail_tap(
-    object_type: str, object_id: str, pipeline_and_display: str,
+    object_type: str, object_id: str, pipeline: str, display: str,
     filter: str | None = None,
 ):
     """Thumbnail for a specific (pipeline, tap) of an object.
 
     Served straight from the tap's pyramidal `.tiff` (a small stored
-    level), never by decoding the full-resolution master.
-    `<path:pipeline_and_display>` is `<pipeline>/<display>` joined
-    into one URL segment so Flask doesn't need to know that pipeline
-    display names contain spaces."""
+    level), never by decoding the full-resolution master. Pipeline /
+    display are independent segments; Werkzeug URL-decodes spaces
+    transparently so the old `<path:>` join is unnecessary — and using
+    `<path:>` made the no-filter and with-filter routes ambiguous."""
     from web_server.backend.tiles import _tile_pyramid_path_for_tap
     from previews.create_tile_pyramid import pyramid_thumbnail
-    pipeline, _, display = pipeline_and_display.rpartition("/")
-    if not pipeline or not display:
-        return abort(404)
     tiff = _tile_pyramid_path_for_tap(
         object_type, object_id, pipeline, display, filter,
     )

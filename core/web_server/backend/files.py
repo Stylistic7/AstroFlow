@@ -322,20 +322,15 @@ def open_image(filename):
     return Response(status=200)
 
 
-@files_bp.route("/api/open_mosaic_master/<mosaic_id>/<path:pipeline_and_display>/<filter>")
-def open_mosaic_master(mosaic_id, pipeline_and_display, filter):
+@files_bp.route("/api/open_mosaic_master/<mosaic_id>/<pipeline>/<display>/<filter>")
+def open_mosaic_master(mosaic_id, pipeline, display, filter):
     """Open a specific (pipeline, tap) of a mosaic+filter in PixInsight.
 
     Path resolution goes through the PipelineOutputIndex
-    (`tap_path_for`); `<path:pipeline_and_display>` is the
-    `<pipeline>/<display>` pair joined into one URL segment so
-    pipeline names with spaces don't need extra escaping.
+    (`tap_path_for`). Pipeline / display are independent path
+    segments; Werkzeug URL-decodes spaces transparently.
     """
     from web_server.backend.metadata import tap_path_for
-
-    pipeline, _, display = pipeline_and_display.rpartition("/")
-    if not pipeline or not display:
-        return jsonify({"error": "bad pipeline/display"}), 400
 
     mosaics = context.mosaics or {}
     if mosaic_id not in mosaics:

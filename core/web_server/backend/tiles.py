@@ -110,24 +110,20 @@ def _get_handle(tile_pyramid_path):
 
 
 @stateful_route(
-    tiles_bp.route("/tap/tile_metadata/<object_type>/<object_id>/<path:pipeline_and_display>/<filter>"),
+    tiles_bp.route("/tap/tile_metadata/<object_type>/<object_id>/<pipeline>/<display>/<filter>"),
     sharding_key="object_id",
 )
 def tile_metadata_tap(
-    object_type: str, object_id: str, pipeline_and_display: str, filter: str,
+    object_type: str, object_id: str, pipeline: str, display: str, filter: str,
     backend_port: int = None,
 ):
     """tile_metadata for a specific (pipeline, tap) of an object.
 
-    `pipeline_and_display` is `<pipeline>/<display>` — joined into one
-    path segment so Flask doesn't have to know that pipeline names
-    contain spaces. The PipelineOutputIndex (populated at pipeline-
-    trace time) tells us which file backs the tap; the tile pyramid
-    is its `.tiff` sibling.
+    Pipeline / display are independent path segments; Werkzeug
+    URL-decodes spaces transparently. The PipelineOutputIndex
+    (populated at pipeline-trace time) tells us which file backs the
+    tap; the tile pyramid is its `.tiff` sibling.
     """
-    pipeline, _, display = pipeline_and_display.rpartition("/")
-    if not pipeline or not display:
-        return abort(404)
     path = _tile_pyramid_path_for_tap(object_type, object_id, pipeline, display, filter)
     return _tile_metadata_response(path, backend_port)
 
@@ -180,18 +176,15 @@ def serve_tile_specific(
 
 @stateful_route(
     tiles_bp.route(
-        "/tap/tile/<object_type>/<object_id>/<path:pipeline_and_display>/<filter>/<int:z>/<int:x>/<int:y>.png"
+        "/tap/tile/<object_type>/<object_id>/<pipeline>/<display>/<filter>/<int:z>/<int:x>/<int:y>.png"
     ),
     sharding_key="object_id",
 )
 def serve_tile_tap(
-    object_type: str, object_id: str, pipeline_and_display: str, filter: str,
+    object_type: str, object_id: str, pipeline: str, display: str, filter: str,
     z: str, x: str, y: str,
 ):
     """Single tile from a tap-point's tile pyramid."""
-    pipeline, _, display = pipeline_and_display.rpartition("/")
-    if not pipeline or not display:
-        return abort(404)
     path = _tile_pyramid_path_for_tap(object_type, object_id, pipeline, display, filter)
     return _serve_tile_response(path, object_type, object_id, x, y, z)
 

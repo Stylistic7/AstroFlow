@@ -300,19 +300,18 @@ def _resolve_object(object_type_str, object_id, filter=None):
     abort(400, f"Unknown object type: {object_type_str}")
 
 
-@metadata_bp.route("/api/metadata/<object_type>/<object_id>/<path:pipeline_and_display>/<filter>")
-@metadata_bp.route("/api/metadata/<object_type>/<object_id>/<path:pipeline_and_display>")
-def metadata(object_type: str, object_id: str, pipeline_and_display: str, filter: str | None = None):
+@metadata_bp.route("/api/metadata/<object_type>/<object_id>/<pipeline>/<display>/<filter>")
+@metadata_bp.route("/api/metadata/<object_type>/<object_id>/<pipeline>/<display>")
+def metadata(object_type: str, object_id: str, pipeline: str, display: str, filter: str | None = None):
     """Polygons + image path for a specific (pipeline, display) tap.
 
-    `pipeline_and_display` is `<pipeline>/<display>` joined into one
-    `<path:>` segment so Flask doesn't have to know that pipeline
-    display names contain spaces.
+    `pipeline` and `display` are independent segments. Werkzeug
+    decodes spaces in the URL transparently, so the old `<path:>`
+    join is unnecessary — and using `<path:>` made the no-filter and
+    with-filter routes ambiguous (a 4-segment URL would match the
+    with-filter route with `pipeline_and_display` collapsed and
+    `filter` stealing the display, then `rpartition` would 404).
     """
-    pipeline, _, display = pipeline_and_display.rpartition("/")
-    if not pipeline or not display:
-        return abort(404)
-
     obj_type, args = _resolve_object(object_type, object_id, filter)
 
     path = tap_path_for(pipeline, display, object_type, object_id, filter)

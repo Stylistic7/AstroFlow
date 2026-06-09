@@ -79,7 +79,12 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
 
   useEffect(() => {
     if (!tap) return;
-    const url = `/tap/tile_metadata/${objectType}/${imageHash}/${tap}/${filter}`;
+    // Stacks have an intrinsic filter and don't carry one in the URL;
+    // sending the literal string "undefined" trips a 404 because
+    // `_tap_path_unchecked` looks up a filter named "undefined".
+    const url = filter !== undefined
+      ? `/tap/tile_metadata/${objectType}/${imageHash}/${tap}/${filter}`
+      : `/tap/tile_metadata/${objectType}/${imageHash}/${tap}`;
     fetch(url)
       .then((res) => res.ok ? res.json() : null)
       .then((meta) => { if (meta) setTileMetadata(meta); });
@@ -88,26 +93,30 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
   const onClick = (poly, event) => {
     const e = event.nativeEvent; // underlying DOM PointerEvent
 
+    // Drilldown views need a tap to render — the no-tap routes leave
+    // TileViewer with `tap=null` and the tile pyramid never loads.
+    // Carry the parent pipeline forward; the display name swaps from
+    // the mosaic-level tap ("Mosaic") to a stack-level tap ("Master")
+    // since the same display name doesn't apply across object types.
+    // No-pipeline parents (e.g. starmap drills) fall through to a bare
+    // suffix as before.
+    const stackTap = pipeline
+      ? `/${encodeURIComponent(pipeline)}/${encodeURIComponent('Master')}`
+      : '';
+
     let suffix;
     if (poly.type === 'stack' && poly.target_id) {
-      suffix = `target/${poly.target_id}/stack/${poly.stable_hash}`;
+      suffix = `target/${poly.target_id}/stack/${poly.stable_hash}${stackTap}`;
     } else if (poly.type === 'target' && filter && targets?.[poly.stable_hash]) {
       const target = targets[poly.stable_hash];
       const stackId = target.stack_ids?.find(s => stacks?.[s]?.filter === filter);
       suffix = stackId
-        ? `target/${poly.stable_hash}/stack/${stackId}`
+        ? `target/${poly.stable_hash}/stack/${stackId}${stackTap}`
         : `target/${poly.stable_hash}`;
     } else {
       suffix = `${poly.type}/${poly.stable_hash}`;
     }
 
-    // Build an absolute URL that drops the parent mosaic's
-    // implementation/quality/filter context. Those segments only
-    // describe how the user is currently viewing the merged mosaic
-    // image; once we drill into a target or stack they're meaningless,
-    // and keeping them in the URL pollutes the breadcrumbs. Browser
-    // history still preserves the original mosaic-with-pills URL so
-    // the back button returns there.
     const url = params.mosaic_id
       ? `/mosaic/${params.mosaic_id}/${suffix}`
       : `/${suffix}`;
@@ -472,7 +481,9 @@ const ImperativeViewport = ({ objectType, imageHash, filter, tap, port, imageWid
           if (spritesRef.current[key]) continue;
 
           if (!tap) continue;
-          const relativePath = `/tap/tile/${objectType}/${imageHash}/${tap}/${filter}/${bestZ}/${x}/${y}.png`;
+          const relativePath = filter !== undefined
+            ? `/tap/tile/${objectType}/${imageHash}/${tap}/${filter}/${bestZ}/${x}/${y}.png`
+            : `/tap/tile/${objectType}/${imageHash}/${tap}/${bestZ}/${x}/${y}.png`;
           const url = new URL(relativePath, `${window.location.protocol}//${window.location.hostname}:${port}`);
           if (mtime) url.searchParams.set('v', mtime);
           PIXI.Texture.fromURL(url.href)

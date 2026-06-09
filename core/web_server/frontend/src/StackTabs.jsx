@@ -127,6 +127,7 @@ const StackTabs = ({ stack_type, stack, stack_id, pipeline, display }) => {
                 objectId={stack_id}
                 pipeline={pipeline}
                 display={display}
+                filter={stack?.filter}
                 showQualitySelector={false}
               />
             </Box>
