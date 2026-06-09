@@ -10,8 +10,8 @@ import LayersIcon from '@mui/icons-material/Layers';
 import SquareFootIcon from '@mui/icons-material/SquareFoot';
 import AutoAwesomeMosaicIcon from '@mui/icons-material/AutoAwesomeMosaic';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
-import BuildIcon from '@mui/icons-material/Build';
-import AltRouteIcon from '@mui/icons-material/AltRoute';
+import AccountTreeIcon from '@mui/icons-material/AccountTree';
+import PhotoIcon from '@mui/icons-material/Photo';
 import ColorLensIcon from '@mui/icons-material/ColorLens';
 import Link from '@mui/material/Link';
 import PanoramaHorizontalIcon from '@mui/icons-material/PanoramaHorizontal';
@@ -396,7 +396,7 @@ export default function AstroFlowBreadcrumbs() {
                     none was set). */}
                 {pipeline && implementations.length > 0 && (
                     <PillCrumb
-                        icon={<BuildIcon sx={{ marginRight: '0.5em' }} />}
+                        icon={<AccountTreeIcon sx={{ marginRight: '0.5em' }} />}
                         options={implementations}
                         active={pipeline}
                         exists={() => true}
@@ -413,7 +413,7 @@ export default function AstroFlowBreadcrumbs() {
                     triple, even when there's only one option. */}
                 {display && (
                     <PillCrumb
-                        icon={<AltRouteIcon sx={{ marginRight: '0.5em' }} />}
+                        icon={<PhotoIcon sx={{ marginRight: '0.5em' }} />}
                         options={displays}
                         active={display}
                         exists={() => true}
