@@ -268,6 +268,12 @@ function App() {
                     <TargetPanel />
                   </AppLayout>
                 } />
+                <Route path="/target/:target_id/:pipeline/:display/:filter" element={
+                  dataIsAvailable &&
+                  <AppLayout>
+                    <TargetPanel />
+                  </AppLayout>
+                } />
                 <Route path="/mosaic/:mosaic_id" element={
                   dataIsAvailable &&
                   <AppLayout>
@@ -299,6 +305,12 @@ function App() {
                   </AppLayout>
                 } />
                 <Route path="/mosaic/:mosaic_id/target/:target_id" element={
+                  dataIsAvailable &&
+                  <AppLayout>
+                    <TargetPanel />
+                  </AppLayout>}
+                />
+                <Route path="/mosaic/:mosaic_id/target/:target_id/:pipeline/:display/:filter" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <TargetPanel />

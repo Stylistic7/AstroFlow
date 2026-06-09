@@ -11,7 +11,9 @@ import {
   ToggleButtonGroup,
   Typography,
 } from '@mui/material';
+import { useContext } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import AstroFlowContext from './AstroFlowContext.jsx';
 import { AstroFlowImage } from './AstroFlowImage.jsx';
 import RunsTab from './RunsTab.jsx';
 import WorkflowGraph from './WorkflowGraph.jsx';
@@ -87,6 +89,7 @@ const StackTabs = ({ stack_type, stack, stack_id, pipeline, display }) => {
   const videoRef = useRef(null);
   const navigate = useNavigate();
   const params = useParams();
+  const { stacks, targets } = useContext(AstroFlowContext);
 
   const view = (pipeline && display && stack?.filter)
     ? { pipeline, display, filter: stack.filter }
@@ -96,11 +99,24 @@ const StackTabs = ({ stack_type, stack, stack_id, pipeline, display }) => {
   if (params.target_id) hierarchy.push({ type: 'target', id: params.target_id });
   hierarchy.push({ type: stack_type, id: stack_id });
 
-  // Filter pill changing to a different value means "show me the
-  // sibling stack for that filter under this target." Without a
-  // target_id we can't resolve siblings — fall back to ignoring the
-  // change. Pipeline/display swaps stay on this stack.
+  // Filter pill: changing to a different filter on a stack page means
+  // "show me the sibling stack for that filter under the same target."
+  // Resolution needs target.stack_ids + the stacks dict to find the
+  // sibling. Without a target context (bare /stack URL) sibling-resolve
+  // can't run — fall back to staying on this stack.
   const handleViewChange = (nextView) => {
+    if (stack && nextView.filter !== stack.filter && params.target_id) {
+      const target = targets?.[params.target_id];
+      const siblingId = target?.stack_ids?.find(
+        (sid) => stacks?.[sid]?.filter === nextView.filter,
+      );
+      if (siblingId) {
+        const siblingHierarchy = hierarchy.slice(0, -1);
+        siblingHierarchy.push({ type: stack_type, id: siblingId });
+        navigate(buildUrl({ hierarchy: siblingHierarchy, view: nextView }));
+        return;
+      }
+    }
     navigate(buildUrl({ hierarchy, view: nextView }));
   };
 

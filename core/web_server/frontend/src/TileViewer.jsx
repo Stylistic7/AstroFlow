@@ -480,11 +480,9 @@ const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, ima
             '/tap/tile',
             [{ type: objectType, id: imageHash }],
             view,
+            `/${bestZ}/${x}/${y}.png`,
           );
           const url = new URL(relativePath, `${window.location.protocol}//${window.location.hostname}:${port}`);
-          url.searchParams.set('z', bestZ);
-          url.searchParams.set('x', x);
-          url.searchParams.set('y', y);
           if (mtime) url.searchParams.set('v', mtime);
           PIXI.Texture.fromURL(url.href)
             .then((texture) => {

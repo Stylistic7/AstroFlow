@@ -106,20 +106,17 @@ def _tile_metadata_response(path, backend_port):
 
 
 @stateful_route(
-    tap_route(tiles_bp, "/tap/tile", hierarchy=("object_type", "object_id")),
+    tap_route(
+        tiles_bp, "/tap/tile",
+        hierarchy=("object_type", "object_id"),
+        suffix="/<int:z>/<int:x>/<int:y>.png",
+    ),
     sharding_key="object_id",
 )
 def serve_tile_tap(
     object_type: str, object_id: str, pipeline: str, display: str, filter: str,
+    z: int, x: int, y: int,
 ):
-    """Single tile from a tap-point's tile pyramid. Tile coords arrive
-    as `?z=&x=&y=` so the URL itself stays canonical (URL ends with the
-    view triple — see grammar lint)."""
-    z = request.args.get("z")
-    x = request.args.get("x")
-    y = request.args.get("y")
-    if z is None or x is None or y is None:
-        return abort(400)
     path = _tile_pyramid_path_for_tap(object_type, object_id, pipeline, display, filter)
     return _serve_tile_response(path, object_type, object_id, x, y, z)
 

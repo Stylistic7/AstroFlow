@@ -37,8 +37,11 @@ export function buildUrl({ hierarchy, view }) {
   return hierarchyPath(hierarchy) + viewPath(view);
 }
 
-export function buildApiUrl(prefix, hierarchy, view) {
-  return prefix + hierarchyPath(hierarchy) + viewPath(view);
+export function buildApiUrl(prefix, hierarchy, view, suffix = '') {
+  // `suffix` is for sub-resources of a tap (e.g. tile coords
+  // `/z/x/y.png`). Always appended AFTER the view triple so the URL
+  // stays global → local.
+  return prefix + hierarchyPath(hierarchy) + viewPath(view) + suffix;
 }
 
 export function inheritView(parentView, childObjectType) {
