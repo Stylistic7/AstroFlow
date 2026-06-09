@@ -465,42 +465,53 @@ def _record_pipeline_taps(record_existence, pipeline_name, cart_type, cart_id, g
         arg_map = {params[i]: n.args[i]
                    for i in range(min(len(n.args), len(params)))}
         identities = getattr(fn, "_identities", None) or getattr(task, "_identities", [])
-        for identity_cls in identities:
-            id_field_names = [f.name for f in dataclasses.fields(identity_cls)]
-            try:
-                id_values = [arg_map[name] for name in id_field_names]
-            except KeyError:
-                continue
-            object_type_name = identity_cls.object_type.__name__.lower()
-            primary = id_values[0] if id_values else None
-            object_id_value = (
-                primary.stable_hash if hasattr(primary, "stable_hash")
-                else str(primary)
-            )
-            filter_value = arg_map.get("filter")
-            key = (object_type_name, object_id_value, base_display, filter_value)
-            seq[key] = seq.get(key, 0) + 1
-            display = (
-                base_display if seq[key] == 1
-                else f"{base_display} {seq[key]}"
-            )
-            record_existence(
-                pipeline_name, object_type_name, object_id_value,
-                display, filter_value,
-            )
-            # Schedule a runtime task that, when n's result is
-            # available, writes the real path to the tap index. The
-            # task depends on n via the graph adjacency (one entry,
-            # ordering = data flow). Its literal args bake in the
-            # identity; its data-dep is the tap's result.
-            register_node = Node(
-                _register_tap_path_op,
-                pipeline_name, object_type_name, object_id_value,
-                display, filter_value,
-                name=f"_register_tap_{n.name}",
-            )
-            graph[register_node] = [n]
-            break  # one identity matched; don't double-record
+        # Pick the identity by isinstance(first_arg, identity_cls.object_type),
+        # mirroring products.registry._make_dispatcher. Polymorphic ops
+        # (e.g. stack_files registered for both StackId and
+        # CalibrationStackId) share field NAMES across alternatives —
+        # picking by field-name presence in `arg_map` duck-types a
+        # Stack as a CalibrationStack, misregistering the tap under
+        # the wrong object_type.
+        first_arg = n.args[0] if n.args else None
+        if first_arg is None:
+            continue
+        identity_cls = next(
+            (ic for ic in identities if isinstance(first_arg, ic.object_type)),
+            None,
+        )
+        if identity_cls is None:
+            continue
+        object_type_name = identity_cls.object_type.__name__.lower()
+        object_id_value = first_arg.stable_hash
+        # Filter precedence: explicit `filter=` param wins (mosaic ops
+        # take it as an arg), else fall back to the primary object's
+        # intrinsic filter (every Stack has exactly one filter, but
+        # `stack_files(stack, config, *cal_masters)` doesn't carry it
+        # as a named param). Without this fallback the tap is stored
+        # at filter=None and the UI's per-filter lookup misses.
+        filter_value = arg_map.get("filter") or getattr(first_arg, "filter", None)
+        key = (object_type_name, object_id_value, base_display, filter_value)
+        seq[key] = seq.get(key, 0) + 1
+        display = (
+            base_display if seq[key] == 1
+            else f"{base_display} {seq[key]}"
+        )
+        record_existence(
+            pipeline_name, object_type_name, object_id_value,
+            display, filter_value,
+        )
+        # Schedule a runtime task that, when n's result is
+        # available, writes the real path to the tap index. The
+        # task depends on n via the graph adjacency (one entry,
+        # ordering = data flow). Its literal args bake in the
+        # identity; its data-dep is the tap's result.
+        register_node = Node(
+            _register_tap_path_op,
+            pipeline_name, object_type_name, object_id_value,
+            display, filter_value,
+            name=f"_register_tap_{n.name}",
+        )
+        graph[register_node] = [n]
 
 
 @node
