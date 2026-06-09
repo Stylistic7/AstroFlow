@@ -1,5 +1,5 @@
 import React, { useContext } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams } from "react-router-dom";
 
 import StackThumbnail from "./StackThumbnail.jsx";
 import DecisionBadge from "./DecisionBadge.jsx";
@@ -8,7 +8,6 @@ import SuggestionBadge from "./suggestions/SuggestionBadge.jsx";
 import QuarantineToggle from "./QuarantineToggle.jsx";
 import ShoppingCartMenu from "./ShoppingCartMenu.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
-import ViewPills from './ViewPills.jsx';
 import { buildUrl, inheritView } from './urls.js';
 
 
@@ -16,7 +15,6 @@ export default function TargetPanel() {
 	const { stacks, targets, isQuarantined } = useContext(AstroFlowContext);
 
 	const params = useParams();
-	const navigate = useNavigate();
 
 	const target = targets[params.target_id];
 
@@ -27,10 +25,6 @@ export default function TargetPanel() {
 	const view = (params.pipeline && params.display && params.filter)
 		? { pipeline: params.pipeline, display: params.display, filter: params.filter }
 		: null;
-
-	const handleViewChange = (nextView) => {
-		navigate(buildUrl({ hierarchy, view: nextView }));
-	};
 
 	// When a view is picked, drilldown URLs propagate it (stack defaults
 	// for display via inheritView); without a view, links degrade to the
@@ -50,7 +44,6 @@ export default function TargetPanel() {
 				<QuarantineToggle objectType="target" objectId={params.target_id} />
 				<SuggestionBadge objectType="target" objectId={params.target_id} />
 			</div>
-			<ViewPills hierarchy={hierarchy} value={view} onChange={handleViewChange} />
 			<div style={{
 					display: "grid",
 					gridTemplateColumns: "repeat(4, 1fr)",

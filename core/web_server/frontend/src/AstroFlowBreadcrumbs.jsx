@@ -220,6 +220,32 @@ export default function AstroFlowBreadcrumbs() {
     const goToFilter = (f) => {
         if (!pipeline) return;
         const d = display || DEFAULT_DISPLAY_FOR_TYPE[viewerObjectType] || "Master";
+        // On a stack page, switching filter means showing a sibling
+        // stack — each stack has exactly one filter, so we have to
+        // navigate to a different stack_id. Resolve via target.stack_ids
+        // when target context exists; otherwise fall through to the
+        // generic URL build (which won't actually switch filter, but
+        // at least won't 404).
+        if (
+            viewerObjectType === "stack"
+            && params.target_id
+            && stack
+            && f !== stack.filter
+        ) {
+            const t = targets[params.target_id];
+            const siblingId = t?.stack_ids?.find(
+                (sid) => stacks?.[sid]?.filter === f,
+            );
+            if (siblingId) {
+                const prefix = params.mosaic_id
+                    ? `/mosaic/${params.mosaic_id}/target/${params.target_id}/stack/${siblingId}`
+                    : `/target/${params.target_id}/stack/${siblingId}`;
+                navigate(
+                    `${prefix}/${encodeURIComponent(pipeline)}/${encodeURIComponent(d)}/${f}`,
+                );
+                return;
+            }
+        }
         navigate(
             `${viewerPathPrefix}/${encodeURIComponent(pipeline)}/${encodeURIComponent(d)}/${f}`,
         );
@@ -378,9 +404,10 @@ export default function AstroFlowBreadcrumbs() {
                 {/* Display (tap-point) pill — selects which of the
                     current pipeline's emitted taps ("Mosaic",
                     "Channel", "Post-Processed", "Subframe", ...) the
-                    viewer renders. Pipelines that emit a single tap
-                    skip the pill (nothing to pick). */}
-                {display && displays.length > 1 && (
+                    viewer renders. Always rendered when `display` is
+                    in the URL so the breadcrumbs mirror the URL's view
+                    triple, even when there's only one option. */}
+                {display && (
                     <PillCrumb
                         icon={<AltRouteIcon sx={{ marginRight: '0.5em' }} />}
                         options={displays}
