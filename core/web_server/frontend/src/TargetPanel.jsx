@@ -1,4 +1,4 @@
-import React, { useContext } from "react";
+import React, { useContext, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import StackThumbnail from "./StackThumbnail.jsx";
@@ -8,13 +8,15 @@ import SuggestionBadge from "./suggestions/SuggestionBadge.jsx";
 import QuarantineToggle from "./QuarantineToggle.jsx";
 import ShoppingCartMenu from "./ShoppingCartMenu.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
-import { buildUrl } from './urls.js';
+import ViewPills from './ViewPills.jsx';
+import { buildUrl, inheritView } from './urls.js';
 
 
 export default function TargetPanel() {
 	const { stacks, targets, isQuarantined } = useContext(AstroFlowContext);
 
 	const params = useParams();
+	const [view, setView] = useState(null);
 
 	const target = targets[params.target_id];
 
@@ -22,10 +24,14 @@ export default function TargetPanel() {
 	if (params.mosaic_id) hierarchy.push({ type: 'mosaic', id: params.mosaic_id });
 	hierarchy.push({ type: 'target', id: params.target_id });
 
+	// When a view is picked, drilldown URLs propagate it (stack defaults
+	// for display via inheritView); without a view, links degrade to the
+	// hierarchy-only URL so the stack page can pick its own defaults.
 	const handleStackClick = (stack_id) => (event) => {
-		const url = buildUrl({
-			hierarchy: [...hierarchy, { type: 'stack', id: stack_id }],
-		});
+		const childHierarchy = [...hierarchy, { type: 'stack', id: stack_id }];
+		const url = view
+			? buildUrl({ hierarchy: childHierarchy, view: inheritView(view, 'stack') })
+			: buildUrl({ hierarchy: childHierarchy });
 		window.open(url, '_blank');
 	};
 
@@ -36,6 +42,7 @@ export default function TargetPanel() {
 				<QuarantineToggle objectType="target" objectId={params.target_id} />
 				<SuggestionBadge objectType="target" objectId={params.target_id} />
 			</div>
+			<ViewPills hierarchy={hierarchy} value={view} onChange={setView} />
 			<div style={{
 					display: "grid",
 					gridTemplateColumns: "repeat(4, 1fr)",
