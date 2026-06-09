@@ -161,18 +161,19 @@ export default function AstroFlowBreadcrumbs() {
     let viewerObjectType = null;
     let viewerObjectId = null;
     let viewerPathPrefix = "";
-    let viewerHasFilter = false;
     if (params.stack_id) {
         viewerObjectType = "stack";
         viewerObjectId = params.stack_id;
         viewerPathPrefix = stack_url;
-        viewerHasFilter = false;
     } else if (params.mosaic_id && pipeline) {
         viewerObjectType = "mosaic";
         viewerObjectId = params.mosaic_id;
         viewerPathPrefix = mosaic_url;
-        viewerHasFilter = true;
     }
+    // Per [[project_url_grammar]] every tap-keyed URL carries the
+    // full view triple (pipeline / display / filter). Stack URLs
+    // include `:filter` even though it's redundant with `stack.filter`.
+    const viewerHasFilter = viewerObjectType !== null;
 
     const versionsData = useVersionsMatrix(
         viewerObjectType, viewerObjectId, computeGraphStatus,
@@ -214,7 +215,7 @@ export default function AstroFlowBreadcrumbs() {
             encodeURIComponent(nextPipeline),
             encodeURIComponent(d),
         ];
-        if (viewerHasFilter) segs.push(f);
+        if (viewerHasFilter && f) segs.push(encodeURIComponent(f));
         navigate(segs.filter(Boolean).join("/"));
     };
     const goToFilter = (f) => {
@@ -257,7 +258,10 @@ export default function AstroFlowBreadcrumbs() {
             encodeURIComponent(pipeline),
             encodeURIComponent(nextDisplay),
         ];
-        if (viewerHasFilter) segs.push(filter);
+        // Filter is always part of the view triple in the URL grammar,
+        // even on stack pages where it's intrinsic. Without it we lose
+        // the filter context and React Router can't match the route.
+        if (viewerHasFilter && filter) segs.push(encodeURIComponent(filter));
         navigate(segs.filter(Boolean).join("/"));
     };
 
