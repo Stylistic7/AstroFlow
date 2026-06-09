@@ -20,6 +20,7 @@ from mosaics.trimming import project_to_viewbox
 from metadata.sidecar_io import read_image_metadata
 from attributes.astrometric_attributes import _spherical_polygon_for_wcs
 from decisions.decisions import ObjectType, get_decisions_for_object
+from web_server.backend._route import tap_route
 
 metadata_bp = Blueprint("metadata", __name__)
 
@@ -280,7 +281,7 @@ def _get_polygons(identity_cls: type, pipeline: str, *args) -> list[dict[str, An
 # Endpoints
 # ---------------------------------------------------------------------------
 
-def _resolve_object(object_type_str, object_id, filter=None):
+def _resolve_object(object_type_str, object_id, filter):
     """Resolve an object type string + id to (identity_cls, *args).
 
     The identity class drives the producer/filename-fn registry lookup;
@@ -292,26 +293,14 @@ def _resolve_object(object_type_str, object_id, filter=None):
     if object_type_str == "calibration_stack":
         return CalibrationStackId, (context.calibration_stacks[object_id],)
     if object_type_str == "target":
-        obj = context.targets[object_id].get()
-        return TargetId, (obj, filter) if filter else (obj,)
+        return TargetId, (context.targets[object_id].get(), filter)
     if object_type_str == "mosaic":
-        obj = context.mosaics[object_id].get()
-        return MosaicChannelId, (obj, filter) if filter else (obj,)
+        return MosaicChannelId, (context.mosaics[object_id].get(), filter)
     abort(400, f"Unknown object type: {object_type_str}")
 
 
-@metadata_bp.route("/api/metadata/<object_type>/<object_id>/<pipeline>/<display>/<filter>")
-@metadata_bp.route("/api/metadata/<object_type>/<object_id>/<pipeline>/<display>")
-def metadata(object_type: str, object_id: str, pipeline: str, display: str, filter: str | None = None):
-    """Polygons + image path for a specific (pipeline, display) tap.
-
-    `pipeline` and `display` are independent segments. Werkzeug
-    decodes spaces in the URL transparently, so the old `<path:>`
-    join is unnecessary — and using `<path:>` made the no-filter and
-    with-filter routes ambiguous (a 4-segment URL would match the
-    with-filter route with `pipeline_and_display` collapsed and
-    `filter` stealing the display, then `rpartition` would 404).
-    """
+@tap_route(metadata_bp, "/api/metadata", hierarchy=("object_type", "object_id"))
+def metadata(object_type: str, object_id: str, pipeline: str, display: str, filter: str):
     obj_type, args = _resolve_object(object_type, object_id, filter)
 
     path = tap_path_for(pipeline, display, object_type, object_id, filter)

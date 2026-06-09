@@ -25,8 +25,6 @@ export default function StackThumbnail({ stack_id, width, handleClick, children 
 		return `rgb(${rgb.join(', ')})`;
 	};
 
-	const show_image = false;
-	const show_video = true;
 	const video_fps = 10;
 
 	const video_ref = useRef();
@@ -55,19 +53,7 @@ export default function StackThumbnail({ stack_id, width, handleClick, children 
 				position: "relative",
 			}}
 		>
-			{show_image && <img
-				id={stack_id}
-				src={`/thumbnail/stack/${stack_id}/none`}
-				style={{
-					pointerEvents: "auto",
-					width: "100%",
-					top: 0,
-					left: 0,
-				}}
-				onClick={handleClick}
-			/>}
-
-			{show_video && <video
+			<video
 				loop
 				autoPlay
 				muted
@@ -83,7 +69,6 @@ export default function StackThumbnail({ stack_id, width, handleClick, children 
 				<source src={`/video/stack/${stack_id}`} type="video/mp4" />
 				Your browser does not support the video tag.
 			</video>
-			}
 
 			<div
 				style={{

@@ -11,10 +11,12 @@ import {
   ToggleButtonGroup,
   Typography,
 } from '@mui/material';
+import { useNavigate, useParams } from 'react-router-dom';
 import { AstroFlowImage } from './AstroFlowImage.jsx';
 import RunsTab from './RunsTab.jsx';
 import WorkflowGraph from './WorkflowGraph.jsx';
 import StackingReportPanel from './StackingReportPanel.jsx';
+import ViewPills from './ViewPills.jsx';
 import darkTheme from './theme.js';
 
 function BlinkQualityInfo({ stack_id }) {
@@ -82,6 +84,31 @@ function BlinkQualityInfo({ stack_id }) {
 const StackTabs = ({ stack_type, stack, stack_id, pipeline, display }) => {
   const [tabIndex, setTabIndex] = useState(0);
   const videoRef = useRef(null);
+  const navigate = useNavigate();
+  const params = useParams();
+
+  // Stack URLs carry pipeline + display but the filter is intrinsic
+  // (stack.filter). ViewPills still wants all three for the grammar;
+  // changing filter on a stack page would mean navigating to a sibling
+  // stack — out of scope here, so the filter pill is decorative.
+  const view = (pipeline && display && stack?.filter)
+    ? { pipeline, display, filter: stack.filter }
+    : null;
+  const hierarchy = [];
+  if (params.mosaic_id) hierarchy.push({ type: 'mosaic', id: params.mosaic_id });
+  if (params.target_id) hierarchy.push({ type: 'target', id: params.target_id });
+  hierarchy.push({ type: stack_type, id: stack_id });
+
+  // Stack route shape is /<...>/<stack_id>/<pipeline>/<display> — no
+  // filter segment (intrinsic). Build just hierarchy + pipeline +
+  // display rather than the canonical buildUrl shape.
+  const handleViewChange = (nextView) => {
+    if (nextView.filter !== stack?.filter) return;
+    const prefix = hierarchy.map((h) => `/${h.type}/${h.id}`).join('');
+    navigate(
+      `${prefix}/${encodeURIComponent(nextView.pipeline)}/${encodeURIComponent(nextView.display)}`,
+    );
+  };
 
   return (
     <Paper
@@ -96,6 +123,7 @@ const StackTabs = ({ stack_type, stack, stack_id, pipeline, display }) => {
         minHeight: 0,
       }}
     >
+      <ViewPills hierarchy={hierarchy} value={view} onChange={handleViewChange} />
       <Box sx={{ backgroundColor: 'rgba(255,255,255,0.05)', px: 2 }}>
         <Tabs
           value={tabIndex}

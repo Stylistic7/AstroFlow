@@ -9,6 +9,7 @@ from file_io.find_image_files import find_image_files
 from file_io.sidecar import get_section
 from metadata.image_types import is_light_frame
 from web_server.backend.announcer import announce
+from web_server.backend._route import tap_route
 from state.actor import state
 
 files_bp = Blueprint("files", __name__)
@@ -322,14 +323,11 @@ def open_image(filename):
     return Response(status=200)
 
 
-@files_bp.route("/api/open_mosaic_master/<mosaic_id>/<pipeline>/<display>/<filter>")
+@tap_route(files_bp, "/api/open_mosaic_master", hierarchy=("mosaic_id",))
 def open_mosaic_master(mosaic_id, pipeline, display, filter):
     """Open a specific (pipeline, tap) of a mosaic+filter in PixInsight.
-
     Path resolution goes through the PipelineOutputIndex
-    (`tap_path_for`). Pipeline / display are independent path
-    segments; Werkzeug URL-decodes spaces transparently.
-    """
+    (`tap_path_for`)."""
     from web_server.backend.metadata import tap_path_for
 
     mosaics = context.mosaics or {}

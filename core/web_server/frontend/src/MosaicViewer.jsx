@@ -29,6 +29,7 @@ import WorkflowGraph from "./WorkflowGraph.jsx";
 import ConcernsBadge from "./ConcernsBadge.jsx";
 import darkTheme from "./theme.js";
 import { useVersionsMatrix } from "./useVersions.js";
+import { buildUrl, buildApiUrl } from "./urls.js";
 
 
 export default function MosaicViewer() {
@@ -54,27 +55,24 @@ export default function MosaicViewer() {
     useEffect(() => {
         if (!pipeline || !display) return;
         const pipelines = versionsData.pipelines || [];
-        if (pipelines.length === 0) return;  // matrix still loading
+        if (pipelines.length === 0) return;
         const current = pipelines.find((p) => p.name === pipeline);
-        if (!current) return;  // unknown pipeline; let the user see the empty state
+        if (!current) return;
         const validDisplays = (current.taps || []).map((t) => t.display);
         if (validDisplays.includes(display)) return;
-        // Pick the first display this pipeline actually emits.
         const replacement = validDisplays[0];
         if (!replacement) return;
-        navigate(
-            `/mosaic/${mosaic_id}/${encodeURIComponent(pipeline)}`
-            + `/${encodeURIComponent(replacement)}/${filter}`,
-            { replace: true },
-        );
+        navigate(buildUrl({
+            hierarchy: [{ type: 'mosaic', id: mosaic_id }],
+            view: { pipeline, display: replacement, filter },
+        }), { replace: true });
     }, [pipeline, display, filter, mosaic_id, versionsData, navigate]);
 
     const openInPixInsight = () => {
-        // Backend resolves (pipeline, display) → on-disk file via the
-        // PipelineOutputIndex. `<path:>` parsing carries the slash
-        // between pipeline and display segments.
-        const tap = `${encodeURIComponent(pipeline)}/${encodeURIComponent(display)}`;
-        fetch(`/api/open_mosaic_master/${mosaic_id}/${tap}/${filter}`)
+        // open_mosaic_master's hierarchy is just <mosaic_id> (not
+        // <type>/<id>), so spell out the prefix explicitly.
+        const tap = `${encodeURIComponent(pipeline)}/${encodeURIComponent(display)}/${encodeURIComponent(filter)}`;
+        fetch(`/api/open_mosaic_master/${mosaic_id}/${tap}`)
             .then((r) => { if (!r.ok) console.warn("open_mosaic_master failed", r.status); })
             .catch(console.error);
     };

@@ -14,6 +14,7 @@ from products.identity import (
     MosaicChannelId,
     CalibratedStackId, UncorrectedRunId,
 )
+from web_server.backend._route import tap_route
 
 thumbnails_bp = Blueprint("thumbnails", __name__)
 
@@ -195,19 +196,14 @@ def mosaic_thumbnail(mosaic_id: str, filter: str):
     return get_thumbnail_by_id(MosaicChannelId(mosaic=mosaic, filter=filter))
 
 
-@thumbnails_bp.route("/tap/thumbnail/<object_type>/<object_id>/<pipeline>/<display>/<filter>")
-@thumbnails_bp.route("/tap/thumbnail/<object_type>/<object_id>/<pipeline>/<display>")
+@tap_route(thumbnails_bp, "/tap/thumbnail", hierarchy=("object_type", "object_id"))
 def thumbnail_tap(
-    object_type: str, object_id: str, pipeline: str, display: str,
-    filter: str | None = None,
+    object_type: str, object_id: str, pipeline: str, display: str, filter: str,
 ):
     """Thumbnail for a specific (pipeline, tap) of an object.
 
     Served straight from the tap's pyramidal `.tiff` (a small stored
-    level), never by decoding the full-resolution master. Pipeline /
-    display are independent segments; Werkzeug URL-decodes spaces
-    transparently so the old `<path:>` join is unnecessary — and using
-    `<path:>` made the no-filter and with-filter routes ambiguous."""
+    level), never by decoding the full-resolution master."""
     from web_server.backend.tiles import _tile_pyramid_path_for_tap
     from previews.create_tile_pyramid import pyramid_thumbnail
     tiff = _tile_pyramid_path_for_tap(

@@ -5,6 +5,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Viewport } from 'pixi-viewport';
 
 import AstroFlowContext from './AstroFlowContext.jsx';
+import { buildUrl, buildApiUrl, inheritView } from './urls.js';
 
 
 const TILE_SIZE = 256;
@@ -57,69 +58,64 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
     return () => observer.disconnect();
   }, []);
 
-  // (pipeline, display) together identify the tap; both must be set
-  // for the viewer to make tap-keyed requests. (Bare /tile/* and
-  // /thumbnail/* legacy routes are gone.)
-  const tap = pipeline && display
-    ? `${encodeURIComponent(pipeline)}/${encodeURIComponent(display)}`
+  // The view triple is all-or-nothing — see [[project_url_grammar]].
+  // Without it we can't request a tap-keyed artifact.
+  const view = (pipeline && display && filter)
+    ? { pipeline, display, filter }
     : null;
 
   useEffect(() => {
-    if (!tap) return;
-    // image metadata (RA/Dec/etc) lives next to the on-disk artifact;
-    // the backend looks the file up via the PipelineOutputIndex.
-    const metaUrl = filter !== undefined
-      ? `/api/metadata/${objectType}/${imageHash}/${tap}/${filter}`
-      : `/api/metadata/${objectType}/${imageHash}/${tap}`;
-    fetch(metaUrl)
+    if (!view) return;
+    const url = buildApiUrl(
+      '/api/metadata',
+      [{ type: objectType, id: imageHash }],
+      view,
+    );
+    fetch(url)
       .then((res) => res.ok ? res.json() : null)
       .then((meta) => { if (meta) setMetadata(meta); })
       .catch((e) => console.warn(e));
-  }, [objectType, imageHash, filter, tap, observingPlan]);
+  }, [objectType, imageHash, view?.pipeline, view?.display, view?.filter, observingPlan]);
 
   useEffect(() => {
-    if (!tap) return;
-    // Stacks have an intrinsic filter and don't carry one in the URL;
-    // sending the literal string "undefined" trips a 404 because
-    // `_tap_path_unchecked` looks up a filter named "undefined".
-    const url = filter !== undefined
-      ? `/tap/tile_metadata/${objectType}/${imageHash}/${tap}/${filter}`
-      : `/tap/tile_metadata/${objectType}/${imageHash}/${tap}`;
+    if (!view) return;
+    const url = buildApiUrl(
+      '/tap/tile_metadata',
+      [{ type: objectType, id: imageHash }],
+      view,
+    );
     fetch(url)
       .then((res) => res.ok ? res.json() : null)
       .then((meta) => { if (meta) setTileMetadata(meta); });
-  }, [objectType, imageHash, filter, tap, computeGraphStatus]);
+  }, [objectType, imageHash, view?.pipeline, view?.display, view?.filter, computeGraphStatus]);
 
   const onClick = (poly, event) => {
-    const e = event.nativeEvent; // underlying DOM PointerEvent
+    const e = event.nativeEvent;
 
-    // Drilldown views need a tap to render — the no-tap routes leave
-    // TileViewer with `tap=null` and the tile pyramid never loads.
-    // Carry the parent pipeline forward; the display name swaps from
-    // the mosaic-level tap ("Mosaic") to a stack-level tap ("Master")
-    // since the same display name doesn't apply across object types.
-    // No-pipeline parents (e.g. starmap drills) fall through to a bare
-    // suffix as before.
-    const stackTap = pipeline
-      ? `/${encodeURIComponent(pipeline)}/${encodeURIComponent('Master')}`
-      : '';
-
-    let suffix;
+    // Hierarchy: the parent mosaic (if any) → drilldown target type +
+    // its id. Stacks and the target-with-no-matching-stack case nest
+    // identically; the only oddity is target → stack auto-resolution
+    // by the active filter.
+    const hierarchy = params.mosaic_id
+      ? [{ type: 'mosaic', id: params.mosaic_id }]
+      : [];
     if (poly.type === 'stack' && poly.target_id) {
-      suffix = `target/${poly.target_id}/stack/${poly.stable_hash}${stackTap}`;
+      hierarchy.push({ type: 'target', id: poly.target_id });
+      hierarchy.push({ type: 'stack', id: poly.stable_hash });
     } else if (poly.type === 'target' && filter && targets?.[poly.stable_hash]) {
+      hierarchy.push({ type: 'target', id: poly.stable_hash });
       const target = targets[poly.stable_hash];
       const stackId = target.stack_ids?.find(s => stacks?.[s]?.filter === filter);
-      suffix = stackId
-        ? `target/${poly.stable_hash}/stack/${stackId}${stackTap}`
-        : `target/${poly.stable_hash}`;
+      if (stackId) hierarchy.push({ type: 'stack', id: stackId });
     } else {
-      suffix = `${poly.type}/${poly.stable_hash}`;
+      hierarchy.push({ type: poly.type, id: poly.stable_hash });
     }
 
-    const url = params.mosaic_id
-      ? `/mosaic/${params.mosaic_id}/${suffix}`
-      : `/${suffix}`;
+    const destType = hierarchy[hierarchy.length - 1].type;
+    const url = buildUrl({
+      hierarchy,
+      view: view ? inheritView(view, destType) : null,
+    });
 
     if (e.metaKey || e.ctrlKey) {
       window.open(url, '_blank');
@@ -147,8 +143,7 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
         <ImperativeViewport
           objectType={objectType}
           imageHash={imageHash}
-          filter={filter}
-          tap={tap}
+          view={view}
           port={tileMetadata.port}
           imageWidth={tileMetadata.width}
           imageHeight={tileMetadata.height}
@@ -228,7 +223,7 @@ function drawExposureClock(g, cx, cy, radius, hours, wbppHours = null) {
 }
 
 
-const ImperativeViewport = ({ objectType, imageHash, filter, tap, port, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom, mtime, showPolygons, showPanelNumbers, metadata, mosaics, onClick, showQuarantined, isQuarantined, stacks }) => {
+const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom, mtime, showPolygons, showPanelNumbers, metadata, mosaics, onClick, showQuarantined, isQuarantined, stacks }) => {
   const app = useApp();
   const viewportRef = useRef(null);
   const spritesRef = useRef({});
@@ -480,11 +475,16 @@ const ImperativeViewport = ({ objectType, imageHash, filter, tap, port, imageWid
           const key = `${bestZ}/${x}/${y}`;
           if (spritesRef.current[key]) continue;
 
-          if (!tap) continue;
-          const relativePath = filter !== undefined
-            ? `/tap/tile/${objectType}/${imageHash}/${tap}/${filter}/${bestZ}/${x}/${y}.png`
-            : `/tap/tile/${objectType}/${imageHash}/${tap}/${bestZ}/${x}/${y}.png`;
+          if (!view) continue;
+          const relativePath = buildApiUrl(
+            '/tap/tile',
+            [{ type: objectType, id: imageHash }],
+            view,
+          );
           const url = new URL(relativePath, `${window.location.protocol}//${window.location.hostname}:${port}`);
+          url.searchParams.set('z', bestZ);
+          url.searchParams.set('x', x);
+          url.searchParams.set('y', y);
           if (mtime) url.searchParams.set('v', mtime);
           PIXI.Texture.fromURL(url.href)
             .then((texture) => {
@@ -532,7 +532,7 @@ const ImperativeViewport = ({ objectType, imageHash, filter, tap, port, imageWid
       try { viewport.destroy({ children: true }); } catch {}
       spritesRef.current = {};
     };
-  }, [app, mosaics, imageHash, filter, tap, imageWidth, imageHeight, maxZoom, worldWidth, worldHeight, showPolygons, showPanelNumbers, stacks, metadata]);
+  }, [app, mosaics, imageHash, view?.pipeline, view?.display, view?.filter, imageWidth, imageHeight, maxZoom, worldWidth, worldHeight, showPolygons, showPanelNumbers, stacks, metadata]);
 
   return null;
 };
