@@ -18,7 +18,7 @@ Three entry points, matching the PI Downscaled pipeline.
 """
 from astroflow.pipeline import ephemeral_intermediates, pipeline
 from dependency_graph.tracing import workflow_group
-from mosaics.final_storage import store_mosaic_color_channel_xisf
+from mosaics.final_storage import store_mosaic_color_channel_oss
 from mosaics.merging.oss import merge_images_oss
 from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
@@ -95,36 +95,22 @@ def for_mosaic(mosaic, config):
     for filter in mosaic.filters:
         viewbox = mosaic.viewbox("DownscaledMaster")
 
-        # Multi-GB placed and merged intermediates fill the storage volume
-        # faster than they're useful. The tile-pyramid `.tiff` siblings the
-        # UI serves survive cleanup; the final `store_*` master lives on
-        # outside this block.
+        # Placed-panel images are multi-GB each (smaller here because of
+        # the 8× downscale, but still meaningful) and only feed the final
+        # OSS merge. `merge_images_oss` is variadic — every panel blends
+        # in a single global pass.
         with ephemeral_intermediates():
-            rows = []
-            for strip in mosaic.strips:
-                placed = [
-                    place_image(mosaic, targets_by_id[tid], filter, viewbox,
-                                config, channels[(tid, filter)])
-                    for tid in strip if (tid, filter) in channels
-                ]
-                if not placed:
-                    continue
-                row = placed[0]
-                for p in placed[1:]:
-                    # The one differing line vs PI Downscaled: distance-
-                    # weighted feather + flux equalization instead of
-                    # PhotometricMosaic.
-                    row = merge_images_oss(mosaic, filter, row, p)
-                rows.append(row)
-            if not rows:
+            placed = [
+                place_image(mosaic, targets_by_id[tid], filter, viewbox,
+                            config, channels[(tid, filter)])
+                for strip in mosaic.strips
+                for tid in strip
+                if (tid, filter) in channels
+            ]
+            if not placed:
                 continue
+            merged = merge_images_oss(mosaic, filter, *placed)
 
-            merged = rows[0]
-            for r in rows[1:]:
-                merged = merge_images_oss(mosaic, filter, merged, r)
-
-        out[filter] = store_mosaic_color_channel_xisf(
-            mosaic, filter, config, merged,
-        )
+        out[filter] = store_mosaic_color_channel_oss(mosaic, filter, merged)
 
     return out
