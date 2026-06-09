@@ -41,14 +41,10 @@ from targets.types import Target
 
 @workflow_group
 def _post_processed_master(stack, config):
-    """Calibrate → WBPP-stack → post-process. Same as PI Master.
-
-    `post_process_stack` is ephemeral — see `pixinsight_master.py`
-    for the rationale."""
+    """Calibrate → WBPP-stack → post-process. Same as PI Master."""
     cal_masters = calibrate(stack, config)
     master = stack_files(stack, config, *cal_masters)
-    with ephemeral_intermediates():
-        return post_process_stack(stack, config, master)
+    return post_process_stack(stack, config, master)
 
 
 @workflow_group

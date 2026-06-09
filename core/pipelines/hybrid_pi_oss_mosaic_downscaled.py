@@ -34,18 +34,14 @@ from targets.types import Target
 @workflow_group
 def _post_processed_master(stack, config):
     """Downscale every stack (cal AND light) by 8×, then stack +
-    post-process. Same structure as PI Downscaled.
-
-    `post_process_stack` is ephemeral — see `pixinsight_master.py`
-    for the rationale."""
+    post-process. Same structure as PI Downscaled."""
     cal_masters = []
     for cs in calibration_stacks_for(stack, config):
         cs_downscaled = downscale_stack(cs, 8)
         cal_masters.append(stack_files(cs_downscaled, config, *cal_masters))
     s_downscaled = downscale_stack(stack, 8)
     master = stack_files(s_downscaled, config, *cal_masters)
-    with ephemeral_intermediates():
-        return post_process_stack(s_downscaled, config, master)
+    return post_process_stack(s_downscaled, config, master)
 
 
 @workflow_group
