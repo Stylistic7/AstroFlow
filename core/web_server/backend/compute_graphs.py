@@ -30,25 +30,25 @@ def compute_graph_status():
 # they reserve the URL shape for when pipelines start tagging their
 # trace with workflow keys.
 @compute_graphs_bp.route("/api/workflow_graph/stack/<stack_id>")
-@compute_graphs_bp.route("/api/workflow_graph/stack/<stack_id>/<pipeline>")
-def workflow_graph_for_stack(stack_id, pipeline=None):
+@compute_graphs_bp.route("/api/workflow_graph/stack/<stack_id>/<pipeline_name>")
+def workflow_graph_for_stack(stack_id, pipeline_name=None):
     wf = context["workflow_graphs"] or {}
-    graph = _resolve_ref(wf.get(("stack", stack_id, pipeline))) if pipeline else None
+    graph = _resolve_ref(wf.get(("stack", stack_id, pipeline_name))) if pipeline_name else None
     return graph if graph is not None else _EMPTY_WORKFLOW_GRAPH
 
 
 @compute_graphs_bp.route("/api/workflow_graph/target/<target_id>")
-@compute_graphs_bp.route("/api/workflow_graph/target/<target_id>/<pipeline>")
-def workflow_graph_for_target(target_id, pipeline=None):
+@compute_graphs_bp.route("/api/workflow_graph/target/<target_id>/<pipeline_name>")
+def workflow_graph_for_target(target_id, pipeline_name=None):
     wf = context["workflow_graphs"] or {}
-    graph = _resolve_ref(wf.get(("target", target_id, pipeline))) if pipeline else None
+    graph = _resolve_ref(wf.get(("target", target_id, pipeline_name))) if pipeline_name else None
     return graph if graph is not None else _EMPTY_WORKFLOW_GRAPH
 
 
 @compute_graphs_bp.route("/api/workflow_graph/mosaic/<mosaic_id>")
-@compute_graphs_bp.route("/api/workflow_graph/mosaic/<mosaic_id>/<pipeline>")
-@compute_graphs_bp.route("/api/workflow_graph/mosaic/<mosaic_id>/<pipeline>/<filter>")
-def workflow_graph_for_mosaic(mosaic_id, pipeline=None, filter=None):
+@compute_graphs_bp.route("/api/workflow_graph/mosaic/<mosaic_id>/<pipeline_name>")
+@compute_graphs_bp.route("/api/workflow_graph/mosaic/<mosaic_id>/<pipeline_name>/<filter>")
+def workflow_graph_for_mosaic(mosaic_id, pipeline_name=None, filter=None):
     """One workflow graph per `(mosaic, id, pipeline)`, snapshotted
     at pipeline-trace time and refreshed with live runtime state
     by the runtime's `graph_update_fn`. The optional `<filter>`
@@ -62,14 +62,14 @@ def workflow_graph_for_mosaic(mosaic_id, pipeline=None, filter=None):
     visible, shared Nodes not duplicated). Re-traces the pipeline
     on the spot, so it's slower but only used for debugging when
     the sanitized view looks wrong."""
-    if not pipeline:
+    if not pipeline_name:
         return _EMPTY_WORKFLOW_GRAPH
     raw = request.args.get("raw") == "1"
     if raw:
-        snapshot = _build_raw_workflow_graph(mosaic_id, pipeline)
+        snapshot = _build_raw_workflow_graph(mosaic_id, pipeline_name)
     else:
         wf = context["workflow_graphs"] or {}
-        snapshot = _resolve_ref(wf.get(("mosaic", mosaic_id, pipeline)))
+        snapshot = _resolve_ref(wf.get(("mosaic", mosaic_id, pipeline_name)))
     if snapshot is None:
         return _EMPTY_WORKFLOW_GRAPH
     if filter:
