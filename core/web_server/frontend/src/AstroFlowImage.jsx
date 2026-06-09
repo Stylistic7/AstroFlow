@@ -25,8 +25,13 @@ export const AstroFlowImage = ({
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
             <div style={{ flexGrow: 1, position: 'relative', overflow: 'hidden' }}>
                 {size === "full" ? (
+                    // Key intentionally omits the view triple
+                    // (pipeline/display/filter). Changing tap shouldn't
+                    // tear down the PIXI canvas — TileViewer handles
+                    // the swap internally and preserves zoom/pan across
+                    // the viewport re-create.
                     <TileViewer
-                        key={`${objectType}:${objectId}:${filter}:${pipeline}:${display}`}
+                        key={`${objectType}:${objectId}`}
                         objectType={objectType}
                         imageHash={objectId}
                         filter={filter}

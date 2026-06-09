@@ -227,6 +227,18 @@ const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, ima
   const app = useApp();
   const viewportRef = useRef(null);
   const spritesRef = useRef({});
+  // Survives across view-triple changes (display/pipeline/filter pill
+  // switches): when the main viewport-setup effect cleans up + re-runs,
+  // we save center+scale here so the new viewport restores the user's
+  // zoom/pan instead of resetting to fit-to-screen. Cleared explicitly
+  // when imageHash changes (different object → semantically different
+  // viewport, fit-to-screen is the right default).
+  const savedViewStateRef = useRef(null);
+  const lastImageHashRef = useRef(imageHash);
+  if (lastImageHashRef.current !== imageHash) {
+    savedViewStateRef.current = null;
+    lastImageHashRef.current = imageHash;
+  }
 
   // When the tile pyramid file changes (new merge completed), clear
   // the sprite cache so tiles are re-fetched with the new content.
@@ -262,8 +274,14 @@ const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, ima
     );
 
     viewport.clampZoom({ minScale: fitScale, maxScale: 1 });
-    viewport.setZoom(fitScale, true);
-    viewport.moveCenter(imageWidth / 2, imageHeight / 2);
+    const saved = savedViewStateRef.current;
+    if (saved) {
+      viewport.setZoom(saved.scale, true);
+      viewport.moveCenter(saved.centerX, saved.centerY);
+    } else {
+      viewport.setZoom(fitScale, true);
+      viewport.moveCenter(imageWidth / 2, imageHeight / 2);
+    }
 
     viewportRef.current = viewport;
     app.stage.addChild(viewport);
@@ -520,6 +538,15 @@ const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, ima
     viewport.on('zoomed-end', updateAll);
 
     return () => {
+      // Capture zoom/pan before destroying so the next viewport
+      // (re-created when the user changes pipeline/display/filter)
+      // restores them. lastImageHashRef clears this when the user
+      // navigates to a different object.
+      savedViewStateRef.current = {
+        scale: viewport.scale.x,
+        centerX: viewport.center.x,
+        centerY: viewport.center.y,
+      };
       viewport.off('moved', updateAll);
       viewport.off('zoomed', updateAll);
       viewport.off('moved-end', updateAll);
