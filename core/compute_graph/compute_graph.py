@@ -465,22 +465,25 @@ def _record_pipeline_taps(record_existence, pipeline_name, cart_type, cart_id, g
         arg_map = {params[i]: n.args[i]
                    for i in range(min(len(n.args), len(params)))}
         identities = getattr(fn, "_identities", None) or getattr(task, "_identities", [])
+        if not identities:
+            continue
         # Pick the identity by isinstance(first_arg, identity_cls.object_type),
-        # mirroring products.registry._make_dispatcher. Polymorphic ops
-        # (e.g. stack_files registered for both StackId and
-        # CalibrationStackId) share field NAMES across alternatives —
-        # picking by field-name presence in `arg_map` duck-types a
-        # Stack as a CalibrationStack, misregistering the tap under
-        # the wrong object_type.
+        # mirroring products.registry._make_dispatcher: that's how
+        # polymorphic ops (e.g. stack_files registered for both
+        # [CalibrationStackId, StackId]) get disambiguated — field-name
+        # presence in `arg_map` matches either alternative regardless
+        # of the actual arg type, so Stacks end up registered under
+        # `calibrationstack`. When no identity matches (e.g. ops with
+        # a phantom output-marker identity like MergedImageId whose
+        # `object_type` is a tag class, not a base of the first arg),
+        # fall back to the first identity, also matching the dispatcher.
         first_arg = n.args[0] if n.args else None
         if first_arg is None:
             continue
         identity_cls = next(
             (ic for ic in identities if isinstance(first_arg, ic.object_type)),
-            None,
+            identities[0],
         )
-        if identity_cls is None:
-            continue
         object_type_name = identity_cls.object_type.__name__.lower()
         object_id_value = first_arg.stable_hash
         # Filter precedence: explicit `filter=` param wins (mosaic ops

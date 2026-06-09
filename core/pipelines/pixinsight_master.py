@@ -31,10 +31,16 @@ def _post_processed_master(stack, config):
     """Calibrate → stack → post-process one stack. No per-stack
     transformation, so `calibrate(...)` does the cal-master
     building in one call. Shared across the stack / target /
-    mosaic entry points."""
+    mosaic entry points.
+
+    `post_process_stack` is ephemeral: it's quick to re-run from
+    the cached WBPP master, and the `.xisf` would otherwise double
+    the per-stack disk cost. The cleanup spares the `.tiff` sibling
+    so the UI's Post-Processed tap keeps rendering."""
     cal_masters = calibrate(stack, config)
     master = stack_files(stack, config, *cal_masters)
-    return post_process_stack(stack, config, master)
+    with ephemeral_intermediates():
+        return post_process_stack(stack, config, master)
 
 
 @workflow_group
