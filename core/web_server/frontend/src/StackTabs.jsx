@@ -17,6 +17,7 @@ import RunsTab from './RunsTab.jsx';
 import WorkflowGraph from './WorkflowGraph.jsx';
 import StackingReportPanel from './StackingReportPanel.jsx';
 import ViewPills from './ViewPills.jsx';
+import { buildUrl } from './urls.js';
 import darkTheme from './theme.js';
 
 function BlinkQualityInfo({ stack_id }) {
@@ -87,10 +88,6 @@ const StackTabs = ({ stack_type, stack, stack_id, pipeline, display }) => {
   const navigate = useNavigate();
   const params = useParams();
 
-  // Stack URLs carry pipeline + display but the filter is intrinsic
-  // (stack.filter). ViewPills still wants all three for the grammar;
-  // changing filter on a stack page would mean navigating to a sibling
-  // stack — out of scope here, so the filter pill is decorative.
   const view = (pipeline && display && stack?.filter)
     ? { pipeline, display, filter: stack.filter }
     : null;
@@ -99,15 +96,12 @@ const StackTabs = ({ stack_type, stack, stack_id, pipeline, display }) => {
   if (params.target_id) hierarchy.push({ type: 'target', id: params.target_id });
   hierarchy.push({ type: stack_type, id: stack_id });
 
-  // Stack route shape is /<...>/<stack_id>/<pipeline>/<display> — no
-  // filter segment (intrinsic). Build just hierarchy + pipeline +
-  // display rather than the canonical buildUrl shape.
+  // Filter pill changing to a different value means "show me the
+  // sibling stack for that filter under this target." Without a
+  // target_id we can't resolve siblings — fall back to ignoring the
+  // change. Pipeline/display swaps stay on this stack.
   const handleViewChange = (nextView) => {
-    if (nextView.filter !== stack?.filter) return;
-    const prefix = hierarchy.map((h) => `/${h.type}/${h.id}`).join('');
-    navigate(
-      `${prefix}/${encodeURIComponent(nextView.pipeline)}/${encodeURIComponent(nextView.display)}`,
-    );
+    navigate(buildUrl({ hierarchy, view: nextView }));
   };
 
   return (
