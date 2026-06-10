@@ -191,14 +191,46 @@ const AsiairPanel = () => {
     : summary.active > 0 ? "active"
     : "default";
 
-  // Chip label: keep the existing "N ASIAirs · M active" shape, which
-  // a tooltip can elaborate on. The icon shifts to a Warning glyph
-  // when the tone calls for it, mirroring the swap we shipped before.
-  const summaryNode = summary.total === 0
-    ? <Typography variant="body2" color="text.secondary">no ASIAirs</Typography>
-    : <Typography variant="body2">
-        {`${summary.total} ${summary.total === 1 ? "ASIAir" : "ASIAirs"} · ${summary.active} active`}
-      </Typography>;
+  // Chip label has three modes, picked from how many rigs are on the
+  // network right now:
+  //   - 0: "no ASIAirs" — actionable nothing-here signal.
+  //   - 1: name + activity, e.g. "ASIAIR_RC71 idle" or
+  //        "ASIAIR_RC71 capturing 13/60". The single-rig case is the
+  //        dominant one; an abstract count would read weirdly when
+  //        there's exactly one specific device to talk about.
+  //   - 2+: aggregate, e.g. "3 ASIAirs · 2 active". "How many of N are
+  //         working?" only becomes a useful question once N > 1.
+  let summaryNode;
+  if (rigs.length === 0) {
+    summaryNode = (
+      <Typography variant="body2" color="text.secondary">
+        no ASIAirs
+      </Typography>
+    );
+  } else if (rigs.length === 1) {
+    const r = rigs[0];
+    let activity;
+    if (!r.reachable) {
+      activity = "offline";
+    } else if (r.capture_state && r.capture_state !== "idle") {
+      activity = r.stack_total > 0
+        ? `capturing ${r.stack_done}/${r.stack_total}`
+        : "capturing";
+    } else {
+      activity = "idle";
+    }
+    summaryNode = (
+      <Typography variant="body2">
+        {`${r.label} ${activity}`}
+      </Typography>
+    );
+  } else {
+    summaryNode = (
+      <Typography variant="body2">
+        {`${rigs.length} ASIAirs · ${summary.active} active`}
+      </Typography>
+    );
+  }
 
   // AutoMode = "star + automation loop" — captures what an ASIAir
   // actually IS (an automation rig pointed at the sky) better than
