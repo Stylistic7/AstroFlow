@@ -171,6 +171,67 @@ def test_anchored_plus_pending_mix(stub_context):
     assert pending[0]["asiair_hostname"] == "b.local"
 
 
+def test_live_overlay_promotes_ap_ssid_and_goto_target(stub_context):
+    """When the live-poller has populated `device["live"]`, the row's
+    `ap_ssid` and `last_object` come from the live snapshot instead of
+    None / unset."""
+    stub_context.asiair_devices = [{
+        "ip": "10.0.0.28", "hostname": "asiair.local.",
+        "live": {
+            "reachable": True,
+            "ap_ssid": "ASIAIR_RC71",
+            "last_goto_target": "Vega",
+            "firmware": "13.41",
+        },
+    }]
+    stub_context.stacks = {"s": _stack("cam-hash-1", mins_ago=1)}
+
+    out = ps.compute_panel_state(now_epoch=_NOW_EPOCH)
+    (row,) = out["rigs"]
+    assert row["ap_ssid"] == "ASIAIR_RC71"
+    assert row["last_object"] == "Vega"
+    assert row["live"]["firmware"] == "13.41"
+
+
+def test_primary_asiair_picked_by_reachability(stub_context):
+    """When discovery returns two records for the same physical
+    ASIAir (one on a routable LAN IP, one on a link-local
+    169.254/16), the panel must promote live state from whichever
+    ONE answered the RPC. Picking by list order would surface
+    `reachable=False` data and miss the ap.ssid."""
+    stub_context.asiair_devices = [
+        {"ip": "169.254.25.148", "hostname": "asiair.local.",
+         "live": {"reachable": False, "ap_ssid": None}},
+        {"ip": "10.0.0.28", "hostname": "asiair.local.",
+         "live": {"reachable": True, "ap_ssid": "ASIAIR_RC71",
+                  "last_goto_target": "Vega"}},
+    ]
+    stub_context.stacks = {"s": _stack("cam-hash-x", mins_ago=1)}
+
+    out = ps.compute_panel_state(now_epoch=_NOW_EPOCH)
+    (row,) = out["rigs"]
+    assert row["ap_ssid"] == "ASIAIR_RC71"
+    assert row["asiair_ip"] == "10.0.0.28"
+    assert row["last_object"] == "Vega"
+
+
+def test_pending_row_carries_live_ap_ssid(stub_context):
+    """A discovered ASIAir with live state but no anchored camera
+    still gets the device-set name in its pending row — the user
+    can see 'this is ASIAIR_RC71, still anchoring'."""
+    stub_context.asiair_devices = [{
+        "ip": "10.0.0.28", "hostname": "asiair.local.",
+        "live": {"reachable": True, "ap_ssid": "ASIAIR_RC71"},
+    }]
+    stub_context.stacks = {}
+
+    out = ps.compute_panel_state(now_epoch=_NOW_EPOCH)
+    (row,) = out["rigs"]
+    assert row["anchored"] is False
+    assert row["ap_ssid"] == "ASIAIR_RC71"
+    assert row["live"]["reachable"] is True
+
+
 def test_anchored_row_picks_newest_stack_for_live_fields(stub_context):
     """When a camera has multiple stacks, the row's `last_filter` /
     `last_instrume` come from the most recently active one — what the

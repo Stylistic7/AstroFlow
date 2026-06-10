@@ -13,6 +13,7 @@ class SchedulerActor:
             Dict[str, Any]
         ] = []  # {"interval": float, "action": dict, "next": float}
         self._asiair_poller_task = None
+        self._asiair_live_poller_task = None
         self._run_task = asyncio.get_event_loop().create_task(self._run())
 
     async def add(
@@ -62,6 +63,39 @@ class SchedulerActor:
         except asyncio.CancelledError:
             pass
 
+    async def start_asiair_live_poller(
+        self, interval_s: float = 5.0, start_delay_s: float = 5.0,
+    ) -> None:
+        """Poll the discovered ASIAirs for live state (capture progress,
+        connected camera, last GoTo target, firmware/temp/location).
+
+        Separate from the SMB download poller because the cadences are
+        very different — file downloads happen on a 15-min cycle, but
+        live state needs to refresh every few seconds during an active
+        session. Runs in its own asyncio task with `to_thread`-wrapped
+        socket I/O so it doesn't share the download poller's timer.
+        """
+        if self._asiair_live_poller_task is not None:
+            return
+        self._asiair_live_poller_task = asyncio.get_event_loop().create_task(
+            self._asiair_live_poll_loop(interval_s, start_delay_s)
+        )
+
+    async def _asiair_live_poll_loop(
+        self, interval_s: float, start_delay_s: float,
+    ) -> None:
+        try:
+            await asyncio.sleep(start_delay_s)
+            while True:
+                try:
+                    from asiair.live_poller import tick
+                    await asyncio.to_thread(tick)
+                except Exception as e:
+                    print(f"### ASIAir live-poll raised, ignoring: {e}")
+                await asyncio.sleep(interval_s)
+        except asyncio.CancelledError:
+            pass
+
     async def _run(self) -> None:
         try:
             while True:
@@ -81,7 +115,9 @@ class SchedulerActor:
         state.enqueue.remote(action)
 
     async def stop(self) -> None:
-        for task in (self._run_task, self._asiair_poller_task):
+        for task in (
+            self._run_task, self._asiair_poller_task, self._asiair_live_poller_task,
+        ):
             if task is None:
                 continue
             task.cancel()

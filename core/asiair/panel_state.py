@@ -88,12 +88,25 @@ def compute_panel_state(now_epoch: float | None = None) -> dict[str, Any]:
     # Best-effort "via" attribution: there's no per-file ASIAir tag in
     # the download path today (the rig field is hardcoded "foo"; all
     # files land in `input_dirs[0]/{date}/`), so we can't tell which
-    # ASIAir delivered which Stack. v1 shows the first discovered
-    # ASIAir's hostname/IP on every anchored row; if multiple are
-    # discovered, the user infers the rest from row order.
-    primary_asiair = asiairs[0] if asiairs else None
+    # ASIAir delivered which Stack. v1 shows the FIRST REACHABLE
+    # ASIAir's hostname/IP on every anchored row. The same physical
+    # ASIAir often appears in discovery under multiple IPs (a routable
+    # LAN address AND a link-local 169.254/16 self-assigned one) —
+    # picking by reachability ensures we pull live state from the
+    # interface that actually answered, not whichever Bonjour record
+    # happened to land first.
+    primary_asiair = next(
+        (d for d in asiairs if (d.get("live") or {}).get("reachable")),
+        asiairs[0] if asiairs else None,
+    )
     primary_hostname = primary_asiair["hostname"] if primary_asiair else ""
     primary_ip = primary_asiair["ip"] if primary_asiair else ""
+    # The live-poller writes its snapshot to `device["live"]`. The
+    # device-set name (`ap.ssid`, e.g. "ASIAIR_RC71") and the most
+    # recent GoTo target etc. live here. We promote a few fields into
+    # every row so the UI can render them without knowing which
+    # device's `live` to pick from.
+    primary_live = (primary_asiair or {}).get("live") or {}
 
     rigs: list[dict[str, Any]] = []
     for camera_hash, group in by_camera.items():
@@ -119,14 +132,20 @@ def compute_panel_state(now_epoch: float | None = None) -> dict[str, Any]:
             "nickname": nicknames.get(camera_hash),
             "asiair_hostname": primary_hostname,
             "asiair_ip": primary_ip,
+            # Device-set name from the ASIAir AP's SSID (live-polled).
+            # The frontend's label precedence is: AstroFlow nickname >
+            # this ap_ssid > camera_hash_short.
+            "ap_ssid": primary_live.get("ap_ssid"),
             "last_image_mtime": last_image_mtime,
             "last_filter": getattr(primary_stack, "filter", None),
-            # Stack doesn't carry FITS OBJECT directly. We'd need a
-            # frame-header lookup, which is a per-row I/O hit; defer.
-            "last_object": None,
+            # Prefer the device's most recent GoTo target (live) over
+            # the stack-derived target (None today). Falls back when
+            # the live poll hasn't run or fetched nothing.
+            "last_object": primary_live.get("last_goto_target"),
             "last_instrume": getattr(primary_stack, "camera", None),
             "active_state": _band(last_image_mtime, now_epoch),
             "frames_until_anchor": None,
+            "live": primary_live or None,
         })
 
     # Pending rows: discovered ASIAirs in excess of known cameras get
@@ -137,6 +156,7 @@ def compute_panel_state(now_epoch: float | None = None) -> dict[str, Any]:
     for i in range(n_excess):
         dev = asiairs[len(by_camera) + i]
         host = dev.get("hostname") or dev.get("ip", "")
+        live = dev.get("live") or {}
         rigs.append({
             "key": f"pending:{host}",
             "anchored": False,
@@ -144,12 +164,14 @@ def compute_panel_state(now_epoch: float | None = None) -> dict[str, Any]:
             "nickname": None,
             "asiair_hostname": dev.get("hostname", ""),
             "asiair_ip": dev.get("ip", ""),
+            "ap_ssid": live.get("ap_ssid"),
             "last_image_mtime": 0.0,
             "last_filter": None,
-            "last_object": None,
-            "last_instrume": None,
+            "last_object": live.get("last_goto_target"),
+            "last_instrume": live.get("camera_name"),
             "active_state": "gray",
             "frames_until_anchor": None,
+            "live": live or None,
         })
 
     active = sum(1 for r in rigs if r["active_state"] == "green")

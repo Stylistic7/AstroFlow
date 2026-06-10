@@ -385,6 +385,10 @@ def _schedule_download_from_asiairs(
         interval_s=15 * 60,
         start_delay_s=30,
     )
+    scheduler.start_asiair_live_poller.remote(
+        interval_s=5.0,
+        start_delay_s=5.0,
+    )
 
     return state, []
 

@@ -41,15 +41,28 @@ const RigRow = ({ rig, onRename }) => {
   const [expanded, setExpanded] = useState(false);
   const [draftNickname, setDraftNickname] = useState(rig.nickname || "");
 
+  // Label precedence: AstroFlow nickname (set in this panel) >
+  // device-set ap.ssid from the ASIAir's WiFi AP (live-polled, e.g.
+  // "ASIAIR_RC71") > short fingerprint hash > "Awaiting fingerprint"
+  // for pending rows.
   const titleLine = rig.anchored
-    ? (rig.nickname || `Camera ${rig.camera_hash_short}`)
-    : `Awaiting fingerprint`;
+    ? (rig.nickname || rig.ap_ssid || `Camera ${rig.camera_hash_short}`)
+    : (rig.ap_ssid || `Awaiting fingerprint`);
 
   // Secondary line: last-image relative time + filter + target +
-  // which ASIAir we currently believe is delivering for this camera.
+  // which ASIAir we currently believe is delivering for this camera,
+  // plus live capture progress when the device is actually working.
   // Each segment is optional — only render the ones we have data for,
   // joined by " · ", to avoid the empty "·  · " runs that look broken.
   const secondaryParts = [];
+  const live = rig.live || null;
+  if (live && live.capture_state && live.capture_state !== "idle") {
+    if (live.stack_total > 0) {
+      secondaryParts.push(`capturing ${live.stack_done}/${live.stack_total}`);
+    } else {
+      secondaryParts.push(`${live.capture_state}`);
+    }
+  }
   if (rig.last_image_mtime) {
     secondaryParts.push(`last image: ${_formatRelativeTime(rig.last_image_mtime)}`);
   }
@@ -99,6 +112,53 @@ const RigRow = ({ rig, onRename }) => {
               <Typography variant="caption" color="text.secondary" component="div">
                 ASIAir: {rig.asiair_hostname || "unknown"} ({rig.asiair_ip || "?"})
               </Typography>
+              {live && live.reachable && (
+                <Box sx={{ mt: 1, pl: 1, borderLeft: "2px solid", borderColor: "divider" }}>
+                  <Typography variant="caption" color="text.secondary" component="div" sx={{ fontWeight: 600 }}>
+                    Live
+                  </Typography>
+                  {live.ap_ssid && (
+                    <Typography variant="caption" color="text.secondary" component="div">
+                      device name: {live.ap_ssid}
+                    </Typography>
+                  )}
+                  {live.firmware && (
+                    <Typography variant="caption" color="text.secondary" component="div">
+                      firmware: {live.firmware}
+                    </Typography>
+                  )}
+                  {live.model && (
+                    <Typography variant="caption" color="text.secondary" component="div">
+                      model: {live.model}
+                    </Typography>
+                  )}
+                  {live.focal_len_mm && (
+                    <Typography variant="caption" color="text.secondary" component="div">
+                      focal length: {live.focal_len_mm} mm
+                    </Typography>
+                  )}
+                  {(live.camera_state || live.focuser_state) && (
+                    <Typography variant="caption" color="text.secondary" component="div">
+                      camera: {live.camera_state || "?"}, focuser: {live.focuser_state || "?"}
+                    </Typography>
+                  )}
+                  {typeof live.pi_temp_c === "number" && (
+                    <Typography variant="caption" color="text.secondary" component="div">
+                      Pi CPU temp: {live.pi_temp_c.toFixed(1)}°C
+                    </Typography>
+                  )}
+                  {Array.isArray(live.location) && live.location.length === 2 && (
+                    <Typography variant="caption" color="text.secondary" component="div">
+                      observing at: {live.location[1].toFixed(4)}°N, {live.location[0].toFixed(4)}°E
+                    </Typography>
+                  )}
+                  {live.queried_at && (
+                    <Typography variant="caption" color="text.secondary" component="div">
+                      last polled: {_formatRelativeTime(live.queried_at)}
+                    </Typography>
+                  )}
+                </Box>
+              )}
               <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 1 }}>
                 <TextField
                   size="small"
@@ -114,12 +174,33 @@ const RigRow = ({ rig, onRename }) => {
             </>
           )}
           {!rig.anchored && (
-            <Tooltip title="The camera's fingerprint anchors after ~20 frames from it have been processed. The rename input unlocks then.">
-              <Typography variant="caption" color="text.secondary" component="div">
-                ASIAir: {rig.asiair_hostname || "unknown"} ({rig.asiair_ip || "?"}) — naming unlocks
-                once the fingerprint anchors.
-              </Typography>
-            </Tooltip>
+            <>
+              <Tooltip title="The camera's fingerprint anchors after ~20 frames from it have been processed. The rename input unlocks then.">
+                <Typography variant="caption" color="text.secondary" component="div">
+                  ASIAir: {rig.asiair_hostname || "unknown"} ({rig.asiair_ip || "?"}) — naming unlocks
+                  once the fingerprint anchors.
+                </Typography>
+              </Tooltip>
+              {live && live.reachable && (
+                <Box sx={{ mt: 1, pl: 1, borderLeft: "2px solid", borderColor: "divider" }}>
+                  {live.ap_ssid && (
+                    <Typography variant="caption" color="text.secondary" component="div">
+                      device name: {live.ap_ssid}
+                    </Typography>
+                  )}
+                  {live.firmware && (
+                    <Typography variant="caption" color="text.secondary" component="div">
+                      firmware: {live.firmware}
+                    </Typography>
+                  )}
+                  {typeof live.pi_temp_c === "number" && (
+                    <Typography variant="caption" color="text.secondary" component="div">
+                      Pi CPU temp: {live.pi_temp_c.toFixed(1)}°C
+                    </Typography>
+                  )}
+                </Box>
+              )}
+            </>
           )}
         </Box>
       )}
