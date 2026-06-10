@@ -16,6 +16,7 @@ import AstroFlowContext from './AstroFlowContext.jsx';
 import DropdownChip from './DropdownChip.jsx';
 import StatusDot from './microviz/StatusDot.jsx';
 import Sparkline from './microviz/Sparkline.jsx';
+import DualSparkline from './microviz/DualSparkline.jsx';
 
 const formatSpeed = (mbps) => {
   if (!mbps) return "?";
@@ -118,28 +119,32 @@ const RayStatus = () => {
       ? `${healthy}/${total} nodes`
       : `${healthy} ${healthy === 1 ? 'node' : 'nodes'}`;
 
+    // Single combined chart. Two overlaid lines on shared [0, 100]
+    // axes — CPU in blue (info), memory color-shifts with pressure
+    // (green → amber → red). No labels, no inline percentages; the
+    // user learns the colors at a glance, and the expanded dropdown
+    // carries the fully-labeled view for when they want to read
+    // specific numbers.
+    const memColor =
+      isMemError ? "#e57373"        // error.light
+      : isMemWarning ? "#ffcc80"    // warning.light
+      : "#81c784";                   // success.light
+    const cpuColor = "#64b5f6";     // info.light
+
     summaryNode = (
-      <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
         <Typography variant="body2">
           {`${nodeText} · ${rayStatus.totalCPUs} CPUs · ${Math.round(rayStatus.totalRAM)} GB`}
         </Typography>
         {cpuHistory.length > 0 && (
-          <Box sx={{ display: "flex", alignItems: "center", gap: 0.25, ml: 0.5 }}>
-            <Typography variant="caption" color="text.secondary">CPU</Typography>
-            <Sparkline values={cpuHistory} width={48} height={14} domain={[0, 100]} />
-            <Typography variant="body2" color="text.secondary" sx={{ minWidth: 32 }}>
-              {`${Math.round(cpuLatest)}%`}
-            </Typography>
-          </Box>
-        )}
-        {memHistory.length > 0 && (
-          <Box sx={{ display: "flex", alignItems: "center", gap: 0.25 }}>
-            <Typography variant="caption" color="text.secondary">MEM</Typography>
-            <Sparkline values={memHistory} width={48} height={14} domain={[0, 100]} />
-            <Typography variant="body2" color="text.secondary" sx={{ minWidth: 32 }}>
-              {`${Math.round(memLatest)}%`}
-            </Typography>
-          </Box>
+          <DualSparkline
+            primary={cpuHistory}
+            secondary={memHistory}
+            primaryColor={cpuColor}
+            secondaryColor={memColor}
+            width={96}
+            height={32}
+          />
         )}
       </Box>
     );
@@ -153,6 +158,47 @@ const RayStatus = () => {
       tooltipTitle="Ray cluster"
       ariaLabel="Ray cluster status"
     >
+        {hasCluster && cpuHistory.length > 0 && (
+          <Box sx={{ px: 2, py: 1.5 }}>
+            <DualSparkline
+              primary={cpuHistory}
+              secondary={memHistory}
+              primaryColor="#64b5f6"
+              secondaryColor={
+                isMemError ? "#e57373"
+                : isMemWarning ? "#ffcc80"
+                : "#81c784"
+              }
+              width={280}
+              height={80}
+              strokeWidth={2}
+            />
+            <Box sx={{ display: "flex", justifyContent: "space-around", mt: 0.5 }}>
+              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                <Box sx={{ width: 10, height: 2, backgroundColor: "#64b5f6" }} />
+                <Typography variant="caption" color="text.secondary">
+                  {`CPU ${Math.round(cpuLatest)}%`}
+                </Typography>
+              </Box>
+              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                <Box sx={{
+                  width: 10, height: 2,
+                  backgroundColor: isMemError ? "#e57373"
+                    : isMemWarning ? "#ffcc80"
+                    : "#81c784",
+                }} />
+                <Typography variant="caption" color="text.secondary">
+                  {`memory ${Math.round(memLatest)}%`}
+                </Typography>
+              </Box>
+              {objLatest !== null && (
+                <Typography variant="caption" color="text.secondary">
+                  {`object store ${Math.round(objLatest)}%`}
+                </Typography>
+              )}
+            </Box>
+          </Box>
+        )}
         {hasCluster && (
           <List dense>
             {rayStatus.nodes.map((node, index) => (
