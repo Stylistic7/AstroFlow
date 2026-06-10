@@ -1,10 +1,14 @@
 """1 Hz cluster-utilization sampler for the Ray status chip's
 sparkline.
 
-Runs as a gevent greenlet inside the gunicorn worker — the same
-process the Flask app serves from — so the `/api/ray/status`
-endpoint can read the rolling history directly out of module-level
-state without crossing a process or a diskcache boundary.
+Runs as a gevent greenlet inside the SSE-stream gunicorn worker
+(which is the only worker that loads `gunicorn_config.py:post_fork`)
+and persists samples to diskcache via `local_context` so the OTHER
+gunicorn worker — the main Flask app, which actually serves
+`/api/ray/status` — can read them out across the process boundary.
+
+The diskcache hit per write is tiny (3 × 60 floats × 8 B ≈ 1.5 KB
+per second) — well under any reasonable budget.
 
 History is intentionally short (60 samples at 1 Hz = the last
 minute). The chip's job is "is the cluster busy or idle right now?",
@@ -21,7 +25,6 @@ each worker — both deferrable.
 """
 from __future__ import annotations
 
-import collections
 import time
 from typing import Any
 
@@ -29,17 +32,31 @@ from typing import Any
 _HISTORY_LEN = 60
 _SAMPLE_INTERVAL_S = 1.0
 
+# Diskcache keys. Three lockstep streams of last-60 samples.
+_CPU_KEY = "ray_metrics_cpu_history"
+_MEM_KEY = "ray_metrics_mem_history"
+_OBJ_KEY = "ray_metrics_obj_history"
 
-# Module-level ring buffers. Read concurrently by the Flask endpoint
-# off the gevent event loop; the GIL plus gevent's cooperative
-# scheduling means appends + slicing don't need an explicit lock.
-#
-# Three streams sampled in lockstep so the indices line up — the
-# frontend can read sample i across all three and trust it's the
-# same wall-clock moment.
-_cpu_history: collections.deque[float] = collections.deque(maxlen=_HISTORY_LEN)
-_mem_history: collections.deque[float] = collections.deque(maxlen=_HISTORY_LEN)
-_obj_history: collections.deque[float] = collections.deque(maxlen=_HISTORY_LEN)
+
+def _push_sample(key: str, value: float) -> None:
+    """Append `value` to the rolling history at `key`, trim to the
+    last `_HISTORY_LEN` samples, write back. Each write is a single
+    diskcache transaction so concurrent readers see a consistent
+    list (never a half-trimmed one)."""
+    from context import local_context as context
+    prev = context.get(key, None) or []
+    if not isinstance(prev, list):
+        prev = []
+    prev.append(value)
+    if len(prev) > _HISTORY_LEN:
+        prev = prev[-_HISTORY_LEN:]
+    context[key] = prev
+
+
+def _read_history(key: str) -> list[float]:
+    from context import local_context as context
+    val = context.get(key, None)
+    return val if isinstance(val, list) else []
 
 
 def _utilization_pct(total: dict, avail: dict, key: str) -> float | None:
@@ -74,13 +91,13 @@ def sample_once() -> None:
         avail = ray.available_resources() or {}
         cpu = _utilization_pct(total, avail, "CPU")
         if cpu is not None:
-            _cpu_history.append(cpu)
+            _push_sample(_CPU_KEY, cpu)
         mem = _utilization_pct(total, avail, "memory")
         if mem is not None:
-            _mem_history.append(mem)
+            _push_sample(_MEM_KEY, mem)
         obj = _utilization_pct(total, avail, "object_store_memory")
         if obj is not None:
-            _obj_history.append(obj)
+            _push_sample(_OBJ_KEY, obj)
     except Exception as e:
         import os
         if os.environ.get("ASTROFLOW_DEBUG_RAY_METRICS"):
@@ -88,24 +105,23 @@ def sample_once() -> None:
 
 
 def get_cpu_history() -> list[float]:
-    """Snapshot the current CPU history as a plain list — what the
-    Flask endpoint serializes into the JSON response. Returns the
-    samples oldest-first; the sparkline renders left-to-right
-    accordingly."""
-    return list(_cpu_history)
+    """Snapshot the current CPU history. The diskcache read is on
+    the hot path of `/api/ray/status`, but it's a single small list
+    lookup — sub-millisecond."""
+    return _read_history(_CPU_KEY)
 
 
 def get_mem_history() -> list[float]:
     """Same shape as `get_cpu_history` but for scheduled cluster
     memory utilization."""
-    return list(_mem_history)
+    return _read_history(_MEM_KEY)
 
 
 def get_object_store_history() -> list[float]:
     """Same shape but for Ray's plasma object store. Worth its own
     series because object-store pressure is what triggers spilling
     to disk (slow) and downstream OOMs."""
-    return list(_obj_history)
+    return _read_history(_OBJ_KEY)
 
 
 def start_polling() -> None:
