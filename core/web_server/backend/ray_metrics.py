@@ -33,41 +33,79 @@ _SAMPLE_INTERVAL_S = 1.0
 # Module-level ring buffers. Read concurrently by the Flask endpoint
 # off the gevent event loop; the GIL plus gevent's cooperative
 # scheduling means appends + slicing don't need an explicit lock.
+#
+# Three streams sampled in lockstep so the indices line up — the
+# frontend can read sample i across all three and trust it's the
+# same wall-clock moment.
 _cpu_history: collections.deque[float] = collections.deque(maxlen=_HISTORY_LEN)
+_mem_history: collections.deque[float] = collections.deque(maxlen=_HISTORY_LEN)
+_obj_history: collections.deque[float] = collections.deque(maxlen=_HISTORY_LEN)
+
+
+def _utilization_pct(total: dict, avail: dict, key: str) -> float | None:
+    """`(total - available) / total` as a 0-100 percentage. None when
+    Ray hasn't told us about this resource (cluster not up yet, or
+    the key just isn't tracked)."""
+    total_val = float(total.get(key, 0))
+    if total_val <= 0:
+        return None
+    used = total_val - float(avail.get(key, 0))
+    return max(0.0, min(100.0, (used / total_val) * 100.0))
 
 
 def sample_once() -> None:
-    """Sample current cluster CPU utilization and append to history.
+    """Sample current cluster CPU / memory / object-store utilization
+    and append to history.
 
-    Best-effort — swallows every exception. Ray not initialized,
-    transient cluster glitches, etc. just produce no sample this
-    tick; the deque keeps its prior contents and the sparkline
-    visibly flatlines if the cluster goes away."""
+    Memory and object-store numbers track Ray's SCHEDULED resources
+    (what tasks have declared via `memory=...`), not actual RSS on
+    each node. For most workloads that's a reliable proxy for
+    pressure — Ray scheduling near 100% means no room for new tasks
+    — but it isn't the same as "my Macs are about to swap". If we
+    grow a real-RSS view, that's a separate per-node sampler.
+
+    Best-effort: swallows every exception, so Ray-not-yet-initialized
+    just produces no samples this tick. The deques keep their prior
+    contents and the sparklines flatline visibly when the cluster
+    goes away."""
     try:
         import ray
         total = ray.cluster_resources() or {}
         avail = ray.available_resources() or {}
-        total_cpu = float(total.get("CPU", 0))
-        if total_cpu <= 0:
-            return
-        used_cpu = total_cpu - float(avail.get("CPU", 0))
-        pct = max(0.0, min(100.0, (used_cpu / total_cpu) * 100.0))
-        _cpu_history.append(pct)
+        cpu = _utilization_pct(total, avail, "CPU")
+        if cpu is not None:
+            _cpu_history.append(cpu)
+        mem = _utilization_pct(total, avail, "memory")
+        if mem is not None:
+            _mem_history.append(mem)
+        obj = _utilization_pct(total, avail, "object_store_memory")
+        if obj is not None:
+            _obj_history.append(obj)
     except Exception as e:
-        # Don't even log under normal "ray not yet initialized" —
-        # noise dominates signal. Only log if the user wires
-        # ASTROFLOW_DEBUG_RAY_METRICS.
         import os
         if os.environ.get("ASTROFLOW_DEBUG_RAY_METRICS"):
             print(f"### ray_metrics sample failed: {e}")
 
 
 def get_cpu_history() -> list[float]:
-    """Snapshot the current history as a plain list — what the
+    """Snapshot the current CPU history as a plain list — what the
     Flask endpoint serializes into the JSON response. Returns the
     samples oldest-first; the sparkline renders left-to-right
     accordingly."""
     return list(_cpu_history)
+
+
+def get_mem_history() -> list[float]:
+    """Same shape as `get_cpu_history` but for scheduled cluster
+    memory utilization."""
+    return list(_mem_history)
+
+
+def get_object_store_history() -> list[float]:
+    """Same shape but for Ray's plasma object store. Worth its own
+    series because object-store pressure is what triggers spilling
+    to disk (slow) and downstream OOMs."""
+    return list(_obj_history)
 
 
 def start_polling() -> None:

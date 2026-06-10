@@ -66,12 +66,31 @@ const RayStatus = () => {
 
   const hasCluster = Object.keys(rayStatus).length > 0;
 
-  // Pick the tone first — drives icon color AND the chip's background
-  // tint. SSE disconnect is more urgent than an unhealthy node count
-  // (the latter is data, the former means we have no data at all).
+  // Latest sample from each utilization stream — used both to render
+  // the trailing "X% Y%" numbers and to drive the icon's tone when
+  // memory pressure or object-store pressure crosses a threshold.
+  const cpuHistory = rayStatus.cpuHistory || [];
+  const memHistory = rayStatus.memHistory || [];
+  const objHistory = rayStatus.objectStoreHistory || [];
+  const cpuLatest = cpuHistory.length ? cpuHistory[cpuHistory.length - 1] : null;
+  const memLatest = memHistory.length ? memHistory[memHistory.length - 1] : null;
+  const objLatest = objHistory.length ? objHistory[objHistory.length - 1] : null;
+
+  // Memory pressure thresholds. Scheduled-memory > 85% means Ray's
+  // running out of room to place new tasks; > 95% means tasks are
+  // probably starting to block. Object store > 75% means imminent
+  // spill-to-disk (slow); > 90% means cluster is struggling. CPU
+  // saturation alone isn't a red flag — busy is good.
+  const isMemError = (memLatest ?? 0) > 95 || (objLatest ?? 0) > 90;
+  const isMemWarning = (memLatest ?? 0) > 85 || (objLatest ?? 0) > 75;
+
+  // Pick the tone — order matters, severest first. SSE disconnect
+  // ("we have no data at all") is the most urgent.
   const tone =
     !sseConnected ? "error"
+    : isMemError ? "error"
     : hasCluster && rayStatus.unhealthyNodes > 0 ? "warning"
+    : isMemWarning ? "warning"
     : hasCluster ? "active"
     : "default";
 
@@ -86,8 +105,8 @@ const RayStatus = () => {
     summaryNode = <Typography variant="body2" color="text.secondary">no cluster</Typography>;
   } else {
     // No leading StatusDot here — the Hub icon already carries the
-    // amber/red tone when an unhealthy node count or SSE disconnect
-    // fires, and a second dot saying the same thing is redundant.
+    // amber/red tone when an unhealthy node count, memory pressure,
+    // or SSE disconnect fires, and a second dot would be redundant.
     //
     // Node display is "X/Y" only when something died — surfacing a
     // missing worker as a digit (in addition to the icon's tone) so
@@ -98,10 +117,6 @@ const RayStatus = () => {
     const nodeText = total > healthy
       ? `${healthy}/${total} nodes`
       : `${healthy} ${healthy === 1 ? 'node' : 'nodes'}`;
-    const cpuHistory = rayStatus.cpuHistory || [];
-    const cpuLatest = cpuHistory.length > 0
-      ? cpuHistory[cpuHistory.length - 1]
-      : null;
 
     summaryNode = (
       <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
@@ -109,12 +124,22 @@ const RayStatus = () => {
           {`${nodeText} · ${rayStatus.totalCPUs} CPUs · ${Math.round(rayStatus.totalRAM)} GB`}
         </Typography>
         {cpuHistory.length > 0 && (
-          <>
-            <Sparkline values={cpuHistory} width={60} height={14} domain={[0, 100]} />
-            <Typography variant="body2" color="text.secondary">
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.25, ml: 0.5 }}>
+            <Typography variant="caption" color="text.secondary">CPU</Typography>
+            <Sparkline values={cpuHistory} width={48} height={14} domain={[0, 100]} />
+            <Typography variant="body2" color="text.secondary" sx={{ minWidth: 32 }}>
               {`${Math.round(cpuLatest)}%`}
             </Typography>
-          </>
+          </Box>
+        )}
+        {memHistory.length > 0 && (
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.25 }}>
+            <Typography variant="caption" color="text.secondary">MEM</Typography>
+            <Sparkline values={memHistory} width={48} height={14} domain={[0, 100]} />
+            <Typography variant="body2" color="text.secondary" sx={{ minWidth: 32 }}>
+              {`${Math.round(memLatest)}%`}
+            </Typography>
+          </Box>
         )}
       </Box>
     );

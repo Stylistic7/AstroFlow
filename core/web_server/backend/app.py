@@ -486,12 +486,13 @@ def ray_status():
             }
         )
 
-    # Pull the rolling cluster-CPU% history written by the 1 Hz
-    # sampler in `web_server.backend.ray_metrics`. Empty list when
+    # Pull the rolling utilization history written by the 1 Hz
+    # sampler in `web_server.backend.ray_metrics`. Empty lists when
     # the sampler hasn't ticked yet (very first second after worker
     # boot, or Ray not yet initialized).
-    from web_server.backend.ray_metrics import get_cpu_history
-    cpu_history = get_cpu_history()
+    from web_server.backend.ray_metrics import (
+        get_cpu_history, get_mem_history, get_object_store_history,
+    )
 
     return jsonify(
         {
@@ -504,8 +505,12 @@ def ray_status():
             "totalCPUs": total_cpus,
             "totalRAM": total_ram,
             "nodes": node_list,
-            # Last 60 samples of cluster CPU utilization, oldest first.
-            "cpuHistory": cpu_history,
+            # Last 60 samples of each utilization stream, oldest first.
+            # CPU / memory / object-store are sampled in lockstep so
+            # indices line up.
+            "cpuHistory": get_cpu_history(),
+            "memHistory": get_mem_history(),
+            "objectStoreHistory": get_object_store_history(),
         }
     )
 
