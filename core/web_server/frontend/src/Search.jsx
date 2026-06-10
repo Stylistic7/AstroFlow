@@ -274,7 +274,13 @@ export function VerticalDivider({ height = 24, color = 'grey.400', marginX = 2 }
 }
 
 export default function PrimarySearchAppBar() {
-  const { stacks, targets, mosaics, calibrationStacks, showQuarantined, toggleShowQuarantined, quarantineCount } = useContext(AstroFlowContext);
+  const { stacks, targets, mosaics, calibrationStacks, showQuarantined, toggleShowQuarantined, quarantineCount, asiairDevices } = useContext(AstroFlowContext);
+
+  // Hide the ASIAir chip + its divider entirely when no ASIAir is
+  // currently reachable on the network. Reduces toolbar noise when
+  // the user is at their desk doing post-processing rather than at
+  // the scope.
+  const asiairReachable = (asiairDevices?.rigs || []).some(r => r.reachable);
   const navigate = useNavigate();
 
   const index = useMemo(() => {
@@ -493,8 +499,12 @@ export default function PrimarySearchAppBar() {
           <VerticalDivider />
           <RayStatus />
           <VerticalDivider />
-          <AsiairPanel />
-          <VerticalDivider />
+          {asiairReachable && (
+            <>
+              <AsiairPanel />
+              <VerticalDivider />
+            </>
+          )}
           <Box sx={{ display: { xs: 'none', md: 'flex' } }}>
             <IconButton
               size="large"

@@ -191,28 +191,32 @@ const AsiairPanel = () => {
     : summary.active > 0 ? "active"
     : "default";
 
-  // Chip label has three modes, picked from how many rigs are on the
-  // network right now:
-  //   - 0: "no ASIAirs" — actionable nothing-here signal.
-  //   - 1: name + activity, e.g. "ASIAIR_RC71 idle" or
-  //        "ASIAIR_RC71 capturing 13/60". The single-rig case is the
-  //        dominant one; an abstract count would read weirdly when
-  //        there's exactly one specific device to talk about.
-  //   - 2+: aggregate, e.g. "3 ASIAirs · 2 active". "How many of N are
-  //         working?" only becomes a useful question once N > 1.
+  // Chip text counts only REACHABLE rigs — a Bonjour-stale record
+  // that isn't actually answering TCP polls is effectively absent
+  // for the user's purposes. The dropdown body still renders every
+  // discovered rig (with its own per-row state), so diagnostic info
+  // isn't lost; the chip just stays honest about what's live.
+  //
+  // Three modes:
+  //   - 0 reachable: "0 ASIAir" — uniform with the 2+ form.
+  //   - 1 reachable: name + activity, e.g. "ASIAIR_RC71 idle" or
+  //        "ASIAIR_RC71 capturing 13/60". One specific device, one
+  //        word for what it's doing.
+  //   - 2+ reachable: aggregate, e.g. "3 ASIAir · 2 active".
+  //
+  // Brand name stays "ASIAir" (no plural "s") to match the product.
+  const reachableRigs = rigs.filter(r => r.reachable);
   let summaryNode;
-  if (rigs.length === 0) {
+  if (reachableRigs.length === 0) {
     summaryNode = (
       <Typography variant="body2" color="text.secondary">
-        no ASIAirs
+        0 ASIAir
       </Typography>
     );
-  } else if (rigs.length === 1) {
-    const r = rigs[0];
+  } else if (reachableRigs.length === 1) {
+    const r = reachableRigs[0];
     let activity;
-    if (!r.reachable) {
-      activity = "offline";
-    } else if (r.capture_state && r.capture_state !== "idle") {
+    if (r.capture_state && r.capture_state !== "idle") {
       activity = r.stack_total > 0
         ? `capturing ${r.stack_done}/${r.stack_total}`
         : "capturing";
@@ -227,7 +231,7 @@ const AsiairPanel = () => {
   } else {
     summaryNode = (
       <Typography variant="body2">
-        {`${rigs.length} ASIAirs · ${summary.active} active`}
+        {`${reachableRigs.length} ASIAir · ${summary.active} active`}
       </Typography>
     );
   }
