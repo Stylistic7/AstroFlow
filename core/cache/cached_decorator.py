@@ -161,6 +161,22 @@ def make_cached_decorator(
             if needs_metadata_upgrade:
                 from file_io.types import WithSidecar
                 if isinstance(cached, WithSidecar):
+                    # File-existence check BEFORE the upgrade.
+                    # `compute_image_metadata` opens the file to derive
+                    # content_hash; if the file was reclaimed by an
+                    # earlier ephemeral cleanup, the upgrade would
+                    # raise FileNotFoundError and kill the task.
+                    # Treat as a stale miss instead, same as the
+                    # post-upgrade check below — the producer will be
+                    # re-run on the miss path and write the new shape
+                    # natively.
+                    pre_missing = _cached_path_missing(cached)
+                    if pre_missing is not None:
+                        debug_print(
+                            f"cache hit on stale pre-upgrade entry: {key} -> "
+                            f"{pre_missing} no longer on disk, treating as miss"
+                        )
+                        return key, call_hash, False, None
                     from metadata.image_metadata import compute_image_metadata
                     cached = compute_image_metadata._function(cached)
                     _resolve_cache()[key] = strip_refs(cached)
