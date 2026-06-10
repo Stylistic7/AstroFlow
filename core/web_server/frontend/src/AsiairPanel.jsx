@@ -1,7 +1,6 @@
 import React, { useState, useContext } from "react";
 import {
   Box,
-  Menu,
   MenuItem,
   Typography,
   IconButton,
@@ -11,6 +10,7 @@ import {
 } from "@mui/material";
 import { ExpandMore, ExpandLess, Circle, Wifi, Warning } from "@mui/icons-material";
 import AstroFlowContext from "./AstroFlowContext.jsx";
+import DropdownChip from "./DropdownChip.jsx";
 
 
 const _STATE_COLOR = {
@@ -169,48 +169,42 @@ const RigRow = ({ rig }) => {
 
 const AsiairPanel = () => {
   const { asiairDevices } = useContext(AstroFlowContext);
-  const [anchorEl, setAnchorEl] = useState(null);
 
   const rigs = (asiairDevices && asiairDevices.rigs) || [];
   const summary = (asiairDevices && asiairDevices.summary) || { total: 0, active: 0, warnings: 0 };
   const warnings = summary.warnings || 0;
 
-  const label = summary.total === 0
-    ? "no ASIAirs"
-    : `${summary.total} ${summary.total === 1 ? "ASIAir" : "ASIAirs"} · ${summary.active} active`;
-  const labelColor = summary.total === 0 ? "text.secondary" : "text.primary";
+  // The tone drives both the icon color and the chip's background
+  // tint. Warning state wins; otherwise we tint green when anything
+  // is actively capturing, leave default when idle.
+  const tone =
+    warnings > 0 ? "warning"
+    : summary.active > 0 ? "active"
+    : "default";
+
+  // Chip label: keep the existing "N ASIAirs · M active" shape, which
+  // a tooltip can elaborate on. The icon shifts to a Warning glyph
+  // when the tone calls for it, mirroring the swap we shipped before.
+  const summaryNode = summary.total === 0
+    ? <Typography variant="body2" color="text.secondary">no ASIAirs</Typography>
+    : <Typography variant="body2">
+        {`${summary.total} ${summary.total === 1 ? "ASIAir" : "ASIAirs"} · ${summary.active} active`}
+      </Typography>;
+
+  const icon = warnings > 0 ? <Warning /> : <Wifi />;
+  const tooltipTitle =
+    warnings > 0 ? `${warnings} ASIAir(s) capturing without a healthy guide loop`
+    : summary.total === 0 ? "No ASIAirs discovered on the LAN"
+    : "ASIAir devices";
 
   return (
-    <>
-      <Box
-        sx={{
-          display: "flex",
-          alignItems: "center",
-          cursor: "pointer",
-          padding: "8px",
-          borderRadius: "8px",
-        }}
-        onClick={(event) => setAnchorEl(event.currentTarget)}
-      >
-        {warnings > 0 ? (
-          <Tooltip title={`${warnings} ASIAir(s) capturing without a healthy guide loop`}>
-            <Warning sx={{ fontSize: 16, mr: 1, color: "warning.main" }} />
-          </Tooltip>
-        ) : (
-          <Wifi sx={{ fontSize: 16, mr: 1, color: labelColor }} />
-        )}
-        <Typography variant="body2" sx={{ mr: 1, color: labelColor }}>
-          {label}
-        </Typography>
-        <IconButton size="small">{anchorEl ? <ExpandLess /> : <ExpandMore />}</IconButton>
-      </Box>
-
-      <Menu
-        anchorEl={anchorEl}
-        open={Boolean(anchorEl)}
-        onClose={() => setAnchorEl(null)}
-        slotProps={{ paper: { sx: { minWidth: 360, maxWidth: 480 } } }}
-      >
+    <DropdownChip
+      icon={icon}
+      summary={summaryNode}
+      tone={tone}
+      tooltipTitle={tooltipTitle}
+      ariaLabel="ASIAir devices"
+    >
         {rigs.length === 0 && (
           <MenuItem disabled>
             <Box>
@@ -231,8 +225,7 @@ const AsiairPanel = () => {
             ))}
           </List>
         )}
-      </Menu>
-    </>
+    </DropdownChip>
   );
 };
 

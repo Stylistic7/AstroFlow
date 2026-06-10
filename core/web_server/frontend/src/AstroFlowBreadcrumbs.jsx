@@ -18,6 +18,7 @@ import PanoramaHorizontalIcon from '@mui/icons-material/PanoramaHorizontal';
 import RuleIcon from '@mui/icons-material/Rule';
 
 import AstroFlowContext from './AstroFlowContext.jsx';
+import Chevron from './Chevron.jsx';
 import QuarantineToggle from './QuarantineToggle.jsx';
 import ShoppingCartMenu from './ShoppingCartMenu.jsx';
 import SuggestionBadge from './suggestions/SuggestionBadge.jsx';
@@ -71,9 +72,7 @@ function PillCrumb({ icon, options, active, exists, onPick, fontColor, activeCol
                 }}
             >
                 {label(active)}
-                <Box component="span" sx={{ fontSize: '0.7em', color: fontColor }}>
-                    ▾
-                </Box>
+                <Chevron open={open} size={14} color={fontColor} />
             </Box>
             <Menu
                 anchorEl={anchorRef.current}

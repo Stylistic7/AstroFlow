@@ -1,10 +1,8 @@
 import React, { useState, useContext, useEffect } from "react";
 import {
   Box,
-  Menu,
   MenuItem,
   Typography,
-  IconButton,
   List,
   ListItem,
   ListItemText,
@@ -13,8 +11,10 @@ import {
   FormControl,
   Select,
 } from "@mui/material";
-import { ExpandMore, ExpandLess, Circle } from "@mui/icons-material";
+import Hub from "@mui/icons-material/Hub";
 import AstroFlowContext from './AstroFlowContext.jsx';
+import DropdownChip from './DropdownChip.jsx';
+import StatusDot from './microviz/StatusDot.jsx';
 
 const formatSpeed = (mbps) => {
   if (!mbps) return "?";
@@ -25,7 +25,6 @@ const formatSpeed = (mbps) => {
 const RayStatus = () => {
   const { rayStatus, sseConnected } = useContext(AstroFlowContext);
 
-  const [anchorEl, setAnchorEl] = useState(null);
   const [isHeadNode, setIsHeadNode] = useState(false);
   const [clusterInterface, setClusterInterface] = useState("");
   const [interfaces, setInterfaces] = useState([]);
@@ -64,52 +63,52 @@ const RayStatus = () => {
     patchSettings({ cluster_interface: value || null });
   };
 
+  const hasCluster = Object.keys(rayStatus).length > 0;
+
+  // Pick the tone first — drives icon color AND the chip's background
+  // tint. SSE disconnect is more urgent than an unhealthy node count
+  // (the latter is data, the former means we have no data at all).
+  const tone =
+    !sseConnected ? "error"
+    : hasCluster && rayStatus.unhealthyNodes > 0 ? "warning"
+    : hasCluster ? "active"
+    : "default";
+
+  // Summary slot: a status dot + the most compressed cluster summary.
+  // When disconnected we surface that explicitly so the chip self-
+  // explains; when there's no cluster yet we say "no cluster" rather
+  // than an empty string.
+  let summaryNode;
   if (!sseConnected) {
-    return (
-      <Box sx={{ display: "flex", alignItems: "center", padding: "8px" }}>
-        <Circle sx={{ fontSize: 10, color: "error.light", mr: 1 }} />
-        <Typography variant="body2" color="error.light">
-          Disconnected
+    summaryNode = <Typography variant="body2" color="error.light">disconnected</Typography>;
+  } else if (!hasCluster) {
+    summaryNode = <Typography variant="body2" color="text.secondary">no cluster</Typography>;
+  } else {
+    summaryNode = (
+      <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+        <StatusDot tone={rayStatus.unhealthyNodes > 0 ? "warning" : "active"} />
+        <Typography variant="body2">
+          {`${rayStatus.healthyNodes} ${rayStatus.healthyNodes === 1 ? 'node' : 'nodes'} · ${rayStatus.totalCPUs} CPUs · ${Math.round(rayStatus.totalRAM)} GB`}
         </Typography>
       </Box>
     );
   }
 
-  const hasCluster = Object.keys(rayStatus).length > 0;
-
   return (
-    <>
-      <Box
-        sx={{
-          display: "flex",
-          alignItems: "center",
-          cursor: "pointer",
-          padding: "8px",
-          borderRadius: "8px",
-        }}
-        onClick={(event) => setAnchorEl(event.currentTarget)}
-      >
-        {!hasCluster
-          ? <Typography variant="body2" color="textSecondary">No Cluster</Typography>
-          : <>
-              <Circle sx={{ fontSize: 10, color: rayStatus.unhealthyNodes > 0 ? "error.light" : "success.light", mr: 1 }} />
-              <Typography variant="body2" sx={{ mr: 1 }}>
-                {rayStatus.healthyNodes} {rayStatus.healthyNodes === 1 ? 'Node' : 'Nodes'},
-              </Typography>
-              <Typography variant="body2" sx={{ mr: 1 }}>
-                {rayStatus.totalCPUs} CPUs, {Math.round(rayStatus.totalRAM)} GB RAM
-              </Typography>
-            </>
-        }
-        <IconButton size="small">{anchorEl ? <ExpandLess /> : <ExpandMore />}</IconButton>
-      </Box>
-
-      <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={() => setAnchorEl(null)}>
+    <DropdownChip
+      icon={<Hub />}
+      summary={summaryNode}
+      tone={tone}
+      tooltipTitle="Ray cluster"
+      ariaLabel="Ray cluster status"
+    >
         {hasCluster && (
           <List dense>
             {rayStatus.nodes.map((node, index) => (
               <ListItem key={index}>
-                <Circle sx={{ fontSize: 10, color: node.health === "healthy" ? "green" : "red", mr: 1 }} />
+                <Box sx={{ mr: 1 }}>
+                  <StatusDot tone={node.health === "healthy" ? "active" : "error"} />
+                </Box>
                 <ListItemText
                   primary={`${node.ip}: ${node.cpus} CPUs, ${Math.round(node.ram)} GB RAM`}
                   secondary={node.health === "unhealthy" ? node.message : ""}
@@ -148,8 +147,7 @@ const RayStatus = () => {
             </Select>
           </FormControl>
         </MenuItem>
-      </Menu>
-    </>
+    </DropdownChip>
   );
 };
 

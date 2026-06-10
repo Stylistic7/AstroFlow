@@ -1,11 +1,9 @@
 import { useState, useContext } from "react";
 import {
   Box,
-  Menu,
   MenuItem,
   Typography,
   IconButton,
-  Badge,
   Chip,
   Divider,
   Dialog,
@@ -17,11 +15,12 @@ import {
   Tooltip,
 } from "@mui/material";
 import {
-  ExpandMore, ExpandLess, Delete, Unarchive, Archive,
+  Delete, Unarchive, Archive,
 } from "@mui/icons-material";
 import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
 import ShoppingCartOutlinedIcon from "@mui/icons-material/ShoppingCartOutlined";
 import AstroFlowContext from "./AstroFlowContext.jsx";
+import DropdownChip from "./DropdownChip.jsx";
 
 
 // Removing an item from the live cart pops this modal. The three
@@ -113,7 +112,6 @@ function RemoveArchiveItemDialog({ item, open, onClose, onConfirm }) {
 export default function ShoppingCartPanel() {
   const { shoppingCart, archive, stacks, targets, mosaics } =
     useContext(AstroFlowContext);
-  const [anchorEl, setAnchorEl] = useState(null);
   const [removeCartTarget, setRemoveCartTarget] = useState(null);
   const [removeArchiveTarget, setRemoveArchiveTarget] = useState(null);
 
@@ -165,37 +163,23 @@ export default function ShoppingCartPanel() {
 
   const totalCount = cartItems.length + archItems.length;
 
+  // Summary slot. When the cart's empty we still show a muted label so
+  // the chip carries the same information density as the other panels
+  // (otherwise it'd be an icon floating in space).
+  const summaryNode = totalCount === 0
+    ? <Typography variant="body2" color="text.secondary">empty</Typography>
+    : <Typography variant="body2">
+        {`${cartItems.length} live · ${archItems.length} archived`}
+      </Typography>;
+
   return (
     <>
-      <Box
-        sx={{
-          display: "flex", alignItems: "center", cursor: "pointer",
-          padding: "8px", borderRadius: "8px",
-        }}
-        onClick={(e) => setAnchorEl(e.currentTarget)}
-      >
-        <Badge badgeContent={cartItems.length} color="primary" max={99}>
-          {cartItems.length > 0 ? (
-            <ShoppingCartIcon sx={{ color: "primary.main" }} />
-          ) : (
-            <ShoppingCartOutlinedIcon sx={{ color: "text.secondary" }} />
-          )}
-        </Badge>
-        {totalCount > 0 && (
-          <Typography variant="body2" sx={{ ml: 1 }}>
-            {cartItems.length} live · {archItems.length} archived
-          </Typography>
-        )}
-        <IconButton size="small">
-          {anchorEl ? <ExpandLess /> : <ExpandMore />}
-        </IconButton>
-      </Box>
-
-      <Menu
-        anchorEl={anchorEl}
-        open={Boolean(anchorEl)}
-        onClose={() => setAnchorEl(null)}
-        PaperProps={{ sx: { minWidth: 360, maxHeight: 500 } }}
+      <DropdownChip
+        icon={cartItems.length > 0 ? <ShoppingCartIcon /> : <ShoppingCartOutlinedIcon />}
+        summary={summaryNode}
+        tone={cartItems.length > 0 ? "active" : "default"}
+        tooltipTitle="Shopping cart"
+        ariaLabel="Shopping cart"
       >
         <MenuItem disabled sx={{ opacity: "1 !important" }}>
           <Typography variant="caption" sx={{ fontWeight: 600 }}>
@@ -292,7 +276,7 @@ export default function ShoppingCartPanel() {
             </MenuItem>
           ))
         )}
-      </Menu>
+      </DropdownChip>
 
       <RemoveCartItemDialog
         item={removeCartTarget}
