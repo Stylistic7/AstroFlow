@@ -475,9 +475,14 @@ def _record_pipeline_taps(record_existence, pipeline_name, cart_type, cart_id, g
         first_arg = n.args[0] if n.args else None
         if first_arg is None:
             continue
+        # When no identity isinstance-matches the first arg (e.g. ops
+        # like `merge_images` whose `MergedImageId.object_type` is a
+        # phantom marker class that no real first-arg ever instances),
+        # fall back to `identities[0]`. Mirrors the same fallback in
+        # `products.registry._make_dispatcher`.
         identity_cls = next(
             (ic for ic in identities if isinstance(first_arg, ic.object_type)),
-            None,
+            identities[0] if identities else None,
         )
         if identity_cls is None:
             continue

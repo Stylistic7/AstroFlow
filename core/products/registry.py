@@ -450,16 +450,9 @@ def _make_thumbnail(result, resize_array, autostretch, array_to_png, width=1920)
     return None
 
 
-# ---------------------------------------------------------------------
-# Trace-time hooks
-# ---------------------------------------------------------------------
-
-def _chain_compute_image_metadata(handle):
-    """Trace-time hook: every `@node(identity=...)` op produces a file
-    whose canonical downstream consumer is its `ImageMetadata`, so we
-    auto-chain a `compute_image_metadata` node after the producer.
-    User pipelines skip the `compute_image_metadata(stack(...))`
-    boilerplate."""
-    from dependency_graph.tracing import record
-    from metadata.image_metadata import compute_image_metadata
-    return record(compute_image_metadata, handle)
+# The chain-hook trace function (`_chain_compute_image_metadata`)
+# lived here. It was retired 2026-06-09: `compute_image_metadata` now
+# composes synchronously inside the `@node(identity=...)` Ray task via
+# `decorators._metadata_wrap`, eliminating the
+# `_maybe_clean_predecessors` race where the chain-hook Node was the
+# producer's immediate dependent and finished too quickly.

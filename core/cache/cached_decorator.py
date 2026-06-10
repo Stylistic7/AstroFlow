@@ -127,8 +127,13 @@ def make_cached_decorator(
         *,
         canonical_call_hash: Callable,
         ray_opts: dict,
+        needs_metadata_upgrade: bool = False,
     ) -> Callable:
-        """Wrap `func` with caching keyed by `canonical_call_hash(args)`."""
+        """Wrap `func` with caching keyed by `canonical_call_hash(args)`.
+
+        `needs_metadata_upgrade=True` opts in to the on-read
+        WithSidecar→ImageMetadata cache shim — see the TODO(cache-wipe)
+        block in _key_and_lookup."""
         func = _beartype(func)
 
         def _key_and_lookup(bound):
@@ -144,6 +149,21 @@ def make_cached_decorator(
                 debug_print(
                     f"### cache key {key} was slow to load, took {elapsed_time=} s"
                 )
+            # TODO(cache-wipe): remove this shim — and the
+            # `needs_metadata_upgrade` decorate-kwarg + its plumbing —
+            # the next time the diskcache is wiped (see
+            # `~/.claude/projects/.../memory/project_cache_wipe_metadata_migration.md`).
+            # Pre-2026-06-09 cache entries for `@node(identity=...)` ops
+            # were `WithSidecar[Path]`; post-refactor they're
+            # `ImageMetadata` (the metadata extraction was folded into
+            # the producer's Ray task). Upgrade old-shape entries on
+            # first read so consumers always see the new shape.
+            if needs_metadata_upgrade:
+                from file_io.types import WithSidecar
+                if isinstance(cached, WithSidecar):
+                    from metadata.image_metadata import compute_image_metadata
+                    cached = compute_image_metadata._function(cached)
+                    _resolve_cache()[key] = strip_refs(cached)
             size_mb = objsize.get_deep_size(cached) / 1024.0 / 1024.0
             if size_mb > 5:
                 debug_print(
@@ -289,10 +309,12 @@ def make_cached_decorator(
         the op's narrow hook.
         """
 
-        def remote(self, func=None, *, canonical_call_hash=None, cache_key_narrow=None, **ray_opts):
+        def remote(self, func=None, *, canonical_call_hash=None, cache_key_narrow=None,
+                   needs_metadata_upgrade=False, **ray_opts):
             def go(f):
                 cch = canonical_call_hash or _default_canonical_call_hash(f, cache_key_narrow)
-                return decorate(f, canonical_call_hash=cch, ray_opts=ray_opts)
+                return decorate(f, canonical_call_hash=cch, ray_opts=ray_opts,
+                                needs_metadata_upgrade=needs_metadata_upgrade)
             if func is None:
                 return go
             return go(func)

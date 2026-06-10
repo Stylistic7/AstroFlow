@@ -141,6 +141,81 @@ def test_orion_mosaic(test_context) -> None:
 
 
 @pytest.mark.exhaustive
+def test_orion_mosaic_hybrid_oss(test_context) -> None:
+    """End-to-end run of the "Hybrid: PI Master + OSS Mosaic" pipeline on
+    the 4 real Orion panes. Exercises the variadic OSS merge: one
+    `merge_images_oss(*all_placed)` call per filter (not the pairwise
+    `merge_images_oss` loop the pipeline used to do), and the
+    `store_mosaic_color_channel_oss` terminal (not the XISF one that
+    needs PixInsight to convert FITS)."""
+    add_orion_mosaic_images()
+
+    # First pass: discover targets + mosaic.
+    graph = build_compute_graph()
+    run_graph(graph)
+
+    assert len(context.targets) == 4
+    assert len(context.mosaics) == 1
+    mosaic = next(iter(context.mosaics.values())).get()
+
+    # Queue under the Hybrid pipeline and run.
+    context.shopping_cart = [
+        ("mosaic", mosaic.stable_hash, "Hybrid: PI Master + OSS Mosaic"),
+    ]
+    _override_flats_for_all_stacks()
+
+    print("### First pass done; starting pass with shopping cart")
+    graph = build_compute_graph()
+    run_graph(graph)
+
+    assert len(context.targets) == 4
+    assert len(context.mosaics) == 1
+    print_tree(context.output_dir)
+
+    def assert_files(
+        pattern: str,
+        expected_number: int | None = None,
+        expected_header: dict | None = None,
+    ):
+        files = list(Path(context.output_dir).rglob(pattern))
+        if expected_number is not None:
+            assert len(files) == expected_number, (
+                f"{pattern}: expected {expected_number}, got {len(files)}: {files}"
+            )
+        if expected_header is not None:
+            for file in files:
+                header = read_header(file)
+                assert expected_header.items() <= header.items()
+
+    # Mirror the existing test_orion_mosaic_with_missing_panel convention
+    # of snapshotting the output dir to a stable path so the agent can
+    # inspect artifacts after the test_context tempdir is torn down.
+    shutil.copytree(context.output_dir, "/tmp/oss_test_output",
+                    dirs_exist_ok=True)
+
+    # The variadic OSS merge is one call per filter — 1 single merge
+    # node total for the 4-panel single-filter Orion corpus (not 3
+    # like the PI Master pipeline's pairwise chain). `merge_images_oss`
+    # is wrapped in `ephemeral_intermediates()` in the pipeline body, so
+    # the primary `.fits` output is unlinked after `store_mosaic_color_channel_oss`
+    # consumes it; we assert via the preview `.tiff` sidecar (kept for
+    # the UI) that the variadic merge ran exactly once.
+    assert_files("MergedImage/merge_images_oss/*.tiff", 1)
+
+    # Final store is the OSS variant (FITS copy, no PI conversion).
+    assert_files("Mosaic/store_mosaic_color_channel_oss/*.fits", 1,
+                 {"FILTER": "H"})
+
+    # And critically the XISF terminal isn't invoked under this pipeline
+    # — confirms the import / call-site swap stuck.
+    assert_files("Mosaic/store_mosaic_color_channel_xisf/*.xisf", 0)
+
+    ui_mosaics = context.ui_mosaics
+    assert len(ui_mosaics) == 1
+    assert list(ui_mosaics.keys()) == [mosaic.stable_hash]
+
+
+@pytest.mark.exhaustive
 def test_orion_mosaic_with_missing_panel(test_context) -> None:
     copy_testdata_frames(
         target_name="Orion Pane 1",

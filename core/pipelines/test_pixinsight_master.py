@@ -150,9 +150,15 @@ def test_pixinsight_master_records_expected_graph_shape(test_context):
     assert counts.get("merge_images", 0) == 1, counts
     # Final canonical per-filter Mosaic file (1 filter):
     assert counts.get("store_mosaic_color_channel_xisf", 0) == 1, counts
-    # compute_image_metadata: per master (2) + per pp (2) + per channel
-    # (2) + per placed (2) + per row merge (1) + per filter store (1) = 10.
-    assert counts.get("compute_image_metadata", 0) == 10, counts
+    # compute_image_metadata: zero. `compute_image_metadata` used to be
+    # auto-inserted as a separate trace-time Node downstream of every
+    # `@node(identity=...)` producer (via `_chain_compute_image_metadata`)
+    # — 10 of them for this pipeline shape. The chain hook was retired
+    # 2026-06-09; `compute_image_metadata` now composes synchronously
+    # inside the producer's own Ray task via `decorators._metadata_wrap`,
+    # so it doesn't appear in the traced compute graph as a separate
+    # node anymore.
+    assert counts.get("compute_image_metadata", 0) == 0, counts
 
 
 def test_pixinsight_master_handles_missing_panels(test_context):

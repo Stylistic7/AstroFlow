@@ -52,6 +52,47 @@ measure_performance = make_measure_performance_decorator(context)
 capture_logs = make_capture_logs_decorator(context)
 
 
+def _metadata_wrap(func):
+    """Run `func`, then synchronously extract image metadata from its
+    return value and yield the resulting `ImageMetadata` to callers.
+
+    Folds the `compute_image_metadata` step into every
+    `@node(identity=...)` producer in place of the trace-time chain-
+    hook Node that used to live between the producer and its
+    consumers. The chain-hook approach raced with the runtime's
+    `_maybe_clean_predecessors` (the chain-hook node was the
+    producer's immediate dependent and finished in milliseconds,
+    firing ephemeral cleanup before the real consumer ran);
+    composing the wrap into the producer's own Ray task eliminates
+    the indirection — the producer's only graph-level dependents are
+    the actual file consumers.
+
+    Marked with `_needs_metadata_upgrade = True` so the cached layer
+    can transparently migrate pre-refactor entries (which were
+    `WithSidecar[Path]`) on first read.
+    """
+    import functools
+    from metadata.classes import ImageMetadata
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        result = func(*args, **kwargs)
+        from metadata.image_metadata import compute_image_metadata
+        return compute_image_metadata._function(result)
+
+    # `functools.wraps` copies the wrapped function's `__annotations__`,
+    # including its `WithSidecar[...]` return annotation. After this
+    # wrap the actual return type is `ImageMetadata`, so override the
+    # `return` annotation; otherwise the outer `_beartype` (in
+    # `cached.remote`) rejects the call with a return-type violation.
+    wrapper.__annotations__ = {
+        **wrapper.__annotations__,
+        "return": ImageMetadata,
+    }
+    wrapper._needs_metadata_upgrade = True
+    return wrapper
+
+
 class _Node:
     """Single decorator for cached Ray-remote ops.
 
@@ -165,12 +206,14 @@ class _Node:
                 canonical_call_hash=canonical_call_hash,
                 identities=identities,
             )
+            wrapped = _metadata_wrap(wrapped)
 
         wrapped = capture_logs(wrapped, cache_key_narrow=cache_key_narrow)
         wrapped = measure_performance(wrapped, ray_opts=ray_opts)
         wrapper = cached.remote(
             wrapped,
             canonical_call_hash=canonical_call_hash,
+            needs_metadata_upgrade=bool(identities),
             **ray_opts,
         )
 
@@ -190,10 +233,7 @@ class _Node:
             wrapper._final = final
             if display is not None:
                 wrapper._display = display
-            from products.registry import (
-                _chain_compute_image_metadata, register_producer,
-            )
-            wrapper._trace_hooks = [_chain_compute_image_metadata]
+            from products.registry import register_producer
             register_producer(wrapper, identities, media_type=media_type)
 
         return wrapper
