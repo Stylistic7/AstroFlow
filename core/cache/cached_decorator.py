@@ -248,9 +248,27 @@ def make_cached_decorator(
                     )
                 handle = record(wrapper, *args, _after=_after)
                 if ephemeral:
+                    if getattr(wrapper, "_final", False):
+                        # A `final=True` op (a `store_*` terminal) is
+                        # always a deliverable. Wrapping one in an
+                        # `ephemeral_intermediates()` block is always a
+                        # user bug — the terminal-predecessor topology
+                        # guard in the old `_maybe_clean_predecessors`
+                        # protected this implicitly; with the global
+                        # registry an unconsumed terminal would just
+                        # never get registered (no consumers) so it'd
+                        # never clean anyway, but a downstream consumer
+                        # appearing later would silently unlink the
+                        # final output. Refuse explicitly at trace time.
+                        raise RuntimeError(
+                            f"{func.__name__} is `final=True` (a deliverable "
+                            "terminal) but was called inside "
+                            "`ephemeral_intermediates()`. Final outputs "
+                            "must never be marked ephemeral — either drop "
+                            "the `final=True` or move the call out of the "
+                            "ephemeral scope."
+                        )
                     handle._ephemeral = True
-                for hook in getattr(wrapper, "_trace_hooks", ()):
-                    handle = hook(handle)
                 return handle
             raise RuntimeError(
                 f"{func.__name__} is a remote task. Use `.remote(...)`."
@@ -281,11 +299,18 @@ def make_cached_decorator(
         wrapper.is_cached = is_cached
 
         def invalidate(*args, injected_context=None, **kwargs) -> bool:
-            """Drop this call's cache entry. Returns True iff a key was deleted."""
+            """Drop this call's cache entry. Returns True iff a key was deleted.
+
+            Bypasses `_key_and_lookup` because that function's stale-miss
+            check (`_cached_path_missing`) returns valid=False when the
+            on-disk file is already gone. Ephemeral cleanup calls
+            `invalidate` AFTER unlinking the file, so the lookup would
+            always report "nothing to invalidate" and the cache entry
+            would leak. Just compute the key and unconditionally `del`.
+            """
             bound = _bind_args(func, args, kwargs, injected_context)
-            key, _, valid, _ = _key_and_lookup(bound)
-            if not valid:
-                return False
+            call_hash = canonical_call_hash(*bound.args, **bound.kwargs)
+            key = (func.__name__, call_hash)
             cache = _resolve_cache()
             try:
                 del cache[key]

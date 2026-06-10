@@ -1,10 +1,12 @@
 """Delete an ephemeral node's on-disk output after its last consumer
-in the graph completes.
+across every pipeline has completed.
 
-Called by `GraphRuntime._mark_done` when:
-
-  - the just-completed node has a predecessor marked `_ephemeral=True`, AND
-  - every other dependent of that predecessor is already in `_done`.
+Invoked by the global `EphemeralFiles` registry
+(`dependency_graph/ephemeral_registry.py`) when the registry's pending
+consumer set for a filename empties — i.e. every Node across every
+child runtime that declared the producer as a data/ordering dep has
+succeeded. Failed/skipped consumers don't decrement (see A2 in the
+plan): intermediates linger one extra run on failure for re-dispatch.
 
 Cleanup rules — keyed on the master's file extension and the producer's
 `_display` attribute:

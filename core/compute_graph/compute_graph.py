@@ -311,13 +311,22 @@ def build_preview_graph(
     # `run_pipeline` above), so each Subframe trace's
     # `node_status_fn` / `graph_update_fn` fires inside its own
     # sub-runtime.
+    #
+    # Eagerly trace each Subframe pipeline here on the head-side @node
+    # worker so the global ephemeral_files registry sees every consumer
+    # before any Subframe sub-Graph dispatches. The trace is cheap
+    # Python — no @node bodies run — and `run_pipeline` re-traces lazily
+    # on the cluster with bit-identical Node identities.
+    traced: list = []
     for mosaic_ref in objects.mosaics.values():
         mosaic = mosaic_ref.get()
         task = (run_pipeline, mosaic, config, "Subframe", "mosaic")
         graph[task] = set()
         tasks.append(task)
+        traced.append(_eager_trace_pipeline("Subframe", "mosaic", mosaic, config))
 
     graph[preview_graph_done] = tasks
+    graph.ephemeral_files = _build_ephemeral_registry(traced)
     return graph
 
 
@@ -330,6 +339,56 @@ def run_pipeline_done() -> None:
     nodes, etc.), so we funnel them all into this no-op so the
     sub-runtime has a single completion handle."""
     pass
+
+
+def _eager_trace_pipeline(
+    pipeline_name: str, type_tag: str, entity, cfg,
+) -> "Graph | None":
+    """Trace a pipeline on the head node (in-process, not via Ray).
+
+    Same code path as the lazy trace inside `run_pipeline` — calls
+    `pipeline_fn(entity, cfg)` from the registry and walks tap points.
+    Used by `build_main_processing_graph` / `build_preview_graph` to
+    pre-populate the global ephemeral_files registry before any
+    consumer of an ephemeral file can dispatch. `run_pipeline` still
+    re-traces lazily at runtime; the two traces are bit-identical
+    (deterministic, same args, same context), and structural Node
+    identity means the eager-trace's consumers match the lazy-trace's
+    consumers exactly in the registry.
+
+    Returns None if the pipeline body bails (e.g. MASTER-mode mosaic
+    with missing panels) — callers should skip registry population
+    for that entry.
+    """
+    from pipelines.registry import get_pipeline
+    from pipelines.output_index import record_existence
+    from stacks.composite_stack import Stack
+    from targets.types import Target
+    from mosaics.types import Mosaic
+
+    type_to_class = {"stack": Stack, "target": Target, "mosaic": Mosaic}
+    pipeline_fn = get_pipeline(pipeline_name, processes=type_to_class[type_tag])
+    graph = pipeline_fn(entity, cfg)
+    if graph is None:
+        return None
+    # Walk taps just like the lazy run_pipeline does; idempotent on
+    # repeated trace, so re-tracing in the lazy run_pipeline is fine.
+    _record_pipeline_taps(
+        record_existence, pipeline_name, type_tag, entity.stable_hash, graph,
+    )
+    return graph
+
+
+def _build_ephemeral_registry(traced_graphs) -> "EphemeralFiles":
+    """Union the ephemeral_files contributions from every traced
+    pipeline graph into a single registry. Returns the registry; the
+    caller attaches it to the Graph it returns from a builder @node."""
+    from dependency_graph.ephemeral_registry import EphemeralFiles
+    registry = EphemeralFiles()
+    for g in traced_graphs:
+        if g is not None:
+            registry.register_from_graph(g)
+    return registry
 
 
 @ray.remote(num_cpus=0.1)
@@ -482,8 +541,22 @@ def _record_pipeline_taps(record_existence, pipeline_name, cart_type, cart_id, g
         # `products.registry._make_dispatcher`.
         identity_cls = next(
             (ic for ic in identities if isinstance(first_arg, ic.object_type)),
-            identities[0] if identities else None,
+            None,
         )
+        if identity_cls is None and identities:
+            # Fallback fired. Safe for single-identity phantom-marker
+            # ops (the common case), but for an op registered with
+            # `identity=[A, B]` whose first_arg matches neither, we'd
+            # silently misroute taps under A. Warn so the pipeline
+            # author can switch to explicit `filter=`/identity hints.
+            if len(identities) > 1:
+                log.warning(
+                    "tap recorder: identities[0] fallback fired on multi-identity op; "
+                    "taps may misroute. Pick identity explicitly or use a single-identity op.",
+                    op=fn.__name__, identities=[ic.__name__ for ic in identities],
+                    first_arg_type=type(first_arg).__name__,
+                )
+            identity_cls = identities[0]
         if identity_cls is None:
             continue
         object_type_name = identity_cls.object_type.__name__.lower()
@@ -564,6 +637,16 @@ def build_main_processing_graph(
     registered = registered_pipelines()
     graph = Graph({})
     pipeline_tasks = []
+    # Eagerly trace each cart entry here on the head-side @node worker.
+    # Same call as the lazy run_pipeline does on the cluster; the two
+    # traces are bit-identical (deterministic + same context), and
+    # structural Node identity means consumer matching against the
+    # registry works across the trace/dispatch boundary. The eager
+    # pass exists purely to populate the global ephemeral_files
+    # registry BEFORE any pipeline's children dispatch — within-cart
+    # consumers of a shared ephemeral file see each other in the
+    # registry's pending set, so cleanup waits for ALL of them.
+    traced: list = []
     for entry in shopping_cart:
         # Cart entries: `(type, id, pipeline_name)`. Each entry
         # becomes a `run_pipeline` Ray task that traces the
@@ -584,8 +667,10 @@ def build_main_processing_graph(
         task = (run_pipeline, entity, cfg, pipeline_name, type)
         graph[task] = set()
         pipeline_tasks.append(task)
+        traced.append(_eager_trace_pipeline(pipeline_name, type, entity, cfg))
 
     graph[main_processing_graph_done] = pipeline_tasks
+    graph.ephemeral_files = _build_ephemeral_registry(traced)
     return graph
 
 

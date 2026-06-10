@@ -221,6 +221,30 @@ def test_for_loop_scales_linearly():
         assert len(by_op[store]) == 1
 
 
+def test_after_set_distinguishes_otherwise_identical_calls():
+    """Two `record(...)` calls with identical literals + data deps but
+    different `_after` sets must produce two distinct Nodes. Without
+    `_after` in the name hash, they'd dedup to one canonical Node and
+    the second call's ordering edge would silently disappear from the
+    graph — the dependent could race ahead of the upstream side effect
+    the `_after` was supposed to enforce."""
+    def builder():
+        a = record(fetch, "a")
+        b = record(fetch, "b")
+        # Same op + same literals + no data deps, differing only in _after.
+        return record(stack_files, "x", _after=(a,)), record(stack_files, "x", _after=(b,))
+
+    nodes = []
+    def capture():
+        nodes.extend(builder())
+        return nodes[0]
+
+    trace(capture)
+    after_a, after_b = nodes
+    assert after_a is not after_b
+    assert after_a != after_b
+
+
 def test_identical_subgraphs_deduplicate():
     """Two traces of the same toy program produce structurally
     identical graphs — Node identity is hash(op, literals, dep

@@ -153,11 +153,17 @@ def record(task: Callable, *args: Any, _after: tuple = ()) -> Node:
     deps = data_deps + ordering_deps
 
     fn = getattr(task, "_function", task)
+    # Include `_after` in the name hash so two otherwise-identical calls
+    # with different ordering deps don't dedup to one canonical Node.
+    # The docstring claims this — but the original implementation only
+    # hashed data deps' names. Sort `_after` names so the encoding is
+    # order-independent (semantically `_after` is a SET).
     name = str(hash_list_int([
         getattr(fn, "__module__", ""),
         getattr(fn, "__qualname__", getattr(fn, "__name__", "")),
         list(literals),
-        [d.name for d in deps],
+        [d.name for d in data_deps],
+        sorted(d.name for d in ordering_deps),
     ]))
 
     node = Node(task, *literals, name=name)

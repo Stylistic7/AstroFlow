@@ -279,6 +279,54 @@ class TestCleanupAction:
         cleanup_ephemeral_artifact(node, "not a path at all", fn_args=[])
 
 
+class TestCrossPipelineFusion:
+    """The A6/A7 fix: a producer's cleanup must wait for ALL
+    structurally-equal consumers across every child runtime, not just
+    the consumers in one runtime's local graph."""
+
+    def test_two_child_runtimes_sharing_an_ephemeral_producer(self):
+        """Pipeline A graph: P (ephemeral) → CA. Pipeline B graph: P → CB.
+        P is the same producer in both — structurally equal Node. Without
+        the global registry, runtime A would clean P as soon as CA
+        completes, leaving CB FNF when it later tries to read P's file.
+        With the registry, P's pending set is {CA, CB} unioned across
+        both child runtimes; cleanup fires only after both."""
+        p_task, ca_task, cb_task = (
+            _FakeTask("p"), _FakeTask("ca"), _FakeTask("cb"),
+        )
+        P_for_a = _ephemeral(_node(p_task))
+        P_for_b = _ephemeral(_node(p_task))
+        # Structural identity: both Ps hash + equal-compare the same.
+        assert P_for_a == P_for_b
+        assert hash(P_for_a) == hash(P_for_b)
+
+        CA, CB = _node(ca_task), _node(cb_task)
+        called: list = []
+
+        def cleanup(node, result, args):
+            called.append(node)
+
+        # Root runtime has no ephemerals — just a placeholder.
+        root = GraphRuntime(Graph({}), cleanup_fn=cleanup)
+        # Two child sub-Graphs simulate two pipelines that both
+        # consume the same producer. Each child runtime is created
+        # the way `node_completed` would create it.
+        child_a = GraphRuntime(Graph({CA: [P_for_a]}), parent=root)
+        child_b = GraphRuntime(Graph({CB: [P_for_b]}), parent=root)
+
+        # P "runs" in pipeline A: producer_done fires from child_a.
+        child_a.start(P_for_a); child_a.node_completed(P_for_a, "rp")
+        # Pipeline A's only local consumer completes.
+        child_a.start(CA); child_a.node_completed(CA, "rca")
+        # Without cross-pipeline fusion, cleanup would fire here.
+        # With the global registry, it shouldn't — CB still pending.
+        assert called == []
+        # Pipeline B's consumer completes.
+        child_b.start(CB); child_b.node_completed(CB, "rcb")
+        # NOW the producer's pending set is empty across both pipelines.
+        assert called == [P_for_a]
+
+
 class TestChildRuntimeInheritsCleanup:
     """A subgraph should inherit its parent's cleanup_fn so ephemeral
     nodes nested inside a `@graph_builder` still get reclaimed."""

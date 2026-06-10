@@ -174,20 +174,27 @@ GraphUpdateFn = Callable[..., Any]
 
 
 class Graph(dict[TaskDescriptor, Iterable[TaskDescriptor]]):
-    __slots__ = ("graph_update_fn", "node_status_fn")
+    __slots__ = ("graph_update_fn", "node_status_fn", "ephemeral_files")
     graph_update_fn: GraphUpdateFn | None
     node_status_fn: NodeStatusFn | None
+    # Optional `EphemeralFiles` registry built at eager-trace time in a
+    # graph-builder @node (build_main_processing_graph / build_preview_graph).
+    # GraphRuntime.__init__ folds it into the root runtime's shared
+    # registry when this Graph becomes a child runtime.
+    ephemeral_files: "Any | None"
 
     def __init__(
         self,
         *args,
         graph_update_fn: GraphUpdateFn | None = None,
         node_status_fn: NodeStatusFn | None = None,
+        ephemeral_files: "Any | None" = None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.graph_update_fn = graph_update_fn
         self.node_status_fn = node_status_fn
+        self.ephemeral_files = ephemeral_files
 
 
 class CanonicalGraph(dict[Node, list[Node]]):

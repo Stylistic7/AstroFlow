@@ -26,6 +26,7 @@ from dependency_graph.classes import (
     canonicalize_graph,
     canonicalize_node,
 )
+from dependency_graph.ephemeral_registry import EphemeralFiles
 from cache.types import NeverRun
 from dependency_graph.classes import Skipped
 
@@ -110,7 +111,10 @@ class GraphRuntime:
         # Ephemeral output cleanup. Nodes flagged `_ephemeral` (by the
         # trace-mode wrapper in `cache/cached_decorator.py` when the call
         # was inside an `ephemeral_intermediates()` scope) get their
-        # on-disk output reclaimed after every dependent has completed.
+        # on-disk output reclaimed once every dependent across every
+        # pipeline has completed. The bookkeeping lives in a single
+        # `EphemeralFiles` registry shared across the entire run via the
+        # parent chain — see `dependency_graph/ephemeral_registry.py`.
         # `cleanup_fn` is the actual delete-the-file callable —
         # `cleanup_ephemeral_artifact` in `cache/ephemeral_cleanup.py`
         # in production, mockable for tests.
@@ -119,15 +123,45 @@ class GraphRuntime:
             if cleanup_fn is not None
             else (parent.cleanup_fn if parent else None)
         )
-        self._ephemeral: set[Node] = {
-            n for n in self._graph if getattr(n, "_ephemeral", False)
-        }
-        self._cleaned: set[Node] = set()
+        # Root holds the live registry; children share it via parent.
+        if parent is None:
+            self._ephemeral_files: EphemeralFiles = EphemeralFiles()
+        else:
+            self._ephemeral_files = parent._root._ephemeral_files
+
+        # If this Graph carries its own pre-traced registry (built at
+        # eager-trace time inside a graph-builder @node), union it into
+        # the shared one.
+        incoming = getattr(graph, "ephemeral_files", None)
+        if incoming is not None:
+            self._ephemeral_files.merge(incoming)
+        # Also register from this runtime's own graph — but skip the
+        # work entirely when no cleanup_fn is wired up (snapshot
+        # runtimes used by the workflow-graph adapter, structure-only
+        # test fixtures, dry-run paths). Without a cleanup_fn nothing
+        # consults the registry, so populating it is pure waste.
+        # For production this is redundant with eager-trace
+        # contributions (structural Node identity → idempotent set
+        # union). For tests and stand-alone use without an eager-trace
+        # pass, it's the only source of bookkeeping.
+        if self.cleanup_fn is not None:
+            self._ephemeral_files.register_from_graph(
+                self._graph, fallback_to_node_key=True,
+            )
 
     @property
     def graph(self) -> dict[Node, list[Node]]:
         """The dependency graph dict. Used by workflow_graph_adapter."""
         return self._graph
+
+    @property
+    def _root(self) -> "GraphRuntime":
+        """Walk up the parent chain to the root runtime — the one that
+        owns the shared `EphemeralFiles` registry."""
+        rt = self
+        while rt.parent is not None:
+            rt = rt.parent
+        return rt
 
     @property
     def done_nodes(self) -> list[Node]:
@@ -161,13 +195,17 @@ class GraphRuntime:
             child = GraphRuntime(result, parent=self, parent_node=node)
             self._children[node] = child
         else:
-            self._mark_done(node, result, logs)
+            # Skipped/NeverRun sentinels propagate through node_completed
+            # but don't represent a real, file-producing success — gate
+            # cleanup decisions accordingly.
+            succeeded = result is not Skipped and result is not NeverRun
+            self._mark_done(node, result, logs, succeeded=succeeded)
 
     def node_failed(self, node: Node, error: Exception, logs: list[Any] | None = None) -> None:
         """Report that a node raised an exception."""
         if logs is None:
             logs = []
-        self._mark_done(node, error, logs)
+        self._mark_done(node, error, logs, succeeded=False)
         self.final_result = error
 
     def ancestor_results(self, node: Node) -> list[Any]:
@@ -182,35 +220,49 @@ class GraphRuntime:
             args += self.ancestor_results(node)
         return args
 
-    def _maybe_clean_predecessors(self, node: Node) -> None:
-        """Fire `cleanup_fn` for any ephemeral predecessor of `node` whose
-        every dependent is now done. Safety guard: terminal predecessors
-        (zero dependents in this runtime) are never auto-cleaned — that
-        protects users who accidentally put a `final=True` op inside an
-        `ephemeral_intermediates()` block.
-        """
-        if self.cleanup_fn is None:
-            return
-        for dep in self._graph.get(node, ()):
-            if dep not in self._ephemeral or dep in self._cleaned:
-                continue
-            dependents = self._dependents.get(dep, set())
-            if not dependents:
-                continue
-            if all(d in self._done for d in dependents):
-                self._cleaned.add(dep)
-                try:
-                    self.cleanup_fn(
-                        dep, self.results.get(dep), self.make_fn_args(dep),
-                    )
-                except Exception as e:
-                    import structlog
-                    structlog.get_logger().warning(
-                        "ephemeral cleanup hook raised",
-                        node=str(dep), error=str(e),
-                    )
+    def _notify_ephemeral_registry(
+        self, node: Node, result: Any, succeeded: bool,
+    ) -> None:
+        """Two notifications fire here in succession:
 
-    def _mark_done(self, node: Node, result: Any, logs: list[Any]) -> None:
+        1. If `node` is itself an ephemeral producer, register the
+           cleanup data (filename, result, fn_args) so the registry can
+           fire `cleanup_fn` once every consumer is also done.
+        2. `node` may be a consumer of someone else's ephemeral
+           producer — discard from the registry's pending sets, fire
+           cleanup for any filename whose set just emptied.
+
+        Gated on `succeeded`: a failed producer wrote no file (skip
+        producer registration); a failed consumer still needs the
+        upstream file for the next manual re-run (skip consumer
+        decrement). Failures leave intermediates around for one extra
+        run, intentionally.
+
+        The producer-side key is the result's master path (extracted
+        from `ImageMetadata.filename` / `WithSidecar.path`) when one
+        exists — matches the eager trace's `expected_output_path` so
+        cross-pipeline consumer sets unify. When the result has no
+        extractable path (test stubs, ops without `filename_fn`), we
+        fall back to `f"node:{node.name}"`, mirroring the same fallback
+        in `EphemeralFiles.register_from_graph`.
+        """
+        if self.cleanup_fn is None or not succeeded:
+            return
+        registry = self._root._ephemeral_files
+        if getattr(node, "_ephemeral", False):
+            from cache.ephemeral_cleanup import _master_path
+            master = _master_path(result)
+            key = str(master) if master is not None else f"node:{node.name}"
+            registry.producer_done(
+                key, node, result,
+                self.make_fn_args(node), self.cleanup_fn,
+            )
+        registry.consumer_done(node, self.cleanup_fn)
+
+    def _mark_done(
+        self, node: Node, result: Any, logs: list[Any],
+        succeeded: bool = True,
+    ) -> None:
         self.results[node] = result
         self.logs[node] = logs
         self._done.add(node)
@@ -225,7 +277,7 @@ class GraphRuntime:
             ):
                 self._ready.add(dependent)
 
-        self._maybe_clean_predecessors(node)
+        self._notify_ephemeral_registry(node, result, succeeded)
 
         # Opportunistically compute the output filename for the workflow UI.
         if hasattr(node.task, "filename_fn"):
@@ -254,7 +306,18 @@ class GraphRuntime:
                 # subgraphs finish.
                 self._done_per_fn += child._done_per_fn
                 self._total_per_fn += child._total_per_fn
-                self._mark_done(node, child.final_result, child.logs)
+                # The parent node "succeeds" iff the child subgraph
+                # reached a real result — failed children propagate an
+                # Exception in final_result, which we treat as failure
+                # for cleanup-gating purposes (don't decrement consumer
+                # sets for a failed parent's spot in the parent graph).
+                parent_succeeded = not isinstance(
+                    child.final_result, Exception,
+                )
+                self._mark_done(
+                    node, child.final_result, child.logs,
+                    succeeded=parent_succeeded,
+                )
                 # Move out of _children so we stop scheduling against
                 # it, but keep it in _completed_children so the
                 # workflow-graph UI can still render the subgraph.
