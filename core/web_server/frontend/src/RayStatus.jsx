@@ -15,6 +15,7 @@ import Hub from "@mui/icons-material/Hub";
 import AstroFlowContext from './AstroFlowContext.jsx';
 import DropdownChip from './DropdownChip.jsx';
 import StatusDot from './microviz/StatusDot.jsx';
+import Sparkline from './microviz/Sparkline.jsx';
 
 const formatSpeed = (mbps) => {
   if (!mbps) return "?";
@@ -87,10 +88,35 @@ const RayStatus = () => {
     // No leading StatusDot here — the Hub icon already carries the
     // amber/red tone when an unhealthy node count or SSE disconnect
     // fires, and a second dot saying the same thing is redundant.
+    //
+    // Node display is "X/Y" only when something died — surfacing a
+    // missing worker as a digit (in addition to the icon's tone) so
+    // the user knows "I'm supposed to have 4 nodes; 1 is gone"
+    // without having to open Activity Monitor.
+    const healthy = rayStatus.healthyNodes;
+    const total = rayStatus.totalNodes ?? healthy;
+    const nodeText = total > healthy
+      ? `${healthy}/${total} nodes`
+      : `${healthy} ${healthy === 1 ? 'node' : 'nodes'}`;
+    const cpuHistory = rayStatus.cpuHistory || [];
+    const cpuLatest = cpuHistory.length > 0
+      ? cpuHistory[cpuHistory.length - 1]
+      : null;
+
     summaryNode = (
-      <Typography variant="body2">
-        {`${rayStatus.healthyNodes} ${rayStatus.healthyNodes === 1 ? 'node' : 'nodes'} · ${rayStatus.totalCPUs} CPUs · ${Math.round(rayStatus.totalRAM)} GB`}
-      </Typography>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+        <Typography variant="body2">
+          {`${nodeText} · ${rayStatus.totalCPUs} CPUs · ${Math.round(rayStatus.totalRAM)} GB`}
+        </Typography>
+        {cpuHistory.length > 0 && (
+          <>
+            <Sparkline values={cpuHistory} width={60} height={14} domain={[0, 100]} />
+            <Typography variant="body2" color="text.secondary">
+              {`${Math.round(cpuLatest)}%`}
+            </Typography>
+          </>
+        )}
+      </Box>
     );
   }
 

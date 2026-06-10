@@ -486,13 +486,26 @@ def ray_status():
             }
         )
 
+    # Pull the rolling cluster-CPU% history written by the 1 Hz
+    # sampler in `web_server.backend.ray_metrics`. Empty list when
+    # the sampler hasn't ticked yet (very first second after worker
+    # boot, or Ray not yet initialized).
+    from web_server.backend.ray_metrics import get_cpu_history
+    cpu_history = get_cpu_history()
+
     return jsonify(
         {
             "healthyNodes": healthy_nodes,
             "unhealthyNodes": unhealthy_nodes,
+            # `totalNodes` includes both alive and dead. When healthy
+            # < total, the chip surfaces an "X/Y" disparity so a
+            # missing worker is glanceable.
+            "totalNodes": len(nodes),
             "totalCPUs": total_cpus,
             "totalRAM": total_ram,
             "nodes": node_list,
+            # Last 60 samples of cluster CPU utilization, oldest first.
+            "cpuHistory": cpu_history,
         }
     )
 
