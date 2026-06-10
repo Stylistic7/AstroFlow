@@ -14,6 +14,7 @@ class SchedulerActor:
         ] = []  # {"interval": float, "action": dict, "next": float}
         self._asiair_poller_task = None
         self._asiair_live_poller_task = None
+        self._ray_metrics_task = None
         self._run_task = asyncio.get_event_loop().create_task(self._run())
 
     async def add(
@@ -96,6 +97,38 @@ class SchedulerActor:
         except asyncio.CancelledError:
             pass
 
+    async def start_ray_metrics_poller(
+        self, interval_s: float = 1.0, start_delay_s: float = 1.0,
+    ) -> None:
+        """1 Hz cluster CPU / memory / object-store sampler that
+        feeds the Ray status chip's sparklines. Runs HERE because
+        this actor is already inside the Ray cluster and has the
+        `ray.*` API readily available; the gunicorn workers don't
+        (the SSE worker doesn't call `ray.init`, and the main app
+        worker uses sync workers, neither of which is a natural
+        host for a long-running 1 Hz loop).
+        """
+        if self._ray_metrics_task is not None:
+            return
+        self._ray_metrics_task = asyncio.get_event_loop().create_task(
+            self._ray_metrics_loop(interval_s, start_delay_s)
+        )
+
+    async def _ray_metrics_loop(
+        self, interval_s: float, start_delay_s: float,
+    ) -> None:
+        try:
+            await asyncio.sleep(start_delay_s)
+            while True:
+                try:
+                    from web_server.backend.ray_metrics import sample_once
+                    sample_once()
+                except Exception as e:
+                    print(f"### ray_metrics sample raised, ignoring: {e}")
+                await asyncio.sleep(interval_s)
+        except asyncio.CancelledError:
+            pass
+
     async def _run(self) -> None:
         try:
             while True:
@@ -116,7 +149,10 @@ class SchedulerActor:
 
     async def stop(self) -> None:
         for task in (
-            self._run_task, self._asiair_poller_task, self._asiair_live_poller_task,
+            self._run_task,
+            self._asiair_poller_task,
+            self._asiair_live_poller_task,
+            self._ray_metrics_task,
         ):
             if task is None:
                 continue
