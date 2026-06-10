@@ -79,12 +79,21 @@ def enable_test_mode(ray_temp_dir: str | None = None) -> None:
 
     _log(f"cluster resources: {ray.get(get_available_resources.remote())}")
 
+    # Mirror the production head-pin so the test path exercises the
+    # same actor scheduling constraint that ray_init.py applies. On a
+    # single-node test cluster this is a no-op; the value is in
+    # asserting the pinning code path doesn't error out.
+    from ray.util.scheduling_strategies import NodeAffinitySchedulingStrategy
+    head_node_id = ray.get_runtime_context().get_node_id()
+    head_pin = NodeAffinitySchedulingStrategy(node_id=head_node_id, soft=False)
+
     from context import ContextActor
 
     _log("creating ContextActor")
     _context_actor = ContextActor.options(
         name="context", namespace=namespace, get_if_exists=True,
         max_concurrency=64,
+        scheduling_strategy=head_pin,
     ).remote()
     actor = ray.get_actor("context", namespace=namespace)
     _ = ray.get(actor.get_cache_keys.remote())
@@ -94,7 +103,8 @@ def enable_test_mode(ray_temp_dir: str | None = None) -> None:
 
     _log("creating StateActor")
     _state_actor = StateActor.options(
-        name="state", namespace=namespace, get_if_exists=True
+        name="state", namespace=namespace, get_if_exists=True,
+        scheduling_strategy=head_pin,
     ).remote()
     actor = ray.get_actor("state", namespace=namespace)
     _ = ray.get(actor.enqueue.remote(dict(type="noop")))
@@ -104,7 +114,8 @@ def enable_test_mode(ray_temp_dir: str | None = None) -> None:
 
     _log("creating SchedulerActor")
     _scheduler_actor = SchedulerActor.options(
-        name="scheduler", namespace=namespace, get_if_exists=True
+        name="scheduler", namespace=namespace, get_if_exists=True,
+        scheduling_strategy=head_pin,
     ).remote()
     actor = ray.get_actor("scheduler", namespace=namespace)
     _log("SchedulerActor ready")

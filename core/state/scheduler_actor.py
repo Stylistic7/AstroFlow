@@ -123,6 +123,13 @@ class SchedulerActor:
         from web_server.backend.ray_metrics import sample_once
         sample_once()
 
+    async def get_node_id_for_introspection(self) -> str:
+        """Return the Ray node ID this actor is currently scheduled on.
+        Test-only — used to assert the head-pin actually placed the
+        actor on the driver's node, not silently on a worker (the bug
+        that left the Flask diskcache reader looking at stale data)."""
+        return ray.get_runtime_context().get_node_id()
+
     async def _ray_metrics_loop(
         self, interval_s: float, start_delay_s: float,
     ) -> None:

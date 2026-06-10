@@ -95,6 +95,26 @@ def test_repeated_samples_grow_history(client):
     )
 
 
+def test_scheduler_actor_is_pinned_to_head_node():
+    """The SchedulerActor must run on the same Ray node as the driver
+    (the head). If it lands on a worker, its diskcache writes go to
+    the wrong machine's disk and the Flask endpoint reads stale data
+    forever — that's exactly the "constant sparkline" bug we hit.
+
+    On a single-node test cluster head == worker, so this is mostly
+    sanity-checking the pinning code path doesn't error out. On a
+    multi-node cluster (live cluster with a laptop joined) the same
+    assertion catches a worker-placement regression.
+    """
+    scheduler = ray.get_actor("scheduler", namespace=_namespace())
+    actor_node_id = ray.get(scheduler.get_node_id_for_introspection.remote())
+    driver_node_id = ray.get_runtime_context().get_node_id()
+    assert actor_node_id == driver_node_id, (
+        f"SchedulerActor scheduled on node {actor_node_id!r}, "
+        f"driver/head is {driver_node_id!r} — head-pin regression"
+    )
+
+
 def test_ray_status_endpoint_returns_expected_shape(client):
     """The endpoint contract the frontend RayStatus.jsx component
     depends on: a dict with cpuHistory / memHistory / objectStoreHistory
