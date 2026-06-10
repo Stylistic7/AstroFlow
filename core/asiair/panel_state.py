@@ -1,24 +1,19 @@
 """Aggregator for the ASIAir devices dropdown panel.
 
-Joins three live sources to produce one row per known camera plus
-pending rows for ASIAirs whose camera identity hasn't anchored yet:
+ONE ROW PER DISCOVERED ASIAir DEVICE. The panel's job is to give the
+user comfort that their rig is up and working — capturing the planned
+target, guiding, making frame-count progress — without having to also
+open the ZWO mobile app. The cross-reference back to AstroFlow's
+camera-fingerprint identity (used for calibration-frame association)
+is incidental and only surfaces when it's unambiguous (single
+discovered ASIAir + single anchored camera in the stacks dict);
+deriving per-ASIAir camera attribution from downloaded files would
+require download-path changes we don't want here.
 
-* `context.asiair_devices` — Zeroconf-discovered ASIAirs (live).
-* `context.stacks` — `Stack` objects each carrying `camera_id_hash`
-  (derived from defect-pixel consensus). One unique `camera_id_hash`
-  = one camera.
-* `context["asiair_device_nicknames"]` — user-assigned nicknames,
-  keyed by `camera_id_hash`. Never written into FITS / sidecar /
-  XISF — explicit "AstroFlow never modifies user data" rule.
-
-There is no live ASIAir API (no HTTP/WebSocket for cooler temp,
-target name, mount state) — everything below derives from the
-already-downloaded files' metadata as carried on the Stack objects.
-
-The panel is keyed by CAMERA, not by ASIAir, because the user
-established the rigs are fungible: "I only care about the main
-camera's identity". The ASIAir hostname is shown per-row as
-informational context only.
+Live state comes from `core/asiair/live_poller.py` (writes the live
+poll snapshot into `device["live"]`). Files-on-disk state (camera
+hash, last-image mtime) comes from `context.stacks` when the
+attribution is safe.
 """
 from __future__ import annotations
 
@@ -29,6 +24,37 @@ from context import local_context as context
 
 _ACTIVE_GREEN_SECONDS = 30 * 60        # < 30 min
 _ACTIVE_YELLOW_SECONDS = 24 * 60 * 60  # < 24 h
+
+
+# Guider states the panel renders as "actively guiding (good)".
+# Anything else AND capture-state-active is the warning condition
+# (the cloudy / star-lost / equipment-disconnected scenario).
+_GUIDE_HEALTHY_STATES = {"guiding", "looping", "calibrating", "settling"}
+
+
+def _derive_guide_warning(live: dict | None) -> bool:
+    """The user-facing warning we surface: capture is active on the
+    imager port but the guide loop is NOT in a healthy state. That's
+    the situation worth surfacing with a ⚠️ icon — clouds, star lost,
+    guide cam disconnect mid-session.
+
+    When the imager is idle, a stopped guider is the EXPECTED state
+    and we say nothing. When the guider state is unknown (`None`),
+    we also stay silent — better than firing spurious alarms while
+    we're still learning the firmware's state vocabulary.
+    """
+    if not live:
+        return False
+    capture_state = live.get("capture_state")
+    guide_state = live.get("guide_state")
+    # `capture_state` is from the imager's `get_app_state.capture.state`.
+    # "idle" is the not-currently-imaging value; anything else means
+    # the user told the device to capture.
+    if not capture_state or capture_state == "idle":
+        return False
+    if guide_state is None:
+        return False
+    return guide_state not in _GUIDE_HEALTHY_STATES
 
 
 def _band(epoch: float, now_epoch: float) -> str:
@@ -56,6 +82,62 @@ def _resolve_stack(stack_or_ref) -> Any:
     return stack_or_ref
 
 
+def _dedup_asiairs_by_hostname(asiairs: list[dict]) -> dict[str, dict]:
+    """Discovery often returns the SAME physical ASIAir under multiple
+    records — one per Bonjour service type (_smb._tcp + _device-info._tcp),
+    or one per network interface (a routable LAN IP plus a link-local
+    169.254/16 self-assigned address). Group by mDNS hostname; within
+    each hostname, prefer the entry whose live poll succeeded so the
+    panel renders state from the IP that actually answered.
+    """
+    by_host: dict[str, dict] = {}
+    for d in asiairs:
+        host = d.get("hostname") or d.get("ip") or ""
+        if not host:
+            continue
+        prev = by_host.get(host)
+        if prev is None:
+            by_host[host] = d
+            continue
+        prev_reachable = bool((prev.get("live") or {}).get("reachable"))
+        this_reachable = bool((d.get("live") or {}).get("reachable"))
+        if this_reachable and not prev_reachable:
+            by_host[host] = d
+    return by_host
+
+
+def _unambiguous_camera_hash(stacks_dict: dict, n_asiairs: int) -> str | None:
+    """If we have exactly one discovered ASIAir AND exactly one
+    anchored camera (one unique camera_id_hash across all stacks),
+    show it. Anything more complex would need per-ASIAir attribution
+    in the download path, which is explicit out — the camera hash is
+    low-priority and the wiring isn't worth it."""
+    if n_asiairs != 1:
+        return None
+    hashes: set[str] = set()
+    for s_or_ref in stacks_dict.values():
+        stack = _resolve_stack(s_or_ref)
+        h = getattr(stack, "camera_id_hash", None)
+        if h:
+            hashes.add(h)
+    if len(hashes) == 1:
+        return next(iter(hashes))
+    return None
+
+
+def _row_active_state(reachable: bool, capture_state: str | None) -> str:
+    """Three-state status dot for the row.
+      - green: the device answered AND is actively capturing
+      - yellow: answered but idle (working state machine, no session)
+      - gray: didn't answer the last poll cycle
+    """
+    if not reachable:
+        return "gray"
+    if capture_state and capture_state != "idle":
+        return "green"
+    return "yellow"
+
+
 def compute_panel_state(now_epoch: float | None = None) -> dict[str, Any]:
     """Build the panel payload from current context. Pure function over
     context state — safe to call from a Flask handler on every GET.
@@ -69,113 +151,50 @@ def compute_panel_state(now_epoch: float | None = None) -> dict[str, Any]:
 
     asiairs = list(context.asiair_devices or [])
     stacks_dict = context.stacks or {}
-    nicknames: dict[str, str] = (
-        context.get("asiair_device_nicknames", None) or {}
-    )
 
-    # Group stacks by `camera_id_hash`. Unanchored stacks (None hash)
-    # are skipped — they show up as the "Awaiting fingerprint" pending
-    # rows below, by virtue of an ASIAir being discovered but no row
-    # claiming its camera.
-    by_camera: dict[str, list[Any]] = {}
-    for s_or_ref in stacks_dict.values():
-        stack = _resolve_stack(s_or_ref)
-        camera_hash = getattr(stack, "camera_id_hash", None)
-        if camera_hash is None:
-            continue
-        by_camera.setdefault(camera_hash, []).append(stack)
-
-    # Best-effort "via" attribution: there's no per-file ASIAir tag in
-    # the download path today (the rig field is hardcoded "foo"; all
-    # files land in `input_dirs[0]/{date}/`), so we can't tell which
-    # ASIAir delivered which Stack. v1 shows the FIRST REACHABLE
-    # ASIAir's hostname/IP on every anchored row. The same physical
-    # ASIAir often appears in discovery under multiple IPs (a routable
-    # LAN address AND a link-local 169.254/16 self-assigned one) —
-    # picking by reachability ensures we pull live state from the
-    # interface that actually answered, not whichever Bonjour record
-    # happened to land first.
-    primary_asiair = next(
-        (d for d in asiairs if (d.get("live") or {}).get("reachable")),
-        asiairs[0] if asiairs else None,
-    )
-    primary_hostname = primary_asiair["hostname"] if primary_asiair else ""
-    primary_ip = primary_asiair["ip"] if primary_asiair else ""
-    # The live-poller writes its snapshot to `device["live"]`. The
-    # device-set name (`ap.ssid`, e.g. "ASIAIR_RC71") and the most
-    # recent GoTo target etc. live here. We promote a few fields into
-    # every row so the UI can render them without knowing which
-    # device's `live` to pick from.
-    primary_live = (primary_asiair or {}).get("live") or {}
+    by_host = _dedup_asiairs_by_hostname(asiairs)
+    cam_hash = _unambiguous_camera_hash(stacks_dict, len(by_host))
 
     rigs: list[dict[str, Any]] = []
-    for camera_hash, group in by_camera.items():
-        # Pick the most-recently-active stack to source the row's
-        # live fields (last filter, last target, last instrument).
-        # `newest_date` is the maximum frame DATE-OBS across the
-        # Stack — built once at identify time, no FS walk.
-        group_sorted = sorted(
-            group,
-            key=lambda s: getattr(s, "newest_date", None) or 0,
-            reverse=True,
-        )
-        primary_stack = group_sorted[0]
-        newest_date = getattr(primary_stack, "newest_date", None)
-        last_image_mtime = (
-            newest_date.timestamp() if newest_date is not None else 0.0
-        )
-
-        rigs.append({
-            "key": camera_hash,
-            "anchored": True,
-            "camera_hash_short": camera_hash[:8],
-            "nickname": nicknames.get(camera_hash),
-            "asiair_hostname": primary_hostname,
-            "asiair_ip": primary_ip,
-            # Device-set name from the ASIAir AP's SSID (live-polled).
-            # The frontend's label precedence is: AstroFlow nickname >
-            # this ap_ssid > camera_hash_short.
-            "ap_ssid": primary_live.get("ap_ssid"),
-            "last_image_mtime": last_image_mtime,
-            "last_filter": getattr(primary_stack, "filter", None),
-            # Prefer the device's most recent GoTo target (live) over
-            # the stack-derived target (None today). Falls back when
-            # the live poll hasn't run or fetched nothing.
-            "last_object": primary_live.get("last_goto_target"),
-            "last_instrume": getattr(primary_stack, "camera", None),
-            "active_state": _band(last_image_mtime, now_epoch),
-            "frames_until_anchor": None,
-            "live": primary_live or None,
-        })
-
-    # Pending rows: discovered ASIAirs in excess of known cameras get
-    # a placeholder row each. The user sees "Awaiting fingerprint" and
-    # the rename input stays disabled until the fingerprint anchors and
-    # the row promotes to one of the camera-keyed rows above.
-    n_excess = max(0, len(asiairs) - len(by_camera))
-    for i in range(n_excess):
-        dev = asiairs[len(by_camera) + i]
-        host = dev.get("hostname") or dev.get("ip", "")
+    for host, dev in by_host.items():
         live = dev.get("live") or {}
+        reachable = bool(live.get("reachable"))
+        capture_state = live.get("capture_state")
+        label = (
+            live.get("ap_ssid")
+            or host.rstrip(".").removesuffix(".local")
+            or dev.get("ip", "")
+        )
         rigs.append({
-            "key": f"pending:{host}",
-            "anchored": False,
-            "camera_hash_short": "",
-            "nickname": None,
-            "asiair_hostname": dev.get("hostname", ""),
-            "asiair_ip": dev.get("ip", ""),
-            "ap_ssid": live.get("ap_ssid"),
-            "last_image_mtime": 0.0,
-            "last_filter": None,
-            "last_object": live.get("last_goto_target"),
-            "last_instrume": live.get("camera_name"),
-            "active_state": "gray",
-            "frames_until_anchor": None,
+            "key": host,
+            "label": label,
+            "hostname": host,
+            "ip": dev.get("ip", ""),
+            "reachable": reachable,
+            "active_state": _row_active_state(reachable, capture_state),
+            "capture_state": capture_state,
+            "stack_done": live.get("stack_done"),
+            "stack_total": live.get("stack_total"),
+            "last_goto_target": live.get("last_goto_target"),
+            "camera_name": live.get("camera_name"),
+            "camera_state": live.get("camera_state"),
+            "guide_state": live.get("guide_state"),
+            "guide_warning": _derive_guide_warning(live or None),
+            # Unambiguous camera-hash carry — see `_unambiguous_camera_hash`
+            # for the rules. Empty string when ambiguous so the UI can
+            # treat "no hash" identically across the missing / ambiguous
+            # cases.
+            "camera_hash_short": cam_hash[:8] if cam_hash else "",
             "live": live or None,
         })
 
     active = sum(1 for r in rigs if r["active_state"] == "green")
+    warnings = sum(1 for r in rigs if r.get("guide_warning"))
     return {
         "rigs": rigs,
-        "summary": {"total": len(rigs), "active": active},
+        "summary": {
+            "total": len(rigs),
+            "active": active,
+            "warnings": warnings,
+        },
     }

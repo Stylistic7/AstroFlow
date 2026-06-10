@@ -44,15 +44,24 @@ from asiair.rpc_client import call_many
 log = structlog.get_logger()
 
 
-# Method list for one poll cycle. All on the imager port (4700) —
-# the guider port (4400) didn't expose anything we surface today.
-_POLL_METHODS = [
+# Method list for one poll cycle on the imager port (4700).
+_POLL_METHODS_IMAGER = [
     ("get_device_state", []),
     ("get_app_state", []),
     ("get_app_setting", []),
     ("pi_get_info", []),
     ("get_camera_state", []),
     ("get_focuser_state", []),
+]
+
+# Method list for one poll cycle on the guider port (4400). The
+# guider subsystem only registers its full method surface when a
+# guide camera is connected and the loop is running — until then
+# only `get_app_state` answers, returning the string "Stopped".
+# Tonight with equipment live we'll see richer shapes (guide RMS,
+# star SNR, calibration status) and can extend this list.
+_POLL_METHODS_GUIDER = [
+    ("get_app_state", []),
 ]
 
 
@@ -64,6 +73,30 @@ def _result(reply: dict | None) -> dict | None:
     if reply is None:
         return None
     return reply.get("result")
+
+
+def _normalize_guide_state(raw: Any) -> str | None:
+    """Map whatever `get_app_state` on the guider port (4400) returns
+    onto a small enum the panel can render. Today (idle, no equipment)
+    the value is the bare string "Stopped"; once a real session is
+    live, raw is expected to be a dict with explicit state fields —
+    add cases below as they surface."""
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        # "Stopped" is the known idle value. Lowercase + collapse so
+        # any "STOPPED" / "Idle" / "Running" variant resolves cleanly.
+        return raw.strip().lower() or None
+    if isinstance(raw, dict):
+        # Best guess at the live-session shape — when the user is
+        # actively guiding tonight we'll see what's actually in here
+        # and refine.
+        for key in ("state", "guide_state", "status", "mode"):
+            v = raw.get(key)
+            if isinstance(v, str) and v:
+                return v.strip().lower()
+        return None
+    return None
 
 
 def _build_live_snapshot(replies: dict[str, dict | None]) -> dict[str, Any]:
@@ -131,19 +164,43 @@ def _build_live_snapshot(replies: dict[str, dict | None]) -> dict[str, Any]:
         # only the focuser-specific call gets through.
         out.setdefault("focuser_state", focuser_state["state"])
 
+    # The guider port keeps its own `get_app_state` — namespaced under
+    # `guide_app_state` here. Today (no equipment connected) it returns
+    # the bare string "Stopped"; tonight with the guide camera up and
+    # the loop running, it'll return a richer object that we can
+    # surface as guide RMS / star SNR / calibration progress.
+    guide_app_raw = replies.get("guide_app_state")
+    if guide_app_raw is not None:
+        result = guide_app_raw.get("result") if isinstance(guide_app_raw, dict) else None
+        if result is not None:
+            out["reachable"] = True
+            out["guide_app_state_raw"] = result
+            normalized = _normalize_guide_state(result)
+            if normalized:
+                out["guide_state"] = normalized
+
     return out
 
 
-def poll_device(device: dict[str, Any], port: int = 4700,
-                timeout: float = 2.0) -> dict[str, Any]:
+def poll_device(device: dict[str, Any], timeout: float = 2.0) -> dict[str, Any]:
     """Run one poll cycle against a single discovered device and
-    return the snapshot dict. The caller merges this into
-    `context.asiair_devices[i]["live"]`."""
+    return the snapshot dict. Hits BOTH the imager port (4700) for
+    most state and the guider port (4400) for guide-loop state. The
+    caller merges this into `context.asiair_devices[i]["live"]`."""
     ip = device.get("ip")
     if not ip:
         return {"queried_at": time.time(), "reachable": False}
-    replies = call_many(ip, port, _POLL_METHODS, timeout=timeout)
-    return _build_live_snapshot(replies)
+
+    imager_replies = call_many(ip, 4700, _POLL_METHODS_IMAGER, timeout=timeout)
+    guider_replies = call_many(ip, 4400, _POLL_METHODS_GUIDER, timeout=timeout)
+    # Namespace the guider reply so `_build_live_snapshot` can tell
+    # the two `get_app_state` results apart — they answer different
+    # questions on the two ports (imager: capture/stack state;
+    # guider: loop state).
+    merged = dict(imager_replies)
+    if "get_app_state" in guider_replies:
+        merged["guide_app_state"] = guider_replies["get_app_state"]
+    return _build_live_snapshot(merged)
 
 
 def tick() -> None:

@@ -19,24 +19,18 @@ from asiair import panel_state as ps
 @dataclass
 class _FakeStack:
     """Minimum surface of `Stack` that `compute_panel_state` reads:
-    camera_id_hash, newest_date, filter, camera."""
+    camera_id_hash."""
     camera_id_hash: str | None
-    newest_date: datetime.datetime
-    filter: str
-    camera: str
 
 
 class _FakeContext:
     """Tiny mock of `local_context` covering the attrs and `get(...)`
     surface `panel_state` actually touches."""
-    def __init__(self, *, asiair_devices=None, stacks=None, nicknames=None):
+    def __init__(self, *, asiair_devices=None, stacks=None):
         self.asiair_devices = list(asiair_devices or [])
         self.stacks = dict(stacks or {})
-        self._nicknames = dict(nicknames or {})
 
     def get(self, key, default=None):
-        if key == "asiair_device_nicknames":
-            return self._nicknames
         return default
 
 
@@ -49,203 +43,149 @@ def stub_context(monkeypatch):
     return ctx
 
 
-_T_NOW = datetime.datetime(2026, 6, 9, 22, 0, 0)
+_T_NOW = datetime.datetime(2026, 6, 10, 22, 0, 0)
 _NOW_EPOCH = _T_NOW.timestamp()
-
-
-def _stack(camera_hash, *, mins_ago=0, filter="H", camera="ZWO ASI6200MM Pro"):
-    return _FakeStack(
-        camera_id_hash=camera_hash,
-        newest_date=_T_NOW - datetime.timedelta(minutes=mins_ago),
-        filter=filter,
-        camera=camera,
-    )
 
 
 def test_empty_returns_empty_payload(stub_context):
     out = ps.compute_panel_state(now_epoch=_NOW_EPOCH)
-    assert out == {"rigs": [], "summary": {"total": 0, "active": 0}}
+    assert out["rigs"] == []
+    assert out["summary"]["total"] == 0
 
 
-def test_single_anchored_camera(stub_context):
-    stub_context.asiair_devices = [{
-        "ip": "10.0.0.42", "hostname": "asiair-foo.local", "mac": "aa:bb",
-    }]
-    stub_context.stacks = {"s1": _stack("cam-hash-deadbeef", mins_ago=5)}
-
-    out = ps.compute_panel_state(now_epoch=_NOW_EPOCH)
-    assert out["summary"] == {"total": 1, "active": 1}
-    (row,) = out["rigs"]
-    assert row["anchored"] is True
-    assert row["key"] == "cam-hash-deadbeef"
-    assert row["camera_hash_short"] == "cam-hash"
-    assert row["asiair_hostname"] == "asiair-foo.local"
-    assert row["asiair_ip"] == "10.0.0.42"
-    assert row["active_state"] == "green"
-    assert row["last_filter"] == "H"
-    assert row["last_instrume"] == "ZWO ASI6200MM Pro"
-    assert row["nickname"] is None
-
-
-def test_nickname_applied_when_set(stub_context):
-    stub_context.asiair_devices = [{"ip": "10.0.0.1", "hostname": "a.local"}]
-    stub_context.stacks = {"s1": _stack("abc12345", mins_ago=10)}
-    stub_context._nicknames = {"abc12345": "Backyard rig"}
-
-    out = ps.compute_panel_state(now_epoch=_NOW_EPOCH)
-    (row,) = out["rigs"]
-    assert row["nickname"] == "Backyard rig"
-
-
-def test_active_band_classification(stub_context):
-    stub_context.asiair_devices = [{"ip": "10.0.0.1", "hostname": "a.local"}]
-    stub_context.stacks = {
-        # 5 min ago → green
-        "s_green": _stack("hash-green-________", mins_ago=5),
-        # 3 hours ago → yellow
-        "s_yellow": _stack("hash-yellow-_______", mins_ago=180),
-        # 5 days ago → gray
-        "s_gray": _stack("hash-gray-_________", mins_ago=5 * 24 * 60),
-    }
-
-    out = ps.compute_panel_state(now_epoch=_NOW_EPOCH)
-    by_key = {r["key"]: r for r in out["rigs"]}
-    assert by_key["hash-green-________"]["active_state"] == "green"
-    assert by_key["hash-yellow-_______"]["active_state"] == "yellow"
-    assert by_key["hash-gray-_________"]["active_state"] == "gray"
-    assert out["summary"] == {"total": 3, "active": 1}
-
-
-def test_unanchored_stacks_are_ignored(stub_context):
-    stub_context.asiair_devices = [{"ip": "10.0.0.1", "hostname": "a.local"}]
-    stub_context.stacks = {
-        "s_anchored": _stack("anchored", mins_ago=1),
-        "s_pending": _stack(None, mins_ago=1),
-    }
-
-    out = ps.compute_panel_state(now_epoch=_NOW_EPOCH)
-    keys = [r["key"] for r in out["rigs"]]
-    # Only the anchored stack becomes a row. The unanchored stack is
-    # silently dropped — there's no nickname or per-row state to render
-    # for it. If discovery shows more ASIAirs than anchored cameras,
-    # we still emit pending rows for the excess.
-    assert keys == ["anchored"]
-
-
-def test_pending_rows_for_excess_asiairs(stub_context):
-    # Two discovered ASIAirs, zero anchored cameras → two pending rows.
-    stub_context.asiair_devices = [
-        {"ip": "10.0.0.1", "hostname": "a.local"},
-        {"ip": "10.0.0.2", "hostname": "b.local"},
-    ]
-    stub_context.stacks = {}
-
-    out = ps.compute_panel_state(now_epoch=_NOW_EPOCH)
-    assert out["summary"]["total"] == 2
-    assert out["summary"]["active"] == 0
-    for row in out["rigs"]:
-        assert row["anchored"] is False
-        assert row["key"].startswith("pending:")
-        assert row["nickname"] is None
-        assert row["camera_hash_short"] == ""
-        assert row["active_state"] == "gray"
-        assert row["last_image_mtime"] == 0.0
-
-
-def test_anchored_plus_pending_mix(stub_context):
-    # One anchored camera + one extra ASIAir (no anchored camera for
-    # it yet) → 1 anchored row + 1 pending row.
-    stub_context.asiair_devices = [
-        {"ip": "10.0.0.1", "hostname": "a.local"},
-        {"ip": "10.0.0.2", "hostname": "b.local"},
-    ]
-    stub_context.stacks = {"s1": _stack("anchored-cam", mins_ago=1)}
-
-    out = ps.compute_panel_state(now_epoch=_NOW_EPOCH)
-    assert out["summary"]["total"] == 2
-    anchored = [r for r in out["rigs"] if r["anchored"]]
-    pending = [r for r in out["rigs"] if not r["anchored"]]
-    assert len(anchored) == 1
-    assert len(pending) == 1
-    # Pending row is the second discovered ASIAir (index 1).
-    assert pending[0]["asiair_hostname"] == "b.local"
-
-
-def test_live_overlay_promotes_ap_ssid_and_goto_target(stub_context):
-    """When the live-poller has populated `device["live"]`, the row's
-    `ap_ssid` and `last_object` come from the live snapshot instead of
-    None / unset."""
+def test_single_reachable_asiair(stub_context):
+    """The happy path: one discovered ASIAir, live poll succeeded —
+    one row with the device-set name, idle yellow dot."""
     stub_context.asiair_devices = [{
         "ip": "10.0.0.28", "hostname": "asiair.local.",
         "live": {
             "reachable": True,
             "ap_ssid": "ASIAIR_RC71",
-            "last_goto_target": "Vega",
-            "firmware": "13.41",
+            "capture_state": "idle",
         },
     }]
-    stub_context.stacks = {"s": _stack("cam-hash-1", mins_ago=1)}
 
     out = ps.compute_panel_state(now_epoch=_NOW_EPOCH)
     (row,) = out["rigs"]
-    assert row["ap_ssid"] == "ASIAIR_RC71"
-    assert row["last_object"] == "Vega"
-    assert row["live"]["firmware"] == "13.41"
+    assert row["label"] == "ASIAIR_RC71"
+    assert row["reachable"] is True
+    assert row["active_state"] == "yellow"
 
 
-def test_primary_asiair_picked_by_reachability(stub_context):
-    """When discovery returns two records for the same physical
-    ASIAir (one on a routable LAN IP, one on a link-local
-    169.254/16), the panel must promote live state from whichever
-    ONE answered the RPC. Picking by list order would surface
-    `reachable=False` data and miss the ap.ssid."""
+def test_capturing_row_shows_progress_and_goes_green(stub_context):
+    stub_context.asiair_devices = [{
+        "ip": "10.0.0.28", "hostname": "asiair.local.",
+        "live": {
+            "reachable": True,
+            "ap_ssid": "ASIAIR_RC71",
+            "capture_state": "working",
+            "stack_done": 13,
+            "stack_total": 60,
+            "last_goto_target": "M42",
+        },
+    }]
+
+    out = ps.compute_panel_state(now_epoch=_NOW_EPOCH)
+    (row,) = out["rigs"]
+    assert row["active_state"] == "green"
+    assert row["capture_state"] == "working"
+    assert row["stack_done"] == 13
+    assert row["stack_total"] == 60
+    assert row["last_goto_target"] == "M42"
+
+
+def test_unreachable_row_goes_gray(stub_context):
+    stub_context.asiair_devices = [{
+        "ip": "10.0.0.28", "hostname": "asiair.local.",
+        # No live, or live with reachable=False.
+        "live": {"reachable": False},
+    }]
+    out = ps.compute_panel_state(now_epoch=_NOW_EPOCH)
+    (row,) = out["rigs"]
+    assert row["active_state"] == "gray"
+    assert row["reachable"] is False
+
+
+def test_label_fallback_strips_local_when_no_ap_ssid(stub_context):
+    """No `ap.ssid` yet (live poll hasn't run) — use the hostname,
+    stripping the trailing `.local.` and any `.local` so the label
+    doesn't look like Bonjour debug output."""
+    stub_context.asiair_devices = [{
+        "ip": "10.0.0.28", "hostname": "asiair-mike.local.",
+        "live": {},
+    }]
+    out = ps.compute_panel_state(now_epoch=_NOW_EPOCH)
+    (row,) = out["rigs"]
+    assert row["label"] == "asiair-mike"
+
+
+def test_dedup_by_hostname_picks_reachable(stub_context):
+    """Same physical ASIAir often appears under two records — the
+    routable LAN IP plus a 169.254/16 self-assigned link-local. The
+    panel must dedup by hostname AND pick the reachable one so the
+    row reflects the IP that actually answered the live poll."""
     stub_context.asiair_devices = [
         {"ip": "169.254.25.148", "hostname": "asiair.local.",
          "live": {"reachable": False, "ap_ssid": None}},
         {"ip": "10.0.0.28", "hostname": "asiair.local.",
-         "live": {"reachable": True, "ap_ssid": "ASIAIR_RC71",
-                  "last_goto_target": "Vega"}},
+         "live": {"reachable": True, "ap_ssid": "ASIAIR_RC71"}},
     ]
-    stub_context.stacks = {"s": _stack("cam-hash-x", mins_ago=1)}
-
     out = ps.compute_panel_state(now_epoch=_NOW_EPOCH)
     (row,) = out["rigs"]
-    assert row["ap_ssid"] == "ASIAIR_RC71"
-    assert row["asiair_ip"] == "10.0.0.28"
-    assert row["last_object"] == "Vega"
+    assert row["ip"] == "10.0.0.28"
+    assert row["label"] == "ASIAIR_RC71"
+    assert row["reachable"] is True
 
 
-def test_pending_row_carries_live_ap_ssid(stub_context):
-    """A discovered ASIAir with live state but no anchored camera
-    still gets the device-set name in its pending row — the user
-    can see 'this is ASIAIR_RC71, still anchoring'."""
+def test_guide_warning_fires_when_capturing_but_guider_stopped(stub_context):
+    stub_context.asiair_devices = [{
+        "ip": "10.0.0.28", "hostname": "asiair.local.",
+        "live": {
+            "reachable": True,
+            "ap_ssid": "ASIAIR_RC71",
+            "capture_state": "working",
+            "guide_state": "stopped",
+        },
+    }]
+    out = ps.compute_panel_state(now_epoch=_NOW_EPOCH)
+    (row,) = out["rigs"]
+    assert row["guide_warning"] is True
+    assert out["summary"]["warnings"] == 1
+
+
+def test_guide_warning_silent_when_capture_idle(stub_context):
+    """Stopped guider with the imager idle is the EXPECTED daytime
+    state — no warning."""
+    stub_context.asiair_devices = [{
+        "ip": "10.0.0.28", "hostname": "asiair.local.",
+        "live": {
+            "reachable": True,
+            "ap_ssid": "ASIAIR_RC71",
+            "capture_state": "idle",
+            "guide_state": "stopped",
+        },
+    }]
+    out = ps.compute_panel_state(now_epoch=_NOW_EPOCH)
+    (row,) = out["rigs"]
+    assert row["guide_warning"] is False
+    assert out["summary"]["warnings"] == 0
+
+
+def test_camera_hash_carried_only_when_unambiguous(stub_context):
+    """One ASIAir + one anchored camera in stacks → carry the short
+    hash. Two cameras or two ASIAirs → suppress it (we don't have
+    per-ASIAir attribution; surfacing the wrong hash would mislead)."""
     stub_context.asiair_devices = [{
         "ip": "10.0.0.28", "hostname": "asiair.local.",
         "live": {"reachable": True, "ap_ssid": "ASIAIR_RC71"},
     }]
-    stub_context.stacks = {}
-
+    stub_context.stacks = {"s1": _FakeStack(camera_id_hash="deadbeefcafebabe")}
     out = ps.compute_panel_state(now_epoch=_NOW_EPOCH)
     (row,) = out["rigs"]
-    assert row["anchored"] is False
-    assert row["ap_ssid"] == "ASIAIR_RC71"
-    assert row["live"]["reachable"] is True
+    assert row["camera_hash_short"] == "deadbeef"
 
-
-def test_anchored_row_picks_newest_stack_for_live_fields(stub_context):
-    """When a camera has multiple stacks, the row's `last_filter` /
-    `last_instrume` come from the most recently active one — what the
-    user actually saw last."""
-    stub_context.asiair_devices = [{"ip": "10.0.0.1", "hostname": "a.local"}]
-    stub_context.stacks = {
-        "old": _stack("cam-multi", mins_ago=60 * 24 * 7, filter="O"),
-        "new": _stack("cam-multi", mins_ago=2, filter="S"),
-    }
-
+    # Add a second anchored camera — now ambiguous, suppress.
+    stub_context.stacks["s2"] = _FakeStack(camera_id_hash="0123456789abcdef")
     out = ps.compute_panel_state(now_epoch=_NOW_EPOCH)
     (row,) = out["rigs"]
-    assert row["last_filter"] == "S"
-    # mtime is the newest, not the oldest.
-    assert row["last_image_mtime"] == (
-        _T_NOW - datetime.timedelta(minutes=2)
-    ).timestamp()
+    assert row["camera_hash_short"] == ""
