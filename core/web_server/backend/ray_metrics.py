@@ -59,43 +59,90 @@ def _read_history(key: str) -> list[float]:
     return val if isinstance(val, list) else []
 
 
-def sample_once() -> None:
-    """Sample current head-node CPU / memory utilization via psutil.
-
-    What we WANT to plot is "stuff is happening" — actual CPU
-    activity and actual RAM in use. Ray's `cluster_resources()` /
-    `available_resources()` report DECLARED resource slots
-    (`@ray.remote(num_cpus=, memory=)`), not real usage; a single
-    long-running actor with `memory=10G` pegs Ray's memory metric at
-    10 G forever, idle or not. That made the previous chart flat
-    and useless. `psutil` reads the kernel's real numbers.
-
-    Today's limitation: this samples the HEAD node only (the process
-    this code runs in, which is the SchedulerActor). For a
-    multi-node cluster we'd spawn a small `@ray.remote` task on each
-    node that returns its own `psutil.cpu_percent()` /
-    `virtual_memory().percent`, and aggregate (max? mean?) here.
-    Defer until the user actually runs multi-node — adding the
-    extra moving piece prematurely is worse than the current
-    single-node accuracy.
-
-    Best-effort: swallows every exception."""
+def _try_import_ray_remote():
+    """Define `_sample_node_psutil` lazily so the module imports cleanly
+    in processes where Ray isn't available (tests, the SSE worker, etc.).
+    Returns the `@ray.remote`-wrapped function or None on failure."""
     try:
-        import psutil
-        # interval=None / 0 means "non-blocking" — returns the percent
-        # since the LAST call. The first call after process boot
-        # returns 0.0 because there's no prior reference; the second
-        # and onward are accurate. Our 1 Hz cadence means the first
-        # zero sample washes out of the 60-sample window in a minute.
-        cpu = float(psutil.cpu_percent(interval=None))
-        _push_sample(_CPU_KEY, max(0.0, min(100.0, cpu)))
-        mem = float(psutil.virtual_memory().percent)
-        _push_sample(_MEM_KEY, max(0.0, min(100.0, mem)))
-        # Object-store sampling stays Ray-side since it IS still a
-        # signal worth surfacing (object-store spilling to disk
-        # is real pressure). Keep it best-effort.
+        import ray
+
+        @ray.remote(num_cpus=0.01)
+        def _sample_node_psutil():
+            import psutil
+            # Blocking 0.5 s so the first call from a fresh worker
+            # process returns accurate CPU% (the non-blocking variant
+            # would return 0 the first time it's called).
+            cpu = float(psutil.cpu_percent(interval=0.5))
+            mem = float(psutil.virtual_memory().percent)
+            return (cpu, mem)
+
+        return _sample_node_psutil
+    except Exception:
+        return None
+
+
+_sample_node_psutil = None  # populated on first sample_once call
+
+
+def sample_once() -> None:
+    """Sample EACH Ray node's psutil CPU / memory and aggregate by max.
+
+    "Aggregate by max" answers "is any Mac in the cluster working
+    hard right now?" — the same question you'd answer by glancing at
+    Activity Monitor on each machine. Mean would hide a single hot
+    node behind a cluster average; max keeps it honest.
+
+    Implementation: fire a small `@ray.remote(num_cpus=0.01)` task per
+    alive node, pinned via `NodeAffinitySchedulingStrategy`. Each task
+    runs psutil locally on its host and returns the (cpu%, mem%) pair.
+    The head collects, takes the max of each, writes to diskcache.
+
+    Object-store sampling stays Ray-side — that's the one metric Ray
+    reports honestly (it's the size of the plasma store relative to
+    its budget, not a scheduled-vs-available game).
+
+    Best-effort: any exception leaves the deques untouched."""
+    global _sample_node_psutil
+    try:
+        import ray
+        if _sample_node_psutil is None:
+            _sample_node_psutil = _try_import_ray_remote()
+        if _sample_node_psutil is None:
+            return
+
+        from ray.util.scheduling_strategies import NodeAffinitySchedulingStrategy
+        nodes = ray.nodes()
+        alive = [n for n in nodes if n.get("Alive")]
+        if not alive:
+            return
+
+        refs = []
+        for n in alive:
+            strategy = NodeAffinitySchedulingStrategy(
+                node_id=n["NodeID"], soft=False,
+            )
+            refs.append(
+                _sample_node_psutil.options(scheduling_strategy=strategy).remote()
+            )
+        # Per-ref ray.get so one bad node doesn't blank the whole sample.
+        # Total wall time bounded by max(node sampling latency) + network —
+        # the tasks block for 0.5 s in parallel, so a 2-node cluster is
+        # still ~0.5 s + a bit.
+        cpus, mems = [], []
+        for ref in refs:
+            try:
+                cpu, mem = ray.get(ref, timeout=4.0)
+                cpus.append(float(cpu))
+                mems.append(float(mem))
+            except Exception as e:
+                print(f"### ray_metrics per-node sample failed: {type(e).__name__}: {e}")
+        if cpus:
+            _push_sample(_CPU_KEY, max(0.0, min(100.0, max(cpus))))
+        if mems:
+            _push_sample(_MEM_KEY, max(0.0, min(100.0, max(mems))))
+
+        # Object-store sampling stays Ray-side.
         try:
-            import ray
             total = ray.cluster_resources() or {}
             avail = ray.available_resources() or {}
             total_obj = float(total.get("object_store_memory", 0))
@@ -106,9 +153,7 @@ def sample_once() -> None:
         except Exception:
             pass
     except Exception as e:
-        import os
-        if os.environ.get("ASTROFLOW_DEBUG_RAY_METRICS"):
-            print(f"### ray_metrics sample failed: {e}")
+        print(f"### ray_metrics sample failed: {type(e).__name__}: {e}")
 
 
 def get_cpu_history() -> list[float]:
