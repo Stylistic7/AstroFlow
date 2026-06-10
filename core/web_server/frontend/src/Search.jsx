@@ -35,6 +35,7 @@ import LeftDrawer from "./LeftDrawer.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
 import ProgressComponent from './ProgressComponent.jsx';
 import RayStatus from './RayStatus.jsx';
+import AsiairPanel from './AsiairPanel.jsx';
 import ShoppingCartPanel from './ShoppingCartPanel.jsx';
 import ObservingPlanChip from './suggestions/ObservingPlanChip.jsx';
 import { Document } from "flexsearch";
@@ -492,6 +493,8 @@ export default function PrimarySearchAppBar() {
           <ProgressComponent />
           <VerticalDivider />
           <RayStatus />
+          <VerticalDivider />
+          <AsiairPanel />
           <VerticalDivider />
           <Box sx={{ display: { xs: 'none', md: 'flex' } }}>
             <IconButton

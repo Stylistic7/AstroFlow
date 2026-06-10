@@ -62,6 +62,16 @@ class ASIAirListener(ServiceListener):
                     devices=list(self.by_ip.values()),
                 )
             )
+        # Tell connected web clients to refetch the ASIAir panel so the
+        # dropdown reflects the new device list without waiting for the
+        # next polling tick. Lazy-import to avoid pulling the web_server
+        # blueprints into the discovery import path (the discovery code
+        # lives in the state machine, no Flask dependency).
+        try:
+            from web_server.backend.announcer import announce
+            announce("asiair_devices")
+        except Exception as e:
+            print(f"### asiair_zeroconf: announce failed (non-fatal): {e}")
 
     def add_service(self, zc, svc_type, name):
         info = zc.get_service_info(svc_type, name, timeout=1500)

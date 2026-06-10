@@ -38,12 +38,24 @@ function App() {
   const [computeGraph, setComputeGraph] = useState({});
   const [computeGraphStatus, setComputeGraphStatus] = useState({});
   const [rayStatus, setRayStatus] = useState({});
+  const [asiairDevices, setAsiairDevices] = useState({ rigs: [], summary: { total: 0, active: 0 } });
   const [decisionOverrides, setDecisionOverrides] = useState([]);
   const [observingPlan, setObservingPlan] = useState({ entries: [] });
   const [sseConnected, setSseConnected] = useState(false);
   const [showQuarantined, setShowQuarantined] = useState(
     () => localStorage.getItem('astroflow_showQuarantined') !== 'false'
   );
+
+  // Lifted out of the SSE useEffect so the AstroFlowContext provider
+  // can expose `refreshAsiairDevices` to the panel — the panel calls
+  // it after a successful PATCH to repaint immediately without
+  // waiting for the SSE round-trip.
+  const refreshAsiairDevices = useCallback(async () => {
+    try {
+      const s = await fetch('/api/asiair/devices').then(r => r.json());
+      setAsiairDevices(s);
+    } catch (e) { console.warn(e); }
+  }, []);
 
 
   useEffect(() => {
@@ -81,6 +93,7 @@ function App() {
       setRayStatus(s);
     };
 
+
     const loadDecisionOverrides = async () => {
       try {
         const d = await fetch('/api/decision_overrides').then(r => r.json());
@@ -90,6 +103,7 @@ function App() {
 
     loadComputeGraphStatus();
     loadRayStatus();
+    refreshAsiairDevices();
     loadDecisionOverrides();
 
     const stream_url = `${window.location.protocol}//${window.location.hostname}:8001/stream`;
@@ -123,6 +137,7 @@ function App() {
       sse.addEventListener("reload_data", e => { onAnyEvent(); loadObjectData(); loadDecisionOverrides(); });
       sse.addEventListener("compute_graph_status", e => { onAnyEvent(); loadComputeGraphStatus(); });
       sse.addEventListener("ray_status", e => { onAnyEvent(); loadRayStatus(); });
+      sse.addEventListener("asiair_devices", e => { onAnyEvent(); refreshAsiairDevices(); });
       sse.addEventListener("heartbeat", onAnyEvent);
 
       sse.onerror = () => {
@@ -219,6 +234,8 @@ function App() {
             computeGraph,
             computeGraphStatus,
             rayStatus,
+            asiairDevices,
+            refreshAsiairDevices,
             isQuarantined,
             showQuarantined,
             toggleShowQuarantined,

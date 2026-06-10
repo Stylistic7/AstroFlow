@@ -117,6 +117,18 @@ def _run_asiair_download_and_maybe_restart() -> None:
     ]
     ray.get(refs)
 
+    # Tell connected web clients to refetch the ASIAir panel — the
+    # newest-file mtime / active-state dot are derived from on-disk
+    # Stack state, so any newly downloaded frames may shift the
+    # rendering. Fires even when no new files arrived, so the panel
+    # can show the dot dimming when the cycle completes without
+    # producing anything new.
+    try:
+        from web_server.backend.announcer import announce
+        announce("asiair_devices")
+    except Exception as e:
+        print(f"### scheduler_actor: asiair_devices announce failed: {e}")
+
     files_after = sum(len(find_image_files(str(d))) for d in input_dirs)
     if files_after > files_before:
         new_files = files_after - files_before
