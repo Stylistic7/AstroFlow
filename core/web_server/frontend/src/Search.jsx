@@ -435,7 +435,7 @@ export default function PrimarySearchAppBar() {
               <SearchIcon />
             </SearchIconWrapper>
             <StyledInputBase
-              sx={{ width: '25vw' }}
+              sx={{ width: '12.5vw' }}
               placeholder="Search…"
               inputProps={{
                 'aria-label': 'search',
