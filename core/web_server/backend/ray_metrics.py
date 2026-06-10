@@ -59,45 +59,52 @@ def _read_history(key: str) -> list[float]:
     return val if isinstance(val, list) else []
 
 
-def _utilization_pct(total: dict, avail: dict, key: str) -> float | None:
-    """`(total - available) / total` as a 0-100 percentage. None when
-    Ray hasn't told us about this resource (cluster not up yet, or
-    the key just isn't tracked)."""
-    total_val = float(total.get(key, 0))
-    if total_val <= 0:
-        return None
-    used = total_val - float(avail.get(key, 0))
-    return max(0.0, min(100.0, (used / total_val) * 100.0))
-
-
 def sample_once() -> None:
-    """Sample current cluster CPU / memory / object-store utilization
-    and append to history.
+    """Sample current head-node CPU / memory utilization via psutil.
 
-    Memory and object-store numbers track Ray's SCHEDULED resources
-    (what tasks have declared via `memory=...`), not actual RSS on
-    each node. For most workloads that's a reliable proxy for
-    pressure — Ray scheduling near 100% means no room for new tasks
-    — but it isn't the same as "my Macs are about to swap". If we
-    grow a real-RSS view, that's a separate per-node sampler.
+    What we WANT to plot is "stuff is happening" — actual CPU
+    activity and actual RAM in use. Ray's `cluster_resources()` /
+    `available_resources()` report DECLARED resource slots
+    (`@ray.remote(num_cpus=, memory=)`), not real usage; a single
+    long-running actor with `memory=10G` pegs Ray's memory metric at
+    10 G forever, idle or not. That made the previous chart flat
+    and useless. `psutil` reads the kernel's real numbers.
 
-    Best-effort: swallows every exception, so Ray-not-yet-initialized
-    just produces no samples this tick. The deques keep their prior
-    contents and the sparklines flatline visibly when the cluster
-    goes away."""
+    Today's limitation: this samples the HEAD node only (the process
+    this code runs in, which is the SchedulerActor). For a
+    multi-node cluster we'd spawn a small `@ray.remote` task on each
+    node that returns its own `psutil.cpu_percent()` /
+    `virtual_memory().percent`, and aggregate (max? mean?) here.
+    Defer until the user actually runs multi-node — adding the
+    extra moving piece prematurely is worse than the current
+    single-node accuracy.
+
+    Best-effort: swallows every exception."""
     try:
-        import ray
-        total = ray.cluster_resources() or {}
-        avail = ray.available_resources() or {}
-        cpu = _utilization_pct(total, avail, "CPU")
-        if cpu is not None:
-            _push_sample(_CPU_KEY, cpu)
-        mem = _utilization_pct(total, avail, "memory")
-        if mem is not None:
-            _push_sample(_MEM_KEY, mem)
-        obj = _utilization_pct(total, avail, "object_store_memory")
-        if obj is not None:
-            _push_sample(_OBJ_KEY, obj)
+        import psutil
+        # interval=None / 0 means "non-blocking" — returns the percent
+        # since the LAST call. The first call after process boot
+        # returns 0.0 because there's no prior reference; the second
+        # and onward are accurate. Our 1 Hz cadence means the first
+        # zero sample washes out of the 60-sample window in a minute.
+        cpu = float(psutil.cpu_percent(interval=None))
+        _push_sample(_CPU_KEY, max(0.0, min(100.0, cpu)))
+        mem = float(psutil.virtual_memory().percent)
+        _push_sample(_MEM_KEY, max(0.0, min(100.0, mem)))
+        # Object-store sampling stays Ray-side since it IS still a
+        # signal worth surfacing (object-store spilling to disk
+        # is real pressure). Keep it best-effort.
+        try:
+            import ray
+            total = ray.cluster_resources() or {}
+            avail = ray.available_resources() or {}
+            total_obj = float(total.get("object_store_memory", 0))
+            if total_obj > 0:
+                used = total_obj - float(avail.get("object_store_memory", 0))
+                obj = max(0.0, min(100.0, (used / total_obj) * 100.0))
+                _push_sample(_OBJ_KEY, obj)
+        except Exception:
+            pass
     except Exception as e:
         import os
         if os.environ.get("ASTROFLOW_DEBUG_RAY_METRICS"):
