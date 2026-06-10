@@ -60,7 +60,7 @@ const DropdownChip = ({
       aria-expanded={open}
       aria-label={ariaLabel || tooltipTitle}
       tabIndex={0}
-      onClick={(e) => setAnchorEl(e.currentTarget)}
+      onClick={() => setAnchorEl(chipRef.current)}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
@@ -106,11 +106,20 @@ const DropdownChip = ({
     </Box>
   );
 
+  // Always wrap in Tooltip (when a title is set) — flipping
+  // Tooltip on/off based on `open` was remounting the chip Box and
+  // detaching the ref the Menu anchored to, which sent the dropdown
+  // to (0,0). Tooltip suppresses itself when the user isn't
+  // hovering, so the only cost is a redundant tooltip flash if the
+  // user happens to hover the chip while the menu is already open
+  // — minor cosmetic, not a regression.
+  const chipMaybeTooltipped = tooltipTitle
+    ? <Tooltip title={tooltipTitle}>{chip}</Tooltip>
+    : chip;
+
   return (
     <>
-      {tooltipTitle && !open
-        ? <Tooltip title={tooltipTitle}>{chip}</Tooltip>
-        : chip}
+      {chipMaybeTooltipped}
       <Menu
         anchorEl={anchorEl}
         open={open}

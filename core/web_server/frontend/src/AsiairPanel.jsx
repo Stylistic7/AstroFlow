@@ -14,8 +14,17 @@ import DropdownChip from "./DropdownChip.jsx";
 
 
 const _STATE_COLOR = {
+  // green: capturing + guide healthy. The "everything's working" signal.
   green: "success.light",
-  yellow: "warning.light",
+  // warning (amber): capturing but guide_warning fires (clouds /
+  // lost star). Capturing IS still happening; the frames are suspect.
+  warning: "warning.light",
+  // yellow: reachable but idle. White text — present, doing nothing.
+  // The lack of color IS the signal; idle is the baseline.
+  yellow: "text.primary",
+  // gray: live poll didn't answer. The device may have been
+  // powered down or fallen off the network. Dimmed so it visually
+  // recedes from the rows that ARE reachable.
   gray: "text.disabled",
 };
 

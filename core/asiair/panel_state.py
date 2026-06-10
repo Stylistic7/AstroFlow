@@ -125,16 +125,28 @@ def _unambiguous_camera_hash(stacks_dict: dict, n_asiairs: int) -> str | None:
     return None
 
 
-def _row_active_state(reachable: bool, capture_state: str | None) -> str:
-    """Three-state status dot for the row.
-      - green: the device answered AND is actively capturing
-      - yellow: answered but idle (working state machine, no session)
-      - gray: didn't answer the last poll cycle
+def _row_active_state(
+    reachable: bool, capture_state: str | None, guide_warning: bool,
+) -> str:
+    """Four-state status dot for the row.
+      - green:   reachable, capturing, guider healthy. The user's
+                 "everything's working" state.
+      - warning: reachable, capturing, but `guide_warning` fires —
+                 the guider stopped while the imager kept going.
+                 Equivalent to the chip-level amber. Capturing IS
+                 still happening; the frames may just be worse.
+      - yellow:  reachable but idle (powered on, no session active).
+      - gray:    didn't answer the last poll cycle. We tried; nothing.
+
+    A `red` band ("capture stopped unexpectedly") needs a history of
+    prior states to differentiate a clean session end from a mid-
+    session crash, and we don't track that yet — see the open issue
+    in the conversation log.
     """
     if not reachable:
         return "gray"
     if capture_state and capture_state != "idle":
-        return "green"
+        return "warning" if guide_warning else "green"
     return "yellow"
 
 
@@ -160,6 +172,7 @@ def compute_panel_state(now_epoch: float | None = None) -> dict[str, Any]:
         live = dev.get("live") or {}
         reachable = bool(live.get("reachable"))
         capture_state = live.get("capture_state")
+        guide_warning = _derive_guide_warning(live or None)
         label = (
             live.get("ap_ssid")
             or host.rstrip(".").removesuffix(".local")
@@ -171,7 +184,7 @@ def compute_panel_state(now_epoch: float | None = None) -> dict[str, Any]:
             "hostname": host,
             "ip": dev.get("ip", ""),
             "reachable": reachable,
-            "active_state": _row_active_state(reachable, capture_state),
+            "active_state": _row_active_state(reachable, capture_state, guide_warning),
             "capture_state": capture_state,
             "stack_done": live.get("stack_done"),
             "stack_total": live.get("stack_total"),
@@ -179,7 +192,7 @@ def compute_panel_state(now_epoch: float | None = None) -> dict[str, Any]:
             "camera_name": live.get("camera_name"),
             "camera_state": live.get("camera_state"),
             "guide_state": live.get("guide_state"),
-            "guide_warning": _derive_guide_warning(live or None),
+            "guide_warning": guide_warning,
             # Unambiguous camera-hash carry — see `_unambiguous_camera_hash`
             # for the rules. Empty string when ambiguous so the UI can
             # treat "no hash" identically across the missing / ambiguous
