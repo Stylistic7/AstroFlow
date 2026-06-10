@@ -62,37 +62,26 @@ def connect_to_ray_cluster():
 
         print("Ray dashboard:", ray_context.dashboard_url)
 
-        # Pin all orchestrator actors to the head node so unplugging a
-        # worker (MacBook leaving the network) doesn't strand them on a
-        # disappearing host. The head's auto-assigned "node:__internal_head__"
-        # resource is 1.0 on head and absent on workers, so requesting
-        # any sliver of it forces head placement. No-op when the cluster
-        # is single-node.
-        _HEAD_PIN = {"node:__internal_head__": 0.001}
-
         global _context_actor
         from context import ContextActor
 
         _context_actor = ContextActor.options(
             name="context", namespace="AstroFlow", get_if_exists=True,
             max_concurrency=64,
-            resources=_HEAD_PIN,
         ).remote()
 
         global _state_actor
         from state.actor import StateActor
 
         _state_actor = StateActor.options(
-            name="state", namespace="AstroFlow", get_if_exists=True,
-            resources=_HEAD_PIN,
+            name="state", namespace="AstroFlow", get_if_exists=True
         ).remote()
 
         global _scheduler_actor
         from state.scheduler_actor import SchedulerActor
 
         _scheduler_actor = SchedulerActor.options(
-            name="scheduler", namespace="AstroFlow", get_if_exists=True,
-            resources=_HEAD_PIN,
+            name="scheduler", namespace="AstroFlow", get_if_exists=True
         ).remote()
 
         # Block until all actors are actually ready.
