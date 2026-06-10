@@ -114,6 +114,15 @@ class SchedulerActor:
             self._ray_metrics_loop(interval_s, start_delay_s)
         )
 
+    async def sample_ray_metrics_once(self) -> None:
+        """Synchronously trigger one ray_metrics sample. Bypasses the
+        1 Hz loop. Exists so integration tests can deterministically
+        kick a sample and then immediately assert on the diskcache —
+        without it, tests would have to start the poller and sleep
+        for an interval, racing on timing."""
+        from web_server.backend.ray_metrics import sample_once
+        sample_once()
+
     async def _ray_metrics_loop(
         self, interval_s: float, start_delay_s: float,
     ) -> None:

@@ -60,7 +60,12 @@ def enable_test_mode(ray_temp_dir: str | None = None) -> None:
                 "**/.cache/",
                 "**/cache.tar.gz",
                 "**/.git/",
-                "**/web_server/",
+                # Match the production exclude shape: ship web_server's
+                # backend Python (announcer, ray_metrics — both imported
+                # by SchedulerActor flows) but skip the heavy frontend
+                # bundle and the served-static dir.
+                "**/web_server/frontend/",
+                "**/web_server/backend/static/",
                 "**/testdata/",
             ],
             "worker_process_setup_hook": (
