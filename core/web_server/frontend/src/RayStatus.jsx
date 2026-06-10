@@ -84,13 +84,13 @@ const RayStatus = () => {
   } else if (!hasCluster) {
     summaryNode = <Typography variant="body2" color="text.secondary">no cluster</Typography>;
   } else {
+    // No leading StatusDot here — the Hub icon already carries the
+    // amber/red tone when an unhealthy node count or SSE disconnect
+    // fires, and a second dot saying the same thing is redundant.
     summaryNode = (
-      <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
-        <StatusDot tone={rayStatus.unhealthyNodes > 0 ? "warning" : "active"} />
-        <Typography variant="body2">
-          {`${rayStatus.healthyNodes} ${rayStatus.healthyNodes === 1 ? 'node' : 'nodes'} · ${rayStatus.totalCPUs} CPUs · ${Math.round(rayStatus.totalRAM)} GB`}
-        </Typography>
-      </Box>
+      <Typography variant="body2">
+        {`${rayStatus.healthyNodes} ${rayStatus.healthyNodes === 1 ? 'node' : 'nodes'} · ${rayStatus.totalCPUs} CPUs · ${Math.round(rayStatus.totalRAM)} GB`}
+      </Typography>
     );
   }
 

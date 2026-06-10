@@ -430,12 +430,12 @@ export default function PrimarySearchAppBar() {
         <Toolbar>
           <LeftDrawer />
           <img src="/static/images/astroflow_logo_white.png" style={{ height: 30 }} />
-          <Search>
+          <Search sx={{ flexGrow: 1, width: 'auto' }}>
             <SearchIconWrapper>
               <SearchIcon />
             </SearchIconWrapper>
             <StyledInputBase
-              sx={{ width: '12.5vw' }}
+              sx={{ width: '100%' }}
               placeholder="Search…"
               inputProps={{
                 'aria-label': 'search',
@@ -485,7 +485,6 @@ export default function PrimarySearchAppBar() {
               onClose={() => setUnsolvedDialogOpen(false)}
             />
           </>)}
-          <Box sx={{ flexGrow: 1 }} />
           <ShoppingCartPanel />
           <VerticalDivider />
           <ObservingPlanChip />

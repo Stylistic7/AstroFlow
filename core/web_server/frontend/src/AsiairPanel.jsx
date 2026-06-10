@@ -8,7 +8,7 @@ import {
   Divider,
   Tooltip,
 } from "@mui/material";
-import { ExpandMore, ExpandLess, Circle, Wifi, Warning } from "@mui/icons-material";
+import { ExpandMore, ExpandLess, Circle, AutoMode, Warning } from "@mui/icons-material";
 import AstroFlowContext from "./AstroFlowContext.jsx";
 import DropdownChip from "./DropdownChip.jsx";
 
@@ -191,7 +191,10 @@ const AsiairPanel = () => {
         {`${summary.total} ${summary.total === 1 ? "ASIAir" : "ASIAirs"} · ${summary.active} active`}
       </Typography>;
 
-  const icon = warnings > 0 ? <Warning /> : <Wifi />;
+  // AutoMode = "star + automation loop" — captures what an ASIAir
+  // actually IS (an automation rig pointed at the sky) better than
+  // a generic Wifi icon, and dodges the over-specific Camera glyph.
+  const icon = warnings > 0 ? <Warning /> : <AutoMode />;
   const tooltipTitle =
     warnings > 0 ? `${warnings} ASIAir(s) capturing without a healthy guide loop`
     : summary.total === 0 ? "No ASIAirs discovered on the LAN"

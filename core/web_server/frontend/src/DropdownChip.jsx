@@ -2,7 +2,7 @@ import React, { useState, useRef } from "react";
 import { Box, Menu, Tooltip, Typography } from "@mui/material";
 
 import Chevron from "./Chevron.jsx";
-import { toneColor, toneBackground } from "./tones.js";
+import { toneColor } from "./tones.js";
 
 /**
  * The shared header for every top-bar dropdown panel. One chip per
@@ -18,12 +18,12 @@ import { toneColor, toneBackground } from "./tones.js";
  *                  icon-only when omitted (e.g. for tiny "is it on"
  *                  badges where the icon alone says everything).
  *   tone         — "default" | "active" | "warning" | "error".
- *                  Drives icon color AND a subtle background tint
- *                  on the whole chip (see `toneBackground`). The
- *                  "active" + "warning" tones are the peripheral-
- *                  vision signals: a faint green glow says "this
- *                  panel is doing useful work", a faint amber glow
- *                  says "this panel needs your attention".
+ *                  Drives the leading icon's color via `toneColor`.
+ *                  Active green / warning amber / error red on the
+ *                  icon alone is the peripheral-vision signal — the
+ *                  chip background stays neutral so the toolbar
+ *                  reads as a single rhythm and individual chips
+ *                  don't shout for attention from across the screen.
  *   tooltipTitle — optional; rendered as an MUI Tooltip on hover
  *                  when the menu is CLOSED.
  *   ariaLabel    — accessibility label for the chip button. Falls
@@ -50,7 +50,6 @@ const DropdownChip = ({
   const [anchorEl, setAnchorEl] = useState(null);
   const chipRef = useRef(null);
   const open = Boolean(anchorEl);
-  const bg = toneBackground(tone);
   const iconColor = toneColor(tone);
 
   const chip = (
@@ -76,10 +75,9 @@ const DropdownChip = ({
         padding: "4px 8px",
         height: 32,
         borderRadius: 1,
-        backgroundColor: bg || "transparent",
         transition: "background-color 200ms ease-out",
         "&:hover": {
-          backgroundColor: bg || "rgba(255,255,255,0.05)",
+          backgroundColor: "rgba(255,255,255,0.05)",
         },
         // Keyboard-focus ring matches the MUI button rhythm.
         "&:focus-visible": {

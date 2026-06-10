@@ -1,6 +1,6 @@
 import { useContext } from "react";
 import { Box, Typography, LinearProgress } from '@mui/material';
-import GraphicEq from '@mui/icons-material/GraphicEq';
+import AccountTreeIcon from '@mui/icons-material/AccountTree';
 
 import AstroFlowContext from './AstroFlowContext.jsx';
 import DropdownChip from './DropdownChip.jsx';
@@ -59,7 +59,7 @@ const ProgressComponent = () => {
 
   return (
     <DropdownChip
-      icon={<GraphicEq />}
+      icon={<AccountTreeIcon />}
       summary={summaryNode}
       tone={isIdle ? "default" : "active"}
       tooltipTitle="Compute graph progress"
