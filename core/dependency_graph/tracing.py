@@ -101,16 +101,6 @@ def record(task: Callable, *args: Any, _after: tuple = ()) -> Node:
     if node in g:
         canonical = next(k for k in g if k == node)
         canonical._group_path = ()
-        # Within a single trace, duplicate calls dedup to the canonical
-        # Node — this is correct behavior (a `for i in range(3):
-        # expensive(data)` user expected three separate computations,
-        # but the trace+cache layer collapses them to one). Surface at
-        # debug level so an author writing the trace can spot it.
-        import structlog
-        structlog.get_logger().debug(
-            "trace: duplicate call deduped to canonical Node",
-            op=getattr(fn, "__name__", str(fn)),
-        )
         return canonical
     # `_group_path` tags the Node with the active `@workflow_group`
     # scope. Plain instance attribute — Node has no __slots__ and
