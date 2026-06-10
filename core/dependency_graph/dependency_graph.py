@@ -287,10 +287,68 @@ def run_graph(
         status_fn(root.get_status())
     _fire_graph_updates(root)
 
+    _report_disk_bloat(root)
+
     return root.final_result, RunStats(
         num_nodes_run=num_nodes_run,
         trace=trace_list,
     )
+
+
+_DISK_BLOAT_THRESHOLD_BYTES = 500 * 1024 * 1024  # 500 MB
+
+
+def _report_disk_bloat(rt: "GraphRuntime") -> None:
+    """Walk every completed result in the runtime tree; sum the on-disk
+    size of producer outputs that are NOT ephemeral AND NOT `final=True`.
+    Emit one info-level summary line if the total clears the threshold.
+
+    The audit's B2: pure silent disk bloat — every run accretes hundreds
+    of MB of intermediates that the author meant to wrap in
+    `ephemeral_intermediates()` but didn't. The framework can't infer
+    intent, but it can surface "here's how much you left on disk this
+    run" so the author can decide whether to wrap on the next pass.
+
+    Best-effort and never raises — telemetry, not pipeline-critical.
+    """
+    try:
+        import structlog
+        from cache.ephemeral_cleanup import _master_path
+
+        total_bytes = 0
+        n_files = 0
+
+        def walk(rt):
+            nonlocal total_bytes, n_files
+            for node, result in rt.results.items():
+                if not isinstance(node, Node):
+                    continue
+                task = node.task
+                if getattr(task, "_final", False) or getattr(node, "_ephemeral", False):
+                    continue
+                master = _master_path(result)
+                if master is None or not master.exists():
+                    continue
+                try:
+                    total_bytes += master.stat().st_size
+                    n_files += 1
+                except OSError:
+                    pass
+            for child in rt._children.values():
+                walk(child)
+            for child in rt._completed_children.values():
+                walk(child)
+
+        walk(rt)
+        if total_bytes >= _DISK_BLOAT_THRESHOLD_BYTES:
+            structlog.get_logger().info(
+                "disk-bloat: non-ephemeral, non-final producer outputs "
+                f"totaled {total_bytes / 1024 / 1024:.1f} MB across "
+                f"{n_files} files — consider wrapping any intermediates "
+                "you don't intend to keep in `ephemeral_intermediates()`.",
+            )
+    except Exception:
+        pass
 
 
 def _fire_graph_updates(rt: GraphRuntime) -> None:

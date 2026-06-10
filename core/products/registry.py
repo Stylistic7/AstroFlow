@@ -283,6 +283,36 @@ def build_filename_fns(
     return filename_fns, _make_dispatcher(filename_fns)
 
 
+def pick_identity(identities: list, first_arg, op_name: str | None = None):
+    """Pick the identity class whose `object_type` matches `first_arg`.
+
+    Falls back to `identities[0]` when no isinstance check matches —
+    the phantom-marker case (e.g. `MergedImageId.object_type =
+    MergedImage`, which no real first_arg ever instances). Warns when
+    the fallback fires AND the op was registered with more than one
+    identity, since silent fallback there would misroute to whichever
+    identity happened to be first in the registration order.
+
+    Returns None when `identities` is empty.
+    """
+    if not identities:
+        return None
+    for ic in identities:
+        ot = getattr(ic, "object_type", None)
+        if ot is not None and isinstance(first_arg, ot):
+            return ic
+    if len(identities) > 1:
+        import structlog
+        structlog.get_logger().warning(
+            "products.pick_identity: no isinstance match on multi-identity op; "
+            "falling back to identities[0] — taps may misroute. Pick "
+            "identity explicitly or split the op.",
+            op=op_name, identities=[ic.__name__ for ic in identities],
+            first_arg_type=type(first_arg).__name__,
+        )
+    return identities[0]
+
+
 def _make_dispatcher(filename_fns: dict) -> Callable:
     """Pick the right filename_fn by inspecting the first arg's type.
 
@@ -290,21 +320,17 @@ def _make_dispatcher(filename_fns: dict) -> Callable:
     each carries its own resolved fn pointing at a different
     `<object_type>` directory. The call_hash inside is identical (same
     args, same hash), only the routing differs."""
+    identities = list(filename_fns.keys())
+
     def dispatch(*args, **kwargs):
         if not args:
             for fn in filename_fns.values():
                 return fn(*args, **kwargs)
             raise RuntimeError("no filename_fn registered")
-        first = args[0]
-        for identity_cls, resolved in filename_fns.items():
-            ot = identity_cls.object_type
-            if ot is None:
-                continue
-            if isinstance(first, ot):
-                return resolved(*args, **kwargs)
-        for fn in filename_fns.values():
-            return fn(*args, **kwargs)
-        raise RuntimeError("no filename_fn matched")
+        identity_cls = pick_identity(identities, args[0])
+        if identity_cls is None:
+            raise RuntimeError("no filename_fn registered")
+        return filename_fns[identity_cls](*args, **kwargs)
     return dispatch
 
 

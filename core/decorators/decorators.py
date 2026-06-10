@@ -138,6 +138,28 @@ class _Node:
         return lambda f: self._wrap(f, kwargs)
 
     def _wrap(self, func, all_kwargs):
+        # ---- 0. Double-wrap guard -------------------------------------
+        # `@node` wrapping an already-`@node`-wrapped function (e.g.
+        # `my_op = node(...)(some_existing_op)`) builds a NEW wrapper
+        # with a fresh fn_hash → fresh call_hash → fresh filename. Every
+        # cached entry under the old wrapper is now orphaned, the
+        # `@node`-decorated body never re-runs as-is, and `_record_pipeline_taps`
+        # sees a new producer with no display. Warn loudly so the
+        # pipeline author can either rename or drop the redundant wrap.
+        if hasattr(func, "_fn_hash"):
+            import warnings
+            inner_name = getattr(
+                getattr(func, "_function", func), "__name__", repr(func),
+            )
+            warnings.warn(
+                f"@node is wrapping an already-@node-wrapped op "
+                f"({inner_name}). The new wrapper will have its own "
+                "fn_hash, breaking cache dedup with the original. Use "
+                "the original directly, or rename and accept the extra "
+                "wrap-layer's cost.",
+                stacklevel=3,
+            )
+
         # ---- 1. Parse kwargs ------------------------------------------
         ray_opts = dict(all_kwargs)
         identity = ray_opts.pop("identity", None)

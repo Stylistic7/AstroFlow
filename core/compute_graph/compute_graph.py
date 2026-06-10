@@ -534,29 +534,10 @@ def _record_pipeline_taps(record_existence, pipeline_name, cart_type, cart_id, g
         first_arg = n.args[0] if n.args else None
         if first_arg is None:
             continue
-        # When no identity isinstance-matches the first arg (e.g. ops
-        # like `merge_images` whose `MergedImageId.object_type` is a
-        # phantom marker class that no real first-arg ever instances),
-        # fall back to `identities[0]`. Mirrors the same fallback in
-        # `products.registry._make_dispatcher`.
-        identity_cls = next(
-            (ic for ic in identities if isinstance(first_arg, ic.object_type)),
-            None,
-        )
-        if identity_cls is None and identities:
-            # Fallback fired. Safe for single-identity phantom-marker
-            # ops (the common case), but for an op registered with
-            # `identity=[A, B]` whose first_arg matches neither, we'd
-            # silently misroute taps under A. Warn so the pipeline
-            # author can switch to explicit `filter=`/identity hints.
-            if len(identities) > 1:
-                log.warning(
-                    "tap recorder: identities[0] fallback fired on multi-identity op; "
-                    "taps may misroute. Pick identity explicitly or use a single-identity op.",
-                    op=fn.__name__, identities=[ic.__name__ for ic in identities],
-                    first_arg_type=type(first_arg).__name__,
-                )
-            identity_cls = identities[0]
+        # Shared isinstance + identities[0] fallback with
+        # `products.registry._make_dispatcher` — see `pick_identity`.
+        from products.registry import pick_identity
+        identity_cls = pick_identity(identities, first_arg, op_name=fn.__name__)
         if identity_cls is None:
             continue
         object_type_name = identity_cls.object_type.__name__.lower()

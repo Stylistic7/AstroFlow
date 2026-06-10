@@ -37,84 +37,15 @@ _TRACE: contextvars.ContextVar[Graph | None] = contextvars.ContextVar(
     "graph_trace", default=None
 )
 
-# Stack of (group_name, group_id) pairs for the active lexical
-# `@workflow_group` scope. Each entry corresponds to one
-# @workflow_group-decorated function currently on the call stack;
-# `record()` reads this and tags every new Node with the full path,
-# which the workflow-graph serializer uses to build collapsible
-# group nodes in the viewer.
-_GROUP_STACK: contextvars.ContextVar[tuple] = contextvars.ContextVar(
-    "workflow_group_stack", default=()
-)
+# `_GROUP_STACK` + `workflow_group` are pure UI metadata and live in
+# `dependency_graph/workflow_groups.py`. Re-exported here so existing
+# `from dependency_graph.tracing import workflow_group` imports in
+# pipeline files keep working.
+from dependency_graph.workflow_groups import _GROUP_STACK, workflow_group  # noqa: E402, F401
 
 
 def tracing_active() -> bool:
     return _TRACE.get() is not None
-
-
-def workflow_group(fn):
-    """Decorator: mark a plain Python helper as a lexical
-    workflow-graph group. Every `record()` call made during one
-    invocation of the wrapped function (including via nested
-    helpers and @node wrappers) tags its new Node with the
-    function's name; the workflow-graph serializer renders the
-    tagged Nodes as a single collapsible group in the viewer,
-    labeled with the function's `__name__`.
-
-    Pure UI grouping — does not change graph topology, runtime
-    behavior, or caching. The decorated function still returns
-    whatever it would normally return. Outside an active trace
-    the decorator is a no-op (just calls the function directly).
-
-    Example:
-
-        @workflow_group
-        def _build_cal_masters(stack, config):
-            cal_masters = []
-            for cs in calibration_stacks_for(stack, config):
-                cal_masters.append(stack_files(
-                    downscale_stack(cs, 8), config, *cal_masters,
-                ))
-            return cal_masters
-
-    Groups can nest — a helper decorated with `@workflow_group`
-    that's called inside another `@workflow_group`-decorated
-    helper inherits the outer group as a prefix on its Nodes'
-    `_group_path`.
-
-    The `group_id` is a deterministic hash of (function-name,
-    parent_path, per-call key) so re-traces of the same lexical
-    structure produce the same ids; the viewer's expanded/
-    collapsed state stays stable across reruns."""
-    name = fn.__name__
-
-    @functools.wraps(fn)
-    def wrapper(*args, **kwargs):
-        if _TRACE.get() is None:
-            return fn(*args, **kwargs)
-        parent = _GROUP_STACK.get()
-        # Per-call key so two distinct calls of the same
-        # `@workflow_group` helper produce distinct group ids.
-        # Most pipeline helpers take their primary entity
-        # (stack / target / mosaic) as the first arg, all of
-        # which expose a precomputed `stable_hash` string — using
-        # that directly avoids the O(cal_stacks) cost of recursive
-        # arg hashing through ProcessingConfig. Falls back to a
-        # full args hash for callers whose first arg has no
-        # stable_hash.
-        if args and hasattr(args[0], "stable_hash"):
-            call_key = args[0].stable_hash
-        else:
-            call_key = hash_list_int(
-                [list(args), sorted(kwargs.items())]
-            )
-        group_id = str(hash_list_int([name, parent, call_key]))
-        token = _GROUP_STACK.set(parent + ((name, group_id),))
-        try:
-            return fn(*args, **kwargs)
-        finally:
-            _GROUP_STACK.reset(token)
-    return wrapper
 
 
 def record(task: Callable, *args: Any, _after: tuple = ()) -> Node:
@@ -170,6 +101,16 @@ def record(task: Callable, *args: Any, _after: tuple = ()) -> Node:
     if node in g:
         canonical = next(k for k in g if k == node)
         canonical._group_path = ()
+        # Within a single trace, duplicate calls dedup to the canonical
+        # Node — this is correct behavior (a `for i in range(3):
+        # expensive(data)` user expected three separate computations,
+        # but the trace+cache layer collapses them to one). Surface at
+        # debug level so an author writing the trace can spot it.
+        import structlog
+        structlog.get_logger().debug(
+            "trace: duplicate call deduped to canonical Node",
+            op=getattr(fn, "__name__", str(fn)),
+        )
         return canonical
     # `_group_path` tags the Node with the active `@workflow_group`
     # scope. Plain instance attribute — Node has no __slots__ and
