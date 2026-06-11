@@ -366,28 +366,33 @@ def _ensure_pipelines_traced(object_type: str, object_id: str, entity) -> None:
 
     Per-pipeline @node caches mean a single pipeline body change
     invalidates only that pipeline's trace; the others stay hot. The
-    pipeline's `_function` source hash is in the call hash, so the
-    cache tracks the user-written body, not just `trace_pipeline`'s
-    own body.
-
-    Calibration_stacks is read here (not inside the @node body) so the
-    cache key reflects the actual calibration set used — adding a new
-    master invalidates exactly the affected traces.
+    pipeline's `_function` source hash is part of the call hash, so
+    invalidation tracks the user-written body, not just
+    `trace_pipeline`'s own body. `cfg` is also part of the call hash,
+    so this dashboard trace gets its own cache slot — naturally
+    separate from the live-runtime cfg's slot.
     """
     import ray
     from pipelines.registry import registered_pipelines
     from pipelines.output_index import commit_taps
     from compute_graph.compute_graph import trace_pipeline
+    from decisions.settings import ProcessingConfig, DevelopmentSettings
+    from frozendict import frozendict as fd
     from hashing.hashing import hash_source_code
 
-    cal_stacks = context.calibration_stacks
+    cfg = ProcessingConfig(
+        calibration_stacks=context.calibration_stacks or fd(),
+        development_settings=DevelopmentSettings(mock_pixinsight=False),
+        min_frames_in_stack=3,
+        decisions=fd(),
+    )
     refs = []
     for (pname, processes_class), pfn in registered_pipelines().items():
         if processes_class is not type(entity):
             continue
         source_hash = hash_source_code(pfn._function)
         refs.append((pname, trace_pipeline.remote(
-            pname, source_hash, entity, cal_stacks,
+            pname, source_hash, entity, cfg,
         )))
     for pname, ref in refs:
         result = ray.get(ref)

@@ -394,50 +394,59 @@ def _build_ephemeral_registry(traced_graphs) -> "EphemeralFiles":
 
 @ray.remote(num_cpus=0.1)
 def run_pipeline(entity, cfg, pipeline_name: str, type_tag: str) -> "Graph":
-    """Trace one pipeline at runtime and return its Graph as a
-    dynamic sub-graph.
+    """Reach for the cached trace, inject runtime register-tap nodes,
+    funnel terminals into the sub-runtime sentinel. Returns the Graph
+    so the parent runtime spins up a child `GraphRuntime`.
+
+    Trace is via the @node-cached `trace_pipeline` — body only re-runs
+    when the pipeline source, entity, or cfg changes. Tap existence
+    registration + the runtime `_register_tap_path_op` Nodes are
+    spliced in here (impure, always runs) so the cached graph stays
+    pure data.
 
     Returning a Graph from a `@ray.remote` task is how `run_graph`
-    spins up a child `GraphRuntime` for the work the pipeline
-    represents. That sub-runtime reads the tracer's per-pipeline
-    `node_status_fn` (= `store_node_status`) and `graph_update_fn`
-    (= `partial(store_workflow_graph, pipeline_key)`) straight off
-    the returned Graph — so per-pipeline live state updates fire
-    naturally as nodes complete inside this pipeline's sub-runtime,
-    without any extra plumbing at the parent.
-
-    Replaces the old `_splice` pattern, which flattened every
-    pipeline's traced Graph into one big parent dict and dropped
-    the per-Graph callbacks on the floor."""
+    spins up a child `GraphRuntime`. That sub-runtime reads the
+    tracer's `node_status_fn` (= `store_node_status`) and
+    `graph_update_fn` (= `partial(store_workflow_graph, pipeline_key)`)
+    straight off the returned Graph — so per-pipeline live state
+    updates fire naturally as nodes complete, without parent-level
+    plumbing.
+    """
     from pipelines.registry import get_pipeline
     from pipelines.output_index import record_existence
     from stacks.composite_stack import Stack
     from targets.types import Target
     from mosaics.types import Mosaic
+    from hashing.hashing import hash_source_code
+    from dependency_graph import Graph
 
     type_to_class = {"stack": Stack, "target": Target, "mosaic": Mosaic}
     pipeline_fn = get_pipeline(pipeline_name, processes=type_to_class[type_tag])
-    graph = pipeline_fn(entity, cfg)
+
+    # Cached trace. result.graph is freshly deserialized from diskcache
+    # on each cache hit so in-place mutation downstream is safe.
+    source_hash = hash_source_code(pipeline_fn._function)
+    result = ray.get(trace_pipeline.remote(
+        pipeline_name, source_hash, entity, cfg,
+    ))
+    graph = result.graph
     if graph is None:
-        # Some pipelines (MASTER-mode mosaics with missing panels)
-        # legitimately bail. Surface an empty graph so the parent
-        # task's `node_completed` still gets a Graph value and
-        # closes out the cart entry cleanly.
-        from dependency_graph import Graph
+        # MASTER-mode mosaics with missing panels legitimately bail.
+        # Surface an empty graph so the parent task's `node_completed`
+        # still gets a Graph and closes out the cart entry cleanly.
         return Graph({})
-    # Walk the traced graph for @makes_image(display=...) tap
-    # points: register their existence in the PipelineOutputIndex
-    # (for dashboard discovery) AND splice in the runtime
-    # `_register_tap_path_op` Nodes that record each tap's actual
-    # on-disk path once the producing op completes.
+
+    # Walk the traced graph for @makes_image(display=...) tap points:
+    # register their existence in the PipelineOutputIndex AND splice
+    # in the runtime `_register_tap_path_op` Nodes that record each
+    # tap's actual on-disk path once the producing op completes.
     _record_pipeline_taps(
         record_existence, pipeline_name, type_tag, entity.stable_hash, graph,
     )
-    # GraphRuntime asserts a sub-graph has exactly one terminal
-    # node. Funnel every current terminal into a sentinel so the
-    # child sub-runtime has a single completion handle (parent's
-    # `run_pipeline` task is `mark_done`'d with this sentinel's
-    # result — None, since the parent only cares about ordering).
+
+    # GraphRuntime asserts a sub-graph has exactly one terminal. Funnel
+    # every current terminal into a sentinel so the child sub-runtime
+    # has a single completion handle.
     depended_on = {d for ds in graph.values() for d in ds}
     terminals = [n for n in graph if n not in depended_on]
     graph[run_pipeline_done] = terminals
@@ -602,34 +611,26 @@ def trace_pipeline(
     pipeline_name: str,
     pipeline_source_hash: str,
     entity,
-    calibration_stacks,
+    cfg,
 ):
     """Pure trace of one pipeline. Returns a `TraceResult(graph, taps)`.
 
     Cached via @node on (source hash + args). `pipeline_source_hash`
     is in the args so changing the pipeline body invalidates the cache
     — @node alone would only hash THIS function's body, not the
-    looked-up pipeline_fn. Caller computes the source hash from the
-    @pipeline decorator's stashed `_function`.
+    looked-up pipeline_fn. `cfg` is the FULL ProcessingConfig (frozen
+    dataclass, hashable), so dashboard-trace cfg and live-runtime cfg
+    naturally get separate cache entries.
 
     Side-effect-free. The dashboard / merger callers do their own
     commit-to-context step downstream.
     """
     from pipelines.registry import registered_pipelines
-    from decisions.settings import ProcessingConfig, DevelopmentSettings
-    from frozendict import frozendict as fd
     from stacks.downscale import TRACE_ONLY as _DOWNSCALE_TRACE_ONLY
 
     pipeline_fn = registered_pipelines().get((pipeline_name, type(entity)))
     if pipeline_fn is None:
         return TraceResult(graph=None, taps=())
-
-    cfg = ProcessingConfig(
-        calibration_stacks=calibration_stacks or fd(),
-        development_settings=DevelopmentSettings(mock_pixinsight=False),
-        min_frames_in_stack=3,
-        decisions=fd(),
-    )
 
     _tok = _DOWNSCALE_TRACE_ONLY.set(True)
     try:
