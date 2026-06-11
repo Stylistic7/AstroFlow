@@ -381,12 +381,10 @@ const RigRow = ({ rig, defaultExpanded = false }) => {
                 // a -3″ excursion still fits.
                 const raSeries = rig.guide_history.map(r => r.ra_arcsec);
                 const decSeries = rig.guide_history.map(r => r.dec_arcsec);
-                const rmsSeries = rig.guide_history.map(r => r.rms_arcsec);
                 const absMax = Math.max(
                   0,
                   ...raSeries.filter(v => v != null).map(Math.abs),
                   ...decSeries.filter(v => v != null).map(Math.abs),
-                  ...rmsSeries.filter(v => v != null),
                 );
                 const axisMax = _PICK_AXIS_MAX(absMax);
                 return (
@@ -398,18 +396,14 @@ const RigRow = ({ rig, defaultExpanded = false }) => {
                         axisMax={axisMax}
                         axisLabelW={26}
                         series={[
-                          // Order matters: draw RA/DEC first so RMS
-                          // sits on top and remains readable when the
-                          // axes are noisy.
                           { values: raSeries, color: "#ef9a9a", label: "RA" },   // red.300
                           { values: decSeries, color: "#90caf9", label: "DEC" }, // blue.300
-                          { values: rmsSeries, color: skyColor, label: "RMS",
-                            strokeWidth: 1.75 },
                         ]}
                       />
                     </Box>
-                    {/* Tiny color legend so the user knows which line
-                        is which. Three pills, color + label. */}
+                    {/* Color legend: RA + DEC only — RMS is shown as
+                        a number in the readout below the chart, the
+                        same way PHD2 presents it. */}
                     <Box sx={{ display: "flex", gap: 1.5, mt: 0.5, ml: 3.25 }}>
                       <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
                         <Box sx={{ width: 10, height: 2, backgroundColor: "#ef9a9a" }} />
@@ -418,10 +412,6 @@ const RigRow = ({ rig, defaultExpanded = false }) => {
                       <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
                         <Box sx={{ width: 10, height: 2, backgroundColor: "#90caf9" }} />
                         <Typography variant="caption" color="text.secondary">DEC</Typography>
-                      </Box>
-                      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                        <Box sx={{ width: 10, height: 2, backgroundColor: skyColor }} />
-                        <Typography variant="caption" color="text.secondary">RMS</Typography>
                       </Box>
                     </Box>
                     <Typography variant="caption" color="text.secondary" component="div">
@@ -644,8 +634,6 @@ const AsiairPanel = () => {
               series={[
                 { values: raSeries, color: "#ef9a9a", label: "RA" },
                 { values: decSeries, color: "#90caf9", label: "DEC" },
-                { values: rmsSeries, color: sparkColor, label: "RMS",
-                  strokeWidth: 1.5 },
               ]}
             />
             {latestRms != null && (
