@@ -566,31 +566,45 @@ const AsiairPanel = () => {
         0 ASIAir
       </Typography>
     );
-  } else if (reachableRigs.length === 1) {
-    const r = reachableRigs[0];
-    // No verbose "capturing" text — the icon color does that signal
-    // (green when active, white when idle). If frames are being
-    // counted (stack_total > 0) we show the count tersely; otherwise
-    // the chip is just label + guide chart.
+  } else {
+    // Single + multi-rig share the same chip layout: a "feature rig"
+    // (the worst-performing one, by latest RMS) gets its full signed
+    // guide chart in the chip. For 2+ rigs we prepend a "N of M"
+    // badge so the user knows the chip is surfacing one of several.
+    // Single-rig: the only rig IS the feature rig.
+    const _latestRms = r => {
+      if (!r.guide_history?.length) return null;
+      const last = r.guide_history[r.guide_history.length - 1] || {};
+      return last.rms_arcsec ?? null;
+    };
+    // Pick the worst-currently-guiding rig. If none have guide data,
+    // fall back to the first reachable. "Worst" = highest latest RMS;
+    // null RMS sorts last (rigs without data don't dominate the chip).
+    const featureRig = reachableRigs.slice().sort((a, b) => {
+      const ra = _latestRms(a), rb = _latestRms(b);
+      if (ra == null && rb == null) return 0;
+      if (ra == null) return 1;
+      if (rb == null) return -1;
+      return rb - ra;
+    })[0];
+    const r = featureRig;
     const countText = (
       r.capture_state && r.capture_state !== "idle" && r.stack_total > 0
     ) ? `${r.stack_done}/${r.stack_total}` : null;
-    // When guide data is flowing, render a chart of total arcsec
-    // error tinted by the sky-quality level. PHD2's AvgDist (last
-    // sample's `rms_arcsec`) is the headline number; the chart's
-    // SHAPE shows whether guiding is steady or wandering, the COLOR
-    // shows whether the sky is letting us see clearly.
-    const series = _totalErrorSeries(r.guide_history);
-    const hasGuideData = series.some(v => v != null);
+    const raSeries = (r.guide_history || []).map(s => s.ra_arcsec);
+    const decSeries = (r.guide_history || []).map(s => s.dec_arcsec);
+    const rmsSeries = (r.guide_history || []).map(s => s.rms_arcsec);
+    const hasGuideData = raSeries.some(v => v != null);
     const skyLevel = r.sky?.level || "unknown";
     const sparkColor = _SKY_COLOR[skyLevel];
-    const latestRms = r.guide_history?.length
-      ? r.guide_history[r.guide_history.length - 1].rms_arcsec
-      : null;
-    const seriesMax = hasGuideData
-      ? Math.max(...series.filter(v => v != null))
-      : 0;
-    const axisMax = _PICK_AXIS_MAX(seriesMax);
+    const latestRms = _latestRms(r);
+    const absMax = Math.max(
+      0,
+      ...raSeries.filter(v => v != null).map(Math.abs),
+      ...decSeries.filter(v => v != null).map(Math.abs),
+      ...rmsSeries.filter(v => v != null),
+    );
+    const axisMax = _PICK_AXIS_MAX(absMax);
     const RigSkyIcon = _SKY_ICON[skyLevel];
     const skyTooltip =
       skyLevel === "good" ? "Sky clear — guide signal at baseline"
@@ -600,19 +614,21 @@ const AsiairPanel = () => {
       : "Sky-quality estimator warming up";
     summaryNode = (
       <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-        {/* Sky icon ALWAYS visible (when we have data) so the chip
-            constantly answers "what does the system think of the sky
-            right now?" — not just on degraded conditions. WbSunny
-            for good means "yes, we're actively classifying it as
-            clear" rather than "no data". */}
         {RigSkyIcon && (
           <Tooltip title={skyTooltip}>
             <RigSkyIcon sx={{ fontSize: 16, color: sparkColor }} />
           </Tooltip>
         )}
-        <Typography variant="body2">
-          {r.label}
-        </Typography>
+        <Typography variant="body2">{r.label}</Typography>
+        {/* Multi-rig badge: tell the user the chip is featuring ONE
+            rig (the worst) out of N. Dropdown shows them all. */}
+        {reachableRigs.length > 1 && (
+          <Tooltip title={`Showing the worst-guiding of ${reachableRigs.length} ASIAirs. Open the dropdown for per-rig detail.`}>
+            <Typography variant="caption" color="text.disabled">
+              {`(worst of ${reachableRigs.length})`}
+            </Typography>
+          </Tooltip>
+        )}
         {countText && (
           <Typography variant="caption" color="text.secondary">
             {countText}
@@ -620,13 +636,17 @@ const AsiairPanel = () => {
         )}
         {hasGuideData && (
           <>
-            <GuideChart
-              values={series}
-              width={96}
-              height={28}
-              color={sparkColor}
+            <GuideAxisChart
+              width={140}
+              height={40}
               axisMax={axisMax}
-              axisLabelW={16}
+              axisLabelW={20}
+              series={[
+                { values: raSeries, color: "#ef9a9a", label: "RA" },
+                { values: decSeries, color: "#90caf9", label: "DEC" },
+                { values: rmsSeries, color: sparkColor, label: "RMS",
+                  strokeWidth: 1.5 },
+              ]}
             />
             {latestRms != null && (
               <Typography variant="caption" color="text.secondary">
@@ -635,28 +655,6 @@ const AsiairPanel = () => {
             )}
           </>
         )}
-      </Box>
-    );
-  } else {
-    // Multi-rig: show the worst sky across the fleet so a single
-    // cloudy rig is visible even when the summary text is aggregated.
-    const MultiSkyIcon = _SKY_ICON[worstSkyForTone];
-    const skyTooltip =
-      worstSkyForTone === "good" ? "All rigs see clear sky"
-      : worstSkyForTone === "thin" ? "At least one rig sees thin clouds"
-      : worstSkyForTone === "heavy" ? "At least one rig sees heavy clouds"
-      : worstSkyForTone === "lost" ? "At least one rig lost its guide star"
-      : "Sky-quality estimator warming up";
-    summaryNode = (
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-        {MultiSkyIcon && (
-          <Tooltip title={skyTooltip}>
-            <MultiSkyIcon sx={{ fontSize: 16, color: _SKY_COLOR[worstSkyForTone] }} />
-          </Tooltip>
-        )}
-        <Typography variant="body2">
-          {`${reachableRigs.length} ASIAir · ${summary.active} active`}
-        </Typography>
       </Box>
     );
   }
