@@ -178,6 +178,15 @@ def compute_panel_state(now_epoch: float | None = None) -> dict[str, Any]:
             or host.rstrip(".").removesuffix(".local")
             or dev.get("ip", "")
         )
+        # Pull the PHD2 guide-event-stream rolling buffer. Empty list
+        # when no GuideStep events have arrived yet (ASIAir not guiding,
+        # listener not connected, etc.). The buffer carries per-frame
+        # ra/dec/rms in arcsec + SNR + StarMass so the chip can render
+        # the live sparkline and sky-quality estimator.
+        from asiair.guide_event_stream import get_history
+        from asiair.sky_quality import estimate as estimate_sky
+        guide_history = get_history(host)
+        sky = estimate_sky(guide_history)
         rigs.append({
             "key": host,
             "label": label,
@@ -199,6 +208,8 @@ def compute_panel_state(now_epoch: float | None = None) -> dict[str, Any]:
             # cases.
             "camera_hash_short": cam_hash[:8] if cam_hash else "",
             "live": live or None,
+            "guide_history": guide_history,
+            "sky": sky,
         })
 
     active = sum(1 for r in rigs if r["active_state"] == "green")

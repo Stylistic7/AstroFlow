@@ -14,6 +14,8 @@ class SchedulerActor:
         ] = []  # {"interval": float, "action": dict, "next": float}
         self._asiair_poller_task = None
         self._asiair_live_poller_task = None
+        self._asiair_guide_stream_tasks: dict = {}  # hostname -> Task
+        self._asiair_guide_stream_supervisor_task = None
         self._ray_metrics_task = None
         self._run_task = asyncio.get_event_loop().create_task(self._run())
 
@@ -96,6 +98,66 @@ class SchedulerActor:
                 await asyncio.sleep(interval_s)
         except asyncio.CancelledError:
             pass
+
+    async def start_asiair_guide_event_streams(
+        self, start_delay_s: float = 5.0, restart_interval_s: float = 30.0,
+    ) -> None:
+        """Spawn one persistent guide-event-stream listener per discovered
+        ASIAir. The stream parses PHD2 GuideStep notifications (every ~1s
+        during guiding) into a rolling buffer the panel endpoint reads.
+
+        Re-checks the asiair_devices list every `restart_interval_s`: if a
+        new ASIAir appears, we spawn its listener; if one disappears, we
+        cancel. Each listener auto-reconnects on transient TCP failures,
+        so the supervisor only handles add/remove."""
+        if self._asiair_guide_stream_supervisor_task is not None:
+            return
+        self._asiair_guide_stream_supervisor_task = (
+            asyncio.get_event_loop().create_task(
+                self._asiair_guide_stream_supervisor(
+                    start_delay_s, restart_interval_s,
+                )
+            )
+        )
+
+    async def _asiair_guide_stream_supervisor(
+        self, start_delay_s: float, restart_interval_s: float,
+    ) -> None:
+        try:
+            await asyncio.sleep(start_delay_s)
+            while True:
+                try:
+                    from context import context
+                    devices = context.asiair_devices or []
+                    # By-hostname so a re-IP'd device gets a fresh listener.
+                    wanted = {
+                        d.get("hostname"): d.get("ip")
+                        for d in devices
+                        if d.get("hostname") and d.get("ip")
+                    }
+                    # Cancel listeners for gone-away devices.
+                    for hostname in list(self._asiair_guide_stream_tasks.keys()):
+                        if hostname not in wanted:
+                            task = self._asiair_guide_stream_tasks.pop(hostname)
+                            task.cancel()
+                            print(f"### guide stream: stopped for {hostname}")
+                    # Spawn for new ones.
+                    for hostname, ip in wanted.items():
+                        if hostname in self._asiair_guide_stream_tasks:
+                            continue
+                        from asiair.guide_event_stream import stream_one
+                        task = asyncio.get_event_loop().create_task(
+                            asyncio.to_thread(stream_one, ip, hostname)
+                        )
+                        self._asiair_guide_stream_tasks[hostname] = task
+                        print(f"### guide stream: started for {hostname} ({ip})")
+                except Exception as e:
+                    print(f"### guide stream supervisor raised, ignoring: {e}")
+                await asyncio.sleep(restart_interval_s)
+        except asyncio.CancelledError:
+            for task in self._asiair_guide_stream_tasks.values():
+                task.cancel()
+            self._asiair_guide_stream_tasks.clear()
 
     async def start_ray_metrics_poller(
         self, interval_s: float = 1.0, start_delay_s: float = 1.0,

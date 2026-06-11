@@ -393,6 +393,9 @@ def _schedule_download_from_asiairs(
         interval_s=1.0,
         start_delay_s=1.0,
     )
+    scheduler.start_asiair_guide_event_streams.remote(
+        start_delay_s=10.0,
+    )
 
     return state, []
 
