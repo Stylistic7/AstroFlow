@@ -68,14 +68,10 @@ const _PICK_AXIS_MAX = (maxValue) => {
 
 
 /**
- * Sparkline with a real Y-axis (left side, two ticks at 0 and axisMax)
- * plus a solid horizontal reference at 0 and a dashed reference at the
- * top. Built directly as SVG so we can position axis + reference lines
- * pixel-precisely. Used for both the chip's tiny chart and the
- * dropdown's larger one — same component, different `width` and
- * `height`. `axisLabelW` controls how much pixel space we reserve on
- * the left for the tick labels; the chip gets a slightly narrower
- * label gutter to stay compact.
+ * One-series unsigned guide chart for the chip — total arcsec error,
+ * never negative. Y-axis runs 0 to axisMax, solid reference at 0,
+ * dashed reference at axisMax. See GuideAxisChart for the signed
+ * multi-series version used in the dropdown.
  */
 const GuideChart = ({
   values, width, height, color, axisMax, axisLabelW = 18,
@@ -183,6 +179,117 @@ const _formatRelativeTime = (epochSeconds) => {
 };
 
 
+/**
+ * Signed multi-series guide chart. Y-axis runs -axisMax to +axisMax
+ * with the zero line in the middle. Used in the dropdown to show RA
+ * + DEC + RMS together — RA and DEC swing positive or negative
+ * (their signs tell you which way the star drifted before the
+ * correction); RMS stays non-negative (PHD2's running AvgDist).
+ *
+ * `series` is an array of { values: number[], color: string,
+ * label: string }. Each line is rendered independently; missing
+ * samples (null/undefined) are skipped without breaking the path.
+ */
+const GuideAxisChart = ({
+  series, width, height, axisMax, axisLabelW = 24,
+}) => {
+  const chartLeft = axisLabelW;
+  const chartW = Math.max(0, width - chartLeft);
+  const innerH = height;
+  // Y midline = zero. Positive values draw above, negative below.
+  const yZero = innerH / 2;
+  const norm = (v) => yZero - (v / axisMax) * (innerH / 2);
+
+  const buildPath = (vals) => {
+    if (!vals || vals.length === 0) return "";
+    const xStep = vals.length > 1 ? chartW / (vals.length - 1) : 0;
+    let d = "";
+    let inSeg = false;
+    for (let i = 0; i < vals.length; i++) {
+      const v = vals[i];
+      if (v == null || !Number.isFinite(v)) {
+        inSeg = false;
+        continue;
+      }
+      const x = chartLeft + i * xStep;
+      const y = norm(v);
+      d += inSeg
+        ? ` L${x.toFixed(2)},${y.toFixed(2)}`
+        : ` M${x.toFixed(2)},${y.toFixed(2)}`;
+      inSeg = true;
+    }
+    return d;
+  };
+
+  const axisColor = "#888";
+  const refColor = "#555";
+  const fontSize = 9;
+
+  return (
+    <svg width={width} height={height} style={{ display: "block" }}>
+      {/* Solid zero line — the "perfect" axis. */}
+      <line
+        x1={chartLeft} y1={yZero}
+        x2={width} y2={yZero}
+        stroke={axisColor} strokeWidth={0.75}
+      />
+      {/* Dashed +axisMax and -axisMax references. */}
+      <line
+        x1={chartLeft} y1={0.5}
+        x2={width} y2={0.5}
+        stroke={refColor} strokeWidth={0.5}
+        strokeDasharray="3,3"
+      />
+      <line
+        x1={chartLeft} y1={innerH - 0.5}
+        x2={width} y2={innerH - 0.5}
+        stroke={refColor} strokeWidth={0.5}
+        strokeDasharray="3,3"
+      />
+      {/* Y-axis vertical. */}
+      <line
+        x1={chartLeft} y1={0}
+        x2={chartLeft} y2={innerH}
+        stroke={axisColor} strokeWidth={0.75}
+      />
+      {/* Three ticks: +max, 0, -max. */}
+      <line x1={chartLeft - 2} y1={0.5} x2={chartLeft} y2={0.5}
+        stroke={axisColor} strokeWidth={0.75} />
+      <line x1={chartLeft - 2} y1={yZero} x2={chartLeft} y2={yZero}
+        stroke={axisColor} strokeWidth={0.75} />
+      <line x1={chartLeft - 2} y1={innerH - 0.5} x2={chartLeft} y2={innerH - 0.5}
+        stroke={axisColor} strokeWidth={0.75} />
+      {/* Tick labels. */}
+      <text x={chartLeft - 4} y={fontSize - 1}
+        textAnchor="end" fontSize={fontSize} fill="#999">
+        {`+${axisMax}″`}
+      </text>
+      <text x={chartLeft - 4} y={yZero + 3}
+        textAnchor="end" fontSize={fontSize} fill="#999">
+        0
+      </text>
+      <text x={chartLeft - 4} y={innerH - 1}
+        textAnchor="end" fontSize={fontSize} fill="#999">
+        {`−${axisMax}″`}
+      </text>
+      {/* Series — render in given order so RMS sits on top. */}
+      {series.map((s, i) => (
+        <path
+          key={i}
+          d={buildPath(s.values)}
+          fill="none"
+          stroke={s.color}
+          strokeWidth={s.strokeWidth || 1.25}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          strokeDasharray={s.dashed ? "3,3" : undefined}
+        />
+      ))}
+    </svg>
+  );
+};
+
+
 const RigRow = ({ rig, defaultExpanded = false }) => {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const live = rig.live || null;
@@ -267,21 +374,55 @@ const RigRow = ({ rig, defaultExpanded = false }) => {
               {(() => {
                 const latest = rig.guide_history[rig.guide_history.length - 1] || {};
                 const sky = rig.sky || {};
-                const series = _totalErrorSeries(rig.guide_history);
                 const skyColor = _SKY_COLOR[sky.level || "unknown"];
-                const seriesMax = Math.max(0, ...series.filter(v => v != null));
-                const axisMax = _PICK_AXIS_MAX(seriesMax);
+                // Three series: signed RA, signed DEC, unsigned RMS.
+                // RA / DEC swing through zero; RMS rides above. Axis
+                // tier picks the max ABSOLUTE value across all three so
+                // a -3″ excursion still fits.
+                const raSeries = rig.guide_history.map(r => r.ra_arcsec);
+                const decSeries = rig.guide_history.map(r => r.dec_arcsec);
+                const rmsSeries = rig.guide_history.map(r => r.rms_arcsec);
+                const absMax = Math.max(
+                  0,
+                  ...raSeries.filter(v => v != null).map(Math.abs),
+                  ...decSeries.filter(v => v != null).map(Math.abs),
+                  ...rmsSeries.filter(v => v != null),
+                );
+                const axisMax = _PICK_AXIS_MAX(absMax);
                 return (
                   <>
                     <Box sx={{ mt: 0.5 }}>
-                      <GuideChart
-                        values={series}
+                      <GuideAxisChart
                         width={260}
-                        height={60}
-                        color={skyColor}
+                        height={80}
                         axisMax={axisMax}
-                        axisLabelW={22}
+                        axisLabelW={26}
+                        series={[
+                          // Order matters: draw RA/DEC first so RMS
+                          // sits on top and remains readable when the
+                          // axes are noisy.
+                          { values: raSeries, color: "#ef9a9a", label: "RA" },   // red.300
+                          { values: decSeries, color: "#90caf9", label: "DEC" }, // blue.300
+                          { values: rmsSeries, color: skyColor, label: "RMS",
+                            strokeWidth: 1.75 },
+                        ]}
                       />
+                    </Box>
+                    {/* Tiny color legend so the user knows which line
+                        is which. Three pills, color + label. */}
+                    <Box sx={{ display: "flex", gap: 1.5, mt: 0.5, ml: 3.25 }}>
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                        <Box sx={{ width: 10, height: 2, backgroundColor: "#ef9a9a" }} />
+                        <Typography variant="caption" color="text.secondary">RA</Typography>
+                      </Box>
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                        <Box sx={{ width: 10, height: 2, backgroundColor: "#90caf9" }} />
+                        <Typography variant="caption" color="text.secondary">DEC</Typography>
+                      </Box>
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                        <Box sx={{ width: 10, height: 2, backgroundColor: skyColor }} />
+                        <Typography variant="caption" color="text.secondary">RMS</Typography>
+                      </Box>
                     </Box>
                     <Typography variant="caption" color="text.secondary" component="div">
                       RMS: {latest.rms_arcsec != null ? `${latest.rms_arcsec.toFixed(2)}″` : "?"}
