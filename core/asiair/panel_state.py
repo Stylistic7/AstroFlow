@@ -167,14 +167,28 @@ def compute_panel_state(now_epoch: float | None = None) -> dict[str, Any]:
     by_host = _dedup_asiairs_by_hostname(asiairs)
     cam_hash = _unambiguous_camera_hash(stacks_dict, len(by_host))
 
+    # Sticky labels: the user-set ASIAir name comes from the live poll's
+    # `ap_ssid`. When a single poll cycle fails the rig is briefly missing
+    # ap_ssid in `live`, and naive fallback to the mDNS hostname makes the
+    # chip flicker from "ASIAIR_RC71" to "asiair" and back. Cache the last
+    # KNOWN-good label per hostname in context so it survives transient
+    # poll failures over hours.
+    known_labels = dict(context.get("asiair_known_labels", None) or {})
+    labels_changed = False
+
     rigs: list[dict[str, Any]] = []
     for host, dev in by_host.items():
         live = dev.get("live") or {}
         reachable = bool(live.get("reachable"))
         capture_state = live.get("capture_state")
         guide_warning = _derive_guide_warning(live or None)
+        ap_ssid = live.get("ap_ssid")
+        if ap_ssid and known_labels.get(host) != ap_ssid:
+            known_labels[host] = ap_ssid
+            labels_changed = True
         label = (
-            live.get("ap_ssid")
+            ap_ssid
+            or known_labels.get(host)
             or host.rstrip(".").removesuffix(".local")
             or dev.get("ip", "")
         )
@@ -211,6 +225,9 @@ def compute_panel_state(now_epoch: float | None = None) -> dict[str, Any]:
             "guide_history": guide_history,
             "sky": sky,
         })
+
+    if labels_changed:
+        context["asiair_known_labels"] = known_labels
 
     active = sum(1 for r in rigs if r["active_state"] == "green")
     warnings = sum(1 for r in rigs if r.get("guide_warning"))

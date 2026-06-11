@@ -14,13 +14,10 @@ import {
 } from "@mui/icons-material";
 import AstroFlowContext from "./AstroFlowContext.jsx";
 import DropdownChip from "./DropdownChip.jsx";
-import Sparkline from "./microviz/Sparkline.jsx";
-
-
 // Total guide error in arcsec per sample: sqrt(ra² + dec²). Drops
-// the per-axis decomposition so the chip-level sparkline is one curve
+// the per-axis decomposition so the chip-level chart is one curve
 // the user can read at a glance ("am I roughly steady or wandering?").
-// Returns null entries for samples missing ra/dec — Sparkline skips them.
+// Returns null entries for samples missing ra/dec — GuideChart skips them.
 const _totalErrorSeries = (history) => (history || []).map(r => {
   if (r.ra_arcsec == null || r.dec_arcsec == null) return null;
   return Math.sqrt(r.ra_arcsec * r.ra_arcsec + r.dec_arcsec * r.dec_arcsec);
@@ -51,17 +48,105 @@ const _SKY_ICON = {
 
 
 // Pick a sparkline Y-max from a friendly tier list so the user knows
-// what the chart's "ceiling" means at a glance. We tint generously —
-// most amateur guiding sits in 0-2″, hardcore astrophotographers
-// hit < 0.5″, and anything above 5″ means something's wrong (clouds /
-// wind / lost calibration). Always show the tier as a tiny label so
-// the chart is self-explaining.
+// what the chart's "ceiling" means at a glance. Most amateur guiding
+// sits in 0-2″, hardcore astrophotographers hit < 0.5″, and anything
+// above 5″ means something's wrong (clouds / wind / lost calibration).
 const _PICK_AXIS_MAX = (maxValue) => {
   if (maxValue <= 1) return 1;
   if (maxValue <= 2) return 2;
   if (maxValue <= 5) return 5;
   if (maxValue <= 10) return 10;
   return Math.ceil(maxValue);
+};
+
+
+/**
+ * Sparkline with a real Y-axis (left side, two ticks at 0 and axisMax)
+ * plus a solid horizontal reference at 0 and a dashed reference at the
+ * top. Built directly as SVG so we can position axis + reference lines
+ * pixel-precisely. Used for both the chip's tiny chart and the
+ * dropdown's larger one — same component, different `width` and
+ * `height`. `axisLabelW` controls how much pixel space we reserve on
+ * the left for the tick labels; the chip gets a slightly narrower
+ * label gutter to stay compact.
+ */
+const GuideChart = ({
+  values, width, height, color, axisMax, axisLabelW = 18,
+}) => {
+  const chartLeft = axisLabelW;
+  const chartW = Math.max(0, width - chartLeft);
+  const innerH = height;
+  const norm = (v) => innerH - (v / axisMax) * innerH;
+
+  const finite = values.map(v => Number.isFinite(v) ? v : null);
+  const xStep = values.length > 1 ? chartW / (values.length - 1) : 0;
+  let d = "";
+  let inSeg = false;
+  for (let i = 0; i < finite.length; i++) {
+    if (finite[i] == null) {
+      inSeg = false;
+      continue;
+    }
+    const x = chartLeft + i * xStep;
+    const y = norm(finite[i]);
+    d += inSeg
+      ? ` L${x.toFixed(2)},${y.toFixed(2)}`
+      : ` M${x.toFixed(2)},${y.toFixed(2)}`;
+    inSeg = true;
+  }
+
+  const axisColor = "#888";
+  const refColor = "#555";
+  const fontSize = axisLabelW >= 18 ? 9 : 8;
+
+  return (
+    <svg width={width} height={height} style={{ display: "block" }}>
+      {/* Horizontal reference at 0″ — solid baseline. */}
+      <line
+        x1={chartLeft} y1={innerH - 0.5}
+        x2={width} y2={innerH - 0.5}
+        stroke={refColor} strokeWidth={0.5}
+      />
+      {/* Horizontal reference at axisMax — dashed ceiling. */}
+      <line
+        x1={chartLeft} y1={0.5}
+        x2={width} y2={0.5}
+        stroke={refColor} strokeWidth={0.5}
+        strokeDasharray="3,3"
+      />
+      {/* Y-axis. */}
+      <line
+        x1={chartLeft} y1={0}
+        x2={chartLeft} y2={innerH}
+        stroke={axisColor} strokeWidth={0.75}
+      />
+      {/* Tick marks at 0 and max. */}
+      <line
+        x1={chartLeft - 2} y1={0.5}
+        x2={chartLeft} y2={0.5}
+        stroke={axisColor} strokeWidth={0.75}
+      />
+      <line
+        x1={chartLeft - 2} y1={innerH - 0.5}
+        x2={chartLeft} y2={innerH - 0.5}
+        stroke={axisColor} strokeWidth={0.75}
+      />
+      {/* Tick labels — top + bottom. */}
+      <text
+        x={chartLeft - 4} y={fontSize - 1}
+        textAnchor="end" fontSize={fontSize} fill="#999"
+      >{axisMax}″</text>
+      <text
+        x={chartLeft - 4} y={innerH - 1}
+        textAnchor="end" fontSize={fontSize} fill="#999"
+      >0″</text>
+      {/* The data line. */}
+      <path
+        d={d} fill="none" stroke={color} strokeWidth={1.5}
+        strokeLinejoin="round" strokeLinecap="round"
+      />
+    </svg>
+  );
 };
 
 
@@ -181,35 +266,15 @@ const RigRow = ({ rig, defaultExpanded = false }) => {
                 const axisMax = _PICK_AXIS_MAX(seriesMax);
                 return (
                   <>
-                    <Box sx={{ mt: 0.5, position: "relative", display: "inline-block" }}>
-                      <Sparkline
+                    <Box sx={{ mt: 0.5 }}>
+                      <GuideChart
                         values={series}
-                        width={240}
-                        height={50}
+                        width={260}
+                        height={60}
                         color={skyColor}
-                        domain={[0, axisMax]}
+                        axisMax={axisMax}
+                        axisLabelW={22}
                       />
-                      {/* Y-axis labels at top and bottom of the chart so
-                          the user knows what the line means without
-                          context. Top = chart ceiling; bottom = 0. */}
-                      <Typography
-                        variant="caption"
-                        sx={{
-                          position: "absolute", top: -2, right: 2,
-                          fontSize: 10, color: "text.disabled", lineHeight: 1,
-                        }}
-                      >
-                        {`${axisMax}″`}
-                      </Typography>
-                      <Typography
-                        variant="caption"
-                        sx={{
-                          position: "absolute", bottom: -2, right: 2,
-                          fontSize: 10, color: "text.disabled", lineHeight: 1,
-                        }}
-                      >
-                        0″
-                      </Typography>
                     </Box>
                     <Typography variant="caption" color="text.secondary" component="div">
                       RMS: {latest.rms_arcsec != null ? `${latest.rms_arcsec.toFixed(2)}″` : "?"}
@@ -355,21 +420,18 @@ const AsiairPanel = () => {
     );
   } else if (reachableRigs.length === 1) {
     const r = reachableRigs[0];
-    let activity;
-    if (r.capture_state && r.capture_state !== "idle") {
-      activity = r.stack_total > 0
-        ? `capturing ${r.stack_done}/${r.stack_total}`
-        : "capturing";
-    } else {
-      activity = "idle";
-    }
-    // When guide data is flowing, render a sparkline of total arcsec
+    // No verbose "capturing" text — the icon color does that signal
+    // (green when active, white when idle). If frames are being
+    // counted (stack_total > 0) we show the count tersely; otherwise
+    // the chip is just label + guide chart.
+    const countText = (
+      r.capture_state && r.capture_state !== "idle" && r.stack_total > 0
+    ) ? `${r.stack_done}/${r.stack_total}` : null;
+    // When guide data is flowing, render a chart of total arcsec
     // error tinted by the sky-quality level. PHD2's AvgDist (last
-    // sample's `rms_arcsec`) is the headline number; the sparkline's
+    // sample's `rms_arcsec`) is the headline number; the chart's
     // SHAPE shows whether guiding is steady or wandering, the COLOR
-    // shows whether the sky is letting us see clearly. The Y-max
-    // sits at a tiered value (1/2/5/10″) and we show that tier as a
-    // tiny label so the chart is self-explaining.
+    // shows whether the sky is letting us see clearly.
     const series = _totalErrorSeries(r.guide_history);
     const hasGuideData = series.some(v => v != null);
     const skyLevel = r.sky?.level || "unknown";
@@ -384,41 +446,23 @@ const AsiairPanel = () => {
     summaryNode = (
       <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
         <Typography variant="body2">
-          {`${r.label} ${activity}`}
+          {r.label}
         </Typography>
+        {countText && (
+          <Typography variant="caption" color="text.secondary">
+            {countText}
+          </Typography>
+        )}
         {hasGuideData && (
           <>
-            <Box
-              sx={{
-                position: "relative",
-                display: "inline-block",
-                lineHeight: 0,
-              }}
-            >
-              <Sparkline
-                values={series}
-                width={64}
-                height={20}
-                color={sparkColor}
-                domain={[0, axisMax]}
-              />
-              {/* Tiny corner label so the sparkline isn't "what
-                  scale is this?" guesswork. Reads as "the top of
-                  the chart is N arcseconds". */}
-              <Typography
-                variant="caption"
-                sx={{
-                  position: "absolute",
-                  top: -2,
-                  right: 2,
-                  fontSize: 9,
-                  color: "text.disabled",
-                  lineHeight: 1,
-                }}
-              >
-                {`${axisMax}″`}
-              </Typography>
-            </Box>
+            <GuideChart
+              values={series}
+              width={96}
+              height={28}
+              color={sparkColor}
+              axisMax={axisMax}
+              axisLabelW={16}
+            />
             {latestRms != null && (
               <Typography variant="caption" color="text.secondary">
                 {`${latestRms.toFixed(2)}″`}
