@@ -84,6 +84,25 @@ def record_existence(
         )
 
 
+def commit_taps(
+    pipeline_name: str, object_type: str, object_id: str,
+    taps,
+) -> None:
+    """Trace-time: register the existence of every tap in `taps` under
+    `pipeline_name`. `taps` is a sequence of
+    `(tap_object_type, tap_object_id, display, filter)` tuples — the
+    shape `TraceResult.taps` carries.
+
+    Note: the tap's `object_type` / `object_id` come from the trace
+    (e.g. "mergedimage"/<mosaic_hash> for a mosaic's Merged tap), NOT
+    from the cart-level `object_type` / `object_id` passed in. The
+    cart-level args are used only for logging / future indexing; the
+    actual key shape per tap is preserved from the trace.
+    """
+    for tap_ot, tap_oid, display, filter_value in taps:
+        record_existence(pipeline_name, tap_ot, tap_oid, display, filter_value)
+
+
 def record_path(
     pipeline_name: str, object_type: str, object_id: str,
     display: str, filter: str | None, path: str,

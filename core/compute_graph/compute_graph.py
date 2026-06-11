@@ -1,5 +1,6 @@
 import ray
 import structlog
+from dataclasses import dataclass
 from typing import Any
 from beartype import beartype
 
@@ -470,6 +471,25 @@ def _register_tap_path_op(
     return result
 
 
+@dataclass(frozen=True, eq=False)
+class TraceResult:
+    """One pipeline's trace, as data. Returned by `trace_pipeline`
+    (the @node-cached per-pipeline trace) and consumed by the dashboard
+    path's `commit_taps` and (Phase 4) the merger.
+
+    `graph` is None on a trace failure (the pipeline raised); callers
+    must filter those out before further use.
+
+    `taps` is the result of `extract_pipeline_taps(graph)` materialised
+    as a tuple — order is preserved so display disambiguation stays
+    deterministic across cache hits. `eq=False` so the dataclass
+    doesn't try to auto-generate __hash__ across the (unhashable)
+    Graph field.
+    """
+    graph: Any
+    taps: tuple
+
+
 def extract_pipeline_taps(graph):
     """Pure walk of a traced `graph` yielding `(node, (object_type_name,
     object_id, display, filter))` per @makes_image tap.
@@ -575,6 +595,59 @@ def _record_pipeline_taps(record_existence, pipeline_name, cart_type, cart_id, g
             name=f"_register_tap_{n.name}",
         )
         graph[register_node] = [n]
+
+
+@node
+def trace_pipeline(
+    pipeline_name: str,
+    pipeline_source_hash: str,
+    entity,
+    calibration_stacks,
+):
+    """Pure trace of one pipeline. Returns a `TraceResult(graph, taps)`.
+
+    Cached via @node on (source hash + args). `pipeline_source_hash`
+    is in the args so changing the pipeline body invalidates the cache
+    — @node alone would only hash THIS function's body, not the
+    looked-up pipeline_fn. Caller computes the source hash from the
+    @pipeline decorator's stashed `_function`.
+
+    Side-effect-free. The dashboard / merger callers do their own
+    commit-to-context step downstream.
+    """
+    from pipelines.registry import registered_pipelines
+    from decisions.settings import ProcessingConfig, DevelopmentSettings
+    from frozendict import frozendict as fd
+    from stacks.downscale import TRACE_ONLY as _DOWNSCALE_TRACE_ONLY
+
+    pipeline_fn = registered_pipelines().get((pipeline_name, type(entity)))
+    if pipeline_fn is None:
+        return TraceResult(graph=None, taps=())
+
+    cfg = ProcessingConfig(
+        calibration_stacks=calibration_stacks or fd(),
+        development_settings=DevelopmentSettings(mock_pixinsight=False),
+        min_frames_in_stack=3,
+        decisions=fd(),
+    )
+
+    _tok = _DOWNSCALE_TRACE_ONLY.set(True)
+    try:
+        try:
+            graph = pipeline_fn(entity, cfg)
+        except Exception as e:
+            import traceback
+            print(f"### trace_pipeline failed: {pipeline_name} for {type(entity).__name__}: {e}")
+            traceback.print_exc()
+            graph = None
+    finally:
+        _DOWNSCALE_TRACE_ONLY.reset(_tok)
+
+    if graph is None:
+        return TraceResult(graph=None, taps=())
+
+    taps = tuple(tap for _, tap in extract_pipeline_taps(graph))
+    return TraceResult(graph=graph, taps=taps)
 
 
 @node

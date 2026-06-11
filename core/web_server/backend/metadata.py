@@ -21,7 +21,6 @@ from metadata.sidecar_io import read_image_metadata
 from attributes.astrometric_attributes import _spherical_polygon_for_wcs
 from decisions.decisions import ObjectType, get_decisions_for_object
 from web_server.backend._route import tap_route
-from decorators.decorators import node
 
 metadata_bp = Blueprint("metadata", __name__)
 
@@ -360,58 +359,39 @@ def _entity_filters(entity, object_type: str) -> list[str]:
     return []
 
 
-@node
-def _trace_pipelines_for_entity(
-    object_type: str, object_id: str, entity, calibration_stacks,
-):
-    """Trace every registered pipeline for `entity` and register each
-    tap's existence in the PipelineOutputIndex. Calibration_stacks is
-    in the args (not read from context inside) so that adding a new
-    master changes the call hash and re-traces against the new disk
-    state exactly once."""
-    from pipelines.registry import registered_pipelines
-    from pipelines.output_index import record_existence
-    from compute_graph.compute_graph import _record_pipeline_taps
-    from decisions.settings import ProcessingConfig, DevelopmentSettings
-    from frozendict import frozendict as fd
-    from stacks.downscale import TRACE_ONLY as _DOWNSCALE_TRACE_ONLY
-
-    cfg = ProcessingConfig(
-        calibration_stacks=calibration_stacks or fd(),
-        development_settings=DevelopmentSettings(mock_pixinsight=False),
-        min_frames_in_stack=3,
-        decisions=fd(),
-    )
-
-    # downscale_stack stat()s every frame on disk in its normal mode
-    # — network-storage murder on the trace path. TRACE_ONLY skips it.
-    _tok = _DOWNSCALE_TRACE_ONLY.set(True)
-    try:
-        for (name, processes_class), pipeline_fn in registered_pipelines().items():
-            if processes_class is not type(entity):
-                continue
-            try:
-                graph = pipeline_fn(entity, cfg)
-            except Exception as e:
-                import traceback
-                print(f"### pipeline trace failed: {name} for {object_type}/{object_id}: {e}")
-                traceback.print_exc()
-                continue
-            _record_pipeline_taps(
-                record_existence, name, object_type, object_id, graph,
-            )
-    finally:
-        _DOWNSCALE_TRACE_ONLY.reset(_tok)
-
-
 def _ensure_pipelines_traced(object_type: str, object_id: str, entity) -> None:
-    """Cache-survives-restarts version of the trace — the @node on the
-    inner function persists in diskcache and re-runs only when a
-    pipeline source or calibration_stacks changes."""
+    """Fan out one cached `trace_pipeline.remote(...)` per registered
+    pipeline that matches `type(entity)`, then commit each result's
+    taps to the PipelineOutputIndex.
+
+    Per-pipeline @node caches mean a single pipeline body change
+    invalidates only that pipeline's trace; the others stay hot. The
+    pipeline's `_function` source hash is in the call hash, so the
+    cache tracks the user-written body, not just `trace_pipeline`'s
+    own body.
+
+    Calibration_stacks is read here (not inside the @node body) so the
+    cache key reflects the actual calibration set used — adding a new
+    master invalidates exactly the affected traces.
+    """
     import ray
-    ray.get(_trace_pipelines_for_entity.remote(
-        object_type, object_id, entity, context.calibration_stacks,
-    ))
+    from pipelines.registry import registered_pipelines
+    from pipelines.output_index import commit_taps
+    from compute_graph.compute_graph import trace_pipeline
+    from hashing.hashing import hash_source_code
+
+    cal_stacks = context.calibration_stacks
+    refs = []
+    for (pname, processes_class), pfn in registered_pipelines().items():
+        if processes_class is not type(entity):
+            continue
+        source_hash = hash_source_code(pfn._function)
+        refs.append((pname, trace_pipeline.remote(
+            pname, source_hash, entity, cal_stacks,
+        )))
+    for pname, ref in refs:
+        result = ray.get(ref)
+        commit_taps(pname, object_type, object_id, result.taps)
 
 
 @metadata_bp.route("/api/pipeline_outputs/<object_type>/<object_id>")
