@@ -470,42 +470,29 @@ def _register_tap_path_op(
     return result
 
 
-def _record_pipeline_taps(record_existence, pipeline_name, cart_type, cart_id, graph):
-    """Walk every Node in the pipeline's traced `graph`. For each
-    @makes_image tap point (Nodes whose task carries `_display`):
+def extract_pipeline_taps(graph):
+    """Pure walk of a traced `graph` yielding `(node, (object_type_name,
+    object_id, display, filter))` per @makes_image tap.
 
-    1. Register the tap's EXISTENCE in the PipelineOutputIndex
-       (`(pipeline, type, id, display, filter) → "pending"`). The UI
-       can render placeholders immediately.
+    "Tap" = any Node whose task has a `_display` attribute (set by
+    `@makes_image(display=...)`). Same-key collisions inside a single
+    graph (a pipeline that calls `merge_images` twice on the same
+    (mosaic, filter), say) get the `display` suffixed with ` 2`, ` 3`,
+    …; the first occurrence keeps its bare display so single-merge
+    pipelines don't show "Merged 1".
 
-    2. Add a downstream `_register_tap_path_op` Node that depends on
-       the tap's result. When the tap finishes and the path is
-       known, this follow-up writes the real path to the index.
-
-    Same-key collisions (e.g. a pipeline that calls an atomic op
-    like `merge_images` more than once on the same (mosaic, filter))
-    are disambiguated by suffixing ` 2`, ` 3`, … to the display
-    string in the order the Nodes appear in the trace. The first
-    occurrence keeps the unmodified display name — single-merge
-    pipelines aren't cluttered with "Merged 1" when there's no
-    ambiguity to resolve.
-
-    The two-phase pattern (existence at trace, path at runtime) is
-    the framework's answer to "shared ops across pipelines must
-    produce distinct files even when literals match" — each tap's
-    on-disk filename is chosen by the op body using its full bound
-    args (including resolved data deps), and the runtime hook
-    captures that filename regardless of how the body computed it.
+    No side effects, no graph mutation. The split between this
+    extraction step and `_record_pipeline_taps`'s side-effect step is
+    what lets the merger plan cache the extraction via `@node` and
+    write taps once in an impure merger downstream.
     """
     from dependency_graph.classes import Node
-    import dataclasses
     import inspect
 
     if graph is None:
         return
 
-    # Per-(type, id, display, filter) sequence count, so duplicate
-    # taps in the same trace get distinct display names.
+    # Per-(type, id, display, filter) sequence count for disambiguation.
     seq: dict[tuple, int] = {}
 
     for n in list(graph.keys()):
@@ -534,8 +521,6 @@ def _record_pipeline_taps(record_existence, pipeline_name, cart_type, cart_id, g
         first_arg = n.args[0] if n.args else None
         if first_arg is None:
             continue
-        # Shared isinstance + identities[0] fallback with
-        # `products.registry._make_dispatcher` — see `pick_identity`.
         from products.registry import pick_identity
         identity_cls = pick_identity(identities, first_arg, op_name=fn.__name__)
         if identity_cls is None:
@@ -555,15 +540,34 @@ def _record_pipeline_taps(record_existence, pipeline_name, cart_type, cart_id, g
             base_display if seq[key] == 1
             else f"{base_display} {seq[key]}"
         )
+        yield n, (object_type_name, object_id_value, display, filter_value)
+
+
+def _record_pipeline_taps(record_existence, pipeline_name, cart_type, cart_id, graph):
+    """Apply trace-time side effects per tap returned by
+    `extract_pipeline_taps`:
+
+    1. Register the tap's EXISTENCE in the PipelineOutputIndex
+       (`(pipeline, type, id, display, filter) → "pending"`). The UI
+       can render placeholders immediately.
+    2. Add a downstream `_register_tap_path_op` Node that depends on
+       the tap's result. When the tap finishes and the path is
+       known, this follow-up writes the real path to the index.
+
+    The two-phase pattern (existence at trace, path at runtime) is
+    the framework's answer to "shared ops across pipelines must
+    produce distinct files even when literals match" — each tap's
+    on-disk filename is chosen by the op body using its full bound
+    args, and the runtime hook captures that filename regardless of
+    how the body computed it.
+    """
+    from dependency_graph.classes import Node
+
+    for n, (object_type_name, object_id_value, display, filter_value) in extract_pipeline_taps(graph):
         record_existence(
             pipeline_name, object_type_name, object_id_value,
             display, filter_value,
         )
-        # Schedule a runtime task that, when n's result is
-        # available, writes the real path to the tap index. The
-        # task depends on n via the graph adjacency (one entry,
-        # ordering = data flow). Its literal args bake in the
-        # identity; its data-dep is the tap's result.
         register_node = Node(
             _register_tap_path_op,
             pipeline_name, object_type_name, object_id_value,

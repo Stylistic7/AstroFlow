@@ -188,3 +188,67 @@ def test_recorder_disambiguates_repeated_same_key_taps(test_context):
 # Orion mosaic tests; they call the cart-dispatcher with real
 # fixture data, and the /api/pipeline_outputs test asserts that
 # each pipeline's taps surface for the mosaic.
+
+
+def test_extract_pipeline_taps_empty_graph():
+    """The pure helper must tolerate a None / empty graph (the trace
+    path catches pipeline_fn failures and continues; downstream code
+    iterates the empty result)."""
+    from compute_graph.compute_graph import extract_pipeline_taps
+    assert list(extract_pipeline_taps(None)) == []
+
+
+def test_extract_pipeline_taps_yields_disambiguated_displays(test_context):
+    """Same shape as `test_recorder_disambiguates_repeated_same_key_taps`
+    but for the new pure extractor: two merge_images calls on the same
+    (mosaic, filter) yield "Merged" + "Merged 2", first call unsuffixed.
+    No side effects (no output_index writes)."""
+    from compute_graph.compute_graph import extract_pipeline_taps
+    from dependency_graph.classes import Node, Graph
+    from mosaics.merging.pixinsight import merge_images
+
+    output_index.clear()  # any side effect from extractor would surface here
+
+    class FakeMosaic:
+        stable_hash = "mosaic-X"
+
+    mosaic = FakeMosaic()
+    cfg = ProcessingConfig()
+    n1 = Node(merge_images, mosaic, "H", cfg, name="merge_a")
+    n2 = Node(merge_images, mosaic, "H", cfg, name="merge_b")
+    graph = Graph({n1: [], n2: []})
+
+    taps = list(extract_pipeline_taps(graph))
+    nodes_yielded = [n for n, _ in taps]
+    tap_tuples = [t for _, t in taps]
+
+    assert nodes_yielded == [n1, n2]
+    assert tap_tuples == [
+        ("mergedimage", "mosaic-X", "Merged", "H"),
+        ("mergedimage", "mosaic-X", "Merged 2", "H"),
+    ]
+    # Purity: clear() above + no write side-effects means for_object
+    # sees nothing.
+    assert output_index.for_object("mergedimage", "mosaic-X") == {}
+
+
+def test_extract_pipeline_taps_skips_nodes_with_no_display(test_context):
+    """Nodes whose task has no `_display` (intermediate ops the
+    pipeline author didn't mark as user-visible) must be skipped."""
+    from compute_graph.compute_graph import extract_pipeline_taps
+    from dependency_graph.classes import Node, Graph
+    from mosaics.merging.pixinsight import merge_images
+    from mosaics.placement.astroflow import place_image
+
+    class FakeMosaic:
+        stable_hash = "mosaic-Y"
+
+    mosaic = FakeMosaic()
+    cfg = ProcessingConfig()
+    # place_image has no _display (intermediate); merge_images does.
+    n_intermediate = Node(place_image, mosaic, name="placer")
+    n_tap = Node(merge_images, mosaic, "H", cfg, name="merger")
+    graph = Graph({n_intermediate: [], n_tap: [n_intermediate]})
+
+    taps = list(extract_pipeline_taps(graph))
+    assert [n for n, _ in taps] == [n_tap]
