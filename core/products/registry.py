@@ -331,11 +331,15 @@ def _make_dispatcher(filename_fns: dict) -> Callable:
     def dispatch(*args, **kwargs):
         # Direct isinstance scan over args — bypass pick_identity's
         # "fallback to identities[0]" warning, because here a mismatch
-        # just means "this arg isn't the entity, keep looking."
+        # just means "this arg isn't the entity, keep looking." Also
+        # check `arg.entity` so trace_paths' `_TracedOutput` proxies
+        # (which wrap a dep's content_hash + entity) route by their
+        # underlying identity instead of misrouting via the fallback.
         for a in args:
+            candidate = a if not hasattr(a, "entity") else (a.entity or a)
             for ic in identities:
                 ot = getattr(ic, "object_type", None)
-                if ot is not None and isinstance(a, ot):
+                if ot is not None and isinstance(candidate, ot):
                     return filename_fns[ic](*args, **kwargs)
         # No arg matched — let pick_identity handle the warn-and-
         # fallback path with the first arg, preserving the old

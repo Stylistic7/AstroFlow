@@ -44,14 +44,24 @@ from decorators import node
 class _TracedOutput:
     """In-memory proxy for an upstream Node's result at trace time.
 
-    Carries only `content_hash`, which equals the producer's `call_hash`
-    under the pure-Merkle convention. Deliberately NOT a `ContentHashable`
-    subclass — `hashing._maybe_use_content_hash` then skips the
-    `get_content_hash(file)` branch (which would read disk) and takes
-    the `.content_hash` attribute branch instead. Bit-for-bit identical
-    to what the runtime produces when it reads the stamped file header.
+    Carries `content_hash` (the producer's call_hash under the pure-Merkle
+    convention) and `entity` (the dep's primary entity, used by polymorphic
+    filename_fn dispatchers to route by identity).
+
+    Deliberately NOT a `ContentHashable` subclass —
+    `hashing._maybe_use_content_hash` then skips the `get_content_hash(file)`
+    branch (which would read disk) and takes the `.content_hash` attribute
+    branch instead. Bit-for-bit identical to what the runtime produces
+    when it reads the stamped file header.
+
+    `entity` is the dep's first identity-bearing arg (or recursive
+    ancestor). When `downscale_stack(8, stack)` becomes a dep of
+    `stack_files(config, stack_dep, *cal_masters)`, the dispatcher in
+    `_make_dispatcher` sees ProcessingConfig at args[0] and needs
+    `entity` on the `_TracedOutput` proxy to find the actual Stack.
     """
     content_hash: str
+    entity: Any = None
 
 
 def paths_for_cart_item(
@@ -366,6 +376,22 @@ def _identity_for_node(n) -> dict:
     return {}
 
 
+def _find_dep_entity(dep, graph):
+    """Walk `dep.args` + ancestor deps for the first value with
+    `stable_hash`. Used to populate `_TracedOutput.entity` so polymorphic
+    filename_fn dispatchers can isinstance-route through the proxy."""
+    from dependency_graph.classes import Node
+    for a in getattr(dep, "args", ()):
+        if hasattr(a, "stable_hash"):
+            return a
+    for d in graph.get(dep, []) or ():
+        if isinstance(d, Node):
+            found = _find_dep_entity(d, graph)
+            if found is not None:
+                return found
+    return None
+
+
 def _resolve_args(
     node, graph, node_hash: dict[Any, str],
 ) -> list[Any]:
@@ -373,13 +399,17 @@ def _resolve_args(
     `GraphRuntime.make_fn_args`: literal `node.args` followed by
     dep results. Dep results are replaced with `_TracedOutput` proxies
     carrying the dep's call_hash (or the propagated content_hash for
-    pass-through helpers)."""
+    pass-through helpers) plus the dep's primary entity for dispatcher
+    routing."""
     sig = inspect.signature(node.task._function)
     args = list(node.args)
     if len(sig.parameters) > len(node.args):
         for dep in graph.get(node, []) or []:
             if dep in node_hash:
-                args.append(_TracedOutput(content_hash=node_hash[dep]))
+                args.append(_TracedOutput(
+                    content_hash=node_hash[dep],
+                    entity=_find_dep_entity(dep, graph),
+                ))
             else:
                 # Unresolved dep — append a sentinel that will cause
                 # filename_fn to raise (caught upstream → skip subtree).
