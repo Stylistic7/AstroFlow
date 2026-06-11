@@ -10,7 +10,7 @@ import {
 } from "@mui/material";
 import {
   ExpandMore, ExpandLess, Circle, AutoMode, Warning,
-  WbSunny, CloudQueue, Cloud, FilterDrama,
+  AutoAwesome, BlurOn, WbCloudy, FilterDrama,
 } from "@mui/icons-material";
 import AstroFlowContext from "./AstroFlowContext.jsx";
 import DropdownChip from "./DropdownChip.jsx";
@@ -35,14 +35,21 @@ const _SKY_COLOR = {
 };
 
 
-// Sky-quality level → icon. WbSunny is clear; the cloud variants
-// escalate with level. "unknown" gets no icon so we don't show
-// something misleading while the buffer is warming up.
+// Sky-quality level → icon.
+//   good  → AutoAwesome (sparkles) — clear stars visible, the
+//           "you're doing astrophotography right now" glyph.
+//   thin  → BlurOn — diffuse dotted haze. Matches the "thin clouds
+//           that are quietly killing SNR" failure mode where stars
+//           are still visible but transparency is dropping.
+//   heavy → WbCloudy — overt cloud; visible obstruction.
+//   lost  → FilterDrama — dense overcast silhouette; total
+//           obscuration / guide star gone.
+// "unknown" stays null — no icon while the estimator's warming up.
 const _SKY_ICON = {
-  good: WbSunny,
-  thin: CloudQueue,    // outline-only cloud — "starting to obstruct"
-  heavy: Cloud,        // filled cloud
-  lost: FilterDrama,   // dense overcast silhouette
+  good: AutoAwesome,
+  thin: BlurOn,
+  heavy: WbCloudy,
+  lost: FilterDrama,
   unknown: null,
 };
 
