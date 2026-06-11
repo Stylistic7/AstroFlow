@@ -8,7 +8,10 @@ import {
   Divider,
   Tooltip,
 } from "@mui/material";
-import { ExpandMore, ExpandLess, Circle, AutoMode, Warning } from "@mui/icons-material";
+import {
+  ExpandMore, ExpandLess, Circle, AutoMode, Warning,
+  WbSunny, CloudQueue, Cloud, FilterDrama,
+} from "@mui/icons-material";
 import AstroFlowContext from "./AstroFlowContext.jsx";
 import DropdownChip from "./DropdownChip.jsx";
 import Sparkline from "./microviz/Sparkline.jsx";
@@ -32,6 +35,33 @@ const _SKY_COLOR = {
   heavy: "#ffab91",     // deep-orange-200 — visible cloud
   lost: "#e57373",      // error.light — guide star lost
   unknown: "#9e9e9e",   // grey.500 — no data yet
+};
+
+
+// Sky-quality level → icon. WbSunny is clear; the cloud variants
+// escalate with level. "unknown" gets no icon so we don't show
+// something misleading while the buffer is warming up.
+const _SKY_ICON = {
+  good: WbSunny,
+  thin: CloudQueue,    // outline-only cloud — "starting to obstruct"
+  heavy: Cloud,        // filled cloud
+  lost: FilterDrama,   // dense overcast silhouette
+  unknown: null,
+};
+
+
+// Pick a sparkline Y-max from a friendly tier list so the user knows
+// what the chart's "ceiling" means at a glance. We tint generously —
+// most amateur guiding sits in 0-2″, hardcore astrophotographers
+// hit < 0.5″, and anything above 5″ means something's wrong (clouds /
+// wind / lost calibration). Always show the tier as a tiny label so
+// the chart is self-explaining.
+const _PICK_AXIS_MAX = (maxValue) => {
+  if (maxValue <= 1) return 1;
+  if (maxValue <= 2) return 2;
+  if (maxValue <= 5) return 5;
+  if (maxValue <= 10) return 10;
+  return Math.ceil(maxValue);
 };
 
 
@@ -61,8 +91,8 @@ const _formatRelativeTime = (epochSeconds) => {
 };
 
 
-const RigRow = ({ rig }) => {
-  const [expanded, setExpanded] = useState(false);
+const RigRow = ({ rig, defaultExpanded = false }) => {
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const live = rig.live || null;
 
   // Primary line: the device's user-set name (from the ZWO app),
@@ -147,16 +177,39 @@ const RigRow = ({ rig }) => {
                 const sky = rig.sky || {};
                 const series = _totalErrorSeries(rig.guide_history);
                 const skyColor = _SKY_COLOR[sky.level || "unknown"];
+                const seriesMax = Math.max(0, ...series.filter(v => v != null));
+                const axisMax = _PICK_AXIS_MAX(seriesMax);
                 return (
                   <>
-                    <Box sx={{ mt: 0.5 }}>
+                    <Box sx={{ mt: 0.5, position: "relative", display: "inline-block" }}>
                       <Sparkline
                         values={series}
                         width={240}
                         height={50}
                         color={skyColor}
-                        domain={[0, Math.max(2, ...series.filter(v => v != null))]}
+                        domain={[0, axisMax]}
                       />
+                      {/* Y-axis labels at top and bottom of the chart so
+                          the user knows what the line means without
+                          context. Top = chart ceiling; bottom = 0. */}
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          position: "absolute", top: -2, right: 2,
+                          fontSize: 10, color: "text.disabled", lineHeight: 1,
+                        }}
+                      >
+                        {`${axisMax}″`}
+                      </Typography>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          position: "absolute", bottom: -2, right: 2,
+                          fontSize: 10, color: "text.disabled", lineHeight: 1,
+                        }}
+                      >
+                        0″
+                      </Typography>
                     </Box>
                     <Typography variant="caption" color="text.secondary" component="div">
                       RMS: {latest.rms_arcsec != null ? `${latest.rms_arcsec.toFixed(2)}″` : "?"}
@@ -259,10 +312,22 @@ const AsiairPanel = () => {
   const warnings = summary.warnings || 0;
 
   // The tone drives both the icon color and the chip's background
-  // tint. Warning state wins; otherwise we tint green when anything
-  // is actively capturing, leave default when idle.
+  // tint. Escalation order, most-severe first:
+  //   - lost guide star (likely heavy clouds)         → error
+  //   - heavy clouds / capturing-without-guide        → warning
+  //   - thin clouds                                   → warning (gentler)
+  //   - anything actively capturing in clear sky      → active
+  //   - else                                          → default
+  const reachableRigsForTone = rigs.filter(r => r.reachable);
+  const _toneSkyRank = { good: 0, unknown: 0, thin: 1, heavy: 2, lost: 3 };
+  const worstSkyForTone = reachableRigsForTone.reduce((worst, r) => {
+    const level = r.sky?.level || "unknown";
+    return (_toneSkyRank[level] || 0) > (_toneSkyRank[worst] || 0) ? level : worst;
+  }, "good");
   const tone =
-    warnings > 0 ? "warning"
+    worstSkyForTone === "lost" ? "error"
+    : worstSkyForTone === "heavy" || warnings > 0 ? "warning"
+    : worstSkyForTone === "thin" ? "warning"
     : summary.active > 0 ? "active"
     : "default";
 
@@ -302,7 +367,9 @@ const AsiairPanel = () => {
     // error tinted by the sky-quality level. PHD2's AvgDist (last
     // sample's `rms_arcsec`) is the headline number; the sparkline's
     // SHAPE shows whether guiding is steady or wandering, the COLOR
-    // shows whether the sky is letting us see clearly.
+    // shows whether the sky is letting us see clearly. The Y-max
+    // sits at a tiered value (1/2/5/10″) and we show that tier as a
+    // tiny label so the chart is self-explaining.
     const series = _totalErrorSeries(r.guide_history);
     const hasGuideData = series.some(v => v != null);
     const skyLevel = r.sky?.level || "unknown";
@@ -310,6 +377,10 @@ const AsiairPanel = () => {
     const latestRms = r.guide_history?.length
       ? r.guide_history[r.guide_history.length - 1].rms_arcsec
       : null;
+    const seriesMax = hasGuideData
+      ? Math.max(...series.filter(v => v != null))
+      : 0;
+    const axisMax = _PICK_AXIS_MAX(seriesMax);
     summaryNode = (
       <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
         <Typography variant="body2">
@@ -317,13 +388,37 @@ const AsiairPanel = () => {
         </Typography>
         {hasGuideData && (
           <>
-            <Sparkline
-              values={series}
-              width={64}
-              height={20}
-              color={sparkColor}
-              domain={[0, Math.max(2, ...series.filter(v => v != null))]}
-            />
+            <Box
+              sx={{
+                position: "relative",
+                display: "inline-block",
+                lineHeight: 0,
+              }}
+            >
+              <Sparkline
+                values={series}
+                width={64}
+                height={20}
+                color={sparkColor}
+                domain={[0, axisMax]}
+              />
+              {/* Tiny corner label so the sparkline isn't "what
+                  scale is this?" guesswork. Reads as "the top of
+                  the chart is N arcseconds". */}
+              <Typography
+                variant="caption"
+                sx={{
+                  position: "absolute",
+                  top: -2,
+                  right: 2,
+                  fontSize: 9,
+                  color: "text.disabled",
+                  lineHeight: 1,
+                }}
+              >
+                {`${axisMax}″`}
+              </Typography>
+            </Box>
             {latestRms != null && (
               <Typography variant="caption" color="text.secondary">
                 {`${latestRms.toFixed(2)}″`}
@@ -341,12 +436,27 @@ const AsiairPanel = () => {
     );
   }
 
-  // AutoMode = "star + automation loop" — captures what an ASIAir
-  // actually IS (an automation rig pointed at the sky) better than
-  // a generic Wifi icon, and dodges the over-specific Camera glyph.
-  const icon = warnings > 0 ? <Warning /> : <AutoMode />;
+  // Chip icon priority:
+  //   1. Warning (capturing but guide loop sick) — most urgent.
+  //   2. Sky-quality icon if any reachable rig has a non-good /
+  //      non-unknown sky reading. This is what tells the user "the
+  //      weather is showing up in the data."
+  //   3. AutoMode otherwise — neutral "ASIAir as automation rig"
+  //      glyph; less specific than a Camera, more specific than Wifi.
+  const SkyIcon = _SKY_ICON[worstSkyForTone];
+  let icon;
+  if (warnings > 0) {
+    icon = <Warning />;
+  } else if (SkyIcon && worstSkyForTone !== "good" && worstSkyForTone !== "unknown") {
+    icon = <SkyIcon />;
+  } else {
+    icon = <AutoMode />;
+  }
   const tooltipTitle =
     warnings > 0 ? `${warnings} ASIAir(s) capturing without a healthy guide loop`
+    : worstSkyForTone === "thin" ? "Thin clouds — transparency dropping"
+    : worstSkyForTone === "heavy" ? "Heavy clouds — guide star dim"
+    : worstSkyForTone === "lost" ? "Guide star lost — likely thick clouds"
     : summary.total === 0 ? "No ASIAirs discovered on the LAN"
     : "ASIAir devices";
 
@@ -373,7 +483,7 @@ const AsiairPanel = () => {
             {rigs.map((rig, i) => (
               <React.Fragment key={rig.key}>
                 {i > 0 && <Divider />}
-                <RigRow rig={rig} />
+                <RigRow rig={rig} defaultExpanded={rigs.length === 1} />
               </React.Fragment>
             ))}
           </List>
