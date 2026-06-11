@@ -24,14 +24,24 @@ class _FakeStack:
 
 
 class _FakeContext:
-    """Tiny mock of `local_context` covering the attrs and `get(...)`
-    surface `panel_state` actually touches."""
+    """Tiny mock of `local_context` covering the attrs, `get(...)`, and
+    item-assignment surfaces `panel_state` actually touches.
+
+    `panel_state.compute_panel_state` writes back the sticky-labels cache
+    via `context["asiair_known_labels"] = ...` whenever it sees a new
+    `ap_ssid`, so the fake needs `__setitem__` even though every test we
+    care about reads only `asiair_devices` + `stacks`.
+    """
     def __init__(self, *, asiair_devices=None, stacks=None):
         self.asiair_devices = list(asiair_devices or [])
         self.stacks = dict(stacks or {})
+        self._store: dict = {}
 
     def get(self, key, default=None):
-        return default
+        return self._store.get(key, default)
+
+    def __setitem__(self, key, value):
+        self._store[key] = value
 
 
 @pytest.fixture

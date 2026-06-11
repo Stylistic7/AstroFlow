@@ -85,15 +85,18 @@ def test_get_devices_returns_payload_shape(client, stub_context):
     stub_context.asiair_devices = [
         {"ip": "10.0.0.42", "hostname": "asiair-foo.local", "mac": "aa:bb"},
     ]
-    # No anchored stacks → one pending row for the discovered ASIAir.
+    # No anchored stacks → one row whose `camera_hash_short` is empty
+    # (the panel_state.py contract for "not yet matched to a camera").
     resp = client.get("/api/asiair/devices")
     assert resp.status_code == 200
     body = resp.get_json()
     assert "rigs" in body
     assert "summary" in body
     assert body["summary"]["total"] == 1
-    assert body["rigs"][0]["anchored"] is False
-    assert body["rigs"][0]["asiair_hostname"] == "asiair-foo.local"
+    # `camera_hash_short == ""` is the on-the-wire indicator of an
+    # unanchored rig (see `panel_state._unambiguous_camera_hash`).
+    assert body["rigs"][0]["camera_hash_short"] == ""
+    assert body["rigs"][0]["hostname"] == "asiair-foo.local"
 
 
 def test_patch_nickname_persists_and_announces(client, stub_context, announcements):
