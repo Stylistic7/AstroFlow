@@ -379,6 +379,14 @@ def _ensure_pipelines_traced(object_type: str, object_id: str, entity) -> None:
     from decisions.settings import ProcessingConfig, DevelopmentSettings
     from frozendict import frozendict as fd
     from hashing.hashing import hash_source_code
+    from ray_infra.ray_init import connect_to_ray_cluster
+
+    # gunicorn main-app workers don't call ray.init at startup; the
+    # actor-backed `context.*` path lazily triggers it on first use,
+    # but `trace_pipeline.remote(...)` bypasses context, so we have to
+    # ensure the connection here ourselves. No-op when already
+    # connected.
+    connect_to_ray_cluster()
 
     cfg = ProcessingConfig(
         calibration_stacks=context.calibration_stacks or fd(),
