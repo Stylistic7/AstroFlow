@@ -1,5 +1,6 @@
 import math
 import os
+import threading
 from pathlib import Path
 import astropy.io.fits as pyfits
 from flask import Blueprint, jsonify, abort
@@ -359,52 +360,81 @@ def _entity_filters(entity, object_type: str) -> list[str]:
     return []
 
 
-def _ensure_pipelines_traced(object_type: str, object_id: str, entity) -> None:
-    """Fan out one cached `trace_pipeline.remote(...)` per registered
-    pipeline that matches `type(entity)`, then commit each result's
-    taps to the PipelineOutputIndex.
+_TRACE_LOCK = threading.Lock()
+# Process-local memo. Lost on restart, but avoids Ray dispatch tax on
+# the dashboard hot path. Key is (object_type, object_id,
+# calibration_signature, pipeline_sources) — anything that affects what
+# `pipeline_fn(entity, cfg)` would produce.
+_TRACED_KEYS: set = set()
 
-    Per-pipeline @node caches mean a single pipeline body change
-    invalidates only that pipeline's trace; the others stay hot. The
-    pipeline's `_function` source hash is part of the call hash, so
-    invalidation tracks the user-written body, not just
-    `trace_pipeline`'s own body. `cfg` is also part of the call hash,
-    so this dashboard trace gets its own cache slot — naturally
-    separate from the live-runtime cfg's slot.
+
+def _ensure_pipelines_traced(object_type: str, object_id: str, entity) -> None:
+    """Run every registered pipeline's trace IN-PROCESS once per
+    (entity, calibration set, pipeline sources), commit the taps to
+    the PipelineOutputIndex.
+
+    The earlier @node-based fanout had every dashboard request pay
+    Ray dispatch overhead per pipeline. Under a loaded cluster (real
+    cart running 32k tasks) that latency exploded to ~10 s per
+    dispatch × N pipelines = ~50 s per page load. Ray is the wrong
+    coordination layer for in-process Python work — the pipeline_fn
+    trace is pure Python, doesn't need a worker, doesn't need cross-
+    process sharing, and the answer for "have I already traced this"
+    is a dict lookup, not a diskcache round-trip through Ray.
+
+    Double-checked locking serialises the actual trace work across
+    threads: first caller does the body, subsequent concurrent callers
+    block on the lock and then fast-return.
     """
-    import ray
     from pipelines.registry import registered_pipelines
     from pipelines.output_index import commit_taps
-    from compute_graph.compute_graph import trace_pipeline
+    from compute_graph.compute_graph import extract_pipeline_taps
     from decisions.settings import ProcessingConfig, DevelopmentSettings
     from frozendict import frozendict as fd
     from hashing.hashing import hash_source_code
-    from ray_infra.ray_init import connect_to_ray_cluster
+    from stacks.downscale import TRACE_ONLY as _DOWNSCALE_TRACE_ONLY
 
-    # gunicorn main-app workers don't call ray.init at startup; the
-    # actor-backed `context.*` path lazily triggers it on first use,
-    # but `trace_pipeline.remote(...)` bypasses context, so we have to
-    # ensure the connection here ourselves. No-op when already
-    # connected.
-    connect_to_ray_cluster()
-
-    cfg = ProcessingConfig(
-        calibration_stacks=context.calibration_stacks or fd(),
-        development_settings=DevelopmentSettings(mock_pixinsight=False),
-        min_frames_in_stack=3,
-        decisions=fd(),
+    cal_stacks = context.calibration_stacks or fd()
+    applicable = [
+        (pname, pfn)
+        for (pname, pc), pfn in registered_pipelines().items()
+        if pc is type(entity)
+    ]
+    # Cache key bakes in everything that affects pipeline_fn output:
+    # entity identity, calibration set fingerprint, source of every
+    # applicable pipeline. Pipeline body change → cache miss on its
+    # entity; new calibration master → cache miss everywhere.
+    key = (
+        object_type, object_id,
+        tuple(sorted(cal_stacks.keys())),
+        tuple(sorted((pname, hash_source_code(pfn._function)) for pname, pfn in applicable)),
     )
-    refs = []
-    for (pname, processes_class), pfn in registered_pipelines().items():
-        if processes_class is not type(entity):
-            continue
-        source_hash = hash_source_code(pfn._function)
-        refs.append((pname, trace_pipeline.remote(
-            pname, source_hash, entity, cfg,
-        )))
-    for pname, ref in refs:
-        result = ray.get(ref)
-        commit_taps(pname, object_type, object_id, result.taps)
+    if key in _TRACED_KEYS:
+        return
+    with _TRACE_LOCK:
+        if key in _TRACED_KEYS:
+            return
+        cfg = ProcessingConfig(
+            calibration_stacks=cal_stacks,
+            development_settings=DevelopmentSettings(mock_pixinsight=False),
+            min_frames_in_stack=3,
+            decisions=fd(),
+        )
+        _tok = _DOWNSCALE_TRACE_ONLY.set(True)
+        try:
+            for pname, pfn in applicable:
+                try:
+                    graph = pfn(entity, cfg)
+                except Exception as e:
+                    import traceback
+                    print(f"### pipeline trace failed: {pname} for {object_type}/{object_id}: {e}")
+                    traceback.print_exc()
+                    continue
+                taps = tuple(tap for _, tap in extract_pipeline_taps(graph))
+                commit_taps(pname, object_type, object_id, taps)
+        finally:
+            _DOWNSCALE_TRACE_ONLY.reset(_tok)
+        _TRACED_KEYS.add(key)
 
 
 @metadata_bp.route("/api/pipeline_outputs/<object_type>/<object_id>")

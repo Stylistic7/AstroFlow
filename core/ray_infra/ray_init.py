@@ -17,12 +17,10 @@ _ray_init_lock = threading.Lock()
 
 def connect_to_ray_cluster():
     if ray.is_initialized():
-        print(f"### connect_to_ray_cluster: already initialized, skipping")
         return
 
     with _ray_init_lock:
         if ray.is_initialized():
-            print(f"### connect_to_ray_cluster: already initialized (under lock), skipping")
             return
 
         working_dir = f"{get_base_path()}/core"

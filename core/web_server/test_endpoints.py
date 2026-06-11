@@ -137,6 +137,55 @@ def test_orion_mosaic_versions_endpoint(client, with_orion_mosaic):
 
 
 @pytest.mark.exhaustive
+def test_pipeline_outputs_second_call_hits_cache(client, with_orion_mosaic):
+    """Regression for the live-app failure mode: every call to
+    /api/pipeline_outputs/mosaic/<id> taking ~50s instead of the
+    second-call cache hit @node was supposed to give us.
+
+    Hits the endpoint twice for the same mosaic. The second call MUST
+    be at least 10x faster than the first — if it's not, the @node
+    cache on trace_pipeline isn't taking, and we have a real bug.
+    Prints both timings so we can see where wall-clock goes when it
+    breaks.
+    """
+    import time
+    from web_server.backend import metadata as md_mod
+
+    # Other tests in this suite hit /api/pipeline_outputs first and
+    # leave `_TRACED_KEYS` populated for this mosaic — so a fresh "first
+    # call" here would hit cache and defeat the test. Clear before
+    # measuring.
+    md_mod._TRACED_KEYS.clear()
+
+    mosaics = client.get("/api/mosaics").get_json()
+    mosaic_id = next(iter(mosaics.keys()))
+    url = f"/api/pipeline_outputs/mosaic/{mosaic_id}"
+
+    t0 = time.perf_counter()
+    r1 = client.get(url)
+    dt1 = time.perf_counter() - t0
+    assert r1.status_code == 200
+    print(f"[cache-test] first call:  {dt1*1000:8.1f} ms")
+
+    t0 = time.perf_counter()
+    r2 = client.get(url)
+    dt2 = time.perf_counter() - t0
+    assert r2.status_code == 200
+    print(f"[cache-test] second call: {dt2*1000:8.1f} ms (speedup: {dt1/max(dt2, 1e-9):.1f}x)")
+
+    # Sanity: responses should be structurally identical (same
+    # pipelines listed). Catches "cache returns stale shape" bugs.
+    assert r1.get_json() == r2.get_json()
+
+    # The real assertion. Order of magnitude faster on the second hit.
+    assert dt2 < dt1 / 10, (
+        f"Second /api/pipeline_outputs call ({dt2*1000:.0f} ms) was not "
+        f"≥10× faster than first ({dt1*1000:.0f} ms) — @node cache miss "
+        f"on repeat, the live-app symptom."
+    )
+
+
+@pytest.mark.exhaustive
 def test_metadata_route_trace_cache_actually_hits_on_second_call(client, with_orion_mosaic):
     """Diagnostic: prove (or disprove) that the trace `@node` cache is
     actually being hit on repeat requests, and identify which sub-step
