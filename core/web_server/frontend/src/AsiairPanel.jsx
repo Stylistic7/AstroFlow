@@ -11,6 +11,28 @@ import {
 import { ExpandMore, ExpandLess, Circle, AutoMode, Warning } from "@mui/icons-material";
 import AstroFlowContext from "./AstroFlowContext.jsx";
 import DropdownChip from "./DropdownChip.jsx";
+import Sparkline from "./microviz/Sparkline.jsx";
+
+
+// Total guide error in arcsec per sample: sqrt(ra² + dec²). Drops
+// the per-axis decomposition so the chip-level sparkline is one curve
+// the user can read at a glance ("am I roughly steady or wandering?").
+// Returns null entries for samples missing ra/dec — Sparkline skips them.
+const _totalErrorSeries = (history) => (history || []).map(r => {
+  if (r.ra_arcsec == null || r.dec_arcsec == null) return null;
+  return Math.sqrt(r.ra_arcsec * r.ra_arcsec + r.dec_arcsec * r.dec_arcsec);
+});
+
+
+// Sky-quality level → chip-style tint. We deliberately use the SAME
+// palette as the rig-row dot colors so the user learns one mapping.
+const _SKY_COLOR = {
+  good: "#81c784",      // success.light — clear
+  thin: "#ffcc80",      // warning.light — transparency dropping
+  heavy: "#ffab91",     // deep-orange-200 — visible cloud
+  lost: "#e57373",      // error.light — guide star lost
+  unknown: "#9e9e9e",   // grey.500 — no data yet
+};
 
 
 const _STATE_COLOR = {
@@ -114,6 +136,59 @@ const RigRow = ({ rig }) => {
                 camera fingerprint: <code>{rig.camera_hash_short}</code>
               </Typography>
             </Tooltip>
+          )}
+          {rig.guide_history && rig.guide_history.length > 0 && (
+            <Box sx={{ mt: 1, pl: 1, borderLeft: "2px solid", borderColor: "divider" }}>
+              <Typography variant="caption" color="text.secondary" component="div" sx={{ fontWeight: 600 }}>
+                Guiding
+              </Typography>
+              {(() => {
+                const latest = rig.guide_history[rig.guide_history.length - 1] || {};
+                const sky = rig.sky || {};
+                const series = _totalErrorSeries(rig.guide_history);
+                const skyColor = _SKY_COLOR[sky.level || "unknown"];
+                return (
+                  <>
+                    <Box sx={{ mt: 0.5 }}>
+                      <Sparkline
+                        values={series}
+                        width={240}
+                        height={50}
+                        color={skyColor}
+                        domain={[0, Math.max(2, ...series.filter(v => v != null))]}
+                      />
+                    </Box>
+                    <Typography variant="caption" color="text.secondary" component="div">
+                      RMS: {latest.rms_arcsec != null ? `${latest.rms_arcsec.toFixed(2)}″` : "?"}
+                      {latest.ra_arcsec != null && (
+                        <>{" "}· RA: {latest.ra_arcsec.toFixed(2)}″</>
+                      )}
+                      {latest.dec_arcsec != null && (
+                        <>{" "}· DEC: {latest.dec_arcsec.toFixed(2)}″</>
+                      )}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" component="div">
+                      SNR: {latest.snr ?? "?"}
+                      {" "}· star mass: {latest.star_mass ?? "?"}
+                      {latest.ra_pulse_ms != null && (
+                        <>{" "}· pulses: {latest.ra_pulse_ms}/{latest.dec_pulse_ms} ms</>
+                      )}
+                    </Typography>
+                    <Typography
+                      variant="caption"
+                      component="div"
+                      sx={{ color: skyColor, fontWeight: 500, mt: 0.5 }}
+                    >
+                      sky: {sky.caption || "no data"}
+                      {sky.snr_ratio != null && (
+                        <>{" "}({(sky.snr_ratio * 100).toFixed(0)}% SNR
+                        {" / "}{(sky.star_mass_ratio * 100).toFixed(0)}% mass)</>
+                      )}
+                    </Typography>
+                  </>
+                );
+              })()}
+            </Box>
           )}
           {live && live.reachable && (
             <Box sx={{ mt: 1, pl: 1, borderLeft: "2px solid", borderColor: "divider" }}>
@@ -223,10 +298,40 @@ const AsiairPanel = () => {
     } else {
       activity = "idle";
     }
+    // When guide data is flowing, render a sparkline of total arcsec
+    // error tinted by the sky-quality level. PHD2's AvgDist (last
+    // sample's `rms_arcsec`) is the headline number; the sparkline's
+    // SHAPE shows whether guiding is steady or wandering, the COLOR
+    // shows whether the sky is letting us see clearly.
+    const series = _totalErrorSeries(r.guide_history);
+    const hasGuideData = series.some(v => v != null);
+    const skyLevel = r.sky?.level || "unknown";
+    const sparkColor = _SKY_COLOR[skyLevel];
+    const latestRms = r.guide_history?.length
+      ? r.guide_history[r.guide_history.length - 1].rms_arcsec
+      : null;
     summaryNode = (
-      <Typography variant="body2">
-        {`${r.label} ${activity}`}
-      </Typography>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+        <Typography variant="body2">
+          {`${r.label} ${activity}`}
+        </Typography>
+        {hasGuideData && (
+          <>
+            <Sparkline
+              values={series}
+              width={64}
+              height={20}
+              color={sparkColor}
+              domain={[0, Math.max(2, ...series.filter(v => v != null))]}
+            />
+            {latestRms != null && (
+              <Typography variant="caption" color="text.secondary">
+                {`${latestRms.toFixed(2)}″`}
+              </Typography>
+            )}
+          </>
+        )}
+      </Box>
     );
   } else {
     summaryNode = (
