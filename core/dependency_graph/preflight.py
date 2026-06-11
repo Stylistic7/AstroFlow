@@ -43,11 +43,27 @@ class _PredictedRef:
     `ContentHashable` objects. By NOT inheriting `ContentHashable` we
     avoid the file-read path; the predicted hash string carried here is
     consumed directly, producing the same hash as the real runtime value.
-    """
-    __slots__ = ("content_hash",)
 
-    def __init__(self, content_hash: str):
+    `entity` carries the dep's primary identity-bearing arg (the first
+    `.stable_hash`-carrying value in the dep's args or recursive
+    ancestors). Polymorphic `cache_key_narrow` hooks like
+    `_stack_files_narrow` need to reach through the ref to compute
+    `decisions_for_stack(stack.stable_hash)` — without `entity` they
+    crash at preflight when the entity arrives as a dep instead of a
+    literal (the post-`@node-downscale_stack` topology). Same pattern
+    we use for trace_paths' `_TracedOutput.entity`.
+    """
+    __slots__ = ("content_hash", "entity", "stable_hash")
+
+    def __init__(self, content_hash: str, entity=None):
         self.content_hash = content_hash
+        self.entity = entity
+        # Expose the entity's stable_hash directly so callers that read
+        # `ref.stable_hash` find it without an explicit `.entity`
+        # detour. Most narrow hooks reach for stable_hash via attribute
+        # access on the first positional arg; this keeps them working
+        # whether the arg is a real entity or a _PredictedRef.
+        self.stable_hash = getattr(entity, "stable_hash", None)
 
     def __repr__(self) -> str:
         return f"_PredictedRef({self.content_hash!r})"
@@ -65,12 +81,32 @@ def _data_deps(node, graph) -> list:
     return list(graph.get(node, []))[:n_data_deps]
 
 
+def _find_dep_entity(dep, graph):
+    """Walk `dep.args` + ancestor deps for the first value with
+    `stable_hash`. Mirrors trace_paths._find_dep_entity — the entity
+    that travels through a chain of @node deps gets surfaced so a
+    `_PredictedRef` can carry it for downstream narrow-hook use."""
+    for a in getattr(dep, "args", ()):
+        if hasattr(a, "stable_hash"):
+            return a
+    for d in graph.get(dep, []) or ():
+        found = _find_dep_entity(d, graph)
+        if found is not None:
+            return found
+    return None
+
+
 def _predicted_fn_args(node, predicted: dict, graph) -> list[Any]:
     """Build the predicted positional args for `node.task`: literals +
-    `_PredictedRef` stubs for each data dep, in signature order."""
+    `_PredictedRef` stubs for each data dep, in signature order. Each
+    stub carries both the dep's predicted call_hash AND the dep's
+    primary entity (so polymorphic narrow hooks can read stable_hash
+    through it)."""
     fn_args: list[Any] = list(node.args)
     for d in _data_deps(node, graph):
-        fn_args.append(_PredictedRef(predicted[d]))
+        fn_args.append(_PredictedRef(
+            predicted[d], entity=_find_dep_entity(d, graph),
+        ))
     return fn_args
 
 
