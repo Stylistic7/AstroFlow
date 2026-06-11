@@ -66,10 +66,6 @@ def _metadata_wrap(func):
     composing the wrap into the producer's own Ray task eliminates
     the indirection — the producer's only graph-level dependents are
     the actual file consumers.
-
-    Marked with `_needs_metadata_upgrade = True` so the cached layer
-    can transparently migrate pre-refactor entries (which were
-    `WithSidecar[Path]`) on first read.
     """
     import functools
     from metadata.classes import ImageMetadata
@@ -89,7 +85,6 @@ def _metadata_wrap(func):
         **wrapper.__annotations__,
         "return": ImageMetadata,
     }
-    wrapper._needs_metadata_upgrade = True
     return wrapper
 
 
@@ -235,7 +230,6 @@ class _Node:
         wrapper = cached.remote(
             wrapped,
             canonical_call_hash=canonical_call_hash,
-            needs_metadata_upgrade=bool(identities),
             **ray_opts,
         )
 

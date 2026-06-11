@@ -28,7 +28,7 @@ log = structlog.get_logger()
     auto_memory=True,
 )
 def post_process_stack_oss(
-    stack: Stack, mock_pixinsight: bool, master,
+    mock_pixinsight: bool, stack: Stack, master,
 ) -> WithSidecar[FitsFilePath]:
     """OSS background-correct + plate-solve a stacked master.
 
@@ -38,7 +38,7 @@ def post_process_stack_oss(
     call_hash via `filename_fn(*bound.args)`, so distinct upstream
     masters produce distinct output filenames automatically."""
     output_filename = post_process_stack_oss.filename_fn(
-        stack, mock_pixinsight, master,
+        mock_pixinsight, stack, master,
     )
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
     log.info("OSS post-processing stack", stack=str(stack), master=str(master.filename))

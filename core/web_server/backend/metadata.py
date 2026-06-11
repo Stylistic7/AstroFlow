@@ -392,7 +392,6 @@ def _ensure_pipelines_traced(object_type: str, object_id: str, entity) -> None:
     from decisions.settings import ProcessingConfig, DevelopmentSettings
     from frozendict import frozendict as fd
     from hashing.hashing import hash_source_code
-    from stacks.downscale import TRACE_ONLY as _DOWNSCALE_TRACE_ONLY
 
     cal_stacks = context.calibration_stacks or fd()
     applicable = [
@@ -420,20 +419,16 @@ def _ensure_pipelines_traced(object_type: str, object_id: str, entity) -> None:
             min_frames_in_stack=3,
             decisions=fd(),
         )
-        _tok = _DOWNSCALE_TRACE_ONLY.set(True)
-        try:
-            for pname, pfn in applicable:
-                try:
-                    graph = pfn(entity, cfg)
-                except Exception as e:
-                    import traceback
-                    print(f"### pipeline trace failed: {pname} for {object_type}/{object_id}: {e}")
-                    traceback.print_exc()
-                    continue
-                taps = tuple(tap for _, tap in extract_pipeline_taps(graph))
-                commit_taps(pname, object_type, object_id, taps)
-        finally:
-            _DOWNSCALE_TRACE_ONLY.reset(_tok)
+        for pname, pfn in applicable:
+            try:
+                graph = pfn(entity, cfg)
+            except Exception as e:
+                import traceback
+                print(f"### pipeline trace failed: {pname} for {object_type}/{object_id}: {e}")
+                traceback.print_exc()
+                continue
+            taps = tuple(tap for _, tap in extract_pipeline_taps(graph))
+            commit_taps(pname, object_type, object_id, taps)
         _TRACED_KEYS.add(key)
 
 

@@ -212,8 +212,8 @@ def _stack_files_narrow(args, kwargs):
     `*cal_masters` data-deps that follow are passed through — their
     content_hashes flow into the call_hash, which is what makes
     different upstream cal masters produce different output files."""
-    stack, config, *rest = args
-    return (stack, narrow_stack_config(stack, config), *rest), kwargs
+    config, stack, *rest = args
+    return (narrow_stack_config(stack, config), stack, *rest), kwargs
 
 def _run_wbpp_stacking(
     stack: BaseStack, config: ProcessingConfig,
@@ -316,8 +316,8 @@ def _run_wbpp_stacking(
     auto_memory=True,
 )
 def stack_files(
-    stack: BaseStack,
     config: ProcessingConfig,
+    stack: BaseStack,
     *cal_masters: ImageMetadata,
 ) -> WithSidecar[XisfFilePath]:
     """Resolution-agnostic PixInsight WBPP master.
@@ -327,6 +327,12 @@ def stack_files(
     `downscale_stack` upstream (preserving `stable_hash`, so this
     op's `@makes_image` identity routes to the same user-facing
     stack regardless of resolution).
+
+    Signature follows the tracer's "literals first, deps trailing"
+    convention: `config` is a literal `ProcessingConfig`, `stack` may
+    be a trace-time literal Stack OR a Node handle (from
+    `downscale_stack`), and `*cal_masters` are always Node handles
+    from upstream `stack_files` calls on the cal stacks.
 
     `*cal_masters` is the cal masters this stack's runs depend on
     (any order; one per (bias, dark, flat) the stack references).
@@ -340,7 +346,7 @@ def stack_files(
     output files."""
     return _run_wbpp_stacking(
         stack, config, cal_masters,
-        stack_files.filename_fn(stack, config, *cal_masters),
+        stack_files.filename_fn(config, stack, *cal_masters),
     )
 
 def _check_integration_time(stack: BaseStack, master_path) -> None:

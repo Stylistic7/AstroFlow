@@ -499,6 +499,29 @@ class TraceResult:
     taps: tuple
 
 
+def _find_identity_arg(graph, node):
+    """Walk `node.args` + dep ancestors for the first value that has
+    `stable_hash` (i.e. an identity-bearing Stack/Target/Mosaic).
+
+    The tracer's convention is "literals first, deps trailing": deps
+    get stripped from `Node.args` and stored on graph edges, so an op
+    like `stack_files(config, stack, *cal_masters)` where `stack` is a
+    dep ends up with `args = (config,)` and `deps = [stack_node, ...]`.
+    The entity is somewhere down that dep chain — usually as the
+    leading literal of the first dep — so we recurse.
+    """
+    from dependency_graph.classes import Node
+    for a in node.args:
+        if hasattr(a, "stable_hash"):
+            return a
+    for d in graph.get(node, []) or ():
+        if isinstance(d, Node):
+            found = _find_identity_arg(graph, d)
+            if found is not None:
+                return found
+    return None
+
+
 def extract_pipeline_taps(graph):
     """Pure walk of a traced `graph` yielding `(node, (object_type_name,
     object_id, display, filter))` per @makes_image tap.
@@ -510,10 +533,7 @@ def extract_pipeline_taps(graph):
     …; the first occurrence keeps its bare display so single-merge
     pipelines don't show "Merged 1".
 
-    No side effects, no graph mutation. The split between this
-    extraction step and `_record_pipeline_taps`'s side-effect step is
-    what lets the merger plan cache the extraction via `@node` and
-    write taps once in an impure merger downstream.
+    No side effects, no graph mutation.
     """
     from dependency_graph.classes import Node
     import inspect
@@ -540,29 +560,23 @@ def extract_pipeline_taps(graph):
         arg_map = {params[i]: n.args[i]
                    for i in range(min(len(n.args), len(params)))}
         identities = getattr(fn, "_identities", None) or getattr(task, "_identities", [])
-        # Pick the identity by isinstance(first_arg, identity_cls.object_type),
-        # mirroring products.registry._make_dispatcher. Polymorphic ops
-        # (e.g. stack_files registered for both StackId and
-        # CalibrationStackId) share field NAMES across alternatives —
-        # picking by field-name presence in `arg_map` duck-types a
-        # Stack as a CalibrationStack, misregistering the tap under
-        # the wrong object_type.
-        first_arg = n.args[0] if n.args else None
-        if first_arg is None:
+        # Find the entity: try literals (n.args) first, then walk into
+        # the dep chain. Lets ops with `stack` as a trailing dep (e.g.
+        # `stack_files(config, stack, *cal_masters)`) route taps the
+        # same as ops with `stack` as a leading literal.
+        entity = _find_identity_arg(graph, n)
+        if entity is None:
             continue
         from products.registry import pick_identity
-        identity_cls = pick_identity(identities, first_arg, op_name=fn.__name__)
+        identity_cls = pick_identity(identities, entity, op_name=fn.__name__)
         if identity_cls is None:
             continue
         object_type_name = identity_cls.object_type.__name__.lower()
-        object_id_value = first_arg.stable_hash
-        # Filter precedence: explicit `filter=` param wins (mosaic ops
-        # take it as an arg), else fall back to the primary object's
-        # intrinsic filter (every Stack has exactly one filter, but
-        # `stack_files(stack, config, *cal_masters)` doesn't carry it
-        # as a named param). Without this fallback the tap is stored
-        # at filter=None and the UI's per-filter lookup misses.
-        filter_value = arg_map.get("filter") or getattr(first_arg, "filter", None)
+        object_id_value = entity.stable_hash
+        # Filter precedence: explicit `filter=` literal param wins (mosaic
+        # ops take it as a literal arg), else fall back to the entity's
+        # intrinsic filter (every Stack has exactly one filter).
+        filter_value = arg_map.get("filter") or getattr(entity, "filter", None)
         key = (object_type_name, object_id_value, base_display, filter_value)
         seq[key] = seq.get(key, 0) + 1
         display = (
@@ -626,23 +640,18 @@ def trace_pipeline(
     commit-to-context step downstream.
     """
     from pipelines.registry import registered_pipelines
-    from stacks.downscale import TRACE_ONLY as _DOWNSCALE_TRACE_ONLY
 
     pipeline_fn = registered_pipelines().get((pipeline_name, type(entity)))
     if pipeline_fn is None:
         return TraceResult(graph=None, taps=())
 
-    _tok = _DOWNSCALE_TRACE_ONLY.set(True)
     try:
-        try:
-            graph = pipeline_fn(entity, cfg)
-        except Exception as e:
-            import traceback
-            print(f"### trace_pipeline failed: {pipeline_name} for {type(entity).__name__}: {e}")
-            traceback.print_exc()
-            graph = None
-    finally:
-        _DOWNSCALE_TRACE_ONLY.reset(_tok)
+        graph = pipeline_fn(entity, cfg)
+    except Exception as e:
+        import traceback
+        print(f"### trace_pipeline failed: {pipeline_name} for {type(entity).__name__}: {e}")
+        traceback.print_exc()
+        graph = None
 
     if graph is None:
         return TraceResult(graph=None, taps=())

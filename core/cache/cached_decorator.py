@@ -127,13 +127,8 @@ def make_cached_decorator(
         *,
         canonical_call_hash: Callable,
         ray_opts: dict,
-        needs_metadata_upgrade: bool = False,
     ) -> Callable:
-        """Wrap `func` with caching keyed by `canonical_call_hash(args)`.
-
-        `needs_metadata_upgrade=True` opts in to the on-read
-        WithSidecar→ImageMetadata cache shim — see the TODO(cache-wipe)
-        block in _key_and_lookup."""
+        """Wrap `func` with caching keyed by `canonical_call_hash(args)`."""
         func = _beartype(func)
 
         def _key_and_lookup(bound):
@@ -149,37 +144,6 @@ def make_cached_decorator(
                 debug_print(
                     f"### cache key {key} was slow to load, took {elapsed_time=} s"
                 )
-            # TODO(cache-wipe): remove this shim — and the
-            # `needs_metadata_upgrade` decorate-kwarg + its plumbing —
-            # the next time the diskcache is wiped (see
-            # `~/.claude/projects/.../memory/project_cache_wipe_metadata_migration.md`).
-            # Pre-2026-06-09 cache entries for `@node(identity=...)` ops
-            # were `WithSidecar[Path]`; post-refactor they're
-            # `ImageMetadata` (the metadata extraction was folded into
-            # the producer's Ray task). Upgrade old-shape entries on
-            # first read so consumers always see the new shape.
-            if needs_metadata_upgrade:
-                from file_io.types import WithSidecar
-                if isinstance(cached, WithSidecar):
-                    # File-existence check BEFORE the upgrade.
-                    # `compute_image_metadata` opens the file to derive
-                    # content_hash; if the file was reclaimed by an
-                    # earlier ephemeral cleanup, the upgrade would
-                    # raise FileNotFoundError and kill the task.
-                    # Treat as a stale miss instead, same as the
-                    # post-upgrade check below — the producer will be
-                    # re-run on the miss path and write the new shape
-                    # natively.
-                    pre_missing = _cached_path_missing(cached)
-                    if pre_missing is not None:
-                        debug_print(
-                            f"cache hit on stale pre-upgrade entry: {key} -> "
-                            f"{pre_missing} no longer on disk, treating as miss"
-                        )
-                        return key, call_hash, False, None
-                    from metadata.image_metadata import compute_image_metadata
-                    cached = compute_image_metadata._function(cached)
-                    _resolve_cache()[key] = strip_refs(cached)
             size_mb = objsize.get_deep_size(cached) / 1024.0 / 1024.0
             if size_mb > 5:
                 debug_print(
@@ -351,11 +315,10 @@ def make_cached_decorator(
         """
 
         def remote(self, func=None, *, canonical_call_hash=None, cache_key_narrow=None,
-                   needs_metadata_upgrade=False, **ray_opts):
+                   **ray_opts):
             def go(f):
                 cch = canonical_call_hash or _default_canonical_call_hash(f, cache_key_narrow)
-                return decorate(f, canonical_call_hash=cch, ray_opts=ray_opts,
-                                needs_metadata_upgrade=needs_metadata_upgrade)
+                return decorate(f, canonical_call_hash=cch, ray_opts=ray_opts)
             if func is None:
                 return go
             return go(func)

@@ -26,8 +26,8 @@ def _post_process_narrow(args, kwargs):
     """Cache-key hook: this op's only `config` dependency is the
     `mock_pixinsight` flag, so project `config` to that bool (in its
     arg slot). Keeps the key independent of unrelated config fields."""
-    stack, config, master = args
-    return (stack, config.development_settings.mock_pixinsight, master), kwargs
+    config, stack, master = args
+    return (config.development_settings.mock_pixinsight, stack, master), kwargs
 
 
 @node(
@@ -38,7 +38,7 @@ def _post_process_narrow(args, kwargs):
     auto_memory=True,
 )
 def post_process_stack(
-    stack: Stack, config: ProcessingConfig, master: ImageMetadata,
+    config: ProcessingConfig, stack: Stack, master: ImageMetadata,
 ) -> WithSidecar[XisfFilePath]:
     """PixInsight post-processing of a stacked master.
 
@@ -78,7 +78,7 @@ def post_process_stack(
 
     mock_pixinsight = config.development_settings.mock_pixinsight
     output_filename = post_process_stack.filename_fn(
-        stack, config, master,
+        config, stack, master,
     )
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
 

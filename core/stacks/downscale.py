@@ -1,27 +1,17 @@
 from __future__ import annotations
 
 import dataclasses
-from contextvars import ContextVar
 from pathlib import Path
 import numpy as np
 from astropy.io import fits
 from frozendict import frozendict
 
+from decorators import node
 from hashing import hash_list
 from metadata.classes import ImageMetadata, MetadataDict
 from stacks.composite_stack import BaseStack, Stack, CalibrationStack
 from stacks.run import BaseRun, Run, CalibrationRun, RunsDict
 from units import ArcsecondsPerPixel
-
-
-# When True, `downscale_stack` skips file existence checks and
-# file writes — it just constructs the new Stack metadata. Used by
-# the web server's `_ensure_pipelines_traced` HTTP path to avoid
-# blocking the request on per-frame `stat()` over network-mounted
-# storage (~1 ms × ~tens of thousands of frames adds up to ~100 s).
-# The background Ray dispatch leaves this False; that trace does
-# the actual file work as part of pipeline execution.
-TRACE_ONLY = ContextVar("downscale_stack_trace_only", default=False)
 
 
 def downscale_fits(
@@ -200,7 +190,8 @@ def _downscale_run(run: BaseRun, factor: int, dest_dir: Path) -> BaseRun:
     return dataclasses.replace(run, **overrides)
 
 
-def downscale_stack(stack: BaseStack, factor: int) -> BaseStack:
+@node
+def downscale_stack(factor: int, stack: BaseStack) -> BaseStack:
     """Block-mean-downscale every frame in `stack` by `factor`.
 
     Returns a new Stack with the SAME `stable_hash` as the input
@@ -211,19 +202,19 @@ def downscale_stack(stack: BaseStack, factor: int) -> BaseStack:
     (so downstream ops that include the stack in their call_hash
     produce distinct outputs).
 
-    REGULAR FUNCTION, NOT @node. Runs at trace time so the
-    returned Stack is a literal value — the pipeline's downstream
-    `stack_files(stack, ...)` call then sees `stack` as a literal
-    arg, satisfying the tracer's "literals before deps" contract
-    in `dependency_graph.tracing.record()`. (Making this @node
-    would put the downscaled Stack into the data_deps list, and
-    the tracer reorders deps to the END of `make_fn_args`, so
-    `stack` would land in the wrong positional slot at runtime.)
+    @node — runs at runtime in a Ray worker. The trace records a
+    Node handle; downstream ops like `stack_files(config, stack,
+    *cal_masters)` see this handle in their dep chain. Signature
+    follows the "literals first, deps trailing" convention so the
+    tracer's reordering keeps the entity properly recorded.
 
     Frame-level downscaling is parallelized via a ThreadPool;
     per-frame output paths are content-addressed
     (`<output_dir>/downscale_stack/<derived_hash>.fits`), so
-    re-runs skip already-written files and re-traces are cheap.
+    re-runs skip already-written files. Pipelines wrap calls in
+    `ephemeral_intermediates()` so the FITS get cleaned up after
+    consumers complete — regenerating one is a sub-second
+    block-mean per frame.
 
     Pipeline-agnostic — works on `Stack` (light frames) and
     `CalibrationStack` (bias/dark/flat) the same way."""
@@ -234,27 +225,20 @@ def downscale_stack(stack: BaseStack, factor: int) -> BaseStack:
         return stack
 
     dest_dir = Path(context.output_dir) / "downscale_stack"
-    if not TRACE_ONLY.get():
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        # Pre-compute every frame's downscale target path so the
-        # ThreadPool can run them in parallel. Skip already-written.
-        # Existence checks over network storage are the load-bearing
-        # cost here; TRACE_ONLY mode skips this loop entirely for
-        # the HTTP `pipeline_outputs` path, which only needs the
-        # constructed Stack metadata to enumerate tap points.
-        jobs = []
-        for run in stack.contents.values():
-            for m in run.metadata.values():
-                new_h = _downscaled_frame_content_hash(m.content_hash, factor)
-                new_path = dest_dir / f"{new_h}.fits"
-                if not new_path.exists():
-                    jobs.append((m.filename, new_path))
-        if jobs:
-            with ThreadPoolExecutor(max_workers=16) as ex:
-                list(ex.map(
-                    lambda j: downscale_fits(j[0], j[1], K=factor),
-                    jobs,
-                ))
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    jobs = []
+    for run in stack.contents.values():
+        for m in run.metadata.values():
+            new_h = _downscaled_frame_content_hash(m.content_hash, factor)
+            new_path = dest_dir / f"{new_h}.fits"
+            if not new_path.exists():
+                jobs.append((m.filename, new_path))
+    if jobs:
+        with ThreadPoolExecutor(max_workers=16) as ex:
+            list(ex.map(
+                lambda j: downscale_fits(j[0], j[1], K=factor),
+                jobs,
+            ))
 
     new_runs = RunsDict()
     for run_key, run in stack.contents.items():

@@ -314,15 +314,32 @@ def pick_identity(identities: list, first_arg, op_name: str | None = None):
 
 
 def _make_dispatcher(filename_fns: dict) -> Callable:
-    """Pick the right filename_fn by inspecting the first arg's type.
+    """Pick the right filename_fn by finding the first arg whose type
+    matches one of the registered identities.
 
     `stack_files` registers for both `StackId` and `CalibrationStackId`;
     each carries its own resolved fn pointing at a different
     `<object_type>` directory. The call_hash inside is identical (same
-    args, same hash), only the routing differs."""
+    args, same hash), only the routing differs.
+
+    Scans all positional args (not just `args[0]`) so the literals-first
+    signature convention works: `stack_files(config, stack, *cal_masters)`
+    picks the identity matching `stack` (at args[1]), not `config`.
+    """
     identities = list(filename_fns.keys())
 
     def dispatch(*args, **kwargs):
+        # Direct isinstance scan over args — bypass pick_identity's
+        # "fallback to identities[0]" warning, because here a mismatch
+        # just means "this arg isn't the entity, keep looking."
+        for a in args:
+            for ic in identities:
+                ot = getattr(ic, "object_type", None)
+                if ot is not None and isinstance(a, ot):
+                    return filename_fns[ic](*args, **kwargs)
+        # No arg matched — let pick_identity handle the warn-and-
+        # fallback path with the first arg, preserving the old
+        # diagnostic behaviour for genuinely ambiguous calls.
         if not args:
             for fn in filename_fns.values():
                 return fn(*args, **kwargs)

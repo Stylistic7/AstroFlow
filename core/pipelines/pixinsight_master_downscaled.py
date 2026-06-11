@@ -7,7 +7,7 @@ registration time by ~64x at the cost of a 64x-fewer-pixel master.
 
 The only structural difference from `PixInsight Master` is the
 `downscale_factor=8` arg to `calibrate(...)` and the explicit
-`downscale_stack(stack, 8)` wrap before `stack_files`. Everything
+`downscale_stack(8, stack)` wrap before `stack_files`. Everything
 else is identical.
 
 To fork this pipeline (e.g. swap MultiscaleGradientCorrection for
@@ -40,11 +40,11 @@ def _post_processed_master(stack, config):
     Shared across the stack / target / mosaic entry points."""
     cal_masters = []
     for cs in calibration_stacks_for(stack, config):
-        cs_downscaled = downscale_stack(cs, 8)
-        cal_masters.append(stack_files(cs_downscaled, config, *cal_masters))
-    s_downscaled = downscale_stack(stack, 8)
-    master = stack_files(s_downscaled, config, *cal_masters)
-    return post_process_stack(s_downscaled, config, master)
+        cs_downscaled = downscale_stack(8, cs)
+        cal_masters.append(stack_files(config, cs_downscaled, *cal_masters))
+    s_downscaled = downscale_stack(8, stack)
+    master = stack_files(config, s_downscaled, *cal_masters)
+    return post_process_stack(config, s_downscaled, master)
 
 
 @workflow_group

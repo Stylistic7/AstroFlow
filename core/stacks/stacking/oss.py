@@ -55,10 +55,10 @@ def _load_calibration(cal_stack, config, implementation):
     """
     if implementation == OSS:
         from stacks.stacking.oss import stack_files_oss
-        path = stack_files_oss.filename_fn(cal_stack, config)
+        path = stack_files_oss.filename_fn(config, cal_stack)
     else:
         from stacks.stacking.pixinsight import stack_files
-        path = stack_files.filename_fn(cal_stack, config)
+        path = stack_files.filename_fn(config, cal_stack)
     return read_image(path) if path and os.path.exists(path) else None
 
 def _calibrate(data, bias, dark, flat):
@@ -178,8 +178,8 @@ def _streaming_sigma_clipped_mean(preprocessed_frames, is_light):
 def _stack_files_oss_narrow(args, kwargs):
     """Cache-key hook: same shape as `stack_files`, see `_stack_files_narrow`."""
     from stacks.stacking import narrow_stack_config
-    stack, config, *rest = args
-    return (stack, narrow_stack_config(stack, config), *rest), kwargs
+    config, stack, *rest = args
+    return (narrow_stack_config(stack, config), stack, *rest), kwargs
 
 @node(
     identity=[CalibrationStackId, StackId],
@@ -188,8 +188,8 @@ def _stack_files_oss_narrow(args, kwargs):
     auto_memory=True,
 )
 def stack_files_oss(
-    stack: BaseStack,
     config: ProcessingConfig,
+    stack: BaseStack,
 ) -> WithSidecar[FitsFilePath]:
     """OSS stacker producing a full-resolution master. A future
     downscaled OSS pipeline would compose `downscale_master` on top
@@ -201,7 +201,7 @@ def stack_files_oss(
             raise ValueError(f"Stack {stack} has no frames after applying decisions")
         stack = filtered
 
-    dest_filename = stack_files_oss.filename_fn(stack, config)
+    dest_filename = stack_files_oss.filename_fn(config, stack)
     os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
     log.info("OSS stacking", stack=str(stack), dest=str(dest_filename))
 
