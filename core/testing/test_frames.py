@@ -193,7 +193,22 @@ def make_synthetic_frames(
     num_stars: int = 100,
     image_scale: float = 1.0,
     rotation_angle_deg: float = 90.0,
+    pixel_arrays: list[np.ndarray] | None = None,
 ) -> list[str]:
+    """Write `number` synthetic FITS frames.
+
+    When `pixel_arrays` is provided, each frame's uint16 pixel data
+    comes from `pixel_arrays[i]` and the internal fill_value / random
+    / Flat-Gaussian / `add_noise` / hot-pixel paths are bypassed.
+    Caller is responsible for everything in the array. This is the
+    path the calibration-physics harness uses to supply
+    `B + signal + Poisson + read_noise`-modelled pixels.
+
+    When `pixel_arrays` is None (default), the historical fill_value /
+    random / Flat-Gaussian generator + `add_noise` + hot-pixel
+    injection runs unchanged, so all existing callers continue to
+    work bit-identically.
+    """
     if prefix is None:
         prefix = image_type + "_" + str(uuid.uuid4())
 
@@ -212,7 +227,16 @@ def make_synthetic_frames(
         if dest_dir is not None:
             fits_filename = os.path.join(dest_dir, fits_filename)
 
-        if image_type == "Flat":
+        if pixel_arrays is not None:
+            image_data = pixel_arrays[i]
+            assert image_data.dtype == np.uint16, (
+                f"pixel_arrays[{i}].dtype must be uint16, got {image_data.dtype}"
+            )
+            assert image_data.shape == (height_pixels, width_pixels), (
+                f"pixel_arrays[{i}].shape {image_data.shape} != "
+                f"({height_pixels}, {width_pixels})"
+            )
+        elif image_type == "Flat":
             image_data = _make_flat_frame(height_pixels, width_pixels)
         elif fill_value:
             image_data = (
@@ -225,7 +249,10 @@ def make_synthetic_frames(
             )
 
         # Add a small amount of noise so it will have a unique hash.
-        if add_noise:
+        # Skip when pixel_arrays is provided — caller's array IS the
+        # final pixel data, and adding stochastic noise here would
+        # break the physics-model determinism the harness depends on.
+        if pixel_arrays is None and add_noise:
             assert image_data.dtype == np.uint16
             image_data += rng.integers(
                 low=0, high=2, size=image_data.shape, dtype=image_data.dtype
@@ -236,7 +263,10 @@ def make_synthetic_frames(
         # frames from this "camera" (= instrument + sensor shape). Without
         # this, fingerprint clustering would see only random noise outliers
         # and exclude every synthetic frame as no-fingerprint.
-        if image_type != "Bias":
+        # Skip when pixel_arrays is provided — caller bakes hot pixels
+        # into the array via the dark-current ndarray if they want them
+        # (and the physics harness does, via the same `_hot_seed` shape).
+        if pixel_arrays is None and image_type != "Bias":
             _hot_seed = xxhash.xxh64(
                 f"{instrument}|{width_pixels}x{height_pixels}"
             ).intdigest()

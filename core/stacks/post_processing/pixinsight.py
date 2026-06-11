@@ -96,4 +96,21 @@ def post_process_stack(
         )
     result.save_to(output_filename, mock=mock_pixinsight)
 
+    # Equalize each panel's sky background to a known pedestal so
+    # adjacent panels match at the seam. WBPP's `ImageIntegration`
+    # additive-with-scaling normalization references each integration
+    # to its own reference frame, so two panels with identical physics
+    # land at different sky baselines (~11 σ apart on synthetic data
+    # before pedestaling, ~0.1 σ after). MGC removes intra-panel
+    # gradients but leaves the cross-panel offset; PMM's photometric
+    # scaling addresses the multiplicative part but can't flatten an
+    # additive baseline difference. Applied here so every downstream
+    # consumer of the post-processed master sees an equalized panel.
+    # See `core/stacks/post_processing/background_pedestal.py`.
+    if not mock_pixinsight:
+        from stacks.post_processing.background_pedestal import (
+            apply_background_pedestal_to_xisf,
+        )
+        apply_background_pedestal_to_xisf(Path(output_filename))
+
     return WithSidecar(XisfFilePath(output_filename))
