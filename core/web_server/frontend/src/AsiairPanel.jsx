@@ -443,8 +443,25 @@ const AsiairPanel = () => {
       ? Math.max(...series.filter(v => v != null))
       : 0;
     const axisMax = _PICK_AXIS_MAX(seriesMax);
+    const RigSkyIcon = _SKY_ICON[skyLevel];
+    const skyTooltip =
+      skyLevel === "good" ? "Sky clear — guide signal at baseline"
+      : skyLevel === "thin" ? "Thin clouds — transparency dropping"
+      : skyLevel === "heavy" ? "Heavy clouds — guide star dim"
+      : skyLevel === "lost" ? "Guide star lost — thick clouds likely"
+      : "Sky-quality estimator warming up";
     summaryNode = (
       <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+        {/* Sky icon ALWAYS visible (when we have data) so the chip
+            constantly answers "what does the system think of the sky
+            right now?" — not just on degraded conditions. WbSunny
+            for good means "yes, we're actively classifying it as
+            clear" rather than "no data". */}
+        {RigSkyIcon && (
+          <Tooltip title={skyTooltip}>
+            <RigSkyIcon sx={{ fontSize: 16, color: sparkColor }} />
+          </Tooltip>
+        )}
         <Typography variant="body2">
           {r.label}
         </Typography>
@@ -473,29 +490,35 @@ const AsiairPanel = () => {
       </Box>
     );
   } else {
+    // Multi-rig: show the worst sky across the fleet so a single
+    // cloudy rig is visible even when the summary text is aggregated.
+    const MultiSkyIcon = _SKY_ICON[worstSkyForTone];
+    const skyTooltip =
+      worstSkyForTone === "good" ? "All rigs see clear sky"
+      : worstSkyForTone === "thin" ? "At least one rig sees thin clouds"
+      : worstSkyForTone === "heavy" ? "At least one rig sees heavy clouds"
+      : worstSkyForTone === "lost" ? "At least one rig lost its guide star"
+      : "Sky-quality estimator warming up";
     summaryNode = (
-      <Typography variant="body2">
-        {`${reachableRigs.length} ASIAir · ${summary.active} active`}
-      </Typography>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+        {MultiSkyIcon && (
+          <Tooltip title={skyTooltip}>
+            <MultiSkyIcon sx={{ fontSize: 16, color: _SKY_COLOR[worstSkyForTone] }} />
+          </Tooltip>
+        )}
+        <Typography variant="body2">
+          {`${reachableRigs.length} ASIAir · ${summary.active} active`}
+        </Typography>
+      </Box>
     );
   }
 
-  // Chip icon priority:
-  //   1. Warning (capturing but guide loop sick) — most urgent.
-  //   2. Sky-quality icon if any reachable rig has a non-good /
-  //      non-unknown sky reading. This is what tells the user "the
-  //      weather is showing up in the data."
-  //   3. AutoMode otherwise — neutral "ASIAir as automation rig"
-  //      glyph; less specific than a Camera, more specific than Wifi.
-  const SkyIcon = _SKY_ICON[worstSkyForTone];
-  let icon;
-  if (warnings > 0) {
-    icon = <Warning />;
-  } else if (SkyIcon && worstSkyForTone !== "good" && worstSkyForTone !== "unknown") {
-    icon = <SkyIcon />;
-  } else {
-    icon = <AutoMode />;
-  }
+  // Leading icon: Warning if a guide loop is sick mid-capture, else
+  // AutoMode (the "this chip IS the ASIAir surface" glyph). The
+  // sky-quality icon lives INSIDE the summary content so we get the
+  // sky reading visible regardless of conditions (sun glyph in good
+  // weather, cloud glyphs in bad), without doubling up icons.
+  const icon = warnings > 0 ? <Warning /> : <AutoMode />;
   const tooltipTitle =
     warnings > 0 ? `${warnings} ASIAir(s) capturing without a healthy guide loop`
     : worstSkyForTone === "thin" ? "Thin clouds — transparency dropping"
