@@ -21,6 +21,7 @@ from metadata.sidecar_io import read_image_metadata
 from attributes.astrometric_attributes import _spherical_polygon_for_wcs
 from decisions.decisions import ObjectType, get_decisions_for_object
 from web_server.backend._route import tap_route
+from decorators.decorators import node
 
 metadata_bp = Blueprint("metadata", __name__)
 
@@ -359,34 +360,15 @@ def _entity_filters(entity, object_type: str) -> list[str]:
     return []
 
 
-# In-process memoisation of which (object_type, object_id) pairs
-# we've already traced this session. Pipeline code is immutable
-# during a run (per user policy), so an entity's tap-point structure
-# can't change after the first trace — re-tracing every request was
-# wasted work. The set is process-local; backend restart re-traces
-# on demand.
-_traced_objects: set[tuple[str, str]] = set()
-
-
-def _ensure_pipelines_traced(object_type: str, object_id: str, entity) -> None:
-    """Trace every registered pipeline for `entity` so the
-    PipelineOutputIndex carries its tap-point structure. Idempotent
-    per backend session: an (object_type, object_id) pair traced
-    once will skip the trace on subsequent calls in the same
-    process.
-
-    Tracing itself is pure-Python — walks the @pipeline body,
-    records Node identities. No Ray dispatch, no compute. We pass
-    a `cfg` whose `calibration_stacks` is a plain dict (not a
-    `ContextRef`) so the trace path doesn't call `ray.put`; the
-    web server runs in `LocalContext` (direct-to-SQLite, no Ray
-    init by design) and pipeline bodies use cfg only structurally
-    at trace time.
-    """
-    key = (object_type, object_id)
-    if key in _traced_objects:
-        return
-
+@node
+def _trace_pipelines_for_entity(
+    object_type: str, object_id: str, entity, calibration_stacks,
+):
+    """Trace every registered pipeline for `entity` and register each
+    tap's existence in the PipelineOutputIndex. Calibration_stacks is
+    in the args (not read from context inside) so that adding a new
+    master changes the call hash and re-traces against the new disk
+    state exactly once."""
     from pipelines.registry import registered_pipelines
     from pipelines.output_index import record_existence
     from compute_graph.compute_graph import _record_pipeline_taps
@@ -395,19 +377,14 @@ def _ensure_pipelines_traced(object_type: str, object_id: str, entity) -> None:
     from stacks.downscale import TRACE_ONLY as _DOWNSCALE_TRACE_ONLY
 
     cfg = ProcessingConfig(
-        calibration_stacks=context.calibration_stacks or fd(),
+        calibration_stacks=calibration_stacks or fd(),
         development_settings=DevelopmentSettings(mock_pixinsight=False),
         min_frames_in_stack=3,
         decisions=fd(),
     )
 
-    # `downscale_stack` is a regular function (runs at trace time);
-    # in its normal mode it stat()s every frame on disk and writes
-    # any missing downscaled FITS — necessary for the background
-    # Ray dispatch path, ruinous on the HTTP path (tens of thousands
-    # of stat() calls over network storage). TRACE_ONLY skips that
-    # work so the endpoint only constructs the Stack metadata
-    # needed to enumerate tap points.
+    # downscale_stack stat()s every frame on disk in its normal mode
+    # — network-storage murder on the trace path. TRACE_ONLY skips it.
     _tok = _DOWNSCALE_TRACE_ONLY.set(True)
     try:
         for (name, processes_class), pipeline_fn in registered_pipelines().items():
@@ -416,10 +393,6 @@ def _ensure_pipelines_traced(object_type: str, object_id: str, entity) -> None:
             try:
                 graph = pipeline_fn(entity, cfg)
             except Exception as e:
-                # A pipeline that can't trace this entity (missing
-                # context dependencies etc.) just doesn't contribute
-                # taps — caller still sees its name + empty taps. Log
-                # so we notice systematic trace failures.
                 import traceback
                 print(f"### pipeline trace failed: {name} for {object_type}/{object_id}: {e}")
                 traceback.print_exc()
@@ -430,7 +403,15 @@ def _ensure_pipelines_traced(object_type: str, object_id: str, entity) -> None:
     finally:
         _DOWNSCALE_TRACE_ONLY.reset(_tok)
 
-    _traced_objects.add(key)
+
+def _ensure_pipelines_traced(object_type: str, object_id: str, entity) -> None:
+    """Cache-survives-restarts version of the trace — the @node on the
+    inner function persists in diskcache and re-runs only when a
+    pipeline source or calibration_stacks changes."""
+    import ray
+    ray.get(_trace_pipelines_for_entity.remote(
+        object_type, object_id, entity, context.calibration_stacks,
+    ))
 
 
 @metadata_bp.route("/api/pipeline_outputs/<object_type>/<object_id>")
