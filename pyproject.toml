@@ -48,10 +48,10 @@ dependencies = [
     "opencv-python",
     "scikit-image",
     "Pillow",
+    "pyvips",
     "tifffile",
     "shapely",
     "largestinteriorrectangle",
-    "large-image[vips]",
     "xisf",
     "h5py",
     # Web UI

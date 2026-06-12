@@ -55,7 +55,7 @@ def default_make_tile_pyramid(source_path: Path, dest_path: Path) -> None:
     data is the source's LINEAR float32 values (no autostretch, no
     uint8 quantization).
 
-    Compression is TIFF-internal deflate — `large_image` decompresses
+    Compression is TIFF-internal deflate — pyvips decompresses
     on-the-fly when serving individual tiles, and HTTP transit applies
     brotli on top of the raw float32 bytes. The two compression layers
     address different problems: deflate keeps the on-disk file
