@@ -12,10 +12,12 @@ def test_decision_precedence_order():
 
 
 def test_calibrations_for_image_type():
-    """Verify the calibration-for-image-type mapping."""
+    """Verify the Landmann §7.1 Case 2 calibration-for-image-type mapping
+    (matched-exposure darks; no master bias for lights; no pre-calibrated
+    master dark). Phase A of the seam-hunting plan landed this topology."""
     from decisions.resolve import _CALIBRATIONS_FOR_IMAGE_TYPE
-    assert _CALIBRATIONS_FOR_IMAGE_TYPE["light"] == ["bias", "dark", "flat"]
-    assert _CALIBRATIONS_FOR_IMAGE_TYPE["dark"] == ["bias"]
+    assert _CALIBRATIONS_FOR_IMAGE_TYPE["light"] == ["dark", "flat"]
+    assert _CALIBRATIONS_FOR_IMAGE_TYPE["dark"] == []
     assert _CALIBRATIONS_FOR_IMAGE_TYPE["flat"] == ["bias"]
     assert _CALIBRATIONS_FOR_IMAGE_TYPE["bias"] == []
 

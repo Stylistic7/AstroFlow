@@ -134,11 +134,26 @@ def is_run_included(
 # Calibration resolution via the decision framework
 # ---------------------------------------------------------------------------
 
+# Calibration topology — Landmann §7.1 Case 2 (matched-exposure darks).
+#
+# `dark: []`    — integrate raw darks WITHOUT pre-calibrating them
+#                 (Landmann §6.2: "NEVER pre-calibrate the MasterDark"
+#                 — pre-calibration trips WBPP's §8.2 undercorrection
+#                 path when paired with the master-bias-for-lights
+#                 anti-pattern).
+# `flat: ["bias"]` — bias-calibrate CMOS short flats (Landmann §6.3.1).
+# `light: ["dark", "flat"]` — NO master bias for lights. Case 2's
+#                 closed form is `(L − MD) · s0 / MF` with no MB term;
+#                 staging MB into the lights' WBPP working dir would
+#                 cause WBPP to subtract it again on a master dark
+#                 that already contains the bias (§8.2). With this
+#                 topology WBPP's auto-detect lands on the documented
+#                 Case 2 settings.
 _CALIBRATIONS_FOR_IMAGE_TYPE = {
     "bias": [],
-    "dark": ["bias"],
+    "dark": [],
     "flat": ["bias"],
-    "light": ["bias", "dark", "flat"],
+    "light": ["dark", "flat"],
 }
 
 
