@@ -89,6 +89,20 @@ class ImageStatistics:
     # forward-migration of sidecars written before the field existed.
     mad: float = 0.0
 
+    def __setstate__(self, state: list) -> None:
+        # Forward-compatible unpickling for slotted frozen dataclasses.
+        # Old pickles missing trailing slots (a new optional field added
+        # later) get padded with that field's declared default. Without
+        # this, the auto-generated `_dataclass_setstate` leaves the new
+        # slot unset; a subsequent re-pickle then crashes inside
+        # `_dataclass_getstate` on `getattr(self, "mad")`.
+        field_list = fields(type(self))
+        if len(state) < len(field_list):
+            missing = field_list[len(state):]
+            state = list(state) + [_field_default(f) for f in missing]
+        for f, value in zip(field_list, state):
+            object.__setattr__(self, f.name, value)
+
 
 @dataclass(frozen=True, slots=True)
 class ImageMetadata:
