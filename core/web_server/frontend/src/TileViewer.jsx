@@ -437,17 +437,17 @@ const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, ima
   // CPU-side in ~0.5 ms; `updateLutTexture` blits 4 KB to the GPU
   // (sub-millisecond). The shader picks it up on the next frame.
   //
-  // We also push the histogram range into uniforms here. The shader
-  // normalizes raw float pixels into [0,1] via this range before the
-  // LUT lookup, so the LUT's index space and the input space match.
+  // The shader's per-pixel normalization is (xRaw - min) / (max - min).
+  // Pinning min=0 makes that reduce to `xRaw / max`, which is exactly
+  // what the autostretch math (and its server-side Python original)
+  // assumes as its input space.
   useEffect(() => {
     if (!metadata?.statistics) return;
     if (!lutTextureRef.current || !shaderRef.current) return;
     const lutData = buildAutoStretchLut(metadata.statistics, painterlyBias);
     updateLutTexture(lutTextureRef.current, lutData);
-    const [rangeMin, rangeMax] = metadata.statistics.histogram_range;
-    shaderRef.current.uniforms.uHistRangeMin = rangeMin;
-    shaderRef.current.uniforms.uHistRangeMax = rangeMax;
+    shaderRef.current.uniforms.uHistRangeMin = 0.0;
+    shaderRef.current.uniforms.uHistRangeMax = metadata.statistics.max_value;
     // Kick a render — viewport doesn't fire 'moved'/'zoomed' on a
     // slider tweak, but the meshes are still on stage. PIXI re-renders
     // every ticker frame anyway, so this is a no-op safety net.

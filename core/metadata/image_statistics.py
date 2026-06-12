@@ -110,6 +110,14 @@ def compute_image_statistics(image: np.ndarray) -> ImageStatistics:
         sky_median = p25
         sky_rms = 0.0
 
+    # MAD = median(|pixel − median(all)|). Matches the `mdev()` helper
+    # inside `previews.operations.autostretch` so the JS port produces
+    # an identical STF black-point. Computed on the full pixel array
+    # (zeros already excluded above), at pixel-level precision —
+    # stacked-pedestaled masters have sub-bin sky noise that a 1024-bin
+    # histogram would round to 0.
+    mad = float(np.median(np.abs(pixels - p50)))
+
     # Clipping fractions relative to the data's actual range. For
     # uint16 the range is typically [0, 65535] so clipped_low picks up
     # bias pixels — that's intentional, the UI uses this to detect
@@ -142,6 +150,7 @@ def compute_image_statistics(image: np.ndarray) -> ImageStatistics:
         p0_1=p0_1, p1=p1, p5=p5, p25=p25, p50=p50,
         p75=p75, p95=p95, p99=p99, p99_9=p99_9,
         sky_median=sky_median, sky_rms=sky_rms,
+        mad=mad,
         clipped_low_fraction=clipped_low_fraction,
         clipped_high_fraction=clipped_high_fraction,
         min_value=min_value, max_value=max_value, mean_value=mean_value,

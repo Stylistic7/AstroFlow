@@ -78,6 +78,17 @@ class ImageStatistics:
     max_value: float
     mean_value: float
 
+    # Median absolute deviation across all (non-sentinel) pixels.
+    # `mad = median(|pixel − median(all_pixels)|)`. Surfaced here so
+    # the in-browser auto-stretch port can compute the STF shadow-clip
+    # term `-2.8 · 1.4826 · MAD` without needing to re-read pixels.
+    # For stacked + pedestaled masters the sky noise sits below the
+    # histogram's bin width, so an in-browser MAD derived from
+    # `histogram_counts` collapses to 0; the value computed here on the
+    # raw pixel array preserves sub-bin precision. Defaulted for
+    # forward-migration of sidecars written before the field existed.
+    mad: float = 0.0
+
 
 @dataclass(frozen=True, slots=True)
 class ImageMetadata:
