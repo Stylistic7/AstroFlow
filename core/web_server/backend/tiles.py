@@ -30,12 +30,15 @@ import threading
 import brotli
 import large_image
 import numpy as np
+import pyvips
 from flask import Blueprint, request, send_file, abort, jsonify, Response
-from large_image.constants import TILE_FORMAT_NUMPY
 
 from previews.create_tile_pyramid import context_map_path_for
 from web_server.backend.router import stateful_route
 from web_server.backend._route import tap_route
+
+
+_TILE_SIZE = 256
 
 
 tiles_bp = Blueprint("tiles", __name__)
@@ -48,11 +51,35 @@ tiles_bp = Blueprint("tiles", __name__)
 _TILE_BROTLI_QUALITY = 4
 
 
-# Path -> (large_image handle, source mtime). Cleared when the source
-# file's mtime advances. No locking needed because dict assignment is
-# atomic in CPython and the worst case is briefly opening a handle twice.
+# Path -> (large_image handle, source mtime). Used by the legacy uint8
+# JPEG-pyramid path + by tile_metadata. Cleared when the source file's
+# mtime advances. No locking needed because dict assignment is atomic
+# in CPython and the worst case is briefly opening a handle twice.
 _handle_cache: dict = {}
 _handle_cache_lock = threading.Lock()
+
+# (path, page) -> (pyvips.Image, mtime). The float-pyramid serve path
+# goes through pyvips directly because `large_image[vips].getTile()`
+# renders to JPEG regardless of `format=TILE_FORMAT_NUMPY` (the format
+# kwarg is a hint the vips backend ignores). One Image per pyramid
+# page is enough — they're just metadata + lazy-decode handles, so the
+# cache is cheap to hold.
+_vips_page_cache: dict = {}
+_vips_page_cache_lock = threading.Lock()
+
+
+def _get_vips_page(path: str, page: int):
+    current_mtime = os.path.getmtime(path)
+    key = (path, page)
+    with _vips_page_cache_lock:
+        cached = _vips_page_cache.get(key)
+        if cached is not None:
+            img, cached_mtime = cached
+            if cached_mtime == current_mtime:
+                return img
+        img = pyvips.Image.tiffload(path, page=page)
+        _vips_page_cache[key] = (img, current_mtime)
+        return img
 
 
 def _tile_pyramid_path_for_tap(
@@ -144,61 +171,61 @@ def serve_tile_tap(
 
 
 def _serve_tile_response(path, object_type, object_id, x, y, z):
-    """Read one tile out of the pyramid as a numpy float32 array, pack
-    as raw little-endian bytes, brotli-compress, return with
-    `Content-Encoding: br`. The browser's `fetch` decompresses brotli
-    on the network thread; the bytes that arrive in JavaScript are
-    direct Float32Array-compatible and can be uploaded to a WebGL
+    """Read one tile out of the pyramid as float32, brotli-compress,
+    return with `Content-Encoding: br`. The browser's `fetch`
+    decompresses brotli on the network thread; the bytes that arrive
+    in JavaScript are Float32Array-compatible and upload to a WebGL
     R32F texture with no parse step.
+
+    Uses pyvips directly because `large_image[vips].getTile()` ignores
+    `format=TILE_FORMAT_NUMPY` on this backend and always renders to a
+    JPEG. For our linear-float pyramids the JPEG path silently rounds
+    every pixel to zero (the float values are << 1.0, JPEG quantizes
+    to uint8 [0,255]) — which produced the all-gray canvas the user
+    saw. pyvips reads the float TIFF page directly and gives us raw
+    linear values back.
     """
     if path is None:
         return abort(404)
 
     try:
+        # Map URL zoom (0 = lowest res) to pyvips page (0 = full res).
+        # tile_metadata returned `maxZoom = levels - 1`; pages are
+        # symmetric to that.
         handle = _get_handle(path)
-        # Numpy format pulls the raw pixel array out of the pyramid;
-        # no PNG/JPEG encoding step (which would have quantized to
-        # uint8 and destroyed the linear-float values the shader
-        # needs).
-        tile = handle.getTile(x, y, z, format=TILE_FORMAT_NUMPY)
-        # large_image returns one of three shapes depending on the
-        # source pyramid format:
-        #   * `np.ndarray`            — the float32 case (linear-float
-        #                               TIFFs from the new pyramid
-        #                               generator; vips reads them as
-        #                               float arrays natively).
-        #   * `(np.ndarray, mime)`    — older PIL-source path.
-        #   * `ImageBytes` (a `bytes` subclass) — when the source is
-        #                               an encoded JPEG/PNG TIFF (the
-        #                               legacy autostretched pyramids
-        #                               still on disk for some taps).
-        # The last case used to crash here because `tile[0]` on bytes
-        # is the first *byte* (an int), not a tile array.
-        if isinstance(tile, np.ndarray):
-            arr = tile
-        elif isinstance(tile, tuple) and isinstance(tile[0], np.ndarray):
-            arr = tile[0]
+        meta = handle.getMetadata()
+        max_zoom = meta["levels"] - 1
+        page = max_zoom - z
+        img = _get_vips_page(path, page)
+
+        x0 = x * _TILE_SIZE
+        y0 = y * _TILE_SIZE
+        w = min(_TILE_SIZE, img.width - x0)
+        h = min(_TILE_SIZE, img.height - y0)
+        if w <= 0 or h <= 0:
+            return abort(404)
+        tile = img.crop(x0, y0, w, h)
+        raw = tile.write_to_memory()
+        bands = tile.bands
+
+        if tile.format == "float":
+            arr = np.frombuffer(raw, dtype=np.float32).reshape(h, w, bands)
+        elif tile.format == "uchar":
+            # Legacy autostretched uint8 pyramids — rescale to [0,1]
+            # so the shader's per-pixel normalization still lines up.
+            arr = (
+                np.frombuffer(raw, dtype=np.uint8)
+                .reshape(h, w, bands)
+                .astype(np.float32) / 255.0
+            )
         else:
-            from PIL import Image
-            arr = np.asarray(Image.open(io.BytesIO(bytes(tile))))
-        # Multi-channel images: collapse to the first channel for now;
-        # the shader is mono. RGB-aware tile serving is a separate
-        # change (would require packing 3 channels into the f32 stream
-        # and a shader that samples .rgb instead of .r).
-        if arr.ndim == 3:
-            arr = arr[..., 0]
-        # Legacy autostretched JPEG pyramids decode to uint8 0..255;
-        # the new shader expects pixels in the same value space as the
-        # linear master (≈ 0..1.something), so rescale into [0,1] for
-        # uint8 sources. New linear-float pyramids land here already
-        # as float32 — passed through untouched.
-        if arr.dtype == np.uint8:
-            arr = arr.astype("<f4") / 255.0
-        else:
-            arr = arr.astype("<f4")
-        arr = np.ascontiguousarray(arr)
-        raw = arr.tobytes()
-        compressed = brotli.compress(raw, quality=_TILE_BROTLI_QUALITY)
+            arr = np.frombuffer(raw, dtype=np.float32).reshape(h, w, bands).astype("<f4")
+
+        # Mono channel today. RGB-aware tile serving is a separate
+        # change (pack 3 channels + shader samples .rgb).
+        arr = arr[..., 0]
+        arr = np.ascontiguousarray(arr.astype("<f4"))
+        compressed = brotli.compress(arr.tobytes(), quality=_TILE_BROTLI_QUALITY)
         resp = Response(compressed, mimetype="application/octet-stream")
         resp.headers["Content-Encoding"] = "br"
         # The shape is implied by the tile-pyramid metadata (the

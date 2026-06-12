@@ -48,6 +48,16 @@ def compute_image_statistics(image: np.ndarray) -> ImageStatistics:
     flattened across channels — these stats describe the overall
     brightness distribution, not per-channel.
 
+    Pixels exactly equal to 0.0 are treated as a "no data" sentinel
+    and dropped from every downstream computation: mosaics have an
+    irregular footprint inside a rectangular bounding box and the
+    bbox padding is `place_image`-zero, while `post_process_stack`'s
+    pedestal step shifts every real sky pixel to a positive value.
+    Without this exclusion the histogram, percentiles, and sky stats
+    would all be ~50 % dominated by "no data" and the auto-stretch
+    LUT would waste its display brightness on the rectangular border
+    instead of on the actual image content.
+
     For a 50-megapixel float32 master this runs in ~50 ms (most of
     that is the `np.percentile` calls); for a 1-megapixel float32
     subframe, ~1 ms. The cost lives one-time per file inside
@@ -58,6 +68,22 @@ def compute_image_statistics(image: np.ndarray) -> ImageStatistics:
     # of input dtype. Flatten to 1-D — channel breakdown isn't part
     # of this view.
     pixels = image.astype(np.float64, copy=False).ravel()
+    # Drop the no-data sentinel. Every percentile, sky stat, and
+    # histogram bin below operates on `pixels` post-mask.
+    pixels = pixels[pixels != 0.0]
+    if pixels.size == 0:
+        # Degenerate: empty / all-sentinel image. Return zeros so
+        # the sidecar still deserializes cleanly.
+        return ImageStatistics(
+            histogram_bins=_HISTOGRAM_BINS,
+            histogram_range=(0.0, 1.0),
+            histogram_counts=tuple([0] * _HISTOGRAM_BINS),
+            p0_1=0.0, p1=0.0, p5=0.0, p25=0.0, p50=0.0,
+            p75=0.0, p95=0.0, p99=0.0, p99_9=0.0,
+            sky_median=0.0, sky_rms=0.0,
+            clipped_low_fraction=0.0, clipped_high_fraction=0.0,
+            min_value=0.0, max_value=0.0, mean_value=0.0,
+        )
 
     min_value = float(pixels.min())
     max_value = float(pixels.max())

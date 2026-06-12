@@ -2,133 +2,160 @@
  * Auto-stretch optimizer: build a 1-D RGBA LUT from per-image
  * statistics and a user-controlled painterly bias.
  *
- * Conceptual basis (see the long-form design discussion):
- *   * For brightness distributed perceptually evenly, the
- *     log-histogram should be linear in displayed brightness — i.e.
- *     the displayed histogram should be exponential, which is also
- *     the max-entropy distribution on [0, 1].
- *   * The cleanest single-pass mapping that takes ANY input
- *     distribution to a chosen target distribution is histogram
- *     specification: f(x) = G⁻¹(F(x)) where F is the input CDF and G
- *     is the target CDF.
- *   * The painterly slider biases G away from the pure max-entropy
- *     exponential toward a midtone-heavier curve. Pure naturalistic
- *     = exponential target; pure painterly = exponential weighted by
- *     a wide Gaussian centered at the midtones.
+ * Modeled after PixInsight's ScreenTransferFunction. Three steps:
+ *
+ *   1. Find the sky pedestal — the input value where the cumulative
+ *      distribution crosses 0.5 (or just `sky_median` from stats).
+ *   2. Set the black/white points around it. Black sits just below the
+ *      sky pedestal (effectively a 1-bin offset, because for stacked
+ *      + pedestaled mosaics there is no per-pixel noise spread below
+ *      sky — every "sky" pixel is at the pedestal value within
+ *      single-precision rounding). White comes from a tail percentile
+ *      of the input distribution.
+ *   3. Solve for the MTF midtone parameter `m` such that the sky
+ *      pedestal lands at a chosen DISPLAY brightness — the
+ *      `targetSkyBrightness`. The painterly slider tunes this target:
+ *
+ *          painterlyBias = 0.0  →  sky at display 0.10 (dim, dramatic)
+ *          painterlyBias = 1.0  →  sky at display 0.40 (lifted midtones)
+ *
+ *      Faint structure rides on top of the sky pedestal: as the slider
+ *      lifts sky, the midtones lift with it, which is what makes the
+ *      "painterly" half of the axis look painterly.
+ *
+ * Zero pixels are excluded from every calculation. They're the
+ * "no data" sentinel for the irregular mosaic footprint inside the
+ * rectangular bbox; the shader short-circuits exact zeros to opaque
+ * black so they never reach the LUT.
  *
  * Implementation: 256-entry RGBA float LUT, recomputed on slider
- * change in ~0.5 ms. The shader looks it up with one texture sample
+ * change in ~0.3 ms. The shader looks it up with one texture sample
  * per pixel.
  */
 
 
 const LUT_SIZE = 256;
 
+// White point at the 99.99 % percentile of valid pixels — keeps the
+// brightest 0.01 % of stars saturated, otherwise the LUT spreads its
+// dynamic range across a long star tail and the canvas looks washed
+// out in the midtones.
+const WHITE_CDF = 0.9999;
+
+// MTF curve: y = ((m − 1) t) / ((2m − 1) t − m). Solving mtf(t, m) = y
+// for m gives the form below — the rest of the design is just
+// picking t (where the sky pedestal sits in the bracket) and y
+// (the display brightness we want the sky to show at).
+const TARGET_SKY_NATURAL = 0.10;
+const TARGET_SKY_PAINTERLY = 0.40;
+
 
 /**
- * Build the auto-stretch LUT from the given ImageStatistics and a
- * painterly slider value in [0, 1].
+ * Build the auto-stretch LUT.
  *
- * @param {object} stats - the `statistics` field from
- *     /api/metadata. Must include `histogram_counts`,
- *     `histogram_range`, and at least `p99`, `p1` percentiles.
- * @param {number} painterlyBias - 0.0 = pure max-entropy (linear-
- *     log histogram); 1.0 = heavy midtone emphasis (painterly).
+ * @param {object} stats - the `statistics` field from /api/metadata.
+ *     Uses `histogram_counts`, `histogram_range`, and (when present)
+ *     `sky_median`.
+ * @param {number} painterlyBias - 0.0 = naturalistic, dim sky;
+ *     1.0 = painterly, lifted midtones.
  * @returns {Float32Array} - RGBA float data of length LUT_SIZE * 4.
  */
 export function buildAutoStretchLut(stats, painterlyBias) {
     const counts = stats.histogram_counts;
     const [rangeMin, rangeMax] = stats.histogram_range;
     const nBins = counts.length;
-
-    // Step 1: input CDF F(x), normalized to [0, 1].
-    const totalPixels = counts.reduce((a, c) => a + c, 0);
-    if (totalPixels === 0) {
-        // Degenerate: empty image. Fall back to identity.
+    const span = rangeMax - rangeMin;
+    if (span <= 0) {
         return identityLut();
     }
+
+    // Defensive zero-bin drop for legacy sidecar stats. With the
+    // current backend `compute_image_statistics` already filters
+    // zeros, so bin 0 here is small and dropping it is a no-op; the
+    // line stays as protection against pre-fix stats still on disk.
+    const validCounts = counts.slice();
+    validCounts[0] = 0;
+    const totalPixels = validCounts.reduce((a, c) => a + c, 0);
+    if (totalPixels === 0) {
+        return identityLut();
+    }
+
     const inputCDF = new Float32Array(nBins);
     let cumulative = 0;
     for (let i = 0; i < nBins; i++) {
-        cumulative += counts[i];
+        cumulative += validCounts[i];
         inputCDF[i] = cumulative / totalPixels;
     }
 
-    // Step 2: define the target CDF G(y) on [0, 1]. Parameter τ
-    // controls the shape — the LARGER τ, the more uniform the target
-    // (pure max-entropy = exponential with reasonable τ). Painterly
-    // tweaks the curve so more mass piles up in the midtones.
-    //
-    // At painterlyBias = 0: target_pdf(y) ∝ exp(-y/τ)  with τ ≈ 0.4
-    //     (the max-entropy distribution on [0, 1] given a fixed mean
-    //     of ~0.3). Histogram specification onto this gives the most
-    //     informative linear-log display.
-    //
-    // At painterlyBias = 1: target_pdf(y) ∝ exp(-y/τ) · gauss(y; 0.5, 0.2)
-    //     (the same exponential decay biased toward midtones).
-    //     Histogram specification onto this gives painterly look.
-    const TAU = 0.4;
-    const MID = 0.5;
-    const MID_SIGMA = 0.2;
-    // Build target PDF on a fine grid, then integrate to a CDF.
-    const targetCDF = new Float32Array(nBins);
-    let pdfIntegral = 0;
-    const pdfValues = new Float32Array(nBins);
-    for (let i = 0; i < nBins; i++) {
-        const y = i / (nBins - 1);
-        const exponential = Math.exp(-y / TAU);
-        const dy = y - MID;
-        const midtoneBoost = Math.exp(-(dy * dy) / (2 * MID_SIGMA * MID_SIGMA));
-        // Lerp between pure exponential (painterlyBias=0) and
-        // exponential × midtone gaussian (painterlyBias=1).
-        const pdf = exponential * (1 - painterlyBias + painterlyBias * midtoneBoost);
-        pdfValues[i] = pdf;
-        pdfIntegral += pdf;
-    }
-    let cumulativeTarget = 0;
-    for (let i = 0; i < nBins; i++) {
-        cumulativeTarget += pdfValues[i] / pdfIntegral;
-        targetCDF[i] = cumulativeTarget;
+    const binForCDF = (target) => {
+        for (let i = 0; i < nBins; i++) {
+            if (inputCDF[i] >= target) return i;
+        }
+        return nBins - 1;
+    };
+
+    // Sky pedestal — prefer the sidecar's `sky_median` (computed off
+    // the lower-25 %-cut on the full image data) when it's available
+    // and lies inside the histogram range. Falls back to the
+    // histogram median otherwise.
+    const skyMedianBin = (
+        typeof stats.sky_median === "number" &&
+        stats.sky_median >= rangeMin &&
+        stats.sky_median <= rangeMax
+    )
+        ? Math.floor((stats.sky_median - rangeMin) / span * nBins)
+        : binForCDF(0.5);
+
+    // Black point: one bin below sky_median in normalized space. For
+    // pedestaled mosaics there is no histogram mass below sky — every
+    // pixel is sky-or-brighter — so the black point is really a small
+    // numerical offset that lets sky map to a non-zero `t` in the
+    // bracket, which the MTF can then deliver as the target display
+    // brightness.
+    const skyNorm = (skyMedianBin + 0.5) / nBins;
+    const blackNorm = Math.max(0, skyNorm - 1.0 / nBins);
+
+    const whiteBin = Math.max(skyMedianBin + 2, binForCDF(WHITE_CDF));
+    const whiteNorm = (whiteBin + 0.5) / nBins;
+
+    if (whiteNorm - blackNorm < 1e-6) {
+        return identityLut();
     }
 
-    // Step 3: build the LUT. For each output index i (representing
-    // a display brightness y in [0, 1]), find the input brightness
-    // x such that mapping x→y satisfies F(x) = G(y).
-    //
-    // Equivalently: for each input bin index, look up its CDF
-    // value F, then find the output bin index where targetCDF
-    // matches F. Invert the target CDF lookup table.
-    //
-    // The LUT is indexed by INPUT brightness (so the shader can
-    // sample texture2D(uLUT, vec2(x, 0.5)) for input x in [0,1])
-    // and stores the OUTPUT brightness.
+    // t-position of the sky pedestal within the bracket.
+    const skyT = Math.max(
+        1e-6,
+        Math.min(
+            1 - 1e-6,
+            (skyNorm - blackNorm) / (whiteNorm - blackNorm),
+        ),
+    );
+
+    // Target display brightness for sky, lerped along the slider.
+    const target = TARGET_SKY_NATURAL +
+        (TARGET_SKY_PAINTERLY - TARGET_SKY_NATURAL) * painterlyBias;
+
+    // Solve y = mtf(t, m) for m. Closed form:
+    //   m = t·(1 − y) / (y + t − 2·y·t)
+    // Clamp to a safe range — m = 0 and m = 1 are the degenerate
+    // y = 0 / y = 1 limits where the curve flattens.
+    const m = Math.max(
+        0.05,
+        Math.min(0.95, skyT * (1 - target) / (target + skyT - 2 * target * skyT)),
+    );
+    const mtf = (t) => ((m - 1) * t) / ((2 * m - 1) * t - m);
+
     const lut = new Float32Array(LUT_SIZE * 4);
-    let targetIdx = 0;
+    const bracketSpan = whiteNorm - blackNorm;
     for (let lutI = 0; lutI < LUT_SIZE; lutI++) {
-        // Map LUT index to input range. The shader passes input
-        // values already clamped to [0, 1] (the adapted value after
-        // local-context mixing); we map those into our histogram
-        // range to look up the right CDF bin.
         const xNorm = lutI / (LUT_SIZE - 1);
-        const xData = rangeMin + xNorm * (rangeMax - rangeMin);
-        // Find which histogram bin this input falls in.
-        const histBin = Math.min(
-            nBins - 1,
-            Math.max(0, Math.floor((xData - rangeMin) / (rangeMax - rangeMin) * nBins)),
-        );
-        const F = inputCDF[histBin];
-        // Find the output bin where targetCDF crosses F.
-        while (targetIdx < nBins - 1 && targetCDF[targetIdx] < F) targetIdx++;
-        const yNorm = targetIdx / (nBins - 1);
-        lut[lutI * 4 + 0] = yNorm;
-        lut[lutI * 4 + 1] = yNorm;
-        lut[lutI * 4 + 2] = yNorm;
+        let t = (xNorm - blackNorm) / bracketSpan;
+        t = Math.max(0, Math.min(1, t));
+        const y = mtf(t);
+        lut[lutI * 4 + 0] = y;
+        lut[lutI * 4 + 1] = y;
+        lut[lutI * 4 + 2] = y;
         lut[lutI * 4 + 3] = 1.0;
-        // Reset target index search for the next input (which has
-        // a smaller CDF value if we're scanning in order — but the
-        // LUT input goes from small to large, so CDF goes from small
-        // to large, so targetIdx only ever moves forward).
-        // No reset needed; monotonic input → monotonic CDF.
     }
     return lut;
 }

@@ -109,6 +109,18 @@ void main() {
     float invRange = 1.0 / max(uHistRangeMax - uHistRangeMin, 1e-12);
     float x = (xRaw - uHistRangeMin) * invRange;
 
+    // Zero pixels are "no data" — outside the mosaic's irregular
+    // footprint, place_image leaves the rectangle-bbox padding at
+    // exactly 0.0 and post_process_stack's pedestal shifts every
+    // valid sky pixel to a positive value. Render those exact zeros
+    // as opaque black so the canvas border is visually correct AND so
+    // the auto-stretch operator isn't competing with a giant zero
+    // spike for display brightness.
+    if (xRaw == 0.0) {
+        gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+        return;
+    }
+
     // Local context. When the context map is bound, sample at this
     // pixel's world coordinates (the context map IS the whole image
     // at 1:5). When it isn't, force the local-adaptation term to a
