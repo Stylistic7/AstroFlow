@@ -67,7 +67,14 @@ export function buildAutoStretchLut(stats, painterlyBias) {
     // The autostretch normalizes by max before anything else, so we
     // express median and MAD in [0, 1] units the same way.
     const medianNorm = stats.p50 / max;
-    const madNorm = (stats.mad ?? 0) / max;
+    // Pre-mad sidecars (raw subframes from the early backfill, mostly)
+    // ship `mad = 0`. For those, derive an estimate from `sky_rms` —
+    // for a Gaussian sky noise, `σ = 1.4826 · MAD`, so `sky_rms / 1.4826`
+    // is the right magnitude. Stacked + pedestaled masters have
+    // `sky_rms ≈ 0` too and the right fix there is regenerating the
+    // sidecar with the real per-pixel MAD; that one's already done.
+    const madRaw = stats.mad > 0 ? stats.mad : (stats.sky_rms ?? 0) / 1.4826;
+    const madNorm = madRaw / max;
 
     // E1: shadow-clip black point, clamped to [0, 1].
     const E1 = Math.max(0, Math.min(1, medianNorm - CLIP_SIGMA * MAD_TO_SIGMA * madNorm));
