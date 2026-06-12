@@ -396,31 +396,27 @@ const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, ima
 
     viewport.drag().pinch().decelerate().wheel();
 
-    // Diagnostic: log the EventSystem's domElement at viewport setup
-    // AND wrap pixi-viewport's wheel handler so the next failure
-    // prints what's actually null at handler-call time. The crash is
-    // `events.mapPositionToPoint` reading `null.isConnected`; the only
-    // way that happens is `events.domElement === null`, which is what
-    // `EventSystem.destroy()` sets it to. Logging at both points lets
-    // us see whether domElement was already null at setup (timing bug
-    // around app/canvas init) or became null between setup and the
-    // first wheel event (renderer destroyed under us).
-    console.log("[viewport setup] events.domElement =",
-                app.renderer.events?.domElement,
-                "viewport.options.events =", viewport.options.events);
+    // Capture the canvas this viewport's wheel listener was attached
+    // to. By the time cleanup runs, `app.renderer.events.domElement`
+    // may have been set to null by `EventSystem.destroy()` (StrictMode
+    // unmount, app re-create on Stage prop change, …). Without a
+    // captured reference, `viewport.destroy()` silently fails to call
+    // `removeEventListener`, the old wheel listener stays bound on the
+    // (reused) canvas element, and every subsequent scroll fires both
+    // the live viewport's handler AND every orphaned dead one.
+    const wheelCanvas = app.renderer.events?.domElement;
+    const wheelFunction = viewport.input?.wheelFunction;
+
+    // Wrap pixi-viewport's wheel handler so any stale invocation
+    // through an orphaned listener (during the brief window before
+    // cleanup catches up) returns silently instead of crashing inside
+    // `events.mapPositionToPoint` on a null `domElement`. With the
+    // listener-cleanup fix below this should rarely fire, but it's a
+    // cheap safety net.
     if (viewport.input && typeof viewport.input.handleWheel === "function") {
       const origHandleWheel = viewport.input.handleWheel.bind(viewport.input);
       viewport.input.handleWheel = function (e) {
-        const ev = viewport.options.events;
-        if (!ev || !ev.domElement) {
-          console.warn(
-            "[viewport wheel skipped] options.events =", ev,
-            "domElement =", ev?.domElement,
-            "app.renderer.events.domElement =",
-            app?.renderer?.events?.domElement,
-          );
-          return;
-        }
+        if (!viewport.options.events?.domElement) return;
         return origHandleWheel(e);
       };
     }
@@ -743,13 +739,30 @@ const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, ima
       viewport.off('zoomed', updateAll);
       viewport.off('moved-end', updateAll);
       viewport.off('zoomed-end', updateAll);
+      // Belt-and-suspenders wheel-listener removal: `viewport.destroy()`
+      // tries to do this internally via `events.domElement.removeEventListener`,
+      // but if the EventSystem was already destroyed `domElement` is
+      // null and the call silently no-ops, leaving the listener bound.
+      // Use the captured-at-setup canvas+wheelFunction to remove it
+      // directly.
+      if (wheelCanvas && wheelFunction) {
+        try { wheelCanvas.removeEventListener('wheel', wheelFunction); } catch {}
+      }
       if (viewport.parent) {
         viewport.parent.removeChild(viewport);
       }
       try { viewport.destroy({ children: true }); } catch {}
       spritesRef.current = {};
     };
-  }, [app, mosaics, imageHash, view?.pipeline, view?.display, view?.filter, imageWidth, imageHeight, maxZoom, worldWidth, worldHeight, showPolygons, showPanelNumbers, stacks, metadata]);
+    // Deps deliberately narrowed to things that genuinely require the
+    // viewport to be rebuilt (a different image, a different app, a
+    // different world size). Polygon-related state — metadata, stacks,
+    // mosaics, showPolygons, showPanelNumbers — used to be here, but
+    // any of those flipping under the user mid-scroll tore down the
+    // viewport (and triggered the leaked-listener pile-up we just
+    // fixed). Polygons re-render via `updateAll()` from the viewport's
+    // own move/zoom events anyway.
+  }, [app, imageHash, view?.pipeline, view?.display, view?.filter, imageWidth, imageHeight, maxZoom, worldWidth, worldHeight]);
 
   return null;
 };
