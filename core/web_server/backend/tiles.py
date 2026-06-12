@@ -199,14 +199,24 @@ def _serve_tile_response(path, object_type, object_id, x, y, z):
         # Mono channel today. RGB-aware tile serving is a separate
         # change (pack 3 channels + shader samples .rgb).
         arr = arr[..., 0]
+
+        # Edge tiles get padded to a full _TILE_SIZE × _TILE_SIZE with
+        # zeros — the shader's zero-short-circuit renders those pixels
+        # as opaque black, which is the correct "no data" appearance
+        # past the image's actual bounds. Padding eliminates the
+        # frontend's "the texture is smaller than the mesh" case and
+        # sidesteps any NPOT-R32F-on-WebGL-1 weirdness. Matches what
+        # `large_image.getTile()` used to do implicitly.
+        if h < _TILE_SIZE or w < _TILE_SIZE:
+            padded = np.zeros((_TILE_SIZE, _TILE_SIZE), dtype=np.float32)
+            padded[:h, :w] = arr
+            arr = padded
+            h = w = _TILE_SIZE
+
         arr = np.ascontiguousarray(arr.astype("<f4"))
         compressed = brotli.compress(arr.tobytes(), quality=_TILE_BROTLI_QUALITY)
         resp = Response(compressed, mimetype="application/octet-stream")
         resp.headers["Content-Encoding"] = "br"
-        # The shape is implied by the tile-pyramid metadata (the
-        # tileWidth/tileHeight the client already has). Include it
-        # anyway for debug-friendly out-of-band verification.
-        h, w = arr.shape[:2]
         resp.headers["X-Tile-Width"] = str(w)
         resp.headers["X-Tile-Height"] = str(h)
         return resp

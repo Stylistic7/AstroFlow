@@ -637,27 +637,19 @@ const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, ima
           fetchLinearTile(url.href)
             .then((result) => {
               if (!result || !shaderRef.current) return;
+              // Server pads every tile to TILE_SIZE × TILE_SIZE with
+              // zeros for edge tiles, so the texture is always the
+              // same size as the mesh and the shader's zero short-
+              // circuit handles "past the image bound" correctly.
               const tileTex = uploadFloat32Tile(
                 result.array, result.width, result.height,
               );
-              // Edge tiles return less than TILE_SIZE pixels of data
-              // (e.g. 138×209 in the bottom-right of a 6026×5841 image
-              // at z=maxZoom). The mesh must cover exactly the world
-              // region the tile maps to — capped at the image bound —
-              // otherwise the smaller texture is stretched/clamped
-              // across a full TILE_SIZE×TILE_SIZE mesh and the image
-              // appears to extend past its real edge OR (if the edge
-              // texels are zero from bbox padding) gets cut off at a
-              // straight line short of the actual mosaic boundary.
-              const x0 = x * TILE_SIZE * levelScale;
-              const y0 = y * TILE_SIZE * levelScale;
-              const meshW = Math.min(TILE_SIZE * levelScale, imageWidth - x0);
-              const meshH = Math.min(TILE_SIZE * levelScale, imageHeight - y0);
               const mesh = createTileMesh(
-                shaderRef.current, meshW, meshH,
+                shaderRef.current,
+                TILE_SIZE * levelScale, TILE_SIZE * levelScale,
               );
-              mesh.x = x0;
-              mesh.y = y0;
+              mesh.x = x * TILE_SIZE * levelScale;
+              mesh.y = y * TILE_SIZE * levelScale;
               mesh.zIndex = bestZ;
               // Per-mesh shader uniforms are not really a thing in
               // PIXI's stock Shader model — uniforms live on the
