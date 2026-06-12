@@ -440,6 +440,6 @@ def _topological_order(graph) -> list:
     Same semantics as `GraphRuntime`'s ready/done scheduling, just
     flattened for offline walking."""
     sorter: TopologicalSorter = TopologicalSorter()
-    for node, deps in graph.items():
-        sorter.add(node, *(deps or ()))
+    for n, deps in graph.items():
+        sorter.add(n, *(deps or ()))
     return list(sorter.static_order())

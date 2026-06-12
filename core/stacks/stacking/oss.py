@@ -53,7 +53,7 @@ def _load_calibration(cal_stack, config, implementation):
     `*cal_masters` and we leave that empty for cal-of-cal lookups
     (matches what runtime does for bias→dark/flat dependency).
     """
-    if implementation == OSS:
+    if implementation == "OSS":
         from stacks.stacking.oss import stack_files_oss
         path = stack_files_oss.filename_fn(config, cal_stack)
     else:
@@ -215,8 +215,8 @@ def stack_files_oss(
                 continue
             cal_stack = config.get_calibration_stacks()[dep.stack_id]
             cal_data = (
-                _load_calibration(cal_stack, config, OSS)
-                or _load_calibration(cal_stack, config, PIXINSIGHT)
+                _load_calibration(cal_stack, config, "OSS")
+                or _load_calibration(cal_stack, config, "PIXINSIGHT")
             )
             if cal_data is None:
                 continue

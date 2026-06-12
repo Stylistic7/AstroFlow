@@ -31,7 +31,6 @@ from decorators import node
 from decisions.compute_graph import (
     scatter_customize_targets,
 )
-from cache.context_ref import ContextRef
 from decisions.settings import ClusteringSettings, DevelopmentSettings
 from decisions.decisions import decisions_for_stack
 from compute_graph.objects import Objects
@@ -380,7 +379,7 @@ def _eager_trace_pipeline(
     return graph
 
 
-def _build_ephemeral_registry(traced_graphs) -> "EphemeralFiles":
+def _build_ephemeral_registry(traced_graphs):
     """Union the ephemeral_files contributions from every traced
     pipeline graph into a single registry. Returns the registry; the
     caller attaches it to the Graph it returns from a builder @node."""

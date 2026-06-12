@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "astroflow"
 version = "0.1"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 
 # Every node (head or worker) installs the same set so behaviour is
 # identical everywhere. Splitting into head-vs-worker optional extras
@@ -65,10 +65,38 @@ dependencies = [
     # Tests
     "pytest",
     "pytest-benchmark",
+    "ruff",
 ]
 
 [tool.setuptools.packages.find]
 include = ["cli", "core"]
+
+[tool.ruff]
+# Match runtime Python; the `type` statement at products/registry.py:55
+# is 3.12+.
+target-version = "py312"
+extend-exclude = [
+    "GraXpert",
+    "ray_infra",
+    "pix",
+    "p2p",
+    "web_server/frontend/node_modules",
+    "web_server/frontend/build",
+]
+
+[tool.ruff.lint]
+# Conservative starting set: catches the bug class that just bit us
+# (NameError from missing imports, scope shadows, dead references)
+# without forcing a stylistic rewrite of 600 tests' worth of code.
+#
+#   F821  undefined-name        — the Path bug class
+#   F811  redefined-while-unused — silent shadowing of an earlier
+#                                  import / def with a later one
+#   F402  import-shadowed-by-loop — for-loop var clobbering an import
+#   E9    syntax errors          — won't import → can't run
+#
+# Add UP, B, SIM, etc. later when there's appetite for cleanup.
+select = ["F821", "F811", "F402", "E9"]
 
 [project.scripts]
 astroflow = "cli:main"

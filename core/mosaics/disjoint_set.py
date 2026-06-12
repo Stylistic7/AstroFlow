@@ -48,7 +48,7 @@ class DisjointSet:
                 yield r
 
     @classmethod
-    def from_edges(cls, n: int, edges: Iterable[tuple[int, int]]) -> "DSU":
+    def from_edges(cls, n: int, edges: Iterable[tuple[int, int]]) -> "DisjointSet":
         d = cls(n)
         for a, b in edges:
             d.union(a, b)

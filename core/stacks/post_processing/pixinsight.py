@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 from pix import Image
 from pix.tasks import (

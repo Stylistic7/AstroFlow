@@ -156,7 +156,6 @@ def set_workflow_key(*key_parts: Any) -> None:
     from dependency_graph.workflow_graph_adapter import (
         store_node_status, store_workflow_graph,
     )
-    from functools import partial
 
     key = tuple(key_parts)
     g.graph_update_fn = partial(store_workflow_graph, key)

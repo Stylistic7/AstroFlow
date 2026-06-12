@@ -281,7 +281,7 @@ def test_returning_none_yields_none_graph():
 # we computed by hand. They need the test_context fixture for the
 # Ray cluster + context actors.
 
-def _run_and_get_sink(graph: "Graph"):
+def _run_and_get_sink(graph):
     """Run `graph` through Ray and return the sink Node's value.
     `run_graph` already materialises the sink's result and returns
     it as the first element of the (result, stats) tuple, so we
