@@ -328,6 +328,16 @@ const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, ima
     lastImageHashRef.current = imageHash;
   }
 
+  // Bookkeeping for the polygon-overlay effect below. Tracks every
+  // pixi child added by polygon rendering so we can clear them on
+  // re-render without rebuilding the viewport (which would tear down
+  // the wheel listener and panel state we just spent effort fixing).
+  // `viewportVersion` ticks every time a fresh viewport is created;
+  // the polygon effect listens for it so polygons get re-added when
+  // the viewport reincarnates (image change, etc.).
+  const polygonRefsRef = useRef([]);
+  const [viewportVersion, setViewportVersion] = useState(0);
+
   // When the tile pyramid file changes (new merge completed), clear
   // the sprite cache so tiles are re-fetched with the new content.
   // Also destroys the tile textures we uploaded to the GPU, so the
@@ -449,177 +459,15 @@ const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, ima
         right: imageWidth + halfWidth,
         top: -halfHeight,
         bottom: imageHeight + halfHeight,
+        // When the image is smaller than the visible region (zoomed
+        // out far enough that the whole mosaic fits), pixi-viewport's
+        // default underflow is 'topleft' — which is why the mosaic
+        // sticks to the left and you can't pan it to the middle. We
+        // want it visually centered instead.
+        underflow: 'center',
       });
     };
 
-    const updatePolygons = () => {
-      let polygons = metadata.objects.filter(poly =>
-        showQuarantined || !isQuarantined(poly.type, poly.stable_hash)
-      );
-
-      // Per-stack WBPP-effective exposure (XISF PCL:TotalExposureTime,
-      // in seconds), riding on output polygons from the backend. Built
-      // once here and looked up by stack hash in the input-polygon loop
-      // below to add the green wedge to each exposure clock.
-      const wbppExposureByStack = {};
-      for (const poly of metadata.objects) {
-        if (poly.polygon_type === 'output'
-            && poly.wbpp_exposure_s != null) {
-          wbppExposureByStack[poly.stable_hash] = poly.wbpp_exposure_s;
-        }
-      }
-
-      const typeColors = {
-        stack: '#0000ff',
-        target: '#0000ff',
-        mosaic: '#ff0000',
-      };
-      const outputColor = '#00cc00';
-
-      // Create polygon graphics and add them
-      for (const poly of polygons) {
-        const g = new PIXI.Graphics();
-        g.zIndex = 9999;
-        const color = poly.polygon_type === 'output' ? outputColor : (typeColors[poly.type] ?? '#ff0000');
-        g.lineStyle(imageWidth / 500, color, poly.polygon_type === 'output' ? 0.6 : 1);
-        // g.beginFill(poly.color ?? 0xff0000, 0.2);
-        g.moveTo(poly.points[0][0], poly.points[0][1]);
-        for (let i = 1; i < poly.points.length; i++) {
-          g.lineTo(poly.points[i][0], poly.points[i][1]);
-        }
-        g.closePath();
-        // g.endFill();
-
-        // Interactive: click to navigate, hover to highlight.
-        g.interactive = true;
-        g.hitArea = new PIXI.Polygon(poly.points.flat());
-        g.eventMode = 'static';
-        g.cursor = 'pointer';
-        g.on('pointertap', (event) => onClick(poly, event));
-        // Add a transparent fill child that appears on hover.
-        const highlight = new PIXI.Graphics();
-        highlight.beginFill(0xffffff, 0.15);
-        highlight.moveTo(poly.points[0][0], poly.points[0][1]);
-        for (let i = 1; i < poly.points.length; i++) {
-          highlight.lineTo(poly.points[i][0], poly.points[i][1]);
-        }
-        highlight.closePath();
-        highlight.endFill();
-        highlight.visible = false;
-        g.addChild(highlight);
-        g.on('pointerover', () => { highlight.visible = true; });
-        g.on('pointerout', () => { highlight.visible = false; });
-
-        viewport.addChild(g);
-
-        // Per-panel overlays anchored to the top-right corner of the
-        // polygon bounding box. Decision dot first (closest to the
-        // corner), exposure clock to its left.
-        if (poly.polygon_type === 'input') {
-          const xs = poly.points.map(p => p[0]);
-          const ys = poly.points.map(p => p[1]);
-          const maxX = Math.max(...xs);
-          const minY = Math.min(...ys);
-          const dotRadius = imageWidth / 150;
-
-          if (poly.has_decisions) {
-            const dot = new PIXI.Graphics();
-            dot.zIndex = 10000;
-            dot.beginFill(0xffa726, 0.9); // amber
-            dot.drawCircle(maxX, minY, dotRadius);
-            dot.endFill();
-            dot.lineStyle(dotRadius * 0.2, 0xffffff, 0.8);
-            dot.drawCircle(maxX, minY, dotRadius);
-            viewport.addChild(dot);
-          }
-
-          // Exposure-duration clock for the stack at the selected
-          // filter. Input polygons are target-level (set by the backend
-          // in metadata.py), so the active stack is referenced
-          // explicitly via active_stack_hash.
-          const stack = poly.active_stack_hash ? stacks?.[poly.active_stack_hash] : null;
-          // `raw_integration_s` (blue): total across every subframe.
-          // Falls back to `integration` (AstroFlow-effective) if the
-          // backend hasn't been updated yet.
-          const totalSeconds = stack
-            ? (stack.raw_integration_s ?? stack.integration)
-            : null;
-          if (typeof totalSeconds === 'number') {
-            const clockRadius = imageWidth / 80;
-            const offset = poly.has_decisions ? dotRadius * 2.5 : 0;
-            const clock = new PIXI.Graphics();
-            clock.zIndex = 10000;
-            const wbppSeconds = wbppExposureByStack[poly.active_stack_hash];
-            drawExposureClock(
-              clock,
-              maxX - offset - clockRadius,
-              minY + clockRadius,
-              clockRadius,
-              totalSeconds / 3600,
-              wbppSeconds != null ? wbppSeconds / 3600 : null,
-            );
-            viewport.addChild(clock);
-          }
-
-          // Big centered "Panel N" number — matches the "Panel N" prefix
-          // in the Telescopius / text export so the user can map a row
-          // in the export to the polygon they need to image next.
-          // Underneath the number, show the panel center's RA/Dec for
-          // debugging — quick visual sanity check that polygon N really
-          // corresponds to the export's panel N.
-          if (showPanelNumbers && typeof poly.panel_number === 'number') {
-            const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
-            const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
-            const fontSize = Math.round(imageWidth / 30);
-            const number = new PIXI.Text(String(poly.panel_number), {
-              fontFamily: 'sans-serif',
-              fontSize,
-              fontWeight: 'bold',
-              fill: 0xffffff,
-              stroke: 0x000000,
-              strokeThickness: Math.max(2, fontSize * 0.12),
-              align: 'center',
-            });
-            number.anchor.set(0.5, 0.5);
-            number.position.set(cx, cy);
-            number.zIndex = 10001;
-            viewport.addChild(number);
-
-            if (typeof poly.ra_deg === 'number' && typeof poly.dec_deg === 'number') {
-              const coordsSize = Math.round(imageWidth / 90);
-              const lineHeight = coordsSize * 1.2;
-              const lines = [
-                formatRaHms(poly.ra_deg),
-                formatDecDms(poly.dec_deg),
-              ];
-              if (typeof poly.rotation_deg === 'number') {
-                lines.push(`PA ${poly.rotation_deg.toFixed(2)}°`);
-              }
-              if (poly.rise_time_utc) {
-                const rise = new Date(poly.rise_time_utc);
-                lines.push(`rises ${rise.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
-              }
-              lines.forEach((text, i) => {
-                const t = new PIXI.Text(text, {
-                  fontFamily: 'monospace',
-                  fontSize: coordsSize,
-                  fill: 0xffffff,
-                  stroke: 0x000000,
-                  strokeThickness: Math.max(1, coordsSize * 0.15),
-                  align: 'center',
-                });
-                t.anchor.set(0.5, 0);
-                t.position.set(cx, cy + fontSize * 0.6 + i * lineHeight);
-                t.zIndex = 10001;
-                viewport.addChild(t);
-              });
-            }
-          }
-        }
-      }
-
-      viewport.sortChildren();
-    }
 
     const updateTiles = () => {
       const scale = viewport.scale.x;
@@ -711,19 +559,20 @@ const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, ima
       updateClamp();
     };
 
-    const updateAll = () => {
-      updateTiles();
-
-      if (showPolygons) {
-        updatePolygons();
-      }
-    }
+    // Tiles re-fetch on every move/zoom; polygons don't — they're added
+    // as viewport children that pan/zoom with the world automatically,
+    // and they only need re-rendering when their source data changes,
+    // which is what the separate polygon effect below handles.
+    const updateAll = () => { updateTiles(); };
 
     updateAll();
     viewport.on('moved', updateAll);
     viewport.on('zoomed', updateAll);
     viewport.on('moved-end', updateAll);
     viewport.on('zoomed-end', updateAll);
+
+    // Signal to the polygon effect that a fresh viewport is in place.
+    setViewportVersion(v => v + 1);
 
     return () => {
       // Capture zoom/pan before destroying so the next viewport
@@ -763,6 +612,169 @@ const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, ima
     // fixed). Polygons re-render via `updateAll()` from the viewport's
     // own move/zoom events anyway.
   }, [app, imageHash, view?.pipeline, view?.display, view?.filter, imageWidth, imageHeight, maxZoom, worldWidth, worldHeight]);
+
+  // Polygon / overlay graphics live in the viewport but their content
+  // depends on metadata, stacks, and the user-toggleable showPolygons /
+  // showPanelNumbers booleans. Re-rendering them via a full viewport
+  // rebuild (the original design) tore down the wheel listener and
+  // caused the panel to jump back to fit-to-screen on every toggle, so
+  // they live in their own effect — clear the previously-added
+  // children, then add new ones if showPolygons. Tracked in
+  // `polygonRefsRef` so cleanup doesn't need to walk the whole viewport.
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    for (const obj of polygonRefsRef.current) {
+      if (obj.parent === viewport) viewport.removeChild(obj);
+      try { obj.destroy({ children: true }); } catch {}
+    }
+    polygonRefsRef.current = [];
+    if (!showPolygons || !metadata?.objects) {
+      viewport.sortChildren();
+      return;
+    }
+
+    const refs = polygonRefsRef.current;
+    const add = (obj) => { viewport.addChild(obj); refs.push(obj); };
+
+    const polygons = metadata.objects.filter(poly =>
+      showQuarantined || !isQuarantined(poly.type, poly.stable_hash)
+    );
+
+    // Per-stack WBPP-effective exposure for the green wedge on the
+    // exposure clocks.
+    const wbppExposureByStack = {};
+    for (const poly of metadata.objects) {
+      if (poly.polygon_type === 'output' && poly.wbpp_exposure_s != null) {
+        wbppExposureByStack[poly.stable_hash] = poly.wbpp_exposure_s;
+      }
+    }
+
+    const typeColors = { stack: '#0000ff', target: '#0000ff', mosaic: '#ff0000' };
+    const outputColor = '#00cc00';
+
+    for (const poly of polygons) {
+      const g = new PIXI.Graphics();
+      g.zIndex = 9999;
+      const color = poly.polygon_type === 'output'
+        ? outputColor
+        : (typeColors[poly.type] ?? '#ff0000');
+      g.lineStyle(imageWidth / 500, color, poly.polygon_type === 'output' ? 0.6 : 1);
+      g.moveTo(poly.points[0][0], poly.points[0][1]);
+      for (let i = 1; i < poly.points.length; i++) {
+        g.lineTo(poly.points[i][0], poly.points[i][1]);
+      }
+      g.closePath();
+      g.eventMode = 'static';
+      g.hitArea = new PIXI.Polygon(poly.points.flat());
+      g.cursor = 'pointer';
+      g.on('pointertap', (event) => onClick(poly, event));
+      const highlight = new PIXI.Graphics();
+      highlight.beginFill(0xffffff, 0.15);
+      highlight.moveTo(poly.points[0][0], poly.points[0][1]);
+      for (let i = 1; i < poly.points.length; i++) {
+        highlight.lineTo(poly.points[i][0], poly.points[i][1]);
+      }
+      highlight.closePath();
+      highlight.endFill();
+      highlight.visible = false;
+      g.addChild(highlight);
+      g.on('pointerover', () => { highlight.visible = true; });
+      g.on('pointerout', () => { highlight.visible = false; });
+      add(g);
+
+      if (poly.polygon_type === 'input') {
+        const xs = poly.points.map(p => p[0]);
+        const ys = poly.points.map(p => p[1]);
+        const maxX = Math.max(...xs);
+        const minY = Math.min(...ys);
+        const dotRadius = imageWidth / 150;
+
+        if (poly.has_decisions) {
+          const dot = new PIXI.Graphics();
+          dot.zIndex = 10000;
+          dot.beginFill(0xffa726, 0.9);
+          dot.drawCircle(maxX, minY, dotRadius);
+          dot.endFill();
+          dot.lineStyle(dotRadius * 0.2, 0xffffff, 0.8);
+          dot.drawCircle(maxX, minY, dotRadius);
+          add(dot);
+        }
+
+        const stack = poly.active_stack_hash ? stacks?.[poly.active_stack_hash] : null;
+        const totalSeconds = stack
+          ? (stack.raw_integration_s ?? stack.integration)
+          : null;
+        if (typeof totalSeconds === 'number') {
+          const clockRadius = imageWidth / 80;
+          const offset = poly.has_decisions ? dotRadius * 2.5 : 0;
+          const clock = new PIXI.Graphics();
+          clock.zIndex = 10000;
+          const wbppSeconds = wbppExposureByStack[poly.active_stack_hash];
+          drawExposureClock(
+            clock,
+            maxX - offset - clockRadius,
+            minY + clockRadius,
+            clockRadius,
+            totalSeconds / 3600,
+            wbppSeconds != null ? wbppSeconds / 3600 : null,
+          );
+          add(clock);
+        }
+
+        if (showPanelNumbers && typeof poly.panel_number === 'number') {
+          const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+          const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+          const fontSize = Math.round(imageWidth / 30);
+          const number = new PIXI.Text(String(poly.panel_number), {
+            fontFamily: 'sans-serif',
+            fontSize,
+            fontWeight: 'bold',
+            fill: 0xffffff,
+            stroke: 0x000000,
+            strokeThickness: Math.max(2, fontSize * 0.12),
+            align: 'center',
+          });
+          number.anchor.set(0.5, 0.5);
+          number.position.set(cx, cy);
+          number.zIndex = 10001;
+          add(number);
+
+          if (typeof poly.ra_deg === 'number' && typeof poly.dec_deg === 'number') {
+            const coordsSize = Math.round(imageWidth / 90);
+            const lineHeight = coordsSize * 1.2;
+            const lines = [
+              formatRaHms(poly.ra_deg),
+              formatDecDms(poly.dec_deg),
+            ];
+            if (typeof poly.rotation_deg === 'number') {
+              lines.push(`PA ${poly.rotation_deg.toFixed(2)}°`);
+            }
+            if (poly.rise_time_utc) {
+              const rise = new Date(poly.rise_time_utc);
+              lines.push(`rises ${rise.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+            }
+            lines.forEach((text, i) => {
+              const t = new PIXI.Text(text, {
+                fontFamily: 'monospace',
+                fontSize: coordsSize,
+                fill: 0xffffff,
+                stroke: 0x000000,
+                strokeThickness: Math.max(1, coordsSize * 0.15),
+                align: 'center',
+              });
+              t.anchor.set(0.5, 0);
+              t.position.set(cx, cy + fontSize * 0.6 + i * lineHeight);
+              t.zIndex = 10001;
+              add(t);
+            });
+          }
+        }
+      }
+    }
+
+    viewport.sortChildren();
+  }, [viewportVersion, metadata, showPolygons, showPanelNumbers, stacks, mosaics, showQuarantined, isQuarantined, imageWidth]);
 
   return null;
 };
