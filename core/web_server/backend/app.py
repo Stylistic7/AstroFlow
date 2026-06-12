@@ -130,14 +130,39 @@ app.register_blueprint(videos_bp)
 
 
 import time
+import sys
+import faulthandler
+import signal
 from flask import g
+
+# On-demand thread dump triggered by an external `kill -USR1 <pid>`.
+# Faster + dependency-free vs py-spy when investigating a hung request:
+#   pgrep -f 'gunicorn.*bind 0.0.0.0:8000' | tail -n +2 | xargs kill -USR1
+# Stacks land on the worker's stderr, which gunicorn's `--capture-output`
+# already collects. Trades a `SIGUSR1` signal slot for a always-available
+# "what is this process doing right now" mechanism.
+try:
+    faulthandler.register(signal.SIGUSR1, file=sys.stderr, all_threads=True, chain=False)
+except (AttributeError, ValueError):
+    # SIGUSR1 not available on this platform (Windows), or already taken.
+    pass
+
+# Auto-dump on requests that exceed a generous deadline. faulthandler's
+# `dump_traceback_later` arms a watchdog that fires once after N seconds
+# if the worker hasn't called `cancel_dump_traceback_later` first. Picks
+# up reproductions automatically while we're not looking.
+_SLOW_REQUEST_DEADLINE_S = 60
 
 @app.before_request
 def _start_timer():
     g.start_time = time.monotonic()
+    faulthandler.dump_traceback_later(
+        _SLOW_REQUEST_DEADLINE_S, repeat=False, file=sys.stderr,
+    )
 
 @app.after_request
 def _log_slow_requests(response):
+    faulthandler.cancel_dump_traceback_later()
     elapsed = time.monotonic() - g.start_time
     if elapsed > 0.2:
         print(f"SLOW [{elapsed:.2f}s] {request.method} {request.path}")
