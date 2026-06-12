@@ -18,6 +18,8 @@ export const AstroFlowImage = ({
     size = "full",
     pipeline = undefined,
     display = undefined,
+    hdrEnabled = false,
+    peakBrightness = 1.0,
 }) => {
     const thumbnail_url = `/thumbnail/${objectType}/${objectId}${filter ? `/${filter}` : ''}`;
 
@@ -39,6 +41,8 @@ export const AstroFlowImage = ({
                         display={display}
                         showPolygons={showPolygons}
                         showPanelNumbers={showPanelNumbers}
+                        hdrEnabled={hdrEnabled}
+                        peakBrightness={peakBrightness}
                     />
                 ) : (
                     <img

@@ -9,7 +9,7 @@ import { buildUrl, buildApiUrl, inheritView } from './urls.js';
 import { fetchLinearTile, uploadFloat32Tile } from './linear_tile_loader.js';
 import { createToneMappingShader } from './tone_mapping_shader.js';
 import { computeAutoStretchParams } from './auto_stretch.js';
-import ToneMappingControls, { useHdrCapability } from './ToneMappingControls.jsx';
+import HdrHeadroomVideo from './HdrHeadroomVideo.jsx';
 
 
 const TILE_SIZE = 256;
@@ -68,7 +68,7 @@ const formatDecDms = (decDeg) => {
   return `${sign}${String(d).padStart(2, '0')}°${String(m).padStart(2, '0')}'${s.toFixed(0).padStart(2, '0')}"`;
 };
 
-const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filter: filterProp, pipeline, display, showPolygons, showPanelNumbers }) => {
+const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filter: filterProp, pipeline, display, showPolygons, showPanelNumbers, hdrEnabled = false, peakBrightness = 1.0 }) => {
   const params = useParams();
   const { objectType: objectTypeParam, imageHash: imageHashParam, filter: filterParam } = params;
 
@@ -83,12 +83,9 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
 
   // The auto-stretch is not parameterized — `previews.operations.autostretch`
   // hard-codes the STF parameters and the shader applies them per
-  // pixel. The only user-facing knob in this panel is the HDR
-  // brightness multiplier, gated on display capability.
-  const [peakBrightness, setPeakBrightness] = useState(2.0);
-  const hdrCapable = useHdrCapability();
-  const [hdrEnabled, setHdrEnabled] = useState(false);
-
+  // pixel. HDR enablement + brightness flow in from the parent
+  // (MosaicViewer) so the toggle lives in the toolbar rather than
+  // floating over the image.
   const { mosaics, stacks, targets, showQuarantined, isQuarantined, computeGraphStatus, observingPlan } = useContext(AstroFlowContext);
 
   const navigate = useNavigate();
@@ -182,6 +179,15 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
 
   return (
     <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative' }}>
+      {/*
+        HDR backdrop: a full-size HLG video sits behind the Stage. The
+        Stage canvas uses `mix-blend-mode: multiply` so its SDR pixel
+        values modulate the video's HDR luminance — white parts of the
+        rendered image let the HDR-bright video shine through; black
+        parts mask it. This is the working substitute for a true HDR
+        canvas API (which Chrome 149 still doesn't ship for WebGL).
+      */}
+      {hdrEnabled && <HdrHeadroomVideo />}
       <Stage
         width={containerSize.width}
         height={containerSize.height}
@@ -189,7 +195,12 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
           backgroundColor: 0x000000,
           resizeTo: containerRef.current,
         }}
-        style={{ width: '100%', height: '100%' }}
+        style={{
+          width: '100%',
+          height: '100%',
+          position: 'relative',
+          mixBlendMode: hdrEnabled ? 'multiply' : 'normal',
+        }}
       >
         <ImperativeViewport
           objectType={objectType}
@@ -214,13 +225,6 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
           hdrEnabled={hdrEnabled}
         />
       </Stage>
-      <ToneMappingControls
-        peakBrightness={peakBrightness}
-        setPeakBrightness={setPeakBrightness}
-        hdrEnabled={hdrEnabled}
-        setHdrEnabled={setHdrEnabled}
-        hdrCapable={hdrCapable}
-      />
     </div>
   );
 };
@@ -286,32 +290,16 @@ function drawExposureClock(g, cx, cy, radius, hours, wbppHours = null) {
 const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom, mtime, showPolygons, showPanelNumbers, metadata, mosaics, onClick, showQuarantined, isQuarantined, stacks, peakBrightness, hdrEnabled }) => {
   const app = useApp();
 
-  // HDR canvas reconfiguration. Only fires when HDR is being toggled
-  // ON — calling `canvas.configureHighDynamicRange({mode: 'default'})`
-  // on every mount (the previous behavior) re-initializes the canvas
-  // context on some browsers, which nulls out PIXI's EventSystem
-  // `domElement` and breaks the first wheel event with
-  // `Cannot read properties of null (reading 'isConnected')`. The
-  // SDR default doesn't need re-asserting on a canvas that never had
-  // HDR engaged in the first place.
-  useEffect(() => {
-    if (!hdrEnabled) return;
-    const canvas = app?.renderer?.view;
-    if (!canvas) return;
-    if (typeof canvas.configureHighDynamicRange === 'function') {
-      try {
-        canvas.configureHighDynamicRange({ mode: 'extended' });
-      } catch (e) {
-        console.warn('HDR canvas reconfigure failed:', e);
-      }
-    }
-    app.renderer.render(app.stage);
-    return () => {
-      if (typeof canvas.configureHighDynamicRange === 'function') {
-        try { canvas.configureHighDynamicRange({ mode: 'default' }); } catch {}
-      }
-    };
-  }, [hdrEnabled, app]);
+  // HDR engagement lives in JSX below: when `hdrEnabled` flips on,
+  // a 1×1 hidden HLG <video> mounts inside this same wrapper, which
+  // puts Chrome's compositor in extended-range mode for the local
+  // layer and uplifts the WebGL canvas's >1.0 shader outputs into
+  // real HDR luminance. The `drawingBufferColorSpace = 'rec2100-hlg'`
+  // path would be cleaner but currently throws on Chrome 149 — the
+  // IDL enum hasn't shipped that value yet.
+  //
+  // TODO: swap to the proper API once Chrome ships extended-range
+  // canvas color spaces (track the WebGL HDR explainer).
   const viewportRef = useRef(null);
   const spritesRef = useRef({});
   // The single tone-mapping shader instance shared by every tile mesh
@@ -392,8 +380,10 @@ const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, ima
     app.renderer.render(app.stage);
   }, [metadata?.statistics, app]);
 
-  // HDR brightness multiplier; the only per-frame scalar that changes
-  // post-image-open. Slider state lives at the TileViewer root.
+  // Brightness multiplier on the shader output. With no shipping HDR
+  // canvas path (see TODO above), this clamps at SDR white in
+  // practice, but the slider stays wired so it's a one-line flip once
+  // the browser side catches up.
   useEffect(() => {
     if (!shaderRef.current) return;
     shaderRef.current.uniforms.uPeakBrightness = peakBrightness;

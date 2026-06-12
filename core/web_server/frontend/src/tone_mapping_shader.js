@@ -53,7 +53,8 @@ uniform float uMax;                  // max pixel value over the image
                                      // (per stats.max_value)
 uniform float uE1;                   // STF black point in [0, 1]
 uniform float uE5;                   // STF midtone parameter m in (0, 1)
-uniform float uPeakBrightness;       // 1.0 SDR; up to ~12.0 HDR
+uniform float uPeakBrightness;       // 1.0 SDR; values above 1.0 only
+                                     // matter if an HDR canvas is active.
 
 varying vec2 vTextureCoord;
 
@@ -82,10 +83,10 @@ void main() {
     float y = abs(den) < 1e-12 ? 0.0 : num / den;
     y = clamp(y, 0.0, 1.0);
 
-    // HDR scaling. Output is allowed to exceed 1.0 on HDR canvases;
-    // the browser composites those values at extended display
-    // brightness on capable hardware. On SDR canvases the values
-    // clamp at 1.0, which is also correct.
+    // HDR scaling. On a true HDR canvas, values >1.0 drive extended
+    // display luminance. Today no shipping browser exposes WebGL HDR
+    // canvas (Chrome's PredefinedColorSpace IDL enum still allows
+    // only "srgb" / "display-p3"), so this clamps to SDR in practice.
     gl_FragColor = vec4(vec3(y) * uPeakBrightness, 1.0);
 }
 `;

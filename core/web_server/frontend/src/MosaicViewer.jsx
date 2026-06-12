@@ -25,6 +25,7 @@ import AstroFlowContext from "./AstroFlowContext.jsx";
 import { AstroFlowImage } from "./AstroFlowImage.jsx";
 import TelescopiusDialog from "./TelescopiusDialog.jsx";
 import ToggleIconButton from "./ToggleIconButton";
+import HdrControls, { useHdrCapability } from "./HdrControls.jsx";
 import WorkflowGraph from "./WorkflowGraph.jsx";
 import ConcernsBadge from "./ConcernsBadge.jsx";
 import darkTheme from "./theme.js";
@@ -41,6 +42,9 @@ export default function MosaicViewer() {
 	const [showOutline, setShowOutline] = useState(true);
 	const [showPanelNumbers, setShowPanelNumbers] = useState(false);
 	const [telescopiusOpen, setTelescopiusOpen] = useState(false);
+	const hdrCapable = useHdrCapability();
+	const [hdrEnabled, setHdrEnabled] = useState(false);
+	const [peakBrightness, setPeakBrightness] = useState(2.0);
 
     const mosaic = mosaics?.[mosaic_id];
 
@@ -119,6 +123,13 @@ export default function MosaicViewer() {
 					checked={showPanelNumbers}
 					handleChange={() => setShowPanelNumbers((v) => !v)}
 				/>
+				<HdrControls
+					hdrCapable={hdrCapable}
+					hdrEnabled={hdrEnabled}
+					setHdrEnabled={setHdrEnabled}
+					peakBrightness={peakBrightness}
+					setPeakBrightness={setPeakBrightness}
+				/>
 				<Tooltip title="Export to Telescopius">
 					<IconButton
 						size="small"
@@ -185,6 +196,8 @@ export default function MosaicViewer() {
 						pipeline={pipeline}
 						display={display}
 						showQualitySelector={false}
+						hdrEnabled={hdrEnabled}
+						peakBrightness={peakBrightness}
 					/>
 				</Box>
 
