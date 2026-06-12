@@ -388,12 +388,16 @@ const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, ima
       worldWidth,
       worldHeight,
       events: app.renderer.events,
-      interaction: app.renderer.plugins.interaction,
       passiveWheel: false,
     });
 
-    viewport.drag().pinch().decelerate();
-    setTimeout(() => viewport.wheel(), 0);
+    // All four plugins set up synchronously. The previous
+    // `setTimeout(() => viewport.wheel(), 0)` deferred the wheel
+    // listener to a tick that occasionally lost the EventSystem's
+    // `domElement` reference; the resulting first-wheel crash was
+    // `Cannot read properties of null (reading 'isConnected')` from
+    // pixi-viewport's `handleWheel` → `events.mapPositionToPoint`.
+    viewport.drag().pinch().decelerate().wheel();
 
     const fitScale = Math.min(
       screenWidth / imageWidth,
