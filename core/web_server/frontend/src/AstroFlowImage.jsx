@@ -1,4 +1,4 @@
-import TileViewer from "./TileViewer.jsx";
+import TileViewer from "./tile_viewer/TileViewerV2.jsx";
 
 
 /**

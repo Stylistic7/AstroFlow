@@ -15,7 +15,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import AstroFlowContext from './AstroFlowContext.jsx';
 import ProgressComponent from './ProgressComponent.jsx';
 import WorkflowGraph from './WorkflowGraph.jsx';
-import TileViewer from './TileViewer.jsx';
+import TileViewerV2 from './tile_viewer/TileViewerV2.jsx';
 import StackViewer from './StackViewer.jsx';
 import MosaicViewer from './MosaicViewer.jsx';
 import MosaicDashboard from './MosaicDashboard.jsx';
@@ -365,7 +365,7 @@ function App() {
                 } />
                 <Route path="/tile_viewer/:objectType/:imageHash" element={
                   <Box sx={{ width: '100vw', height: '100vh' }}>
-                    <TileViewer />
+                    <TileViewerV2 />
                   </Box>
                 } />
 <Route path="/recent" element={
