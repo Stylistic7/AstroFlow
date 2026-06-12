@@ -161,21 +161,50 @@ def _serve_tile_response(path, object_type, object_id, x, y, z):
         # uint8 and destroyed the linear-float values the shader
         # needs).
         tile = handle.getTile(x, y, z, format=TILE_FORMAT_NUMPY)
-        # Coerce to float32 + contiguous little-endian; this is the
-        # format the WebGL R32F texture upload expects.
-        if not isinstance(tile, np.ndarray):
-            # large_image sometimes returns a tuple (array, mime); the
-            # numpy format path should give us a plain array.
-            tile = tile[0]
-        tile = np.ascontiguousarray(tile.astype("<f4"))
-        raw = tile.tobytes()
+        # large_image returns one of three shapes depending on the
+        # source pyramid format:
+        #   * `np.ndarray`            — the float32 case (linear-float
+        #                               TIFFs from the new pyramid
+        #                               generator; vips reads them as
+        #                               float arrays natively).
+        #   * `(np.ndarray, mime)`    — older PIL-source path.
+        #   * `ImageBytes` (a `bytes` subclass) — when the source is
+        #                               an encoded JPEG/PNG TIFF (the
+        #                               legacy autostretched pyramids
+        #                               still on disk for some taps).
+        # The last case used to crash here because `tile[0]` on bytes
+        # is the first *byte* (an int), not a tile array.
+        if isinstance(tile, np.ndarray):
+            arr = tile
+        elif isinstance(tile, tuple) and isinstance(tile[0], np.ndarray):
+            arr = tile[0]
+        else:
+            from PIL import Image
+            arr = np.asarray(Image.open(io.BytesIO(bytes(tile))))
+        # Multi-channel images: collapse to the first channel for now;
+        # the shader is mono. RGB-aware tile serving is a separate
+        # change (would require packing 3 channels into the f32 stream
+        # and a shader that samples .rgb instead of .r).
+        if arr.ndim == 3:
+            arr = arr[..., 0]
+        # Legacy autostretched JPEG pyramids decode to uint8 0..255;
+        # the new shader expects pixels in the same value space as the
+        # linear master (≈ 0..1.something), so rescale into [0,1] for
+        # uint8 sources. New linear-float pyramids land here already
+        # as float32 — passed through untouched.
+        if arr.dtype == np.uint8:
+            arr = arr.astype("<f4") / 255.0
+        else:
+            arr = arr.astype("<f4")
+        arr = np.ascontiguousarray(arr)
+        raw = arr.tobytes()
         compressed = brotli.compress(raw, quality=_TILE_BROTLI_QUALITY)
         resp = Response(compressed, mimetype="application/octet-stream")
         resp.headers["Content-Encoding"] = "br"
         # The shape is implied by the tile-pyramid metadata (the
         # tileWidth/tileHeight the client already has). Include it
         # anyway for debug-friendly out-of-band verification.
-        h, w = tile.shape[:2]
+        h, w = arr.shape[:2]
         resp.headers["X-Tile-Width"] = str(w)
         resp.headers["X-Tile-Height"] = str(h)
         return resp
