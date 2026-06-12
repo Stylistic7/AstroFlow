@@ -206,14 +206,23 @@ def test_unpickle_newer_pickle_with_extra_trailing_slot():
     from metadata.classes import ImageMetadata
 
     meta = _make_metadata()
+    field_names = [f.name for f in fields(ImageMetadata)]
     current_state = [getattr(meta, f.name) for f in fields(ImageMetadata)]
 
     # Simulate an older pickle that still carried `defect_candidates`
     # at the position right before `master_integration_s`. We mimic
-    # this by inserting one extra entry into the state list. The
+    # this by inserting one extra entry at that exact position into
+    # the state list — looking the position up by name rather than
+    # by negative index so new fields appended later (e.g.
+    # `statistics`) don't move the insertion target. The
     # __setstate__ should truncate to the current field count.
     extra = {42: 1.0, 100: 2.0}  # what defect_candidates would have been
-    legacy_state = current_state[:-1] + [extra] + current_state[-1:]
+    master_int_idx = field_names.index("master_integration_s")
+    legacy_state = (
+        current_state[:master_int_idx]
+        + [extra]
+        + current_state[master_int_idx:]
+    )
 
     fresh = ImageMetadata.__new__(ImageMetadata)
     fresh.__setstate__(legacy_state)

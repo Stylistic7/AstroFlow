@@ -8,9 +8,51 @@ from pathlib import Path
 from typing import Any
 
 from file_io.sidecar import get_section, set_section, get_file_size, sidecar_path_for
-from metadata.classes import ImageMetadata
+from metadata.classes import ImageMetadata, ImageStatistics
 import plate_solving
 import metadata.image_types as image_types
+
+
+def _statistics_to_obj(stats: ImageStatistics) -> dict[str, Any]:
+    """Serialize ImageStatistics to a JSON-safe dict. The histogram is
+    written as a plain list of ints; everything else is already
+    primitive. Additive on the sidecar — old readers ignore it."""
+    return {
+        "histogram_bins": stats.histogram_bins,
+        "histogram_range": list(stats.histogram_range),
+        "histogram_counts": list(stats.histogram_counts),
+        "p0_1": stats.p0_1, "p1": stats.p1, "p5": stats.p5,
+        "p25": stats.p25, "p50": stats.p50, "p75": stats.p75,
+        "p95": stats.p95, "p99": stats.p99, "p99_9": stats.p99_9,
+        "sky_median": stats.sky_median, "sky_rms": stats.sky_rms,
+        "clipped_low_fraction": stats.clipped_low_fraction,
+        "clipped_high_fraction": stats.clipped_high_fraction,
+        "min_value": stats.min_value,
+        "max_value": stats.max_value,
+        "mean_value": stats.mean_value,
+    }
+
+
+def _statistics_from_obj(obj: dict[str, Any] | None) -> ImageStatistics | None:
+    """Reconstruct ImageStatistics from a sidecar dict. Returns None for
+    legacy sidecars that predate this field — consumers should treat
+    that as 'no per-image stats; use a sensible default'."""
+    if obj is None:
+        return None
+    return ImageStatistics(
+        histogram_bins=obj["histogram_bins"],
+        histogram_range=tuple(obj["histogram_range"]),
+        histogram_counts=tuple(obj["histogram_counts"]),
+        p0_1=obj["p0_1"], p1=obj["p1"], p5=obj["p5"],
+        p25=obj["p25"], p50=obj["p50"], p75=obj["p75"],
+        p95=obj["p95"], p99=obj["p99"], p99_9=obj["p99_9"],
+        sky_median=obj["sky_median"], sky_rms=obj["sky_rms"],
+        clipped_low_fraction=obj["clipped_low_fraction"],
+        clipped_high_fraction=obj["clipped_high_fraction"],
+        min_value=obj["min_value"],
+        max_value=obj["max_value"],
+        mean_value=obj["mean_value"],
+    )
 
 
 @beartype
@@ -58,6 +100,8 @@ def image_metadata_to_obj(meta: ImageMetadata) -> dict[str, Any]:
     }
     if meta.master_integration_s is not None:
         obj["master_integration_s"] = meta.master_integration_s
+    if meta.statistics is not None:
+        obj["statistics"] = _statistics_to_obj(meta.statistics)
     return obj
 
 
@@ -87,6 +131,7 @@ def image_metadata_from_obj(
         dtype=np.dtype(obj["dtype"]),
         plate_solution=plate_solution,
         master_integration_s=obj.get("master_integration_s"),
+        statistics=_statistics_from_obj(obj.get("statistics")),
     )
 
 

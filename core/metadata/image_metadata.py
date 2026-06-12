@@ -177,7 +177,12 @@ def compute_image_metadata(
     else:
         plate_solution = None
 
-    defect_candidates = _maybe_extract_defects(filename, header, geometry)
+    # One pixel read serves both statistics (always wanted) and
+    # defect extraction (conditional — only raw uint16 mono frames).
+    # The cost is paid once per file via the sidecar cache.
+    image, statistics, defect_candidates = _read_and_analyze_pixels(
+        filename, header, geometry,
+    )
     master_integration_s = read_master_integration_seconds(filename, header)
 
     result = ImageMetadata(
@@ -191,6 +196,7 @@ def compute_image_metadata(
         dtype=geometry.dtype,
         plate_solution=plate_solution,
         master_integration_s=master_integration_s,
+        statistics=statistics,
     )
 
     write_image_metadata(result)
@@ -202,38 +208,58 @@ def compute_image_metadata(
     return result
 
 
-def _maybe_extract_defects(
-    filename: Path, header: dict, geometry
-) -> dict[int, float] | None:
-    """Run the hot-pixel detector only on frame types where it's meaningful.
+def _read_and_analyze_pixels(
+    filename: Path, header: dict, geometry,
+):
+    """Read the image once; return (image, statistics, defect_candidates).
 
-    Lights/darks/flats with raw uint16 mono pixels carry stable defect
-    signal. Biases are too short (RTS noise dominates), masters are
-    post-rejection float32 (the raw defects are gone), and anything
-    multi-channel is debayered/rendered. For all those cases, return
-    None and skip the pixel read entirely.
+    Statistics are computed for every image (used by the web UI auto-
+    stretch / structure-emphasis / HDR display, the seam-metric QA,
+    and the panel comparison view). Defect extraction stays
+    conditional on the historical "raw uint16 mono light/dark/flat,
+    not a master" gate.
+
+    A single read serves both — pixels stay hot in cache, and the
+    sidecar caches the resulting metadata so we pay this once per
+    file. On read failure we return (None, None, None); the caller
+    stores the file as broken via the existing sidecar marker.
     """
     import numpy as np
+    from metadata.image_statistics import compute_image_statistics
 
-    if geometry.channels != 1 or geometry.dtype != np.dtype(np.uint16):
-        return None
-    if image_types.is_master(header):
-        return None
-    if not (
-        image_types.is_light_frame(header)
-        or image_types.is_dark_frame(header)
-        or image_types.is_flat_frame(header)
-    ):
-        return None
     try:
         image = read_image(filename)
     except (ValueError, OSError) as e:
         log.warning(
-            "Skipping defect extraction; image read failed",
+            "Skipping pixel analysis; image read failed",
             filename=str(filename), error=str(e),
         )
-        return None
-    return extract_defects(image)
+        return None, None, None
+
+    try:
+        statistics = compute_image_statistics(image)
+    except Exception as e:
+        # Stats failure shouldn't block defect extraction or the
+        # metadata record itself; log and continue with None.
+        log.warning(
+            "compute_image_statistics failed",
+            filename=str(filename), error=str(e),
+        )
+        statistics = None
+
+    defects_eligible = (
+        geometry.channels == 1
+        and geometry.dtype == np.dtype(np.uint16)
+        and not image_types.is_master(header)
+        and (
+            image_types.is_light_frame(header)
+            or image_types.is_dark_frame(header)
+            or image_types.is_flat_frame(header)
+        )
+    )
+    defect_candidates = extract_defects(image) if defects_eligible else None
+
+    return image, statistics, defect_candidates
 
 
 
