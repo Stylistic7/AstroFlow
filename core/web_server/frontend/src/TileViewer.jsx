@@ -351,6 +351,9 @@ const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, ima
   useEffect(() => {
     if (!viewportRef.current) return;
     Object.values(spritesRef.current).forEach(s => {
+      // Entries can be the 'pending' sentinel string while a fetch is
+      // still in flight; only the resolved Mesh values need teardown.
+      if (typeof s !== 'object') return;
       const tex = s._tileTexture;
       s.parent?.removeChild(s);
       s.destroy();
@@ -514,9 +517,24 @@ const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, ima
           const url = new URL(relativePath, `${window.location.protocol}//${window.location.hostname}:${port}`);
           if (mtime) url.searchParams.set('v', mtime);
 
+          // Mark as in-flight immediately so the next `updateTiles`
+          // pass (one fires per wheel tick) doesn't re-dispatch the
+          // same fetch. Without this, a fast scroll on a 25-tile
+          // viewport queues thousands of duplicate fetches and Chrome
+          // rejects everything past its per-origin / global cap with
+          // ERR_INSUFFICIENT_RESOURCES.
+          spritesRef.current[key] = 'pending';
+
           fetchLinearTile(url.href)
             .then((result) => {
-              if (!result || !shaderRef.current) return;
+              if (!result || !shaderRef.current) {
+                // Cleared so the next pass can retry (e.g. server
+                // restart, transient 5xx). The mesh never materialized.
+                if (spritesRef.current[key] === 'pending') {
+                  delete spritesRef.current[key];
+                }
+                return;
+              }
               // Server pads every tile to TILE_SIZE × TILE_SIZE with
               // zeros for edge tiles, so the texture is always the
               // same size as the mesh and the shader's zero short-
@@ -557,6 +575,14 @@ const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, ima
               spritesRef.current[key] = mesh;
             })
             .catch((err) => {
+              // Clear the in-flight sentinel so a future pass can
+              // retry this tile. Without this, a transient
+              // ERR_INSUFFICIENT_RESOURCES (or network blip) would
+              // permanently blacklist the tile until the next image
+              // open.
+              if (spritesRef.current[key] === 'pending') {
+                delete spritesRef.current[key];
+              }
               console.warn(`Failed to load tile: ${url}`, err);
             });
         }
