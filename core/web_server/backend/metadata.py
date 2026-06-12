@@ -18,7 +18,7 @@ from products.identity import (
 )
 from previews.types import MASTER
 from mosaics.trimming import project_to_viewbox
-from metadata.sidecar_io import read_image_metadata
+from metadata.sidecar_io import read_image_metadata, _statistics_to_obj
 from attributes.astrometric_attributes import _spherical_polygon_for_wcs
 from decisions.decisions import ObjectType, get_decisions_for_object
 from web_server.backend._route import tap_route
@@ -309,11 +309,23 @@ def metadata(object_type: str, object_id: str, pipeline: str, display: str, filt
 
     objects = _get_polygons(obj_type, pipeline, *args)
 
+    # ImageStatistics for the tap output — drives the browser-side
+    # auto-stretch optimizer. Read straight off the sidecar; the
+    # `compute_image_metadata` step populated it when the image was
+    # written. None when the sidecar is missing (very small images, or
+    # taps that don't carry an ImageMetadata).
+    statistics = None
+    if image_path:
+        meta = read_image_metadata(Path(image_path))
+        if meta is not None and meta.statistics is not None:
+            statistics = _statistics_to_obj(meta.statistics)
+
     return jsonify({
         "display": display,
         "pipeline": pipeline,
         "image_path": image_path,
         "objects": objects,
+        "statistics": statistics,
     })
 
 

@@ -15,7 +15,10 @@ import {
 import {
     createToneMappingShader,
     createIdentityLut,
+    updateLutTexture,
 } from './tone_mapping_shader.js';
+import { buildAutoStretchLut } from './auto_stretch.js';
+import ToneMappingControls, { useHdrCapability } from './ToneMappingControls.jsx';
 
 
 const TILE_SIZE = 256;
@@ -86,6 +89,26 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
   const [tileMetadata, setTileMetadata] = useState(null);
   const containerRef = useRef(null);
   const [containerSize, setContainerSize] = useState({ width: 800, height: 600 });
+
+  // Tone-mapping controls. These live above the PIXI Stage so the
+  // sliders re-render the React component but the canvas stays put;
+  // changes propagate into the shader via the ImperativeViewport's
+  // refs (no React re-render of tile sprites).
+  //   painterlyBias = 0 → max-entropy stretch (linear-log histogram).
+  //   painterlyBias = 1 → midtone-heavy stretch (painterly look).
+  //   localMix      = 0 → pure global LUT lookup.
+  //   localMix      = 1 → full local-context adaptation (per-pixel
+  //                       subtraction of the context-map sample).
+  //   peakBrightness     = 1.0 → SDR (clamped at 1.0).
+  //                       > 1.0 only meaningful on the HDR canvas (C6).
+  const [painterlyBias, setPainterlyBias] = useState(0.4);
+  const [localMix, setLocalMix] = useState(0.0);
+  const [peakBrightness, setPeakBrightness] = useState(2.0);
+  // HDR-capable display? Tracked live via the `(dynamic-range: high)`
+  // media query — if the user drags the window to a non-HDR display,
+  // the toggle vanishes automatically.
+  const hdrCapable = useHdrCapability();
+  const [hdrEnabled, setHdrEnabled] = useState(false);
 
   const { mosaics, stacks, targets, showQuarantined, isQuarantined, computeGraphStatus, observingPlan } = useContext(AstroFlowContext);
 
@@ -173,7 +196,7 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
   const worldHeight = tileMetadata.tileHeight * Math.pow(2, tileMetadata.maxZoom);
 
   return (
-    <div ref={containerRef} style={{ width: '100%', height: '100%' }}>
+    <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative' }}>
       <Stage
         width={containerSize.width}
         height={containerSize.height}
@@ -202,8 +225,23 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
           showQuarantined={showQuarantined}
           isQuarantined={isQuarantined}
           stacks={stacks}
+          painterlyBias={painterlyBias}
+          localMix={localMix}
+          peakBrightness={hdrEnabled ? peakBrightness : 1.0}
+          hdrEnabled={hdrEnabled}
         />
       </Stage>
+      <ToneMappingControls
+        painterlyBias={painterlyBias}
+        setPainterlyBias={setPainterlyBias}
+        localMix={localMix}
+        setLocalMix={setLocalMix}
+        peakBrightness={peakBrightness}
+        setPeakBrightness={setPeakBrightness}
+        hdrEnabled={hdrEnabled}
+        setHdrEnabled={setHdrEnabled}
+        hdrCapable={hdrCapable}
+      />
     </div>
   );
 };
@@ -266,8 +304,32 @@ function drawExposureClock(g, cx, cy, radius, hours, wbppHours = null) {
 }
 
 
-const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom, mtime, showPolygons, showPanelNumbers, metadata, mosaics, onClick, showQuarantined, isQuarantined, stacks }) => {
+const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom, mtime, showPolygons, showPanelNumbers, metadata, mosaics, onClick, showQuarantined, isQuarantined, stacks, painterlyBias, localMix, peakBrightness, hdrEnabled }) => {
   const app = useApp();
+
+  // HDR canvas reconfiguration. We don't rebuild the PIXI renderer
+  // (that would destroy every uploaded tile + the shader); instead we
+  // ask the underlying canvas to switch to extended-range output. On
+  // Chromium that's `canvas.configureHighDynamicRange({mode: 'extended'})`;
+  // on browsers that don't implement it, the call is silently a no-op
+  // and the shader's `uPeakBrightness > 1.0` output clips at the SDR
+  // ceiling — graceful degradation. Either way, the LUT and shader
+  // logic don't care: SDR canvas clamps, HDR canvas extends.
+  useEffect(() => {
+    const canvas = app?.renderer?.view;
+    if (!canvas) return;
+    if (typeof canvas.configureHighDynamicRange === 'function') {
+      try {
+        canvas.configureHighDynamicRange({
+          mode: hdrEnabled ? 'extended' : 'default',
+        });
+      } catch (e) {
+        console.warn('HDR canvas reconfigure failed:', e);
+      }
+    }
+    // Force a redraw so the operator's new peak-brightness lands.
+    app.renderer.render(app.stage);
+  }, [hdrEnabled, app]);
   const viewportRef = useRef(null);
   const spritesRef = useRef({});
   // The single tone-mapping shader instance shared by every tile mesh
@@ -369,6 +431,38 @@ const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, ima
       shaderRef.current = null;
     };
   }, [objectType, imageHash, view?.pipeline, view?.display, view?.filter, mtime, imageWidth, imageHeight, port]);
+
+  // Recompute the auto-stretch LUT whenever the painterly bias slider
+  // moves OR the image statistics arrive. `buildAutoStretchLut` runs
+  // CPU-side in ~0.5 ms; `updateLutTexture` blits 4 KB to the GPU
+  // (sub-millisecond). The shader picks it up on the next frame.
+  //
+  // We also push the histogram range into uniforms here. The shader
+  // normalizes raw float pixels into [0,1] via this range before the
+  // LUT lookup, so the LUT's index space and the input space match.
+  useEffect(() => {
+    if (!metadata?.statistics) return;
+    if (!lutTextureRef.current || !shaderRef.current) return;
+    const lutData = buildAutoStretchLut(metadata.statistics, painterlyBias);
+    updateLutTexture(lutTextureRef.current, lutData);
+    const [rangeMin, rangeMax] = metadata.statistics.histogram_range;
+    shaderRef.current.uniforms.uHistRangeMin = rangeMin;
+    shaderRef.current.uniforms.uHistRangeMax = rangeMax;
+    // Kick a render — viewport doesn't fire 'moved'/'zoomed' on a
+    // slider tweak, but the meshes are still on stage. PIXI re-renders
+    // every ticker frame anyway, so this is a no-op safety net.
+    app.renderer.render(app.stage);
+  }, [metadata?.statistics, painterlyBias, app]);
+
+  // Plumb the per-frame scalar uniforms (local-context mix and HDR
+  // peak brightness) directly into the shader. No LUT recomputation
+  // — just a one-line uniform write that the next frame picks up.
+  useEffect(() => {
+    if (!shaderRef.current) return;
+    shaderRef.current.uniforms.uLocalMix = localMix;
+    shaderRef.current.uniforms.uPeakBrightness = peakBrightness;
+    app.renderer.render(app.stage);
+  }, [localMix, peakBrightness, app]);
 
   useEffect(() => {
     const screenWidth = app.renderer.view.clientWidth;

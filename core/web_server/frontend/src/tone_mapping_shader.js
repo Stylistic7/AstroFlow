@@ -91,23 +91,36 @@ uniform float uLocalMix;             // 0 = global, 1 = full-local
 uniform float uPeakBrightness;       // 1.0 SDR; up to ~12.0 HDR
 uniform float uHasContext;           // 1.0 if context map bound, else 0.0
 
+// Histogram range from ImageStatistics. Linear float pixels arrive
+// from the GPU in their raw value space (anything from ~0 up to the
+// image max); the LUT is indexed by [0,1] mapped to [min,max]. We
+// normalize before the LUT lookup and the context-subtraction step.
+uniform float uHistRangeMin;
+uniform float uHistRangeMax;
+
 varying vec2 vTextureCoord;
 
 void main() {
     // Sample the linear pixel value from this tile's texture. R32F
-    // gives us full float32 precision back from the GPU.
-    float x = texture2D(uTileTexture, vTextureCoord).r;
+    // gives us full float32 precision back from the GPU. Then map
+    // into [0,1] using the per-image histogram range so it lines up
+    // with the LUT's index space.
+    float xRaw = texture2D(uTileTexture, vTextureCoord).r;
+    float invRange = 1.0 / max(uHistRangeMax - uHistRangeMin, 1e-12);
+    float x = (xRaw - uHistRangeMin) * invRange;
 
     // Local context. When the context map is bound, sample at this
     // pixel's world coordinates (the context map IS the whole image
-    // at 1:5). When it isn't, the local context degenerates to the
-    // pixel itself, making the local-adaptation step a no-op and the
-    // operator collapse to a pure global LUT lookup.
-    float c = x;
+    // at 1:5). When it isn't, force the local-adaptation term to a
+    // no-op by gating the mix amount on uHasContext — otherwise the
+    // (x - c + 0.5) fallback at c=x would collapse the image to 0.5
+    // at full localMix.
+    float c = 0.0;
     if (uHasContext > 0.5) {
         vec2 worldPos = uTileWorldOrigin + vTextureCoord * uTileWorldSize;
         vec2 contextUV = worldPos / uWorldSize;
-        c = texture2D(uContextMap, contextUV).r;
+        float cRaw = texture2D(uContextMap, contextUV).r;
+        c = (cRaw - uHistRangeMin) * invRange;
     }
 
     // Adapted input for the LUT lookup. At uLocalMix = 0 this is
@@ -115,7 +128,10 @@ void main() {
     // this subtracts the local context and recenters at 0.5,
     // mapping local CONTRAST onto the LUT instead of absolute
     // brightness — the painterly look. Smooth blend in between.
-    float adapted = mix(x, x - c + 0.5, uLocalMix);
+    // When no context map is bound, the effective mix is zero so the
+    // slider silently has no effect.
+    float effMix = uLocalMix * uHasContext;
+    float adapted = mix(x, x - c + 0.5, effMix);
     adapted = clamp(adapted, 0.0, 1.0);
 
     // LUT lookup. The LUT is computed CPU-side from ImageStatistics
@@ -149,6 +165,8 @@ export function createToneMappingShader() {
         uLocalMix: 0.0,
         uPeakBrightness: 1.0,
         uHasContext: 0.0,
+        uHistRangeMin: 0.0,
+        uHistRangeMax: 1.0,
     });
 }
 
