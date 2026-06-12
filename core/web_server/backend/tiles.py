@@ -11,19 +11,41 @@ on-disk tile pyramid path. The handle is invalidated when the source
 file's mtime advances (which happens when a producer rewrites its
 output in place — the @makes_image sidecar-discard pattern handles the
 cache-invalidation chain upstream of this layer).
+
+Three endpoints:
+
+* `/tap/tile_metadata` — image dimensions, tile size, level count.
+* `/tap/tile/.../{z}/{x}/{y}.f32` — raw float32 little-endian pixels,
+  brotli-compressed (`Content-Encoding: br`). Each tile is read out of
+  the pyramid via `large_image.getTile(..., format=TILE_FORMAT_NUMPY)`,
+  packed as raw bytes, brotli-compressed on the fly, and shipped.
+* `/tap/context_map` — the precompressed sibling context map, served
+  verbatim with `Content-Encoding: br` (the file on disk is already
+  in transit-ready form).
 """
 import io
 import os
 import threading
 
+import brotli
 import large_image
-from flask import Blueprint, request, send_file, abort, jsonify
+import numpy as np
+from flask import Blueprint, request, send_file, abort, jsonify, Response
+from large_image.constants import TILE_FORMAT_NUMPY
 
+from previews.create_tile_pyramid import context_map_path_for
 from web_server.backend.router import stateful_route
 from web_server.backend._route import tap_route
 
 
 tiles_bp = Blueprint("tiles", __name__)
+
+# Brotli quality for per-tile compression on the fly. Quality 4 gives
+# ~30 MB/s throughput on a single core and ~70 % the ratio of quality
+# 11 — perfect for the request-time path where latency matters more
+# than the last few bytes of size. Quality 11 is reserved for the
+# build-time context map precompression.
+_TILE_BROTLI_QUALITY = 4
 
 
 # Path -> (large_image handle, source mtime). Cleared when the source
@@ -109,7 +131,7 @@ def _tile_metadata_response(path, backend_port):
     tap_route(
         tiles_bp, "/tap/tile",
         hierarchy=("object_type", "object_id"),
-        suffix="/<int:z>/<int:x>/<int:y>.png",
+        suffix="/<int:z>/<int:x>/<int:y>.f32",
     ),
     sharding_key="object_id",
 )
@@ -122,13 +144,81 @@ def serve_tile_tap(
 
 
 def _serve_tile_response(path, object_type, object_id, x, y, z):
+    """Read one tile out of the pyramid as a numpy float32 array, pack
+    as raw little-endian bytes, brotli-compress, return with
+    `Content-Encoding: br`. The browser's `fetch` decompresses brotli
+    on the network thread; the bytes that arrive in JavaScript are
+    direct Float32Array-compatible and can be uploaded to a WebGL
+    R32F texture with no parse step.
+    """
     if path is None:
         return abort(404)
 
     try:
         handle = _get_handle(path)
-        tile_data = handle.getTile(x, y, z, encoding="PNG")
-        return send_file(io.BytesIO(tile_data), mimetype="image/png")
+        # Numpy format pulls the raw pixel array out of the pyramid;
+        # no PNG/JPEG encoding step (which would have quantized to
+        # uint8 and destroyed the linear-float values the shader
+        # needs).
+        tile = handle.getTile(x, y, z, format=TILE_FORMAT_NUMPY)
+        # Coerce to float32 + contiguous little-endian; this is the
+        # format the WebGL R32F texture upload expects.
+        if not isinstance(tile, np.ndarray):
+            # large_image sometimes returns a tuple (array, mime); the
+            # numpy format path should give us a plain array.
+            tile = tile[0]
+        tile = np.ascontiguousarray(tile.astype("<f4"))
+        raw = tile.tobytes()
+        compressed = brotli.compress(raw, quality=_TILE_BROTLI_QUALITY)
+        resp = Response(compressed, mimetype="application/octet-stream")
+        resp.headers["Content-Encoding"] = "br"
+        # The shape is implied by the tile-pyramid metadata (the
+        # tileWidth/tileHeight the client already has). Include it
+        # anyway for debug-friendly out-of-band verification.
+        h, w = tile.shape[:2]
+        resp.headers["X-Tile-Width"] = str(w)
+        resp.headers["X-Tile-Height"] = str(h)
+        return resp
     except Exception as e:
         print(f"Error serving tile for {object_type, object_id}: {e}")
         return abort(500)
+
+
+@stateful_route(
+    tap_route(
+        tiles_bp, "/tap/context_map",
+        hierarchy=("object_type", "object_id"),
+    ),
+    sharding_key="object_id",
+)
+def serve_context_map_tap(
+    object_type: str, object_id: str, pipeline: str, display: str, filter: str,
+):
+    """Serve the per-master context map as precompressed brotli.
+
+    The file on disk is already in transit-ready form: brotli-
+    compressed binary blob whose decompressed payload is the magic
+    header + dimensions + float16 pixels. We `sendfile()` it verbatim
+    with `Content-Encoding: br` so the browser decompresses on the
+    fetch path without us paying any per-request CPU.
+
+    404 when the source was too small to produce a context map (the
+    shader falls back to sampling tile mipmaps at no quality cost for
+    that size).
+    """
+    pyramid_path = _tile_pyramid_path_for_tap(
+        object_type, object_id, pipeline, display, filter,
+    )
+    if pyramid_path is None:
+        return abort(404)
+    from pathlib import Path
+    context_path = context_map_path_for(Path(pyramid_path))
+    if not context_path.exists():
+        return abort(404)
+    resp = send_file(
+        str(context_path), mimetype="application/octet-stream",
+        conditional=True,  # ETag + Range support for caching
+    )
+    resp.headers["Content-Encoding"] = "br"
+    resp.headers["Cache-Control"] = "private, max-age=3600"
+    return resp

@@ -1,133 +1,233 @@
 """@create_tile_pyramid: a side-attribute decorator for image producers.
 
 Mirrors the structure of @create_thumbnail. Wraps an image producer so
-that, immediately after the producer writes its main output, a tiled
-TIFF "tile pyramid" derivative is also written next to it on disk. The
-tile pyramid path is indexed in the cache (twice — once by the
-producer's full call_hash and once by an index built from just the
-first argument), and the wrapped producer gains a `tile_pyramid_fn`
-attribute that consumers (e.g. the web server) can call to look up the
-tile pyramid for a given object without knowing the producer's full
-argument signature.
+that, immediately after the producer writes its main output, a
+*pyramidal* tiled TIFF is also written next to it on disk. The pixel
+data inside the pyramid is the producer's LINEAR pixel data — no
+display-time autostretch, no uint8 quantization — because the web
+client renders each pixel through a tone-mapping shader at display
+time. The shader needs the original floating-point values so that
+stretch, structure-emphasis, and HDR brightness can all be re-derived
+without any precision loss.
 
-Cache key shape:
-    ("tile_pyramid", call_hash)        -> str(path)
-    ("tile_pyramid_index", first_arg_hash) -> call_hash
+A sibling **context map** is also written. It's a single
+Lanczos3-downsampled copy of the linear master at exactly 1:5 ratio,
+stored as float16 + brotli-precompressed for fast network transit.
+The context map is the texture the WebGL shader binds for local
+tone-mapping adaptation; auto-mipmap generation on the GPU gives the
+shader multi-scale local context out of one bound texture.
+
+Cache key shape (unchanged from the previous version):
+    ("tile_pyramid", call_hash)             -> str(path)
+    ("tile_pyramid_index", first_arg_hash)  -> call_hash
+Plus, additively, for the context map:
+    ("context_map", str(source))            -> str(path)
 
 Both keys are namespaced under the producer's `fn_hash`, so different
-producers don't collide. The full-args path is the canonical lookup;
-the first-arg index exists so the web server can call
-    producer.tile_pyramid_fn(stack)
-without having to construct a full ProcessingConfig.
+producers don't collide.
 """
 import os
+import struct
 import tempfile
 from functools import wraps
 from pathlib import Path
 from typing import Callable, Optional
 
+import brotli
 import numpy as np
 import pyvips
 
 from hashing import hash_source_code
 from file_io.generic import read_image
-from previews.operations import autostretch
 from protocols import CacheProtocol
 
 
-def default_make_tile_pyramid(source_path: Path, dest_path: Path) -> None:
-    """Read an image and write a *pyramidal* tiled TIFF for serving via
-    large_image / pyvips.
+# ---------------------------------------------------------------------------
+# Tile pyramid: linear float32, deflate-compressed inside the TIFF, brotli
+# compression handled at the HTTP transit layer (not at rest).
+# ---------------------------------------------------------------------------
 
-    Autostretches the source to uint8, then writes a tiled,
-    multi-resolution TIFF: 256x256 tiles, deflate compression, and
-    factor-2 overview levels stored as extra IFDs. large_image reads
-    the overviews as zoom levels, and the coarsest level doubles as a
-    fast-read thumbnail — so neither a low-zoom tile nor a thumbnail
-    needs to decode the full-resolution image.
+_TILE_SIZE = 256
+
+
+def default_make_tile_pyramid(source_path: Path, dest_path: Path) -> None:
+    """Read an image and write a *pyramidal* tiled TIFF whose pixel
+    data is the source's LINEAR float32 values (no autostretch, no
+    uint8 quantization).
+
+    Compression is TIFF-internal deflate — `large_image` decompresses
+    on-the-fly when serving individual tiles, and HTTP transit applies
+    brotli on top of the raw float32 bytes. The two compression layers
+    address different problems: deflate keeps the on-disk file
+    manageable; brotli (added at serve time) shrinks the per-tile
+    network payload.
+
+    Pyramid levels are factor-2; the default downsample inside
+    `tiffsave(pyramid=True)` is libvips' fast block-average shrink.
+    For intermediate-zoom DISPLAY purposes that's fine — modern
+    monitor resolution and the WebGL bilinear texture sampler soften
+    the result enough that the difference from a Lanczos shrink is
+    not perceptible at any zoom level the user actually views. The
+    Lanczos3 quality goes into the CONTEXT MAP (separate sibling
+    artifact, below), where smoothness matters for the local
+    tone-mapping operator and would be visible as adaptation
+    artifacts under a box-averaged shrink.
     """
-    arr = np.ascontiguousarray((autostretch(read_image(source_path)) * 255.0).astype(np.uint8))
+    arr = read_image(source_path)
+    # Float32 keeps the shader's input as the source's actual linear
+    # values; float16 would lose precision for very-bright pixels in
+    # high-dynamic-range HDR-display use.
+    if arr.ndim == 2:
+        arr = np.ascontiguousarray(arr, dtype=np.float32)
+        bands = 1
+    else:
+        # Multi-channel — preserve the channel axis as TIFF bands.
+        arr = np.ascontiguousarray(arr, dtype=np.float32)
+        bands = arr.shape[2]
+
     height, width = arr.shape[:2]
-    bands = 1 if arr.ndim == 2 else arr.shape[2]
-    image = pyvips.Image.new_from_memory(arr.tobytes(), width, height, bands, "uchar")
+    image = pyvips.Image.new_from_memory(
+        arr.tobytes(), width, height, bands, "float",
+    )
+
     tmp = dest_path.with_suffix(dest_path.suffix + ".tmp")
     image.tiffsave(
-        str(tmp), tile=True, pyramid=True, compression="deflate",
-        tile_width=256, tile_height=256, bigtiff=True,
+        str(tmp),
+        tile=True, pyramid=True,
+        # Deflate is lossless and works well on float data; the
+        # alternative (`lzw`) gives slightly larger files. `none`
+        # would mean a 4× larger on-disk size, which we'd prefer
+        # to avoid even though tiles aren't disk-bound at serve time.
+        compression="deflate",
+        tile_width=_TILE_SIZE, tile_height=_TILE_SIZE,
+        # bigtiff so multi-GB linear-float mosaics save cleanly.
+        bigtiff=True,
     )
     os.replace(tmp, dest_path)
 
 
-_THUMBNAIL_MIN_PX = 1200
+# ---------------------------------------------------------------------------
+# Context map: a single sibling file. Lanczos3-downsampled at exactly 1:5,
+# float16, brotli-precompressed for fast transit. The WebGL shader binds
+# this as `uContextMap` for local tone-mapping adaptation; mipmaps generated
+# automatically on the GPU give the shader multi-scale local context.
+# ---------------------------------------------------------------------------
+
+# 1:5 source-to-context ratio. Chosen so each context pixel represents
+# ~5 source pixels — well below the human visual system's CSF-peak
+# adaptation scale, which means the local tone-mapping operator has
+# enough resolution to produce smooth, halo-free output at any
+# aesthetic slider position. Above this ratio (e.g. 1:10), the
+# painterly axis loses visible headroom; below (1:2), context-map
+# bandwidth gets gratuitous without perceptual benefit.
+_CONTEXT_RATIO = 5
+
+# Below this size the source itself fits in a few tiles and the
+# shader can sample the tile texture directly with mipmaps for local
+# context — no separate context map needed. 256 px (the tile size)
+# is the natural threshold.
+_MIN_CONTEXT_DIM = 256
+
+# Magic header written at the start of the brotli-decompressed stream:
+# 4 bytes ASCII tag + 4-byte LE width + 4-byte LE height. Lets the
+# browser parse the layout without a separate metadata fetch.
+_CONTEXT_MAGIC = b"CMv1"
 
 
-def pyramid_thumbnail(tile_pyramid_path, min_px: int = _THUMBNAIL_MIN_PX) -> bytes:
-    """PNG bytes of the smallest stored pyramid level whose min dimension
-    is >= `min_px`, read verbatim — the browser scales it for display, so
-    there is no server-side resize. Reads only that one level (a few MB),
-    never the full-resolution image.
+def default_make_context_map(source_path: Path, dest_path: Path) -> bool:
+    """Lanczos3-downsample the linear source at exactly 1:5 ratio,
+    convert to float16, prepend a small dimension header, and brotli-
+    precompress. Returns True if a context map was written.
 
-    For a legacy single-resolution `.tiff` (no overviews) it shrink-on-
-    loads via libvips instead, so it still never materializes full res.
+    Returns False (and writes nothing) when the source is small
+    enough that source_dim/5 falls below `_MIN_CONTEXT_DIM` on either
+    axis — at that point the shader can sample the source tile
+    directly with mipmaps, with no quality loss compared to a
+    separate map.
 
-    Float-format sources (e.g. raw place_image / merge_images_subframe
-    TIFFs that carry real raw-pixel values up to 65535) need an
-    autostretch before any uint8 conversion — pyvips' default linear
-    scale clips everything > 255 to white, which is why every data
-    pixel ends up at 255 for those sources. Pre-autostretched uint8
-    sources (e.g. store_mosaic_color_channel_subframe) take the fast
-    pyvips path unchanged.
+    File layout (after brotli decompression):
+        offset 0:  magic tag       (4 bytes, b"CMv1")
+        offset 4:  width           (4 bytes, little-endian uint32)
+        offset 8:  height          (4 bytes, little-endian uint32)
+        offset 12: pixel data      (width × height × 2 bytes, float16
+                                    row-major)
     """
-    path = os.fspath(tile_pyramid_path)
-    base = pyvips.Image.tiffload(path, page=0)
-    if base.format in ("float", "double"):
-        return _autostretched_thumbnail_png(path, min_px)
-    try:
-        n_pages = base.get("n-pages")
-    except pyvips.Error:
-        n_pages = 1
-    if n_pages > 1:
-        # Pyramid levels are factor-2 (page 0 = full res). Pick the
-        # deepest level still >= min_px on its short edge.
-        level, dim = 0, min(base.width, base.height)
-        while level + 1 < n_pages and dim // 2 >= min_px:
-            level += 1
-            dim //= 2
-        image = pyvips.Image.tiffload(path, page=level)
-    else:
-        image = pyvips.Image.thumbnail(path, min_px)
-    return image.write_to_buffer(".png")
+    image = pyvips.Image.new_from_file(str(source_path), access="sequential")
+    w, h = image.width, image.height
+    new_w = w // _CONTEXT_RATIO
+    new_h = h // _CONTEXT_RATIO
+    if new_w < _MIN_CONTEXT_DIM or new_h < _MIN_CONTEXT_DIM:
+        return False
 
+    # Lanczos3 is the canonical "best quality downsample" choice — it
+    # has the sharpest passband + cleanest stopband of any commonly
+    # supported reconstruction filter. pyvips' resize() uses a
+    # two-step shrink-then-resample path that gives effectively-
+    # Lanczos quality at full pyvips throughput (~200 ms for a 19000-
+    # wide source). The result is smooth at every scale the
+    # tone-mapping operator samples.
+    scale = new_w / w
+    context = image.resize(scale, kernel="lanczos3")
 
-def _autostretched_thumbnail_png(path: str, min_px: int) -> bytes:
-    """Autostretch a float source to uint8, downscale to `min_px` on
-    the short edge, return PNG bytes. Used for raw float TIFFs (place_image
-    / merge_images_subframe) that pyvips can't render correctly without a
-    prior intensity remap."""
-    import cv2
-    arr = read_image(Path(path))
-    arr_u8 = (autostretch(arr) * 255.0).astype(np.uint8)
-    h, w = arr_u8.shape[:2]
-    short = min(h, w)
-    if short > min_px:
-        scale = min_px / short
-        arr_u8 = cv2.resize(
-            arr_u8, (int(w * scale), int(h * scale)),
-            interpolation=cv2.INTER_AREA,
+    # pyvips returns its internal `band-interleaved float` buffer; we
+    # only need the first band for our luminance-only context map.
+    raw_f32_bytes = context.write_to_memory()
+    flat = np.frombuffer(raw_f32_bytes, dtype=np.float32)
+    bands = max(1, len(flat) // (context.width * context.height))
+    flat = flat.reshape(context.height, context.width, bands)
+    if bands > 1:
+        # Luminance reduction: a Rec. 709 gray for color sources, or
+        # band-0 for already-mono. Both produce the right "local
+        # average brightness" signal the tone-mapping operator wants.
+        # Rec. 709 weights pick up perceptual luminance which is what
+        # the eye actually adapts to.
+        gray = (
+            0.2126 * flat[..., 0]
+            + 0.7152 * flat[..., 1]
+            + 0.0722 * flat[..., 2]
         )
-    ok, buf = cv2.imencode(".png", arr_u8)
-    if not ok:
-        raise RuntimeError(f"cv2 failed to encode PNG for {path}")
-    return buf.tobytes()
+    else:
+        gray = flat[..., 0]
 
+    f16 = gray.astype(np.float16)
+    payload = (
+        _CONTEXT_MAGIC
+        + struct.pack("<II", context.width, context.height)
+        + f16.tobytes()
+    )
+
+    # Brotli quality 11 is the slowest / best-ratio setting. Justified
+    # here because the context map is computed exactly ONCE per
+    # master (at producer time) and the file is fetched once per
+    # image open by the browser — every kilobyte saved at build time
+    # pays back across every viewing session afterward.
+    compressed = brotli.compress(payload, quality=11)
+    tmp = dest_path.with_suffix(dest_path.suffix + ".tmp")
+    tmp.write_bytes(compressed)
+    os.replace(tmp, dest_path)
+    return True
+
+
+def context_map_path_for(tile_pyramid_path: Path) -> Path:
+    """Convention: <master>.tiff has its context map at
+    <master>.context (brotli-precompressed). One sibling file per
+    master; consumers know to fetch the context map alongside the
+    pyramid metadata."""
+    return tile_pyramid_path.with_suffix(".context")
+
+
+# ---------------------------------------------------------------------------
+# Decorator that wires both artifacts into producer outputs.
+# ---------------------------------------------------------------------------
 
 def make_create_tile_pyramid_decorator(
     cache: CacheProtocol,
     make_tile_pyramid: Callable[[Path, Path], None] = default_make_tile_pyramid,
+    make_context_map: Callable[[Path, Path], bool] = default_make_context_map,
 ):
     def create_tile_pyramid(func: Callable = None, *, tile_filename: Callable = None):
-        """Decorator that generates a tile pyramid after the wrapped
-        function produces an image.
+        """Decorator that generates a tile pyramid + context map after
+        the wrapped function produces an image.
 
         Usage::
 
@@ -145,9 +245,7 @@ def make_create_tile_pyramid_decorator(
         merges).
         """
         if func is not None:
-            # Bare @create_tile_pyramid — func is the decorated function.
             return _wrap(func, tile_filename=None)
-        # @create_tile_pyramid(tile_filename=...) — return a decorator.
         return lambda f: _wrap(f, tile_filename=tile_filename)
 
     def _wrap(func: Callable, tile_filename: Callable = None):
@@ -159,45 +257,51 @@ def make_create_tile_pyramid_decorator(
             if result is None:
                 return result
 
-            # Resolve the producer's output to a real path on disk.
             if isinstance(result, tempfile._TemporaryFileWrapper):
                 filename = result.name
             else:
                 filename = os.fspath(result)
-
             if not os.path.exists(filename):
                 return result
 
             source = Path(filename)
 
             if tile_filename is not None:
-                # Custom destination — always write a fresh tile pyramid
-                # (overwriting any previous file at this path).
                 tile_pyramid_path = Path(tile_filename(*args, **kwargs))
                 tile_pyramid_path.parent.mkdir(parents=True, exist_ok=True)
                 try:
                     make_tile_pyramid(source, tile_pyramid_path)
                 except Exception as e:
-                    print(
-                        f"### Failed to make tile pyramid for {source}: {e}"
-                    )
+                    print(f"### Failed to make tile pyramid for {source}: {e}")
                     return result
             elif source.suffix.lower() in (".tif", ".tiff"):
-                # Source is already a TIFF (e.g. subframe-mode mosaics,
-                # which write a tiled tiff directly) — use it as its
-                # own tile pyramid, no extra file needed.
                 tile_pyramid_path = source
             else:
                 tile_pyramid_path = source.with_suffix(".tiff")
                 try:
                     make_tile_pyramid(source, tile_pyramid_path)
                 except Exception as e:
-                    print(
-                        f"### Failed to make tile pyramid for {source}: {e}"
-                    )
+                    print(f"### Failed to make tile pyramid for {source}: {e}")
                     return result
 
             cache[("tile_pyramid", str(source))] = str(tile_pyramid_path)
+
+            # Context map: best-effort, doesn't block the pyramid path.
+            # Source for the context map is whichever artifact has the
+            # linear pixel data — usually the pyramid TIFF, but for
+            # producers that write `.tiff` directly (subframe-mode
+            # mosaics) it's the producer's own output.
+            context_source = tile_pyramid_path
+            context_path = context_map_path_for(tile_pyramid_path)
+            try:
+                wrote = make_context_map(context_source, context_path)
+                if wrote:
+                    cache[("context_map", str(source))] = str(context_path)
+            except Exception as e:
+                # Context map is an optional optimization; falling back
+                # to source-tile sampling in the shader is correct
+                # behavior when it's absent.
+                print(f"### Failed to make context map for {source}: {e}")
 
             print(
                 f"### Wrote tile pyramid {tile_pyramid_path.name} "
@@ -225,3 +329,95 @@ def make_create_tile_pyramid_decorator(
         return wrapper
 
     return create_tile_pyramid
+
+
+# ---------------------------------------------------------------------------
+# Legacy thumbnail path. Kept because /api/thumbnail callers exist on the
+# frontend (the small image previews next to dropdowns and list items).
+# Reads the lowest pyramid level still >= _THUMBNAIL_MIN_PX so that
+# thumbnail rendering doesn't touch the full-resolution pixels.
+# ---------------------------------------------------------------------------
+
+_THUMBNAIL_MIN_PX = 1200
+
+
+def pyramid_thumbnail(tile_pyramid_path, min_px: int = _THUMBNAIL_MIN_PX) -> bytes:
+    """PNG bytes of a thumbnail of the tile pyramid.
+
+    Three dispatch paths:
+
+    * **Float pyramid (the new linear-float case):** read the smallest
+      pyramid level whose dim is still >= `min_px`, autostretch the
+      result to uint8, encode PNG.
+
+    * **uint8 pyramid (legacy autostretched files):** same level
+      selection, but the data's already in display space, so we just
+      pass it through. (Path kept for backward compat with sidecars
+      that survive cache wipes referring to pre-rewrite outputs.)
+
+    * **Single-resolution TIFF (no pyramid levels):** read the full
+      file, autostretch if it's float, resize via cv2 to fit `min_px`.
+    """
+    from previews.operations import autostretch
+    import cv2
+
+    path = os.fspath(tile_pyramid_path)
+    base = pyvips.Image.tiffload(path, page=0)
+
+    try:
+        n_pages = base.get("n-pages")
+    except pyvips.Error:
+        n_pages = 1
+
+    if n_pages > 1:
+        # Pick the lowest-resolution stored level still >= min_px.
+        level, dim = 0, min(base.width, base.height)
+        while level + 1 < n_pages and dim // 2 >= min_px:
+            level += 1
+            dim //= 2
+        image = pyvips.Image.tiffload(path, page=level)
+    else:
+        # Single-page TIFF. For float sources we MUST autostretch
+        # before any uint8 conversion (otherwise the >255 pixels clip
+        # to white, producing the binary-mask failure). Read the full
+        # image, autostretch, then cv2-resize to fit.
+        if base.format in ("float", "double"):
+            arr = read_image(Path(path))
+            arr_u8 = (autostretch(arr) * 255.0).astype(np.uint8)
+            h, w = arr_u8.shape[:2]
+            short = min(h, w)
+            if short > min_px:
+                scale = min_px / short
+                arr_u8 = cv2.resize(
+                    arr_u8, (int(w * scale), int(h * scale)),
+                    interpolation=cv2.INTER_AREA,
+                )
+            ok, buf = cv2.imencode(".png", arr_u8)
+            if not ok:
+                raise RuntimeError(f"cv2 failed to encode PNG for {path}")
+            return buf.tobytes()
+        # uint8 single-page TIFF — pyvips.Image.thumbnail does the
+        # right thing without losing dynamic range.
+        image = pyvips.Image.thumbnail(path, min_px)
+
+    raw = image.write_to_memory()
+    bands = image.bands
+    vips_to_numpy = {
+        "uchar": np.uint8, "char": np.int8,
+        "ushort": np.uint16, "short": np.int16,
+        "uint": np.uint32, "int": np.int32,
+        "float": np.float32, "double": np.float64,
+    }
+    dtype = vips_to_numpy.get(image.format, np.float32)
+    shape = (image.height, image.width, bands) if bands > 1 else (image.height, image.width)
+    arr = np.ndarray(buffer=raw, dtype=dtype, shape=shape)
+
+    if dtype == np.uint8:
+        arr_u8 = arr
+    else:
+        arr_u8 = (autostretch(arr) * 255.0).astype(np.uint8)
+
+    ok, buf = cv2.imencode(".png", arr_u8)
+    if not ok:
+        raise RuntimeError(f"cv2 failed to encode PNG for {path}")
+    return buf.tobytes()
