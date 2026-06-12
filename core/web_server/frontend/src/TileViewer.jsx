@@ -6,18 +6,9 @@ import { Viewport } from 'pixi-viewport';
 
 import AstroFlowContext from './AstroFlowContext.jsx';
 import { buildUrl, buildApiUrl, inheritView } from './urls.js';
-import {
-    fetchLinearTile,
-    fetchContextMap,
-    uploadFloat32Tile,
-    uploadContextMap,
-} from './linear_tile_loader.js';
-import {
-    createToneMappingShader,
-    createIdentityLut,
-    updateLutTexture,
-} from './tone_mapping_shader.js';
-import { buildAutoStretchLut } from './auto_stretch.js';
+import { fetchLinearTile, uploadFloat32Tile } from './linear_tile_loader.js';
+import { createToneMappingShader } from './tone_mapping_shader.js';
+import { computeAutoStretchParams } from './auto_stretch.js';
 import ToneMappingControls, { useHdrCapability } from './ToneMappingControls.jsx';
 
 
@@ -90,23 +81,11 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
   const containerRef = useRef(null);
   const [containerSize, setContainerSize] = useState({ width: 800, height: 600 });
 
-  // Tone-mapping controls. These live above the PIXI Stage so the
-  // sliders re-render the React component but the canvas stays put;
-  // changes propagate into the shader via the ImperativeViewport's
-  // refs (no React re-render of tile sprites).
-  //   painterlyBias = 0 → max-entropy stretch (linear-log histogram).
-  //   painterlyBias = 1 → midtone-heavy stretch (painterly look).
-  //   localMix      = 0 → pure global LUT lookup.
-  //   localMix      = 1 → full local-context adaptation (per-pixel
-  //                       subtraction of the context-map sample).
-  //   peakBrightness     = 1.0 → SDR (clamped at 1.0).
-  //                       > 1.0 only meaningful on the HDR canvas (C6).
-  const [painterlyBias, setPainterlyBias] = useState(0.4);
-  const [localMix, setLocalMix] = useState(0.0);
+  // The auto-stretch is not parameterized — `previews.operations.autostretch`
+  // hard-codes the STF parameters and the shader applies them per
+  // pixel. The only user-facing knob in this panel is the HDR
+  // brightness multiplier, gated on display capability.
   const [peakBrightness, setPeakBrightness] = useState(2.0);
-  // HDR-capable display? Tracked live via the `(dynamic-range: high)`
-  // media query — if the user drags the window to a non-HDR display,
-  // the toggle vanishes automatically.
   const hdrCapable = useHdrCapability();
   const [hdrEnabled, setHdrEnabled] = useState(false);
 
@@ -225,17 +204,11 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
           showQuarantined={showQuarantined}
           isQuarantined={isQuarantined}
           stacks={stacks}
-          painterlyBias={painterlyBias}
-          localMix={localMix}
           peakBrightness={hdrEnabled ? peakBrightness : 1.0}
           hdrEnabled={hdrEnabled}
         />
       </Stage>
       <ToneMappingControls
-        painterlyBias={painterlyBias}
-        setPainterlyBias={setPainterlyBias}
-        localMix={localMix}
-        setLocalMix={setLocalMix}
         peakBrightness={peakBrightness}
         setPeakBrightness={setPeakBrightness}
         hdrEnabled={hdrEnabled}
@@ -304,7 +277,7 @@ function drawExposureClock(g, cx, cy, radius, hours, wbppHours = null) {
 }
 
 
-const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom, mtime, showPolygons, showPanelNumbers, metadata, mosaics, onClick, showQuarantined, isQuarantined, stacks, painterlyBias, localMix, peakBrightness, hdrEnabled }) => {
+const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom, mtime, showPolygons, showPanelNumbers, metadata, mosaics, onClick, showQuarantined, isQuarantined, stacks, peakBrightness, hdrEnabled }) => {
   const app = useApp();
 
   // HDR canvas reconfiguration. We don't rebuild the PIXI renderer
@@ -339,11 +312,6 @@ const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, ima
   // The 1D LUT texture the shader binds as uLutTexture. Default is
   // an identity LUT (no stretch); the auto-stretch optimizer (Phase
   // C5) replaces its contents from ImageStatistics.
-  const lutTextureRef = useRef(null);
-  // The per-image context map texture, fetched once on image open.
-  // Null until the fetch completes; the shader's uHasContext uniform
-  // flips to 1.0 once it's bound so local tone-mapping engages.
-  const contextMapTextureRef = useRef(null);
   // Survives across view-triple changes (display/pipeline/filter pill
   // switches): when the main viewport-setup effect cleans up + re-runs,
   // we save center+scale here so the new viewport restores the user's
@@ -374,95 +342,41 @@ const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, ima
     spritesRef.current = {};
   }, [mtime]);
 
-  // Set up shader + LUT + context map on image open. The shader is
-  // a single instance shared across every tile mesh; the LUT and
-  // context map textures are bound as shader uniforms and persist
-  // across pan/zoom (different tiles, same image).
+  // One shader instance per image-open, shared across every tile mesh.
+  // The auto-stretch parameters (E1, E5, max) are scalar uniforms — no
+  // LUT, no context map, no slider state. The previous LUT-based
+  // implementation introduced a quantization artifact at the E1
+  // boundary: with only 256 LUT entries spread over [0, 1] and E1 ≈
+  // sky_median ≈ 0.146, every entry below E1 was 0; sky pedestal pixels
+  // sampled LINEAR-filtered between two zero entries and crushed to
+  // black. The shader now evaluates the MTF closed form per pixel.
   useEffect(() => {
     if (!view) return;
     shaderRef.current = createToneMappingShader();
-    lutTextureRef.current = createIdentityLut();
-    shaderRef.current.uniforms.uLutTexture = lutTextureRef.current;
-    shaderRef.current.uniforms.uWorldSize = new Float32Array([imageWidth, imageHeight]);
-
-    // Fetch the per-image context map. ~10 MB compressed, ~1 s on a
-    // typical connection; image stays usable while it's loading
-    // (shader's uHasContext stays at 0 until the fetch completes,
-    // at which point local tone-mapping engages).
-    const contextMapUrl = (() => {
-      const relativePath = buildApiUrl(
-        '/tap/context_map',
-        [{ type: objectType, id: imageHash }],
-        view,
-      );
-      const u = new URL(relativePath, `${window.location.protocol}//${window.location.hostname}:${port}`);
-      if (mtime) u.searchParams.set('v', mtime);
-      return u.href;
-    })();
-
-    let cancelled = false;
-    fetchContextMap(contextMapUrl).then(result => {
-      if (cancelled || !shaderRef.current) return;
-      if (result) {
-        const tex = uploadContextMap(result.array, result.width, result.height);
-        contextMapTextureRef.current = tex;
-        shaderRef.current.uniforms.uContextMap = tex;
-        shaderRef.current.uniforms.uHasContext = 1.0;
-      }
-      // Result null (404) is fine: small images don't have a context
-      // map and the shader's uHasContext stays at 0, making the
-      // operator collapse to a pure global LUT lookup.
-    }).catch(e => {
-      console.warn('Context map fetch failed; proceeding without local context:', e);
-    });
-
     return () => {
-      cancelled = true;
-      // Tile sprites are destroyed by the mtime-cleanup effect; this
-      // cleanup handles the per-image shader / LUT / context-map
-      // textures that aren't tile-keyed.
-      contextMapTextureRef.current?.destroy(true);
-      contextMapTextureRef.current = null;
-      lutTextureRef.current?.destroy(true);
-      lutTextureRef.current = null;
-      // The shader doesn't own GPU memory directly (its uniforms
-      // reference textures we already destroyed), but we clear the
-      // ref so the next image-open recreates a fresh instance.
       shaderRef.current = null;
     };
-  }, [objectType, imageHash, view?.pipeline, view?.display, view?.filter, mtime, imageWidth, imageHeight, port]);
+  }, [objectType, imageHash, view?.pipeline, view?.display, view?.filter, mtime, port]);
 
-  // Recompute the auto-stretch LUT whenever the painterly bias slider
-  // moves OR the image statistics arrive. `buildAutoStretchLut` runs
-  // CPU-side in ~0.5 ms; `updateLutTexture` blits 4 KB to the GPU
-  // (sub-millisecond). The shader picks it up on the next frame.
-  //
-  // The shader's per-pixel normalization is (xRaw - min) / (max - min).
-  // Pinning min=0 makes that reduce to `xRaw / max`, which is exactly
-  // what the autostretch math (and its server-side Python original)
-  // assumes as its input space.
+  // Push the autostretch parameters into the shader whenever the
+  // ImageStatistics arrive. The values come from `computeAutoStretchParams`,
+  // which mirrors `previews.operations.autostretch` exactly.
   useEffect(() => {
-    if (!metadata?.statistics) return;
-    if (!lutTextureRef.current || !shaderRef.current) return;
-    const lutData = buildAutoStretchLut(metadata.statistics, painterlyBias);
-    updateLutTexture(lutTextureRef.current, lutData);
-    shaderRef.current.uniforms.uHistRangeMin = 0.0;
-    shaderRef.current.uniforms.uHistRangeMax = metadata.statistics.max_value;
-    // Kick a render — viewport doesn't fire 'moved'/'zoomed' on a
-    // slider tweak, but the meshes are still on stage. PIXI re-renders
-    // every ticker frame anyway, so this is a no-op safety net.
+    if (!metadata?.statistics || !shaderRef.current) return;
+    const { E1, E5, identity } = computeAutoStretchParams(metadata.statistics);
+    shaderRef.current.uniforms.uMax = metadata.statistics.max_value || 1.0;
+    shaderRef.current.uniforms.uE1 = identity ? 0.0 : E1;
+    shaderRef.current.uniforms.uE5 = identity ? 0.5 : E5;
     app.renderer.render(app.stage);
-  }, [metadata?.statistics, painterlyBias, app]);
+  }, [metadata?.statistics, app]);
 
-  // Plumb the per-frame scalar uniforms (local-context mix and HDR
-  // peak brightness) directly into the shader. No LUT recomputation
-  // — just a one-line uniform write that the next frame picks up.
+  // HDR brightness multiplier; the only per-frame scalar that changes
+  // post-image-open. Slider state lives at the TileViewer root.
   useEffect(() => {
     if (!shaderRef.current) return;
-    shaderRef.current.uniforms.uLocalMix = localMix;
     shaderRef.current.uniforms.uPeakBrightness = peakBrightness;
     app.renderer.render(app.stage);
-  }, [localMix, peakBrightness, app]);
+  }, [peakBrightness, app]);
 
   useEffect(() => {
     const screenWidth = app.renderer.view.clientWidth;
