@@ -438,16 +438,31 @@ const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, ima
 
     viewport.clampZoom({ minScale: fitScale, maxScale: 1 });
     const saved = savedViewStateRef.current;
+    const log = (label) => console.log(
+      `[center ${label}]`,
+      "scale=", viewport.scale.x.toFixed(4),
+      "fitScale=", fitScale.toFixed(4),
+      "center=(", viewport.center.x.toFixed(0), ",", viewport.center.y.toFixed(0), ")",
+      "screen=", screenWidth, "x", screenHeight,
+      "saved=", saved && {scale: saved.scale.toFixed(4), x: saved.centerX.toFixed(0), y: saved.centerY.toFixed(0)},
+    );
+    log("init");
     if (saved) {
       viewport.setZoom(saved.scale, true);
+      log("after setZoom(saved)");
       viewport.moveCenter(saved.centerX, saved.centerY);
+      log("after moveCenter(saved)");
     } else {
       viewport.setZoom(fitScale, true);
+      log("after setZoom(fit)");
       viewport.moveCenter(imageWidth / 2, imageHeight / 2);
+      log("after moveCenter(image-center)");
     }
 
     viewportRef.current = viewport;
     app.stage.addChild(viewport);
+    log("after addChild");
+    requestAnimationFrame(() => log("next frame"));
 
     const updateClamp = () => {
       const scale = viewport.scale.x;
