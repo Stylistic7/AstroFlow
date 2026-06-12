@@ -171,8 +171,14 @@ const TileViewer = ({ objectType: objectTypeProp, imageHash: imageHashProp, filt
 
   if (!metadata || !tileMetadata || !containerRef.current) return <div ref={containerRef} style={{ width: '100%', height: '100%' }} />;
 
-  const worldWidth = tileMetadata.tileWidth * Math.pow(2, tileMetadata.maxZoom);
-  const worldHeight = tileMetadata.tileHeight * Math.pow(2, tileMetadata.maxZoom);
+  // The viewport's world is the image itself, not the power-of-two-
+  // rounded tile-grid extent. The old `tileWidth * 2^maxZoom` formula
+  // (e.g. 256 × 32 = 8192 for a 6026×5841 image) padded the world with
+  // dead space past the image edge, and pixi-viewport's first-tick
+  // recenter pass would slide the viewport center to `worldWidth/2 =
+  // 4096` — visibly off-image — instead of `imageWidth/2 = 3013`.
+  const worldWidth = tileMetadata.width;
+  const worldHeight = tileMetadata.height;
 
   return (
     <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative' }}>
@@ -438,31 +444,16 @@ const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, ima
 
     viewport.clampZoom({ minScale: fitScale, maxScale: 1 });
     const saved = savedViewStateRef.current;
-    const log = (label) => console.log(
-      `[center ${label}]`,
-      "scale=", viewport.scale.x.toFixed(4),
-      "fitScale=", fitScale.toFixed(4),
-      "center=(", viewport.center.x.toFixed(0), ",", viewport.center.y.toFixed(0), ")",
-      "screen=", screenWidth, "x", screenHeight,
-      "saved=", saved && {scale: saved.scale.toFixed(4), x: saved.centerX.toFixed(0), y: saved.centerY.toFixed(0)},
-    );
-    log("init");
     if (saved) {
       viewport.setZoom(saved.scale, true);
-      log("after setZoom(saved)");
       viewport.moveCenter(saved.centerX, saved.centerY);
-      log("after moveCenter(saved)");
     } else {
       viewport.setZoom(fitScale, true);
-      log("after setZoom(fit)");
       viewport.moveCenter(imageWidth / 2, imageHeight / 2);
-      log("after moveCenter(image-center)");
     }
 
     viewportRef.current = viewport;
     app.stage.addChild(viewport);
-    log("after addChild");
-    requestAnimationFrame(() => log("next frame"));
 
     const updateClamp = () => {
       const scale = viewport.scale.x;
