@@ -6,9 +6,52 @@ import { Viewport } from 'pixi-viewport';
 
 import AstroFlowContext from './AstroFlowContext.jsx';
 import { buildUrl, buildApiUrl, inheritView } from './urls.js';
+import {
+    fetchLinearTile,
+    fetchContextMap,
+    uploadFloat32Tile,
+    uploadContextMap,
+} from './linear_tile_loader.js';
+import {
+    createToneMappingShader,
+    createIdentityLut,
+} from './tone_mapping_shader.js';
 
 
 const TILE_SIZE = 256;
+
+
+/**
+ * Build a unit-quad Mesh with our tone-mapping shader. Each visible
+ * tile gets its own mesh — they share the shader instance (so slider
+ * updates propagate to all tiles via shared uniforms) but each
+ * carries its own uTileTexture and per-tile world-position uniforms.
+ *
+ * The Mesh replaces PIXI.Sprite from the previous design: a Sprite's
+ * built-in shader assumes pre-stretched RGBA tiles, which is exactly
+ * what we no longer have. The custom shader needs Mesh-with-geometry
+ * to be invoked at all.
+ */
+function createTileMesh(shader, tileWidth, tileHeight) {
+    const verts = new Float32Array([
+        0, 0,                       // top-left
+        tileWidth, 0,               // top-right
+        tileWidth, tileHeight,      // bottom-right
+        0, tileHeight,              // bottom-left
+    ]);
+    const uvs = new Float32Array([
+        0, 0,
+        1, 0,
+        1, 1,
+        0, 1,
+    ]);
+    const indices = new Uint16Array([0, 1, 2, 0, 2, 3]);
+    const geometry = new PIXI.Geometry()
+        .addAttribute('aVertexPosition', verts, 2)
+        .addAttribute('aTextureCoord', uvs, 2)
+        .addIndex(indices);
+    return new PIXI.Mesh(geometry, shader);
+}
 
 // Match the HMS / DMS formatting in suggestions/export.py so polygon
 // labels read identically to the Telescopius / text export.
@@ -227,6 +270,18 @@ const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, ima
   const app = useApp();
   const viewportRef = useRef(null);
   const spritesRef = useRef({});
+  // The single tone-mapping shader instance shared by every tile mesh
+  // for this image. Created once per image-open; updated uniforms
+  // (LUT, slider values) propagate to all meshes automatically.
+  const shaderRef = useRef(null);
+  // The 1D LUT texture the shader binds as uLutTexture. Default is
+  // an identity LUT (no stretch); the auto-stretch optimizer (Phase
+  // C5) replaces its contents from ImageStatistics.
+  const lutTextureRef = useRef(null);
+  // The per-image context map texture, fetched once on image open.
+  // Null until the fetch completes; the shader's uHasContext uniform
+  // flips to 1.0 once it's bound so local tone-mapping engages.
+  const contextMapTextureRef = useRef(null);
   // Survives across view-triple changes (display/pipeline/filter pill
   // switches): when the main viewport-setup effect cleans up + re-runs,
   // we save center+scale here so the new viewport restores the user's
@@ -242,14 +297,78 @@ const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, ima
 
   // When the tile pyramid file changes (new merge completed), clear
   // the sprite cache so tiles are re-fetched with the new content.
+  // Also destroys the tile textures we uploaded to the GPU, so the
+  // memory frees properly between merge cycles.
   useEffect(() => {
     if (!viewportRef.current) return;
     Object.values(spritesRef.current).forEach(s => {
+      const tex = s._tileTexture;
       s.parent?.removeChild(s);
       s.destroy();
+      // Destroy the BaseTexture too; PIXI.Mesh.destroy doesn't
+      // tear down per-instance textures by default.
+      if (tex) tex.destroy(true);
     });
     spritesRef.current = {};
   }, [mtime]);
+
+  // Set up shader + LUT + context map on image open. The shader is
+  // a single instance shared across every tile mesh; the LUT and
+  // context map textures are bound as shader uniforms and persist
+  // across pan/zoom (different tiles, same image).
+  useEffect(() => {
+    if (!view) return;
+    shaderRef.current = createToneMappingShader();
+    lutTextureRef.current = createIdentityLut();
+    shaderRef.current.uniforms.uLutTexture = lutTextureRef.current;
+    shaderRef.current.uniforms.uWorldSize = new Float32Array([imageWidth, imageHeight]);
+
+    // Fetch the per-image context map. ~10 MB compressed, ~1 s on a
+    // typical connection; image stays usable while it's loading
+    // (shader's uHasContext stays at 0 until the fetch completes,
+    // at which point local tone-mapping engages).
+    const contextMapUrl = (() => {
+      const relativePath = buildApiUrl(
+        '/tap/context_map',
+        [{ type: objectType, id: imageHash }],
+        view,
+      );
+      const u = new URL(relativePath, `${window.location.protocol}//${window.location.hostname}:${port}`);
+      if (mtime) u.searchParams.set('v', mtime);
+      return u.href;
+    })();
+
+    let cancelled = false;
+    fetchContextMap(contextMapUrl).then(result => {
+      if (cancelled || !shaderRef.current) return;
+      if (result) {
+        const tex = uploadContextMap(result.array, result.width, result.height);
+        contextMapTextureRef.current = tex;
+        shaderRef.current.uniforms.uContextMap = tex;
+        shaderRef.current.uniforms.uHasContext = 1.0;
+      }
+      // Result null (404) is fine: small images don't have a context
+      // map and the shader's uHasContext stays at 0, making the
+      // operator collapse to a pure global LUT lookup.
+    }).catch(e => {
+      console.warn('Context map fetch failed; proceeding without local context:', e);
+    });
+
+    return () => {
+      cancelled = true;
+      // Tile sprites are destroyed by the mtime-cleanup effect; this
+      // cleanup handles the per-image shader / LUT / context-map
+      // textures that aren't tile-keyed.
+      contextMapTextureRef.current?.destroy(true);
+      contextMapTextureRef.current = null;
+      lutTextureRef.current?.destroy(true);
+      lutTextureRef.current = null;
+      // The shader doesn't own GPU memory directly (its uniforms
+      // reference textures we already destroyed), but we clear the
+      // ref so the next image-open recreates a fresh instance.
+      shaderRef.current = null;
+    };
+  }, [objectType, imageHash, view?.pipeline, view?.display, view?.filter, mtime, imageWidth, imageHeight, port]);
 
   useEffect(() => {
     const screenWidth = app.renderer.view.clientWidth;
@@ -493,26 +612,67 @@ const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, ima
           const key = `${bestZ}/${x}/${y}`;
           if (spritesRef.current[key]) continue;
 
-          if (!view) continue;
+          if (!view || !shaderRef.current) continue;
+          // New URL suffix: raw float32 bytes, brotli-encoded by the
+          // server. `.png` doesn't apply — the data is no longer a
+          // browser-renderable image format. The fetch goes through
+          // `fetchLinearTile` which returns the decoded Float32Array.
           const relativePath = buildApiUrl(
             '/tap/tile',
             [{ type: objectType, id: imageHash }],
             view,
-            `/${bestZ}/${x}/${y}.png`,
+            `/${bestZ}/${x}/${y}.f32`,
           );
           const url = new URL(relativePath, `${window.location.protocol}//${window.location.hostname}:${port}`);
           if (mtime) url.searchParams.set('v', mtime);
-          PIXI.Texture.fromURL(url.href)
-            .then((texture) => {
-              const sprite = new PIXI.Sprite(texture);
-              sprite.x = x * TILE_SIZE * levelScale;
-              sprite.y = y * TILE_SIZE * levelScale;
-              sprite.width = TILE_SIZE * levelScale;
-              sprite.height = TILE_SIZE * levelScale;
-              sprite.zIndex = bestZ;
-              viewport.addChild(sprite);
+
+          fetchLinearTile(url.href)
+            .then((result) => {
+              if (!result || !shaderRef.current) return;
+              const tileTex = uploadFloat32Tile(
+                result.array, result.width, result.height,
+              );
+              const mesh = createTileMesh(
+                shaderRef.current,
+                TILE_SIZE * levelScale, TILE_SIZE * levelScale,
+              );
+              mesh.x = x * TILE_SIZE * levelScale;
+              mesh.y = y * TILE_SIZE * levelScale;
+              mesh.zIndex = bestZ;
+              // Per-mesh shader uniforms are not really a thing in
+              // PIXI's stock Shader model — uniforms live on the
+              // Shader instance and are shared. To bind the right
+              // tile texture per draw, we override at draw time by
+              // attaching the texture as a mesh property and reading
+              // it via shader.uniforms before the mesh renders. The
+              // render order is deterministic (PIXI iterates children
+              // in zIndex order), so this works without a custom
+              // PIXI.MeshMaterial subclass.
+              mesh._tileTexture = tileTex;
+              mesh._tileWorldOrigin = new Float32Array([
+                x * TILE_SIZE * levelScale,
+                y * TILE_SIZE * levelScale,
+              ]);
+              mesh._tileWorldSize = new Float32Array([
+                TILE_SIZE * levelScale,
+                TILE_SIZE * levelScale,
+              ]);
+              // Replace the default render path with one that sets
+              // per-tile uniforms just before drawing.
+              const origRender = mesh.render.bind(mesh);
+              mesh.render = (renderer) => {
+                const uniforms = shaderRef.current?.uniforms;
+                if (uniforms) {
+                  uniforms.uTileTexture = mesh._tileTexture;
+                  uniforms.uTileWorldOrigin = mesh._tileWorldOrigin;
+                  uniforms.uTileWorldSize = mesh._tileWorldSize;
+                }
+                origRender(renderer);
+              };
+
+              viewport.addChild(mesh);
               viewport.sortChildren();
-              spritesRef.current[key] = sprite;
+              spritesRef.current[key] = mesh;
             })
             .catch((err) => {
               console.warn(`Failed to load tile: ${url}`, err);
