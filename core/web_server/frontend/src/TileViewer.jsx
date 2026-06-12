@@ -394,13 +394,36 @@ const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, ima
       passiveWheel: false,
     });
 
-    // All four plugins set up synchronously. The previous
-    // `setTimeout(() => viewport.wheel(), 0)` deferred the wheel
-    // listener to a tick that occasionally lost the EventSystem's
-    // `domElement` reference; the resulting first-wheel crash was
-    // `Cannot read properties of null (reading 'isConnected')` from
-    // pixi-viewport's `handleWheel` → `events.mapPositionToPoint`.
     viewport.drag().pinch().decelerate().wheel();
+
+    // Diagnostic: log the EventSystem's domElement at viewport setup
+    // AND wrap pixi-viewport's wheel handler so the next failure
+    // prints what's actually null at handler-call time. The crash is
+    // `events.mapPositionToPoint` reading `null.isConnected`; the only
+    // way that happens is `events.domElement === null`, which is what
+    // `EventSystem.destroy()` sets it to. Logging at both points lets
+    // us see whether domElement was already null at setup (timing bug
+    // around app/canvas init) or became null between setup and the
+    // first wheel event (renderer destroyed under us).
+    console.log("[viewport setup] events.domElement =",
+                app.renderer.events?.domElement,
+                "viewport.options.events =", viewport.options.events);
+    if (viewport.input && typeof viewport.input.handleWheel === "function") {
+      const origHandleWheel = viewport.input.handleWheel.bind(viewport.input);
+      viewport.input.handleWheel = function (e) {
+        const ev = viewport.options.events;
+        if (!ev || !ev.domElement) {
+          console.warn(
+            "[viewport wheel skipped] options.events =", ev,
+            "domElement =", ev?.domElement,
+            "app.renderer.events.domElement =",
+            app?.renderer?.events?.domElement,
+          );
+          return;
+        }
+        return origHandleWheel(e);
+      };
+    }
 
     const fitScale = Math.min(
       screenWidth / imageWidth,
