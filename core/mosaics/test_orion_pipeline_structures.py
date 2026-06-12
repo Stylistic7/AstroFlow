@@ -437,19 +437,21 @@ def test_pi_master_graph_update_fn_reflects_runtime_state(test_context):
 
 @pytest.mark.exhaustive
 def test_pi_master_initial_topology_snapshot_is_stateless(test_context):
-    """Documents the topology-only snapshot the @pipeline runner
-    writes at trace time, before any nodes have run. Every node's
-    state is `NO_STATE_RUNTIME`. The runtime overwrites this with
-    a live snapshot as soon as its first `_fire_graph_updates`
-    fires; this test exists to anchor that contract — if the
-    initial snapshot ever starts carrying real state, callers that
-    rely on the "viewer renders skeleton immediately" promise will
-    notice."""
+    """Documents the topology-only snapshot written by
+    `_eager_trace_pipeline` at cart-dispatch time, before any nodes
+    have run. Every node's state is `NO_STATE_RUNTIME`. The runtime
+    overwrites this with a live snapshot as soon as its first
+    `_fire_graph_updates` fires; this test anchors the contract —
+    if the initial snapshot ever starts carrying real state, callers
+    that rely on the "viewer renders skeleton immediately" promise
+    will notice. The @pipeline runner itself NO LONGER snapshots:
+    that lives at the execution-site `_eager_trace_pipeline` so
+    dashboard tap-extraction traces stay cheap."""
+    from compute_graph.compute_graph import _eager_trace_pipeline
     mosaic = _identify(test_context)
     config = _make_config()
 
-    import pipelines.pixinsight_master as pi
-    pi.for_mosaic(mosaic, config)
+    _eager_trace_pipeline("PixInsight Master", "mosaic", mosaic, config)
 
     key = ("mosaic", mosaic.stable_hash, "PixInsight Master")
     snapshot = context["workflow_graphs"][key].get()

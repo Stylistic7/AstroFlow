@@ -211,8 +211,7 @@ def _resolve_pipeline_call(
     trace, or `(None, None, None)` when the cart entry is unresolvable.
 
     Bypasses the `@pipeline` runner so we don't trigger
-    `_snapshot_workflow_graph` / tap recording / `set_workflow_key`
-    side effects at sweep time.
+    `set_workflow_key` side effects at sweep time.
     """
     object_type, object_id, pipeline_name = item
 

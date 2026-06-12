@@ -233,10 +233,10 @@ def gather_state_from_visual(
                 "imageUrl": f"/api/open_image/{_resolved_filename(rt, node)}",
             },
         }
-        if node.args:
-            entry["description"] = str(node.args[0])
         if node.name:
             entry["description"] = node.name
+        elif node.args:
+            entry["description"] = str(node.args[0])
         if node in subgraphs_by_parent:
             sub_rt = subgraphs_by_parent[node]
             sub_vg = to_visual_graph(sub_rt.graph)

@@ -45,25 +45,6 @@ _TYPE_TAG = {
 }
 
 
-def _snapshot_workflow_graph(key: tuple, graph) -> None:
-    """Build a topology-only workflow graph from `graph` and store
-    it under `key`. Uses a stub `GraphRuntime` with no recorded
-    results, so every node shows as 'NO_STATE_RUNTIME' — the viewer
-    renders the structure without per-node state.
-
-    Identical storage shape to the runtime-driven `store_workflow_
-    graph`, so the web server's
-    `/api/workflow_graph/<type>/<id>/<pipeline>` endpoints don't
-    have to special-case anything.
-    """
-    from dependency_graph.graph_runtime import GraphRuntime
-    from dependency_graph.workflow_graph_adapter import store_workflow_graph
-    rt = GraphRuntime(graph)
-    store_workflow_graph(key, rt)
-
-
-
-
 def pipeline(display_name: str, processes: type) -> Callable:
     """Decorator: register the wrapped function as an entry point for
     pipeline `display_name`, handling cart entries whose object class
@@ -72,20 +53,15 @@ def pipeline(display_name: str, processes: type) -> Callable:
     the (name, class) pair). The wrapped function, when called, runs
     the user's body under a fresh trace context and returns the
     recorded `Graph` (or `None` if the body returned `None`).
+
+    The runner ONLY traces — it does not snapshot the workflow graph.
+    Snapshotting lives at the cart-dispatch sites (`_eager_trace_pipeline`),
+    so dashboard callers that trace purely to extract taps don't pay
+    for an O(graph)·O(args repr) serialization they'll never read.
     """
     def decorate(fn: Callable) -> Callable:
         @functools.wraps(fn)
         def runner(*args, **kwargs):
-            """Build and return the pipeline's `Graph` by running the
-            user's body under a fresh trace context.
-
-            After the trace completes, snapshot a topology-only
-            workflow graph so the stack / target / mosaic viewers
-            can render the pipeline's structure immediately. The
-            runtime overwrites this with a live snapshot via
-            `set_workflow_key`'s `graph_update_fn` once nodes start
-            completing.
-            """
             type_tag = _TYPE_TAG.get(processes.__name__)
             entity = args[0] if args else None
             entity_id = getattr(entity, "stable_hash", None)
@@ -95,11 +71,7 @@ def pipeline(display_name: str, processes: type) -> Callable:
                     set_workflow_key(type_tag, entity_id, display_name)
                 return fn(*a, **kw)
 
-            graph = trace(keyed_fn, *args, **kwargs)
-            if graph is not None and type_tag and entity_id:
-                base_key = (type_tag, entity_id, display_name)
-                _snapshot_workflow_graph(base_key, graph)
-            return graph
+            return trace(keyed_fn, *args, **kwargs)
 
         runner._function = fn
         runner._is_pipeline = True

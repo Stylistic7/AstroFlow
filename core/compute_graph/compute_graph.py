@@ -365,6 +365,8 @@ def _eager_trace_pipeline(
     from stacks.composite_stack import Stack
     from targets.types import Target
     from mosaics.types import Mosaic
+    from dependency_graph.graph_runtime import GraphRuntime
+    from dependency_graph.workflow_graph_adapter import store_workflow_graph
 
     type_to_class = {"stack": Stack, "target": Target, "mosaic": Mosaic}
     pipeline_fn = get_pipeline(pipeline_name, processes=type_to_class[type_tag])
@@ -375,6 +377,12 @@ def _eager_trace_pipeline(
     # repeated trace, so re-tracing in the lazy run_pipeline is fine.
     _record_pipeline_taps(
         record_existence, pipeline_name, type_tag, entity.stable_hash, graph,
+    )
+    # Topology-only snapshot so the viewer can render structure
+    # before any node completes. Lives here, NOT in the @pipeline
+    # runner, so dashboard tap-extraction traces don't pay for it.
+    store_workflow_graph(
+        (type_tag, entity.stable_hash, pipeline_name), GraphRuntime(graph),
     )
     return graph
 

@@ -84,8 +84,19 @@ def tap_path_for(
     p = _tap_path_unchecked(pipeline, display, object_type, object_id, filter)
     return p if p and os.path.exists(p) else None
 
+_MOSAIC_FILTERS_MEMO: dict[str, list[str]] = {}
+
+
 def _mosaic_filters(mosaic) -> list[str]:
-    """All filters that any target in the mosaic has a stack in."""
+    """All filters that any target in the mosaic has a stack in.
+
+    Memoized on `mosaic.stable_hash`: target_ids and per-target
+    stack_ids are structural (don't change as a cart progresses).
+    Walking 23 targets × ~3 stacks × ContextRef.get() each costs
+    0.25–2 s; the memo collapses that to a dict lookup."""
+    cached = _MOSAIC_FILTERS_MEMO.get(mosaic.stable_hash)
+    if cached is not None:
+        return cached
     stacks = context.stacks or {}
     targets = context.targets or {}
     filters = set()
@@ -97,7 +108,9 @@ def _mosaic_filters(mosaic) -> list[str]:
                 continue
             filters.add(stack_ref.get().filter)
     order = ["L", "H", "S", "O", "R", "G", "B"]
-    return sorted(filters, key=lambda f: (order.index(f) if f in order else len(order), f))
+    out = sorted(filters, key=lambda f: (order.index(f) if f in order else len(order), f))
+    _MOSAIC_FILTERS_MEMO[mosaic.stable_hash] = out
+    return out
 
 
 def _viewbox_quality_for_pipeline(pipeline: str) -> str:
@@ -373,30 +386,26 @@ def _entity_filters(entity, object_type: str) -> list[str]:
 
 
 _TRACE_LOCK = threading.Lock()
-# Process-local memo. Lost on restart, but avoids Ray dispatch tax on
-# the dashboard hot path. Key is (object_type, object_id,
-# calibration_signature, pipeline_sources) — anything that affects what
-# `pipeline_fn(entity, cfg)` would produce.
-_TRACED_KEYS: set = set()
 
 
 def _ensure_pipelines_traced(object_type: str, object_id: str, entity) -> None:
-    """Run every registered pipeline's trace IN-PROCESS once per
-    (entity, calibration set, pipeline sources), commit the taps to
-    the PipelineOutputIndex.
+    """Trace every registered pipeline that applies to `entity` (once
+    per `(pipeline, source_hash, object)`) and commit the tap names
+    to `PipelineOutputIndex`.
 
-    The earlier @node-based fanout had every dashboard request pay
-    Ray dispatch overhead per pipeline. Under a loaded cluster (real
-    cart running 32k tasks) that latency exploded to ~10 s per
-    dispatch × N pipelines = ~50 s per page load. Ray is the wrong
-    coordination layer for in-process Python work — the pipeline_fn
-    trace is pure Python, doesn't need a worker, doesn't need cross-
-    process sharing, and the answer for "have I already traced this"
-    is a dict lookup, not a diskcache round-trip through Ray.
+    The skip-cache is a per-pipeline persistent receipt in `context`:
+    `("_pipeline_traced", pname, source_hash, object_type, object_id)
+    → True`. It survives worker restart, is shared across all gunicorn
+    workers, and invalidates automatically when a pipeline body
+    changes (the source hash is in the key). The trace is pure Python
+    on a Mosaic-sized pipeline (~600–900 nodes, 10–30 s); the receipt
+    avoids paying that more than once per `(source, object)`.
 
-    Double-checked locking serialises the actual trace work across
-    threads: first caller does the body, subsequent concurrent callers
-    block on the lock and then fast-return.
+    `_TRACE_LOCK` serialises concurrent threads inside one worker, so
+    `--threads 4` doesn't multiply trace cost. Concurrent first-time
+    requests across separate workers will still each pay once — that
+    only happens before any receipt is committed and is a one-shot
+    cost per fresh cache.
     """
     from pipelines.registry import registered_pipelines
     from pipelines.output_index import commit_taps
@@ -405,43 +414,43 @@ def _ensure_pipelines_traced(object_type: str, object_id: str, entity) -> None:
     from frozendict import frozendict as fd
     from hashing.hashing import hash_source_code
 
-    cal_stacks = context.calibration_stacks or fd()
+    def receipt_key(pname, source_hash):
+        return ("_pipeline_traced", pname, source_hash, object_type, object_id)
+
     applicable = [
-        (pname, pfn)
+        (pname, pfn, hash_source_code(pfn._function))
         for (pname, pc), pfn in registered_pipelines().items()
         if pc is type(entity)
     ]
-    # Cache key bakes in everything that affects pipeline_fn output:
-    # entity identity, calibration set fingerprint, source of every
-    # applicable pipeline. Pipeline body change → cache miss on its
-    # entity; new calibration master → cache miss everywhere.
-    key = (
-        object_type, object_id,
-        tuple(sorted(cal_stacks.keys())),
-        tuple(sorted((pname, hash_source_code(pfn._function)) for pname, pfn in applicable)),
-    )
-    if key in _TRACED_KEYS:
+    to_trace = [
+        (pname, pfn, source_hash)
+        for pname, pfn, source_hash in applicable
+        if not context.get(receipt_key(pname, source_hash))
+    ]
+    if not to_trace:
         return
+
     with _TRACE_LOCK:
-        if key in _TRACED_KEYS:
-            return
         cfg = ProcessingConfig(
-            calibration_stacks=cal_stacks,
+            calibration_stacks=context.calibration_stacks or fd(),
             development_settings=DevelopmentSettings(mock_pixinsight=False),
             min_frames_in_stack=3,
             decisions=fd(),
         )
-        for pname, pfn in applicable:
+        for pname, pfn, source_hash in to_trace:
+            # Another thread may have committed while we waited.
+            if context.get(receipt_key(pname, source_hash)):
+                continue
             try:
                 graph = pfn(entity, cfg)
             except Exception as e:
                 import traceback
-                print(f"### pipeline trace failed: {pname} for {object_type}/{object_id}: {e}")
+                print(f"### pipeline trace failed: {pname} for {object_type}/{object_id}: {e}", flush=True)
                 traceback.print_exc()
                 continue
             taps = tuple(tap for _, tap in extract_pipeline_taps(graph))
             commit_taps(pname, object_type, object_id, taps)
-        _TRACED_KEYS.add(key)
+            context[receipt_key(pname, source_hash)] = True
 
 
 @metadata_bp.route("/api/pipeline_outputs/<object_type>/<object_id>")
@@ -498,11 +507,10 @@ def pipeline_outputs(object_type: str, object_id: str):
     for extra_type in _RELATED_OBJECT_TYPES.get(object_type, ()):
         if extra_type == object_type:
             continue
-        extra = for_object(extra_type, object_id)
         # `indexed` shape: {pipeline_name: {display: {filter: path_or_pending}}}.
         # Merge per pipeline; display names are already disambiguated
         # by the trace-time recorder so collisions don't happen.
-        for pn, displays in extra.items():
+        for pn, displays in for_object(extra_type, object_id).items():
             indexed.setdefault(pn, {}).update(displays)
 
     pipelines = []
