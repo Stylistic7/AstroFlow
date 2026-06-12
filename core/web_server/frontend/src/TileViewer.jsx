@@ -640,12 +640,24 @@ const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, ima
               const tileTex = uploadFloat32Tile(
                 result.array, result.width, result.height,
               );
+              // Edge tiles return less than TILE_SIZE pixels of data
+              // (e.g. 138×209 in the bottom-right of a 6026×5841 image
+              // at z=maxZoom). The mesh must cover exactly the world
+              // region the tile maps to — capped at the image bound —
+              // otherwise the smaller texture is stretched/clamped
+              // across a full TILE_SIZE×TILE_SIZE mesh and the image
+              // appears to extend past its real edge OR (if the edge
+              // texels are zero from bbox padding) gets cut off at a
+              // straight line short of the actual mosaic boundary.
+              const x0 = x * TILE_SIZE * levelScale;
+              const y0 = y * TILE_SIZE * levelScale;
+              const meshW = Math.min(TILE_SIZE * levelScale, imageWidth - x0);
+              const meshH = Math.min(TILE_SIZE * levelScale, imageHeight - y0);
               const mesh = createTileMesh(
-                shaderRef.current,
-                TILE_SIZE * levelScale, TILE_SIZE * levelScale,
+                shaderRef.current, meshW, meshH,
               );
-              mesh.x = x * TILE_SIZE * levelScale;
-              mesh.y = y * TILE_SIZE * levelScale;
+              mesh.x = x0;
+              mesh.y = y0;
               mesh.zIndex = bestZ;
               // Per-mesh shader uniforms are not really a thing in
               // PIXI's stock Shader model — uniforms live on the
@@ -657,14 +669,6 @@ const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, ima
               // in zIndex order), so this works without a custom
               // PIXI.MeshMaterial subclass.
               mesh._tileTexture = tileTex;
-              mesh._tileWorldOrigin = new Float32Array([
-                x * TILE_SIZE * levelScale,
-                y * TILE_SIZE * levelScale,
-              ]);
-              mesh._tileWorldSize = new Float32Array([
-                TILE_SIZE * levelScale,
-                TILE_SIZE * levelScale,
-              ]);
               // Replace the default render path with one that sets
               // per-tile uniforms just before drawing.
               const origRender = mesh.render.bind(mesh);
@@ -672,8 +676,6 @@ const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, ima
                 const uniforms = shaderRef.current?.uniforms;
                 if (uniforms) {
                   uniforms.uTileTexture = mesh._tileTexture;
-                  uniforms.uTileWorldOrigin = mesh._tileWorldOrigin;
-                  uniforms.uTileWorldSize = mesh._tileWorldSize;
                 }
                 origRender(renderer);
               };
