@@ -280,28 +280,31 @@ function drawExposureClock(g, cx, cy, radius, hours, wbppHours = null) {
 const ImperativeViewport = ({ objectType, imageHash, view, port, imageWidth, imageHeight, worldWidth, worldHeight, maxZoom, mtime, showPolygons, showPanelNumbers, metadata, mosaics, onClick, showQuarantined, isQuarantined, stacks, peakBrightness, hdrEnabled }) => {
   const app = useApp();
 
-  // HDR canvas reconfiguration. We don't rebuild the PIXI renderer
-  // (that would destroy every uploaded tile + the shader); instead we
-  // ask the underlying canvas to switch to extended-range output. On
-  // Chromium that's `canvas.configureHighDynamicRange({mode: 'extended'})`;
-  // on browsers that don't implement it, the call is silently a no-op
-  // and the shader's `uPeakBrightness > 1.0` output clips at the SDR
-  // ceiling — graceful degradation. Either way, the LUT and shader
-  // logic don't care: SDR canvas clamps, HDR canvas extends.
+  // HDR canvas reconfiguration. Only fires when HDR is being toggled
+  // ON — calling `canvas.configureHighDynamicRange({mode: 'default'})`
+  // on every mount (the previous behavior) re-initializes the canvas
+  // context on some browsers, which nulls out PIXI's EventSystem
+  // `domElement` and breaks the first wheel event with
+  // `Cannot read properties of null (reading 'isConnected')`. The
+  // SDR default doesn't need re-asserting on a canvas that never had
+  // HDR engaged in the first place.
   useEffect(() => {
+    if (!hdrEnabled) return;
     const canvas = app?.renderer?.view;
     if (!canvas) return;
     if (typeof canvas.configureHighDynamicRange === 'function') {
       try {
-        canvas.configureHighDynamicRange({
-          mode: hdrEnabled ? 'extended' : 'default',
-        });
+        canvas.configureHighDynamicRange({ mode: 'extended' });
       } catch (e) {
         console.warn('HDR canvas reconfigure failed:', e);
       }
     }
-    // Force a redraw so the operator's new peak-brightness lands.
     app.renderer.render(app.stage);
+    return () => {
+      if (typeof canvas.configureHighDynamicRange === 'function') {
+        try { canvas.configureHighDynamicRange({ mode: 'default' }); } catch {}
+      }
+    };
   }, [hdrEnabled, app]);
   const viewportRef = useRef(null);
   const spritesRef = useRef({});
