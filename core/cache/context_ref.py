@@ -77,12 +77,34 @@ class ContextRef(Generic[T]):
         if self.ref is not None:
             try:
                 return ray.get(self.ref, timeout=5)
-            except Exception:
+            except Exception as e:
+                # Surface WHY the fast path failed before falling back —
+                # a swallowed numpy-unpickle / owner-unknown / timeout
+                # error here otherwise reappears downstream as a baffling
+                # "'NoneType' has no attribute ..." once the fallback also
+                # misses. Print (not log) so Ray forwards it to the driver.
+                print(
+                    f"### ContextRef.get: ray.get(ref) failed for "
+                    f"cache_key={self.cache_key!r} "
+                    f"content_hash={self.content_hash!r}: "
+                    f"{type(e).__name__}: {e}",
+                    flush=True,
+                )
                 self.ref = None
         if _active_context is not None:
-            return _active_context[self.cache_key]
-        from context import context
-        return context[self.cache_key]
+            value = _active_context[self.cache_key]
+        else:
+            from context import context
+            value = context[self.cache_key]
+        if value is None:
+            print(
+                f"### ContextRef.get: context store has no value for "
+                f"cache_key={self.cache_key!r} "
+                f"content_hash={self.content_hash!r} — object missing from "
+                f"both plasma and the context store.",
+                flush=True,
+            )
+        return value
 
     def __reduce__(self):
         # stdlib pickle path (diskcache persistence, cached Graphs,
