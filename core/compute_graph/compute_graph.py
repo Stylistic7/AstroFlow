@@ -566,19 +566,18 @@ def extract_pipeline_taps(graph):
         params = list(sig.parameters.keys())
         arg_map = {params[i]: n.args[i]
                    for i in range(min(len(n.args), len(params)))}
-        identities = getattr(fn, "_identities", None) or getattr(task, "_identities", [])
-        # Find the entity: try literals (n.args) first, then walk into
-        # the dep chain. Lets ops with `stack` as a trailing dep (e.g.
-        # `stack_files(stack, config, *cal_masters)`) route taps the
-        # same as ops with `stack` as a leading literal.
+        # Find the entity: walks `n.args` for an instance with
+        # `stable_hash`, then descends into upstream deps if needed.
+        # Lets ops with `stack` as a trailing dep (e.g. `stack_files
+        # (stack, config, *cal_masters)`) route taps the same as ops
+        # with `stack` as a leading literal.
         entity = _find_identity_arg(graph, n)
         if entity is None:
             continue
-        from products.registry import pick_identity
-        identity_cls = pick_identity(identities, entity, op_name=fn.__name__)
-        if identity_cls is None:
-            continue
-        object_type_name = identity_cls.object_type.__name__.lower()
+        # Routing string = the entity's runtime class name, as-is
+        # (PascalCase). No identity-class indirection; no lowercase
+        # translation. The URL grammar matches the class name.
+        object_type_name = type(entity).__name__
         object_id_value = entity.stable_hash
         # Filter precedence: explicit `filter=` literal param wins (mosaic
         # ops take it as a literal arg), else fall back to the entity's

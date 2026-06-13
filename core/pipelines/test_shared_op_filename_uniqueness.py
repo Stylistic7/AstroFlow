@@ -108,8 +108,8 @@ def test_shared_op_distinct_outputs_per_pipeline(test_context):
     # Outputs land under the same `Stack/stack_files/` dir, distinguished
     # by call_hash: same stable_hash, different content_hash → different
     # call_hash → different filename.
-    stack_masters = sorted((output / "Stack" / "stack_files").glob("*.xisf"))
-    post_processed = sorted((output / "Stack" / "post_process_stack").glob("*.xisf"))
+    stack_masters = sorted((output / "stack_files").glob("*.xisf"))
+    post_processed = sorted((output / "post_process_stack").glob("*.xisf"))
 
     assert len(stack_masters) == 2, (
         f"expected 2 stack_files masters (full-res + downscaled), "

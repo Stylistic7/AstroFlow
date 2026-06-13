@@ -64,5 +64,5 @@ def test_downscaled_stack(test_context):
     # the downscaled pipeline's output lands under `Stack/stack_files/`
     # alongside any full-res masters from sibling pipelines — distinct
     # call_hash filenames keep them from colliding.
-    masters = list(Path(context.output_dir).rglob("Stack/stack_files/*.xisf"))
+    masters = list(Path(context.output_dir).rglob("stack_files/*.xisf"))
     assert len(masters) >= 1, f"Expected stack_files master files, found: {masters}"

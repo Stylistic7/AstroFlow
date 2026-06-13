@@ -183,20 +183,19 @@ def test_filename_fn_and_cache_layer_share_canonical_call_hash(test_context) -> 
     _registry._ensure_producers_imported()
     failures: list[str] = []
     seen: set[int] = set()
-    for identity_dict in _registry._producers.values():
-        for ops in identity_dict.values():
-            for op in ops:
-                if id(op) in seen:
-                    continue
-                seen.add(id(op))
-                # @image_producer ops are non-Ray, non-cached lightweight
-                # presentations (synchronous ndarray-returning). They have
-                # neither a filename_fn nor a cache layer, so the
-                # canonical_call_hash invariant doesn't apply.
-                if not hasattr(op, "filename_fn"):
-                    continue
-                if not hasattr(op, "_fn_hash"):
-                    failures.append(f"{op.__name__}: _fn_hash missing")
+    for ops in _registry._producers.values():
+        for op in ops:
+            if id(op) in seen:
+                continue
+            seen.add(id(op))
+            # @image_producer ops are non-Ray, non-cached lightweight
+            # presentations (synchronous ndarray-returning). They have
+            # neither a filename_fn nor a cache layer, so the
+            # canonical_call_hash invariant doesn't apply.
+            if not hasattr(op, "filename_fn"):
+                continue
+            if not hasattr(op, "_fn_hash"):
+                failures.append(f"{op.__name__}: _fn_hash missing")
     assert not failures, "\n".join(failures)
 
 

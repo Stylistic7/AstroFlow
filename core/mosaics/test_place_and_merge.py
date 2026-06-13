@@ -40,7 +40,7 @@ def test_downscaled_mosaic_has_real_pixels(test_context):
     # The DownscaledMaster mosaic landed somewhere — find any non-empty
     # PlacedImage tiff under the per-op output directory.
     output_dir = context.output_dir
-    placed_dir = output_dir / "PlacedImage" / "place_image"
+    placed_dir = output_dir / "place_image"
     assert placed_dir.exists(), f"PlacedImage dir missing: {placed_dir}"
 
     placed_count = 0
@@ -54,7 +54,7 @@ def test_downscaled_mosaic_has_real_pixels(test_context):
     )
 
     # Same shape for the final per-filter Mosaic output.
-    final_dir = output_dir / "Mosaic" / "store_mosaic_color_channel_xisf"
+    final_dir = output_dir / "store_mosaic_color_channel_xisf"
     if final_dir.exists():
         finals = list(final_dir.glob("*.xisf"))
         if finals:

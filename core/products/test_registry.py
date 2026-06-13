@@ -112,49 +112,27 @@ def test_presentation_cache_key_distinguishes_object_kind():
 # --- per-identity producer enumeration ---
 
 def test_producers_for_returns_decoration_order():
-    """`producers_for(identity)` returns each op registered for that
-    identity, in decoration order. Polymorphic ops (one body
-    registered for multiple identities) appear in each identity's
-    list."""
+    """`producers_for(type)` returns each op whose first-parameter
+    type accepts an instance of `type`. Walks MRO so an op annotated
+    with a base class (`BaseStack`) surfaces for both subclasses
+    (Stack, CalibrationStack) — replaces the old polymorphic
+    `identity=[StackId, CalibrationStackId]` dispatch."""
     from products import ensure_producers_registered
     from products.registry import producers_for
-    from products.identity import StackId, CalibrationStackId
+    from stacks.composite_stack import Stack, CalibrationStack
 
     ensure_producers_registered()
 
-    stack_ops = {p.__name__ for p in producers_for(StackId)}
+    stack_ops = {p.__name__ for p in producers_for(Stack)}
     assert "stack_files" in stack_ops, (
-        f"stack_files must register for StackId; got {stack_ops}"
+        f"stack_files (annotated stack: BaseStack) must surface for "
+        f"producers_for(Stack); got {stack_ops}"
     )
     assert "post_process_stack" in stack_ops
 
-    cal_ops = {p.__name__ for p in producers_for(CalibrationStackId)}
-    # stack_files registers for BOTH StackId and CalibrationStackId; the
-    # polymorphic decoration appends to each identity's producer list.
+    cal_ops = {p.__name__ for p in producers_for(CalibrationStack)}
+    # Same op surfaces for both subclasses via MRO walk.
     assert "stack_files" in cal_ops
-
-
-def test_real_run_subframe_producers_resolve_distinctly():
-    """The two Run/SUBFRAME producers — `flat_corrected_stack` and
-    `uncorrected_run_thumbnail` — register under distinct identities
-    (CalibratedStackId vs UncorrectedRunId). Neither's
-    `filename_fn` can resolve the other's identity args, so they
-    can't be confused at view-side dispatch time."""
-    from products.registry import producers_for
-    from products.identity import CalibratedStackId, UncorrectedRunId
-    from products import ensure_producers_registered
-
-    ensure_producers_registered()
-
-    cal = {p.__name__ for p in producers_for(CalibratedStackId)}
-    unc = {p.__name__ for p in producers_for(UncorrectedRunId)}
-
-    assert "flat_corrected_stack" in cal
-    assert "uncorrected_run_thumbnail" in unc
-    assert cal != unc, (
-        f"CalibratedStackId producers ({cal}) and UncorrectedRunId "
-        f"producers ({unc}) must be distinct sets"
-    )
 
 
 # --- final=True on @makes_image marks the user's deliverable --------

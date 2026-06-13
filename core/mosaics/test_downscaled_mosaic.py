@@ -48,9 +48,9 @@ def test_downscaled_orion_mosaic(test_context):
     # unified `stack_files` op output dir; the call_hash filename
     # distinguishes downscaled vs full-res outputs when both
     # pipelines are queued.
-    stack_masters = list(output.rglob("Stack/stack_files/*.xisf"))
+    stack_masters = list(output.rglob("stack_files/*.xisf"))
     assert len(stack_masters) >= 1, f"Expected stack masters, found: {stack_masters}"
-    cal_masters = list(output.rglob("CalibrationStack/stack_files/*.xisf"))
+    cal_masters = list(output.rglob("stack_files/*.xisf"))
     assert len(cal_masters) >= 1, f"Expected cal masters, found: {cal_masters}"
 
     # Note: placement and merging are not tested here because mock
@@ -92,7 +92,7 @@ def test_downscaled_orion_mosaic_produces_tiled_tiff(test_context):
     # (different upstream `merge_images` masters → different
     # call_hashes → different filenames in the same op dir).
     output = Path(context.output_dir)
-    op_dir = "Mosaic/store_mosaic_color_channel_xisf"
+    op_dir = "store_mosaic_color_channel_xisf"
     xisfs = list(output.rglob(f"{op_dir}/*.xisf"))
     tiffs = list(output.rglob(f"{op_dir}/*.tiff"))
 

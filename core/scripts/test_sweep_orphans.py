@@ -153,18 +153,18 @@ def test_walk_and_classify_with_no_output_dir_returns_empty():
 def test_include_scopes_to_named_dirs(temp_output_dir, fake_trace):
     """--include restricts classification to the named op directories;
     files outside are neither live nor orphan, just ignored."""
-    included = _make_file(temp_output_dir / "PlacedImage" / "place_image" / "a.tiff")
-    excluded = _make_file(temp_output_dir / "Stack" / "stack_files" / "b.xisf")
+    included = _make_file(temp_output_dir / "place_image" / "a.tiff")
+    excluded = _make_file(temp_output_dir / "stack_files" / "b.xisf")
 
     orphans, by_dir = sweep_orphans._walk_and_classify(
-        temp_output_dir, set(), include={"PlacedImage/place_image"},
+        temp_output_dir, set(), include={"place_image"},
     )
     paths = {p for p, _ in orphans}
 
     assert str(included) in paths
     assert str(excluded) not in paths
-    assert "PlacedImage/place_image" in by_dir
-    assert "Stack/stack_files" not in by_dir
+    assert "place_image" in by_dir
+    assert "stack_files" not in by_dir
 
 
 # ---------------------------------------------------------------------
@@ -214,13 +214,13 @@ def _master_pipeline_op_dirs() -> tuple[str, ...]:
     """Directories the Master pipeline writes primary outputs into.
     Used to filter disk-scan results for the trace==disk comparison."""
     return (
-        "CalibrationStack/stack_files",
-        "Stack/stack_files",
-        "Stack/post_process_stack",
-        "TargetChannel/merge_target_channel",
-        "PlacedImage/place_image",
-        "MergedImage/merge_images",
-        "Mosaic/store_mosaic_color_channel_xisf",
+        "stack_files",
+        "stack_files",
+        "post_process_stack",
+        "merge_target_channel",
+        "place_image",
+        "merge_images",
+        "store_mosaic_color_channel_xisf",
     )
 
 
@@ -329,17 +329,17 @@ def test_orion_mosaic_trace_matches_disk_and_archive_lifecycle(test_context) -> 
     assert archived_paths == finals_traced
 
     # `stack_files` is now `final=True` — must be in the archive set.
-    assert any("Stack/stack_files" in p for p in archived_paths)
+    assert any("stack_files" in p for p in archived_paths)
     assert any(
-        "Mosaic/store_mosaic_color_channel_xisf" in p
+        "store_mosaic_color_channel_xisf" in p
         for p in archived_paths
     )
     # Intermediates must NOT be in finals.
     for non_final_dir in (
-        "Stack/post_process_stack",
-        "PlacedImage/place_image",
-        "MergedImage/merge_images",
-        "TargetChannel/merge_target_channel",
+        "post_process_stack",
+        "place_image",
+        "merge_images",
+        "merge_target_channel",
     ):
         assert not any(non_final_dir in p for p in archived_paths), (
             f"{non_final_dir} should not be in finals"
@@ -363,10 +363,10 @@ def test_orion_mosaic_trace_matches_disk_and_archive_lifecycle(test_context) -> 
     intermediates_on_disk = {
         p for p in on_disk
         if any(d in p for d in (
-            "Stack/post_process_stack",
-            "PlacedImage/place_image",
-            "MergedImage/merge_images",
-            "TargetChannel/merge_target_channel",
+            "post_process_stack",
+            "place_image",
+            "merge_images",
+            "merge_target_channel",
         ))
     }
     assert intermediates_on_disk, "Test setup didn't produce intermediates"

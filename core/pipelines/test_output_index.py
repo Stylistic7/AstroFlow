@@ -18,7 +18,6 @@ from attributes.astrometric_attributes import healpix_cells_from_poly
 from cache.context_ref import ContextRef
 from context import local_context as context
 from decisions.settings import ProcessingConfig
-from mosaics.types import Mosaic
 from pipelines import output_index
 from stacks.composite_stack import CalibrationStacksDict, StacksDict
 from targets.types import TargetsDict
@@ -152,12 +151,14 @@ def test_recorder_disambiguates_repeated_same_key_taps(test_context):
 
     output_index.clear()
 
-    # Build a fake mosaic-like with a stable_hash; the recorder only
-    # reads `stable_hash` off the first identity arg.
-    class FakeMosaic:
+    # Build a fake mosaic-like with a stable_hash. Class name MUST be
+    # "Mosaic" (not e.g. "FakeMosaic") because the recorder routes
+    # taps using `type(first_arg).__name__` — that's the post-identity-
+    # refactor convention. Real Mosaic instances satisfy this naturally.
+    class Mosaic:
         stable_hash = "mosaic-X"
 
-    mosaic = FakeMosaic()
+    mosaic = Mosaic()
     cfg = ProcessingConfig()
     # Two merge_images Nodes with identical literal args (mosaic,
     # filter, config). Their `*inputs` data-deps would differ at trace
@@ -171,10 +172,11 @@ def test_recorder_disambiguates_repeated_same_key_taps(test_context):
         "Test Pipeline", "mosaic", mosaic.stable_hash, graph,
     )
 
-    # MergedImageId.object_type is `MergedImage`, so the recorder
-    # keys taps under "mergedimage" — the cart-level "mosaic" type
-    # tag is separate.
-    by_object = output_index.for_object("mergedimage", mosaic.stable_hash)
+    # Routing is now `type(first_arg).__name__` (PascalCase), so taps
+    # are keyed under "Mosaic" — no more parallel "mergedimage"
+    # bucket. The dashboard no longer needs `_RELATED_OBJECT_TYPES`
+    # aggregation to find these.
+    by_object = output_index.for_object("Mosaic", mosaic.stable_hash)
     assert "Test Pipeline" in by_object
     displays = by_object["Test Pipeline"]
     # First call keeps "Merged"; second is "Merged 2".
@@ -209,10 +211,11 @@ def test_extract_pipeline_taps_yields_disambiguated_displays(test_context):
 
     output_index.clear()  # any side effect from extractor would surface here
 
-    class FakeMosaic:
+    # Class name doubles as the routing string post-identity-refactor.
+    class Mosaic:
         stable_hash = "mosaic-X"
 
-    mosaic = FakeMosaic()
+    mosaic = Mosaic()
     cfg = ProcessingConfig()
     n1 = Node(merge_images, mosaic, "H", cfg, name="merge_a")
     n2 = Node(merge_images, mosaic, "H", cfg, name="merge_b")
@@ -224,12 +227,12 @@ def test_extract_pipeline_taps_yields_disambiguated_displays(test_context):
 
     assert nodes_yielded == [n1, n2]
     assert tap_tuples == [
-        ("mergedimage", "mosaic-X", "Merged", "H"),
-        ("mergedimage", "mosaic-X", "Merged 2", "H"),
+        ("Mosaic", "mosaic-X", "Merged", "H"),
+        ("Mosaic", "mosaic-X", "Merged 2", "H"),
     ]
     # Purity: clear() above + no write side-effects means for_object
     # sees nothing.
-    assert output_index.for_object("mergedimage", "mosaic-X") == {}
+    assert output_index.for_object("Mosaic", "mosaic-X") == {}
 
 
 def test_extract_pipeline_taps_skips_nodes_with_no_display(test_context):
@@ -240,10 +243,10 @@ def test_extract_pipeline_taps_skips_nodes_with_no_display(test_context):
     from mosaics.merging.pixinsight import merge_images
     from mosaics.placement.astroflow import place_image
 
-    class FakeMosaic:
+    class Mosaic:
         stable_hash = "mosaic-Y"
 
-    mosaic = FakeMosaic()
+    mosaic = Mosaic()
     cfg = ProcessingConfig()
     # place_image has no _display (intermediate); merge_images does.
     n_intermediate = Node(place_image, mosaic, name="placer")

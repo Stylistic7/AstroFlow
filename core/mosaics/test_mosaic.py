@@ -109,29 +109,29 @@ def test_orion_mosaic(test_context) -> None:
 
     # CalibrationStack/stack_files writes one XISF per (bias/dark/flat)
     # calibration master — 3 distinct call_hashes.
-    assert_files("CalibrationStack/stack_files/*.xisf", 3)
+    assert_files("stack_files/*.xisf", 3)
 
     # Per-stack light masters: 4 stacks → 4 distinct call_hashes.
-    assert_files("Stack/stack_files/*.xisf", 4, {"FILTER": "H"})
-    assert_files("Stack/post_process_stack/*.xisf", 4, {"FILTER": "H"})
+    assert_files("stack_files/*.xisf", 4, {"FILTER": "H"})
+    assert_files("post_process_stack/*.xisf", 4, {"FILTER": "H"})
 
     # Placed panels: 4 stacks × 2 viewbox sizes (Master + Subframe)
     # = 8 distinct call_hashes. Different viewboxes → different
     # call_hashes → different files inside the same op directory.
-    assert_files("PlacedImage/place_image/*.tiff", 8, {"FILTER": "H"})
+    assert_files("place_image/*.tiff", 8, {"FILTER": "H"})
 
     # Master-pipeline mosaic merge: pairwise PhotometricMosaic over the
     # 4 panels in a 2x2 layout → 2 within-strip + 1 cross-strip = 3
     # merge_images nodes, each writing its own output file (matches
     # test_orion_pipeline_structures' op counts).
-    assert_files("MergedImage/merge_images/*.xisf", 3, {"FILTER": "H"})
+    assert_files("merge_images/*.xisf", 3, {"FILTER": "H"})
 
     # Subframe-pipeline mosaic merge (numpy TIFF). Same pairwise shape: 3.
-    assert_files("MergedImage/merge_images_subframe/*.tiff", 3,
+    assert_files("merge_images_subframe/*.tiff", 3,
                  {"FILTER": "H"})
 
-    assert_files("Mosaic/store_mosaic_color_channel_subframe/*.tiff", 1, {"FILTER": "H"})
-    assert_files("Mosaic/store_mosaic_color_channel_xisf/*.xisf", 1, {"FILTER": "H"})
+    assert_files("store_mosaic_color_channel_subframe/*.tiff", 1, {"FILTER": "H"})
+    assert_files("store_mosaic_color_channel_xisf/*.xisf", 1, {"FILTER": "H"})
     # PostProcessed not produced — test data has only "H" filter,
     # which doesn't match any post-processing path (RGB or SHO).
 
@@ -200,15 +200,15 @@ def test_orion_mosaic_hybrid_oss(test_context) -> None:
     # the primary `.fits` output is unlinked after `store_mosaic_color_channel_oss`
     # consumes it; we assert via the preview `.tiff` sidecar (kept for
     # the UI) that the variadic merge ran exactly once.
-    assert_files("MergedImage/merge_images_oss/*.tiff", 1)
+    assert_files("merge_images_oss/*.tiff", 1)
 
     # Final store is the OSS variant (FITS copy, no PI conversion).
-    assert_files("Mosaic/store_mosaic_color_channel_oss/*.fits", 1,
+    assert_files("store_mosaic_color_channel_oss/*.fits", 1,
                  {"FILTER": "H"})
 
     # And critically the XISF terminal isn't invoked under this pipeline
     # — confirms the import / call-site swap stuck.
-    assert_files("Mosaic/store_mosaic_color_channel_xisf/*.xisf", 0)
+    assert_files("store_mosaic_color_channel_xisf/*.xisf", 0)
 
     ui_mosaics = context.ui_mosaics
     assert len(ui_mosaics) == 1

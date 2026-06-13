@@ -25,24 +25,24 @@ Two checks:
 from hashing import hash_call, hash_source_code
 
 from dependency_graph.preflight import _PredictedRef
-from products.registry import _producers, _ensure_producers_imported, MediaType
+from products.registry import _producers, _ensure_producers_imported
 
 
 def test_every_producer_has_fn_hash_and_filename_fn():
     _ensure_producers_imported()
     image_producers: list = []
-    for identity, wrappers in _producers[MediaType.IMAGE].items():
+    for arg_type, wrappers in _producers.items():
         for w in wrappers:
-            image_producers.append((identity, w))
+            image_producers.append((arg_type, w))
 
     assert image_producers, (
         "No registered image producers — did discovery fail? "
-        "Expected `@node(identity=...)` ops in stacks/, mosaics/, "
+        "Expected artifact-producing `@node` ops in stacks/, mosaics/, "
         "previews/ to populate `_producers`."
     )
 
     n_with_filename_fn = 0
-    for identity, w in image_producers:
+    for arg_type, w in image_producers:
         op_name = getattr(w, "__name__", repr(w))
         # `_fn_hash` is set in `decorators/decorators.py:_Node._wrap`
         # — its presence proves the wrapper went through @node, not

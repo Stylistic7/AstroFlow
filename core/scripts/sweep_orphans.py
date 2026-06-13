@@ -50,7 +50,7 @@ def main() -> None:
         help=("Comma-separated op directories (rel to output_dir) to scope "
               "the sweep to. Files outside these dirs are skipped entirely "
               "— not classified, not deleted. Match exactly the rel paths "
-              "from the breakdown table (e.g. 'PlacedImage/place_image'). "
+              "from the breakdown table (e.g. 'place_image'). "
               "Without this flag, every file under output_dir is considered."),
     )
     args = parser.parse_args()
