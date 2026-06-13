@@ -28,14 +28,20 @@ def _print_first_line(fn_name: str, event_dict: dict) -> None:
 def _concerns_keys_for(func: Callable, args: tuple, kwargs: dict) -> list[tuple]:
     """Per-object cache keys to side-write concerns under.
 
+    Only artifact-producing ops surface concerns per-object — concerns
+    originate in the stacking producers (the `concerns.warn/error`
+    callers), and `/api/concerns/<object>` reads them per Stack/Mosaic.
+    Non-producer tasks (UI prep, identification) keep their concerns in
+    the per-call log only.
+
     The producer's first positional arg is the entity. We key under
     `('concerns', type(entity).__name__, entity.stable_hash)`. Mosaic
     producers carry a `filter` second arg we splice in to match the
     `/api/concerns/<mosaic>` lookup shape.
 
-    Returns one key (the producer's entity key). Empty list if no
-    positional args or no `stable_hash` on the first arg — we don't
-    have an object to attribute concerns to.
+    Returns one key (the producer's entity key). Empty list if the op
+    isn't a registered producer, has no positional args, or its first
+    arg has no `stable_hash` to attribute concerns to.
 
     The stored value is `{op_name: [concerns...]}` so distinct ops
     that contribute to the same object don't overwrite each other.
@@ -45,6 +51,13 @@ def _concerns_keys_for(func: Callable, args: tuple, kwargs: dict) -> list[tuple]
     entity = args[0]
     stable_hash = getattr(entity, "stable_hash", None)
     if not stable_hash:
+        return []
+    from products.registry import _producers
+    if not any(
+        func.__name__ == w.__name__
+        for wrappers in _producers.values()
+        for w in wrappers
+    ):
         return []
     type_name = type(entity).__name__
     # Mosaic-keyed concerns include the filter (`/api/concerns/mosaic`
@@ -122,16 +135,23 @@ def make_capture_logs_decorator(cache):
                 # Always overwrite this op's slot in the per-object
                 # concerns dict (even with []) so a successful re-run
                 # that emitted no concerns clears the previous run's.
-                # Skip if not a registered producer.
-                concerns = [e for e in captured_logs if e.get("_concern")]
-                op_name = func.__name__
-                for key in _concerns_keys_for(func, args, kwargs):
-                    with cache.transact():
-                        existing = cache.get(key, {})
-                        if not isinstance(existing, dict):
-                            existing = {}
-                        existing[op_name] = concerns
-                        cache[key] = existing
+                # Written to the diskcache (`get_cache()`) — it supports
+                # `transact()` for the atomic read-modify-write and is the
+                # same store `/api/concerns` reads from. Empty for
+                # non-producers (see `_concerns_keys_for`).
+                concern_keys = _concerns_keys_for(func, args, kwargs)
+                if concern_keys:
+                    from context import get_cache
+                    concerns = [e for e in captured_logs if e.get("_concern")]
+                    op_name = func.__name__
+                    concerns_cache = get_cache()
+                    for key in concern_keys:
+                        with concerns_cache.transact():
+                            existing = concerns_cache.get(key, {})
+                            if not isinstance(existing, dict):
+                                existing = {}
+                            existing[op_name] = concerns
+                            concerns_cache[key] = existing
 
             return result
 

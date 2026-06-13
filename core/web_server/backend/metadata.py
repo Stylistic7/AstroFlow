@@ -127,7 +127,6 @@ def _viewbox_quality_for_pipeline(pipeline: str) -> str:
 def _get_polygons(pipeline: str, *args) -> list[dict[str, Any]]:
     """Compute projected polygons for an object at the pipeline's
     output canvas resolution."""
-    from stacks.composite_stack import CalibrationStack
     obj = args[0]
     if isinstance(obj, CalibrationStack):
         return []
