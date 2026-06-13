@@ -23,6 +23,26 @@ class PixInsightError(Exception):
     pass
 
 
+class PixInsightLegacyEngineError(PixInsightError):
+    """A script ran under the removed legacy SpiderMonkey ('sm') engine.
+
+    PixInsight 1.9.4+ replaced SpiderMonkey with V8; on Apple Silicon the
+    'sm' engine is absent entirely. Any script executed without a
+    `#engine v8` directive at its top fails with this. Raised distinctly
+    (a subclass of PixInsightError, so existing `except PixInsightError`
+    still catches it) so SpiderMonkey->V8 migration gaps are unmistakable
+    and addressable directly — the message names the offending script.
+    """
+    pass
+
+
+# The exact console marker PixInsight 1.9.4+ prints when a script tries
+# the removed legacy engine. Checked for EVERY task (see _check_for_errors).
+_LEGACY_ENGINE_MARKER = (
+    "The legacy 'sm' JavaScript engine is not available"
+)
+
+
 # PixInsight 1.9.4 replaced the SpiderMonkey ('sm') JavaScript engine with
 # V8 (PJSR 2.0); on Apple Silicon there is no 'sm' fallback. A script run via
 # the console `run -x` command must declare its engine with a `#engine`
@@ -285,8 +305,36 @@ class Recipe:
             if line.strip():
                 logger.info(line)
 
+    def _check_legacy_engine(self) -> None:
+        """Universal check (every task): fail loudly if any script ran under
+        the removed legacy SpiderMonkey engine. Names the offending script by
+        scanning back to the nearest 'Processing script file:' line."""
+        if not self.log or _LEGACY_ENGINE_MARKER not in self.log:
+            return
+        script = "(unknown script)"
+        lines = self.log.splitlines()
+        marker_idx = next(
+            i for i, ln in enumerate(lines) if _LEGACY_ENGINE_MARKER in ln
+        )
+        for prev in reversed(lines[:marker_idx]):
+            m = re.search(r"Processing script file:\s*(\S+)", prev)
+            if m:
+                script = m.group(1)
+                break
+        raise PixInsightLegacyEngineError(
+            f"{script} ran under the removed legacy SpiderMonkey ('sm') "
+            f"JavaScript engine. PixInsight 1.9.4+ needs a `#engine v8` "
+            f"directive at the top of every executed script (the 'sm' "
+            f"engine is absent on Apple Silicon). Add `#engine v8` to that "
+            f"script; if it is a bundled/AdP script, it may not yet be "
+            f"V8-ported by its author."
+        )
+
     def _check_for_errors(self) -> None:
-        """Check PixInsight console log against each step's error/success patterns."""
+        """Check PixInsight console log for failures — first the universal
+        SpiderMonkey->V8 migration marker (any task), then each step's own
+        error/success patterns."""
+        self._check_legacy_engine()
         for step in self.steps:
             for pattern in step.error_patterns:
                 match = pattern.search(self.log)
