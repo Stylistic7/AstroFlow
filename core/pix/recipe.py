@@ -23,6 +23,24 @@ class PixInsightError(Exception):
     pass
 
 
+# PixInsight 1.9.4 replaced the SpiderMonkey ('sm') JavaScript engine with
+# V8 (PJSR 2.0); on Apple Silicon there is no 'sm' fallback. A script run via
+# the console `run -x` command must declare its engine with a `#engine`
+# preprocessor directive, or PixInsight defaults to the now-absent 'sm' and
+# fails with "The legacy 'sm' JavaScript engine is not available...".
+_ENGINE_DIRECTIVE = "#engine v8"
+
+
+def _with_engine_directive(js: str) -> str:
+    """Prepend the V8 engine directive to a standalone script. Idempotent —
+    a script that already declares an engine (e.g. an external file we read)
+    is left untouched, since duplicate directives raise "Conflicting engine
+    directives"."""
+    if js.lstrip().startswith("#engine"):
+        return js
+    return f"{_ENGINE_DIRECTIVE}\n{js}"
+
+
 @dataclass
 class Step:
     """A single PixInsight operation in a recipe.
@@ -85,7 +103,7 @@ class Recipe:
         if step.javascript is None:
             return None
         js_path = self.tmp_dir / f"{uuid.uuid4().hex[:12]}.js"
-        js_path.write_text(step.javascript)
+        js_path.write_text(_with_engine_directive(step.javascript))
         return js_path
 
     def _scp_command_for_step(self, step: Step) -> str:
@@ -177,7 +195,7 @@ class Recipe:
             # All inline JS — generate a single .js file and run it
             js = self.to_javascript(save=save)
             js_path = self.tmp_dir / f"{self._recipe_id}_main.js"
-            js_path.write_text(js)
+            js_path.write_text(_with_engine_directive(js))
             return f'run -x "{js_path}"'
 
         # Mixed recipe: generate separate commands for each step
@@ -189,7 +207,7 @@ class Recipe:
             + generate_open_images_js(self.input_filenames)
         )
         open_path = self.tmp_dir / f"{self._recipe_id}_open.js"
-        open_path.write_text(open_js)
+        open_path.write_text(_with_engine_directive(open_js))
         scp_lines.append(f'run -x "{open_path}"')
 
         # Each processing step
@@ -210,7 +228,7 @@ class Recipe:
         save_js = generate_save_images_js(save_targets)
         save_js += f'\nFile.writeTextFile("{log_file}", console.endLog().toString());'
         save_path = self.tmp_dir / f"{self._recipe_id}_save.js"
-        save_path.write_text(save_js)
+        save_path.write_text(_with_engine_directive(save_js))
         scp_lines.append(f'run -x "{save_path}"')
 
         return '\n'.join(scp_lines)

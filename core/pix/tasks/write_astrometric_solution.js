@@ -1,3 +1,5 @@
+#engine v8
+
 /*
  * WriteAstrometricSolution.js
  *
