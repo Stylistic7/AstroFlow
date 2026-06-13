@@ -45,11 +45,13 @@ dependencies = [
     "ephem",
     "scipy",
     # Pin numpy: ndarrays pickle/unpickle across cluster nodes and into
-    # the on-disk cache. numpy 2.0 changed the pickle module path
-    # (numpy.core -> numpy._core), so a node on 2.x writes objects a node
-    # on 1.x can't load ("No module named 'numpy._core.numeric'"). Same
-    # wire-format-consistency risk as the ray and spherical-geometry pins.
-    "numpy==1.26.4",
+    # the on-disk cache, so every node MUST run the same numpy — a 2.x
+    # node writes a pickle module path (numpy._core) a 1.x node can't
+    # load, and vice versa. Pinned to 2.x specifically because 1.26.x
+    # has no Python 3.13 wheels (it predates 3.13) and would compile
+    # from source on every node. Same wire-format pin rationale as ray /
+    # spherical-geometry.
+    "numpy==2.4.6",
     "opencv-python",
     "scikit-image",
     "Pillow",
