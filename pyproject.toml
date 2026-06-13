@@ -44,12 +44,20 @@ dependencies = [
     "spherical-geometry==1.4.0",
     "ephem",
     "scipy",
-    "numpy",
+    # Pin numpy: ndarrays pickle/unpickle across cluster nodes and into
+    # the on-disk cache. numpy 2.0 changed the pickle module path
+    # (numpy.core -> numpy._core), so a node on 2.x writes objects a node
+    # on 1.x can't load ("No module named 'numpy._core.numeric'"). Same
+    # wire-format-consistency risk as the ray and spherical-geometry pins.
+    "numpy==1.26.4",
     "opencv-python",
     "scikit-image",
     "Pillow",
     "pyvips",
     "tifffile",
+    # Tile-pyramid pages are brotli-compressed linear float32 (see
+    # previews/create_tile_pyramid.py, web_server/backend/tiles.py).
+    "brotli",
     "shapely",
     "largestinteriorrectangle",
     "xisf",
@@ -65,6 +73,10 @@ dependencies = [
     # Tests
     "pytest",
     "pytest-benchmark",
+    # Test suite runs under xdist (`pytest -n`, conftest's `worker_id`
+    # fixture) with a per-test timeout (pytest.ini `timeout_method`).
+    "pytest-xdist",
+    "pytest-timeout",
     "ruff",
 ]
 

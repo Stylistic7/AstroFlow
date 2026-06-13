@@ -4,7 +4,16 @@ JUNIT_HEAVY = heavy.xml
 JUNIT_EXCLUSIVE = exclusive.xml
 JUNIT_MERGED = merged.xml
 
-.PHONY: tests tests-full clean ray-clean ray-status
+.PHONY: install tests tests-full clean ray-clean ray-status
+
+# Build/repair the project venv so it EXACTLY matches uv.lock — the
+# single source of truth every Mac in the cluster syncs to. `--frozen`
+# refuses to silently re-resolve: if pyproject.toml changed without a
+# fresh `uv lock`, this errors instead of drifting. Run on every node.
+# pyproject.toml + uv.lock live at the repo root (one level up).
+install:
+	cd .. && uv sync --frozen
+	@echo "✅ venv synced to uv.lock. Run the app with: uv run python main.py"
 
 tests:
 	PYTHONPATH=. $(PYTEST) -n auto --dist=loadscope -m "not exclusive and not slow and not heavy" --junitxml=$(JUNIT_LIGHT)
