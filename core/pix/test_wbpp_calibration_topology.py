@@ -371,6 +371,121 @@ def _apply_pedestal(cal: np.ndarray, target: float = 0.1) -> np.ndarray:
     return apply_background_pedestal(cal.astype(np.float32), target=target).astype(np.float64)
 
 
+# Where the visual before/after dumps land. Override with
+# SEAM_TEST_IMAGE_DIR=/path to redirect.
+_SEAM_IMAGE_DIR = Path(
+    os.environ.get("SEAM_TEST_IMAGE_DIR", "/tmp/astroflow_seam_test")
+)
+
+
+def _crop_registration_border(a: np.ndarray) -> np.ndarray:
+    """Trim the dark registration border WBPP's StarAlignment leaves —
+    near-zero edge pixels on the overlap (RA) axis where the resampled
+    frame has incomplete coverage. Returns the bounding box of rows/cols
+    whose median exceeds 30% of the central median; without this, two
+    panels stitched together butt their dark borders against each other
+    and fake a dark seam at the join that has nothing to do with sky
+    matching."""
+    h, w = a.shape
+    central = float(np.median(a[h // 4:3 * h // 4, w // 4:3 * w // 4]))
+    thr = 0.3 * central
+    rows = np.where(np.median(a, axis=1) > thr)[0]
+    cols = np.where(np.median(a, axis=0) > thr)[0]
+    if rows.size == 0 or cols.size == 0:
+        return a
+    return a[rows.min():rows.max() + 1, cols.min():cols.max() + 1]
+
+
+def _starfree_row(a: np.ndarray) -> int:
+    """Row index with the fewest star pixels (brightest are outliers
+    above median + 6·MAD), biased toward the vertical centre. A good
+    flat mosaic, sampled along such a row, is essentially one value."""
+    med = float(np.median(a))
+    mad = float(np.median(np.abs(a - med))) + 1e-12
+    star = a > med + 6.0 * 1.4826 * mad
+    counts = star.sum(axis=1).astype(float)
+    h = a.shape[0]
+    counts += 0.01 * np.abs(np.arange(h) - h / 2.0)  # prefer central rows
+    return int(np.argmin(counts))
+
+
+def _dump_seam_visuals(
+    scenario_name: str,
+    cal_a: np.ndarray, cal_b: np.ndarray,
+    cal_a_ped: np.ndarray, cal_b_ped: np.ndarray,
+) -> dict:
+    """Write before/after seam visuals + a star-free row profile.
+
+    The dark registration borders are cropped off each panel first
+    (see `_crop_registration_border`), then the clean interiors are
+    stitched side-by-side and stretched with a SINGLE autostretch per
+    composite — a shared stretch is what makes a real inter-panel
+    background step show up as a brightness discontinuity at the join,
+    while stretching each panel on its own max would re-normalize the
+    offset away and hide it.
+
+    The decisive artifact is `row_profile.png`: pixel value along one
+    star-free horizontal row across the full stitched width. A good flat
+    mosaic is essentially one value across that row; a seam is a step at
+    the join. `raw_seam.png` should look bad; `pedestal_fixed.png` and a
+    flat profile should look good. Returns the measured join step (raw
+    vs pedestal) on that row so the caller can report it."""
+    from previews.operations import autostretch, array_to_png
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    out = _SEAM_IMAGE_DIR / scenario_name
+    out.mkdir(parents=True, exist_ok=True)
+
+    a_raw = _crop_registration_border(cal_a)
+    b_raw = _crop_registration_border(cal_b)
+    a_ped = _crop_registration_border(cal_a_ped)
+    b_ped = _crop_registration_border(cal_b_ped)
+    H = min(x.shape[0] for x in (a_raw, b_raw, a_ped, b_ped))
+    W = min(x.shape[1] for x in (a_raw, b_raw, a_ped, b_ped))
+    a_raw, b_raw, a_ped, b_ped = (x[:H, :W] for x in (a_raw, b_raw, a_ped, b_ped))
+
+    raw_comp = np.hstack([a_raw, b_raw])
+    ped_comp = np.hstack([a_ped, b_ped])
+    join = W  # first column of the right panel in the stitched composite
+
+    for name, arr in {"raw_seam": raw_comp, "pedestal_fixed": ped_comp}.items():
+        (out / f"{name}.png").write_bytes(
+            array_to_png(autostretch(arr.astype(np.float32)))
+        )
+
+    # Star-free row + the join step measured on it (the seam, in native
+    # units): median of the row just left vs just right of the join.
+    row = _starfree_row(ped_comp)
+
+    def join_step(comp: np.ndarray) -> float:
+        band = max(4, W // 20)
+        left = np.median(comp[row, join - band:join])
+        right = np.median(comp[row, join:join + band])
+        return float(abs(left - right))
+
+    raw_step, ped_step = join_step(raw_comp), join_step(ped_comp)
+
+    fig, axes = plt.subplots(2, 1, figsize=(10, 6))
+    for ax, comp, title, step in (
+        (axes[0], raw_comp, "raw (per-panel WBPP normalization)", raw_step),
+        (axes[1], ped_comp, "after NormalizeBackgroundPedestal", ped_step),
+    ):
+        ax.plot(comp[row], lw=0.6, color="0.2")
+        ax.axvline(join, color="r", ls="--", lw=1.0, label="panel join")
+        ax.set_title(f"{title} — row {row}, join step = {step:.4g}")
+        ax.set_ylabel("pixel value")
+        ax.legend(loc="upper right", fontsize=8)
+    axes[1].set_xlabel("column (x) across stitched mosaic")
+    fig.suptitle(f"Star-free row profile — scenario: {scenario_name}")
+    fig.tight_layout()
+    fig.savefig(out / "row_profile.png", dpi=110)
+    plt.close(fig)
+
+    return {"dir": out, "row": row, "raw_step": raw_step, "ped_step": ped_step}
+
+
 def _sky_background_median(cal: np.ndarray) -> float:
     """Median of the sky pixels — lower-25th-percentile cut excludes
     stars / nebulosity from the background estimate."""
@@ -501,6 +616,11 @@ def test_pedestal_eliminates_multipanel_seam(tmp_path, scenario_name):
     cal_a_ped = _apply_pedestal(cal_a, target=pedestal_target)
     cal_b_ped = _apply_pedestal(cal_b, target=pedestal_target)
 
+    image_dir = _dump_seam_visuals(
+        scenario_name, cal_a, cal_b, cal_a_ped, cal_b_ped,
+    )
+    print(f"  before/after images: {image_dir}")
+
     bg_a_ped = _sky_background_median(cal_a_ped)
     bg_b_ped = _sky_background_median(cal_b_ped)
     # Noise scale is invariant under an additive shift; reuse the raw
@@ -550,4 +670,54 @@ def test_pedestal_eliminates_multipanel_seam(tmp_path, scenario_name):
     assert abs(bg_b_ped - pedestal_target) < 0.05 * pedestal_target, (
         f"Panel B pedestal landed too far from target: "
         f"median={bg_b_ped:.6g}, target={pedestal_target}"
+    )
+
+
+# --------------------------------------------------------------------
+# PhotometricMosaic seam test — foundation checkpoint
+# --------------------------------------------------------------------
+# A real PhotometricMosaic join is removed by matching hundreds of common
+# stars in the panel overlap. Before building the full (slow) place +
+# PMM merge test, this verifies the synthetic field can actually supply
+# that many stars at a realistic frame size and limiting magnitude.
+
+
+def _count_star_blobs(image: np.ndarray, n_sigma: float = 8.0) -> int:
+    """Crude star count: connected components brighter than
+    median + n_sigma·(1.4826·MAD). Bright neighbours can merge, so this
+    under-counts in crowded fields — fine for a 'thousands?' floor."""
+    from scipy import ndimage
+    sky = float(np.median(image))
+    mad = float(np.median(np.abs(image - sky))) + 1e-9
+    thr = sky + n_sigma * 1.4826 * mad
+    _, n = ndimage.label(image > thr)
+    return int(n)
+
+
+@pytest.mark.slow
+@pytest.mark.timeout(420)
+def test_synthetic_panel_starfield_is_dense_enough_for_pmm(tmp_path):
+    """A 4096² panel at limiting mag ~18.5 must hold thousands of stars,
+    so a ~25% overlap carries the hundreds of common stars PhotometricMosaic
+    needs to fit its scale+gradient model. Single light frame, no WBPP —
+    a fast foundation check for the full PMM seam test."""
+    truth = synthesize_calibration_suite(
+        output_dir=tmp_path / "cal",
+        width=4096, height=4096,
+        n_bias=1, n_dark=1, n_flat=1, n_light=1,
+        ra=100.0, dec=45.0,
+        star_max_magnitude=18.5,
+        # Pin the brightest star far above the uint16 ceiling so bright
+        # stars saturate (as on a real sensor) and faint catalog stars
+        # rise above the noise floor instead of being compressed into it.
+        star_peak_adu=2_000_000.0,
+        prefix="density",
+    )
+    light = read_image(truth.light_files[0]).astype(np.float64)
+    n_stars = _count_star_blobs(light)
+    print(f"\n[starfield] 4096² mag<=18.5 @ RA=100,Dec=45: ~{n_stars} stars")
+    assert n_stars >= 2000, (
+        f"Only ~{n_stars} stars in a 4096² mag<=18.5 panel — too sparse "
+        f"for a PhotometricMosaic overlap to carry hundreds of matches. "
+        f"Push star_max_magnitude fainter or pick a richer field."
     )

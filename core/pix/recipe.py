@@ -43,6 +43,22 @@ _LEGACY_ENGINE_MARKER = (
 )
 
 
+class PixInsightNoReferenceDataError(PixInsightError):
+    """A process needed external reference data that isn't available for
+    this field/filter — e.g. the MARS database MultiscaleGradientCorrection
+    uses has no coverage there. Raised as a distinct subclass (still caught
+    by `except PixInsightError`) so client code can catch it and retry with
+    a data-driven gradient corrector (AutomaticBackgroundExtractor /
+    GraXpert), which need no external reference and work anywhere on sky.
+    """
+    pass
+
+
+# Console marker a MARS-backed process prints when it has no reference data
+# for the target field/filter. Checked for EVERY task (see _check_for_errors).
+_NO_REFERENCE_DATA_MARKER = "No reference data found for filter"
+
+
 # PixInsight 1.9.4 replaced the SpiderMonkey ('sm') JavaScript engine with
 # V8 (PJSR 2.0); on Apple Silicon there is no 'sm' fallback. A script run via
 # the console `run -x` command must declare its engine with a `#engine`
@@ -330,11 +346,24 @@ class Recipe:
             f"V8-ported by its author."
         )
 
+    def _check_no_reference_data(self) -> None:
+        """Universal check (every task): a MARS-backed process found no
+        reference data for this field/filter. Raised as a distinct,
+        catchable subclass so callers can fall back to a data-driven
+        corrector (ABE/GraXpert)."""
+        if self.log and _NO_REFERENCE_DATA_MARKER in self.log:
+            raise PixInsightNoReferenceDataError(
+                "A PixInsight process found no MARS reference data for this "
+                "field/filter. Retry with a data-driven gradient corrector "
+                "(AutomaticBackgroundExtractor / GraXpert)."
+            )
+
     def _check_for_errors(self) -> None:
         """Check PixInsight console log for failures — first the universal
-        SpiderMonkey->V8 migration marker (any task), then each step's own
-        error/success patterns."""
+        SpiderMonkey->V8 migration marker, then the no-reference-data marker
+        (both any task), then each step's own error/success patterns."""
         self._check_legacy_engine()
+        self._check_no_reference_data()
         for step in self.steps:
             for pattern in step.error_patterns:
                 match = pattern.search(self.log)

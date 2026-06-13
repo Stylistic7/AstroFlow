@@ -95,7 +95,7 @@ _default_parameters = {
     "psfMinStructureSize": 0,
     "psfMinSNR": 40.00,
     "psfAllowClusteredSources": False,
-    "psfType": Enum("SpectrophotometricFluxCalibration.prototype.PSFType_Auto"),
+    "psfType": Enum("SpectrophotometricFluxCalibration.PSFType_Auto"),
     "psfGrowth": 1.75,
     "psfMaxStars": 24576,
     "psfSearchTolerance": 4.00,

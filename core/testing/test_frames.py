@@ -194,6 +194,7 @@ def make_synthetic_frames(
     image_scale: float = 1.0,
     rotation_angle_deg: float = 90.0,
     pixel_arrays: list[np.ndarray] | None = None,
+    solvable: bool = False,
 ) -> list[str]:
     """Write `number` synthetic FITS frames.
 
@@ -328,9 +329,15 @@ def make_synthetic_frames(
         if image_type.lower() in ["light", "flat"]:
             fits_header["FILTER"] = filter
 
+        if solvable:
+            # Treat this as a real input frame: drop the opt-out so the
+            # pipeline runs solve-field on it. The WCS keywords stay as a
+            # seed for solve-field (then it blind-solves from the stars).
+            fits_header.pop("DONTSOLV", None)
+
         header = normalize_header(fits_header)
 
-        if image_type == "Light":
+        if image_type == "Light" and not solvable:
             plate_solution = plate_solving.PlateSolution(
                 image_filename=fits_filename,
                 header=fits_header,
@@ -367,7 +374,11 @@ def make_synthetic_frames(
         fn_hash = hash_source_code(compute_image_metadata)
         call_hash = hash_call(fn_hash, Path(fits_filename))
         key = ("compute_image_metadata", call_hash)
-        context.set(key, metadata)
+        if not solvable:
+            # Pre-seed the metadata cache only for non-solvable frames.
+            # A solvable frame must flow through the real
+            # compute_image_metadata + solve-field path like a real image.
+            context.set(key, metadata)
 
         if dest_dir is None:
             continue
@@ -381,7 +392,12 @@ def make_synthetic_frames(
         )
 
         # Write a sidecar so compute_image_metadata can short-circuit
-        # without reading the FITS file or invoking solve-field.
+        # without reading the FITS file or invoking solve-field. Skipped
+        # for solvable frames — they must look exactly like a fresh real
+        # input file (no sidecar), so the pipeline solves them itself.
+        if solvable:
+            output_filenames.append(fits_filename)
+            continue
         from metadata.sidecar_io import (
             write_image_metadata, write_defect_candidates,
         )

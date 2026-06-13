@@ -204,6 +204,9 @@ def _render_stars_for_light_wcs(
     filter_name: str,
     exposure_s: float,
     peak_adu: float,
+    min_magnitude: float = 8.0,
+    max_magnitude: float = 16.0,
+    rotation_angle_deg: float = 90.0,
 ) -> np.ndarray:
     """Render Gaia DR3 stars at the light frames' WCS.
 
@@ -227,6 +230,7 @@ def _render_stars_for_light_wcs(
         exposure=int(exposure_s), filter=filter_name,
         instrument=instrument, width_pixels=width, height_pixels=height,
         dest_dir=str(template_dir), ra=ra, dec=dec,
+        rotation_angle_deg=rotation_angle_deg,
         pixel_arrays=[template_pixels], add_noise=False,
     )
     template_path = Path(template_paths[0])
@@ -237,7 +241,9 @@ def _render_stars_for_light_wcs(
     stars_path = template_dir / f"{prefix}_csg_stars.xisf"
 
     image = Image.open(template_path, filter=filter_name)
-    stars = RenderCatalogStars(image)
+    stars = RenderCatalogStars(
+        image, minMagnitude=min_magnitude, maxMagnitude=max_magnitude,
+    )
     stars.save_to(stars_path)
 
     star_image = read_image(stars_path).astype(np.float64)
@@ -314,6 +320,11 @@ def synthesize_calibration_suite(
     gain_e_per_adu: float = 0.25,
     ra: float = 100.0,
     dec: float = 45.0,
+    # Frame orientation. make_synthetic_frames feeds this to np.cos/np.sin
+    # (which take radians), so it's effectively a rotation seed; pass 0.0
+    # for axis-aligned footprints whose RA-offset panels share a clean
+    # vertical edge (what mosaic identification's edge-overlap test wants).
+    rotation_angle_deg: float = 90.0,
     instrument: str = "ZWO ASI6200MM Pro",
     filter_name: str = "H",
     # Master-dark topology switch (see module docstring).
@@ -325,6 +336,17 @@ def synthesize_calibration_suite(
     # and added to every light's pixel array before quantization.
     add_stars: bool = True,
     star_peak_adu: float = 30_000.0,
+    # Limiting magnitudes for the rendered Gaia field. Defaults match
+    # CatalogStarGenerator's own (8–16) and keep a sparse field; push
+    # `star_max_magnitude` fainter (~18–19) for the thousands of stars a
+    # realistic PhotometricMosaic join needs to match on.
+    star_min_magnitude: float = 8.0,
+    star_max_magnitude: float = 16.0,
+    # When True, the LIGHT frames are written as real-looking input
+    # (no DONTSOLV, no baked plate solution / sidecar) so the pipeline
+    # solves them with solve-field. Cal frames keep their opt-out — real
+    # darks/bias/flats aren't plate-solved either.
+    solvable_lights: bool = False,
     # Naming.
     prefix: str = "calphys",
 ) -> CalibrationGroundTruth:
@@ -406,6 +428,9 @@ def synthesize_calibration_suite(
             filter_name=filter_name,
             exposure_s=light_exposure_s,
             peak_adu=star_peak_adu,
+            min_magnitude=star_min_magnitude,
+            max_magnitude=star_max_magnitude,
+            rotation_angle_deg=rotation_angle_deg,
         )
         # Add stars to every physics-modelled light (pre-quantization
         # gymnastics: round trip through float64 to avoid uint16
@@ -441,7 +466,8 @@ def synthesize_calibration_suite(
     light_files = make_synthetic_frames(
         prefix=f"{prefix}_light", number=n_light, image_type="Light",
         exposure=int(light_exposure_s), filter=filter_name,
-        pixel_arrays=light_arrays, **common,
+        pixel_arrays=light_arrays, solvable=solvable_lights,
+        rotation_angle_deg=rotation_angle_deg, **common,
     )
 
     # Build masters in float64 to avoid quantization on integration.

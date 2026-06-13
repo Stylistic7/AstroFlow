@@ -1,21 +1,22 @@
 """CatalogStarGenerator — render Gaia DR3 stars at an image's WCS.
 
-Wraps the Andrés del Pozo AdP script at
-`/Applications/PixInsight/src/scripts/AdP/CatalogStarGenerator.js`
-v2.1.13. Used by the calibration-validation harness to give synthetic
-light frames real catalog stars — without them WBPP's SubframeSelector
-fails to measure every frame and the integration step never runs.
+Wraps the Andrés del Pozo / PTeam script at
+`/Applications/PixInsight/src/scripts/CatalogStarGenerator/CatalogStarGenerator.js`
+v2.2.2 (PJSR 2.0 / V8; the script carries its own `#engine v8`). Used by
+the calibration-validation harness to give synthetic light frames real
+catalog stars — without them WBPP's SubframeSelector fails to measure
+every frame and the integration step never runs.
 
-The script registers parameter fields under prefix ``sgen_`` (see CSG
-source line 1070 `__base__( CSG_SETTINGS_MODULE, "sgen", … )` and
-WCSmetadata.jsh:132 `MakeParamsKey` which builds ``<prefix>_<field>``).
-The ``non_interactive`` flag is read unprefixed by the script's
-``main()``.
+The engine registers parameter fields under prefix ``sgen_`` (see
+`CatalogStarGeneratorEngine.js` `__base__( CSG_SETTINGS_MODULE, "sgen",
+… )` and WCSmetadata.jsh `MakeParamsKey` which builds
+``<prefix>_<field>``). The ``non_interactive`` flag is read unprefixed
+by the script's ``main()`` and selects the no-GUI path that targets
+``ImageWindow.activeWindow``.
 
 Catalog selection uses the display name registered in
-``__catalogRegister__`` (per AstronomicalCatalogs.jsh:65, `FindByName`
-matches ``this.catalogs[i].name``). For local Gaia DR3 XPSD that is
-``"Gaia DR3 (XPSD)"`` (AstronomicalCatalogs.jsh:3851).
+``__catalogRegister__``; for local Gaia DR3 XPSD that is
+``"Gaia DR3 (XPSD)"`` (AstronomicalCatalogs).
 """
 from __future__ import annotations
 
@@ -26,7 +27,7 @@ from pix.image import Image
 from pix.recipe import Step
 
 _SCRIPT_FILENAME = (
-    "/Applications/PixInsight/src/scripts/AdP/CatalogStarGenerator.js"
+    "/Applications/PixInsight/src/scripts/CatalogStarGenerator/CatalogStarGenerator.js"
 )
 
 # Prefix from CSG_SETTINGS_MODULE base call. Every registered field on

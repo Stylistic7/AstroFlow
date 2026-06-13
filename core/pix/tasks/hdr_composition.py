@@ -20,7 +20,13 @@ _DEFAULT_PARAMETERS = {
     "images": [],
     "inputHints": "",
     "outputHints": "",
-    "combinationMethod": Enum("HDRComposition.prototype.HDRC_MaximumValue"),
+    # FIXME(PJSR-2.0/V8): broken. On a fresh HDRComposition instance
+    # `combinationMethod` reads undefined, and `HDRComposition
+    # .HDRC_MaximumValue` is undefined too — the parameter and its enum
+    # were renamed/removed in PixInsight 1.9.4. Needs per-process
+    # migration to the new names (probe the live process). Not exercised
+    # by the mono mosaic pipeline, so left flagged rather than guessed.
+    "combinationMethod": Enum("HDRComposition.HDRC_MaximumValue"),
     "maskBinarizingThreshold": 0.80,
     "maskSmoothness": 8,
     "maskGrowth": 2,

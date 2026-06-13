@@ -2,6 +2,7 @@
 
 This is a script-based task invoked via -p parameter flags.
 """
+import re
 from typing import Any
 
 from pix.image import Image
@@ -45,7 +46,14 @@ _DEFAULT_PARAMETERS = {
     "overlapGradientSmoothness": -1,
     "taperLength": "47",
     "useAutoTaperLength": True,
-    "useTargetGradientCorrection": True,
+    # AstroFlow runs MultiscaleGradientCorrection per panel BEFORE PMM, so
+    # the panels handed to PMM are already gradient-free. PMM's own
+    # target-gradient correction then has no real gradient to fit and
+    # instead extrapolates its surface-spline across the panel, producing
+    # a background glow in the corner farthest from the overlap. Disable
+    # it; PMM still applies the photometric scale + the overlap-join
+    # gradient, so the seam stays matched.
+    "useTargetGradientCorrection": False,
     "targetGradientSmoothness": 2,
     "limitMaskStarsPercent": 10,
     "maskStarGrowthRate": 0.25,
@@ -77,6 +85,13 @@ def PhotometricMosaic(images: list[Image], **kwargs: Any) -> Image:
         name="PhotometricMosaic",
         script_filename=_SCRIPT_FILENAME,
         parameters={k: str(v) for k, v in parameters.items()},
+        # astroflow_main() swallows any exception into a MessageBox and
+        # returns normally, so a failed join leaves no error in the log —
+        # it just never creates the Mosaic view. Assert the script's
+        # conclusive success line ("Created Mosaic …", emitted only after
+        # the view is built) so a silent failure raises here instead of
+        # surfacing later as a confusing missing-output error at save.
+        success_pattern=re.compile(r"Created\s+Mosaic\b"),
     ))
 
     result = Image(

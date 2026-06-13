@@ -19,18 +19,18 @@ _DEFAULT_PARAMETERS = {
     "referenceImage": "",
     "referenceIsFile": False,
     "targets": [],
-    "mode": Enum("StarAlignment.prototype.RegisterMatch"),
+    "mode": Enum("StarAlignment.RegisterMatch"),
     "writeKeywords": True,
     "generateMasks": False,
     "generateDrizzleData": True,
     "inheritAstrometricSolution": True,
     "noGUIMessages": True,
     "useSurfaceSplines": True,
-    "pixelInterpolation": Enum("StarAlignment.prototype.Auto"),
+    "pixelInterpolation": Enum("StarAlignment.Auto"),
     "clampingThreshold": 0.30,
-    "onError": Enum("StarAlignment.prototype.Continue"),
-    "fitPSF": Enum("StarAlignment.prototype.FitPSF_DistortionOnly"),
-    "intersection": Enum("StarAlignment.prototype.MosaicOnly"),
+    "onError": Enum("StarAlignment.Continue"),
+    "fitPSF": Enum("StarAlignment.FitPSF_DistortionOnly"),
+    "intersection": Enum("StarAlignment.MosaicOnly"),
 }
 
 _RENAME_JS = 'View.viewById("{old_id}").id = "{new_id}";'

@@ -7,7 +7,9 @@ from pix.tasks import (
     SpectrophotometricFluxCalibration,
     MultiscaleGradientCorrection,
     GradientCorrection,
+    AutomaticBackgroundExtractor,
 )
+from pix.recipe import PixInsightNoReferenceDataError
 from pix.tasks.filters import normalize_filter
 from decorators import node
 from decisions.settings import ProcessingConfig
@@ -78,19 +80,36 @@ def post_process_stack(
     )
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
 
-    image = Image.open(master.filename, filter=stack.filter)
-    image = WriteAstrometricSolution(image, master.plate_solution.header)
+    def _calibrated_master() -> Image:
+        """Fresh master view with WCS injected + flux-calibrated. Re-opened
+        per attempt so a failed recipe's accumulated steps don't leak into
+        the fallback."""
+        img = Image.open(master.filename, filter=stack.filter)
+        img = WriteAstrometricSolution(img, master.plate_solution.header)
+        return SpectrophotometricFluxCalibration(img)
 
     if normalize_filter(stack.filter) == "S":
-        # MultiscaleGradientCorrection has no MARS reference data for
-        # SII, so it fails deterministically on S-filter masters. Use
-        # the classic GradientCorrection (no external data) instead.
-        result = GradientCorrection(image)
+        # SII has no MARS reference data at all, so MGC can't run on it;
+        # use the classic data-driven GradientCorrection directly.
+        image = Image.open(master.filename, filter=stack.filter)
+        image = WriteAstrometricSolution(image, master.plate_solution.header)
+        GradientCorrection(image).save_to(output_filename, mock=mock_pixinsight)
     else:
-        result = MultiscaleGradientCorrection(
-            SpectrophotometricFluxCalibration(image)
-        )
-    result.save_to(output_filename, mock=mock_pixinsight)
+        try:
+            MultiscaleGradientCorrection(_calibrated_master()).save_to(
+                output_filename, mock=mock_pixinsight,
+            )
+        except PixInsightNoReferenceDataError:
+            # MARS has no coverage for this field/filter. Fall back to the
+            # data-driven AutomaticBackgroundExtractor (no external
+            # reference), so gradient correction still works anywhere on sky.
+            log.warning(
+                "MGC has no MARS reference data; falling back to ABE",
+                filter=stack.filter, master=str(master.filename),
+            )
+            AutomaticBackgroundExtractor(_calibrated_master()).save_to(
+                output_filename, mock=mock_pixinsight,
+            )
 
     # Equalize each panel's sky background to a known pedestal so
     # adjacent panels match at the seam. WBPP's `ImageIntegration`

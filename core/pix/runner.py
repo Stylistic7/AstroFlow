@@ -287,9 +287,15 @@ def run_scp(
         start_sentinel = tmp_dir / f"start_{script_id}.txt"
         end_sentinel = tmp_dir / f"end_{script_id}.txt"
 
-        # Wrap commands with sentinels and close-all
+        # Wrap commands with sentinels and close-all. The leading
+        # `close --force *` makes every recipe self-cleaning on entry:
+        # a prior recipe in this persistent instance (especially one that
+        # failed) may have left views open, and reopening the same file
+        # yields the same deterministic view_id — so start from a clean
+        # slate to avoid collisions. Trailing close-all tidies up after.
         scp = (
             f'![echo "start" > {start_sentinel}\n'
+            f'close --force *\n'
             f'{scp_commands}\n'
             f'close --force *\n'
             f'![echo "end" > {end_sentinel}\n'

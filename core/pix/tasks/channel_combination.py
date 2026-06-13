@@ -6,7 +6,7 @@ from pix.recipe import Step
 from pix.tasks.js import Enum, execute_global
 
 _DEFAULT_PARAMETERS = {
-    "colorSpace": Enum("ChannelCombination.prototype.RGB"),
+    "colorSpace": Enum("ChannelCombination.RGB"),
     "channels": [],
     "inheritAstrometricSolution": True,
 }

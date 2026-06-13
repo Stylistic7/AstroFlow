@@ -5,7 +5,7 @@ from pix.image import Image
 from pix.recipe import Step
 
 _SCRIPT_FILENAME = (
-    "/Applications/PixInsight/src/scripts/AdP/MosaicByCoordinates.js"
+    "/Applications/PixInsight/src/scripts/MosaicByCoordinates/MosaicByCoordinates.js"
 )
 
 _DEFAULT_PARAMETERS = {

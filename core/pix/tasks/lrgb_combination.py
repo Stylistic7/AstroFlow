@@ -6,7 +6,12 @@ from pix.recipe import Step
 from pix.tasks.js import Enum, execute_global
 
 _DEFAULT_PARAMETERS = {
-    "colorSpace": Enum("LRGBCombination.prototype.RGB"),
+    # FIXME(PJSR-2.0/V8): broken. On a fresh LRGBCombination instance
+    # `colorSpace` reads undefined, and `LRGBCombination.RGB` is undefined
+    # too — the parameter and its enum were renamed/removed in PixInsight
+    # 1.9.4. Needs per-process migration (probe the live process). Not
+    # exercised by the mono mosaic pipeline, so left flagged not guessed.
+    "colorSpace": Enum("LRGBCombination.RGB"),
     "channels": [],
     "inheritAstrometricSolution": True,
     "mL": 0.500,

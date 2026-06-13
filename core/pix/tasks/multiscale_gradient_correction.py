@@ -51,8 +51,11 @@ def MultiscaleGradientCorrection(image: Image, **kwargs: Any) -> Image:
             name="MultiscaleGradientCorrection",
             error_patterns=[
                 re.compile(r"\*\*\* Error:.*lacks flux calibration metadata"),
-                re.compile("No reference data found for filter"),
             ],
+            # "No reference data found for filter" (MARS has no coverage for
+            # this field/filter) is detected universally by Recipe and
+            # raised as PixInsightNoReferenceDataError, which
+            # post_process_stack catches to fall back to ABE.
         )
     )
     return Image(
