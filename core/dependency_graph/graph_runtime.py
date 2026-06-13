@@ -213,12 +213,27 @@ class GraphRuntime:
         return [self.results[dep] for dep in self._graph.get(node, [])]
 
     def make_fn_args(self, node: Node) -> list[Any]:
-        """Build the argument list for a node's remote function."""
-        sig = inspect.signature(node.task._function)
-        args = list(node.args)
-        if len(sig.parameters) > len(node.args):
-            args += self.ancestor_results(node)
-        return args
+        """Build the argument list for a node's remote function.
+
+        Data-dep results are placed at their ORIGINAL arg positions
+        (`node._dep_positions`), so a node result can sit anywhere in the
+        call — first, middle, or last — not only as a trailing arg. Nodes
+        built directly (no `_dep_positions`, e.g. in tests) fall back to
+        the historical literals-then-deps layout."""
+        from dependency_graph.classes import reconstruct_call_args
+        positions = getattr(node, "_dep_positions", None)
+        literals = list(node.args)
+        if positions is None:
+            sig = inspect.signature(node.task._function)
+            if len(sig.parameters) > len(literals):
+                return literals + self.ancestor_results(node)
+            return literals
+        # `_dep_positions` counts the data deps exactly (robust to
+        # `*cal_masters`); they sit before any ordering-only `_after`
+        # deps in `graph[node]`.
+        deps = self._graph.get(node, [])[: len(positions)]
+        dep_values = [self.results[d] for d in deps]
+        return reconstruct_call_args(literals, dep_values, positions)
 
     def _notify_ephemeral_registry(
         self, node: Node, result: Any, succeeded: bool,

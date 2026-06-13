@@ -141,6 +141,31 @@ class Node:
         )
 
 
+def reconstruct_call_args(literals, dep_values, dep_positions):
+    """Rebuild a node's positional call args from its literals and its
+    resolved data-dep values, placing each dep at the ORIGINAL position
+    it occupied in the traced call.
+
+    `dep_positions` is the list of arg indices that were data-dep
+    handles at trace time (ascending; `dep_values` is in the same
+    order). With it, an op whose first arg is a dep — e.g.
+    `stack_files(downscale_stack(8, stack), config, *cal_masters)` in the
+    downscaled pipeline — reconstructs as `[downscaled, config, cal…]`
+    instead of collapsing the literal `config` into slot 0.
+
+    `dep_positions is None` is the legacy path for Nodes built directly
+    (not via `record()`): fall back to literals-then-deps, the historical
+    "deps trailing" layout.
+    """
+    if dep_positions is None:
+        return list(literals) + list(dep_values)
+    pos = set(dep_positions)
+    total = len(literals) + len(dep_values)
+    lit_it = iter(literals)
+    dep_it = iter(dep_values)
+    return [next(dep_it) if i in pos else next(lit_it) for i in range(total)]
+
+
 NodeStatusFn = Callable[[Node, Any, Any], None]
 
 AnyTask: TypeAlias = GenericRemoteFunction | Callable

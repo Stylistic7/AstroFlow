@@ -82,6 +82,10 @@ def record(task: Callable, *args: Any, _after: tuple = ()) -> Node:
     data_deps = [a for a in args if isinstance(a, Node)]
     ordering_deps = [a for a in _after if isinstance(a, Node)]
     deps = data_deps + ordering_deps
+    # Original positions of the data-dep args, so the runtime/preflight
+    # can rebuild the call with each dep at its true slot (the entity
+    # stays first even when it's a `@node` result, e.g. downscale_stack).
+    dep_positions = [i for i, a in enumerate(args) if isinstance(a, Node)]
 
     fn = getattr(task, "_function", task)
     # Include `_after` in the name hash so two otherwise-identical calls
@@ -94,10 +98,12 @@ def record(task: Callable, *args: Any, _after: tuple = ()) -> Node:
         getattr(fn, "__qualname__", getattr(fn, "__name__", "")),
         list(literals),
         [d.name for d in data_deps],
+        dep_positions,
         sorted(d.name for d in ordering_deps),
     ]))
 
     node = Node(task, *literals, name=name)
+    node._dep_positions = dep_positions
     if node in g:
         canonical = next(k for k in g if k == node)
         canonical._group_path = ()

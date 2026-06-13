@@ -98,16 +98,26 @@ def _find_dep_entity(dep, graph):
 
 def _predicted_fn_args(node, predicted: dict, graph) -> list[Any]:
     """Build the predicted positional args for `node.task`: literals +
-    `_PredictedRef` stubs for each data dep, in signature order. Each
-    stub carries both the dep's predicted call_hash AND the dep's
-    primary entity (so polymorphic narrow hooks can read stable_hash
-    through it)."""
-    fn_args: list[Any] = list(node.args)
-    for d in _data_deps(node, graph):
-        fn_args.append(_PredictedRef(
-            predicted[d], entity=_find_dep_entity(d, graph),
-        ))
-    return fn_args
+    a `_PredictedRef` stub per data dep, each placed at its ORIGINAL arg
+    position (mirrors `GraphRuntime.make_fn_args`). Each stub carries the
+    dep's predicted call_hash AND its primary entity (so polymorphic
+    narrow hooks can read stable_hash through it)."""
+    from dependency_graph.classes import reconstruct_call_args
+    literals = list(node.args)
+    positions = getattr(node, "_dep_positions", None)
+    if positions is None:
+        fn_args: list[Any] = list(literals)
+        for d in _data_deps(node, graph):
+            fn_args.append(_PredictedRef(
+                predicted[d], entity=_find_dep_entity(d, graph),
+            ))
+        return fn_args
+    deps = list(graph.get(node, []))[: len(positions)]
+    dep_refs = [
+        _PredictedRef(predicted[d], entity=_find_dep_entity(d, graph))
+        for d in deps
+    ]
+    return reconstruct_call_args(literals, dep_refs, positions)
 
 
 def _predict_one(node, predicted: dict, graph) -> str:
