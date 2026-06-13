@@ -56,6 +56,17 @@ _FOV_DEG = 4096 * 1.0 / 3600.0
 _RA_OFFSET_DEG = 0.80 * _FOV_DEG  # ~20% panel overlap
 
 
+# Apex field matrix: spans a MARS-covered galactic-plane field (→ MGC) and
+# a high galactic-latitude field with no MARS coverage (→ ABE fallback),
+# so the run exercises BOTH gradient-correction paths. Both at Dec 0
+# (identification geometry validated equatorial; RA shifts galactic
+# latitude). Each field's mosaic lands in /tmp/astroflow_seam_test/<field>/.
+_APEX_FIELDS = {
+    "galactic_plane_mgc": dict(ra_a=100.0, dec=0.0),    # b≈-2, MARS → MGC
+    "high_lat_abe":       dict(ra_a=192.85, dec=0.0),   # b≈+63, no MARS → ABE
+}
+
+
 def add_synthetic_mosaic_images(
     *, dec: float = 0.0, ra_a: float = 192.85,
     ra_b: float | None = None,
@@ -279,16 +290,46 @@ def _seam_column_profile(mosaic) -> dict:
     }
 
 
+def _join_step(seam: dict) -> dict:
+    """Local seam discontinuity across the panel join — the field-
+    independent 'is there a visible seam?' invariant. Smooth the column
+    sky profile, then take the largest change over a ~50px window: a real
+    join step is a sharp jump, whereas a per-panel smile or a smooth
+    MARS-vs-synthetic gradient changes only gradually and is NOT a seam."""
+    import numpy as np
+
+    prof = seam["profile"]
+    good = seam["good_cols"]
+    if good.size < 200:
+        return {"step_adu": float("nan"), "step_over_rms": float("nan")}
+    p = prof[good]
+    k = 25
+    sm = np.convolve(p, np.ones(2 * k + 1) / (2 * k + 1), mode="valid")
+    W = 25
+    if sm.size <= 2 * W:
+        return {"step_adu": float("nan"), "step_over_rms": float("nan")}
+    step = float(np.max(np.abs(sm[2 * W:] - sm[:-2 * W])))
+    return {"step_adu": step,
+            "step_over_rms": step / max(seam["sky_rms"], 1e-12)}
+
+
 @pytest.mark.slow
 @pytest.mark.timeout(2400)
-def test_synthetic_mosaic_is_seamless(test_context):
+@pytest.mark.parametrize("field", list(_APEX_FIELDS))
+def test_synthetic_mosaic_is_seamless(test_context, field):
     """Apex: source FITS → seamless mosaic, fully automatic, via the real
-    PixInsight Master pipeline.
+    PixInsight Master pipeline, across multiple sky regions.
 
-    Two-pass — run to identify the mosaic, drop it in the shopping cart,
-    run again to build it — because the synthetic pixels make the stable
-    hash run-dependent. Dumps the assembled mosaic + a column-wise sky
-    profile, then checks the join reads as a single flat photograph."""
+    Two-pass (synthetic pixels make the stable hash run-dependent): run to
+    identify the mosaic, drop it in the shopping cart, run again to build.
+
+    Universal invariant asserted for EVERY field: the JOIN is seamless —
+    no local step across the panel boundary (`_join_step`). Global flatness
+    is reported but NOT asserted: on MARS/MGC fields, MGC subtracts the
+    real-sky model from synthetic uniform data, leaving a smooth gradient
+    that is a synthetic↔MARS mismatch, not a seam; only the data-driven ABE
+    path is flat. Each field's mosaic + profile land in
+    /tmp/astroflow_seam_test/<field>/ for visual comparison."""
     import numpy as np
     import matplotlib
     matplotlib.use("Agg")
@@ -300,16 +341,16 @@ def test_synthetic_mosaic_is_seamless(test_context):
     from previews.operations import autostretch, array_to_png
 
     _force_real_pixinsight()
-    add_synthetic_mosaic_images()
+    add_synthetic_mosaic_images(**_APEX_FIELDS[field])
 
     # Pass 1 — solve + identify.
     run_graph(build_compute_graph())
     assert len(context.mosaics) == 1, (
-        f"Identification produced {len(context.mosaics)} mosaics: "
+        f"[{field}] identification produced {len(context.mosaics)} mosaics: "
         f"{list(context.mosaics)}"
     )
     mosaic_id = next(iter(context.mosaics))
-    print(f"\n[apex] identified mosaic {mosaic_id}; building via PixInsight Master")
+    print(f"\n[apex:{field}] mosaic {mosaic_id}; building via PixInsight Master")
 
     # Pass 2 — build the mosaic through the real pipeline.
     context.shopping_cart = [("mosaic", mosaic_id, "PixInsight Master")]
@@ -317,34 +358,40 @@ def test_synthetic_mosaic_is_seamless(test_context):
 
     final_dir = context.output_dir / "store_mosaic_color_channel_xisf"
     finals = sorted(final_dir.glob("*.xisf")) if final_dir.exists() else []
-    assert finals, f"No final mosaic produced under {final_dir}"
+    assert finals, f"[{field}] no final mosaic under {final_dir}"
     mosaic = read_image(finals[-1]).astype(np.float64)
     if mosaic.ndim == 3:
         mosaic = mosaic[..., 0]
 
-    out = _SEAM_IMAGE_DIR / "apex"
+    out = _SEAM_IMAGE_DIR / field
     out.mkdir(parents=True, exist_ok=True)
     (out / "mosaic.png").write_bytes(
         array_to_png(autostretch(mosaic.astype(np.float32)))
     )
 
     seam = _seam_column_profile(mosaic)
+    js = _join_step(seam)
     fig, ax = plt.subplots(figsize=(11, 4))
     ax.plot(seam["good_cols"], seam["profile"][seam["good_cols"]],
             lw=0.7, color="0.2")
-    ax.set_title(f"Mosaic sky background vs column — "
-                 f"seam {seam['seam_pp_adu']:.4g} ADU "
-                 f"({seam['seam_over_rms']:.2f}× sky RMS)")
+    ax.set_title(f"{field}: join step {js['step_over_rms']:.2f}× RMS, "
+                 f"global p-p {seam['seam_over_rms']:.2f}× RMS")
     ax.set_xlabel("column (x) across mosaic")
     ax.set_ylabel("sky-background median (ADU)")
     fig.tight_layout()
     fig.savefig(out / "seam_profile.png", dpi=110)
     plt.close(fig)
 
-    print(f"[apex] mosaic {mosaic.shape}, valid={float((mosaic>0).mean()):.2f}, "
+    print(f"[apex:{field}] valid={float((mosaic>0).mean()):.2f} "
           f"sky_median={seam['sky_median']:.4g} sky_rms={seam['sky_rms']:.4g} "
-          f"seam_pp={seam['seam_pp_adu']:.4g} ({seam['seam_over_rms']:.2f}× RMS)")
-    print(f"[apex] artifacts in {out}")
+          f"join_step={js['step_adu']:.4g} ({js['step_over_rms']:.2f}× RMS) "
+          f"global_pp={seam['seam_pp_adu']:.4g} ({seam['seam_over_rms']:.2f}× RMS)")
+    print(f"[apex:{field}] artifacts in {out}")
 
-    assert np.isfinite(mosaic).all(), "Mosaic has non-finite pixels."
-    assert (mosaic > 0).mean() > 0.2, "Mosaic is mostly empty."
+    assert np.isfinite(mosaic).all(), f"[{field}] mosaic has non-finite pixels."
+    assert (mosaic > 0).mean() > 0.2, f"[{field}] mosaic is mostly empty."
+    # Universal invariant: no visible seam at the join.
+    assert js["step_over_rms"] < 2.0, (
+        f"[{field}] visible seam at the join: {js['step_over_rms']:.2f}× sky "
+        f"RMS (step {js['step_adu']:.4g} ADU)"
+    )
