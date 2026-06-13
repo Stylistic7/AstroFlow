@@ -25,7 +25,6 @@ def _store_xisf_narrow(args, kwargs):
 
 
 @node(
-    identity=MosaicChannelId,
     display="Mosaic",
     final=True,
     cache_key_narrow=_store_xisf_narrow,
@@ -56,7 +55,6 @@ def store_mosaic_color_channel_xisf(
 
 
 @node(
-    identity=MosaicChannelId,
     display="Subframe",
     final=True,
     resources={"fastest_storage": 0.001},
@@ -80,7 +78,6 @@ def store_mosaic_color_channel_subframe(
 
 
 @node(
-    identity=MosaicChannelId,
     display="Mosaic",
     final=True,
 )

@@ -56,7 +56,6 @@ def _post_process_target(
 
 
 @node(
-    identity=TargetId,
     resources={"PixInsight": 1},
     scheduling_strategy="SPREAD",
     auto_memory=True,
@@ -109,7 +108,7 @@ def post_process_target(
     return None
 
 
-@node(identity=TargetId)
+@node
 def post_process_target_oss(target: Target, mock_pixinsight: bool = False) -> None:
     """Stub: target post-processing for the OSS pipeline (TODO)."""
     return None

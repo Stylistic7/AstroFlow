@@ -56,7 +56,7 @@ class _TracedOutput:
 
     `entity` is the dep's first identity-bearing arg (or recursive
     ancestor). When `downscale_stack(8, stack)` becomes a dep of
-    `stack_files(config, stack_dep, *cal_masters)`, the dispatcher in
+    `stack_files(stack_dep, config, *cal_masters)`, the dispatcher in
     `_make_dispatcher` sees ProcessingConfig at args[0] and needs
     `entity` on the `_TracedOutput` proxy to find the actual Stack.
     """

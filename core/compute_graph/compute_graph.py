@@ -512,7 +512,7 @@ def _find_identity_arg(graph, node):
 
     The tracer's convention is "literals first, deps trailing": deps
     get stripped from `Node.args` and stored on graph edges, so an op
-    like `stack_files(config, stack, *cal_masters)` where `stack` is a
+    like `stack_files(stack, config, *cal_masters)` where `stack` is a
     dep ends up with `args = (config,)` and `deps = [stack_node, ...]`.
     The entity is somewhere down that dep chain — usually as the
     leading literal of the first dep — so we recurse.
@@ -569,7 +569,7 @@ def extract_pipeline_taps(graph):
         identities = getattr(fn, "_identities", None) or getattr(task, "_identities", [])
         # Find the entity: try literals (n.args) first, then walk into
         # the dep chain. Lets ops with `stack` as a trailing dep (e.g.
-        # `stack_files(config, stack, *cal_masters)`) route taps the
+        # `stack_files(stack, config, *cal_masters)`) route taps the
         # same as ops with `stack` as a leading literal.
         entity = _find_identity_arg(graph, n)
         if entity is None:

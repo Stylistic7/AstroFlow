@@ -52,6 +52,33 @@ measure_performance = make_measure_performance_decorator(context)
 capture_logs = make_capture_logs_decorator(context)
 
 
+# File-typed return annotations that signal "this is an artifact
+# producer." Listed locally rather than imported from products.registry
+# so bare `@node` decoration paths don't have to load that module.
+_FILE_RETURN_TYPE_NAMES = ('TiffFilePath', 'XisfFilePath', 'FitsFilePath')
+
+
+def _looks_like_file_return(func) -> bool:
+    """Return True iff `func`'s return annotation names a file-typed
+    result directly (`-> XisfFilePath`) or as a generic arg
+    (`-> WithSidecar[XisfFilePath]`)."""
+    import inspect, typing
+    raw = func.__wrapped__ if hasattr(func, '__wrapped__') else func
+    try:
+        sig = inspect.signature(raw)
+    except (TypeError, ValueError):
+        return False
+    ret = sig.return_annotation
+    if ret is inspect.Signature.empty:
+        return False
+    if getattr(ret, '__name__', None) in _FILE_RETURN_TYPE_NAMES:
+        return True
+    for a in typing.get_args(ret):
+        if getattr(a, '__name__', None) in _FILE_RETURN_TYPE_NAMES:
+            return True
+    return False
+
+
 def _metadata_wrap(func):
     """Run `func`, then synchronously extract image metadata from its
     return value and yield the resulting `ImageMetadata` to callers.
@@ -157,20 +184,16 @@ class _Node:
 
         # ---- 1. Parse kwargs ------------------------------------------
         ray_opts = dict(all_kwargs)
-        identity = ray_opts.pop("identity", None)
+        # `identity=` is accepted but ignored — every @node now routes
+        # by `type(first_arg).__name__` and the op's own `__name__`,
+        # with no ObjectId indirection. Pop here to keep it out of
+        # ray_opts; remove once all call sites stop passing it.
+        ray_opts.pop("identity", None)
         final = ray_opts.pop("final", False)
         display = ray_opts.pop("display", None)
-        media_type = ray_opts.pop("media_type", None)
+        ray_opts.pop("media_type", None)  # vestigial
         custom_filename_fn = ray_opts.pop("filename_fn", None)
         cache_key_narrow = ray_opts.pop("cache_key_narrow", None)
-        identities = _normalize_identities(identity)
-        # Default media_type = IMAGE; only resolve when there are
-        # identities to register (avoids pulling the products.registry
-        # module — and its mosaics/targets/stacks transitive imports —
-        # into the import path of every bare `@node` decoration).
-        if identities and media_type is None:
-            from products.registry import MediaType
-            media_type = MediaType.IMAGE
 
         # ---- 2. Compute shared artifacts ------------------------------
         fn_hash = hash_source_code(func)
@@ -185,30 +208,30 @@ class _Node:
                 args, kwargs = cache_key_narrow(args, kwargs)
             return hash_call(fn_hash, *args, **kwargs)
 
+        # An op is an "artifact producer" iff its return annotation
+        # resolves to a file-typed result (TIFF, XISF, etc.). That's
+        # the signal that used to be `identity=...`; the return type
+        # was already carrying it.
+        #
+        # Done inline (rather than calling into `products.registry`)
+        # so a bare @node decoration on a non-artifact op never has
+        # to import the registry — avoids a circular-import chain
+        # during module load of `clustering/` / similar bare-@node
+        # modules.
+        is_artifact_producer = _looks_like_file_return(func)
+
         filename_fn = None
-        filename_fns = None
-        if identities:
-            from products.registry import (
-                validate_identities, build_filename_fns, fully_resolve,
-            )
-            validate_identities(func, identities)
+        if is_artifact_producer:
+            from products.registry import build_filename_fn, fully_resolve
             if custom_filename_fn is not None:
-                # Caller passed an explicit `filename_fn=` (rare, used by
-                # selection-style ops that return absolute paths to raw
-                # frames). Apply it per identity; skip the call_hash
-                # convention entirely.
-                filename_fns = {
-                    identity: fully_resolve(
-                        identity, custom_filename_fn, func.__name__,
-                    )
-                    for identity in identities
-                }
-                from products.registry import _make_dispatcher
-                filename_fn = _make_dispatcher(filename_fns)
+                # Caller passed an explicit `filename_fn=` (rare, used
+                # by selection-style ops that return absolute paths to
+                # raw frames). Wrap with `fully_resolve` so the routing
+                # prefix (`<output_dir>/<op_name>/`) still gets prepended
+                # for relative paths.
+                filename_fn = fully_resolve(custom_filename_fn, func.__name__)
             else:
-                filename_fns, filename_fn = build_filename_fns(
-                    func, identities, canonical_call_hash,
-                )
+                filename_fn = build_filename_fn(func, canonical_call_hash)
 
         # ---- 3. Compose layers ----------------------------------------
         # Each layer is single-concern. None of them queries another's
@@ -216,12 +239,10 @@ class _Node:
         # explicit arguments below.
         wrapped = func
 
-        if identities:
+        if is_artifact_producer:
             from products.registry import makes_image_wrap
             wrapped = makes_image_wrap(
-                wrapped,
-                canonical_call_hash=canonical_call_hash,
-                identities=identities,
+                wrapped, canonical_call_hash=canonical_call_hash,
             )
             wrapped = _metadata_wrap(wrapped)
 
@@ -234,23 +255,16 @@ class _Node:
         )
 
         # ---- 4. Attach public-API attributes on the final wrapper -----
-        # These are the ATTRIBUTES users access on the wrapper. The
-        # inner layers don't read them — they had everything they needed
-        # passed in as args. These exist purely so external code (user
-        # pipelines, the trace, the runtime, the view-side enumeration)
-        # can introspect the op.
         wrapper._fn_hash = fn_hash
         wrapper._cache_key_narrow = cache_key_narrow
 
-        if identities:
+        if is_artifact_producer:
             wrapper.filename_fn = filename_fn
-            wrapper.filename_fns = filename_fns
-            wrapper._identities = identities
             wrapper._final = final
             if display is not None:
                 wrapper._display = display
             from products.registry import register_producer
-            register_producer(wrapper, identities, media_type=media_type)
+            register_producer(wrapper, func)
 
         return wrapper
 

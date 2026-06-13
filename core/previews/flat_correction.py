@@ -14,7 +14,7 @@ from previews.identity import CalibratedStackId, UncorrectedRunId
 
 THUMBNAIL = PresentationType.THUMBNAIL
 
-@image_producer(identity=CalibratedStackId)
+@image_producer()
 @measure_performance
 def flat_corrected_stack(
     stack: Stack, substack: Run, flat_stack: Run,
@@ -34,7 +34,7 @@ def flat_corrected_stack(
 
     return calibrate_subframe(light_frame, dependencies)
 
-@image_producer(identity=UncorrectedRunId)
+@image_producer()
 def uncorrected_run_thumbnail(
     stack: Stack, substack: Run,
 ) -> np.ndarray:

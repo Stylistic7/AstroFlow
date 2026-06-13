@@ -182,7 +182,6 @@ def _place_image_narrow(args, kwargs):
 
 
 @node(
-    identity=PlacedImageId,
     cache_key_narrow=_place_image_narrow,
     auto_memory=True,
 )

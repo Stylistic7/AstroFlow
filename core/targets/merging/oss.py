@@ -43,7 +43,6 @@ log = structlog.get_logger()
 _SATURATION_FRACTION = 0.999
 
 @node(
-    identity=TargetChannelId,
     cache_key_narrow=_merge_target_channel_narrow,
     auto_memory=True,
 )

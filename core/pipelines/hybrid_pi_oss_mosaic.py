@@ -43,8 +43,8 @@ from targets.types import Target
 def _post_processed_master(stack, config):
     """Calibrate → WBPP-stack → post-process. Same as PI Master."""
     cal_masters = calibrate(stack, config)
-    master = stack_files(config, stack, *cal_masters)
-    return post_process_stack(config, stack, master)
+    master = stack_files(stack, config, *cal_masters)
+    return post_process_stack(stack, config, master)
 
 
 @workflow_group

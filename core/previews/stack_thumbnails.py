@@ -103,11 +103,11 @@ def get_best_light_frame(stack: Stack) -> WithSidecar:
         FitsFilePath(metadata[light_frames_by_stars[0]].filename)
     )
 
-@node(identity=StackId, filename_fn=get_best_light_frame)
+@node(filename_fn=get_best_light_frame)
 def stack_thumbnail(stack: Stack) -> WithSidecar:
     return get_best_light_frame(stack)
 
-@node(identity=CalibrationStackId, filename_fn=get_first_frame)
+@node(filename_fn=get_first_frame)
 def calibration_stack_thumbnail(stack: CalibrationStack) -> WithSidecar:
     return get_first_frame(stack)
 
@@ -147,7 +147,6 @@ def _stack_thumbnail_video_narrow(args, kwargs):
     return (stack, width, narrow_stack_config(stack, config), *rest), kwargs
 
 @node(
-    identity=StackId,
     media_type=MediaType.VIDEO,
     cache_key_narrow=_stack_thumbnail_video_narrow,
     resources={"fastest_storage": 0.001},
@@ -189,7 +188,6 @@ def stack_thumbnail_video(
         yield im
 
 @node(
-    identity=CalibrationStackId,
     media_type=MediaType.VIDEO,
     resources={"fastest_storage": 0.001},
 )

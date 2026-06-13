@@ -12,7 +12,7 @@ trace time so the cal-master sub-graph is built explicitly:
 * `calibrate(stack, config)` — convenience for the common case
   where no per-stack transform is needed. Returns the list of
   cal-master handles ready to spread into
-  `stack_files(config, stack, *cal_masters)`.
+  `stack_files(stack, config, *cal_masters)`.
 """
 from file_io.types import WithSidecar
 from stacks.composite_stack import BaseStack, CalibrationStack
@@ -39,7 +39,7 @@ def calibration_stacks_for(
                 config, cs_transformed, *cal_masters,
             ))
         s_transformed = my_transform(stack)
-        master = stack_files(config, s_transformed, *cal_masters)
+        master = stack_files(s_transformed, config, *cal_masters)
 
     Each cal stack's `stack_files` call is passed every cal master
     built so far; `stack_files` matches them to its own dependencies
@@ -79,12 +79,12 @@ def calibrate(
     calibration dependencies, with no per-stack transformation.
 
         cal_masters = calibrate(stack, config)
-        master = stack_files(config, stack, *cal_masters)
+        master = stack_files(stack, config, *cal_masters)
 
     For pipelines that want to transform each cal stack (e.g.
     downscale) before stacking, use `calibration_stacks_for` and
     write the loop yourself."""
     cal_masters: list[WithSidecar] = []
     for cs in calibration_stacks_for(stack, config):
-        cal_masters.append(stack_files(config, cs, *cal_masters))
+        cal_masters.append(stack_files(cs, config, *cal_masters))
     return cal_masters

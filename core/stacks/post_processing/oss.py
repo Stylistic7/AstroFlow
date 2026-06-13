@@ -23,12 +23,11 @@ from stacks.composite_stack import Stack
 log = structlog.get_logger()
 
 @node(
-    identity=StackId,
     display="Post-Processed",
     auto_memory=True,
 )
 def post_process_stack_oss(
-    mock_pixinsight: bool, stack: Stack, master,
+    stack: Stack, mock_pixinsight: bool, master,
 ) -> WithSidecar[FitsFilePath]:
     """OSS background-correct + plate-solve a stacked master.
 
@@ -38,7 +37,7 @@ def post_process_stack_oss(
     call_hash via `filename_fn(*bound.args)`, so distinct upstream
     masters produce distinct output filenames automatically."""
     output_filename = post_process_stack_oss.filename_fn(
-        mock_pixinsight, stack, master,
+        stack, mock_pixinsight, master,
     )
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
     log.info("OSS post-processing stack", stack=str(stack), master=str(master.filename))

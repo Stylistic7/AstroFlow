@@ -120,7 +120,7 @@ def _blend_many(paths: list[Path]) -> np.ndarray:
     return numer / denom
 
 
-@node(identity=MergedImageId, display="Merged", auto_memory=True)
+@node(display="Merged", auto_memory=True)
 def merge_images_oss(
     mosaic: Mosaic, filter: str, *inputs: ImageMetadata,
 ) -> WithSidecar[FitsFilePath]:

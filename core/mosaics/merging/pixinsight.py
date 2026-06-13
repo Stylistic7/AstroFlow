@@ -54,7 +54,6 @@ def _blend_pair_numpy(image_0, image_1):
 
 
 @node(
-    identity=MergedImageId,
     display="Merged",
     resources={"fastest_storage": 0.001},
 )
@@ -182,7 +181,6 @@ def _merge_images_narrow(args, kwargs):
 
 
 @node(
-    identity=MergedImageId,
     display="Merged",
     cache_key_narrow=_merge_images_narrow,
     resources={"PixInsight": 1},

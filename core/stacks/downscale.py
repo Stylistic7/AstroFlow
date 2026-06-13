@@ -203,7 +203,7 @@ def downscale_stack(factor: int, stack: BaseStack) -> BaseStack:
     produce distinct outputs).
 
     @node — runs at runtime in a Ray worker. The trace records a
-    Node handle; downstream ops like `stack_files(config, stack,
+    Node handle; downstream ops like `stack_files(stack, config,
     *cal_masters)` see this handle in their dep chain. Signature
     follows the "literals first, deps trailing" convention so the
     tracer's reordering keeps the entity properly recorded.

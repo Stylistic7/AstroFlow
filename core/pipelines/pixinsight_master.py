@@ -33,8 +33,8 @@ def _post_processed_master(stack, config):
     building in one call. Shared across the stack / target /
     mosaic entry points."""
     cal_masters = calibrate(stack, config)
-    master = stack_files(config, stack, *cal_masters)
-    return post_process_stack(config, stack, master)
+    master = stack_files(stack, config, *cal_masters)
+    return post_process_stack(stack, config, master)
 
 
 @workflow_group

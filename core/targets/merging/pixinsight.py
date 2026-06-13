@@ -80,7 +80,6 @@ def _merge_target_channel_impl(
 
 
 @node(
-    identity=TargetChannelId,
     display="Channel",
     cache_key_narrow=_merge_target_channel_narrow,
     resources={"PixInsight": 1},

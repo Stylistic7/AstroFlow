@@ -49,7 +49,6 @@ def _post_process_mosaic(
 
 
 @node(
-    identity=MosaicId,
     resources={"PixInsight": 1},
     auto_memory=True,
 )

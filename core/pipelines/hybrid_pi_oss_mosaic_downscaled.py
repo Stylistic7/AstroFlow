@@ -38,10 +38,10 @@ def _post_processed_master(stack, config):
     cal_masters = []
     for cs in calibration_stacks_for(stack, config):
         cs_downscaled = downscale_stack(8, cs)
-        cal_masters.append(stack_files(config, cs_downscaled, *cal_masters))
+        cal_masters.append(stack_files(cs_downscaled, config, *cal_masters))
     s_downscaled = downscale_stack(8, stack)
-    master = stack_files(config, s_downscaled, *cal_masters)
-    return post_process_stack(config, s_downscaled, master)
+    master = stack_files(s_downscaled, config, *cal_masters)
+    return post_process_stack(s_downscaled, config, master)
 
 
 @workflow_group

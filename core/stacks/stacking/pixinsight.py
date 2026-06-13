@@ -212,8 +212,8 @@ def _stack_files_narrow(args, kwargs):
     `*cal_masters` data-deps that follow are passed through — their
     content_hashes flow into the call_hash, which is what makes
     different upstream cal masters produce different output files."""
-    config, stack, *rest = args
-    return (narrow_stack_config(stack, config), stack, *rest), kwargs
+    stack, config, *rest = args
+    return (stack, narrow_stack_config(stack, config), *rest), kwargs
 
 def _run_wbpp_stacking(
     stack: BaseStack, config: ProcessingConfig,
@@ -307,7 +307,6 @@ def _run_wbpp_stacking(
     return result
 
 @node(
-    identity=[CalibrationStackId, StackId],
     display="Master",
     final=True,
     cache_key_narrow=_stack_files_narrow,
@@ -316,8 +315,8 @@ def _run_wbpp_stacking(
     auto_memory=True,
 )
 def stack_files(
-    config: ProcessingConfig,
     stack: BaseStack,
+    config: ProcessingConfig,
     *cal_masters: ImageMetadata,
 ) -> WithSidecar[XisfFilePath]:
     """Resolution-agnostic PixInsight WBPP master.
@@ -346,7 +345,7 @@ def stack_files(
     output files."""
     return _run_wbpp_stacking(
         stack, config, cal_masters,
-        stack_files.filename_fn(config, stack, *cal_masters),
+        stack_files.filename_fn(stack, config, *cal_masters),
     )
 
 def _check_integration_time(stack: BaseStack, master_path) -> None:
