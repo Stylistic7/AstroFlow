@@ -28,6 +28,14 @@ struct Globals {
     e5: f32,
     maxVal: f32,
     peakBrightness: f32,
+    // 0.0 = PixInsight STF (closed-form MTF using e1/e5 above).
+    // 1.0 = LUT lookup (sample stretchLut at x normalized). Used by
+    //       the constrained-max-entropy stretch (and any future
+    //       LUT-based modes).
+    stretchMode: f32,
+    _pad0: f32,
+    _pad1: f32,
+    _pad2: f32,
 };
 struct Viewport {
     tx: f32,
@@ -49,6 +57,11 @@ struct TileRect {
 @group(0) @binding(0) var<uniform> globals: Globals;
 @group(0) @binding(1) var<uniform> viewport: Viewport;
 @group(0) @binding(2) var tileSampler: sampler;
+// 1024×1 r32float texture carrying the stretch LUT. Indexed by
+// normalized input (xRaw/maxVal). Updated whenever stats or the
+// selected mode change.
+@group(0) @binding(3) var stretchLut: texture_2d<f32>;
+@group(0) @binding(4) var stretchLutSampler: sampler;
 @group(1) @binding(0) var tileTexture: texture_2d<f32>;
 @group(1) @binding(1) var<uniform> tileRect: TileRect;
 
@@ -100,17 +113,28 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // original.
     let x = clamp(xRaw / globals.maxVal, 0.0, 1.0);
 
-    // PixInsight Auto-STF: linear remap into [E1, 1] then MTF.
-    let E2 = max(0.0, (x - globals.e1) / max(1.0 - globals.e1, 1e-12));
-    let num = (globals.e5 - 1.0) * E2;
-    let den = (2.0 * globals.e5 - 1.0) * E2 - globals.e5;
     var y: f32;
-    if (abs(den) < 1e-12) {
-        y = 0.0;
+    if (globals.stretchMode > 0.5) {
+        // LUT-based stretch (constrained max-entropy or any future
+        // mode that needs an empirically-fitted curve). Texture is
+        // 1024×1, so we sample at vec2(x, 0.5) with the linear
+        // sampler — linear interpolation between adjacent LUT
+        // entries gives sub-bin precision for free.
+        y = textureSample(stretchLut, stretchLutSampler, vec2<f32>(x, 0.5)).r;
     } else {
-        y = num / den;
+        // PixInsight Auto-STF: linear remap into [E1, 1] then MTF
+        // (closed-form, no LUT — preserves the precision benefits
+        // identified in the C4-era "kill the LUT" rewrite).
+        let E2 = max(0.0, (x - globals.e1) / max(1.0 - globals.e1, 1e-12));
+        let num = (globals.e5 - 1.0) * E2;
+        let den = (2.0 * globals.e5 - 1.0) * E2 - globals.e5;
+        if (abs(den) < 1e-12) {
+            y = 0.0;
+        } else {
+            y = num / den;
+        }
+        y = clamp(y, 0.0, 1.0);
     }
-    y = clamp(y, 0.0, 1.0);
 
     // HDR scaling. With the canvas configured for extended tone
     // mapping (rgba16float + toneMapping:{mode:'extended'}), values

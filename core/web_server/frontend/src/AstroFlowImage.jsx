@@ -20,6 +20,7 @@ export const AstroFlowImage = ({
     display = undefined,
     hdrEnabled = false,
     peakBrightness = 1.0,
+    stretchMode = 'stf',
 }) => {
     const thumbnail_url = `/thumbnail/${objectType}/${objectId}${filter ? `/${filter}` : ''}`;
 
@@ -43,6 +44,7 @@ export const AstroFlowImage = ({
                         showPanelNumbers={showPanelNumbers}
                         hdrEnabled={hdrEnabled}
                         peakBrightness={peakBrightness}
+                        stretchMode={stretchMode}
                     />
                 ) : (
                     <img

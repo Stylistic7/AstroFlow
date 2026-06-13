@@ -29,12 +29,20 @@ import { TONE_MAPPING_WGSL } from './tone_mapping.js';
 import { fetchLinearTile } from './tile_loader.js';
 
 
-// Globals bind-group layout: STF params + viewport + sampler.
-const GLOBALS_LAYOUT_ENTRIES = [
+// Globals bind-group layout: STF params + viewport + samplers + LUT.
+// Binding 3 is the stretch LUT (1024×1 r32float); binding 4 is its
+// dedicated sampler (same physical sampler as binding 2 — separate
+// binding because WGSL requires explicit declarations per texture
+// even when the sampler can be shared).
+const GLOBALS_LAYOUT_ENTRIES_BASE = [
     { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
     { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
     { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+    { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float' } },
+    { binding: 4, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
 ];
+
+const LUT_SIZE = 1024;
 
 // Per-tile bind-group layout: r32float texture + TileRect uniform.
 // r32float in WebGPU is by default `unfilterable-float`; we sample
@@ -102,12 +110,33 @@ export function useTileRenderer({ canvasRef }) {
                 addressModeV: 'clamp-to-edge',
             });
 
-            // Globals uniform buffer: STF parameters + brightness.
-            // Std140-style layout: 4 × f32 = 16 bytes.
+            // Globals uniform buffer: e1, e5, max, peakBrightness,
+            // stretchMode + 3 floats of std140 padding to round to
+            // a 32-byte boundary.
             const globalsBuffer = device.createBuffer({
-                size: 16,
+                size: 32,
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
+
+            // Stretch LUT — 1024×1 r32float texture sampled in the
+            // fragment shader for max-entropy / future LUT-based
+            // stretches. Initialized to identity so the STF closed-
+            // form path doesn't need the texture to be uploaded
+            // first to render correctly.
+            const lutFormat = 'r32float';
+            const stretchLutTexture = device.createTexture({
+                size: [LUT_SIZE, 1],
+                format: lutFormat,
+                usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+            });
+            const identityLut = new Float32Array(LUT_SIZE);
+            for (let i = 0; i < LUT_SIZE; i++) identityLut[i] = i / (LUT_SIZE - 1);
+            device.queue.writeTexture(
+                { texture: stretchLutTexture },
+                identityLut.buffer,
+                { offset: identityLut.byteOffset, bytesPerRow: LUT_SIZE * 4, rowsPerImage: 1 },
+                { width: LUT_SIZE, height: 1, depthOrArrayLayers: 1 },
+            );
 
             // Viewport uniform buffer: tx, ty, scale, screenW, screenH
             // + 3 floats of padding to reach 32 bytes (WGSL std140
@@ -117,8 +146,17 @@ export function useTileRenderer({ canvasRef }) {
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
 
+            // LUT texture sampleType: 'float' (filterable) when the
+            // adapter exposes float32-filterable; otherwise
+            // 'unfilterable-float' with nearest sampling. 1024 LUT
+            // entries gives enough resolution that nearest-only
+            // shows no banding in practice.
             const globalsLayout = device.createBindGroupLayout({
-                entries: GLOBALS_LAYOUT_ENTRIES,
+                entries: GLOBALS_LAYOUT_ENTRIES_BASE.map((e) =>
+                    e.binding === 3 && wantsFilterable
+                        ? { ...e, texture: { sampleType: 'float' } }
+                        : e,
+                ),
             });
             const tileLayout = device.createBindGroupLayout({
                 entries: wantsFilterable
@@ -134,6 +172,8 @@ export function useTileRenderer({ canvasRef }) {
                     { binding: 0, resource: { buffer: globalsBuffer } },
                     { binding: 1, resource: { buffer: viewportBuffer } },
                     { binding: 2, resource: sampler },
+                    { binding: 3, resource: stretchLutTexture.createView() },
+                    { binding: 4, resource: sampler },
                 ],
             });
 
@@ -159,6 +199,7 @@ export function useTileRenderer({ canvasRef }) {
                 globalsBindGroup,
                 globalsBuffer,
                 viewportBuffer,
+                stretchLutTexture,
                 // `tiles` is the LOADED tile cache, keyed on tile key
                 // (e.g. "z/x/y"). Tiles stay here after leaving the
                 // visible set so re-panning over them doesn't trigger
@@ -169,7 +210,9 @@ export function useTileRenderer({ canvasRef }) {
                 visible: new Set(),     // subset of `tiles` to draw this frame
                 pending: new Set(),     // keys whose fetch is in-flight
                 wantsFilterable,
-                lastGlobals: new Float32Array([0, 0.5, 1, 1]),
+                // 8 floats: e1, e5, max, peakBrightness, stretchMode,
+                // and 3 of std140 padding.
+                lastGlobals: new Float32Array([0, 0.5, 1, 1, 0, 0, 0, 0]),
                 lastViewport: new Float32Array(8),
                 // rAF coalescing — multiple redraw() calls within one
                 // frame collapse into a single paint.
@@ -259,15 +302,35 @@ export function useTileRenderer({ canvasRef }) {
         device.queue.submit([encoder.finish()]);
     }
 
-    /** Push new STF parameters + brightness; paints synchronously so
-     * the slider reflects on the next frame. */
-    function setGlobals({ e1, e5, max, peakBrightness }) {
+    /** Push new STF parameters + brightness + stretch mode; paints
+     * synchronously so the slider reflects on the next frame.
+     * `stretchMode`: 0 = STF closed-form, 1 = LUT lookup. */
+    function setGlobals({ e1, e5, max, peakBrightness, stretchMode = 0 }) {
         const s = stateRef.current;
         if (!s) return;
         s.lastGlobals[0] = e1;
         s.lastGlobals[1] = e5;
         s.lastGlobals[2] = max;
         s.lastGlobals[3] = peakBrightness;
+        s.lastGlobals[4] = stretchMode;
+        paint();
+    }
+
+    /** Upload a new stretch LUT (Float32Array of length 1024) and
+     * paint. The shader samples this when `stretchMode > 0.5`. */
+    function setStretchLut(lut) {
+        const s = stateRef.current;
+        if (!s || !lut) return;
+        if (lut.length !== LUT_SIZE) {
+            console.warn(`stretch LUT length ${lut.length} != ${LUT_SIZE}`);
+            return;
+        }
+        s.device.queue.writeTexture(
+            { texture: s.stretchLutTexture },
+            lut.buffer,
+            { offset: lut.byteOffset, bytesPerRow: LUT_SIZE * 4, rowsPerImage: 1 },
+            { width: LUT_SIZE, height: 1, depthOrArrayLayers: 1 },
+        );
         paint();
     }
 
@@ -425,5 +488,6 @@ export function useTileRenderer({ canvasRef }) {
         redraw();
     }
 
-    return { isReady, error, setGlobals, setViewport, setTileUrls, redraw, clearTiles };
+    return { isReady, error, setGlobals, setViewport, setTileUrls,
+             setStretchLut, redraw, clearTiles };
 }

@@ -21,6 +21,8 @@ import Box from '@mui/material/Box';
 import Slider from '@mui/material/Slider';
 import Switch from '@mui/material/Switch';
 import FormControlLabel from '@mui/material/FormControlLabel';
+import MenuItem from '@mui/material/MenuItem';
+import Select from '@mui/material/Select';
 import Typography from '@mui/material/Typography';
 
 import AstroFlowContext from '../AstroFlowContext.jsx';
@@ -29,7 +31,17 @@ import { useTileRenderer } from './useTileRenderer.js';
 import PolygonOverlay from './PolygonOverlay.jsx';
 import TextOverlay from './TextOverlay.jsx';
 import { computeAutoStretchParams } from '../auto_stretch.js';
+import { computeMaxEntropyLut } from './auto_stretch_maxent.js';
 import { buildApiUrl, buildUrl, inheritView } from '../urls.js';
+
+
+/** Supported stretch modes. Numeric value is what the shader's
+ *  `globals.stretchMode` uniform reads (0 = STF closed-form,
+ *  1 = LUT-based). */
+export const STRETCH_MODES = {
+    stf: { label: 'PixInsight STF', shaderMode: 0 },
+    maxent: { label: 'Constrained max-entropy', shaderMode: 1 },
+};
 
 
 const TILE_SIZE = 256;
@@ -137,6 +149,7 @@ export default function TileViewerV2({
     showPanelNumbers: showPanelNumbersProp,
     hdrEnabled: hdrEnabledProp,
     peakBrightness: peakBrightnessProp,
+    stretchMode: stretchModeProp,
 } = {}) {
     const routeParams = useParams();
     const objectType = objectTypeProp ?? routeParams.objectType;
@@ -167,6 +180,7 @@ export default function TileViewerV2({
     const [localPeakBrightness, setLocalPeakBrightness] = useState(2.0);
     const [localShowPolygons, setLocalShowPolygons] = useState(true);
     const [localShowPanelNumbers, setLocalShowPanelNumbers] = useState(false);
+    const [localStretchMode, setLocalStretchMode] = useState('stf');
     // Default: zoom clamps at 1:1 (one source pixel per screen pixel).
     // Past that the image just gets blurry without revealing detail.
     // Toggle on to allow over-zoom for pixel-peeping or screenshots.
@@ -176,6 +190,7 @@ export default function TileViewerV2({
     const peakBrightness = peakBrightnessProp ?? localPeakBrightness;
     const showPolygons = showPolygonsProp ?? localShowPolygons;
     const showPanelNumbers = showPanelNumbersProp ?? localShowPanelNumbers;
+    const stretchMode = stretchModeProp ?? localStretchMode;
     // hdrEnabled gates brightness: when off, force peak=1.0 (SDR).
     const effectivePeak = (hdrEnabledProp === false) ? 1.0 : peakBrightness;
 
@@ -307,17 +322,33 @@ export default function TileViewerV2({
         renderer.clearTiles();
     }, [renderer.isReady, tileMeta?.mtime]);
 
-    // Push STF globals when statistics + brightness arrive/change.
+    // Push shader uniforms when statistics + brightness + mode change.
+    // The shader picks STF (closed-form) vs LUT (max-entropy) via the
+    // `stretchMode` integer; STF reads e1/e5/max, LUT samples the
+    // texture uploaded by the effect below.
     useEffect(() => {
         if (!renderer.isReady || !metadata?.statistics) return;
         const { E1, E5, identity } = computeAutoStretchParams(metadata.statistics);
+        const shaderMode = STRETCH_MODES[stretchMode]?.shaderMode ?? 0;
         renderer.setGlobals({
             e1: identity ? 0 : E1,
             e5: identity ? 0.5 : E5,
             max: metadata.statistics.max_value || 1.0,
             peakBrightness: effectivePeak,
+            stretchMode: shaderMode,
         });
-    }, [renderer.isReady, metadata?.statistics, effectivePeak]);
+    }, [renderer.isReady, metadata?.statistics, effectivePeak, stretchMode]);
+
+    // Recompute + upload the stretch LUT whenever stats change or the
+    // mode flips into a LUT-based path. STF mode doesn't sample the
+    // LUT so we skip the upload there.
+    useEffect(() => {
+        if (!renderer.isReady || !metadata?.statistics) return;
+        if (stretchMode === 'maxent') {
+            const lut = computeMaxEntropyLut(metadata.statistics);
+            renderer.setStretchLut(lut);
+        }
+    }, [renderer.isReady, metadata?.statistics, stretchMode]);
 
     // On viewport change: push uniforms to renderer + recompute visible
     // tiles. The viewport already rAF-coalesces its subscriber fan-out,
@@ -420,6 +451,28 @@ export default function TileViewerV2({
                         label={<Typography variant="caption">Allow over-zoom past 1:1</Typography>}
                         sx={{ mt: -1, ml: -1 }}
                     />
+                    <Box sx={{ mt: 1 }}>
+                        <Typography variant="caption" sx={{ display: 'block', opacity: 0.85, mb: 0.5 }}>
+                            Stretch
+                        </Typography>
+                        <Select
+                            size="small"
+                            value={localStretchMode}
+                            onChange={(e) => setLocalStretchMode(e.target.value)}
+                            sx={{
+                                width: '100%',
+                                color: '#fff',
+                                '& .MuiSelect-icon': { color: '#fff' },
+                                '& .MuiOutlinedInput-notchedOutline': {
+                                    borderColor: 'rgba(255,255,255,0.3)',
+                                },
+                            }}
+                        >
+                            {Object.entries(STRETCH_MODES).map(([k, m]) => (
+                                <MenuItem key={k} value={k}>{m.label}</MenuItem>
+                            ))}
+                        </Select>
+                    </Box>
                     {renderer.error && (
                         <Typography variant="caption" sx={{ color: '#f55' }}>
                             {renderer.error}

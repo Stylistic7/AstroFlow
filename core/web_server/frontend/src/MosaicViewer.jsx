@@ -9,7 +9,9 @@ import {
 	Box,
 	Divider,
 	IconButton,
+	MenuItem,
 	Paper,
+	Select,
 	Tab,
 	Tabs,
 	Tooltip,
@@ -26,6 +28,7 @@ import { AstroFlowImage } from "./AstroFlowImage.jsx";
 import TelescopiusDialog from "./TelescopiusDialog.jsx";
 import ToggleIconButton from "./ToggleIconButton";
 import HdrControls, { useHdrCapability } from "./HdrControls.jsx";
+import { STRETCH_MODES } from "./tile_viewer/TileViewerV2.jsx";
 import WorkflowGraph from "./WorkflowGraph.jsx";
 import ConcernsBadge from "./ConcernsBadge.jsx";
 import darkTheme from "./theme.js";
@@ -45,6 +48,7 @@ export default function MosaicViewer() {
 	const hdrCapable = useHdrCapability();
 	const [hdrEnabled, setHdrEnabled] = useState(false);
 	const [peakBrightness, setPeakBrightness] = useState(2.0);
+	const [stretchMode, setStretchMode] = useState('stf');
 
     const mosaic = mosaics?.[mosaic_id];
 
@@ -130,6 +134,21 @@ export default function MosaicViewer() {
 					peakBrightness={peakBrightness}
 					setPeakBrightness={setPeakBrightness}
 				/>
+				<Tooltip title="Stretch mode">
+					<Select
+						size="small"
+						value={stretchMode}
+						onChange={(e) => setStretchMode(e.target.value)}
+						sx={{
+							minWidth: 160,
+							'& .MuiSelect-select': { py: 0.5, fontSize: '0.85rem' },
+						}}
+					>
+						{Object.entries(STRETCH_MODES).map(([k, m]) => (
+							<MenuItem key={k} value={k}>{m.label}</MenuItem>
+						))}
+					</Select>
+				</Tooltip>
 				<Tooltip title="Export to Telescopius">
 					<IconButton
 						size="small"
@@ -198,6 +217,7 @@ export default function MosaicViewer() {
 						showQualitySelector={false}
 						hdrEnabled={hdrEnabled}
 						peakBrightness={peakBrightness}
+						stretchMode={stretchMode}
 					/>
 				</Box>
 
