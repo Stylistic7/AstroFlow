@@ -18,12 +18,10 @@ from decorators import node
 from decisions.settings import ProcessingConfig
 from file_io.tiff_file_io import write_tiff_image
 from file_io.types import XisfFilePath, TiffFilePath, WithSidecar
-from products.identity import MosaicChannelId, MergedImageId, PresentationType
 from hashing import hash_list
 
 log = structlog.get_logger()
 
-THUMBNAIL = PresentationType.THUMBNAIL
 
 @dataclass(frozen=True)
 class MergedImage:

@@ -28,11 +28,6 @@ from decorators import node
 from file_io.generic import read_image, read_header
 from file_io.types import FitsFilePath, WithSidecar
 from previews.types import DOWNSCALED_MASTER, DOWNSCALE_FACTORS
-from products.identity import (
-    StackId, CalibrationStackId, identity_for_stack, PresentationType,
-)
-THUMBNAIL = PresentationType.THUMBNAIL
-TILE_PYRAMID = PresentationType.TILE_PYRAMID
 from stacks.composite_stack import BaseStack, Stack, CalibrationStack
 from stacks.types import StackIdDependency
 from decisions.resolve import resolve_calibration, resolve_decisions

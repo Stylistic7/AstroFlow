@@ -1,6 +1,4 @@
-import io
 import os
-import dataclasses
 import threading
 from pathlib import Path
 
@@ -8,12 +6,7 @@ import flask
 from flask import Blueprint, abort
 
 from context import local_context as context
-from products.registry import _make_thumbnail, producers_for, MediaType
-from products.identity import (
-    ObjectId, PresentationType, StackId, CalibrationStackId, TargetId,
-    MosaicChannelId,
-    CalibratedStackId, UncorrectedRunId,
-)
+from products.registry import _make_thumbnail, producers_for
 from web_server.backend._route import tap_route
 
 thumbnails_bp = Blueprint("thumbnails", __name__)
@@ -34,11 +27,28 @@ def _key_lock(key) -> threading.Lock:
         return lk
 
 
-def _regenerate_thumbnail_for_producer(producer, identity: ObjectId):
-    """Rebuild a thumbnail by invoking `producer` for `identity`.
+def _cache_key(args: tuple) -> str:
+    """Stable "_"-joined string key for a set of producer args. Uses
+    `stable_hash` when present (the Stack/Mosaic/Target/Run convention)
+    and `str(x)` otherwise."""
+    parts = []
+    for a in args:
+        parts.append(getattr(a, "stable_hash", None) or str(a))
+    return "_".join(parts)
+
+
+def _presentation_cache_key(entity, args: tuple, op_name: str) -> tuple:
+    """Cache key for a presentation (thumbnail) of an entity produced
+    by op `op_name`. Embeds `type(entity).__name__` so distinct kinds
+    don't alias."""
+    return ("Thumbnail", type(entity).__name__, op_name, _cache_key(args))
+
+
+def _regenerate_thumbnail_for_producer(producer, args: tuple):
+    """Rebuild a thumbnail by invoking `producer` for `args`.
 
     Three producer shapes:
-    - File-backed (most ops): `producer.filename_fn(*identity_args)`
+    - File-backed (most ops): `producer.filename_fn(*args)`
       points at an on-disk file we read + downsample.
     - Selection-backed (subframe thumbnails): the filename_fn returns
       an absolute path to a raw input frame.
@@ -50,8 +60,6 @@ def _regenerate_thumbnail_for_producer(producer, identity: ObjectId):
     Returns the PNG bytes, or None if no source resolves."""
     import traceback
     from previews.operations import resize_array, autostretch, array_to_png
-
-    args = [getattr(identity, f.name) for f in dataclasses.fields(identity)]
 
     filename_fn = getattr(producer, "filename_fn", None)
     if filename_fn is not None:
@@ -66,8 +74,8 @@ def _regenerate_thumbnail_for_producer(producer, identity: ObjectId):
                 path, resize_array, autostretch, array_to_png,
             )
         except Exception:
-            print(f"### thumbnail regen FAILED ({producer.__name__}, "
-                  f"{type(identity).__name__}): {traceback.format_exc()}")
+            print(f"### thumbnail regen FAILED ({producer.__name__}): "
+                  f"{traceback.format_exc()}")
             return None
 
     if getattr(producer, "_is_task", False):
@@ -78,18 +86,16 @@ def _regenerate_thumbnail_for_producer(producer, identity: ObjectId):
             result, resize_array, autostretch, array_to_png,
         )
     except Exception:
-        print(f"### thumbnail regen FAILED ({producer.__name__}, "
-              f"{type(identity).__name__}): {traceback.format_exc()}")
+        print(f"### thumbnail regen FAILED ({producer.__name__}): "
+              f"{traceback.format_exc()}")
         return None
 
 
-def _thumbnail_for(identity: ObjectId, producer) -> bytes | None:
-    """Cached thumbnail bytes for one (identity, op), regenerating
+def _thumbnail_for(entity, args: tuple, producer) -> bytes | None:
+    """Cached thumbnail bytes for one (entity, args, op), regenerating
     from the on-disk source on a miss (single-flight). None if no
     thumbnail could be built."""
-    key = identity.presentation_cache_key(
-        PresentationType.THUMBNAIL, producer.__name__,
-    )
+    key = _presentation_cache_key(entity, args, producer.__name__)
     thumbnail = context.get(key)
     if thumbnail:
         return thumbnail
@@ -97,7 +103,7 @@ def _thumbnail_for(identity: ObjectId, producer) -> bytes | None:
         thumbnail = context.get(key)
         if thumbnail:
             return thumbnail
-        thumbnail = _regenerate_thumbnail_for_producer(producer, identity)
+        thumbnail = _regenerate_thumbnail_for_producer(producer, args)
         if thumbnail is not None:
             context[key] = thumbnail
         return thumbnail
@@ -111,27 +117,27 @@ def _png_response(thumbnail: bytes, label: str):
     return resp
 
 
-def get_thumbnail_by_id(identity: ObjectId):
-    """Best-available thumbnail for `identity`.
+def get_thumbnail(entity, *extra_args):
+    """Best-available thumbnail for an entity + optional extra producer
+    args (e.g. filter for Mosaic channels, substack for Runs).
 
-    Ranking: among all `@makes_image`-registered producers whose
-    `filename_fn` resolves to an on-disk file, pick the one with
-    the LARGEST file (mtime breaks ties — fresher artifact wins if
-    sizes match). Bigger file ≈ more pixels ≈ higher quality, so
-    a post-processed master shows up above the raw-frame subframe
+    Ranking: among all producers whose first param accepts type(entity)
+    and whose `filename_fn` resolves to an on-disk file, pick the one
+    with the LARGEST file (mtime breaks ties — fresher artifact wins if
+    sizes match). Bigger file ≈ more pixels ≈ higher quality, so a
+    post-processed master shows up above the raw-frame subframe
     thumbnail without any explicit priority list.
 
-    If no producer has written anything, fall back to the
-    compute-on-miss path: walk the non-file-backed producers
-    (typically the cheap ndarray-returning ones like
-    flat-correction Run thumbnails) and invoke the first that
-    succeeds."""
-    candidates: list[tuple[int, float, ObjectId, object]] = []
-    args = [getattr(identity, f.name) for f in dataclasses.fields(identity)]
+    If no producer has written anything, fall back to the compute-on-
+    miss path: walk the non-file-backed producers (typically the cheap
+    ndarray-returning ones like flat-correction Run thumbnails) and
+    invoke the first that succeeds."""
+    args = (entity,) + extra_args
+    candidates: list[tuple[int, float, object, str]] = []
 
     file_backed = []
     compute_backed = []
-    for producer in producers_for(type(identity)):
+    for producer in producers_for(type(entity)):
         if getattr(producer, "filename_fn", None) is not None:
             file_backed.append(producer)
         else:
@@ -166,12 +172,12 @@ def get_thumbnail_by_id(identity: ObjectId):
                 pass
         # No pyramid (e.g. a raw-frame placeholder for an un-built
         # object) — fall back to the lightweight read+resize path.
-        thumbnail = _thumbnail_for(identity, producer)
+        thumbnail = _thumbnail_for(entity, args, producer)
         if thumbnail:
             return _png_response(thumbnail, producer.__name__)
 
     for producer in compute_backed:
-        thumbnail = _thumbnail_for(identity, producer)
+        thumbnail = _thumbnail_for(entity, args, producer)
         if thumbnail:
             return _png_response(thumbnail, producer.__name__)
 
@@ -181,19 +187,19 @@ def get_thumbnail_by_id(identity: ObjectId):
 @thumbnails_bp.route("/thumbnail/stack/<stack_id>")
 def stack_thumbnail(stack_id: str):
     stack = context.stacks[stack_id].get()
-    return get_thumbnail_by_id(StackId(stack=stack))
+    return get_thumbnail(stack)
 
 
 @thumbnails_bp.route("/thumbnail/target/<target_id>")
 def target_thumbnail(target_id: str):
     target = context.targets[target_id].get()
-    return get_thumbnail_by_id(TargetId(target=target))
+    return get_thumbnail(target)
 
 
 @thumbnails_bp.route("/thumbnail/mosaic/<mosaic_id>/<filter>")
 def mosaic_thumbnail(mosaic_id: str, filter: str):
     mosaic = context.mosaics[mosaic_id].get()
-    return get_thumbnail_by_id(MosaicChannelId(mosaic=mosaic, filter=filter))
+    return get_thumbnail(mosaic, filter)
 
 
 @tap_route(thumbnails_bp, "/tap/thumbnail", hierarchy=("object_type", "object_id"))
@@ -221,16 +227,14 @@ def thumbnail_tap(
 @thumbnails_bp.route("/thumbnail/calibration_stack/<stack_id>")
 def calibration_stack_thumbnail(stack_id: str):
     stack = context.calibration_stacks[stack_id]
-    return get_thumbnail_by_id(CalibrationStackId(stack=stack))
+    return get_thumbnail(stack)
 
 
 @thumbnails_bp.route("/thumbnail/run/<stack_id>/<substack_id>")
 def uncorrected_run_thumbnail_route(stack_id: str, substack_id: str):
     stack = context.stacks[stack_id].get()
     substack = stack.contents[substack_id]
-    return get_thumbnail_by_id(
-        UncorrectedRunId(stack=stack, substack=substack),
-    )
+    return get_thumbnail(stack, substack)
 
 
 @thumbnails_bp.route("/thumbnail/run/<stack_id>/<substack_id>/<flat_stack_id>")
@@ -238,24 +242,6 @@ def run_thumbnail(stack_id: str, substack_id: str, flat_stack_id: str):
     stack = context.stacks[stack_id].get()
     substack = stack.contents[substack_id]
     flat_stack = context.calibration_stacks[flat_stack_id]
-    return get_thumbnail_by_id(
-        CalibratedStackId(stack=stack, substack=substack, flat_stack=flat_stack),
-    )
+    return get_thumbnail(stack, substack, flat_stack)
 
 
-def get_video(identity: type, *args):
-    """First producer registered for VIDEO + `identity` that yields
-    a video stream. Each video producer attaches a `video_fn`
-    callable that, given the identity args, returns bytes or None."""
-    for producer in producers_for(identity, MediaType.VIDEO):
-        video_fn = getattr(producer, "video_fn", None)
-        if video_fn is None:
-            continue
-        video = video_fn(*args)
-        if video is None:
-            continue
-        buffer = io.BytesIO()
-        buffer.write(video)
-        buffer.seek(0)
-        return flask.send_file(buffer, mimetype="video/webm")
-    return abort(404)

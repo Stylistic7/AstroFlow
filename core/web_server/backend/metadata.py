@@ -12,10 +12,6 @@ from stacks.composite_stack import Stack
 from targets.types import Target
 from mosaics.types import Mosaic, Viewbox
 from mosaics.viewbox import compute_viewbox
-from products.registry import MediaType
-from products.identity import (
-    StackId, CalibrationStackId, TargetId, MosaicChannelId, identity_for_stack,
-)
 from previews.types import MASTER
 from mosaics.trimming import project_to_viewbox
 from metadata.sidecar_io import read_image_metadata, _statistics_to_obj
@@ -26,16 +22,15 @@ from web_server.backend._route import tap_route
 metadata_bp = Blueprint("metadata", __name__)
 
 
-# URL-side object types map to one or more identity object_types
-# that share the same `stable_hash`. The PipelineOutputIndex keys
-# taps under each identity's `object_type.__name__.lower()`, but
-# URLs only carry the cart-level type — so look up across all
-# related identity types when resolving a tap's on-disk path.
-# Same mapping the dashboard endpoint uses below.
-_RELATED_OBJECT_TYPES = {
-    "mosaic": ("mosaic", "mergedimage"),
-    "target": ("target", "targetchannel"),
-    "stack": ("stack", "calibratedstack", "uncorrectedrun"),
+# The dashboard / cart route URLs use lowercase / snake_case
+# cart-types (`mosaic`, `stack`, `calibration_stack`); the
+# PipelineOutputIndex registers taps under `type(first_arg).__name__`
+# (PascalCase). This dict bridges the two.
+_URL_TO_TYPE_NAME = {
+    "mosaic": "Mosaic",
+    "target": "Target",
+    "stack": "Stack",
+    "calibration_stack": "CalibrationStack",
 }
 
 
@@ -47,12 +42,10 @@ def _tap_path_unchecked(
     checking whether the file exists.
 
     The index is populated at pipeline-trace time — every Node whose
-    task carries `_display` (set by `@makes_image(display=...)`)
-    gets recorded under (pipeline, identity_type, object_id, display,
-    filter). URLs carry the cart-level type (mosaic / target / stack),
-    which may not match the identity's type — e.g. a `Merged` tap on
-    a mosaic is keyed under `mergedimage`, not `mosaic`. Try each
-    related identity type until one hits.
+    task carries `_display` (set by `@node(display=...)`) gets recorded
+    under (pipeline, type_name, object_id, display, filter), where
+    `type_name` is `type(first_arg).__name__`. The URL's lowercase
+    cart-type translates to that PascalCase name via `_URL_TO_TYPE_NAME`.
 
     The PipelineOutputIndex uses `"pending"` as a sentinel for taps
     that were traced but whose path hasn't been resolved yet; that
@@ -64,10 +57,10 @@ def _tap_path_unchecked(
     For "is this tap currently available" semantics use `tap_path_for`.
     """
     from pipelines.output_index import tap_path, PENDING
-    for ident_type in _RELATED_OBJECT_TYPES.get(object_type, (object_type,)):
-        p = tap_path(pipeline, ident_type, object_id, display, filter)
-        if p and p != PENDING:
-            return p
+    type_name = _URL_TO_TYPE_NAME.get(object_type, object_type)
+    p = tap_path(pipeline, type_name, object_id, display, filter)
+    if p and p != PENDING:
+        return p
     return None
 
 
@@ -131,13 +124,13 @@ def _viewbox_quality_for_pipeline(pipeline: str) -> str:
     return "Master"
 
 
-def _get_polygons(identity_cls: type, pipeline: str, *args) -> list[dict[str, Any]]:
+def _get_polygons(pipeline: str, *args) -> list[dict[str, Any]]:
     """Compute projected polygons for an object at the pipeline's
     output canvas resolution."""
-    if identity_cls is CalibrationStackId:
-        return []
-
+    from stacks.composite_stack import CalibrationStack
     obj = args[0]
+    if isinstance(obj, CalibrationStack):
+        return []
 
     viewbox = compute_viewbox(_viewbox_quality_for_pipeline(pipeline), obj)
 
@@ -296,31 +289,27 @@ def _get_polygons(identity_cls: type, pipeline: str, *args) -> list[dict[str, An
 # ---------------------------------------------------------------------------
 
 def _resolve_object(object_type_str, object_id, filter):
-    """Resolve an object type string + id to (identity_cls, *args).
-
-    The identity class drives the producer/filename-fn registry lookup;
-    the args are the real objects the filename_fn / polygon code needs.
-    """
+    """Resolve an object type string + id to the real entity args
+    that downstream polygon / filename code needs."""
     if object_type_str == "stack":
-        stack = context.stacks[object_id].get()
-        return identity_for_stack(stack), (stack,)
+        return (context.stacks[object_id].get(),)
     if object_type_str == "calibration_stack":
-        return CalibrationStackId, (context.calibration_stacks[object_id],)
+        return (context.calibration_stacks[object_id],)
     if object_type_str == "target":
-        return TargetId, (context.targets[object_id].get(), filter)
+        return (context.targets[object_id].get(), filter)
     if object_type_str == "mosaic":
-        return MosaicChannelId, (context.mosaics[object_id].get(), filter)
+        return (context.mosaics[object_id].get(), filter)
     abort(400, f"Unknown object type: {object_type_str}")
 
 
 @tap_route(metadata_bp, "/api/metadata", hierarchy=("object_type", "object_id"))
 def metadata(object_type: str, object_id: str, pipeline: str, display: str, filter: str):
-    obj_type, args = _resolve_object(object_type, object_id, filter)
+    args = _resolve_object(object_type, object_id, filter)
 
     path = tap_path_for(pipeline, display, object_type, object_id, filter)
     image_path = path if path and os.path.exists(path) else None
 
-    objects = _get_polygons(obj_type, pipeline, *args)
+    objects = _get_polygons(pipeline, *args)
 
     # ImageStatistics for the tap output — drives the browser-side
     # auto-stretch optimizer. Read straight off the sidecar; the
@@ -340,14 +329,6 @@ def metadata(object_type: str, object_id: str, pipeline: str, display: str, filt
         "objects": objects,
         "statistics": statistics,
     })
-
-
-_OBJECT_TYPE_MAP = {
-    "mosaic": MosaicChannelId,
-    "target": TargetId,
-    "stack": StackId,
-    "calibration_stack": CalibrationStackId,
-}
 
 
 def _resolve_entity(object_type: str, object_id: str):
@@ -495,23 +476,11 @@ def pipeline_outputs(object_type: str, object_id: str):
     iter_filters = filters or [None]
 
     _ensure_pipelines_traced(object_type, object_id, entity)
-    indexed = for_object(object_type, object_id)
-
-    # Aggregate taps from "child" identity types that share the
-    # same `object_id`. Example: `merge_images` registers under
-    # `MergedImageId` whose `object_type=MergedImage`, but its
-    # `mosaic` field's `stable_hash` matches the mosaic the cart
-    # is on — so its "Merged" taps belong in the mosaic dashboard
-    # alongside the `MosaicChannelId`-keyed "Mosaic" taps. Skip
-    # the URL type itself (already in `indexed`).
-    for extra_type in _RELATED_OBJECT_TYPES.get(object_type, ()):
-        if extra_type == object_type:
-            continue
-        # `indexed` shape: {pipeline_name: {display: {filter: path_or_pending}}}.
-        # Merge per pipeline; display names are already disambiguated
-        # by the trace-time recorder so collisions don't happen.
-        for pn, displays in for_object(extra_type, object_id).items():
-            indexed.setdefault(pn, {}).update(displays)
+    # Taps are keyed under `type(first_arg).__name__` (PascalCase); the
+    # URL's lowercase cart-type translates via `_URL_TO_TYPE_NAME`. All
+    # of an object's taps (including `merge_images`' "Merged") share the
+    # one PascalCase bucket, so no cross-bucket aggregation is needed.
+    indexed = for_object(_URL_TO_TYPE_NAME.get(object_type, object_type), object_id)
 
     pipelines = []
     # Every registered (name, class) entry whose class matches the

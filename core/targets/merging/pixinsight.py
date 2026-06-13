@@ -16,17 +16,9 @@ from decorators import node
 from file_io.types import XisfFilePath, WithSidecar
 from pix import Image
 from pix.tasks import HDRComposition, StarAlignment
-from products.identity import (
-    PresentationType,
-    TargetChannelId,
-    StackId,
-)
 from stacks.composite_stack import Stack
 from targets.target_channel import TargetChannel
 from targets.types import Target
-
-THUMBNAIL = PresentationType.THUMBNAIL
-TILE_PYRAMID = PresentationType.TILE_PYRAMID
 
 
 def _merge_target_channel_narrow(args, kwargs):

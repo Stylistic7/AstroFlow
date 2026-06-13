@@ -28,7 +28,6 @@ from decorators import node
 from decisions.settings import ProcessingConfig
 from metadata.classes import ImageMetadata
 from plate_solving import PlateSolution
-from products.identity import PlacedImageId
 
 class ProjectionFailedException(Exception):
     pass
@@ -195,9 +194,8 @@ def place_image(
     Pipeline-agnostic: the downscaling — if any — is fully captured
     by the `viewbox` size and by the upstream master (already
     downscaled for the PixInsight Downscaled pipeline). place_image
-    just projects whatever it's given. PlacedImageId includes the
-    viewbox, and the on-disk filename includes a viewbox content-
-    hash prefix so PI Master and PI Downscaled outputs land in
+    just projects whatever it's given. The on-disk filename includes
+    a viewbox content-hash prefix so PI Master and PI Downscaled outputs land in
     distinct files.
 
     Takes the whole `config`; the cache key is narrowed to just

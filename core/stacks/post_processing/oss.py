@@ -14,10 +14,6 @@ import plate_solving
 from decorators import node
 from file_io.generic import read_image
 from file_io.types import FitsFilePath, WithSidecar
-from products.identity import StackId, PresentationType
-
-THUMBNAIL = PresentationType.THUMBNAIL
-TILE_PYRAMID = PresentationType.TILE_PYRAMID
 from stacks.composite_stack import Stack
 
 log = structlog.get_logger()

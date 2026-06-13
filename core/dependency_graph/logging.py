@@ -28,46 +28,34 @@ def _print_first_line(fn_name: str, event_dict: dict) -> None:
 def _concerns_keys_for(func: Callable, args: tuple, kwargs: dict) -> list[tuple]:
     """Per-object cache keys to side-write concerns under.
 
-    Returns one key per identity the producer registers for (a
-    @makes_image-decorated function publishes `_identities`). Empty
-    list if the function isn't a registered producer — concerns from
-    such functions still live in the per-call log, just not surfaced
-    per-object.
+    The producer's first positional arg is the entity. We key under
+    `('concerns', type(entity).__name__, entity.stable_hash)`. Mosaic
+    producers carry a `filter` second arg we splice in to match the
+    `/api/concerns/<mosaic>` lookup shape.
 
-    The key shape is `('concerns', object_type, identity_key)` and
-    the stored value is a dict `{op_name: [concerns...]}` keyed by
-    which op wrote each batch. Direct lookup by object replaces the
-    earlier op-in-key shape that forced `/api/concerns` to scan the
-    full cache to find every op that contributed. Polymorphic
-    producers (e.g. stack_files for both StackId and
-    CalibrationStackId) emit one key per identity they match — the
-    dispatch picks the one whose object_type appears in args, so a
-    CalibrationStack run doesn't write under StackId and vice versa.
+    Returns one key (the producer's entity key). Empty list if no
+    positional args or no `stable_hash` on the first arg — we don't
+    have an object to attribute concerns to.
+
+    The stored value is `{op_name: [concerns...]}` so distinct ops
+    that contribute to the same object don't overwrite each other.
     """
-    identities = getattr(func, "_identities", None)
-    if not identities:
+    if not args:
         return []
-
-    from products.registry import _extract_identity
-
-    keys: list[tuple] = []
-    for identity_cls in identities:
-        object_type = identity_cls.object_type
-        # Only include entries whose object_type matches an actual arg
-        # (a polymorphic producer with both Stack and CalibrationStack
-        # registrations only fires for the one it's actually processing).
-        if not any(isinstance(a, object_type) for a in args):
-            continue
-        try:
-            obj_id = _extract_identity(identity_cls, func, args, kwargs)
-        except Exception:
-            continue
-        keys.append((
-            "concerns",
-            object_type.__name__,
-            obj_id.cache_key(),
-        ))
-    return keys
+    entity = args[0]
+    stable_hash = getattr(entity, "stable_hash", None)
+    if not stable_hash:
+        return []
+    type_name = type(entity).__name__
+    # Mosaic-keyed concerns include the filter (`/api/concerns/mosaic`
+    # passes `?filter=H`; that filter is part of the key shape the
+    # endpoint constructs). Detect by the second positional arg being
+    # a string — the per-filter convention.
+    if type_name == "Mosaic" and len(args) >= 2 and isinstance(args[1], str):
+        identity_key = f"{stable_hash}_{args[1]}"
+    else:
+        identity_key = stable_hash
+    return [("concerns", type_name, identity_key)]
 
 
 def make_capture_logs_decorator(cache):

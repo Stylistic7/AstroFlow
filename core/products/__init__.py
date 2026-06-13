@@ -1,10 +1,10 @@
-from .registry import MediaType, producers_for
+from .registry import producers_for
 
 
 def ensure_producers_registered():
-    """Import every module that calls `@node(identity=...)` so each
-    op's registration side-effect runs. Call once at process startup so
-    import-order doesn't drop a producer.
+    """Import every module that defines artifact-producing `@node` ops so
+    each op's registration side-effect runs. Call once at process startup
+    so import-order doesn't drop a producer.
     """
     import previews.stack_thumbnails  # noqa: F401
     import previews.flat_correction  # noqa: F401

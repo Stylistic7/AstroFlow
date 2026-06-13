@@ -23,10 +23,6 @@ from previews.operations import autostretch
 from stacks.composite_stack import Stack
 from decisions.subframe_selection import get_light_frames_sorted_by_stars
 from decisions.resolve import is_frame_included, resolve_calibration
-from products.registry import MediaType
-from products.identity import StackId, CalibrationStackId, PresentationType
-
-THUMBNAIL = PresentationType.THUMBNAIL
 from file_io.generic import read_image
 from decisions.settings import ProcessingConfig
 from decisions.decisions import decisions_for_stack
@@ -147,7 +143,6 @@ def _stack_thumbnail_video_narrow(args, kwargs):
     return (stack, width, narrow_stack_config(stack, config), *rest), kwargs
 
 @node(
-    media_type=MediaType.VIDEO,
     cache_key_narrow=_stack_thumbnail_video_narrow,
     resources={"fastest_storage": 0.001},
 )
@@ -188,7 +183,6 @@ def stack_thumbnail_video(
         yield im
 
 @node(
-    media_type=MediaType.VIDEO,
     resources={"fastest_storage": 0.001},
 )
 @create_video

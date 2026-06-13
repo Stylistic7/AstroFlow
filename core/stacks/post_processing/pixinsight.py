@@ -14,11 +14,7 @@ from decisions.settings import ProcessingConfig
 from metadata.classes import ImageMetadata
 from stacks.composite_stack import Stack
 from file_io.types import XisfFilePath, WithSidecar
-from products.identity import StackId, PresentationType
 import structlog
-
-THUMBNAIL = PresentationType.THUMBNAIL
-TILE_PYRAMID = PresentationType.TILE_PYRAMID
 
 log = structlog.get_logger()
 

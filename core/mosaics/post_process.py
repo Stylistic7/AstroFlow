@@ -22,7 +22,6 @@ import plate_solving
 from file_io.types import XisfFilePath, WithSidecar
 from decorators import node
 from mosaics.types import Mosaic
-from products.identity import MosaicId
 
 log = structlog.get_logger()
 

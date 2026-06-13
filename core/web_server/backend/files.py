@@ -104,13 +104,12 @@ def concerns_for_object(object_type, object_id):
     Query params:
       filter — required for object_type=mosaic
     """
-    from products.identity import StackId, MosaicChannelId
     from context import get_cache
 
     cache = get_cache()
     filter_arg = request.args.get("filter", "")
 
-    def concerns_for_key(object_type_name: str, identity_key: tuple) -> list[dict]:
+    def concerns_for_key(object_type_name: str, identity_key: str) -> list[dict]:
         """Direct lookup at `('concerns', object_type, identity_key)`.
         Value is `{op_name: [concerns...]}`; we flatten across ops."""
         entry = cache.get(("concerns", object_type_name, identity_key), {})
@@ -126,7 +125,7 @@ def concerns_for_object(object_type, object_id):
             return jsonify({"error": "stack not found"}), 404
         stack = context.stacks[object_id].get()
         return jsonify(concerns_for_key(
-            type(stack).__name__, StackId(stack=stack).cache_key(),
+            type(stack).__name__, stack.stable_hash,
         ))
 
     if object_type == "mosaic":
@@ -135,12 +134,12 @@ def concerns_for_object(object_type, object_id):
         mosaic = context.mosaics[object_id].get()
         direct = concerns_for_key(
             "Mosaic",
-            MosaicChannelId(mosaic=mosaic, filter=filter_arg).cache_key(),
+            f"{mosaic.stable_hash}_{filter_arg}",
         )
         bubbled = []
         for stack in _constituent_stacks(mosaic, filter_arg):
             for c in concerns_for_key(
-                type(stack).__name__, StackId(stack=stack).cache_key(),
+                type(stack).__name__, stack.stable_hash,
             ):
                 bubbled.append({**c, "from_stack": stack.stable_hash})
         return jsonify(direct + bubbled)

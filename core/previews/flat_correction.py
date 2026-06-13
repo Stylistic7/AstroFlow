@@ -9,10 +9,6 @@ from decisions.subframe_selection import get_light_frames_sorted_by_stars
 from stacks.run import Run
 from stacks.types import StackHash, StackIdDependency
 from products.registry import image_producer
-from products.identity import PresentationType
-from previews.identity import CalibratedStackId, UncorrectedRunId
-
-THUMBNAIL = PresentationType.THUMBNAIL
 
 @image_producer()
 @measure_performance

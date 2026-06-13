@@ -105,11 +105,10 @@ def test_stack_dependency_graph(test_context) -> None:
         # producers now use @makes_image).
         file = ray.get(stack_thumbnail.remote(stack))
         assert isinstance(file, WithSidecar)
-        from products.identity import identity_for_stack
-        ops = {p.__name__ for p in producers_for(identity_for_stack(stack))}
+        ops = {p.__name__ for p in producers_for(type(stack))}
         assert "stack_thumbnail" in ops, (
             f"stack_thumbnail must register for "
-            f"{identity_for_stack(stack).__name__}; got {ops}"
+            f"{type(stack).__name__}; got {ops}"
         )
 
     for stack_ref in context.stacks.values():

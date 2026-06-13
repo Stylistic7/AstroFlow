@@ -7,12 +7,9 @@ from file_io.generic import read_image
 from file_io.tiff_file_io import write_tiff_image
 from previews.operations import autostretch
 from pix import Image
-from products.identity import MosaicChannelId, PresentationType
 from decorators import node
 from decisions.settings import ProcessingConfig
 
-THUMBNAIL = PresentationType.THUMBNAIL
-TILE_PYRAMID = PresentationType.TILE_PYRAMID
 from file_io.types import FitsFilePath, TiffFilePath, XisfFilePath, WithSidecar
 from metadata.classes import ImageMetadata
 

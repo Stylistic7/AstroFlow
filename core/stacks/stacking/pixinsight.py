@@ -20,13 +20,7 @@ from decorators import node
 from decisions.settings import ProcessingConfig, DevelopmentSettings
 from decisions.resolve import resolve_calibration, resolve_decisions
 from decisions.compute_graph import ALL_EXCLUSION_TYPES
-from products.identity import (
-    StackId, CalibrationStackId, identity_for_stack, PresentationType,
-)
 import structlog
-
-THUMBNAIL = PresentationType.THUMBNAIL
-TILE_PYRAMID = PresentationType.TILE_PYRAMID
 
 log = structlog.get_logger()
 

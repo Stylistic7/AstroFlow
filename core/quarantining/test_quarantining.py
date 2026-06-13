@@ -132,10 +132,9 @@ def test_quarantine_triggers_restack(test_context) -> None:
     run_graph(build_compute_graph())
 
     # Locate the master file produced by stack_files (mock-stacked).
-    # Post-identity-refactor the routing is just `<op_name>/<call_hash>
-    # .xisf` — the per-type prefix is gone. Glob the directory for the
-    # only master that was produced — there's just one stack in this
-    # test.
+    # On-disk routing is `<op_name>/<call_hash>.xisf`. Glob the directory
+    # for the only master that was produced — there's just one stack in
+    # this test.
     from pathlib import Path
     master_dir = Path(context.output_dir) / "stack_files"
     masters = list(master_dir.glob("*.xisf"))

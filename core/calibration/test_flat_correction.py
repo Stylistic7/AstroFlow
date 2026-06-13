@@ -85,12 +85,9 @@ def test_one_perfect_stack(test_context) -> None:
     assert context.get_matching(("thumbnail",)) == {}
     assert context.get_matching(("Thumbnail",)) == {}
     from products.registry import producers_for
-    from products.identity import CalibratedStackId, UncorrectedRunId
-    assert any(
-        p.__name__ == "flat_corrected_stack"
-        for p in producers_for(CalibratedStackId)
-    )
-    assert any(
-        p.__name__ == "uncorrected_run_thumbnail"
-        for p in producers_for(UncorrectedRunId)
-    )
+    from stacks.composite_stack import Stack
+    # Both flat_corrected_stack and uncorrected_run_thumbnail take
+    # `stack: Stack` as their first param — they're registered under Stack.
+    ops = {p.__name__ for p in producers_for(Stack)}
+    assert "flat_corrected_stack" in ops
+    assert "uncorrected_run_thumbnail" in ops

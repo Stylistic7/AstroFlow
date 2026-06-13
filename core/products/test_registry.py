@@ -1,122 +1,20 @@
-"""Contract tests for the identity-keyed producer registry.
+"""Contract tests for the type-keyed producer registry.
 
-These pin the TARGET behavior of the object_type->identity refactor:
-the producer registry is keyed by the ObjectId identity class (not the
-lossy object_type), each ObjectId carries its own object_type, and the
-Run/SUBFRAME collision that 404'd every calibrated /thumbnail/run/.../
-.../... is gone.
-
-Written test-first: several are RED on pre-refactor code and turn green
-as Phases 1-3 land. Imports are deferred into each test so a missing
-symbol fails that test precisely instead of erroring collection.
+Producers are keyed by the runtime type of their first parameter. The
+URL-side resolution uses a small string -> class map at the route layer.
 
 Pure + fast (no Ray, no graph, no exhaustive fixture).
 """
 import pytest
 
 
-# --- ObjectId.object_type: every identity is self-describing ----------
-
-def test_objectid_subclasses_declare_object_type():
-    from stacks.composite_stack import Stack, CalibrationStack
-    from stacks.run import Run
-    from mosaics.types import Mosaic
-    from targets.types import Target
-    from products import identity as I
-
-    expected = {
-        "StackId": Stack,
-        "CalibrationStackId": CalibrationStack,
-        "CalibratedStackId": Run,
-        "UncorrectedRunId": Run,
-        "MosaicId": Mosaic,
-        "MosaicChannelId": Mosaic,
-        "TargetId": Target,
-    }
-    for name, obj_type in expected.items():
-        cls = getattr(I, name)
-        assert cls.object_type is obj_type, (
-            f"{name}.object_type should be {obj_type.__name__}, "
-            f"got {getattr(cls, 'object_type', None)!r}"
-        )
-
-
-def test_stackid_split_is_total_and_distinct():
-    """StackId previously mapped to BOTH Stack and CalibrationStack
-    (the polymorphism that made a single object_type impossible).
-    After the split each names exactly one type."""
-    from stacks.composite_stack import Stack, CalibrationStack
-    from products.identity import StackId, CalibrationStackId
-
-    assert StackId is not CalibrationStackId
-    assert StackId.object_type is Stack
-    assert CalibrationStackId.object_type is CalibrationStack
-
-
-def test_new_identities_exist_for_formerly_identityless_producers():
-    from mosaics.merging import MergedImage
-    from products import identity as I
-
-    assert hasattr(I, "MergedImageId"), (
-        "merge_images had no identity; object_type cannot be removed "
-        "while an identity-less producer exists"
-    )
-    assert I.MergedImageId.object_type is MergedImage
-
-
-# --- presentation_cache_key no longer takes object_type ---------------
-
-def test_presentation_cache_key_drops_object_type_arg():
-    import inspect
-    from products.identity import ObjectId
-
-    params = list(
-        inspect.signature(ObjectId.presentation_cache_key).parameters
-    )
-    assert "object_type" not in params, (
-        "presentation_cache_key must derive type from self.object_type, "
-        f"not take it as a param; got {params}"
-    )
-
-
-def test_presentation_cache_key_distinguishes_object_kind():
-    """Two identities with identical field values but different
-    object_type must produce different presentation keys (the key must
-    still embed the object_type name — validity and on-disk path layout
-    depend on it — just sourced from self now)."""
-    from dataclasses import dataclass
-    from products.identity import ObjectId, PresentationType
-
-    @dataclass(frozen=True)
-    class _A(ObjectId):
-        object_type = type("KindA", (), {})
-        ref: str
-
-    @dataclass(frozen=True)
-    class _B(ObjectId):
-        object_type = type("KindB", (), {})
-        ref: str
-
-    a = _A(ref="x").presentation_cache_key(
-        PresentationType.THUMBNAIL, "fake_op",
-    )
-    b = _B(ref="x").presentation_cache_key(
-        PresentationType.THUMBNAIL, "fake_op",
-    )
-    assert a != b, "distinct object kinds must not alias in presentation cache"
-    assert a == _A(ref="x").presentation_cache_key(
-        PresentationType.THUMBNAIL, "fake_op",
-    ), "presentation key must be stable for the same identity"
-
-
-# --- per-identity producer enumeration ---
+# --- per-type producer enumeration via MRO walk -----------------------
 
 def test_producers_for_returns_decoration_order():
     """`producers_for(type)` returns each op whose first-parameter
     type accepts an instance of `type`. Walks MRO so an op annotated
     with a base class (`BaseStack`) surfaces for both subclasses
-    (Stack, CalibrationStack) — replaces the old polymorphic
-    `identity=[StackId, CalibrationStackId]` dispatch."""
+    (Stack, CalibrationStack)."""
     from products import ensure_producers_registered
     from products.registry import producers_for
     from stacks.composite_stack import Stack, CalibrationStack
@@ -135,10 +33,10 @@ def test_producers_for_returns_decoration_order():
     assert "stack_files" in cal_ops
 
 
-# --- final=True on @makes_image marks the user's deliverable --------
+# --- final=True on @node marks the user's deliverable --------------
 
 def test_final_kwarg_propagates_to_wrapped_op():
-    """`@makes_image(final=True)` sets `_final` on the wrapped op so
+    """`@node(final=True)` sets `_final` on the wrapped op so
     `dependency_graph.trace_paths.paths_for_cart_item(...,
     finals_only=True)` can filter to the user's preserve-on-archive
     set. Unmarked ops should lack `_final` (or have it False)."""

@@ -22,18 +22,10 @@ from decisions.settings import ProcessingConfig
 from decorators import node
 from file_io.generic import read_image
 from file_io.types import FitsFilePath, WithSidecar
-from products.identity import (
-    PresentationType,
-    TargetChannelId,
-    StackId,
-)
 from stacks.composite_stack import Stack
 from targets.target_channel import TargetChannel
 from targets.merging.pixinsight import _merge_target_channel_narrow
 from targets.types import Target
-
-THUMBNAIL = PresentationType.THUMBNAIL
-TILE_PYRAMID = PresentationType.TILE_PYRAMID
 
 log = structlog.get_logger()
 

@@ -28,7 +28,6 @@ from mosaics.merging.pixinsight import (
     MergedImage, _panel_count, _set_panel_count,
 )
 from mosaics.types import Mosaic
-from products.identity import MergedImageId
 
 log = structlog.get_logger()
 

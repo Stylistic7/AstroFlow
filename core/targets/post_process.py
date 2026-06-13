@@ -21,7 +21,6 @@ import plate_solving
 from file_io.types import XisfFilePath, WithSidecar
 from decorators import node
 from targets.types import Target
-from products.identity import TargetId
 
 
 def _post_process_target(

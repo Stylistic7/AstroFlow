@@ -152,9 +152,9 @@ def test_recorder_disambiguates_repeated_same_key_taps(test_context):
     output_index.clear()
 
     # Build a fake mosaic-like with a stable_hash. Class name MUST be
-    # "Mosaic" (not e.g. "FakeMosaic") because the recorder routes
-    # taps using `type(first_arg).__name__` — that's the post-identity-
-    # refactor convention. Real Mosaic instances satisfy this naturally.
+    # "Mosaic" (not e.g. "FakeMosaic") because the recorder routes taps
+    # using `type(first_arg).__name__`. Real Mosaic instances satisfy
+    # this naturally.
     class Mosaic:
         stable_hash = "mosaic-X"
 
@@ -172,10 +172,8 @@ def test_recorder_disambiguates_repeated_same_key_taps(test_context):
         "Test Pipeline", "mosaic", mosaic.stable_hash, graph,
     )
 
-    # Routing is now `type(first_arg).__name__` (PascalCase), so taps
-    # are keyed under "Mosaic" — no more parallel "mergedimage"
-    # bucket. The dashboard no longer needs `_RELATED_OBJECT_TYPES`
-    # aggregation to find these.
+    # Routing keys on `type(first_arg).__name__` (PascalCase), so taps
+    # land under "Mosaic" — a single bucket the dashboard reads directly.
     by_object = output_index.for_object("Mosaic", mosaic.stable_hash)
     assert "Test Pipeline" in by_object
     displays = by_object["Test Pipeline"]
@@ -211,7 +209,7 @@ def test_extract_pipeline_taps_yields_disambiguated_displays(test_context):
 
     output_index.clear()  # any side effect from extractor would surface here
 
-    # Class name doubles as the routing string post-identity-refactor.
+    # Class name doubles as the routing string.
     class Mosaic:
         stable_hash = "mosaic-X"
 

@@ -3,17 +3,17 @@ import flask
 from flask import Blueprint, abort
 
 from context import local_context as context
-from products.registry import producers_for, MediaType
-from products.identity import StackId, CalibrationStackId
+from products.registry import producers_for
 
 videos_bp = Blueprint("videos", __name__)
 
 
-def get_video(identity: type, *args):
-    """First registered video producer for `identity` that yields a
+def get_video(entity, *extra_args):
+    """First registered video producer for `type(entity)` that yields a
     stream. Each producer attaches a `video_fn` callable that, given
-    the identity args, returns bytes or None."""
-    for producer in producers_for(identity, MediaType.VIDEO):
+    the entity args, returns bytes or None."""
+    args = (entity,) + extra_args
+    for producer in producers_for(type(entity)):
         video_fn = getattr(producer, "video_fn", None)
         if video_fn is None:
             continue
@@ -29,9 +29,9 @@ def get_video(identity: type, *args):
 
 @videos_bp.route("/video/stack/<stack_id>")
 def stack_video(stack_id: str):
-    return get_video(StackId, context.stacks[stack_id].get())
+    return get_video(context.stacks[stack_id].get())
 
 
 @videos_bp.route("/video/calibration_stack/<stack_id>")
 def calibration_stack_video(stack_id: str):
-    return get_video(CalibrationStackId, context.calibration_stacks[stack_id])
+    return get_video(context.calibration_stacks[stack_id])

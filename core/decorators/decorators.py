@@ -130,26 +130,21 @@ class _Node:
         @node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD")
         def pi_op(...): ...
 
-        # Image producer (replaces the old `@makes_image` decorator).
+        # Image producer: an op is an artifact producer iff its return
+        # annotation resolves to a file-typed result (XISF / TIFF /
+        # FITS). Routing on disk is
+        # `<output_dir>/<op_name>/<call_hash>.<ext>`; the registry keys
+        # by the type of the first parameter.
         @node(
-            identity=StackId,
             final=True,
             display="Master",
             cache_key_narrow=_narrow,
             resources={"PixInsight": 1},
             auto_memory=True,
         )
-        def stack_files(stack, config, *cal_masters): ...
-
-        # Polymorphic identity (one op produces files routed under two
-        # ObjectType directories — e.g. stack_files for Stack and
-        # CalibrationStack).
-        @node(
-            identity=[StackId, CalibrationStackId],
-            cache_key_narrow=_narrow,
-            final=True,
-        )
-        def stack_files(...): ...
+        def stack_files(
+            stack: BaseStack, config, *cal_masters,
+        ) -> WithSidecar[XisfFilePath]: ...
     """
 
     def __call__(self, func=None, **kwargs):
@@ -184,14 +179,8 @@ class _Node:
 
         # ---- 1. Parse kwargs ------------------------------------------
         ray_opts = dict(all_kwargs)
-        # `identity=` is accepted but ignored — every @node now routes
-        # by `type(first_arg).__name__` and the op's own `__name__`,
-        # with no ObjectId indirection. Pop here to keep it out of
-        # ray_opts; remove once all call sites stop passing it.
-        ray_opts.pop("identity", None)
         final = ray_opts.pop("final", False)
         display = ray_opts.pop("display", None)
-        ray_opts.pop("media_type", None)  # vestigial
         custom_filename_fn = ray_opts.pop("filename_fn", None)
         cache_key_narrow = ray_opts.pop("cache_key_narrow", None)
 
@@ -208,17 +197,20 @@ class _Node:
                 args, kwargs = cache_key_narrow(args, kwargs)
             return hash_call(fn_hash, *args, **kwargs)
 
-        # An op is an "artifact producer" iff its return annotation
-        # resolves to a file-typed result (TIFF, XISF, etc.). That's
-        # the signal that used to be `identity=...`; the return type
-        # was already carrying it.
+        # An op is an "artifact producer" iff it writes a file on disk:
+        # either its return annotation resolves to a file-typed result
+        # (TIFF, XISF, etc.), or it was given an explicit `filename_fn=`
+        # naming where its file lands (selection-style ops that return a
+        # `WithSidecar` pointing at a raw frame).
         #
-        # Done inline (rather than calling into `products.registry`)
+        # Checked inline (rather than calling into `products.registry`)
         # so a bare @node decoration on a non-artifact op never has
         # to import the registry — avoids a circular-import chain
         # during module load of `clustering/` / similar bare-@node
         # modules.
-        is_artifact_producer = _looks_like_file_return(func)
+        is_artifact_producer = (
+            _looks_like_file_return(func) or custom_filename_fn is not None
+        )
 
         filename_fn = None
         if is_artifact_producer:
@@ -263,6 +255,13 @@ class _Node:
             wrapper._final = final
             if display is not None:
                 wrapper._display = display
+            from products.registry import register_producer
+            register_producer(wrapper, func)
+        elif hasattr(func, "video_fn"):
+            # `@create_video` attaches `video_fn` to its wrapped func.
+            # Surface it on the @node wrapper too so view-side endpoints
+            # can find video producers via `producers_for(type(entity))`.
+            wrapper.video_fn = func.video_fn
             from products.registry import register_producer
             register_producer(wrapper, func)
 
