@@ -85,12 +85,13 @@ def PhotometricMosaic(images: list[Image], **kwargs: Any) -> Image:
         name="PhotometricMosaic",
         script_filename=_SCRIPT_FILENAME,
         parameters={k: str(v) for k, v in parameters.items()},
-        # astroflow_main() swallows any exception into a MessageBox and
-        # returns normally, so a failed join leaves no error in the log —
-        # it just never creates the Mosaic view. Assert the script's
-        # conclusive success line ("Created Mosaic …", emitted only after
-        # the view is built) so a silent failure raises here instead of
-        # surfacing later as a confusing missing-output error at save.
+        # astroflow_main() logs any exception (console.criticalln) and returns
+        # normally, so a failed join never creates the Mosaic view. Assert
+        # the script's conclusive success line ("Created Mosaic …", emitted
+        # only after the view is built) so a silent failure raises here
+        # instead of surfacing later as a confusing missing-output error at
+        # save. The real cause now appears in the recipe log (was previously
+        # swallowed by a GUI MessageBox on the undefined StdIcon_Error).
         success_pattern=re.compile(r"Created\s+Mosaic\b"),
     ))
 

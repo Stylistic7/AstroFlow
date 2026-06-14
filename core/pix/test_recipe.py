@@ -7,6 +7,7 @@ They also serve as examples of the intended user-facing API.
 import numpy as np
 from pathlib import Path
 
+import pytest
 import astropy.io.fits as pyfits
 
 from pix import Image
@@ -267,3 +268,47 @@ class TestJavaScriptGeneration:
         bxt_pos = js.index("BlurXTerminator")
         solver_pos = js.index("ImageSolver")
         assert bxt_pos < solver_pos
+
+
+class TestScriptErrorCheck:
+    """The universal `*** Error:` catch-all: any uncaught PixInsight script
+    error fails the recipe, EXCEPT when a step opts into error tolerance via
+    success_pattern (ImageSolver / PhotometricMosaic)."""
+
+    def _recipe(self, log, steps=()):
+        from pix.recipe import Recipe
+        r = Recipe(input_filenames=[])
+        for s in steps:
+            r.add_step(s)
+        r.log = log
+        return r
+
+    def test_raises_on_script_error_when_no_success_pattern(self):
+        from pix.recipe import PixInsightError, Step
+        log = (
+            "Processing script file: /tmp/foo.js\n"
+            "*** Error: /tmp/foo.js:4: TypeError: Cannot read properties of "
+            "null (reading 'window')\n"
+        )
+        r = self._recipe(log, steps=[Step(name="GradientCorrection")])
+        with pytest.raises(PixInsightError, match="TypeError"):
+            r._check_script_errors()
+
+    def test_no_raise_on_clean_log(self):
+        from pix.recipe import Step
+        r = self._recipe("All good.\nWriting file: out.xisf\n",
+                         steps=[Step(name="GradientCorrection")])
+        r._check_script_errors()  # must not raise
+
+    def test_exempt_when_any_step_has_success_pattern(self):
+        """PhotometricMosaic logs `*** Error:` on a failed join but is
+        validated by its 'Created Mosaic' success line — the catch-all must
+        not pre-empt that path."""
+        import re
+        from pix.recipe import Step
+        log = "*** Error: ReferenceError: StdIcon_Error is not defined\n"
+        r = self._recipe(log, steps=[
+            Step(name="PhotometricMosaic",
+                 success_pattern=re.compile(r"Created\s+Mosaic\b")),
+        ])
+        r._check_script_errors()  # exempt → no raise here

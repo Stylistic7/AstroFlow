@@ -358,12 +358,34 @@ class Recipe:
                 "(AutomaticBackgroundExtractor / GraXpert)."
             )
 
+    def _check_script_errors(self) -> None:
+        """Universal catch-all: PixInsight prints a `*** Error:` line for any
+        uncaught error in an executed script (ReferenceError, TypeError, a
+        task that threw). PI does NOT exit non-zero on these — it logs them
+        and continues the batch — so without this they slip past materialize
+        and resurface later as a confusing null-view cascade or a silently
+        missing/corrupt output. Raise on the first one, quoting it.
+
+        Exempt: recipes where any step opts into error tolerance via
+        `success_pattern` (e.g. ImageSolver legitimately logs `*** Error:`
+        while iterating; PhotometricMosaic relies on its 'Created Mosaic'
+        line). Those are validated by the per-step success_pattern below
+        instead, so we must not pre-empt them here.
+        """
+        if any(step.success_pattern for step in self.steps):
+            return
+        for line in self.log.splitlines():
+            if line.lstrip().startswith("*** Error:"):
+                raise PixInsightError(line.strip())
+
     def _check_for_errors(self) -> None:
         """Check PixInsight console log for failures — first the universal
-        SpiderMonkey->V8 migration marker, then the no-reference-data marker
-        (both any task), then each step's own error/success patterns."""
+        SpiderMonkey->V8 migration marker, then the no-reference-data marker,
+        then the universal `*** Error:` catch-all (all any task), then each
+        step's own error/success patterns."""
         self._check_legacy_engine()
         self._check_no_reference_data()
+        self._check_script_errors()
         for step in self.steps:
             for pattern in step.error_patterns:
                 match = pattern.search(self.log)
