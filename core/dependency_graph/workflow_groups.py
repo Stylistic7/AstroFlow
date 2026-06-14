@@ -57,7 +57,7 @@ def workflow_group(fn):
             cal_masters = []
             for cs in calibration_stacks_for(stack, config):
                 cal_masters.append(stack_files(
-                    config, downscale_stack(8, cs), *cal_masters,
+                    downscale_stack(8, cs), config, *cal_masters,
                 ))
             return cal_masters
 

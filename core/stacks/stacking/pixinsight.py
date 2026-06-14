@@ -190,6 +190,13 @@ def narrow_stack_config(stack: BaseStack, config: ProcessingConfig) -> _StackKey
     `ProcessingConfig` — is what lets `ProcessingConfig` gain fields
     without re-keying every cached master.
     """
+    if not isinstance(config, ProcessingConfig):
+        raise TypeError(
+            f"narrow_stack_config got config={type(config).__name__!r}, "
+            f"expected ProcessingConfig — stack_files args are almost certainly "
+            f"swapped. The signature is stack_files(stack, config, *cal_masters): "
+            f"stack first, config second."
+        )
     from decisions.decisions import decisions_for_stack
 
     return _StackKey(

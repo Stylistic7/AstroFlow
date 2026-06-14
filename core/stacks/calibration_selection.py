@@ -36,7 +36,7 @@ def calibration_stacks_for(
         for cs in calibration_stacks_for(stack, config):
             cs_transformed = my_transform(cs)
             cal_masters.append(stack_files(
-                config, cs_transformed, *cal_masters,
+                cs_transformed, config, *cal_masters,
             ))
         s_transformed = my_transform(stack)
         master = stack_files(s_transformed, config, *cal_masters)

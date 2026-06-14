@@ -1,5 +1,7 @@
 from dataclasses import replace
 
+import pytest
+
 from hashing import make_hashable
 from decisions.settings import ProcessingConfig, DevelopmentSettings
 from stacks.stacking.pixinsight import narrow_stack_config, _StackKey
@@ -37,3 +39,11 @@ def test_narrow_returns_stackkey():
     key = narrow_stack_config(_StubStack(), ProcessingConfig())
     assert isinstance(key, _StackKey)
     assert key.calibration_stacks is None
+
+
+def test_narrow_rejects_swapped_args():
+    """A swapped stack_files(config, stack, ...) call lands a non-config in
+    the config slot. The guard must fail fast with a clear 'swapped' message
+    instead of a cryptic AttributeError deep in preflight."""
+    with pytest.raises(TypeError, match="swapped"):
+        narrow_stack_config(ProcessingConfig(), _StubStack())
