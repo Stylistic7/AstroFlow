@@ -230,12 +230,26 @@ def _kill_instance(slot: int) -> None:
         pass  # Already gone
 
 
+# Overall ceiling on waiting for a free PixInsight slot. The slot file
+# lock sits behind Ray's per-node `PixInsight` resource, which already
+# gates concurrency to one task per slot — so a wait this long means a
+# stale lock or drifted resource accounting, NOT legitimate contention.
+# Raising converts an unrecoverable spin (a worker holding its Ray
+# `PixInsight` slot forever at 0% CPU) into a task failure that Ray
+# retries and reschedules via the @node's `max_retries`.
+_SLOT_ACQUIRE_TIMEOUT = float(
+    os.environ.get("ASTROFLOW_PIX_SLOT_ACQUIRE_TIMEOUT", "300")
+)
+
+
 @contextmanager
 def _acquire_slot(slots: list[int]):
     """Acquire exclusive access to a PixInsight slot via file lock.
 
-    Tries each slot in order. Blocks until one is available.
+    Tries each slot in order. Waits up to `_SLOT_ACQUIRE_TIMEOUT` for one
+    to free, then raises `TimeoutError` rather than blocking forever.
     """
+    deadline = time.monotonic() + _SLOT_ACQUIRE_TIMEOUT
     while True:
         for slot in slots:
             lock_path = _LOCK_DIR / f"pix-slot-{slot}.lock"
@@ -250,12 +264,24 @@ def _acquire_slot(slots: list[int]):
             except filelock.Timeout:
                 continue
 
-        # All slots busy — wait and retry
+        # All slots busy — fail fast once the ceiling is hit so the task
+        # surfaces as a retryable error instead of deadlocking the slot.
+        if time.monotonic() > deadline:
+            raise TimeoutError(
+                f"Could not acquire a PixInsight slot from {slots} within "
+                f"{_SLOT_ACQUIRE_TIMEOUT:.0f}s — stale lock or stuck slot"
+            )
         time.sleep(1)
 
 
 _START_SENTINEL_TIMEOUT = 60      # seconds to wait for PixInsight to begin executing
 _END_SENTINEL_TIMEOUT = 3600      # seconds to wait for the script to finish (1 hour)
+# `--execute` only DISPATCHES the script to the persistent slot instance
+# and returns promptly (actual execution is tracked via the sentinels
+# below) — so this guards the dispatch client itself wedging, not the
+# script runtime. Without it the unguarded dispatch could hang a worker
+# forever, holding its Ray `PixInsight` slot at 0% CPU.
+_DISPATCH_TIMEOUT = float(os.environ.get("ASTROFLOW_PIX_DISPATCH_TIMEOUT", "60"))
 
 
 def run_scp(
@@ -303,11 +329,27 @@ def run_scp(
         scp_filename.write_text(scp)
         print(f"### pix: Wrote script to {scp_filename}")
 
-        # Execute
+        # Execute. The dispatch returns promptly; the start/end sentinels
+        # below track the real execution. `timeout` guards the dispatch
+        # client wedging — on timeout subprocess.run kills it, then we
+        # restart the slot instance and raise so Ray retries the task
+        # rather than the worker deadlocking on a held slot.
         start_time = time.monotonic()
-        subprocess.run(
-            [_PIXINSIGHT_EXECUTABLE, f"--execute={slot}:{scp_filename}"]
-        )
+        try:
+            subprocess.run(
+                [_PIXINSIGHT_EXECUTABLE, f"--execute={slot}:{scp_filename}"],
+                timeout=_DISPATCH_TIMEOUT,
+            )
+        except subprocess.TimeoutExpired:
+            print(
+                f"### pix: --execute dispatch wedged >{_DISPATCH_TIMEOUT:.0f}s "
+                f"on slot {slot}, killing instance"
+            )
+            _kill_instance(slot)
+            raise TimeoutError(
+                f"PixInsight --execute dispatch did not return within "
+                f"{_DISPATCH_TIMEOUT:.0f}s on slot {slot}"
+            )
 
         instance_pid = _find_running_instances().get(slot)
 
