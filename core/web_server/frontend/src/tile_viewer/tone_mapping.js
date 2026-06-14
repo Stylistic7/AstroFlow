@@ -120,7 +120,14 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         // 1024×1, so we sample at vec2(x, 0.5) with the linear
         // sampler — linear interpolation between adjacent LUT
         // entries gives sub-bin precision for free.
-        y = textureSample(stretchLut, stretchLutSampler, vec2<f32>(x, 0.5)).r;
+        //
+        // textureSampleLevel (explicit LOD 0), NOT textureSample:
+        // this call sits after the xRaw == 0.0 early-return, i.e.
+        // in non-uniform control flow, where WGSL forbids the
+        // derivative-computing textureSample (must only be called
+        // from uniform control flow). A 1024x1 LUT has no mip chain,
+        // so explicit-LOD sampling is identical and derivative-free.
+        y = textureSampleLevel(stretchLut, stretchLutSampler, vec2<f32>(x, 0.5), 0.0).r;
     } else {
         // PixInsight Auto-STF: linear remap into [E1, 1] then MTF
         // (closed-form, no LUT — preserves the precision benefits
