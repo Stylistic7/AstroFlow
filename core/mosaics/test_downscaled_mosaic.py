@@ -87,12 +87,12 @@ def test_downscaled_orion_mosaic_produces_tiled_tiff(test_context):
     print_tree(context.output_dir)
 
     # Filenames are `<call_hash>.<ext>`. PI Master and PI
-    # Downscaled now share the unified `store_mosaic_color_channel_xisf`
+    # Downscaled now share the unified `post_process_mosaic_color_channel`
     # op; per-pipeline discrimination comes from the call_hash
     # (different upstream `merge_images` masters → different
     # call_hashes → different filenames in the same op dir).
     output = Path(context.output_dir)
-    op_dir = "store_mosaic_color_channel_xisf"
+    op_dir = "post_process_mosaic_color_channel"
     xisfs = list(output.rglob(f"{op_dir}/*.xisf"))
     tiffs = list(output.rglob(f"{op_dir}/*.tiff"))
 

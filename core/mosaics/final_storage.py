@@ -6,49 +6,10 @@ from mosaics.types import Mosaic
 from file_io.generic import read_image
 from file_io.tiff_file_io import write_tiff_image
 from previews.operations import autostretch
-from pix import Image
 from decorators import node
-from decisions.settings import ProcessingConfig
 
-from file_io.types import FitsFilePath, TiffFilePath, XisfFilePath, WithSidecar
+from file_io.types import FitsFilePath, TiffFilePath, WithSidecar
 from metadata.classes import ImageMetadata
-
-
-def _store_xisf_narrow(args, kwargs):
-    """Cache-key hook: project `config` to its only dependency here,
-    `mock_pixinsight` (in its arg slot)."""
-    mosaic, filter, config, input = args
-    return (mosaic, filter, config.development_settings.mock_pixinsight, input), kwargs
-
-
-@node(
-    display="Mosaic",
-    final=True,
-    cache_key_narrow=_store_xisf_narrow,
-    resources={"PixInsight": 1},
-    auto_memory=True,
-)
-def store_mosaic_color_channel_xisf(
-    mosaic: Mosaic, filter: str, config: ProcessingConfig,
-    input: ImageMetadata,
-) -> WithSidecar[XisfFilePath]:
-    """Persist the merged per-filter PixInsight mosaic master.
-
-    Pipeline-agnostic: PI Master and PI Downscaled both call this
-    with their own merged input. Different `input` (different
-    upstream `merge_images` result) → different bound-args
-    call_hash → different output filename. The framework's
-    runtime tap-path recorder (in `compute_graph._record_pipeline_
-    taps`) captures whatever path the body wrote to. Takes the whole
-    `config`; the cache key is narrowed to just `mock_pixinsight`."""
-    mock_pixinsight = config.development_settings.mock_pixinsight
-    output = store_mosaic_color_channel_xisf.filename_fn(
-        mosaic, filter, config, input,
-    )
-    output.parent.mkdir(parents=True, exist_ok=True)
-    image = Image.open(input.filename, filter=filter)
-    image.save_to(output, mock=mock_pixinsight)
-    return WithSidecar(output)
 
 
 @node(

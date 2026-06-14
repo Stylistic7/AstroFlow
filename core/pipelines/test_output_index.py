@@ -92,13 +92,12 @@ def test_display_attr_attached_to_ops():
     decide which Nodes are user-visible taps."""
     from stacks.stacking.pixinsight import stack_files
     from stacks.post_processing.pixinsight import post_process_stack
-    from mosaics.final_storage import (
-        store_mosaic_color_channel_xisf, store_mosaic_color_channel_subframe,
-    )
+    from mosaics.final_storage import store_mosaic_color_channel_subframe
+    from mosaics.post_process_channel import post_process_mosaic_color_channel
 
     assert stack_files._display == "Master"
     assert post_process_stack._display == "Post-Processed"
-    assert store_mosaic_color_channel_xisf._display == "Mosaic"
+    assert post_process_mosaic_color_channel._display == "Mosaic"
     assert store_mosaic_color_channel_subframe._display == "Subframe"
 
 

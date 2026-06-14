@@ -122,7 +122,7 @@ def test_pi_master_orion_op_counts(test_context):
     # + 1 cross-strip pairwise = 3.
     assert counts["merge_images"] == 3, counts
     # Final per-filter mosaic file: 1.
-    assert counts["store_mosaic_color_channel_xisf"] == 1, counts
+    assert counts["post_process_mosaic_color_channel"] == 1, counts
 
 
 def _format_scope(scope: tuple) -> str:
@@ -748,7 +748,7 @@ def test_pi_downscaled_orion_op_counts(test_context):
     assert counts["merge_target_channel"] == 4, counts
     assert counts["place_image"] == 4, counts
     assert counts["merge_images"] == 3, counts
-    assert counts["store_mosaic_color_channel_xisf"] == 1, counts
+    assert counts["post_process_mosaic_color_channel"] == 1, counts
 
 
 @pytest.mark.exhaustive

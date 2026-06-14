@@ -18,7 +18,7 @@ replace.
 """
 from astroflow.pipeline import ephemeral_intermediates, pipeline
 from dependency_graph.tracing import workflow_group
-from mosaics.final_storage import store_mosaic_color_channel_xisf
+from mosaics.post_process_channel import post_process_mosaic_color_channel
 from mosaics.merging.pixinsight import merge_images
 from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
@@ -114,7 +114,7 @@ def for_mosaic(mosaic, config):
             for r in rows[1:]:
                 merged = merge_images(mosaic, filter, config, merged, r)
 
-        out[filter] = store_mosaic_color_channel_xisf(
+        out[filter] = post_process_mosaic_color_channel(
             mosaic, filter, config, merged,
         )
 

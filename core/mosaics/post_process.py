@@ -48,6 +48,7 @@ def _post_process_mosaic(
 
 
 @node(
+    display="Combined",
     resources={"PixInsight": 1},
     auto_memory=True,
 )
@@ -59,7 +60,7 @@ def post_process_mosaic(
     """Combine per-filter mosaic channels into an RGB / SHO master.
 
     `channels` is a dict keyed by filter, values are upstream
-    WithSidecar handles produced by `store_mosaic_color_channel_xisf`.
+    WithSidecar handles produced by `post_process_mosaic_color_channel`.
     The pipeline body builds the dict and passes it as a data dep."""
     filter_list = sorted(channels.keys())
     image_paths = [channels[f].filename for f in filter_list]

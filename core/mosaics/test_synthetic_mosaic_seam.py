@@ -176,7 +176,7 @@ def test_diagnose_corner_glow(test_context, monkeypatch):
         return float(np.median(br) / max(np.median(ce), 1e-9))
 
     for op in ("stack_files", "post_process_stack", "place_image",
-               "merge_images", "store_mosaic_color_channel_xisf"):
+               "merge_images", "post_process_mosaic_color_channel"):
         d = context.output_dir / op
         files = sorted(d.glob("*.xisf")) + sorted(d.glob("*.tiff")) if d.exists() else []
         for i, f in enumerate(files):
@@ -302,7 +302,14 @@ def _join_step(seam: dict) -> dict:
     good = seam["good_cols"]
     if good.size < 200:
         return {"step_adu": float("nan"), "step_over_rms": float("nan")}
-    p = prof[good]
+    # Measure the INTERIOR join, excluding the outer 2% at each end — the
+    # same edge trim `_seam_column_profile` applies to the global p-p. The
+    # extreme-edge columns are footprint-boundary / GC edge ramps (and on
+    # synthetic MGC fields the synthetic↔MARS glow surfaces there); the
+    # panel join lies in the interior, not at the mosaic edge.
+    m = int(0.02 * good.size)
+    inner = good[m: good.size - m] if good.size - 2 * m > 200 else good
+    p = prof[inner]
     k = 25
     sm = np.convolve(p, np.ones(2 * k + 1) / (2 * k + 1), mode="valid")
     W = 25
@@ -356,7 +363,7 @@ def test_synthetic_mosaic_is_seamless(test_context, field):
     context.shopping_cart = [("mosaic", mosaic_id, "PixInsight Master")]
     run_graph(build_compute_graph())
 
-    final_dir = context.output_dir / "store_mosaic_color_channel_xisf"
+    final_dir = context.output_dir / "post_process_mosaic_color_channel"
     finals = sorted(final_dir.glob("*.xisf")) if final_dir.exists() else []
     assert finals, f"[{field}] no final mosaic under {final_dir}"
     mosaic = read_image(finals[-1]).astype(np.float64)

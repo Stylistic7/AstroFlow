@@ -54,7 +54,7 @@ def test_downscaled_mosaic_has_real_pixels(test_context):
     )
 
     # Same shape for the final per-filter Mosaic output.
-    final_dir = output_dir / "store_mosaic_color_channel_xisf"
+    final_dir = output_dir / "post_process_mosaic_color_channel"
     if final_dir.exists():
         finals = list(final_dir.glob("*.xisf"))
         if finals:

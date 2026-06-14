@@ -131,7 +131,7 @@ def test_orion_mosaic(test_context) -> None:
                  {"FILTER": "H"})
 
     assert_files("store_mosaic_color_channel_subframe/*.tiff", 1, {"FILTER": "H"})
-    assert_files("store_mosaic_color_channel_xisf/*.xisf", 1, {"FILTER": "H"})
+    assert_files("post_process_mosaic_color_channel/*.xisf", 1, {"FILTER": "H"})
     # PostProcessed not produced — test data has only "H" filter,
     # which doesn't match any post-processing path (RGB or SHO).
 
@@ -208,7 +208,7 @@ def test_orion_mosaic_hybrid_oss(test_context) -> None:
 
     # And critically the XISF terminal isn't invoked under this pipeline
     # — confirms the import / call-site swap stuck.
-    assert_files("store_mosaic_color_channel_xisf/*.xisf", 0)
+    assert_files("post_process_mosaic_color_channel/*.xisf", 0)
 
     ui_mosaics = context.ui_mosaics
     assert len(ui_mosaics) == 1

@@ -149,7 +149,7 @@ def test_pixinsight_master_records_expected_graph_shape(test_context):
     # In-strip pairwise merge (1 merge for 2 panels in 1 strip):
     assert counts.get("merge_images", 0) == 1, counts
     # Final canonical per-filter Mosaic file (1 filter):
-    assert counts.get("store_mosaic_color_channel_xisf", 0) == 1, counts
+    assert counts.get("post_process_mosaic_color_channel", 0) == 1, counts
     # compute_image_metadata: zero. `compute_image_metadata` used to be
     # auto-inserted as a separate trace-time Node downstream of every
     # `@node(identity=...)` producer (via `_chain_compute_image_metadata`)
