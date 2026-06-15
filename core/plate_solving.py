@@ -235,11 +235,20 @@ def solve_field(
 
     # Synthetic noise frames opt out of solving via the DONTSOLV header.
     from file_io.generic import read_header
+    import metadata.image_types as image_types
     header = read_header(filename)
     if header.get("DONTSOLV"):
         print(f"### Skipping solve for {filename} (DONTSOLV set)")
         return None
 
+    # A master that won't solve is dropped from every mosaic it belongs
+    # to (catastrophic), and there are few of them — so for masters spend
+    # generously (10 min) AND cap the source list: a deep stack yields
+    # tens of thousands of detections, and the brightest ~1000 are plenty
+    # to solve while avoiding the blind quad-match blow-up that otherwise
+    # times out. Subframes are left at solve-field's defaults (a single
+    # one failing is negligible).
+    is_master = image_types.is_master(header)
     arguments = [
         "solve-field",
         "--overwrite",
@@ -258,6 +267,8 @@ def solve_field(
         "2",
         "--crpix-center",
     ]
+    if is_master:
+        arguments += ["--cpulimit", "600", "--objs", "1000"]
 
     result = _solve_field(filename, arguments, debug)
 
