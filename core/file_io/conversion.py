@@ -1,4 +1,5 @@
 import ast
+import math
 import astropy.io.fits as pyfits  # type: ignore
 from pathlib import Path
 from xisf import XISF  # type: ignore
@@ -29,6 +30,13 @@ def convert_xisf_to_fits(
                 value = ast.literal_eval(v["value"])
             except (ValueError, SyntaxError):
                 value = v["value"]
+
+            # FITS headers cannot hold non-finite floats (the spec forbids
+            # inf/nan; a huge XISF numeric like "1e999" parses to inf via
+            # literal_eval). Skip such keywords rather than fail the whole
+            # convert — they are never needed for the plate solve.
+            if isinstance(value, float) and not math.isfinite(value):
+                continue
 
             hdu.header[k] = (value, v["comment"])
 
