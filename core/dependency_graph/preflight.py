@@ -140,9 +140,43 @@ def _predict_one(node, predicted: dict, graph) -> str:
     fn_args = _predicted_fn_args(node, predicted, graph)
     kwargs: dict[str, Any] = {}
     if cache_key_narrow is not None:
-        fn_args, kwargs = cache_key_narrow(tuple(fn_args), kwargs)
+        try:
+            fn_args, kwargs = cache_key_narrow(tuple(fn_args), kwargs)
+        except Exception as exc:
+            # A narrow hook should never reject a well-formed node. When it
+            # does (e.g. the recurring stack_files arg-swap), dump the exact
+            # node metadata so the producing op/shape is identifiable, then
+            # re-raise — observability, not masking; preflight still fails
+            # loud rather than computing a wrong key.
+            _dump_unreconstructable_node(node, fn_args, graph, exc)
+            raise
 
     return hash_call(fn_hash, *fn_args, **kwargs)
+
+
+def _op_name(n: Any) -> str:
+    task = getattr(n, "task", n)
+    fn = getattr(task, "_function", task)
+    return getattr(fn, "__name__", repr(task))
+
+
+def _dump_unreconstructable_node(node, fn_args, graph, exc) -> None:
+    """Print the offending node's identity, literals, dep positions, and
+    the op-names of its data-deps — enough to pin which pipeline/op shape
+    produced an arg layout the narrow hook can't reconstruct."""
+    import sys
+    deps = list(graph.get(node, []))
+    print(
+        "### preflight: cache_key_narrow FAILED — unreconstructable node\n"
+        f"###   op={_op_name(node)} name={getattr(node, 'name', '?')}\n"
+        f"###   node.args types={[type(a).__name__ for a in getattr(node, 'args', ())]}\n"
+        f"###   node.args reprs={[repr(a)[:80] for a in getattr(node, 'args', ())]}\n"
+        f"###   _dep_positions={getattr(node, '_dep_positions', 'MISSING')}\n"
+        f"###   reconstructed fn_args types={[type(a).__name__ for a in fn_args]}\n"
+        f"###   n_deps={len(deps)} dep_ops={[_op_name(d) for d in deps]}\n"
+        f"###   error={exc}",
+        file=sys.stderr, flush=True,
+    )
 
 
 def predict_call_hashes(graph) -> dict:
