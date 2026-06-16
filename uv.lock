@@ -34,6 +34,7 @@ dependencies = [
     { name = "brotli" },
     { name = "cdshealpix" },
     { name = "diskcache" },
+    { name = "edt" },
     { name = "ephem" },
     { name = "filelock" },
     { name = "flask" },
@@ -85,6 +86,7 @@ requires-dist = [
     { name = "brotli" },
     { name = "cdshealpix" },
     { name = "diskcache" },
+    { name = "edt", specifier = ">=3.1.1" },
     { name = "ephem" },
     { name = "filelock" },
     { name = "flask" },
@@ -368,6 +370,23 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/3f/21/1c1ffc1a039ddcc459db43cc108658f32c57d271d7289a2794e401d0fdb6/diskcache-5.6.3.tar.gz", hash = "sha256:2c3a3fa2743d8535d832ec61c2054a1641f41775aa7c556758a109941e33e4fc", size = 67916, upload-time = "2023-08-31T06:12:00.316Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3f/27/4570e78fc0bf5ea0ca45eb1de3818a23787af9b390c0b0a0033a1b8236f9/diskcache-5.6.3-py3-none-any.whl", hash = "sha256:5e31b2d5fbad117cc363ebaf6b689474db18a1f6438bc82358b024abd4c2ca19", size = 45550, upload-time = "2023-08-31T06:11:58.822Z" },
+]
+
+[[package]]
+name = "edt"
+version = "3.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a5/ca/432c11df2a261fcae71dea11eeabfc5affd8ada22aaafa378212c1e9c9e2/edt-3.1.1.tar.gz", hash = "sha256:4b0ab5d898077eda76d1ebdec6e3a4085fd33d4c85195d71abf464ff225915c5", size = 3234159, upload-time = "2026-03-01T05:20:30.695Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2a/3a/46f02072334c42146ffd241251ac5ca795e84f6d6ffa87b95df37d047e64/edt-3.1.1-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:05959ab8c0f9ce1a1b2736d27c83780f1a2ab77232428f5a606d5e447b7f9a3a", size = 270847, upload-time = "2026-03-01T05:19:46.505Z" },
+    { url = "https://files.pythonhosted.org/packages/fa/15/92f5dceb6b953f1c31b4b627466977fc5a3d18514eeed27f7be1d287b105/edt-3.1.1-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:6b6922e81f1b47832a7a71302eb79372f3aea2a0bbca6bb6b6f6275df18bdaab", size = 252991, upload-time = "2026-03-01T05:19:47.489Z" },
+    { url = "https://files.pythonhosted.org/packages/0a/eb/37e1a719432e747aa6b8d2046eae910f76640bd9be4d71f667cc3dda2356/edt-3.1.1-cp313-cp313-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:467ce55f466ce21c5fb90462cabf82c73796920a8a9d5c0f655b01c6f427c7c3", size = 2867610, upload-time = "2026-03-01T05:19:49.352Z" },
+    { url = "https://files.pythonhosted.org/packages/c0/16/35778deac2353ed385e81bda4dfd2eefcc1c0c1e1c083f4cb39ef0025d18/edt-3.1.1-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:b464bd8bb6e14edfc07f8c1382700446bc20a2b521ec494f3de1fd5d20471cf3", size = 2954115, upload-time = "2026-03-01T05:19:52.558Z" },
+    { url = "https://files.pythonhosted.org/packages/22/87/33fa8d7787489dd21957de56fbc6ad655dd156382b78e9ce2aeef125a044/edt-3.1.1-cp313-cp313-win32.whl", hash = "sha256:06c0ff97bc705803880a153c34b12b8245da51951198f4689942020a9bfcf6ff", size = 170606, upload-time = "2026-03-01T05:19:54.967Z" },
+    { url = "https://files.pythonhosted.org/packages/fb/cf/ce2e98dc0b060c705c321090d9d9fcd9ab39b041309ccc0ca0ae9009cc94/edt-3.1.1-cp313-cp313-win_amd64.whl", hash = "sha256:d6804fe5fcbd7d03813eb48fc33cdfd25cb166d0241768969ee24f209fca07de", size = 206561, upload-time = "2026-03-01T05:19:53.741Z" },
 ]
 
 [[package]]
