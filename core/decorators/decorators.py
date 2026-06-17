@@ -38,8 +38,22 @@ from dependency_graph.logging import make_capture_logs_decorator
 from hashing import hash_call, hash_source_code
 from context import context, get_cache
 
+
+def _head_aware_cache():
+    """`@node` cache provider: the head uses its local (canonical)
+    diskcache directly — fast, and it IS the source of truth there; every
+    other node routes through the cluster-wide `ContextActor` so no worker
+    reads/writes a divergent local diskcache. Resolved once per process
+    (`make_cached_decorator` memoizes the returned cache)."""
+    from cache.cached_decorator import _is_head_node
+    if _is_head_node():
+        return get_cache()
+    from cache.context_actor_cache import ContextActorCache
+    return ContextActorCache()
+
+
 cached = make_cached_decorator(
-    cache_provider=get_cache,
+    cache_provider=_head_aware_cache,
     memory_estimator=estimate_memory,
     debug=False,
 )

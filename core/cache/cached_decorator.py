@@ -73,12 +73,21 @@ class MissingInjectedValueError(Exception):
     pass
 
 
+_MISSING = object()  # sentinel: a cache miss, distinct from a stored None
+
+
 def _is_head_node() -> bool:
+    """True iff this process runs on the node carrying the canonical
+    diskcache. Detected via the head-only `diskcache` custom resource —
+    the same invariant the orchestrator actors pin on. (The prior
+    `node:__internal_head__` marker isn't reliably published in this Ray
+    version; see ray_init.py.) Returns False if the node can't be located,
+    which safely routes cache access to the canonical ContextActor."""
     node_id = get_runtime_context().get_node_id()
     for n in ray.nodes():
-        if n["Alive"] and n["NodeID"] == node_id:
-            return "node:__internal_head__" in n["Resources"]
-    raise RuntimeError("Current node not found in ray.nodes()")
+        if n["NodeID"] == node_id:
+            return "diskcache" in n.get("Resources", {})
+    return False
 
 
 def _bind_args(
@@ -134,12 +143,16 @@ def make_cached_decorator(
         def _key_and_lookup(bound):
             call_hash = canonical_call_hash(*bound.args, **bound.kwargs)
             key = (func.__name__, call_hash)
-            if key not in _resolve_cache():
+            start_time = time.time()
+            # One cache op (one RPC when the cache is the ContextActor
+            # proxy off-head): `.get` with a process-local sentinel, so a
+            # miss is distinguished without a separate `__contains__` hit.
+            cached_raw = _resolve_cache().get(key, _MISSING)
+            elapsed_time = time.time() - start_time
+            if cached_raw is _MISSING:
                 debug_print(f"cache miss: {key}")
                 return key, call_hash, False, None
-            start_time = time.time()
-            cached = strip_refs(_resolve_cache()[key])
-            elapsed_time = time.time() - start_time
+            cached = strip_refs(cached_raw)
             if elapsed_time > 0.5:
                 debug_print(
                     f"### cache key {key} was slow to load, took {elapsed_time=} s"

@@ -103,6 +103,26 @@ class ContextActor:
         finally:
             self._exit()
 
+    def get_or_missing(self, key: Key) -> "tuple[bool, Any]":
+        """One round-trip presence+value: ``(found, strip_refs(value))``.
+
+        Lets the worker-side cache proxy (`ContextActorCache`) do a single
+        RPC instead of `contains()` + `get()`, and keeps miss-detection on
+        the actor: a Ray-pickled sentinel default would lose object
+        identity, so the proxy returns the *caller's* local default on a
+        miss rather than a round-tripped one.
+        """
+        self._enter()
+        try:
+            from cache.context_ref import strip_refs
+            c = self._c(key)
+            try:
+                return (True, strip_refs(c[key]))
+            except KeyError:
+                return (False, None)
+        finally:
+            self._exit()
+
     def get_matching(self, key_fragment: Key) -> ray.ObjectRef:
         return {
             key: c[key]
