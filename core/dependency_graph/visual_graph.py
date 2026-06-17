@@ -155,20 +155,12 @@ def _aggregate_state(states) -> str:
 
 
 def _filter_of(node: Node) -> str | None:
-    """Value bound to the `filter` parameter in `node.args`, if any.
-    Pipeline ops carry `filter` as a literal arg on sinks like
-    `merge_target_channel`, `place_image`, `merge_images`."""
-    import inspect
-    fn = getattr(node.task, "_function", node.task)
-    try:
-        sig = inspect.signature(fn)
-    except (TypeError, ValueError):
-        return None
-    params = list(sig.parameters.keys())
-    arg_map = {params[i]: node.args[i]
-               for i in range(min(len(node.args), len(params)))}
-    f = arg_map.get("filter")
-    return None if f is None else str(f)
+    """Filter this node carries, from its literal args. Thin wrapper over
+    the canonical accessor; pipeline ops carry `filter` as a literal arg
+    on sinks like `merge_target_channel`, `place_image`, `merge_images`,
+    and stack ops carry a `.filter`-bearing stack."""
+    from dependency_graph.node_introspection import filter_of
+    return filter_of(node, node.args)
 
 
 def _filter_membership(vg: VisualGraph) -> dict[VisualNode, set[str]]:

@@ -25,6 +25,28 @@ def _get_namespace() -> str:
     return os.environ.get("ASTROFLOW_MOCK_NAMESPACE", "AstroFlow")
 
 
+def _filter_priority_hint(node, resolved) -> int:
+    """Advisory `run_graph` sort hint: dispatch higher-priority filters
+    first (Hα → S → O → …) so a whole color channel finishes before the
+    next. Purely an ordering of the run — never affects correctness.
+
+    Larger == sooner (dispatch pops from the tail). Filter-less nodes
+    (shared geometry, the color-combine master) sort first: shared
+    prerequisites clear early, and the combine can't run early anyway
+    (its deps aren't met). Unlisted filters sort last.
+    """
+    from dependency_graph.node_introspection import filter_of
+    from suggestions.generator import FILTER_PRIORITY
+
+    f = filter_of(node, resolved)
+    if f is None:
+        return len(FILTER_PRIORITY) + 1
+    try:
+        return len(FILTER_PRIORITY) - FILTER_PRIORITY.index(f)
+    except ValueError:
+        return 0
+
+
 def _announce(state: State, action: Action) -> tuple[State, list[Action]]:
     from web_server.backend.announcer import announce
 
@@ -123,6 +145,7 @@ class StateActor:
                 status_fn=status_fn,
                 status_interval=5,
                 drain_event=self._drain_event,
+                node_sort_key=_filter_priority_hint,
             )
         except GraphCancelled:
             print("### Graph drained; restart already enqueued")

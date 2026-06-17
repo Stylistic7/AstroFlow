@@ -543,7 +543,7 @@ def extract_pipeline_taps(graph):
     No side effects, no graph mutation.
     """
     from dependency_graph.classes import Node
-    import inspect
+    from dependency_graph.node_introspection import filter_of
 
     if graph is None:
         return
@@ -559,13 +559,6 @@ def extract_pipeline_taps(graph):
         base_display = getattr(fn, "_display", None) or getattr(task, "_display", None)
         if base_display is None:
             continue
-        try:
-            sig = inspect.signature(fn)
-        except (TypeError, ValueError):
-            continue
-        params = list(sig.parameters.keys())
-        arg_map = {params[i]: n.args[i]
-                   for i in range(min(len(n.args), len(params)))}
         # Find the entity: walks `n.args` for an instance with
         # `stable_hash`, then descends into upstream deps if needed.
         # Lets ops with `stack` as a trailing dep (e.g. `stack_files
@@ -580,9 +573,9 @@ def extract_pipeline_taps(graph):
         object_type_name = type(entity).__name__
         object_id_value = entity.stable_hash
         # Filter precedence: explicit `filter=` literal param wins (mosaic
-        # ops take it as a literal arg), else fall back to the entity's
-        # intrinsic filter (every Stack has exactly one filter).
-        filter_value = arg_map.get("filter") or getattr(entity, "filter", None)
+        # ops take it as a literal arg), else the entity's intrinsic filter
+        # (every Stack has exactly one). Centralized in `filter_of`.
+        filter_value = filter_of(n, list(n.args) + [entity])
         key = (object_type_name, object_id_value, base_display, filter_value)
         seq[key] = seq.get(key, 0) + 1
         display = (

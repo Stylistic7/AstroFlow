@@ -165,6 +165,7 @@ def run_graph(
     debug: bool = False,
     drain_event: "threading.Event | None" = None,
     preflight: bool = True,
+    node_sort_key: "Callable[[Node, list], Any] | None" = None,
 ) -> tuple[Any, "RunStats"]:
     num_nodes_run: int = 0
     last_status_time: float = 0
@@ -188,6 +189,22 @@ def run_graph(
     def _refill_cache():
         nonlocal ready_cache
         ready_cache = root.get_all_ready()
+        if node_sort_key is not None and ready_cache:
+            # Advisory scheduling hint: reorder ready nodes so the caller's
+            # preferred ones dispatch first. Purely an ordering of the run —
+            # every node still runs, and a node is only ever here once its
+            # deps are done, so topological order is unaffected. Dispatch
+            # pops from the tail, so larger key == sooner. The node is
+            # ready, so `make_fn_args` yields its resolved call args
+            # (literals + dep results) for the hint to inspect.
+            def _hint(rt_node):
+                rt, node = rt_node
+                try:
+                    resolved = rt.make_fn_args(node)
+                except Exception:
+                    resolved = list(node.args)
+                return node_sort_key(node, resolved)
+            ready_cache.sort(key=_hint)
 
     def _draining() -> bool:
         return bool(drain_event and drain_event.is_set())
