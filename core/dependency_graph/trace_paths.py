@@ -159,7 +159,12 @@ def traced_path_for(
     return None
 
 
-@node
+# Head-pinned: like trace_pipeline, this is orchestration whose @node
+# wrapper memoizes a file-less result (list[dict]) into the local
+# diskcache. Only the head has the `diskcache` resource, so requesting a
+# sliver keeps it on the head's canonical cache instead of SPREAD-ing onto
+# a worker's local disk (the silent-write-to-worker-disk bug).
+@node(resources={"diskcache": 0.001})
 def _traced_paths(
     pipeline_name: str,
     entity,

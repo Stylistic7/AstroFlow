@@ -619,7 +619,18 @@ def _record_pipeline_taps(record_existence, pipeline_name, cart_type, cart_id, g
         graph[register_node] = [n]
 
 
-@node
+# Pin to the head node. trace_pipeline is orchestration, not compute: its
+# @node wrapper reads/writes the result to the *local* diskcache of
+# whatever node the task lands on, and its result (a Graph) is file-less,
+# so it has no shared-disk source of truth to fall back on (unlike
+# file-writing ops, which preflight validates against disk). Left to the
+# default SPREAD, it can land on a worker and read/write that worker's
+# local diskcache — the "silent-write-to-worker-disk" bug ray_init.py
+# warns about, which is why the orchestrator actors are head-pinned too.
+# Only the head carries the `diskcache` resource, so requesting a sliver
+# of it (the same idiom as ContextActor/StateActor) keeps tracing on the
+# head against the canonical diskcache.
+@node(resources={"diskcache": 0.001})
 def trace_pipeline(
     pipeline_name: str,
     pipeline_source_hash: str,
