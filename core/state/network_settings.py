@@ -18,12 +18,29 @@ from context import get_cache
 
 
 _CACHE_KEY = "network_settings"
+# Whether the user has explicitly picked this Mac's role (head/worker) at least
+# once. Kept as its own key (not a NetworkSettings field) so the first-run
+# dialog logic doesn't depend on the dataclass shape. Absent → never chosen.
+_ROLE_CHOSEN_KEY = "role_chosen"
+
+
+def role_has_been_chosen() -> bool:
+    return bool(get_cache().get(_ROLE_CHOSEN_KEY, False))
+
+
+def mark_role_chosen() -> None:
+    get_cache()[_ROLE_CHOSEN_KEY] = True
 
 
 @dataclass(frozen=True)
 class NetworkSettings:
     ray_head_node_enabled: bool = True
     cluster_interface: Optional[str] = None  # interface name (e.g. "en6"); None = auto-detect
+    # Opt-in: deploy the head's live working tree to the WHOLE cluster (a
+    # `wt:<hash>` snapshot) instead of the committed HEAD. The cluster still
+    # runs identical code; it's just not reproducible from git, so it's off by
+    # default. See state.code_version.
+    uncommitted: bool = False
 
 
 def get_network_settings() -> NetworkSettings:

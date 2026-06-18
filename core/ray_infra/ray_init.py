@@ -2,7 +2,7 @@ import ray
 import ray._private.auto_init_hook
 import threading
 
-from base_path import get_base_path
+from base_path import get_base_path, get_ray_working_dir
 
 # Disable Ray's auto-init, which silently creates a standalone local cluster
 # when ray.get_actor() etc. are called before connect_to_ray_cluster().
@@ -23,8 +23,12 @@ def connect_to_ray_cluster():
         if ray.is_initialized():
             return
 
-        working_dir = f"{get_base_path()}/core"
+        # The head overrides this to its frozen-snapshot checkout so task code
+        # is byte-identical to what workers pull; otherwise it's <base>/core.
+        working_dir = get_ray_working_dir()
         print(f"### calling ray.init() with working_dir {working_dir}")
+
+        from state.code_version import RAY_WORKING_DIR_EXCLUDES
 
         ray_context = ray.init(
             address="auto",
@@ -35,16 +39,10 @@ def connect_to_ray_cluster():
                 # announcer is imported by status callbacks inside
                 # actors). We only want to skip the heavy artifacts:
                 # frontend node_modules + build, and the backend's
-                # built-static-assets dir.
-                "excludes": [
-                    ".cache/",
-                    "cache.tar.gz",
-                    ".git/",
-                    "web_server/frontend/",
-                    "web_server/backend/static/",
-                    "testdata/",
-                    "pix/testdata/",
-                ],
+                # built-static-assets dir. The list lives in
+                # state.code_version as the single source of truth shared
+                # with the pull-deploy snapshot machinery.
+                "excludes": RAY_WORKING_DIR_EXCLUDES,
                 # Install the ContextRef Ray-context serializer in every
                 # worker process (restores the same-session Plasma fast
                 # path; stdlib pickle stays ref-free / airtight).

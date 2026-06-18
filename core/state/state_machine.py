@@ -7,7 +7,7 @@ import signal
 import sys
 
 from frozendict import frozendict
-from base_path import get_bin_dir
+from base_path import get_bin_dir, get_base_path, checkout_dir, set_ray_working_dir
 from context import context, get_cache, queue
 from decisions.settings import (
     Settings,
@@ -26,6 +26,13 @@ from state.network_settings import (
     get_network_settings,
     resolve_interface_ip,
     update_network_settings,
+)
+from state.code_version import (
+    head_cluster_version,
+    is_deployable_version,
+    build_snapshot_tar,
+    verify_and_extract,
+    read_synced_sha,
 )
 from asiair.asiair_zeroconf import ASIAIRZeroconf
 from state.types import State, Action
@@ -48,6 +55,59 @@ T = TypeVar("T")
 _state = dict()
 
 QUEUE_NAME = "node_state_machine"
+
+# SMB share names the head exposes, mirrored 1:1 to /Volumes/<share> mountpoints
+# on every node. Matches the hardcoded paths in `_populate_context`
+# (/Volumes/Astro, /Volumes/Astro2). Advertised to workers via zeroconf so they
+# can mount the head's disks over 10 GbE.
+HEAD_SHARES = ["Astro", "Astro2"]
+
+
+def is_uncommitted_mode() -> bool:
+    """Whether the head deploys its live working tree (a `wt:` snapshot) to the
+    whole cluster instead of committed HEAD. Off by default. Env
+    ASTROFLOW_UNCOMMITTED (one-shot, persisted) or the persisted setting."""
+    env = os.environ.get("ASTROFLOW_UNCOMMITTED", "").lower()
+    if env in ("1", "true", "yes"):
+        update_network_settings(uncommitted=True)
+        return True
+    if env in ("0", "false", "no"):
+        update_network_settings(uncommitted=False)
+        return False
+    return get_network_settings().uncommitted
+
+
+def _frozen_version() -> str:
+    """The version of the snapshot the head froze and is serving/advertising."""
+    return read_synced_sha(checkout_dir()) or ""
+
+
+def _freeze_head_snapshot() -> str:
+    """Freeze the cluster's code into the checkout dir and point Ray's task
+    working_dir at it, so head-dispatched tasks and workers run byte-identical
+    code. Committed mode → `git archive HEAD`; uncommitted → the working tree.
+    The head's own bootstrap + web server keep running from the full repo (the
+    snapshot excludes the frontend/static the UI needs). Returns the version.
+
+    The head needs a git working tree; the app bundle has none, so a
+    bundle-as-head can't deploy — logged, and we advertise nothing (workers
+    won't join) rather than crash.
+    """
+    repo = Path(get_base_path())
+    try:
+        version = head_cluster_version(repo, is_uncommitted_mode())
+        if _frozen_version() != version:
+            verify_and_extract(build_snapshot_tar(repo, version), version,
+                               checkout_dir())
+        set_ray_working_dir(f"{checkout_dir()}/core")
+        print(f"### Froze cluster snapshot {version[:16]} -> {checkout_dir()}")
+        return version
+    except Exception as e:
+        print(
+            f"### Cannot freeze a cluster snapshot from {repo!r} ({e}). The "
+            "head must run from a git checkout; workers will not join."
+        )
+        return ""
 
 
 def _get_namespace() -> str:
@@ -75,11 +135,56 @@ def is_head_node() -> bool:
     return get_network_settings().ray_head_node_enabled
 
 
+def _await_clean_slate(is_head: bool, timeout: int = 40) -> None:
+    """Before a (re)start binds its singletons, wait for any previous instance
+    on this machine to release them: the local Ray node, and (head only) the
+    web-server port 8000. A restart spawns the replacement *then* quits the old
+    process, so without this the new process can race the old one for those
+    resources. On a fresh launch nothing is held and this returns immediately.
+    """
+    import socket as _socket
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        ray_down = not is_ray_connected()
+        port_free = True
+        if is_head:
+            s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+            try:
+                port_free = s.connect_ex(("127.0.0.1", 8000)) != 0
+            finally:
+                s.close()
+        if ray_down and port_free:
+            return
+        print("### Waiting for a previous instance to release Ray / port 8000…")
+        time.sleep(1)
+    print("### Proceeding despite a busy slate after timeout.")
+
+
 def _init(state: State, action: Action) -> tuple[State, list[Action]]:
+    # If this process is a freshly-spawned replacement (code/role change), the
+    # outgoing instance may still hold Ray / port 8000 — wait for it to release.
+    _await_clean_slate(is_head_node())
+
     new_actions = []
 
+    # A head runs from its own dev repo, never a synced worker checkout. Clear
+    # any stale pointer file (e.g. this machine was previously a worker) so
+    # get_base_path() resolves to the repo, not a leftover checkout.
+    if is_head_node():
+        from base_path import live_core_pointer_file
+        ptr = live_core_pointer_file()
+        if ptr.exists() and "ASTROFLOW_LIVE_CORE" not in os.environ:
+            try:
+                ptr.unlink()
+            except OSError:
+                pass
+
     new_actions.append(Action(type="prepare_pix"))
-    new_actions.append(Action(type="start_gunicorn"))
+    # Only the head serves the user-facing UI + the code-snapshot endpoints.
+    # Workers run headless — no gunicorn.
+    if is_head_node():
+        new_actions.append(Action(type="start_gunicorn"))
     new_actions.append(Action(type="start_astroflow_zeroconf"))
 
     if is_head_node():
@@ -166,7 +271,11 @@ def _advertise_zeroconf(
         get_network_settings().cluster_interface
     )
     state["astroflow_zeroconf"].update_state(
-        is_ray_head=True, advertised_ip=advertised_ip
+        is_ray_head=True,
+        advertised_ip=advertised_ip,
+        # Tell workers the frozen snapshot to run and the disks to mount.
+        cluster_version=_frozen_version(),
+        mounted_volumes=HEAD_SHARES,
     )
     return state, []
 
@@ -189,6 +298,10 @@ def _start_ray_head_node(
     state: State, action: Action
 ) -> tuple[State, list[Action]]:
     assert "ray_process" not in state
+    # Freeze the cluster snapshot and point Ray's working_dir at it BEFORE
+    # ray.init, so head-dispatched tasks and workers run byte-identical code.
+    _freeze_head_snapshot()
+
     node_ip = resolve_interface_ip(get_network_settings().cluster_interface)
     state["ray_process"] = start_ray_head_node(node_ip_address=node_ip)
 
@@ -259,13 +372,20 @@ def _restart_ray(state: State, action: Action) -> tuple[State, list[Action]]:
     return state, actions
 
 
+def _unmount_worker_shares(state: State) -> None:
+    """Drop whatever SMB shares this worker mounted from the head. Tracked in
+    `state["mounted_shares"]` so we never touch the head's real local disks."""
+    shares = state.pop("mounted_shares", [])
+    if shares:
+        from state.worker_sync import unmount_head_shares
+        unmount_head_shares(shares)
+
+
 def _update_astroflow_services(
     state: State, action: Action
 ) -> tuple[State, list[Action]]:
     if get_network_settings().ray_head_node_enabled:
-        return state, []
-
-    from web_server.backend.announcer import announce
+        return state, []  # the head follows no one
 
     instances = action.get("instances", {})
     head = next(
@@ -278,34 +398,109 @@ def _update_astroflow_services(
         if "ray_process" in state and not is_ray_connected():
             print("### Lost connection to head node, cleaning up")
             stop_ray_node()
-            del state["ray_process"]
+            state.pop("ray_process", None)
             state.pop("connected_head_ip", None)
-            announce("ray_status")
         return state, []
 
-    # If we're connected to a different head IP than the one being
-    # advertised now, the head likely changed interfaces (or moved).
-    # Tear down so the start_ray_subordinate_node action below can
-    # reconnect to the new address.
-    if "ray_process" in state and state.get("connected_head_ip") != head["ip"]:
+    head_ip = head["ip"]
+    version = head.get("cluster_version", "")
+    shares = head.get("mounted_volumes", [])
+
+    # Head moved interface / restarted at a new IP: tear down Ray and drop the
+    # stale SMB mounts (a hung mount blocks os.listdir ~60s) before reconnecting.
+    if "ray_process" in state and state.get("connected_head_ip") != head_ip:
         print(
             f"### Head IP changed "
-            f"{state.get('connected_head_ip')} -> {head['ip']}, reconnecting"
+            f"{state.get('connected_head_ip')} -> {head_ip}, reconnecting"
         )
         try:
             stop_ray_node()
         except Exception:
             pass
+        _unmount_worker_shares(state)
         state.pop("ray_process", None)
         state.pop("connected_head_ip", None)
 
-    # Already connected to the right head — nothing to do.
+    # Connected and alive → nothing to do. We deliberately do NOT poll for the
+    # head advancing to a new version: deploying new code means restarting the
+    # apps (the head re-freezes; workers re-sync on their next start/connect).
+    # A dead Ray connection (e.g. the head bounced) is torn down so the next
+    # discovery tick re-joins and re-syncs to whatever the head now serves.
     if "ray_process" in state:
+        if not is_ray_connected():
+            print("### Ray connection lost; tearing down to re-join.")
+            try:
+                stop_ray_node()
+            except Exception:
+                pass
+            _unmount_worker_shares(state)
+            state.pop("ray_process", None)
+            state.pop("connected_head_ip", None)
+        else:
+            return state, []
+
+    # Not connected → mount disks, sync code, join.
+    return state, [
+        Action(type="join_head", head_ip=head_ip, version=version, shares=shares)
+    ]
+
+
+def _join_head(state: State, action: Action) -> tuple[State, list[Action]]:
+    """Worker: mount the head's disks, follow its committed code, then join Ray.
+
+    Ordered: (1) mount before anything reads /Volumes; (2) only a real
+    committed SHA is followed — a dev/dirty head is skipped; (3) if our checkout
+    isn't at that SHA, fetch it and restart INTO it; (4) once in sync, join.
+    """
+    head_ip = action["head_ip"]
+    version = action["version"]
+    shares = action["shares"]
+    from state.worker_sync import (
+        mount_head_shares,
+        sync_to_version,
+        current_synced_sha,
+    )
+
+    if shares:
+        try:
+            mount_head_shares(head_ip, shares)
+            state["mounted_shares"] = shares
+        except Exception as e:
+            print(f"### Failed to mount head shares: {e}; will retry")
+            return state, []
+
+    if not is_deployable_version(version):
+        print(
+            f"### Head advertises non-deployable version {version!r}; "
+            "waiting to join (head is in dev mode or has uncommitted edits)."
+        )
         return state, []
 
+    if current_synced_sha() != version:
+        try:
+            ok = sync_to_version(head_ip, version)
+        except Exception as e:
+            print(f"### Code sync failed: {e}; will retry")
+            return state, []
+        # Restart only once the checkout is confirmed at `version` — the
+        # recorded SHA is the loop-breaker, so this can't restart-loop.
+        if ok and current_synced_sha() == version:
+            print(f"### Synced to {version[:12]}; restarting into the new code.")
+            from state.restart import spawn_replacement
+            spawn_replacement(live_core=str(checkout_dir()))
+            return state, [Action(type="quit")]
+        return state, []  # not synced; retry on the next discovery tick
+
     return state, [
-        Action(type="start_ray_subordinate_node", head_ip=head["ip"])
+        Action(type="start_ray_subordinate_node", head_ip=head_ip)
     ]
+
+
+def _unmount_head_shares(
+    state: State, action: Action
+) -> tuple[State, list[Action]]:
+    _unmount_worker_shares(state)
+    return state, []
 
 
 def _start_ray_subordinate_node(
@@ -412,12 +607,17 @@ def _stop_scheduler(state: State, action: Action) -> tuple[State, list[Action]]:
 
 
 def _quit(state: State, action: Action) -> tuple[State, list[Action]]:
-    return state, [
+    actions = [
         Action(type="stop_scheduler"),
         Action(type="stop_zeroconf"),
         Action(type="stop_gunicorn"),
         Action(type="stop_ray_node"),
     ]
+    # Workers leave the head's disks unmounted on exit; the head must never
+    # unmount its own real local disks, so this is worker-only.
+    if not is_head_node():
+        actions.append(Action(type="unmount_head_shares"))
+    return state, actions
 
 
 def _add_to_shopping_cart(
@@ -479,6 +679,8 @@ _HANDLERS = {
     "start_asiair_zeroconf": _start_asiair_zeroconf,
     "advertise_zeroconf": _advertise_zeroconf,
     "update_astroflow_services": _update_astroflow_services,
+    "join_head": _join_head,
+    "unmount_head_shares": _unmount_head_shares,
     "update_asiair_services": _update_asiair_services,
     "stop_zeroconf": _stop_zeroconf,
     "prepare_pix": _prepare_pix,

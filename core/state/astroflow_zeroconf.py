@@ -42,6 +42,11 @@ class AstroFlowListener(ServiceListener):
                 "mounted_volumes": json.loads(
                     info.properties.get(b"mounted_volumes", b"[]").decode()
                 ),
+                # The committed SHA the head is running (or "dev"). Workers
+                # follow it; absent/"" means a peer that doesn't advertise one.
+                "cluster_version": info.properties.get(
+                    b"cluster_version", b""
+                ).decode(),
             }
             self.instances[name] = status
             print(f"Discovered AstroFlow instance: {status}")
@@ -70,6 +75,9 @@ class AstroFlowZeroconf:
     port: int = 6379
     is_ray_head: bool = False
     mounted_volumes: list[str] = field(default_factory=list)
+    # The committed SHA this node is running (or "dev"). Advertised so workers
+    # can follow the head's code. Empty until the head computes it.
+    cluster_version: str = ""
     # When set, advertise this IP instead of the OS default-route
     # heuristic. Used to broadcast the user-chosen cluster interface
     # (e.g. 10 GbE) regardless of which interface holds the default
@@ -120,6 +128,7 @@ class AstroFlowZeroconf:
         properties = {
             "ray_head": "yes" if self.is_ray_head else "no",
             "mounted_volumes": json.dumps(self.mounted_volumes),
+            "cluster_version": self.cluster_version,
         }
 
         hostname = socket.gethostname()
@@ -144,6 +153,7 @@ class AstroFlowZeroconf:
         is_ray_head: bool | None = None,
         mounted_volumes: list[str] | None = None,
         advertised_ip: str | None = None,
+        cluster_version: str | None = None,
     ):
         """Call this function when the state changes."""
         if is_ray_head is not None:
@@ -152,6 +162,8 @@ class AstroFlowZeroconf:
             self.mounted_volumes = mounted_volumes
         if advertised_ip is not None:
             self.advertised_ip = advertised_ip
+        if cluster_version is not None:
+            self.cluster_version = cluster_version
         self.register_service()  # Re-register with updated state
 
     def _periodic_rescan(self):
