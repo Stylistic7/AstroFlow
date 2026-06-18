@@ -220,7 +220,7 @@ def _master_pipeline_op_dirs() -> tuple[str, ...]:
         "merge_target_channel",
         "place_image",
         "merge_images",
-        "store_mosaic_color_channel_xisf",
+        "post_process_mosaic_color_channel",
     )
 
 
@@ -250,6 +250,7 @@ def _gather_disk_primaries(output_dir: Path) -> set[str]:
 
 
 @pytest.mark.exhaustive
+@pytest.mark.timeout(1200)  # builds + runs the full Orion mosaic pipeline twice
 def test_orion_mosaic_trace_matches_disk_and_archive_lifecycle(test_context) -> None:
     """End-to-end validation of the pure-Merkle tracing-based live set.
 
@@ -262,7 +263,7 @@ def test_orion_mosaic_trace_matches_disk_and_archive_lifecycle(test_context) -> 
 
     Phase 2 — Move the cart item to `archive` with `preserve="finals"`.
     Assert the archive entry contains `stack_files` masters and the
-    final `store_mosaic_color_channel_xisf`, and nothing in between.
+    final `post_process_mosaic_color_channel`, and nothing in between.
 
     Phase 3 — Run the sweep. Assert intermediates (post_process_stack,
     place_image, merge_images, merge_target_channel) are orphans;
@@ -331,7 +332,7 @@ def test_orion_mosaic_trace_matches_disk_and_archive_lifecycle(test_context) -> 
     # `stack_files` is now `final=True` — must be in the archive set.
     assert any("stack_files" in p for p in archived_paths)
     assert any(
-        "store_mosaic_color_channel_xisf" in p
+        "post_process_mosaic_color_channel" in p
         for p in archived_paths
     )
     # Intermediates must NOT be in finals.
