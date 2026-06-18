@@ -8,11 +8,12 @@ content_hash of every resolved data-dep arg. So `post_process_stack(s,
 mock, master_A)` and `post_process_stack(s, mock, master_B)` — same
 literals, different upstream master — write to different files.
 
-Today this fails: `_record_pipeline_taps` predicts each tap's path by
-calling `filename_fn(*n.args)` where `n.args` is literals only, while
-the op body computes its path over the full bound args. The recorder's
-hash differs from the body's hash, AND when both pipelines invoke the
-SAME op the body's literals-only fallback collides.
+This now holds: trace-time tap prediction and the runtime op body both
+derive the filename from the FULL bound call (literals + every resolved
+data-dep's content_hash), so the two pipelines' shared `post_process_stack`
+calls produce distinct files instead of colliding. (Historically the
+recorder hashed literals-only args and collided; the trace/runtime path
+was unified in the merger refactor.)
 
 Uses real PixInsight (not `mock_pixinsight=True`) so the two outputs
 have visibly different pixel content — a mocked stacker would write
@@ -77,6 +78,7 @@ def _use_real_pixinsight():
 
 
 @pytest.mark.exhaustive
+@pytest.mark.timeout(1200)  # real PixInsight stacking across two pipelines
 def test_shared_op_distinct_outputs_per_pipeline(test_context):
     _use_real_pixinsight()
     _add_one_stack_worth_of_frames()
@@ -103,17 +105,31 @@ def test_shared_op_distinct_outputs_per_pipeline(test_context):
     run_graph(build_compute_graph(), debug=True)
 
     output = Path(context.output_dir)
+    from file_io.generic import read_header
+
     # Both pipelines call the UNIFIED `stack_files` op (PI Master with
     # the identity downscaler, PI Downscaled with `downscale_stack(_, 8)`).
     # Outputs land under the same `Stack/stack_files/` dir, distinguished
     # by call_hash: same stable_hash, different content_hash → different
     # call_hash → different filename.
-    stack_masters = sorted((output / "stack_files").glob("*.xisf"))
+    #
+    # `stack_files` is unified across light AND calibration stacks, and both
+    # litmus pipelines also stack the bias/dark/flat cal masters — so the dir
+    # holds those too. Isolate THIS stack's two light masters (full-res +
+    # downscaled; `downscale_stack` preserves `stable_hash`) by STBLHASH; the
+    # cal masters carry their own stable_hashes.
+    all_stack_masters = sorted((output / "stack_files").glob("*.xisf"))
+    stack_masters = [
+        p for p in all_stack_masters
+        if read_header(p).get("STBLHASH") == stack.stable_hash
+    ]
     post_processed = sorted((output / "post_process_stack").glob("*.xisf"))
 
     assert len(stack_masters) == 2, (
-        f"expected 2 stack_files masters (full-res + downscaled), "
-        f"got {[p.name for p in stack_masters]}"
+        f"expected 2 stack_files masters for this stack (full-res + "
+        f"downscaled), got {[p.name for p in stack_masters]} "
+        f"(all stack_files outputs incl. cal masters: "
+        f"{[p.name for p in all_stack_masters]})"
     )
 
     # THE PROPERTY: same op `post_process_stack` invoked by two
