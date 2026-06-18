@@ -40,15 +40,15 @@ def test_final_kwarg_propagates_to_wrapped_op():
     `dependency_graph.trace_paths.paths_for_cart_item(...,
     finals_only=True)` can filter to the user's preserve-on-archive
     set. Unmarked ops should lack `_final` (or have it False)."""
+    from mosaics.post_process_channel import post_process_mosaic_color_channel
     from mosaics.final_storage import (
-        store_mosaic_color_channel_xisf,
         store_mosaic_color_channel_subframe,
         store_mosaic_color_channel_oss,
     )
     from stacks.post_processing.pixinsight import post_process_stack
 
     for op in (
-        store_mosaic_color_channel_xisf,
+        post_process_mosaic_color_channel,
         store_mosaic_color_channel_subframe,
         store_mosaic_color_channel_oss,
     ):

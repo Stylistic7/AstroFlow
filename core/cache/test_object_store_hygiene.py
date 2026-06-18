@@ -1,6 +1,7 @@
 """Test that the real compute graph does not bloat the Ray object store."""
 import gc
 from collections import Counter
+from pathlib import Path
 
 import pytest
 import ray
@@ -53,10 +54,16 @@ def _setup(test_context):
     for target_name in _TESTDATA_TARGETS:
         copy_testdata_frames(target_name=target_name, dest_dir=input_dir)
     context.input_dirs = [input_dir]
-    context.output_dir = test_context.output_dir_obj.name
+    # Must be a Path: registry filename routing does `output_dir / op_name`.
+    context.output_dir = Path(test_context.output_dir_obj.name)
     context.settings = Settings(
         clustering_settings=ClusteringSettings(
             min_frames_in_stack=3,
+            # The testdata has only 3 frames per target, so a camera can't
+            # reach the production default anchor size (20). Match the
+            # `identified_testdata` fixture so the 2600MM M42 frames anchor
+            # and M42 forms its stack (otherwise it's silently excluded).
+            fingerprint_min_anchor_size=3,
         ),
         development_settings=DevelopmentSettings(
             mock_pixinsight=True,
@@ -88,6 +95,11 @@ def test_step2_metadata_and_regroup(test_context):
     _check_no_duplicates()
     types = Counter(type(obj).__name__ for obj in objects)
     print(f"\nAfter regroup: {sum(types.values())} {dict(types.most_common())}")
+    for s in (context.stacks or {}).values():
+        st = s.get()
+        print(f"DIAG stack name={st.name!r} filter={st.filter!r} nframes={len(st.contents)}")
+    print(f"DIAG totals: stacks={len(context.stacks or {})} "
+          f"targets={len(context.targets or {})} mosaics={len(context.mosaics or {})}")
     assert len(context.stacks or {}) == 9
     assert len(context.targets or {}) == 9
     assert len(context.mosaics or {}) == 2
