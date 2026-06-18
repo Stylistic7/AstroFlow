@@ -612,8 +612,10 @@ def test_pi_master_cal_masters_visually_duplicated_per_stack(test_context):
     mosaic = _identify(test_context)
     config = _make_config()
 
-    import pipelines.pixinsight_master as pi
-    pi.for_mosaic(mosaic, config)
+    # The @pipeline runner no longer snapshots on its own; the topology
+    # snapshot is written at dispatch time by `_eager_trace_pipeline`.
+    from compute_graph.compute_graph import _eager_trace_pipeline
+    _eager_trace_pipeline("PixInsight Master", "mosaic", mosaic, config)
 
     key = ("mosaic", mosaic.stable_hash, "PixInsight Master")
     snapshot = context["workflow_graphs"][key].get()
@@ -698,8 +700,10 @@ def test_pi_master_no_per_filter_snapshots_written(test_context):
     mosaic = _identify(test_context)
     config = _make_config()
 
-    import pipelines.pixinsight_master as pi
-    pi.for_mosaic(mosaic, config)
+    # The @pipeline runner no longer snapshots on its own; the topology
+    # snapshot is written at dispatch time by `_eager_trace_pipeline`.
+    from compute_graph.compute_graph import _eager_trace_pipeline
+    _eager_trace_pipeline("PixInsight Master", "mosaic", mosaic, config)
 
     base_key = ("mosaic", mosaic.stable_hash, "PixInsight Master")
     wf = context["workflow_graphs"]
