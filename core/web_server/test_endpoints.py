@@ -149,13 +149,19 @@ def test_pipeline_outputs_second_call_hits_cache(client, with_orion_mosaic):
     breaks.
     """
     import time
-    from web_server.backend import metadata as md_mod
+    from context import local_context as context
+    from pipelines import output_index
 
-    # Other tests in this suite hit /api/pipeline_outputs first and
-    # leave `_TRACED_KEYS` populated for this mosaic — so a fresh "first
-    # call" here would hit cache and defeat the test. Clear before
-    # measuring.
-    md_mod._TRACED_KEYS.clear()
+    # Other tests hit /api/pipeline_outputs first and leave this mosaic's
+    # per-object trace receipts + tap index populated — so a fresh "first
+    # call" here would skip tracing and defeat the test. Drop both (the
+    # post-merger replacements for the old `_TRACED_KEYS` memo; the endpoint
+    # writes receipts via local_context) so the first hit actually re-traces
+    # and the second can show the cache win.
+    output_index.clear()
+    for k in list((context.get_matching(("_pipeline_traced",)) or {}).keys()):
+        if k in context:
+            context.delete(k)
 
     mosaics = client.get("/api/mosaics").get_json()
     mosaic_id = next(iter(mosaics.keys()))

@@ -158,9 +158,10 @@ def tap_path(
 def clear() -> None:
     """Wipe every tap entry + secondary index. Used by tests."""
     from context import context
+    # Context exposes `delete`, not `__delitem__` — `del context[k]` raises.
     for k in list((context.get_matching((_PREFIX,)) or {}).keys()):
         if k in context:
-            del context[k]
+            context.delete(k)
     for k in list((context.get_matching((_INDEX_PREFIX,)) or {}).keys()):
         if k in context:
-            del context[k]
+            context.delete(k)
