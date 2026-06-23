@@ -35,18 +35,23 @@ class AstroFlowListener(ServiceListener):
         print(f"### add_service {info}")
         if info:
             ip = info.parsed_addresses()[0]
+
+            def prop(key: bytes, default: bytes) -> str:
+                # `.get(key, default)` substitutes the default only when the
+                # key is ABSENT. A TXT property advertised with an empty value
+                # (e.g. cluster_version="" before the head freezes a snapshot)
+                # reads back as None, so guard for that explicitly.
+                value = info.properties.get(key)
+                return (value if value is not None else default).decode()
+
             status = {
                 "name": name,
                 "ip": ip,
-                "ray_head": info.properties.get(b"ray_head", b"no").decode(),
-                "mounted_volumes": json.loads(
-                    info.properties.get(b"mounted_volumes", b"[]").decode()
-                ),
-                # The committed SHA the head is running (or "dev"). Workers
-                # follow it; absent/"" means a peer that doesn't advertise one.
-                "cluster_version": info.properties.get(
-                    b"cluster_version", b""
-                ).decode(),
+                "ray_head": prop(b"ray_head", b"no"),
+                "mounted_volumes": json.loads(prop(b"mounted_volumes", b"[]")),
+                # The committed SHA (or wt:<hash>) the head is running. Workers
+                # follow it; absent/"" means a peer not advertising a snapshot.
+                "cluster_version": prop(b"cluster_version", b""),
             }
             self.instances[name] = status
             print(f"Discovered AstroFlow instance: {status}")
