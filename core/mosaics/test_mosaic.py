@@ -146,8 +146,8 @@ def test_orion_mosaic_hybrid_oss(test_context) -> None:
     the 4 real Orion panes. Exercises the variadic OSS merge: one
     `merge_images_oss(*all_placed)` call per filter (not the pairwise
     `merge_images_oss` loop the pipeline used to do), and the
-    `store_mosaic_color_channel_oss` terminal (not the XISF one that
-    needs PixInsight to convert FITS)."""
+    `merge_images_oss` deliverable (display="Mosaic", final=True) — there is
+    no separate store/copy step in the OSS path."""
     add_orion_mosaic_images()
 
     # First pass: discover targets + mosaic.
@@ -193,22 +193,22 @@ def test_orion_mosaic_hybrid_oss(test_context) -> None:
     shutil.copytree(context.output_dir, "/tmp/oss_test_output",
                     dirs_exist_ok=True)
 
-    # The variadic OSS merge is one call per filter — 1 single merge
-    # node total for the 4-panel single-filter Orion corpus (not 3
-    # like the PI Master pipeline's pairwise chain). `merge_images_oss`
-    # is wrapped in `ephemeral_intermediates()` in the pipeline body, so
-    # the primary `.fits` output is unlinked after `store_mosaic_color_channel_oss`
-    # consumes it; we assert via the preview `.tiff` sidecar (kept for
-    # the UI) that the variadic merge ran exactly once.
+    # The variadic OSS merge is one call per filter — 1 single merge node
+    # for the 4-panel single-filter Orion corpus (not 3 like PI Master's
+    # pairwise chain). `merge_images_oss` is now the deliverable
+    # (display="Mosaic", final=True) — exempt from the surrounding
+    # `ephemeral_intermediates()`, so its primary `.fits` AND its kept-atom
+    # `.tiff` pyramid both persist. There is no separate store/copy op.
+    assert_files("merge_images_oss/*.fits", 1, {"FILTER": "H"})
     assert_files("merge_images_oss/*.tiff", 1)
 
-    # Final store is the OSS variant (FITS copy, no PI conversion).
-    assert_files("store_mosaic_color_channel_oss/*.fits", 1,
-                 {"FILTER": "H"})
-
-    # And critically the XISF terminal isn't invoked under this pipeline
-    # — confirms the import / call-site swap stuck.
+    # No vestigial store op, and the PI XISF terminal isn't invoked here.
+    assert_files("store_mosaic_color_channel_oss/*.fits", 0)
     assert_files("post_process_mosaic_color_channel/*.xisf", 0)
+
+    # place_image panels are ephemeral (no display) → reclaimed after the
+    # merge consumes them. No placed primaries survive.
+    assert_files("place_image/*.tiff", 0)
 
     ui_mosaics = context.ui_mosaics
     assert len(ui_mosaics) == 1

@@ -27,7 +27,6 @@ Three entry points, matching the PI Master pipeline:
 """
 from astroflow.pipeline import ephemeral_intermediates, pipeline
 from dependency_graph.tracing import workflow_group
-from mosaics.final_storage import store_mosaic_color_channel_oss
 from mosaics.merging.oss import merge_images_oss
 from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
@@ -95,10 +94,13 @@ def for_mosaic(mosaic, config):
         viewbox = mosaic.viewbox("Master")
 
         # Placed-panel images are multi-GB each and only feed the final
-        # OSS merge. `merge_images_oss` is variadic — every panel in the
-        # mosaic blends in a single global pass, with one feather and
-        # one least-squares flux solve across the whole panel set. No
-        # row / strip decomposition.
+        # OSS merge — wrap them in `ephemeral_intermediates()` so the
+        # `place_image` outputs are reclaimed after the merge consumes them.
+        # `merge_images_oss` is `final=True`, so it's exempt from the scope:
+        # the whole body lives inside one block and the merge survives as the
+        # kept "Mosaic" deliverable. `merge_images_oss` is variadic — every
+        # panel blends in a single global pass (one feather, one least-squares
+        # flux solve), no row/strip decomposition.
         with ephemeral_intermediates():
             placed = [
                 place_image(mosaic, targets_by_id[tid], filter, viewbox,
@@ -109,8 +111,6 @@ def for_mosaic(mosaic, config):
             ]
             if not placed:
                 continue
-            merged = merge_images_oss(mosaic, filter, *placed)
-
-        out[filter] = store_mosaic_color_channel_oss(mosaic, filter, merged)
+            out[filter] = merge_images_oss(mosaic, filter, *placed)
 
     return out

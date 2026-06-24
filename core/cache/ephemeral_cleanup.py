@@ -8,26 +8,14 @@ child runtime that declared the producer as a data/ordering dep has
 succeeded. Failed/skipped consumers don't decrement (see A2 in the
 plan): intermediates linger one extra run on failure for re-dispatch.
 
-Cleanup rules — keyed on the master's file extension and the producer's
-`_display` attribute:
-
-  - `place_image` (master is `.tiff`, no `_display`)
-        → unlink the `.tiff` + `.json`. The TIFF was never UI-relevant
-          (no display tap), so reclaiming it is free.
-
-  - `merge_images` / `merge_images_oss` (master is `.xisf`/`.fits`,
-    `_display="Merged"`)
-        → unlink master + `.json`. The `.tiff` sibling is the tile
-          pyramid the UI serves; leave it alone.
-
-  - TIFF master WITH `_display`
-        → skip entirely. The TIFF IS both the master AND the tile
-          pyramid; deleting it would 404 the UI.
-
-  - `store_mosaic_color_channel_*` (`final=True`)
-        → not ephemeral by default, so this function isn't called for
-          them. If it ever IS called for one (user mistake), the
-          safety guard in `_mark_done` skips terminal nodes anyway.
+An image is an **atom**: the primary (xisf/fits, or a tiff for tiff-primary
+ops like `place_image`), its tile-pyramid `.tiff` (the web-openable
+co-representation, present only for `display=` ops), and the `.json`/`.context`
+sidecars. They live and die together — so reclaim deletes the WHOLE atom. A
+`display=` op that is ephemeral still built its TIFF; we delete it here along
+with the primary, so the UI can never show an image whose openable primary is
+gone. (`final=True` ops are exempt from ephemerality, so this is never called
+for them.)
 
 Always invalidate the `@cached.remote` entry afterwards so a future
 re-trace re-runs the producer body instead of returning a `WithSidecar`
@@ -59,19 +47,23 @@ def cleanup_ephemeral_artifact(node, result: Any, fn_args: list) -> None:
     if master is None:
         return
 
-    has_display = hasattr(node.task, "_display")
-    is_tiff = master.suffix.lower() in (".tif", ".tiff")
+    # Delete the whole atom: primary, its sidecar, the tile-pyramid TIFF (if
+    # one was built — `display=` ops), and the TIFF's `.context` map. `.tiff`
+    # may equal `master` (tiff-primary ops like place_image); unlink is
+    # idempotent. Convention: pyramid = master.with_suffix(".tiff"), context
+    # = pyramid.with_suffix(".context") (previews/create_tile_pyramid.py).
+    tiff = master.with_suffix(".tiff")
+    atom = [
+        master,
+        sidecar_path_for(master),
+        tiff,
+        tiff.with_suffix(".context"),
+    ]
+    for path in atom:
+        _safe(f"unlink {path.suffix}",
+              lambda p=path: p.unlink(missing_ok=True),
+              node=node.name, path=path)
 
-    if is_tiff and has_display:
-        # TIFF master IS the tile pyramid the UI serves. Deleting it
-        # would 404 the UI; leave it alone.
-        return
-
-    _safe("unlink master", lambda: master.unlink(missing_ok=True),
-          node=node.name, path=master)
-    _safe("unlink sidecar",
-          lambda: sidecar_path_for(master).unlink(missing_ok=True),
-          node=node.name, path=master)
     invalidate = getattr(node.task, "invalidate", None)
     if invalidate is not None:
         _safe("cache invalidate", lambda: invalidate(*fn_args), node=node.name)

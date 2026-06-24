@@ -18,7 +18,6 @@ Three entry points, matching the PI Downscaled pipeline.
 """
 from astroflow.pipeline import ephemeral_intermediates, pipeline
 from dependency_graph.tracing import workflow_group
-from mosaics.final_storage import store_mosaic_color_channel_oss
 from mosaics.merging.oss import merge_images_oss
 from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
@@ -95,6 +94,9 @@ def for_mosaic(mosaic, config):
         # the 8× downscale, but still meaningful) and only feed the final
         # OSS merge. `merge_images_oss` is variadic — every panel blends
         # in a single global pass.
+        # merge_images_oss is final=True (exempt from the scope) — the kept
+        # "Mosaic" deliverable; placed panels are reclaimed after it consumes
+        # them.
         with ephemeral_intermediates():
             placed = [
                 place_image(mosaic, targets_by_id[tid], filter, viewbox,
@@ -105,8 +107,6 @@ def for_mosaic(mosaic, config):
             ]
             if not placed:
                 continue
-            merged = merge_images_oss(mosaic, filter, *placed)
-
-        out[filter] = store_mosaic_color_channel_oss(mosaic, filter, merged)
+            out[filter] = merge_images_oss(mosaic, filter, *placed)
 
     return out

@@ -1,4 +1,3 @@
-import shutil
 from pathlib import Path
 import numpy as np
 
@@ -8,7 +7,7 @@ from file_io.tiff_file_io import write_tiff_image
 from previews.operations import autostretch
 from decorators import node
 
-from file_io.types import FitsFilePath, TiffFilePath, WithSidecar
+from file_io.types import TiffFilePath, WithSidecar
 from metadata.classes import ImageMetadata
 
 
@@ -35,18 +34,7 @@ def store_mosaic_color_channel_subframe(
     return WithSidecar(output)
 
 
-@node(
-    display="Mosaic",
-    final=True,
-)
-def store_mosaic_color_channel_oss(
-    mosaic: Mosaic, filter: str, input: ImageMetadata,
-) -> WithSidecar[FitsFilePath]:
-    """Persist the merged per-filter OSS mosaic master.
-    Pipeline-agnostic — same reasoning as the XISF variant."""
-    output = store_mosaic_color_channel_oss.filename_fn(
-        mosaic, filter, input,
-    )
-    output.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(str(input.filename), str(output))
-    return WithSidecar(FitsFilePath(output))
+# `store_mosaic_color_channel_oss` was deleted: it was a vestigial
+# `shutil.copy2` of `merge_images_oss`'s output. The OSS variadic merge IS the
+# finished channel, so `merge_images_oss` now carries `display="Mosaic",
+# final=True` directly and there is no separate store/copy step.

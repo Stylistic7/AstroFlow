@@ -559,6 +559,12 @@ def extract_pipeline_taps(graph):
         base_display = getattr(fn, "_display", None) or getattr(task, "_display", None)
         if base_display is None:
             continue
+        # Ephemeral nodes (inside an `ephemeral_intermediates()` scope and not
+        # `final`) are reclaimed after their consumers — not user-facing — so
+        # they register no tap, even with a `display=`. `display=` "activates"
+        # only when the node is kept (unwrapped or final).
+        if getattr(n, "_ephemeral", False):
+            continue
         # Find the entity: walks `n.args` for an instance with
         # `stable_hash`, then descends into upstream deps if needed.
         # Lets ops with `stack` as a trailing dep (e.g. `stack_files

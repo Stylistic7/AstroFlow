@@ -126,11 +126,17 @@ def _blend_many(paths: list[Path]) -> np.ndarray:
     return numer / denom
 
 
-@node(display="Merged", auto_memory=True)
+@node(display="Mosaic", final=True, auto_memory=True)
 def merge_images_oss(
     mosaic: Mosaic, filter: str, *inputs: ImageMetadata,
 ) -> WithSidecar[FitsFilePath]:
     """Variadic distance-weighted OSS blend across every input panel.
+
+    This single variadic call IS the finished per-filter mosaic channel —
+    the OSS deliverable (`display="Mosaic"`, `final=True`). Unlike the PI
+    pairwise path (intermediate `merge_images` → separate flatten/finalize
+    `post_process_mosaic_color_channel`), the OSS blend needs no separate
+    finalize op, so there is no `store_*` step after it.
 
     Pipeline-agnostic: PI Master and PI Downscaled hybrid variants both
     call this with their own placed inputs. One call per mosaic per

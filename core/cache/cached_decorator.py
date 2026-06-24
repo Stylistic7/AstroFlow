@@ -240,27 +240,11 @@ def make_cached_decorator(
                         "are supported in trace context."
                     )
                 handle = record(wrapper, *args, _after=_after)
-                if ephemeral:
-                    if getattr(wrapper, "_final", False):
-                        # A `final=True` op (a `store_*` terminal) is
-                        # always a deliverable. Wrapping one in an
-                        # `ephemeral_intermediates()` block is always a
-                        # user bug — the terminal-predecessor topology
-                        # guard in the old `_maybe_clean_predecessors`
-                        # protected this implicitly; with the global
-                        # registry an unconsumed terminal would just
-                        # never get registered (no consumers) so it'd
-                        # never clean anyway, but a downstream consumer
-                        # appearing later would silently unlink the
-                        # final output. Refuse explicitly at trace time.
-                        raise RuntimeError(
-                            f"{func.__name__} is `final=True` (a deliverable "
-                            "terminal) but was called inside "
-                            "`ephemeral_intermediates()`. Final outputs "
-                            "must never be marked ephemeral — either drop "
-                            "the `final=True` or move the call out of the "
-                            "ephemeral scope."
-                        )
+                # `final=True` ops are deliverables — EXEMPT from ephemeral
+                # reclaim even inside an `ephemeral_intermediates()` block.
+                # This lets a pipeline wrap its whole body and still keep the
+                # final image(s). Everything else inside the block is ephemeral.
+                if ephemeral and not getattr(wrapper, "_final", False):
                     handle._ephemeral = True
                 return handle
             raise RuntimeError(

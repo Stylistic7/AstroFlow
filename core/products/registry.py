@@ -228,13 +228,16 @@ def makes_image_wrap(
     func: Callable,
     *,
     canonical_call_hash: Callable,
+    makes_tiff: bool = True,
 ) -> Callable:
     """Wrap `func` so that after a successful call:
 
       1. The result file's `content_hash` header is stamped with
          `canonical_call_hash(*args)` — the canonical call_hash for
          this invocation.
-      2. Presentations (tile-pyramid TIFF sibling) are generated.
+      2. If `makes_tiff` (the op has `display=`), the tile-pyramid TIFF
+         sibling is generated — the web-openable co-representation of the
+         primary. Non-display intermediates skip it (no tap, not shown).
 
     Single concern: image lifecycle after the body runs. Doesn't touch
     caching, doesn't attach any attributes to the wrapper, doesn't
@@ -248,7 +251,8 @@ def makes_image_wrap(
             return result
         call_hash = canonical_call_hash(*args, **kwargs)
         _stamp_content_hash(result, call_hash)
-        _generate_presentations(func, result, args, kwargs)
+        if makes_tiff:
+            _generate_presentations(func, result, args, kwargs)
         return result
 
     return wrapped

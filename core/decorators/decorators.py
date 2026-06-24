@@ -198,6 +198,15 @@ class _Node:
         custom_filename_fn = ray_opts.pop("filename_fn", None)
         cache_key_narrow = ray_opts.pop("cache_key_narrow", None)
 
+        # A `final=True` op is a deliverable, and a deliverable is always
+        # user-facing (shown + openable). So `final` requires an explicit,
+        # author-chosen `display="Name"`. Fail loud at decoration time.
+        if final and display is None:
+            raise ValueError(
+                f"@node on {func.__name__!r}: final=True requires "
+                'display="Name" (a final deliverable is always user-facing).'
+            )
+
         # ---- 2. Compute shared artifacts ------------------------------
         fn_hash = hash_source_code(func)
 
@@ -249,6 +258,12 @@ class _Node:
             from products.registry import makes_image_wrap
             wrapped = makes_image_wrap(
                 wrapped, canonical_call_hash=canonical_call_hash,
+                # A tile-pyramid TIFF (the web-openable co-representation) is
+                # the human-facing artifact — built only for `display=` ops.
+                # Non-display intermediates write just their primary. (An
+                # ephemeral `display=` op still builds its TIFF; the ephemeral
+                # cleanup deletes the whole atom — primary + TIFF — together.)
+                makes_tiff=display is not None,
             )
             wrapped = _metadata_wrap(wrapped)
 

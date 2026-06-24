@@ -177,6 +177,7 @@ def _stack_files_oss_narrow(args, kwargs):
     return (stack, narrow_stack_config(stack, config), *rest), kwargs
 
 @node(
+    display="Master",
     final=True,
     cache_key_narrow=_stack_files_oss_narrow,
     auto_memory=True,

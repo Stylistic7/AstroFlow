@@ -41,16 +41,14 @@ def test_final_kwarg_propagates_to_wrapped_op():
     finals_only=True)` can filter to the user's preserve-on-archive
     set. Unmarked ops should lack `_final` (or have it False)."""
     from mosaics.post_process_channel import post_process_mosaic_color_channel
-    from mosaics.final_storage import (
-        store_mosaic_color_channel_subframe,
-        store_mosaic_color_channel_oss,
-    )
+    from mosaics.final_storage import store_mosaic_color_channel_subframe
+    from mosaics.merging.oss import merge_images_oss
     from stacks.post_processing.pixinsight import post_process_stack
 
     for op in (
         post_process_mosaic_color_channel,
         store_mosaic_color_channel_subframe,
-        store_mosaic_color_channel_oss,
+        merge_images_oss,  # OSS deliverable: now display="Mosaic", final=True
     ):
         assert getattr(op, "_final", False) is True, (
             f"{op.__name__} should be marked final=True"
@@ -62,3 +60,21 @@ def test_final_kwarg_propagates_to_wrapped_op():
         "post_process_stack must not be final (intermediate from "
         "the mosaic user's perspective)"
     )
+
+
+def test_final_requires_display():
+    """`final=True` is a deliverable, always user-facing — so it requires an
+    explicit `display=`. A final op without display raises at decoration."""
+    from decorators import node
+    from file_io.types import WithSidecar, XisfFilePath
+
+    with pytest.raises(ValueError, match="final=True requires"):
+        @node(final=True)
+        def _bad(stack) -> WithSidecar[XisfFilePath]:
+            ...
+
+    # final + display is fine.
+    @node(final=True, display="Master")
+    def _ok(stack) -> WithSidecar[XisfFilePath]:
+        ...
+    assert _ok._final is True and _ok._display == "Master"
