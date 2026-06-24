@@ -1,20 +1,26 @@
 """Stronger tests around calibration-source selection by `resolve_calibration`.
 
+Calibration topology is Landmann §7.1 Case 2 (matched-exposure darks): a
+LIGHT stack resolves exactly `{dark, flat}` and NEVER a master bias — the
+master dark already carries the bias signal, so a separate MB subtraction
+is the §8.2 anti-pattern (`decisions/resolve.py:_CALIBRATIONS_FOR_IMAGE_TYPE`).
+So these tests drive the selection mechanisms through the `dark` (and `flat`)
+light dependencies rather than `bias`.
+
 Each test exercises a real selection path:
 
-  1. Directory affinity finds an external master in the lights' ancestor tree
-     → `FilenameDependency` to the master file.
+  1. Directory affinity finds an external master dark in the lights' ancestor
+     tree → `FilenameDependency` to the master file.
   2. No external master in the tree → fall through to chronological
      matching on the raw calibration stacks AstroFlow discovered →
      `StackIdDependency` to the calibration stack hash.
   3. User override beats both directory affinity and chronological default.
-  4. Per-kind independence: bias from the directory tree, dark / flat from
-     the chronological matcher (or vice versa).
+  4. Per-kind independence: dark from the directory tree, flat from the
+     chronological matcher.
   5. Stale cached defaults: if the per-object decision cache still holds a
      stack hash that's no longer in `calibration_stacks` (because it got
      filtered out at discovery time, e.g. a sub-min-frames straggler), the
-     resolver doesn't blow up — it silently skips the missing calibration
-     for that kind.
+     resolver doesn't blow up — it resolves fresh to a real stack.
 """
 from __future__ import annotations
 
@@ -127,39 +133,44 @@ def test_directory_affinity_picks_external_master(test_context) -> None:
     target_dir = Path(context.input_dirs[0]) / "Cyg4"
     _make_lights_with_raw_cals(target_dir)
 
-    # Drop an external bias master in a sibling Calibration Masters/ — the
-    # canonical layout that directory-affinity is meant to recognize.
+    # Drop an external master dark in a sibling Calibration Masters/ — the
+    # canonical layout that directory-affinity is meant to recognize. Match
+    # the lights' exposure (120 s) + temperature so dark affinity accepts it.
     masters_dir = target_dir / "Calibration Masters"
     master_path = _make_master_fits(
-        masters_dir / "MasterBias_-20c.fit",
-        image_type="bias", temperature=-20.0,
+        masters_dir / "MasterDark_120s_-20c.fit",
+        image_type="dark", exposure=120, temperature=-20.0,
     )
 
     run_graph(build_compute_graph())
 
     deps = _resolve_first_light(_the_one_light_stack())
-    assert "bias" in deps
-    assert isinstance(deps["bias"], FilenameDependency), (
-        f"Expected directory-affinity FilenameDependency, got {deps['bias']!r}"
+    assert "dark" in deps
+    assert isinstance(deps["dark"], FilenameDependency), (
+        f"Expected directory-affinity FilenameDependency, got {deps['dark']!r}"
     )
-    assert deps["bias"].filename == str(master_path.resolve())
+    assert deps["dark"].filename == str(master_path.resolve())
 
 
 @pytest.mark.exhaustive
 def test_falls_back_to_chronological_when_no_external_master(test_context) -> None:
-    """No external master in the lights' tree → chronological match wins."""
+    """No external master in the lights' tree → chronological match wins, and
+    a light resolves exactly the Case 2 set `{dark, flat}` (never bias)."""
     target_dir = Path(context.input_dirs[0]) / "Cyg4"
     _make_lights_with_raw_cals(target_dir)
 
     run_graph(build_compute_graph())
 
     deps = _resolve_first_light(_the_one_light_stack())
-    assert "bias" in deps
-    assert isinstance(deps["bias"], StackIdDependency), (
-        f"Expected chronological StackIdDependency, got {deps['bias']!r}"
+    # Case 2 topology guard: a light's calibration is dark + flat, no bias.
+    assert set(deps) == {"dark", "flat"}, (
+        f"Expected Case 2 light deps {{dark, flat}}, got {set(deps)}"
+    )
+    assert isinstance(deps["dark"], StackIdDependency), (
+        f"Expected chronological StackIdDependency, got {deps['dark']!r}"
     )
     # The chronological choice must reference an existing calibration stack.
-    assert deps["bias"].stack_id in context.calibration_stacks
+    assert deps["dark"].stack_id in context.calibration_stacks
 
 
 @pytest.mark.exhaustive
@@ -169,49 +180,49 @@ def test_override_beats_directory_affinity(test_context) -> None:
     target_dir = Path(context.input_dirs[0]) / "Cyg4"
     _make_lights_with_raw_cals(target_dir)
     _make_master_fits(
-        target_dir / "Calibration Masters" / "MasterBias_-20c.fit",
-        image_type="bias", temperature=-20.0,
+        target_dir / "Calibration Masters" / "MasterDark_120s_-20c.fit",
+        image_type="dark", exposure=120, temperature=-20.0,
     )
 
     run_graph(build_compute_graph())
     light_stack = _the_one_light_stack()
 
-    # Pick a chronological-AstroFlow-stacked bias; pin it via override.
-    raw_bias_id = next(
+    # Pick a chronological-AstroFlow-stacked dark; pin it via override.
+    raw_dark_id = next(
         sid for sid, s in context.calibration_stacks.items()
-        if s.image_type == "bias"
+        if s.image_type == "dark"
     )
     run_hash = next(iter(light_stack.contents.keys()))
     overrides = frozendict(
-        calibration_override("bias", light_stack.stable_hash, run_hash, raw_bias_id)
+        calibration_override("dark", light_stack.stable_hash, run_hash, raw_dark_id)
     )
 
     deps = _resolve_first_light(light_stack, overrides=overrides)
-    assert deps["bias"] == StackIdDependency(stack_id=raw_bias_id)
+    assert deps["dark"] == StackIdDependency(stack_id=raw_dark_id)
 
 
 @pytest.mark.exhaustive
 def test_per_kind_independence(test_context) -> None:
-    """Directory affinity provides bias only; dark and flat fall through
-    to chronological matching independently."""
+    """Directory affinity provides the dark only; flat falls through to
+    chronological matching independently. (Lights take no bias under Case 2.)"""
     target_dir = Path(context.input_dirs[0]) / "Cyg4"
     _make_lights_with_raw_cals(target_dir)
-    bias_master = _make_master_fits(
-        target_dir / "Calibration Masters" / "MasterBias_-20c.fit",
-        image_type="bias", temperature=-20.0,
+    dark_master = _make_master_fits(
+        target_dir / "Calibration Masters" / "MasterDark_120s_-20c.fit",
+        image_type="dark", exposure=120, temperature=-20.0,
     )
-    # No master dark or master flat in the tree.
+    # No master flat in the tree.
 
     run_graph(build_compute_graph())
 
     deps = _resolve_first_light(_the_one_light_stack())
-    # Bias is from the directory tree.
-    assert isinstance(deps["bias"], FilenameDependency)
-    assert deps["bias"].filename == str(bias_master.resolve())
-    # Dark and flat are AstroFlow-stacked, found via chronological matching.
-    assert isinstance(deps["dark"], StackIdDependency)
+    # Case 2: a light never takes a bias dependency.
+    assert "bias" not in deps
+    # Dark is from the directory tree.
+    assert isinstance(deps["dark"], FilenameDependency)
+    assert deps["dark"].filename == str(dark_master.resolve())
+    # Flat is AstroFlow-stacked, found via chronological matching.
     assert isinstance(deps["flat"], StackIdDependency)
-    assert deps["dark"].stack_id in context.calibration_stacks
     assert deps["flat"].stack_id in context.calibration_stacks
 
 
@@ -220,7 +231,7 @@ def test_resolve_handles_stale_cached_choice(test_context) -> None:
     """The per-object decision cache is never read as the source of truth
     (it exists only for the UI). So even if it holds a stack hash that's
     no longer in calibration_stacks (e.g. one filtered out at discovery),
-    that stale entry cannot poison resolution at all: bias is computed
+    that stale entry cannot poison resolution at all: the dark is computed
     fresh and lands on a real calibration stack — never the stale hash,
     never KeyError'ing downstream in `_setup_run`.
     """
@@ -231,19 +242,19 @@ def test_resolve_handles_stale_cached_choice(test_context) -> None:
     light_stack = _the_one_light_stack()
     run_hash = next(iter(light_stack.contents.keys()))
 
-    # Manually populate the per-object decision cache with a bias choice
+    # Manually populate the per-object decision cache with a dark choice
     # pointing to a hash that doesn't exist in calibration_stacks. This is
     # what would happen if a previous session resolved a now-filtered-out
     # 1-frame straggler stack.
     stale_hash = "deadbeefcafef00d"
     assert stale_hash not in context.calibration_stacks
 
-    bias_key = DecisionKey.calibration("bias", light_stack.stable_hash, run_hash)
+    dark_key = DecisionKey.calibration("dark", light_stack.stable_hash, run_hash)
     cached_dp = DecisionPoint(
-        key=bias_key,
-        decision_type=DecisionType.CALIBRATION_BIAS,
+        key=dark_key,
+        decision_type=DecisionType.CALIBRATION_DARK,
         default_choice=stale_hash,
-        title="Calibration: bias",
+        title="Calibration: dark",
         description="Stale cached default for test",
         object_type=ObjectType.STACK,
         object_id=light_stack.stable_hash,
@@ -251,18 +262,18 @@ def test_resolve_handles_stale_cached_choice(test_context) -> None:
     )
     context.or_equals(
         _decisions_key(ObjectType.STACK, light_stack.stable_hash),
-        {bias_key: cached_dp},
+        {dark_key: cached_dp},
     )
 
     deps = _resolve_first_light(light_stack)
     # The stale cached choice is ignored entirely (cache is never the
-    # source of truth): bias is resolved fresh to a REAL calibration
+    # source of truth): the dark is resolved fresh to a REAL calibration
     # stack — not the stale hash, not dropped.
-    assert isinstance(deps["bias"], StackIdDependency)
-    assert deps["bias"].stack_id != stale_hash
-    assert deps["bias"].stack_id in context.calibration_stacks
-    # Dark and flat likewise resolve fresh to real calibration stacks.
     assert isinstance(deps["dark"], StackIdDependency)
+    assert deps["dark"].stack_id != stale_hash
     assert deps["dark"].stack_id in context.calibration_stacks
+    # Flat likewise resolves fresh to a real calibration stack. (Case 2:
+    # a light takes no bias dependency.)
+    assert "bias" not in deps
     assert isinstance(deps["flat"], StackIdDependency)
     assert deps["flat"].stack_id in context.calibration_stacks

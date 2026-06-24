@@ -164,7 +164,7 @@ class TestCleanupHook:
 class TestCleanupAction:
     """The cleanup function itself: deletes the right files, calls invalidate."""
 
-    def test_non_tiff_master_deletes_master_and_sidecar_keeps_tiff(self, tmp_path):
+    def test_non_tiff_master_deletes_whole_atom_including_tiff(self, tmp_path):
         from file_io.sidecar import sidecar_path_for
 
         master = tmp_path / "abc123.fits"
@@ -174,7 +174,9 @@ class TestCleanupAction:
         tiff = master.with_suffix(".tiff")
         tiff.write_bytes(b"fake tiff")
 
-        # Fake node: has display => UI-relevant; cleanup keeps the tiff.
+        # Fake node WITH display: it built a tile-pyramid tiff for viewing,
+        # but an ephemeral atom dies whole — the tiff goes too, so the UI can
+        # never show an image whose openable primary has been reclaimed.
         class Task:
             class _function:
                 __name__ = "merge"
@@ -191,7 +193,7 @@ class TestCleanupAction:
 
         assert not master.exists()
         assert not sidecar.exists()
-        assert tiff.exists()
+        assert not tiff.exists()
         assert Task.invalidate_called == [("literal",)]
 
     def test_tiff_master_no_display_deletes_tiff(self, tmp_path):
@@ -218,7 +220,7 @@ class TestCleanupAction:
         assert not sidecar.exists()
         assert Task.invalidate_called == [("lit",)]
 
-    def test_tiff_master_with_display_preserves(self, tmp_path):
+    def test_tiff_master_with_display_still_deletes_atom(self, tmp_path):
         master = tmp_path / "abc.tiff"
         master.write_bytes(b"tiff that IS the tile pyramid")
 
@@ -235,9 +237,13 @@ class TestCleanupAction:
 
         cleanup_ephemeral_artifact(node, master, fn_args=["lit"])
 
-        # Master + display → keep everything, UI needs the tiff.
-        assert master.exists()
-        assert Task.invalidate_called == []
+        # A tiff-primary op WITH display is still an ephemeral atom: reclaimed
+        # whole (the tiff IS the primary here), and the cache entry invalidated
+        # so a re-trace re-runs the producer rather than returning a dangling
+        # path. `display=` does NOT preserve an ephemeral node — `final=True`
+        # does (and final ops never reach this cleanup).
+        assert not master.exists()
+        assert Task.invalidate_called == [("lit",)]
 
     def test_withsidecar_wrapped_result(self, tmp_path):
         from file_io.types import WithSidecar, FitsFilePath

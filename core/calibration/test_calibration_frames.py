@@ -177,13 +177,18 @@ def test_stack_dependency_graph(test_context) -> None:
     stack = _resolve_light_stack(next(iter(stacks.values())).get())
     _print_stack(stack)
 
-    bias_stack_id = next(iter(stack.contents.values())).dependencies["bias"].stack_id
-    assert (
-        context.calibration_stacks[bias_stack_id].oldest_date
-        == new_bias_datetime
+    # Case 2 topology (Landmann §7.1): a light resolves dark + flat and NEVER
+    # a master bias — the master dark already carries the bias signal. The
+    # bias frames above still matter, but as the flats' bias dependency (the
+    # cal-to-cal association checked by `assert_cal_deps`), not the lights'.
+    light_deps = next(iter(stack.contents.values())).dependencies
+    assert "bias" not in light_deps, (
+        f"Case 2: a light takes no bias dep; got {set(light_deps)}"
     )
 
-    dark_stack_id = next(iter(stack.contents.values())).dependencies["dark"].stack_id
+    # Both runs of darks share temperature; the chronologically-nearest
+    # (newer) dark must win for this light run.
+    dark_stack_id = light_deps["dark"].stack_id
     assert (
         context.calibration_stacks[dark_stack_id].oldest_date
         == new_dark_datetime
