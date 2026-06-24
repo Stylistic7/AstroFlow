@@ -5,13 +5,12 @@ import itertools
 from dataclasses import replace
 from datetime import datetime
 from typing import Any
-from frozendict import frozendict
 
 from decorators.decorators import node
 from metadata.classes import ImageMetadata, FrameHash
-from stacks.types import StackHash, StackIdDependency
-from stacks.run import BaseRun, Run, RunsDict, run_from_frames, calibration_run_from_frames
-from stacks.composite_stack import Stack, CalibrationStack, CalibrationStacksDict
+from stacks.types import StackHash
+from stacks.run import calibration_run_from_frames
+from stacks.composite_stack import CalibrationStack, CalibrationStacksDict
 import clustering
 from cache.context_ref import ContextRef
 from metadata.classes import MetadataDict
@@ -195,102 +194,26 @@ def _build_cal_index(cal_stacks: dict[StackHash, CalibrationStack]):
     return bias_by_cam, dark_by_cam, flat_by_cam_filter
 
 
-def associate_with_stacks(
-    stacks: RunsDict, cal_stacks: CalibrationStacksDict
-) -> RunsDict:
-    bias_by_cam, dark_by_cam, flat_by_cam_filter = _build_cal_index(cal_stacks)
-
-    def choose_bias(sub: BaseRun) -> StackHash | None:
-        cand = bias_by_cam.get(sub.camera)
-        if not cand:
-            return None
-        sub_mid = _midpoint_s(sub.oldest_date, sub.newest_date)
-        sub_T = sub.mean_temperature
-        cand = [t for (m, t, sid) in cand if abs(t - sub_T) < 10.0]
-        if not cand:
-            return None
-        # Re-scan once to pick nearest by time; avoid NumPy
-        best_sid = min(
-            (
-                (m, t, sid)
-                for (m, t, sid) in bias_by_cam[sub.camera]
-                if abs(t - sub_T) < 10.0
-            ),
-            key=lambda x: abs(x[0] - sub_mid),
-        )[2]
-        return best_sid
-
-    def choose_dark(sub: BaseRun) -> StackHash | None:
-        cand = dark_by_cam.get(sub.camera)
-        if not cand:
-            return None
-        sub_mid = _midpoint_s(sub.oldest_date, sub.newest_date)
-        sub_T = sub.mean_temperature
-        sub_exp = sub.exposure
-        filtered = [
-            (m, t, e, sid)
-            for (m, t, e, sid) in cand
-            if abs(t - sub_T) < 10.0 and e <= sub_exp
-        ]
-        if not filtered:
-            return None
-        return min(filtered, key=lambda x: abs(x[0] - sub_mid))[3]
-
-    def choose_flat(sub: BaseRun) -> StackHash | None:
-        cand = flat_by_cam_filter.get((sub.camera, sub.filter))
-        if not cand:
-            return None
-        sub_mid = _midpoint_s(sub.oldest_date, sub.newest_date)
-        return min(cand, key=lambda x: abs(x[0] - sub_mid))[1]
-
-    pickers = {
-        "bias": choose_bias,
-        "dark": choose_dark,
-        "flat": choose_flat,
-    }
-
-    calibrations_for_stack_type = {
-        "bias": [],
-        "dark": ["bias"],
-        "flat": ["bias"],
-        "light": ["bias", "dark", "flat"],
-    }
-
-    new_stacks = RunsDict()
-    for h, stack in stacks.items():
-        deps = dict(stack.dependencies)  # mutable copy to build up
-        for t in calibrations_for_stack_type[stack.image_type]:
-            if t not in deps:
-                sid = pickers[t](stack)
-
-                if sid is not None:
-                    deps[t] = StackIdDependency(stack_id=sid)
-        new_stacks[h] = replace(stack, dependencies=frozendict(deps))
-
-    return new_stacks
-
-
-def associate_with_stack(
-    stack: Stack, cal_stacks: CalibrationStacksDict
-) -> Stack:
-    new_contents = associate_with_stacks(stack.contents, cal_stacks)
-    return replace(stack, contents=new_contents)
-
-
 @node
 def associate_calibration_stacks(
+    decision_overrides,
     cal_stacks: CalibrationStacksDict,
 ) -> CalibrationStacksDict:
-    # Associate calibration stacks with each other (e.g., bias for darks/flats).
-    # Extract runs, associate, then re-wrap. Preserve camera_id_hash from
-    # the original stack — the rebuilt run carries no consensus, so
-    # from_run() would otherwise drop the camera identity.
-    runs = RunsDict({k: next(iter(s.contents.values())) for k, s in cal_stacks.items()})
-    associated = associate_with_stacks(runs, cal_stacks)
+    """Resolve cal-to-cal dependencies (e.g. a master bias for each flat)
+    through the SAME decision framework that resolves light calibration:
+    `resolve_calibration`, keyed on the shared `CALIBRATION_TOPOLOGY`.
+
+    One mechanism, one topology — so cal-to-cal associations get user
+    overrides and directory-affinity for free, and there is no second
+    matcher/map to drift from the light path (that divergence is what left
+    master darks bias-pre-calibrated against Landmann §6.2). Imported lazily
+    to avoid a module-level cycle (resolve imports back into calibration).
+
+    `resolve_calibration` returns `replace(stack, contents=...)`, so each
+    `CalibrationStack`'s type and `camera_id_hash` survive unchanged.
+    """
+    from decisions.resolve import resolve_calibration
     return CalibrationStacksDict({
-        k: replace(
-            CalibrationStack.from_run(associated[k]),
-            camera_id_hash=cal_stacks[k].camera_id_hash,
-        )
-        for k in cal_stacks
+        k: resolve_calibration(cs, cal_stacks, decision_overrides)
+        for k, cs in cal_stacks.items()
     })

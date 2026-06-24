@@ -153,9 +153,12 @@ def scatter_spatial_groups(
         fingerprint_map_ref,
     )
 
-    graph[associate_calibration_stacks] = {identify_cal_stacks_task}
-    graph[store_calibration_stacks] = {associate_calibration_stacks}
-    graph[process_calibration_stacks_for_ui] = {associate_calibration_stacks}
+    # Cal-to-cal association runs through the same decision framework as light
+    # calibration (`resolve_calibration`), so it takes the decision overrides.
+    associate_cal_task = (associate_calibration_stacks, decision_overrides)
+    graph[associate_cal_task] = {identify_cal_stacks_task}
+    graph[store_calibration_stacks] = {associate_cal_task}
+    graph[process_calibration_stacks_for_ui] = {associate_cal_task}
     graph[store_ui_calibration_stacks] = {process_calibration_stacks_for_ui}
 
     stack_tasks = set()

@@ -134,27 +134,9 @@ def is_run_included(
 # Calibration resolution via the decision framework
 # ---------------------------------------------------------------------------
 
-# Calibration topology — Landmann §7.1 Case 2 (matched-exposure darks).
-#
-# `dark: []`    — integrate raw darks WITHOUT pre-calibrating them
-#                 (Landmann §6.2: "NEVER pre-calibrate the MasterDark"
-#                 — pre-calibration trips WBPP's §8.2 undercorrection
-#                 path when paired with the master-bias-for-lights
-#                 anti-pattern).
-# `flat: ["bias"]` — bias-calibrate CMOS short flats (Landmann §6.3.1).
-# `light: ["dark", "flat"]` — NO master bias for lights. Case 2's
-#                 closed form is `(L − MD) · s0 / MF` with no MB term;
-#                 staging MB into the lights' WBPP working dir would
-#                 cause WBPP to subtract it again on a master dark
-#                 that already contains the bias (§8.2). With this
-#                 topology WBPP's auto-detect lands on the documented
-#                 Case 2 settings.
-_CALIBRATIONS_FOR_IMAGE_TYPE = {
-    "bias": [],
-    "dark": [],
-    "flat": ["bias"],
-    "light": ["dark", "flat"],
-}
+# Calibration topology (which masters each image type depends on) lives in
+# `calibration.topology.CALIBRATION_TOPOLOGY` — the single source of truth
+# shared with the cal-to-cal associator, so the two can't drift.
 
 
 def resolve_calibration(
@@ -170,6 +152,7 @@ def resolve_calibration(
     """
     from calibration.calibration_frames import _build_cal_index, _midpoint_s
     from calibration.directory_affinity import find_external_master
+    from calibration.topology import CALIBRATION_TOPOLOGY
 
     bias_by_cam, dark_by_cam, flat_by_cam_filter = _build_cal_index(cal_stacks)
 
@@ -246,7 +229,7 @@ def resolve_calibration(
     new_contents = RunsDict()
     for run_hash, run in stack.contents.items():
         deps = dict(run.dependencies)
-        for cal_type in _CALIBRATIONS_FOR_IMAGE_TYPE.get(run.image_type, []):
+        for cal_type in CALIBRATION_TOPOLOGY.get(run.image_type, ()):
             if cal_type in deps:
                 continue  # Already set (e.g., from cal-to-cal association)
 

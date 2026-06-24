@@ -31,9 +31,11 @@ def _resolve_light_stack(stack):
 
 
 def assert_cal_deps(cal_stacks):
-    """Assert correct calibration-to-calibration dependencies.
+    """Assert correct calibration-to-calibration dependencies under the
+    Landmann §7.1 Case 2 topology (`calibration.topology.CALIBRATION_TOPOLOGY`):
 
-    bias → no deps, dark → bias (if bias exists), flat → bias (if bias exists).
+    bias → no deps, dark → NO deps (raw darks are NOT bias-pre-calibrated;
+    §6.2), flat → bias (if bias exists).
     """
     has_bias = any(s.image_type == "bias" for s in cal_stacks.values())
     for cal_stack in cal_stacks.values():
@@ -41,8 +43,9 @@ def assert_cal_deps(cal_stacks):
         if cal_stack.image_type == "bias":
             assert deps == set(), f"Bias should have no deps, got {deps}"
         elif cal_stack.image_type == "dark":
-            expected = {"bias"} if has_bias else set()
-            assert deps == expected, f"Dark deps: expected {expected}, got {deps}"
+            assert deps == set(), (
+                f"Case 2: a master dark is NOT bias-pre-calibrated, got {deps}"
+            )
         elif cal_stack.image_type == "flat":
             expected = {"bias"} if has_bias else set()
             assert deps == expected, f"Flat deps: expected {expected}, got {deps}"
