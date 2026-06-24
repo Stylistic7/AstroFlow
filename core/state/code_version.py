@@ -53,9 +53,19 @@ def is_deployable_version(version: str) -> bool:
 
 
 def _is_excluded(rel: str) -> bool:
+    """Whether a repo-root-relative path is a snapshot exclude.
+
+    `RAY_WORKING_DIR_EXCLUDES` is relative to `core/` (Ray's working_dir), but
+    git lists paths from the repo ROOT (e.g. `core/testdata/x`). Match the path
+    AND the path with a leading `core/` stripped, so `core/testdata/` (13 GB!)
+    is dropped, not gzipped into the deploy snapshot."""
+    candidates = [rel]
+    if rel.startswith("core/"):
+        candidates.append(rel[len("core/"):])
     return any(
-        rel == e.rstrip("/") or rel.startswith(e.rstrip("/") + "/")
+        c == e.rstrip("/") or c.startswith(e.rstrip("/") + "/")
         for e in RAY_WORKING_DIR_EXCLUDES
+        for c in candidates
     )
 
 
@@ -116,12 +126,17 @@ def build_snapshot_tar(repo: Path, version: str) -> bytes:
     excludes so the two snapshot kinds — and what Ray ships — stay consistent."""
     if version.startswith(_WT_PREFIX):
         return build_working_tree_tar(repo)
-    # git pathspecs: everything except the excluded dirs (".git/" never archives).
-    exclude_specs = [
-        f":(exclude){e.rstrip('/')}"
-        for e in RAY_WORKING_DIR_EXCLUDES
-        if e.rstrip("/") != ".git"
-    ]
+    # git pathspecs: drop the excluded dirs (".git/" never archives). The
+    # excludes are core/-relative, but archive runs from the repo root, so
+    # exclude BOTH the bare path and the core/-prefixed path (covers
+    # core/testdata/ etc., the 13 GB we must not ship).
+    exclude_specs = []
+    for e in RAY_WORKING_DIR_EXCLUDES:
+        name = e.rstrip("/")
+        if name == ".git":
+            continue
+        exclude_specs.append(f":(exclude){name}")
+        exclude_specs.append(f":(exclude)core/{name}")
     out = subprocess.run(
         ["git", "-C", str(repo), "archive", "--format=tar.gz", version,
          "--", ".", *exclude_specs],
