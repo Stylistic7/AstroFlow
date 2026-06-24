@@ -110,3 +110,62 @@ def test_traced_paths_invalidates_on_metadata_change(test_context):
     ray.get(_traced_paths.remote(*base, "metadata-v1", "source-hash"))
     assert _traced_paths.is_cached(*base, "metadata-v1", "source-hash")
     assert not _traced_paths.is_cached(*base, "metadata-v2", "source-hash")
+
+
+# --- display/filter tagging of the walk (the output_index replacement) ---
+
+
+class _FakeEntity:
+    """Minimal identity-bearing, filter-carrying stand-in for a Stack:
+    `_find_identity_arg` keys off `stable_hash`, `filter_of` off `filter`."""
+
+    def __init__(self, stable_hash: str, filter: str):
+        self.stable_hash = stable_hash
+        self.filter = filter
+
+
+class _FakeTask:
+    """Stand-in for a `@node`/`@makes_image` task. `_function` is an
+    INSTANCE attribute (not a class attribute) so it isn't auto-bound by
+    the descriptor protocol — `inspect.signature` then sees the real
+    params, exactly as the framework's wrappers expose them."""
+
+    def __init__(self, fn, display=None, final=False):
+        self._function = fn
+        self._display = display
+        self._final = final
+        self._path = f"/out/{fn.__name__}/deadbeefcafef00d.fits"
+
+    def filename_fn(self, *args):
+        return self._path
+
+
+def test_walk_tags_tap_node_with_display_and_filter():
+    """The display/filter extension of the walk: a `@makes_image(display=)`
+    node surfaces with its `display`+`filter` (and `is_final`), while a plain
+    filename_fn helper with no `display=` gets `display=None`/`filter=None`.
+
+    This is the trace-derived data the dashboard now reads instead of the
+    deleted stateful PipelineOutputIndex."""
+    from dependency_graph.classes import Node
+    from dependency_graph.trace_paths import _walk_and_resolve_filenames_tagged
+
+    entity = _FakeEntity("st1", "Ha")
+
+    def tapop(stack): ...     # one positional param → leaf, no deps appended
+    def helper(stack): ...
+
+    tap = Node(_FakeTask(tapop, display="Master", final=True), entity, name="tap")
+    plain = Node(_FakeTask(helper), entity, name="plain")
+    graph = {tap: [], plain: []}
+
+    by_op = {e["op_name"]: e for e in _walk_and_resolve_filenames_tagged(graph)}
+
+    assert by_op["tapop"]["display"] == "Master"
+    assert by_op["tapop"]["filter"] == "Ha"
+    assert by_op["tapop"]["is_final"] is True
+    # Non-display helper is still walked (its path feeds downstream) but
+    # carries no tap identity.
+    assert by_op["helper"]["display"] is None
+    assert by_op["helper"]["filter"] is None
+    assert by_op["helper"]["is_final"] is False

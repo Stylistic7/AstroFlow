@@ -15,13 +15,12 @@ from dependency_graph.visual_graph import VisualGraph, VisualNode
 
 
 # Op names hidden in the sanitized view. These are system-glue
-# nodes the user didn't write — trace hooks (`compute_image_metadata`,
-# `_register_tap_path_op`) and sub-runtime sentinels
-# (`run_pipeline_done`). `remove_transparent_nodes` stitches each
-# transparent node's upstreams directly to its downstreams.
+# nodes the user didn't write — trace hooks (`compute_image_metadata`)
+# and sub-runtime sentinels (`run_pipeline_done`).
+# `remove_transparent_nodes` stitches each transparent node's
+# upstreams directly to its downstreams.
 TRANSPARENT_OP_NAMES = frozenset({
     "compute_image_metadata",
-    "_register_tap_path_op",
     "run_pipeline_done",
 })
 

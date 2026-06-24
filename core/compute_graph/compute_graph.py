@@ -1,6 +1,5 @@
 import ray
 import structlog
-from dataclasses import dataclass
 from typing import Any
 from beartype import beartype
 
@@ -361,7 +360,6 @@ def _eager_trace_pipeline(
     for that entry.
     """
     from pipelines.registry import get_pipeline
-    from pipelines.output_index import record_existence
     from stacks.composite_stack import Stack
     from targets.types import Target
     from mosaics.types import Mosaic
@@ -373,11 +371,6 @@ def _eager_trace_pipeline(
     graph = pipeline_fn(entity, cfg)
     if graph is None:
         return None
-    # Walk taps just like the lazy run_pipeline does; idempotent on
-    # repeated trace, so re-tracing in the lazy run_pipeline is fine.
-    _record_pipeline_taps(
-        record_existence, pipeline_name, type_tag, entity.stable_hash, graph,
-    )
     # Topology-only snapshot so the viewer can render structure
     # before any node completes. Lives here, NOT in the @pipeline
     # runner, so dashboard tap-extraction traces don't pay for it.
@@ -401,15 +394,14 @@ def _build_ephemeral_registry(traced_graphs):
 
 @ray.remote(num_cpus=0.1)
 def run_pipeline(entity, cfg, pipeline_name: str, type_tag: str) -> "Graph":
-    """Reach for the cached trace, inject runtime register-tap nodes,
-    funnel terminals into the sub-runtime sentinel. Returns the Graph
-    so the parent runtime spins up a child `GraphRuntime`.
+    """Reach for the cached trace, funnel terminals into the
+    sub-runtime sentinel. Returns the Graph so the parent runtime
+    spins up a child `GraphRuntime`.
 
     Trace is via the @node-cached `trace_pipeline` — body only re-runs
-    when the pipeline source, entity, or cfg changes. Tap existence
-    registration + the runtime `_register_tap_path_op` Nodes are
-    spliced in here (impure, always runs) so the cached graph stays
-    pure data.
+    when the pipeline source, entity, or cfg changes. The cached graph
+    is pure data; tap paths are derived on demand by the dashboard from
+    the same cached trace + disk (no runtime tap recording).
 
     Returning a Graph from a `@ray.remote` task is how `run_graph`
     spins up a child `GraphRuntime`. That sub-runtime reads the
@@ -420,7 +412,6 @@ def run_pipeline(entity, cfg, pipeline_name: str, type_tag: str) -> "Graph":
     plumbing.
     """
     from pipelines.registry import get_pipeline
-    from pipelines.output_index import record_existence
     from stacks.composite_stack import Stack
     from targets.types import Target
     from mosaics.types import Mosaic
@@ -430,26 +421,17 @@ def run_pipeline(entity, cfg, pipeline_name: str, type_tag: str) -> "Graph":
     type_to_class = {"stack": Stack, "target": Target, "mosaic": Mosaic}
     pipeline_fn = get_pipeline(pipeline_name, processes=type_to_class[type_tag])
 
-    # Cached trace. result.graph is freshly deserialized from diskcache
+    # Cached trace. The graph is freshly deserialized from diskcache
     # on each cache hit so in-place mutation downstream is safe.
     source_hash = hash_source_code(pipeline_fn._function)
-    result = ray.get(trace_pipeline.remote(
+    graph = ray.get(trace_pipeline.remote(
         pipeline_name, source_hash, entity, cfg,
     ))
-    graph = result.graph
     if graph is None:
         # MASTER-mode mosaics with missing panels legitimately bail.
         # Surface an empty graph so the parent task's `node_completed`
         # still gets a Graph and closes out the cart entry cleanly.
         return Graph({})
-
-    # Walk the traced graph for @makes_image(display=...) tap points:
-    # register their existence in the PipelineOutputIndex AND splice
-    # in the runtime `_register_tap_path_op` Nodes that record each
-    # tap's actual on-disk path once the producing op completes.
-    _record_pipeline_taps(
-        record_existence, pipeline_name, type_tag, entity.stable_hash, graph,
-    )
 
     # GraphRuntime asserts a sub-graph has exactly one terminal. Funnel
     # every current terminal into a sentinel so the child sub-runtime
@@ -464,46 +446,6 @@ def run_pipeline(entity, cfg, pipeline_name: str, type_tag: str) -> "Graph":
 @beartype
 def main_processing_graph_done() -> None:
     pass
-
-
-@ray.remote(num_cpus=0.01)
-def _register_tap_path_op(
-    pipeline_name: str, object_type: str, object_id: str,
-    display: str, filter: str | None, result,
-):
-    """Runtime helper: record the tap's actual on-disk path in the
-    PipelineOutputIndex after the upstream @makes_image op has
-    finished writing.
-
-    `result` is the resolved upstream Node value — a `WithSidecar`
-    or `ImageMetadata` carrying a `.filename` attribute. The path
-    flows in via Ray's data-dep mechanism, so it's whatever the op
-    body actually wrote to (no trace-time prediction needed)."""
-    from pipelines.output_index import record_path
-    path = getattr(result, "filename", None) or result
-    record_path(
-        pipeline_name, object_type, object_id, display, filter, str(path),
-    )
-    return result
-
-
-@dataclass(frozen=True, eq=False)
-class TraceResult:
-    """One pipeline's trace, as data. Returned by `trace_pipeline`
-    (the @node-cached per-pipeline trace) and consumed by the dashboard
-    path's `commit_taps` and (Phase 4) the merger.
-
-    `graph` is None on a trace failure (the pipeline raised); callers
-    must filter those out before further use.
-
-    `taps` is the result of `extract_pipeline_taps(graph)` materialised
-    as a tuple — order is preserved so display disambiguation stays
-    deterministic across cache hits. `eq=False` so the dataclass
-    doesn't try to auto-generate __hash__ across the (unhashable)
-    Graph field.
-    """
-    graph: Any
-    taps: tuple
 
 
 def _find_identity_arg(graph, node):
@@ -591,40 +533,6 @@ def extract_pipeline_taps(graph):
         yield n, (object_type_name, object_id_value, display, filter_value)
 
 
-def _record_pipeline_taps(record_existence, pipeline_name, cart_type, cart_id, graph):
-    """Apply trace-time side effects per tap returned by
-    `extract_pipeline_taps`:
-
-    1. Register the tap's EXISTENCE in the PipelineOutputIndex
-       (`(pipeline, type, id, display, filter) → "pending"`). The UI
-       can render placeholders immediately.
-    2. Add a downstream `_register_tap_path_op` Node that depends on
-       the tap's result. When the tap finishes and the path is
-       known, this follow-up writes the real path to the index.
-
-    The two-phase pattern (existence at trace, path at runtime) is
-    the framework's answer to "shared ops across pipelines must
-    produce distinct files even when literals match" — each tap's
-    on-disk filename is chosen by the op body using its full bound
-    args, and the runtime hook captures that filename regardless of
-    how the body computed it.
-    """
-    from dependency_graph.classes import Node
-
-    for n, (object_type_name, object_id_value, display, filter_value) in extract_pipeline_taps(graph):
-        record_existence(
-            pipeline_name, object_type_name, object_id_value,
-            display, filter_value,
-        )
-        register_node = Node(
-            _register_tap_path_op,
-            pipeline_name, object_type_name, object_id_value,
-            display, filter_value,
-            name=f"_register_tap_{n.name}",
-        )
-        graph[register_node] = [n]
-
-
 # Pin to the head node. trace_pipeline is orchestration, not compute: its
 # @node wrapper reads/writes the result to the *local* diskcache of
 # whatever node the task lands on, and its result (a Graph) is file-less,
@@ -643,7 +551,8 @@ def trace_pipeline(
     entity,
     cfg,
 ):
-    """Pure trace of one pipeline. Returns a `TraceResult(graph, taps)`.
+    """Pure trace of one pipeline. Returns the traced `Graph`, or `None`
+    on a trace failure (the pipeline raised, or wasn't registered).
 
     Cached via @node on (source hash + args). `pipeline_source_hash`
     is in the args so changing the pipeline body invalidates the cache
@@ -652,28 +561,22 @@ def trace_pipeline(
     dataclass, hashable), so dashboard-trace cfg and live-runtime cfg
     naturally get separate cache entries.
 
-    Side-effect-free. The dashboard / merger callers do their own
-    commit-to-context step downstream.
+    Side-effect-free: tap paths are derived on demand by the dashboard
+    (trace + disk), not committed anywhere here.
     """
     from pipelines.registry import registered_pipelines
 
     pipeline_fn = registered_pipelines().get((pipeline_name, type(entity)))
     if pipeline_fn is None:
-        return TraceResult(graph=None, taps=())
+        return None
 
     try:
-        graph = pipeline_fn(entity, cfg)
+        return pipeline_fn(entity, cfg)
     except Exception as e:
         import traceback
         print(f"### trace_pipeline failed: {pipeline_name} for {type(entity).__name__}: {e}")
         traceback.print_exc()
-        graph = None
-
-    if graph is None:
-        return TraceResult(graph=None, taps=())
-
-    taps = tuple(tap for _, tap in extract_pipeline_taps(graph))
-    return TraceResult(graph=graph, taps=taps)
+        return None
 
 
 @node

@@ -61,7 +61,7 @@ def test_remove_transparent_nodes_chain_of_transparents():
     """A → T1 → T2 → B becomes A → B."""
     a = _vn(_node("a", "1"))
     t1 = _vn(_node("compute_image_metadata", "1"))
-    t2 = _vn(_node("_register_tap_path_op", "1"))
+    t2 = _vn(_node("run_pipeline_done", "1"))
     b = _vn(_node("b", "1"))
     vg: VisualGraph = {a: [], t1: [a], t2: [t1], b: [t2]}
 

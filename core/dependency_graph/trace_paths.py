@@ -159,6 +159,27 @@ def traced_path_for(
     return None
 
 
+def tap_outputs_for(item: tuple[str, str, str]) -> list[dict]:
+    """The user-facing taps for `item`'s pipeline: every traced output that
+    carries a `display=` name. One cached trace; the web dashboard groups
+    these by `display` and checks `os.path.exists` per filter. Replaces the
+    old stateful PipelineOutputIndex `for_object`."""
+    return [e for e in traced_paths_for(item) if e.get("display") is not None]
+
+
+def tap_path_for(
+    item: tuple[str, str, str], display: str, filter: str | None,
+) -> "Path | None":
+    """The on-disk primary path of one tap `(display, filter)` in `item`'s
+    traced pipeline, or None on miss. Pure trace prediction — the file may or
+    may not exist yet; callers check `os.path.exists` as needed."""
+    f = str(filter)
+    for e in traced_paths_for(item):
+        if e.get("display") == display and str(e.get("filter")) == f:
+            return Path(e["path"])
+    return None
+
+
 # Head-pinned: like trace_pipeline, this is orchestration whose @node
 # wrapper memoizes a file-less result (list[dict]) into the local
 # diskcache. Only the head has the `diskcache` resource, so requesting a
@@ -293,6 +314,16 @@ def _walk_and_resolve_filenames_tagged(graph) -> list[dict]:
     node_hash: dict[Any, str] = {}
     out: list[dict] = []
 
+    # User-facing tap metadata (display name + filter) per Node, so a single
+    # traced-paths result serves the dashboard/tiles (which key on
+    # display+filter) as well as sweep/archive (op_name+identity). Non-display
+    # intermediates (e.g. place_image) aren't taps → display/filter stay None.
+    from compute_graph.compute_graph import extract_pipeline_taps
+    taps_by_node: dict[Any, tuple[str, "str | None"]] = {
+        node: (display, filter_value)
+        for node, (_ot, _oid, display, filter_value) in extract_pipeline_taps(graph)
+    }
+
     for n in order:
         if hasattr(n.task, "filename_fn"):
             args = _resolve_args(n, graph, node_hash)
@@ -306,11 +337,14 @@ def _walk_and_resolve_filenames_tagged(graph) -> list[dict]:
             # Filename is `<output_dir>/.../<call_hash>.<ext>`. The
             # stem is exactly the call_hash.
             node_hash[n] = Path(path).stem
+            display, filter_value = taps_by_node.get(n, (None, None))
             out.append({
                 "path": str(path),
                 "op_name": _op_name_for_node(n),
                 "identity": _identity_for_node(n),
                 "is_final": bool(getattr(n.task, "_final", False)),
+                "display": display,
+                "filter": filter_value,
             })
         else:
             # Pass-through propagation for helpers without filename_fn.
@@ -342,9 +376,8 @@ def _identity_for_node(n) -> dict:
     identity registered on `n.task`. Returns `{}` when no identity can
     be resolved (no _identities, or args don't bind cleanly).
 
-    Mirrors compute_graph._record_pipeline_taps's binding pattern: each
-    identity_cls's field names are treated as positional-parameter names
-    on the producer; values come from `n.args` by parameter position.
+    Each identity_cls's field names are treated as positional-parameter
+    names on the producer; values come from `n.args` by parameter position.
     `stable_hash` is preferred over the raw object so the cached trace
     result stays small and easy to compare.
     """

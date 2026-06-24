@@ -1,6 +1,5 @@
 import math
 import os
-import threading
 from pathlib import Path
 import astropy.io.fits as pyfits
 from flask import Blueprint, jsonify, abort
@@ -22,58 +21,33 @@ from web_server.backend._route import tap_route
 metadata_bp = Blueprint("metadata", __name__)
 
 
-# The dashboard / cart route URLs use lowercase / snake_case
-# cart-types (`mosaic`, `stack`, `calibration_stack`); the
-# PipelineOutputIndex registers taps under `type(first_arg).__name__`
-# (PascalCase). This dict bridges the two.
-_URL_TO_TYPE_NAME = {
-    "mosaic": "Mosaic",
-    "target": "Target",
-    "stack": "Stack",
-    "calibration_stack": "CalibrationStack",
-}
-
-
 def _tap_path_unchecked(
     pipeline: str, display: str, object_type: str, object_id: str,
     filter: str | None,
 ) -> str | None:
-    """Look up a tap's on-disk path via the PipelineOutputIndex WITHOUT
-    checking whether the file exists.
+    """The on-disk primary path of a tap `(pipeline, display, type, id,
+    filter)`, predicted from the pipeline trace — WITHOUT checking the file
+    exists. Pure function of the (cached) trace: every `@node(display=...)`
+    op's path is `<output_dir>/<op_name>/<call_hash>.<ext>`, and the trace
+    computes that call_hash via the Merkle convention. No stateful index.
 
-    The index is populated at pipeline-trace time — every Node whose
-    task carries `_display` (set by `@node(display=...)`) gets recorded
-    under (pipeline, type_name, object_id, display, filter), where
-    `type_name` is `type(first_arg).__name__`. The URL's lowercase
-    cart-type translates to that PascalCase name via `_URL_TO_TYPE_NAME`.
-
-    The PipelineOutputIndex uses `"pending"` as a sentinel for taps
-    that were traced but whose path hasn't been resolved yet; that
-    isn't a real path and gets filtered out here too.
-
-    Use this when you need the path string regardless of whether the
-    master is currently on disk — e.g. to derive a `.tiff` sibling for
-    tile-serving when ephemeral cleanup may have reclaimed the master.
-    For "is this tap currently available" semantics use `tap_path_for`.
+    Use this when you need the path regardless of current existence — e.g.
+    to derive a `.tiff` sibling for tile-serving. For "is this tap currently
+    available" semantics use `tap_path_for`.
     """
-    from pipelines.output_index import tap_path, PENDING
-    type_name = _URL_TO_TYPE_NAME.get(object_type, object_type)
-    p = tap_path(pipeline, type_name, object_id, display, filter)
-    if p and p != PENDING:
-        return p
-    return None
+    from dependency_graph.trace_paths import tap_path_for as _trace_tap_path
+    p = _trace_tap_path((object_type, object_id, pipeline), display, filter)
+    return str(p) if p is not None else None
 
 
 def tap_path_for(
     pipeline: str, display: str, object_type: str, object_id: str,
     filter: str | None,
 ) -> str | None:
-    """Find a tap point's on-disk path via the PipelineOutputIndex,
-    returning None if the master no longer exists on disk.
-
-    Existence-gated wrapper around `_tap_path_unchecked` — preserves
-    "tap is available" semantics for download / metadata callers.
-    """
+    """The tap's on-disk path, or None if the predicted file isn't on disk.
+    Existence-gated wrapper around `_tap_path_unchecked` — "tap is currently
+    available" semantics for download / metadata callers. Disk is the source
+    of truth for done-ness."""
     p = _tap_path_unchecked(pipeline, display, object_type, object_id, filter)
     return p if p and os.path.exists(p) else None
 
@@ -365,74 +339,6 @@ def _entity_filters(entity, object_type: str) -> list[str]:
     return []
 
 
-_TRACE_LOCK = threading.Lock()
-
-
-def _ensure_pipelines_traced(object_type: str, object_id: str, entity) -> None:
-    """Trace every registered pipeline that applies to `entity` (once
-    per `(pipeline, source_hash, object)`) and commit the tap names
-    to `PipelineOutputIndex`.
-
-    The skip-cache is a per-pipeline persistent receipt in `context`:
-    `("_pipeline_traced", pname, source_hash, object_type, object_id)
-    → True`. It survives worker restart, is shared across all gunicorn
-    workers, and invalidates automatically when a pipeline body
-    changes (the source hash is in the key). The trace is pure Python
-    on a Mosaic-sized pipeline (~600–900 nodes, 10–30 s); the receipt
-    avoids paying that more than once per `(source, object)`.
-
-    `_TRACE_LOCK` serialises concurrent threads inside one worker, so
-    `--threads 4` doesn't multiply trace cost. Concurrent first-time
-    requests across separate workers will still each pay once — that
-    only happens before any receipt is committed and is a one-shot
-    cost per fresh cache.
-    """
-    from pipelines.registry import registered_pipelines
-    from pipelines.output_index import commit_taps
-    from compute_graph.compute_graph import extract_pipeline_taps
-    from decisions.settings import ProcessingConfig, DevelopmentSettings
-    from frozendict import frozendict as fd
-    from hashing.hashing import hash_source_code
-
-    def receipt_key(pname, source_hash):
-        return ("_pipeline_traced", pname, source_hash, object_type, object_id)
-
-    applicable = [
-        (pname, pfn, hash_source_code(pfn._function))
-        for (pname, pc), pfn in registered_pipelines().items()
-        if pc is type(entity)
-    ]
-    to_trace = [
-        (pname, pfn, source_hash)
-        for pname, pfn, source_hash in applicable
-        if not context.get(receipt_key(pname, source_hash))
-    ]
-    if not to_trace:
-        return
-
-    with _TRACE_LOCK:
-        cfg = ProcessingConfig(
-            calibration_stacks=context.calibration_stacks or fd(),
-            development_settings=DevelopmentSettings(mock_pixinsight=False),
-            min_frames_in_stack=3,
-            decisions=fd(),
-        )
-        for pname, pfn, source_hash in to_trace:
-            # Another thread may have committed while we waited.
-            if context.get(receipt_key(pname, source_hash)):
-                continue
-            try:
-                graph = pfn(entity, cfg)
-            except Exception as e:
-                import traceback
-                print(f"### pipeline trace failed: {pname} for {object_type}/{object_id}: {e}", flush=True)
-                traceback.print_exc()
-                continue
-            taps = tuple(tap for _, tap in extract_pipeline_taps(graph))
-            commit_taps(pname, object_type, object_id, taps)
-            context[receipt_key(pname, source_hash)] = True
-
-
 @metadata_bp.route("/api/pipeline_outputs/<object_type>/<object_id>")
 def pipeline_outputs(object_type: str, object_id: str):
     """Per-pipeline tap-point matrix for the object dashboard.
@@ -456,16 +362,16 @@ def pipeline_outputs(object_type: str, object_id: str):
         ],
       }
 
-    Each pipeline's `taps` come straight out of the
-    PipelineOutputIndex, populated at pipeline-trace time. On
-    endpoint hit we lazily trace any registered pipeline whose
-    entries are missing for this object — tracing is in-process and
-    cheap, so unprocessed objects get their tap-point structure
-    surfaced even before any Ray dispatch happens. File existence
-    on disk determines `exists`/`mtime` per filter.
+    Each pipeline's taps are derived live from a (cached) trace of the
+    pipeline for this object: `tap_outputs_for` predicts every
+    `@node(display=...)` op's on-disk path via the Merkle call_hash
+    convention, and `os.path.exists` per filter says whether it's done.
+    No stateful index — disk is the source of truth, so this can never go
+    stale. Unprocessed objects still show their full tap structure (every
+    predicted path simply doesn't exist yet).
     """
     from pipelines.registry import registered_pipelines
-    from pipelines.output_index import for_object
+    from dependency_graph.trace_paths import tap_outputs_for
 
     entity = _resolve_entity(object_type, object_id)
     if entity is None:
@@ -474,35 +380,28 @@ def pipeline_outputs(object_type: str, object_id: str):
     filters = _entity_filters(entity, object_type)
     iter_filters = filters or [None]
 
-    _ensure_pipelines_traced(object_type, object_id, entity)
-    # Taps are keyed under `type(first_arg).__name__` (PascalCase); the
-    # URL's lowercase cart-type translates via `_URL_TO_TYPE_NAME`. All
-    # of an object's taps (including `merge_images`' "Merged") share the
-    # one PascalCase bucket, so no cross-bucket aggregation is needed.
-    indexed = for_object(_URL_TO_TYPE_NAME.get(object_type, object_type), object_id)
-
-    pipelines = []
-    # Every registered (name, class) entry whose class matches the
-    # entity gets a row — even pipelines with no traced taps appear
-    # in the dashboard (empty `taps` list), so the user sees the full
-    # available menu before queuing anything.
+    # Every registered (name, class) entry whose class matches the entity
+    # gets a row — even pipelines not yet run appear (with all-missing
+    # taps), so the user sees the full available menu.
     applicable = sorted({
         name for (name, processes_class) in registered_pipelines().keys()
         if processes_class is type(entity)
     })
+
+    pipelines = []
     for name in applicable:
-        traced_taps = indexed.get(name, {})
+        # One cached trace per pipeline → its user-facing taps with predicted
+        # paths. Group by display (preserving trace/graph-reach order, which
+        # also orders the "Merged"/"Merged 2" suffix series).
+        by_display: dict[str, dict[str, str]] = {}
+        for e in tap_outputs_for((object_type, object_id, name)):
+            by_display.setdefault(e["display"], {})[str(e["filter"])] = e["path"]
+
         taps = []
-        # Preserve insertion order of `traced_taps` — that's
-        # graph-reach order (each tap is registered the first
-        # time the recorder visits its Node during trace), which
-        # also numerically orders the per-display suffix series
-        # ("Merged" before "Merged 2" before "Merged 10").
-        for display in traced_taps.keys():
-            tap_paths = traced_taps[display]
+        for display, paths_by_filter in by_display.items():
             outputs = []
             for f in iter_filters:
-                p = tap_paths.get(str(f))
+                p = paths_by_filter.get(str(f))
                 exists = p is not None and os.path.exists(p)
                 outputs.append({
                     "filter": f,

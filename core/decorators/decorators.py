@@ -173,9 +173,8 @@ class _Node:
         # `@node` wrapping an already-`@node`-wrapped function (e.g.
         # `my_op = node(...)(some_existing_op)`) builds a NEW wrapper
         # with a fresh fn_hash → fresh call_hash → fresh filename. Every
-        # cached entry under the old wrapper is now orphaned, the
-        # `@node`-decorated body never re-runs as-is, and `_record_pipeline_taps`
-        # sees a new producer with no display. Warn loudly so the
+        # cached entry under the old wrapper is now orphaned and the
+        # `@node`-decorated body never re-runs as-is. Warn loudly so the
         # pipeline author can either rename or drop the redundant wrap.
         if hasattr(func, "_fn_hash"):
             import warnings

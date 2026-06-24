@@ -137,6 +137,60 @@ def test_orion_mosaic_versions_endpoint(client, with_orion_mosaic):
 
 
 @pytest.mark.exhaustive
+def test_pipeline_outputs_exists_is_backed_by_trace_and_disk(client, with_orion_mosaic):
+    """The core contract of the output_index → trace+disk migration.
+
+    Every `exists` flag the dashboard endpoint reports MUST agree with an
+    INDEPENDENT re-derivation: predict the tap's primary path straight from
+    the cached pipeline trace (`tap_path_for`) and ask the filesystem. There
+    is no stateful tap→path index in between, so:
+
+      * `exists=True`  ⟺ a real file sits at the trace-predicted path, and
+      * `exists=False` ⟺ no file is there (real absence, never a stale
+        "pending" placeholder — the live-app bug this refactor removed).
+
+    Because the Orion snapshot actually runs the graph, the merge/master
+    deliverables are on disk; at least one tap must therefore surface as
+    existing, proving the previously-"pending" taps now show.
+    """
+    import os
+    from dependency_graph.trace_paths import tap_path_for
+
+    mosaics = client.get("/api/mosaics").get_json()
+    mosaic_id = next(iter(mosaics.keys()))
+
+    data = client.get(f"/api/pipeline_outputs/mosaic/{mosaic_id}").get_json()
+
+    checked = 0
+    existing = 0
+    for p in data["pipelines"]:
+        name = p["name"]
+        for t in p["taps"]:
+            display = t["display"]
+            for o in t["outputs"]:
+                # Independent path prediction from the cached trace — the
+                # same source the endpoint uses, recomputed here so a stale
+                # or divergent result would surface as a mismatch.
+                predicted = tap_path_for(
+                    ("mosaic", mosaic_id, name), display, o["filter"],
+                )
+                on_disk = predicted is not None and os.path.exists(predicted)
+                assert o["exists"] == on_disk, (
+                    f"{name}/{display}/{o['filter']}: endpoint exists="
+                    f"{o['exists']} but trace+disk says {on_disk} "
+                    f"(predicted path={predicted})"
+                )
+                checked += 1
+                existing += int(o["exists"])
+
+    assert checked > 0, "fixture produced no taps to check"
+    assert existing > 0, (
+        "no tap reported exists=True — deliverables that are on disk for "
+        "the Orion mosaic are not surfacing (the bug this refactor fixes)"
+    )
+
+
+@pytest.mark.exhaustive
 def test_pipeline_outputs_second_call_hits_cache(client, with_orion_mosaic):
     """Regression for the live-app failure mode: every call to
     /api/pipeline_outputs/mosaic/<id> taking ~50s instead of the
@@ -150,16 +204,14 @@ def test_pipeline_outputs_second_call_hits_cache(client, with_orion_mosaic):
     """
     import time
     from context import local_context as context
-    from pipelines import output_index
 
-    # Other tests hit /api/pipeline_outputs first and leave this mosaic's
-    # per-object trace receipts + tap index populated — so a fresh "first
-    # call" here would skip tracing and defeat the test. Drop both (the
-    # post-merger replacements for the old `_TRACED_KEYS` memo; the endpoint
-    # writes receipts via local_context) so the first hit actually re-traces
-    # and the second can show the cache win.
-    output_index.clear()
-    for k in list((context.get_matching(("_pipeline_traced",)) or {}).keys()):
+    # Other tests hit /api/pipeline_outputs first and warm the cached
+    # `_traced_paths` @node entries — so a fresh "first call" here would
+    # be a cache hit and defeat the test. Drop those entries (cache key is
+    # `("_traced_paths", call_hash)`) so the first hit actually re-traces
+    # and the second can show the cache win. There is no tap index anymore:
+    # the endpoint derives paths purely from this cached trace + disk.
+    for k in list((context.get_matching(("_traced_paths",)) or {}).keys()):
         if k in context:
             context.delete(k)
 

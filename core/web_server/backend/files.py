@@ -62,10 +62,10 @@ def select_file():
 def stacking_report(stack_id):
     """Stacker-agnostic summary read off the master file on disk.
 
-    Resolves the master path via the PipelineOutputIndex (tap-keyed)
-    and parses the file's headers + XISF properties into a uniform
-    shape (StackingReport). Returns `null` when the tap point hasn't
-    produced an artifact yet.
+    Resolves the master path from the cached pipeline trace + disk
+    (tap-keyed) and parses the file's headers + XISF properties into a
+    uniform shape (StackingReport). Returns `null` when the tap point
+    hasn't produced an artifact yet.
 
     Query params (defaults reflect the PixInsight Master pipeline's
     Master tap):
@@ -325,7 +325,7 @@ def open_image(filename):
 @tap_route(files_bp, "/api/open_mosaic_master", hierarchy=("mosaic_id",))
 def open_mosaic_master(mosaic_id, pipeline, display, filter):
     """Open a specific (pipeline, tap) of a mosaic+filter in PixInsight.
-    Path resolution goes through the PipelineOutputIndex
+    Path resolution goes through the cached pipeline trace + disk
     (`tap_path_for`)."""
     from web_server.backend.metadata import tap_path_for
 
