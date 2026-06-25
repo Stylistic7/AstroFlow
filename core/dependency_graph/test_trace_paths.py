@@ -202,3 +202,57 @@ def test_routes_to_item_scopes_taps_by_type_AND_id():
     )
     # A non-tap entry (no routing entity) is never claimed by any page.
     assert not _routes_to_item({"object_type": None, "object_id": None}, "mosaic", mid)
+
+
+def test_tap_outputs_for_scopes_to_queried_entity(monkeypatch):
+    """End-to-end guard for the `/mosaic/<id>` regression: `tap_outputs_for`
+    (the helper the dashboard endpoint calls) must return ONLY the taps routing
+    to the queried `(object_type, object_id)`. A mosaic's trace also contains
+    per-panel `Master` taps (route to stacks) and per-target `Channel` taps
+    (route to targets) — those belong on the stack/target pages, not here.
+
+    The existing exhaustive endpoint test checked tap *structure* but not this
+    scoping, which is why the regression shipped — so this is a focused unit
+    test of the actual function, including the stable_hash collision."""
+    import dependency_graph.trace_paths as tp
+
+    mid = "m1"
+    entries = [
+        {"display": "Mosaic", "filter": "H", "object_type": "Mosaic",
+         "object_id": mid, "path": "/out/mosaic.fits"},
+        {"display": "Master", "filter": "H", "object_type": "Stack",
+         "object_id": mid, "path": "/out/master.fits"},      # collides on id!
+        {"display": "Channel", "filter": "H", "object_type": "Target",
+         "object_id": "t9", "path": "/out/channel.fits"},
+        {"display": None, "filter": None, "object_type": None,
+         "object_id": None, "path": "/out/place.tiff"},      # non-tap intermediate
+    ]
+    monkeypatch.setattr(tp, "traced_paths_for", lambda item: entries)
+
+    # Queried as the mosaic → only the Mosaic tap (the colliding Stack Master
+    # is excluded by TYPE despite sharing the id).
+    out = tp.tap_outputs_for(("mosaic", mid, "Hybrid: PI Master + OSS Mosaic"))
+    assert [e["display"] for e in out] == ["Mosaic"]
+
+    # Same trace, queried as the stack → the stack's Master (Mosaic excluded).
+    out_stack = tp.tap_outputs_for(("stack", mid, "Hybrid: PI Master + OSS Mosaic"))
+    assert [e["display"] for e in out_stack] == ["Master"]
+
+
+def test_tap_path_for_scopes_to_queried_entity(monkeypatch):
+    """`tap_path_for` resolves a tap's path only within the queried entity, so a
+    colliding Stack `Master` is never served as the mosaic's path."""
+    import dependency_graph.trace_paths as tp
+
+    mid = "m1"
+    entries = [
+        {"display": "Mosaic", "filter": "H", "object_type": "Mosaic",
+         "object_id": mid, "path": "/out/mosaic.fits"},
+        {"display": "Master", "filter": "H", "object_type": "Stack",
+         "object_id": mid, "path": "/out/master.fits"},
+    ]
+    monkeypatch.setattr(tp, "traced_paths_for", lambda item: entries)
+
+    assert str(tp.tap_path_for(("mosaic", mid, "P"), "Mosaic", "H")) == "/out/mosaic.fits"
+    # The mosaic owns no "Master" tap — the colliding stack's must not leak in.
+    assert tp.tap_path_for(("mosaic", mid, "P"), "Master", "H") is None
