@@ -238,6 +238,14 @@ def _traced_paths(
     consume it directly (the pipeline's downstream tasks read it via
     `config.calibration_stacks` and `context` lookups).
     """
+    # Output-schema version. `@node`'s fn_hash covers THIS body but NOT the
+    # `_walk_and_resolve_filenames_tagged` helper whose dict shape we return —
+    # so when that shape changes, bump this literal to change the fn_hash and
+    # re-fire the cache cluster-wide. Without it, stale entries in the old shape
+    # are served on cache-hit and readers expecting the new keys silently get
+    # nothing (v2 added object_type/object_id for entity-scoped taps — old
+    # entries lacked them and the dashboard filter dropped every tap).
+    _OUTPUT_SCHEMA_VERSION = 2  # noqa: F841 — participates in fn_hash only
     from dependency_graph.tracing import trace
 
     fn = _lookup_pipeline_fn(pipeline_name, entity)
