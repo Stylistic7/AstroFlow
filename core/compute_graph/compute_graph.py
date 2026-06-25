@@ -380,12 +380,6 @@ def _eager_trace_pipeline(
     store_workflow_graph(
         (type_tag, entity.stable_hash, pipeline_name), GraphRuntime(graph),
     )
-    # Tap snapshot for the Ray-free web server. Every tap's on-disk filename is
-    # known at trace time (Merkle convention), so we persist the complete tap
-    # list once, here on the head (Ray available). The web worker then reads it
-    # straight from the diskcache and decides done/pending via os.path.exists —
-    # no on-demand trace, no Ray in the gunicorn worker.
-    _store_tap_snapshot(pipeline_fn, pipeline_name, entity, graph)
     return graph
 
 
@@ -404,16 +398,28 @@ def _store_tap_snapshot(pipeline_fn, pipeline_name: str, entity, graph) -> None:
     from dependency_graph.trace_paths import _walk_and_resolve_filenames_tagged
     from hashing import hash_source_code
 
+    # Compute the content-addressed key FIRST and skip the walk when a snapshot
+    # for this exact (source, stable, content, pipeline) is already present AND
+    # still resolves (not LRU-evicted). So `run_pipeline` on a restart with an
+    # unchanged cart confirms presence in ~ms instead of re-walking — the walk
+    # is cheap (~0.5 s) but this makes a warm restart free, and the expensive
+    # part (the ~25 s trace) was already a `trace_pipeline` @node cache hit.
+    key = (
+        hash_source_code(pipeline_fn._function),
+        entity.stable_hash, entity.content_hash, pipeline_name,
+    )
+    existing = (context.get("tap_snapshots") or {}).get(key)
+    if existing is not None and (
+        existing.get() if hasattr(existing, "get") else existing
+    ):
+        return
+
     # The COMPLETE trace (every filename node, not just display-taps): the web
     # server reads it for the dashboard taps (display+filter), the mosaic
     # polygon overlays (stack_files by identity), and file opens — all Ray-free.
     entries = _walk_and_resolve_filenames_tagged(graph)
     if not entries:
         return
-    key = (
-        hash_source_code(pipeline_fn._function),
-        entity.stable_hash, entity.content_hash, pipeline_name,
-    )
     ref = ContextRef.store(("tap_snapshots", str(key)), entries)
     context.or_equals("tap_snapshots", {key: ref})
 
@@ -470,6 +476,15 @@ def run_pipeline(entity, cfg, pipeline_name: str, type_tag: str) -> "Graph":
         # Surface an empty graph so the parent task's `node_completed`
         # still gets a Graph and closes out the cart entry cleanly.
         return Graph({})
+
+    # Persist the tap snapshot for the Ray-free web server. Done HERE (not in
+    # the @node-cached build_main_processing_graph, which is a cache-hit on an
+    # unchanged cart and would never re-store on restart) because run_pipeline
+    # runs on every `run_entire_graph`. The trace above is the cached
+    # `trace_pipeline` (no 500 s re-trace), and `_store_tap_snapshot` skips the
+    # walk entirely when the content-addressed snapshot already exists — so a
+    # restart with an unchanged cart just confirms presence and moves on.
+    _store_tap_snapshot(pipeline_fn, pipeline_name, entity, graph)
 
     # GraphRuntime asserts a sub-graph has exactly one terminal. Funnel
     # every current terminal into a sentinel so the child sub-runtime
