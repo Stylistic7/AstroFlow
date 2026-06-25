@@ -159,23 +159,53 @@ def traced_path_for(
     return None
 
 
+def _routes_to_item(entry: dict, object_type: str, object_id: str) -> bool:
+    """Whether a traced tap belongs to the queried entity. A pipeline's trace
+    contains taps routing to OTHER entities (a mosaic's trace has per-panel
+    `Master` taps routing to stacks, per-target `Channel` taps routing to
+    targets); only those routing to `(object_type, object_id)` belong on this
+    entity's page.
+
+    Match BOTH type and id: first-subframe-based `stable_hash` collides across
+    a single-panel mosaic / its target / its stack, so id alone is ambiguous.
+    `object_type` is the URL/cart form (`calibration_stack`); the tap carries
+    the routing entity's class name (`CalibrationStack`)."""
+    cls = entry.get("object_type")
+    return (
+        entry.get("object_id") == object_id
+        and bool(cls)
+        and object_type.replace("_", "").lower() == cls.lower()
+    )
+
+
 def tap_outputs_for(item: tuple[str, str, str]) -> list[dict]:
-    """The user-facing taps for `item`'s pipeline: every traced output that
-    carries a `display=` name. One cached trace; the web dashboard groups
-    these by `display` and checks `os.path.exists` per filter. Replaces the
-    old stateful PipelineOutputIndex `for_object`."""
-    return [e for e in traced_paths_for(item) if e.get("display") is not None]
+    """The user-facing taps for `item`'s pipeline that belong to `item`'s
+    entity: every traced `display=` output routing to `(object_type,
+    object_id)`. One cached trace; the web dashboard groups these by `display`
+    and checks `os.path.exists` per filter. Replaces the old stateful
+    PipelineOutputIndex `for_object` (which keyed by object type+id likewise)."""
+    object_type, object_id, _pipeline = item
+    return [
+        e for e in traced_paths_for(item)
+        if e.get("display") is not None
+        and _routes_to_item(e, object_type, object_id)
+    ]
 
 
 def tap_path_for(
     item: tuple[str, str, str], display: str, filter: str | None,
 ) -> "Path | None":
-    """The on-disk primary path of one tap `(display, filter)` in `item`'s
-    traced pipeline, or None on miss. Pure trace prediction — the file may or
+    """The on-disk primary path of one tap `(display, filter)` belonging to
+    `item`'s entity, or None on miss. Pure trace prediction — the file may or
     may not exist yet; callers check `os.path.exists` as needed."""
+    object_type, object_id, _pipeline = item
     f = str(filter)
     for e in traced_paths_for(item):
-        if e.get("display") == display and str(e.get("filter")) == f:
+        if (
+            e.get("display") == display
+            and str(e.get("filter")) == f
+            and _routes_to_item(e, object_type, object_id)
+        ):
             return Path(e["path"])
     return None
 
@@ -314,14 +344,19 @@ def _walk_and_resolve_filenames_tagged(graph) -> list[dict]:
     node_hash: dict[Any, str] = {}
     out: list[dict] = []
 
-    # User-facing tap metadata (display name + filter) per Node, so a single
-    # traced-paths result serves the dashboard/tiles (which key on
-    # display+filter) as well as sweep/archive (op_name+identity). Non-display
-    # intermediates (e.g. place_image) aren't taps → display/filter stay None.
+    # User-facing tap metadata per Node, so a single traced-paths result serves
+    # the dashboard/tiles (which key on the tap's routing entity + display +
+    # filter) as well as sweep/archive (op_name+identity). The routing entity
+    # (object_type/object_id) matters: a mosaic's trace contains per-panel
+    # `Master` taps that route to STACKS and per-target `Channel` taps that
+    # route to TARGETS — those belong on the stack/target views, not the
+    # mosaic's. Non-display intermediates (e.g. place_image) aren't taps → all
+    # four stay None.
     from compute_graph.compute_graph import extract_pipeline_taps
-    taps_by_node: dict[Any, tuple[str, "str | None"]] = {
-        node: (display, filter_value)
-        for node, (_ot, _oid, display, filter_value) in extract_pipeline_taps(graph)
+    taps_by_node: dict[Any, tuple] = {
+        node: (object_type, object_id, display, filter_value)
+        for node, (object_type, object_id, display, filter_value)
+        in extract_pipeline_taps(graph)
     }
 
     for n in order:
@@ -337,7 +372,9 @@ def _walk_and_resolve_filenames_tagged(graph) -> list[dict]:
             # Filename is `<output_dir>/.../<call_hash>.<ext>`. The
             # stem is exactly the call_hash.
             node_hash[n] = Path(path).stem
-            display, filter_value = taps_by_node.get(n, (None, None))
+            tap_object_type, tap_object_id, display, filter_value = (
+                taps_by_node.get(n, (None, None, None, None))
+            )
             out.append({
                 "path": str(path),
                 "op_name": _op_name_for_node(n),
@@ -345,6 +382,8 @@ def _walk_and_resolve_filenames_tagged(graph) -> list[dict]:
                 "is_final": bool(getattr(n.task, "_final", False)),
                 "display": display,
                 "filter": filter_value,
+                "object_type": tap_object_type,
+                "object_id": tap_object_id,
             })
         else:
             # Pass-through propagation for helpers without filename_fn.

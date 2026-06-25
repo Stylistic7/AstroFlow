@@ -169,3 +169,36 @@ def test_walk_tags_tap_node_with_display_and_filter():
     assert by_op["helper"]["display"] is None
     assert by_op["helper"]["filter"] is None
     assert by_op["helper"]["is_final"] is False
+    # The walk also carries the tap's routing entity, so the dashboard can
+    # scope taps to the queried object (see test_routes_to_item_*).
+    assert by_op["tapop"]["object_type"] == "_FakeEntity"
+    assert by_op["tapop"]["object_id"] == "st1"
+
+
+def test_routes_to_item_scopes_taps_by_type_AND_id():
+    """A mosaic's trace contains per-panel `Master` taps that route to STACKS
+    and per-target `Channel` taps that route to TARGETS; only the taps routing
+    to the queried `(object_type, object_id)` belong on that entity's page.
+
+    The match must check BOTH type and id: first-subframe-based `stable_hash`
+    collides across a single-panel mosaic / its target / its stack, so id alone
+    would wrongly surface a stack's `Master` on the mosaic page. This was the
+    `/mosaic/<id>` regression (450 mixed taps showing instead of the mosaic's
+    own)."""
+    from dependency_graph.trace_paths import _routes_to_item
+
+    mid = "75a1da6463e118e6"
+    # The mosaic's own deliverable — kept.
+    assert _routes_to_item({"object_type": "Mosaic", "object_id": mid}, "mosaic", mid)
+    # A per-panel Master routing to a different stack — excluded.
+    assert not _routes_to_item({"object_type": "Stack", "object_id": "other"}, "mosaic", mid)
+    # The collision case: a Stack / Target SHARING the mosaic's id — excluded
+    # by TYPE (id alone would have matched).
+    assert not _routes_to_item({"object_type": "Stack", "object_id": mid}, "mosaic", mid)
+    assert not _routes_to_item({"object_type": "Target", "object_id": mid}, "mosaic", mid)
+    # snake_case URL/cart type vs PascalCase routing class name.
+    assert _routes_to_item(
+        {"object_type": "CalibrationStack", "object_id": "z"}, "calibration_stack", "z"
+    )
+    # A non-tap entry (no routing entity) is never claimed by any page.
+    assert not _routes_to_item({"object_type": None, "object_id": None}, "mosaic", mid)
