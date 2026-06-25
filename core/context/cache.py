@@ -59,12 +59,16 @@ def _create_durable_cache() -> diskcache.Cache:
     )
 
 
-# Identity data that is NOT cheaply regenerable lives in the durable
-# store. Everything else (@node memo results, thumbnails, video,
-# node_status, logs, ui_*, workflow_graphs, ...) is regenerable and
-# stays in the evictable LFU cache.
+# Data that is NOT cheaply regenerable lives in the durable store: the
+# identity/clustering (stacks/targets/mosaics/calibration_stacks) AND the
+# user's curation (`decisions` — quarantines, calibration overrides,
+# subframe-quality choices). Everything else — @node memo results,
+# thumbnails, video, node_status, logs, ui_*, workflow_graphs — is
+# regenerable on demand and stays in the evictable LFU cache, so it's safe
+# to let it get evicted (or wiped).
 _DURABLE_TUPLE_NS = frozenset(
-    {"stacks", "targets", "mosaics", "calibration_stacks", "large_object"}
+    {"stacks", "targets", "mosaics", "calibration_stacks", "large_object",
+     "decisions"}
 )
 _DURABLE_STR_KEYS = frozenset(
     {

@@ -21,6 +21,18 @@ from decisions.resolve import resolve_decisions
 from decisions.compute_graph import ALL_EXCLUSION_TYPES
 
 
+def test_decisions_live_in_the_durable_store():
+    """Decisions are user curation (quarantines, calibration overrides,
+    subframe-quality choices) — NOT regenerable @node results — so they must
+    route to the durable cache and survive LRU eviction / regular-cache wipes.
+    The `("decisions", ...)` namespace being evictable was a real data-loss
+    hazard."""
+    from context.cache import is_durable_key
+    from decisions.decisions import _decisions_key
+    key = _decisions_key(ObjectType.STACK, "abc123")
+    assert is_durable_key(key) is True
+
+
 def _make_decision(key: DecisionKey) -> DecisionPoint:
     return DecisionPoint(
         key=key,
