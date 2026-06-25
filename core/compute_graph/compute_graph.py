@@ -380,7 +380,42 @@ def _eager_trace_pipeline(
     store_workflow_graph(
         (type_tag, entity.stable_hash, pipeline_name), GraphRuntime(graph),
     )
+    # Tap snapshot for the Ray-free web server. Every tap's on-disk filename is
+    # known at trace time (Merkle convention), so we persist the complete tap
+    # list once, here on the head (Ray available). The web worker then reads it
+    # straight from the diskcache and decides done/pending via os.path.exists —
+    # no on-demand trace, no Ray in the gunicorn worker.
+    _store_tap_snapshot(pipeline_fn, pipeline_name, entity, graph)
     return graph
+
+
+def _store_tap_snapshot(pipeline_fn, pipeline_name: str, entity, graph) -> None:
+    """Persist a cart entry's complete display-tap list so the Ray-free web
+    server can read it without tracing.
+
+    CONTENT-ADDRESSED key — `(pipeline_source_hash, stable_hash, content_hash,
+    pipeline)`. A pipeline-code change (new source hash) or new images on the
+    object (new content_hash) yields a NEW key, so the web UI — which computes
+    the SAME key from the live object + pipeline source — always reads the
+    current trace; stale snapshots are harmless orphans, never requested, aged
+    out by LRU. One atomic write (no two-phase `record_path` to drift). The web
+    worker filters the full list to the queried routing entity on read."""
+    from cache.context_ref import ContextRef
+    from dependency_graph.trace_paths import _walk_and_resolve_filenames_tagged
+    from hashing import hash_source_code
+
+    # The COMPLETE trace (every filename node, not just display-taps): the web
+    # server reads it for the dashboard taps (display+filter), the mosaic
+    # polygon overlays (stack_files by identity), and file opens — all Ray-free.
+    entries = _walk_and_resolve_filenames_tagged(graph)
+    if not entries:
+        return
+    key = (
+        hash_source_code(pipeline_fn._function),
+        entity.stable_hash, entity.content_hash, pipeline_name,
+    )
+    ref = ContextRef.store(("tap_snapshots", str(key)), entries)
+    context.or_equals("tap_snapshots", {key: ref})
 
 
 def _build_ephemeral_registry(traced_graphs):

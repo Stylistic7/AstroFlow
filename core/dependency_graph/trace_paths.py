@@ -103,7 +103,18 @@ def traced_paths_for(item: tuple[str, str, str]) -> list[dict]:
 
     Returns `[]` if the entity isn't in context, the pipeline isn't
     registered, or the trace itself fails.
+
+    **Snapshot-first (Ray-free):** if `compute_graph._store_tap_snapshot`
+    persisted this exact `(source, stable, content, pipeline)` at graph-build
+    time — which it does for every cart entry — return that directly. The web
+    workers (no Ray) always hit this path for cart items. Only a MISS (e.g. a
+    sweep/archive item not in the current graph) falls through to the on-demand
+    Ray trace below, which is fine because sweep/archive run on the head driver.
     """
+    snapshot = _read_tap_snapshot(item)
+    if snapshot is not None:
+        return snapshot
+
     import ray
     from hashing import hash_source_code
     from metadata.image_metadata import load_metadata
@@ -178,12 +189,57 @@ def _routes_to_item(entry: dict, object_type: str, object_id: str) -> bool:
     )
 
 
+def _read_tap_snapshot(item: tuple[str, str, str]) -> "list[dict] | None":
+    """Read the content-addressed snapshot persisted at graph-build time by
+    `compute_graph._store_tap_snapshot`. **Ray-free** — resolve the live object
+    from the (local) context, hash the pipeline source, build the SAME
+    `(source_hash, stable_hash, content_hash, pipeline)` key, read the diskcache.
+    No trace, no `ray.put`, no `.remote()`.
+
+    Returns the stored entry list, or **None** when no snapshot matches — the
+    pipeline isn't in the current graph, or the code / object content changed
+    and it hasn't been re-traced yet. `traced_paths_for` treats None as "fall
+    through to the on-demand Ray trace"; the web workers never have one, so for
+    them a miss simply yields no taps (never a stale answer — old-key snapshots
+    are harmless orphans, never read)."""
+    from pipelines.registry import get_pipeline
+    from hashing import hash_source_code
+    from stacks.composite_stack import Stack
+    from targets.types import Target
+    from mosaics.types import Mosaic
+
+    object_type, object_id, pipeline = item
+    type_to_class = {"stack": Stack, "target": Target, "mosaic": Mosaic}
+    type_to_dict = {
+        "stack": context.stacks or {},
+        "target": context.targets or {},
+        "mosaic": context.mosaics or {},
+    }
+    cls = type_to_class.get(object_type)
+    if cls is None:
+        return None
+    entity_ref = type_to_dict[object_type].get(object_id)
+    if entity_ref is None:
+        return None
+    entity = entity_ref.get() if hasattr(entity_ref, "get") else entity_ref
+    try:
+        fn = get_pipeline(pipeline, processes=cls)._function
+    except KeyError:
+        return None
+    key = (hash_source_code(fn), entity.stable_hash, entity.content_hash, pipeline)
+    snap = (context.get("tap_snapshots") or {}).get(key)
+    if snap is None:
+        return None
+    return (snap.get() if hasattr(snap, "get") else snap) or []
+
+
 def tap_outputs_for(item: tuple[str, str, str]) -> list[dict]:
     """The user-facing taps for `item`'s pipeline that belong to `item`'s
-    entity: every traced `display=` output routing to `(object_type,
-    object_id)`. One cached trace; the web dashboard groups these by `display`
-    and checks `os.path.exists` per filter. Replaces the old stateful
-    PipelineOutputIndex `for_object` (which keyed by object type+id likewise)."""
+    entity: every `display=` tap routing to `(object_type, object_id)`. Sourced
+    from the build-time snapshot (Ray-free via `traced_paths_for`); the dashboard
+    groups by `display` + checks `os.path.exists` per filter. Replaces the old
+    stateful PipelineOutputIndex `for_object` (keyed by object type+id likewise),
+    but from a complete single-shot trace, not a two-phase recorder."""
     object_type, object_id, _pipeline = item
     return [
         e for e in traced_paths_for(item)
@@ -196,8 +252,8 @@ def tap_path_for(
     item: tuple[str, str, str], display: str, filter: str | None,
 ) -> "Path | None":
     """The on-disk primary path of one tap `(display, filter)` belonging to
-    `item`'s entity, or None on miss. Pure trace prediction — the file may or
-    may not exist yet; callers check `os.path.exists` as needed."""
+    `item`'s entity, or None on miss. From the build-time snapshot (Ray-free);
+    the file may or may not exist yet — callers check `os.path.exists`."""
     object_type, object_id, _pipeline = item
     f = str(filter)
     for e in traced_paths_for(item):

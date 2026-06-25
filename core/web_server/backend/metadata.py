@@ -370,7 +370,6 @@ def pipeline_outputs(object_type: str, object_id: str):
     stale. Unprocessed objects still show their full tap structure (every
     predicted path simply doesn't exist yet).
     """
-    from pipelines.registry import registered_pipelines
     from dependency_graph.trace_paths import tap_outputs_for
 
     entity = _resolve_entity(object_type, object_id)
@@ -380,12 +379,15 @@ def pipeline_outputs(object_type: str, object_id: str):
     filters = _entity_filters(entity, object_type)
     iter_filters = filters or [None]
 
-    # Every registered (name, class) entry whose class matches the entity
-    # gets a row — even pipelines not yet run appear (with all-missing
-    # taps), so the user sees the full available menu.
+    # Only the pipelines the user has actually ENGAGED for this object — i.e.
+    # ones with a build-time tap snapshot for its current (source_hash,
+    # stable_hash, content_hash) state. Never-run pipelines have no snapshot,
+    # so they no longer clutter the page with all-missing taps. The snapshot
+    # keys are `(source_hash, stable_hash, content_hash, pipeline)`.
+    snapshots = context.get("tap_snapshots") or {}
     applicable = sorted({
-        name for (name, processes_class) in registered_pipelines().keys()
-        if processes_class is type(entity)
+        pipeline for (_src, stable, content, pipeline) in snapshots
+        if stable == entity.stable_hash and content == entity.content_hash
     })
 
     pipelines = []
