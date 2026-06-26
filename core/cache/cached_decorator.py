@@ -268,6 +268,12 @@ def make_cached_decorator(
         wrapper._original = func
         wrapper._function = func
         wrapper._is_task = True
+        # The op's declared *custom* resources (e.g. {"PixInsight": 1}), exposed
+        # so the graph executor can do resource-aware admission control without
+        # knowing any resource name. `@node` is built on top of `cached.remote`,
+        # so this single assignment covers both `@node` and direct
+        # `@cached.remote` ops.
+        wrapper._ray_resources = dict(ray_opts.get("resources") or {})
 
         def is_cached(*args, injected_context=None, **kwargs) -> bool:
             bound = _bind_args(func, args, kwargs, injected_context)

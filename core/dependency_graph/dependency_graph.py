@@ -156,6 +156,29 @@ def _apply_preflight(graph: Graph) -> Graph:
     )
 
 
+def _declared_custom_resources(task) -> dict:
+    """The op's declared *custom* Ray resources (e.g. ``{"PixInsight": 1}``),
+    or ``{}``. Resource-name agnostic.
+
+    `@node` / `@cached.remote` expose them on ``_ray_resources`` (set in
+    `cached.remote`); a raw `@ray.remote` ``RemoteFunction`` carries them on
+    ``_resources``. CPU / GPU / memory are intentionally NOT consulted — Ray's
+    own scheduler plus ``MAX_IN_FLIGHT`` already govern those. This gate exists
+    only for scarce, explicitly-declared custom resources that serialize work
+    (e.g. the single PixInsight slot): without it, run_graph hands Ray a deep
+    backlog of such tasks and Ray arbitrates the slot in submission order,
+    defeating the `node_sort_key` priority."""
+    r = getattr(task, "_ray_resources", None)
+    if r is None:
+        r = getattr(task, "_resources", None)  # raw @ray.remote RemoteFunction
+    return r or {}
+
+
+def _fits(need: dict, avail: dict) -> bool:
+    """Whether every resource in ``need`` is currently available."""
+    return all(avail.get(name, 0.0) >= amt for name, amt in need.items())
+
+
 def run_graph(
     graph: Graph,
     dry_run: bool = False,
@@ -221,22 +244,50 @@ def run_graph(
         ref_meta: dict[ray.ObjectRef, tuple[GraphRuntime, Node]] = {}
 
         while ready_cache or pending:
-            # Fill up to concurrency cap — but stop submitting once drained.
+            # Fill up to concurrency cap — but only admit a node while Ray has
+            # room for the *custom* resources it declares. The ready set is
+            # already sorted by the priority hint; submitting only what can run
+            # now keeps a scarce, serialized resource (e.g. one PixInsight slot)
+            # from building a deep FIFO backlog inside Ray that would defeat the
+            # sort. A node that doesn't fit is *retained* — still ready — for a
+            # later pass once an in-flight task frees the resource. The
+            # `available_resources()` snapshot is eventually-consistent; with a
+            # local decrement per admit (below) over-submission stays ~zero, and
+            # the executor's per-pass cost is irrelevant against task runtimes.
+            avail = None  # lazily fetched only if a custom-resource node appears
+            retained: list[tuple[GraphRuntime, Node]] = []
             while (
                 ready_cache
                 and not _draining()
                 and len(pending) < MAX_IN_FLIGHT
             ):
                 rt, node = ready_cache.pop()
+                need = _declared_custom_resources(node.task)
+                if need:
+                    if avail is None:
+                        avail = dict(ray.available_resources())
+                    # Hold a node only when something is in flight to free the
+                    # resource later; with nothing pending we must admit (even
+                    # against a stale snapshot) so the run can't stall.
+                    if pending and not _fits(need, avail):
+                        retained.append((rt, node))
+                        continue
                 rt.start(node)
                 try:
                     ref = _submit_node(rt, node, dry_run, debug)
                     ref_meta[ref] = (rt, node)
                     pending.append(ref)
+                    for name, amt in need.items():  # consumed iff it launched
+                        avail[name] = avail.get(name, 0.0) - amt
                 except AncestorsNeverRan:
                     rt.node_completed(node, NeverRun)
                 except AncestorsFailed:
                     rt.node_completed(node, Skipped)
+            # Return retained nodes (priority order preserved: highest ends up
+            # at the tail, popped first next pass) so a freed resource is
+            # reconsidered for them after the completions below.
+            if retained:
+                ready_cache.extend(reversed(retained))
 
             if not pending:
                 break
