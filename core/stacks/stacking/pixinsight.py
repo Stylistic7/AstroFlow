@@ -96,7 +96,7 @@ def _setup_run(
 
     def get_dependency_filename(d):
         if isinstance(d, StackIdDependency):
-            return cal_master_by_id[d.stack_id]
+            return cal_master_by_id[str(d.stack_id)]
         elif isinstance(d, FilenameDependency):
             return d.filename
 
@@ -265,7 +265,11 @@ def _run_wbpp_stacking(
     # thread parallel id/master lists through the call.
     from file_io.generic import read_header
     cal_master_by_id = {
-        read_header(m.filename)["STBLHASH"]: m.filename for m in cal_masters
+        # STBLHASH is a hash identifier, but the XISF reader runs
+        # ast.literal_eval on keyword values, so an all-digit stable_hash
+        # round-trips as an int. Force str so the str-keyed lookup matches
+        # (see get_dependency_filename, which also str()s the dep id).
+        str(read_header(m.filename)["STBLHASH"]): m.filename for m in cal_masters
     }
 
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:

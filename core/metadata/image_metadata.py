@@ -164,7 +164,10 @@ def compute_image_metadata(
         log.error("File is broken, marking for skip", filename=str(filename), error=str(e))
         set_section(filename, "broken", {"error": str(e), "set_at": filename.stat().st_mtime})
         return None
-    stable_hash = header.get("STBLHASH", content_hash)
+    # str() because the XISF reader runs ast.literal_eval on keyword values, so
+    # an all-digit STBLHASH round-trips as an int; a master's stable_hash must
+    # stay a string identifier (else downstream str-keyed lookups KeyError).
+    stable_hash = str(header.get("STBLHASH", content_hash))
 
     if image_types.is_light_frame(header):
         plate_solution = plate_solving.solve_field(filename)
