@@ -1,3 +1,4 @@
+import inspect
 import os
 import threading
 from pathlib import Path
@@ -117,6 +118,32 @@ def _png_response(thumbnail: bytes, label: str):
     return resp
 
 
+def _producer_accepts(producer, nargs: int) -> bool:
+    """Whether `producer` can be invoked with exactly `nargs` positional args.
+
+    Producers registered for one entity type can have different arities — a
+    Run has both `uncorrected_run_thumbnail(stack, substack)` (2 args) and
+    `flat_corrected_stack(stack, substack, flat_stack)` (3 args) — and only the
+    one whose signature matches the URL's arg count is the intended producer.
+    Without this filter `get_thumbnail` also invokes the mismatched producer,
+    which raises `TypeError` (caught, but it prints a noisy traceback). A
+    variadic (`*args`) or un-introspectable producer accepts any count."""
+    try:
+        params = list(inspect.signature(producer).parameters.values())
+    except (TypeError, ValueError):
+        return True
+    required = optional = 0
+    for p in params:
+        if p.kind == p.VAR_POSITIONAL:
+            return True
+        if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD):
+            if p.default is p.empty:
+                required += 1
+            else:
+                optional += 1
+    return required <= nargs <= required + optional
+
+
 def get_thumbnail(entity, *extra_args):
     """Best-available thumbnail for an entity + optional extra producer
     args (e.g. filter for Mosaic channels, substack for Runs).
@@ -138,6 +165,12 @@ def get_thumbnail(entity, *extra_args):
     file_backed = []
     compute_backed = []
     for producer in producers_for(type(entity)):
+        # Only the producer whose arity matches this URL's arg count is the
+        # intended one (e.g. 2-arg uncorrected vs 3-arg flat-corrected Run
+        # thumbnails). Skip the rest so we never invoke a producer with the
+        # wrong number of args (which raises a noisy, caught TypeError).
+        if not _producer_accepts(producer, len(args)):
+            continue
         if getattr(producer, "filename_fn", None) is not None:
             file_backed.append(producer)
         else:
