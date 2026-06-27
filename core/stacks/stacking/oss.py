@@ -209,10 +209,11 @@ def stack_files_oss(
             if not isinstance(dep, StackIdDependency):
                 continue
             cal_stack = config.get_calibration_stacks()[dep.stack_id]
-            cal_data = (
-                _load_calibration(cal_stack, config, "OSS")
-                or _load_calibration(cal_stack, config, "PIXINSIGHT")
-            )
+            # `or` would evaluate `bool(ndarray)` on the loaded master →
+            # "truth value of an array is ambiguous". Fall back explicitly.
+            cal_data = _load_calibration(cal_stack, config, "OSS")
+            if cal_data is None:
+                cal_data = _load_calibration(cal_stack, config, "PIXINSIGHT")
             if cal_data is None:
                 continue
             if cal_stack.image_type == "bias": bias = cal_data
