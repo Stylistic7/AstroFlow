@@ -107,6 +107,11 @@ class ImageList(list):
     def __getitem__(self, key):
         if isinstance(key, int):
             return super().__getitem__(key)
+        if isinstance(key, slice):
+            # `images[1:]` (e.g. StarAlignment's reference/targets split) must
+            # return a sub-list, not fall through to filter-by-string lookup
+            # (which would call `.lower()` on the slice object).
+            return ImageList(super().__getitem__(key))
         # String key: find by filter
         from pix.tasks.filters import normalize_filter
         for image in self:
