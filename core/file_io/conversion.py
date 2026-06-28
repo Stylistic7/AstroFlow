@@ -68,6 +68,12 @@ def convert_fits_to_xisf(
     image = np.expand_dims(fits[0].data, -1)
     fits.close()
 
+    # astropy reads FITS in FITS-standard big-endian (e.g. '>f4'), but
+    # XISF.write only accepts native byte order. Normalize (no-op for data
+    # already native) so big-endian FITS — including the OSS FITS masters —
+    # convert instead of raising "sampleFormat for >f4 not implemented".
+    image = image.astype(image.dtype.newbyteorder("="))
+
     if add_noise:
         image += np.random.randint(low=0, high=2, size=image.shape, dtype=image.dtype)
 

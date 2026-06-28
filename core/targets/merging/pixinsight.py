@@ -52,7 +52,19 @@ def _merge_target_channel_impl(
     master_paths = [m.filename for m in masters]
 
     if len(master_paths) == 1:
-        shutil.copy(master_paths[0], output_filename)
+        # n=1: this channel is just its single master. The op's output type is
+        # XISF, so a raw byte copy is correct ONLY when the master is already
+        # XISF (PI hybrids). The OSS hybrid feeds FITS masters
+        # (post_process_stack_oss) — copying FITS bytes into a .xisf name yields
+        # a file with no XISF signature, which crashes the downstream
+        # @makes_image metadata read. Convert FITS -> XISF so the declared type
+        # is honored (FITS keywords, incl. STBLHASH/FILTER, are preserved).
+        src = Path(master_paths[0])
+        if src.suffix.lower() == ".xisf":
+            shutil.copy(src, output_filename)
+        else:
+            from file_io.conversion import convert_fits_to_xisf
+            convert_fits_to_xisf(src, Path(output_filename))
         return WithSidecar(XisfFilePath(output_filename))
 
     stack_master_pairs = sorted(
