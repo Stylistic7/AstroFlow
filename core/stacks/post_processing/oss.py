@@ -29,6 +29,55 @@ from stacks.composite_stack import Stack
 log = structlog.get_logger()
 
 
+def corrected_normalized_pixels(
+    master_path: str, mock_pixinsight: bool, background_pedestal: float,
+) -> np.ndarray:
+    """Background-correct, normalize to [0,1], and sky-pedestal an OSS master.
+
+    The single place the OSS [0,1] representation is established — extracted so
+    it can be exercised against *real* GraXpert output without Ray or
+    plate-solving (see `test_oss_post_process.py`). Two input scales converge:
+
+    - production (`mock_pixinsight=False`): GraXpert background-extracts the raw
+      16-bit master and writes data ALREADY in [0,1] — used as-is.
+    - fast tests (`mock_pixinsight=True`): GraXpert is skipped, so the raw 16-bit
+      ADU master is divided by full scale (65535) to reach [0,1].
+
+    Dividing the GraXpert output by 65535 too (the original bug) collapses every
+    pixel into the sky pedestal — a dead-flat master that renders white. The sky
+    is then equalized to `background_pedestal` with a purely additive shift,
+    which preserves the full signal tail (faint nebulosity → saturated stars).
+    """
+    if mock_pixinsight:
+        data = (read_image(master_path).astype(np.float32) / 65535.0).astype(np.float32)
+    else:
+        # GraXpert AI background/gradient correction — the OSS counterpart to
+        # MultiscaleGradientCorrection (data-driven, no MARS reference). Run as
+        # an external CLI to a temp file; read its output back so we own the
+        # final headers (GraXpert writes its own). GraXpert reads the 16-bit
+        # master and writes data ALREADY normalized to [0,1], so do NOT divide
+        # again — a second /65535 collapses every pixel into the sky pedestal
+        # (the bug that rendered OSS mosaics dead white).
+        from graxpert_cli import run_background_extraction
+        with tempfile.TemporaryDirectory(prefix="graxpert_") as td:
+            gx_out = Path(td) / "corrected.fits"
+            run_background_extraction(master_path, gx_out)
+            data = read_image(gx_out).astype(np.float32)
+
+    # Mono masters: GraXpert may emit an (H, W, 1) cube — flatten to 2-D so
+    # downstream metadata/solve/merge see the same shape as the input.
+    if data.ndim == 3 and data.shape[2] == 1:
+        data = data[:, :, 0]
+
+    # Equalize the sky to the common pedestal so OSS and PI masters share a sky
+    # level and the mosaic blend is seam-free. The shift is purely additive — it
+    # preserves the full signal tail, only re-zeroing the sky. `mask_zeros=False`:
+    # solid master (no panel boundary yet), and GraXpert's sub-zero sky pixels
+    # must be lifted up rather than read as an edge.
+    from stacks.post_processing.background_pedestal import apply_background_pedestal
+    return apply_background_pedestal(data, target=background_pedestal, mask_zeros=False)
+
+
 @node(
     display="Post-Processed",
     auto_memory=True,
@@ -56,33 +105,9 @@ def post_process_stack_oss(
     log.info("OSS post-processing stack", stack=str(stack),
              master=str(master.filename), mock=mock_pixinsight)
 
-    if mock_pixinsight:
-        data = read_image(master.filename).astype(np.float32)
-    else:
-        # GraXpert AI background/gradient correction — the OSS counterpart to
-        # MultiscaleGradientCorrection (data-driven, no MARS reference). Run as
-        # an external CLI to a temp file; read its output back so we own the
-        # final headers (GraXpert writes its own).
-        from graxpert_cli import run_background_extraction
-        with tempfile.TemporaryDirectory(prefix="graxpert_") as td:
-            gx_out = Path(td) / "corrected.fits"
-            run_background_extraction(master.filename, gx_out)
-            data = read_image(gx_out).astype(np.float32)
-
-    # Mono masters: GraXpert may emit an (H, W, 1) cube — flatten to 2-D so
-    # downstream metadata/solve/merge see the same shape as the input.
-    if data.ndim == 3 and data.shape[2] == 1:
-        data = data[:, :, 0]
-
-    # Bring the raw-ADU OSS stack onto the same representation a PI master uses:
-    # normalize to the [0,1] convention (16-bit full scale), then equalize the
-    # sky to the common pedestal — so OSS and PI masters share a scale and a sky
-    # level, and the mosaic blend is seam-free either way. `mask_zeros=False`:
-    # this is a solid master (no panel boundary yet), and GraXpert leaves
-    # sub-zero sky pixels that must be shifted up, not read as an edge.
-    from stacks.post_processing.background_pedestal import apply_background_pedestal
-    data = (data / 65535.0).astype(np.float32)
-    data = apply_background_pedestal(data, target=background_pedestal, mask_zeros=False)
+    data = corrected_normalized_pixels(
+        master.filename, mock_pixinsight, background_pedestal,
+    )
 
     header = pyfits.Header()
     header["IMAGETYP"] = "Post-processed Light"
