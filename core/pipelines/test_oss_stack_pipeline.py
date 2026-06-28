@@ -78,3 +78,13 @@ def test_oss_stack_pipeline_produces_master(test_context):
     # actual end-to-end check, not just a check of the upstream stacker.
     post = list(Path(context.output_dir).rglob("post_process_stack_oss/*.fits"))
     assert post, f"No OSS post-processed master under post_process_stack_oss/; found: {post}"
+
+    # The OSS post-process normalizes the raw-ADU stack to [0,1] and pedestals
+    # the sky to DEFAULT_PEDESTAL (0.005) — same representation as a PI master.
+    import numpy as np
+    from file_io.generic import read_image
+    from stacks.post_processing.background_pedestal import DEFAULT_PEDESTAL
+    pp = read_image(post[0]).astype(np.float32)
+    assert float(pp.max()) <= 2.0, f"OSS post master not [0,1]-normalized (max={pp.max()})"
+    sky = float(np.median(pp[pp <= np.quantile(pp, 0.25)]))
+    assert abs(sky - DEFAULT_PEDESTAL) < 1e-3, f"OSS post master sky={sky}, expected ~{DEFAULT_PEDESTAL}"

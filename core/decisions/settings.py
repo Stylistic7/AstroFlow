@@ -77,6 +77,14 @@ class ProcessingConfig:
     # place_image, which narrows the cache key to just this field — so
     # adding/changing it never touches stack_files etc. (see _StackKey).
     edge_erosion_px: int = 10
+    # Sky-background pedestal: every post-processed master's sky median is
+    # shifted to this common value (on the [0,1] normalized-master scale) so
+    # adjacent mosaic panels agree at their seams. A LINEAR black point, NOT a
+    # stretch-target background — see stacks/post_processing/background_pedestal.py
+    # (DEFAULT_PEDESTAL) for the rationale; keep the two in sync. Narrowed into
+    # the post_process_stack{,_oss} cache keys, so changing it re-derives only
+    # those masters, nothing upstream.
+    background_pedestal: float = 0.005
 
     def get_calibration_stacks(self):
         """Dereference calibration_stacks (may be a ContextRef or a plain dict)."""

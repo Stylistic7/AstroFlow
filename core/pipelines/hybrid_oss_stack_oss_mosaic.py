@@ -51,7 +51,8 @@ def _post_processed_master(stack, config):
     # post_process_stack, whose SPFC/MGC need flux-cal metadata the OSS FITS
     # master lacks. `mock_pixinsight=True` skips GraXpert in fast tests.
     return post_process_stack_oss(
-        stack, config.development_settings.mock_pixinsight, master,
+        stack, config.development_settings.mock_pixinsight,
+        config.background_pedestal, master,
     )
 
 

@@ -34,7 +34,7 @@ log = structlog.get_logger()
     auto_memory=True,
 )
 def post_process_stack_oss(
-    stack: Stack, mock_pixinsight: bool, master,
+    stack: Stack, mock_pixinsight: bool, background_pedestal: float, master,
 ) -> WithSidecar[FitsFilePath]:
     """GraXpert background-correct + plate-solve a stacked OSS master.
 
@@ -42,11 +42,16 @@ def post_process_stack_oss(
     flows into this op's call_hash via `filename_fn(*bound.args)`, so distinct
     upstream masters produce distinct output filenames automatically.
 
-    `mock_pixinsight=True` (fast tests) skips the heavy external GraXpert run and
-    passes the stacked data through with post-processed headers — keeping the
-    test suite free of the GraXpert install. Production runs GraXpert.
+    `background_pedestal` (from `config.background_pedestal`) is the common sky
+    level the master is shifted to; it's an explicit arg so changing it
+    re-derives this master. `mock_pixinsight=True` (fast tests) skips the heavy
+    external GraXpert run and passes the stacked data through with
+    post-processed headers — keeping the test suite free of the GraXpert
+    install. Production runs GraXpert.
     """
-    output_filename = post_process_stack_oss.filename_fn(stack, mock_pixinsight, master)
+    output_filename = post_process_stack_oss.filename_fn(
+        stack, mock_pixinsight, background_pedestal, master,
+    )
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
     log.info("OSS post-processing stack", stack=str(stack),
              master=str(master.filename), mock=mock_pixinsight)
@@ -68,6 +73,16 @@ def post_process_stack_oss(
     # downstream metadata/solve/merge see the same shape as the input.
     if data.ndim == 3 and data.shape[2] == 1:
         data = data[:, :, 0]
+
+    # Bring the raw-ADU OSS stack onto the same representation a PI master uses:
+    # normalize to the [0,1] convention (16-bit full scale), then equalize the
+    # sky to the common pedestal — so OSS and PI masters share a scale and a sky
+    # level, and the mosaic blend is seam-free either way. `mask_zeros=False`:
+    # this is a solid master (no panel boundary yet), and GraXpert leaves
+    # sub-zero sky pixels that must be shifted up, not read as an edge.
+    from stacks.post_processing.background_pedestal import apply_background_pedestal
+    data = (data / 65535.0).astype(np.float32)
+    data = apply_background_pedestal(data, target=background_pedestal, mask_zeros=False)
 
     header = pyfits.Header()
     header["IMAGETYP"] = "Post-processed Light"

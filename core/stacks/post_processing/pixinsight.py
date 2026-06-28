@@ -22,11 +22,14 @@ log = structlog.get_logger()
 
 
 def _post_process_narrow(args, kwargs):
-    """Cache-key hook: this op's only `config` dependency is the
-    `mock_pixinsight` flag, so project `config` to that bool (in its
-    arg slot). Keeps the key independent of unrelated config fields."""
+    """Cache-key hook: this op depends on `config` only through the
+    `mock_pixinsight` flag and the `background_pedestal` level, so project
+    `config` to that pair (in its arg slot). Keeps the key independent of
+    unrelated config fields while still re-deriving the master when the
+    pedestal changes."""
     stack, config, master = args
-    return (stack, config.development_settings.mock_pixinsight, master), kwargs
+    narrowed = (config.development_settings.mock_pixinsight, config.background_pedestal)
+    return (stack, narrowed, master), kwargs
 
 
 @node(
@@ -126,6 +129,8 @@ def post_process_stack(
         from stacks.post_processing.background_pedestal import (
             apply_background_pedestal_to_xisf,
         )
-        apply_background_pedestal_to_xisf(Path(output_filename))
+        apply_background_pedestal_to_xisf(
+            Path(output_filename), target=config.background_pedestal,
+        )
 
     return WithSidecar(XisfFilePath(output_filename))

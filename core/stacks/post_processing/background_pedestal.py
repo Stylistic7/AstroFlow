@@ -7,7 +7,7 @@ their physics is identical — and the resulting offset, placed
 adjacent in a mosaic, is the visible seam.
 
 This module's job: shift every panel's sky-background median to a
-common positive target value (default 0.1) so adjacent panels agree
+common positive target value (default 0.005) so adjacent panels agree
 on the baseline at any boundary they share. The pedestal step is
 strictly additive — the multiplicative photometric ratio between
 panels is preserved exactly, leaving PMM's star-based scaling free
@@ -47,30 +47,43 @@ import numpy as np
 # benefit on a typical field.
 _SKY_QUANTILE = 0.25
 
-# Default pedestal level: low enough that even a 10× brighter star
-# patch won't clip at the 1.0 ceiling of a normalized master; high
-# enough that downstream additive operations stay safely positive.
-# Landmann §8.1 ("output pedestal") uses the same convention for the
-# same reason in the earlier calibration stage.
-DEFAULT_PEDESTAL = 0.1
+# Default pedestal level, on the [0,1] normalized-master scale. Kept near a
+# true LINEAR black point, so the sky lands where stretches (GHS/STF/arcsinh)
+# and the ML tools (StarXTerminator, BlurXTerminator) expect it. This is NOT a
+# stretch-target background — 0.1–0.25 is the FINISHED-(stretched-)image
+# convention and is ~10–50× too high for linear data, which lifts the
+# background under any stretch and forces a razor-exact symmetry point. Still
+# safely above zero: measured deep masters have sky-noise σ ≈ 2.5e-5, so 0.005
+# sits ~200 σ above 0 and clips no noise. Matches the linear "output pedestal"
+# convention (Landmann: a few hundred DN, ≤ 1000 DN ≈ 0.015 normalized).
+DEFAULT_PEDESTAL = 0.005
 
 
 def apply_background_pedestal(
     image: np.ndarray, target: float = DEFAULT_PEDESTAL,
+    mask_zeros: bool = True,
 ) -> np.ndarray:
     """Return `image` shifted so its sky-pixel median equals `target`.
 
-    The shift is additive on the non-zero ("valid panel") pixels. Zero
-    pixels stay zero so the panel's mask geometry is preserved.
+    The shift is additive. With `mask_zeros=True` (default) it acts only on the
+    non-zero ("valid panel") pixels and zeros stay zero, preserving a placed
+    panel's boundary geometry. Set `mask_zeros=False` for a SOLID master that
+    isn't placed yet (e.g. the OSS GraXpert path, whose background-subtracted
+    sky has sub-zero pixels): then every pixel is shifted — sub-zero sky is
+    lifted up rather than read as boundary — and the result is clamped to a
+    tiny positive so nothing downstream (`img > 0`) mistakes it for an edge.
 
     `image` is treated as read-only; the returned array is a new
     allocation.
     """
     if image.size == 0:
         return image
-    mask = image > 0
-    if not mask.any():
-        return image
+    if mask_zeros:
+        mask = image > 0
+        if not mask.any():
+            return image
+    else:
+        mask = np.ones(image.shape, dtype=bool)
     panel = image[mask]
 
     # Sky-only median via lower-quantile cut: stars and nebulosity sit
