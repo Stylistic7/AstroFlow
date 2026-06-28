@@ -56,11 +56,15 @@ def StarAlignment(images: list[Image], **kwargs: Any) -> list[Image]:
 
     js = execute_global("StarAlignment", parameters)
 
-    # Rename reference view to match the '_aligned' suffix convention
-    js += "\n" + _RENAME_JS.format(
-        old_id=reference.view_id,
-        new_id=reference.view_id + "_aligned",
-    )
+    # Normalize output view ids to the "_aligned" suffix this wrapper returns.
+    # StarAlignment (verified on PI 1.9.4) leaves the reference view untouched
+    # and names each registered target "<id>_registered" — NOT "_r" (that is
+    # the file-output postfix) and NOT "_aligned". So rename the reference, and
+    # rename each registered target from "_registered" to "_aligned".
+    renames = [(reference.view_id, reference.view_id + "_aligned")]
+    renames += [(t.view_id + "_registered", t.view_id + "_aligned") for t in targets]
+    for old_id, new_id in renames:
+        js += "\n" + _RENAME_JS.format(old_id=old_id, new_id=new_id)
 
     recipe.add_step(Step(javascript=js, name="StarAlignment"))
 

@@ -59,6 +59,13 @@ class PixInsightNoReferenceDataError(PixInsightError):
 _NO_REFERENCE_DATA_MARKER = "No reference data found for filter"
 
 
+# Marker the generated recipe body prints from its catch block when any step
+# throws (see `to_javascript`). `_check_recipe_error` turns it into a
+# PixInsightError so a thrown step fails loudly with its real message instead
+# of a downstream "output view not found".
+_RECIPE_ERROR_MARKER = "ASTROFLOW_RECIPE_ERROR: "
+
+
 # PixInsight 1.9.4 replaced the SpiderMonkey ('sm') JavaScript engine with
 # V8 (PJSR 2.0); on Apple Silicon there is no 'sm' fallback. A script run via
 # the console `run -x` command must declare its engine with a `#engine`
@@ -180,6 +187,12 @@ class Recipe:
 
         lines = []
         lines.append('console.beginLog();')
+        # Run the whole body inside try/catch so a throw in any step (e.g. an
+        # uncaught process error, or our own executeGlobal guards) still reaches
+        # the log-capture below. Without this the log file is never written on a
+        # throw, and the real PixInsight error is lost — the failure then
+        # surfaces downstream as a confusing "output view not found" instead.
+        lines.append('try {')
         lines.append('')
 
         # Open input images
@@ -206,7 +219,11 @@ class Recipe:
         lines.append(generate_save_images_js(save_targets))
         lines.append('')
 
-        # Capture console log
+        # Surface a caught throw via a marker `_check_recipe_error` looks for,
+        # then always capture the console log (even on failure).
+        lines.append('} catch (__recipe_err) {')
+        lines.append(f'   console.criticalln("{_RECIPE_ERROR_MARKER}" + __recipe_err.toString());')
+        lines.append('}')
         lines.append(
             f'File.writeTextFile("{log_file}", console.endLog().toString());'
         )
@@ -378,11 +395,23 @@ class Recipe:
             if line.lstrip().startswith("*** Error:"):
                 raise PixInsightError(line.strip())
 
+    def _check_recipe_error(self) -> None:
+        """A step threw and the recipe body's catch block logged the marker.
+        Raise with the real message — this is NOT exempted by success_pattern
+        (a thrown step is a hard failure, e.g. our HDRComposition executeGlobal
+        guard), so it always surfaces instead of a later null-view cascade."""
+        if not self.log or _RECIPE_ERROR_MARKER not in self.log:
+            return
+        msg = self.log.split(_RECIPE_ERROR_MARKER, 1)[1].splitlines()[0].strip()
+        raise PixInsightError(f"recipe step threw: {msg}")
+
     def _check_for_errors(self) -> None:
-        """Check PixInsight console log for failures — first the universal
-        SpiderMonkey->V8 migration marker, then the no-reference-data marker,
-        then the universal `*** Error:` catch-all (all any task), then each
-        step's own error/success patterns."""
+        """Check PixInsight console log for failures — first a thrown step
+        (recipe catch-block marker), then the universal SpiderMonkey->V8
+        migration marker, the no-reference-data marker, the universal
+        `*** Error:` catch-all (all any task), then each step's own
+        error/success patterns."""
+        self._check_recipe_error()
         self._check_legacy_engine()
         self._check_no_reference_data()
         self._check_script_errors()
