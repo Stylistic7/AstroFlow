@@ -8,8 +8,10 @@ covered only the numerical helpers on synthetic arrays; this covers the whole
 op as the graph actually invokes it, including the `_after` cal-ordering wiring.
 
 PixInsight is mocked (`test_context` defaults to `mock_pixinsight=True`), so the
-OSS stacker (`stack_files_oss`, pure NumPy) runs for REAL while the downstream PI
-`post_process_stack` is stubbed — keeping the test focused on the OSS stacker.
+OSS stacker (`stack_files_oss`, pure NumPy) runs for REAL while the downstream OSS
+post-processing (`post_process_stack_oss`) takes its mock path — passing the
+stacked data through with post-processed headers + a real plate-solve, but
+skipping the external GraXpert run, so the test needs no GraXpert install.
 """
 import datetime
 from pathlib import Path
@@ -69,3 +71,10 @@ def test_oss_stack_pipeline_produces_master(test_context):
     # The OSS stacker writes a full-resolution FITS master under stack_files_oss/.
     masters = list(Path(context.output_dir).rglob("stack_files_oss/*.fits"))
     assert masters, f"No OSS master produced under stack_files_oss/; found: {masters}"
+
+    # The swapped-in OSS post-processing (GraXpert path skipped under
+    # mock_pixinsight) must also produce a post-processed master — this is what
+    # makes the pipeline swap (post_process_stack → post_process_stack_oss) an
+    # actual end-to-end check, not just a check of the upstream stacker.
+    post = list(Path(context.output_dir).rglob("post_process_stack_oss/*.fits"))
+    assert post, f"No OSS post-processed master under post_process_stack_oss/; found: {post}"

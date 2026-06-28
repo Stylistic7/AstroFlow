@@ -1,11 +1,12 @@
 """Hybrid pipeline: OSS stacking + OSS mosaic merging.
 
-Identical to `hybrid_pi_oss_mosaic.py` EXCEPT the stack-level master is
-produced by the OSS stacker (`stack_files_oss`) instead of WBPP
-(`stack_files`). Everything downstream — PI per-target HDR channel
-combine (`merge_target_channel`), PI post-processing (`post_process_stack`),
-OSS distance-weighted mosaic blend (`merge_images_oss`) — is unchanged,
-so the ONLY variable vs "Hybrid: PI Master + OSS Mosaic" is the stacker.
+Like `hybrid_pi_oss_mosaic.py` but the stack-level master is produced by the
+OSS stacker (`stack_files_oss`) instead of WBPP (`stack_files`), AND post-
+processed by the OSS path (`post_process_stack_oss` — GraXpert background
+correction + solve) instead of PI's `post_process_stack` (whose SPFC/MGC need
+flux-cal metadata the OSS FITS master doesn't carry). Per-target HDR channel
+combine (`merge_target_channel`) and the OSS distance-weighted mosaic blend
+(`merge_images_oss`) are unchanged.
 That makes the per-stack "Master" tap a direct, apples-to-apples quality
 comparison: OSS stacking vs WBPP, with everything else held constant.
 
@@ -23,7 +24,7 @@ from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
 from stacks.calibration_selection import calibration_stacks_for
 from stacks.composite_stack import Stack
-from stacks.post_processing.pixinsight import post_process_stack
+from stacks.post_processing.oss import post_process_stack_oss
 from stacks.stacking.oss import stack_files_oss
 from targets.merging.pixinsight import merge_target_channel
 from targets.types import Target
@@ -46,7 +47,12 @@ def _post_processed_master(stack, config):
     for cs in calibration_stacks_for(stack, config):
         cal_masters.append(stack_files_oss(cs, config, _after=tuple(cal_masters)))
     master = stack_files_oss(stack, config, _after=tuple(cal_masters))
-    return post_process_stack(stack, config, master)
+    # OSS post-processing (GraXpert background correction + solve) — NOT PI's
+    # post_process_stack, whose SPFC/MGC need flux-cal metadata the OSS FITS
+    # master lacks. `mock_pixinsight=True` skips GraXpert in fast tests.
+    return post_process_stack_oss(
+        stack, config.development_settings.mock_pixinsight, master,
+    )
 
 
 @workflow_group
