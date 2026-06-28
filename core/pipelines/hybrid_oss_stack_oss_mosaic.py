@@ -19,6 +19,7 @@ once they are all on disk.
 """
 from astroflow.pipeline import ephemeral_intermediates, pipeline
 from dependency_graph.tracing import workflow_group
+from mosaics.color.post_process import color_post_process
 from mosaics.merging.oss import merge_images_oss
 from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
@@ -83,11 +84,14 @@ def for_target(target, config):
 
 @pipeline(_NAME, processes=Mosaic)
 def for_mosaic(mosaic, config):
-    """Build a mosaic with OSS-stacked panels + OSS panel-blending.
+    """Build a mosaic with OSS-stacked panels + OSS panel-blending, then turn
+    the per-filter channels into named color images.
 
-    Returns `{filter: store_handle}`. Same topology as the PI hybrid —
-    place each panel into the mosaic viewbox, then one variadic OSS
-    distance-weighted blend per filter — just fed by OSS-stacked masters.
+    Returns `{filter: channel_handle, name: color_handle}` — the merged
+    per-filter channels (display="Mosaic") PLUS the color deliverables
+    ("Hubble"/"Foraxx"/"Stars") from `color_post_process`. Same channel
+    topology as the PI hybrid (place each panel, then one variadic OSS blend
+    per filter), now continued into color post-processing.
     """
     targets_by_id = {t.id: t for t in mosaic.targets}
 
@@ -111,4 +115,5 @@ def for_mosaic(mosaic, config):
                 continue
             out[filter] = merge_images_oss(mosaic, filter, *placed)
 
-    return out
+    color = color_post_process(mosaic, out, config)
+    return {**out, **color}
