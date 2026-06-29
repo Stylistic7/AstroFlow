@@ -209,6 +209,14 @@ class _Node:
         # `plate_solve=False`. Calibration masters need no opt-out: the solver
         # skips bias/dark/flat by IMAGETYP (so the shared stacker is untouched).
         plate_solve = ray_opts.pop("plate_solve", True)
+        # The kind of frame this op emits, stamped into the output's IMAGETYP
+        # header — but only when the body didn't already write one (so the
+        # shared stacker's calibration masters keep "Master Dark" etc.). The
+        # default "light" makes `is_light_frame` uniformly true for produced
+        # images. Orthogonal to `plate_solve`: a reprojected mosaic is a light
+        # frame we nonetheless can't solve (non-square pixels), so it keeps
+        # image_type="light" yet sets plate_solve=False.
+        image_type = ray_opts.pop("image_type", "light")
 
         # A `final=True` op is a deliverable, and a deliverable is always
         # user-facing (shown + openable). So `final` requires an explicit,
@@ -276,6 +284,7 @@ class _Node:
                 # ephemeral `display=` op still builds its TIFF; the ephemeral
                 # cleanup deletes the whole atom — primary + TIFF — together.)
                 makes_tiff=display is not None,
+                image_type=image_type,
             )
             wrapped = _metadata_wrap(wrapped, plate_solve=plate_solve)
 

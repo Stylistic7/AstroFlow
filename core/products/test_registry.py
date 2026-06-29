@@ -78,3 +78,67 @@ def test_final_requires_display():
     def _ok(stack) -> WithSidecar[XisfFilePath]:
         ...
     assert _ok._final is True and _ok._display == "Master"
+
+
+# --- image_type stamping (IMAGETYP) on producer outputs --------------
+
+def _write_fits(path, header=None):
+    import astropy.io.fits as pyfits
+    import numpy as np
+    hdu = pyfits.PrimaryHDU(np.zeros((4, 4), dtype=np.float32))
+    for k, v in (header or {}).items():
+        hdu.header[k] = v
+    hdu.writeto(path, overwrite=True)
+
+
+def test_stamp_header_adds_imagetyp_and_content_hash(tmp_path):
+    """`_stamp_header` writes CONTHASH=call_hash and, by default,
+    IMAGETYP=light into a produced file that declares no type — so
+    `is_light_frame` is uniformly true for produced images."""
+    from products.registry import _stamp_header
+    from file_io.generic import read_header
+    from file_io.types import FitsFilePath
+
+    p = FitsFilePath(tmp_path / "out.fits")
+    _write_fits(p)
+    _stamp_header(p, "deadbeef", "light")
+
+    header = read_header(p)
+    assert header.get("CONTHASH") == "deadbeef"
+    assert str(header.get("IMAGETYP")).lower() == "light"
+
+
+def test_stamp_header_does_not_clobber_existing_imagetyp(tmp_path):
+    """The shared stacker writes its own IMAGETYP ("Master Dark" etc.) in
+    the body; `_stamp_header` must preserve it — only the content hash is
+    added. This is what keeps the calibration carve-out working without
+    touching stack_files."""
+    from products.registry import _stamp_header
+    from file_io.generic import read_header
+    from file_io.types import FitsFilePath
+
+    p = FitsFilePath(tmp_path / "master_dark.fits")
+    _write_fits(p, {"IMAGETYP": "Master Dark"})
+    _stamp_header(p, "cafe", "light")
+
+    header = read_header(p)
+    assert header.get("CONTHASH") == "cafe"
+    # read_fits_header lowercases header values; the point is the body's
+    # "Master Dark" survived (not overwritten by the default "light").
+    assert str(header.get("IMAGETYP")).lower() == "master dark"  # not clobbered
+
+
+def test_stamp_header_image_type_none_skips_imagetyp(tmp_path):
+    """`image_type=None` disables the IMAGETYP stamp entirely; only the
+    content hash is written."""
+    from products.registry import _stamp_header
+    from file_io.generic import read_header
+    from file_io.types import FitsFilePath
+
+    p = FitsFilePath(tmp_path / "untyped.fits")
+    _write_fits(p)
+    _stamp_header(p, "f00d", None)
+
+    header = read_header(p)
+    assert header.get("CONTHASH") == "f00d"
+    assert header.get("IMAGETYP") is None

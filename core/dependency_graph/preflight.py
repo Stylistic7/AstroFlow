@@ -4,7 +4,7 @@ The whole runtime is a pure function of literal pipeline args because every
 `@node(identity=...)` op is content-addressed:
 
 * filename is `f(call_hash)` (`build_filename_fns`),
-* `_stamp_content_hash` stamps `CONTHASH = call_hash` into the file header,
+* `_stamp_header` stamps `CONTHASH = call_hash` into the file header,
 * `_maybe_use_content_hash` substitutes the CONTHASH for downstream call_hash
   computations.
 

@@ -229,12 +229,13 @@ def makes_image_wrap(
     *,
     canonical_call_hash: Callable,
     makes_tiff: bool = True,
+    image_type: str | None = "light",
 ) -> Callable:
     """Wrap `func` so that after a successful call:
 
-      1. The result file's `content_hash` header is stamped with
-         `canonical_call_hash(*args)` — the canonical call_hash for
-         this invocation.
+      1. The result file's native header is stamped: `content_hash` =
+         `canonical_call_hash(*args)` always, plus `IMAGETYP` = `image_type`
+         when the op declares one and the body didn't already set IMAGETYP.
       2. If `makes_tiff` (the op has `display=`), the tile-pyramid TIFF
          sibling is generated — the web-openable co-representation of the
          primary. Non-display intermediates skip it (no tap, not shown).
@@ -250,7 +251,7 @@ def makes_image_wrap(
         if result is None:
             return result
         call_hash = canonical_call_hash(*args, **kwargs)
-        _stamp_content_hash(result, call_hash)
+        _stamp_header(result, call_hash, image_type)
         if makes_tiff:
             _generate_presentations(func, result, args, kwargs)
         return result
@@ -258,19 +259,31 @@ def makes_image_wrap(
     return wrapped
 
 
-def _stamp_content_hash(result: Any, call_hash: str) -> None:
-    """Stamp `call_hash` into the result file's native header as
-    `content_hash`. Skips non-file results silently. Swallows write
-    errors — the system still works if the header write fails (the next
-    `get_content_hash` falls back to `hash_of_image_data`)."""
+def _stamp_header(result: Any, call_hash: str, image_type: str | None) -> None:
+    """Stamp the result file's native header in a single write:
+
+      * `content_hash` (CONTHASH) = `call_hash` — always.
+      * `IMAGETYP` = `image_type` — only when the op declares one AND the
+        body didn't already set IMAGETYP. The "don't clobber" rule lets the
+        shared stacker keep its calibration types ("Master Dark" etc.) while
+        every other producer defaults to a light frame, so `is_light_frame`
+        is uniformly correct for produced images.
+
+    One write, not two: `update_xisf_header` rewrites the whole file, so
+    folding both keys into a single `update_header` avoids a redundant
+    full-file rewrite. Skips non-file results silently; swallows write
+    errors (the next `get_content_hash` falls back to `hash_of_image_data`)."""
     target = result
     if isinstance(target, WithSidecar):
         target = target.path
     if not isinstance(target, Path):
         return
     try:
-        from file_io.generic import set_content_hash
-        set_content_hash(target, call_hash)
+        from file_io.generic import read_header, update_header, _CONTENT_HASH_KEY
+        updates: dict[str, Any] = {_CONTENT_HASH_KEY: call_hash}
+        if image_type is not None and not read_header(target).get("IMAGETYP"):
+            updates["IMAGETYP"] = image_type
+        update_header(target, updates)
     except (OSError, ValueError):
         pass
 

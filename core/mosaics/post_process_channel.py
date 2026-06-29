@@ -17,9 +17,9 @@ carries `final=True` and the displayed `"Mosaic"` tap.
 
 Why GradientCorrection (data-driven) and NOT MGC here, unlike
 `post_process_stack`: the assembled mosaic produced by `merge_images` has
-NO plate solution (only `IMAGETYP=light` frames are solve-field'd by
-`compute_image_metadata`; the merged stitch isn't tagged as one), and
-MGC/SPFC both require a WCS (MARS lookup + catalog star matching by sky
+NO plate solution (its producer sets `plate_solve=False` — a reprojected
+stitch has non-square pixels and can't be solve-field'd), and MGC/SPFC
+both require a WCS (MARS lookup + catalog star matching by sky
 coordinates). The MARS correction has already been applied per panel; the
 only thing left for this terminal pass is to remove the *accumulated*
 residual, for which data-driven GradientCorrection (the modern DBE

@@ -10,7 +10,6 @@ from typing import Any
 from file_io.sidecar import get_section, set_section, get_file_size, sidecar_path_for
 from metadata.classes import ImageMetadata, ImageStatistics
 import plate_solving
-import metadata.image_types as image_types
 
 
 def _statistics_to_obj(stats: ImageStatistics) -> dict[str, Any]:
@@ -112,13 +111,18 @@ def image_metadata_from_obj(
     obj: dict[str, Any], filename: Path
 ) -> ImageMetadata:
     """Reconstruct ImageMetadata from a sidecar dict."""
-    # Load plate solution from the same sidecar file (not via solve_field,
-    # which would redundantly re-read the sidecar or worse, re-run the solver).
+    # Restore the plate solution from the same sidecar file (not via
+    # solve_field, which would redundantly re-read the sidecar or worse,
+    # re-run the solver) whenever one was persisted — gated ONLY on its
+    # existence, never on frame type. Solving (`@node(plate_solve=)`) and
+    # frame type (`image_type`/IMAGETYP) are orthogonal axes: a reprojected
+    # mosaic is a light frame with NO solution; a solved master carries one
+    # regardless of how it's typed. Inferring "has a solution" from
+    # `is_light_frame` dropped solutions on produced non-light frames.
     plate_solution = None
-    if image_types.is_light_frame(obj["header"]):
-        ps_obj = get_section(filename, "plate_solution")
-        if isinstance(ps_obj, dict) and ps_obj.get("data") is not None:
-            plate_solution = plate_solving._plate_solution_from_obj(ps_obj)
+    ps_obj = get_section(filename, "plate_solution")
+    if isinstance(ps_obj, dict) and ps_obj.get("data") is not None:
+        plate_solution = plate_solving._plate_solution_from_obj(ps_obj)
 
     content_hash = obj["content_hash"]
 

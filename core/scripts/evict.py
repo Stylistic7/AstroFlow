@@ -23,6 +23,39 @@ def matches(big_tuple, pattern):
     return all(p == "*" or p == b for p, b in zip(pattern, big_tuple))
 
 
+def _file_call_hash(path):
+    """The call_hash portion of an output filename: the name up to the
+    first dot. `<hash>.xisf`, `<hash>.xisf.json` (sidecar) and
+    `<hash>.tiff` (tile pyramid) all share call_hash `<hash>`."""
+    return path.name.split(".", 1)[0]
+
+
+def _output_files_to_delete(output_dir, delete_prefixes, should_delete):
+    """On-disk artifacts (primary + .tiff pyramid + .json sidecar) under
+    each op directory named by a `--delete` pattern, whose synthesized
+    (op_name, call_hash) key matches `should_delete`.
+
+    A node's output lives at `<output_dir>/<op_name>/<call_hash>.<ext>`
+    (+ siblings), so the op_name is a pattern's first element and the
+    call_hash is read back off the filename. This walks the filesystem,
+    NOT the cache — it still cleans stale outputs after the cache entry
+    is already gone. Only meaningful with `--delete` (a `--delete`
+    pattern names the op directory); `--keep` patterns don't."""
+    from pathlib import Path
+    if output_dir is None:
+        return []
+    out = []
+    op_names = {p[0] for p in delete_prefixes if p and p[0] != "*"}
+    for op_name in op_names:
+        op_dir = Path(output_dir) / op_name
+        if not op_dir.is_dir():
+            continue
+        for f in op_dir.iterdir():
+            if f.is_file() and should_delete((op_name, _file_call_hash(f))):
+                out.append(f)
+    return out
+
+
 def main():
     parser = argparse.ArgumentParser(
         description=(
@@ -44,6 +77,17 @@ def main():
     )
     parser.add_argument(
         "--confirm", action="store_true", help="Actually perform deletions."
+    )
+    parser.add_argument(
+        "--delete-outputs",
+        action="store_true",
+        help=(
+            "Also remove each matched op's on-disk output file(s) + .tiff "
+            "pyramid + .json sidecar under output_dir, not just the cache "
+            "entry. Works off the filesystem, so it still cleans stale "
+            "outputs after the cache entry is gone. Only meaningful with "
+            "--delete (a pattern names the op directory)."
+        ),
     )
     parser.add_argument(
         "--cache-dir",
@@ -74,6 +118,14 @@ def main():
         if should_delete(key)
     ]
 
+    # On-disk output artifacts to remove (only with --delete-outputs).
+    file_targets = []
+    if args.delete_outputs:
+        from context import local_context
+        file_targets = _output_files_to_delete(
+            local_context.output_dir, delete_prefixes, should_delete,
+        )
+
     action = (
         f"Keeping keys starting with: {keep_prefixes}"
         if keep_prefixes
@@ -88,6 +140,15 @@ def main():
     for _store, key in targets:
         print(f"  - {key}")
 
+    if args.delete_outputs:
+        print(
+            f"\n{'Would delete' if not args.confirm else 'Deleting'} "
+            f"{len(file_targets)} on-disk output files (primary + pyramid + "
+            f"sidecar):\n"
+        )
+        for path in file_targets:
+            print(f"  - {path}")
+
     if not args.confirm:
         print("\nDry-run only. Use `--confirm` to actually delete.")
     else:
@@ -96,6 +157,11 @@ def main():
                 del store[key]
             except KeyError:
                 print(f"⚠️  Key not found during deletion: {key}")
+        for path in file_targets:
+            try:
+                path.unlink()
+            except OSError as e:
+                print(f"⚠️  Failed to unlink {path}: {e}")
         print("\nDeletion complete.")
 
 
