@@ -126,7 +126,7 @@ def _blend_many(paths: list[Path]) -> np.ndarray:
     return numer / denom
 
 
-@node(display="Mosaic", final=True, auto_memory=True)
+@node(display="Mosaic", final=True, auto_memory=True, plate_solve=False)  # mosaic projection — non-square pixels
 def merge_images_oss(
     mosaic: Mosaic, filter: str, *inputs: ImageMetadata,
 ) -> WithSidecar[FitsFilePath]:

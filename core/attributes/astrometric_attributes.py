@@ -146,7 +146,7 @@ class AstrometricAttributes:
         for m in sorted_metadata:
             assert m.plate_solution is not None, (
                 f"AstrometricAttributes.from_frames requires plate solutions; "
-                f"{m.filename} has none (DONTSOLV?)"
+                f"{m.filename} has none (plate-solve failed?)"
             )
 
         center_raw = spherical_centroid_deg(

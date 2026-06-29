@@ -183,6 +183,7 @@ def _place_image_narrow(args, kwargs):
 @node(
     cache_key_narrow=_place_image_narrow,
     auto_memory=True,
+    plate_solve=False,  # reprojected into the mosaic viewbox (Mercator-like) — non-square pixels, can't solve
 )
 def place_image(
     mosaic: Mosaic, target: Target, filter: str, viewbox: Viewbox,
@@ -201,8 +202,9 @@ def place_image(
     Takes the whole `config`; the cache key is narrowed to just
     `edge_erosion_px` (the only field this op depends on)."""
     assert image_metadata.plate_solution is not None, (
-        f"place_image requires a plate solution on {image_metadata.filename}; "
-        "DONTSOLV synthetic frames cannot be placed."
+        f"place_image requires a plate solution on {image_metadata.filename}, "
+        "but it has none. Its producer must plate-solve (the default); only "
+        "ops with no solvable star field set plate_solve=False."
     )
     log.info("Placing image", mosaic=str(mosaic), target=str(target),
              filter=filter, filename=image_metadata.filename, viewbox=str(viewbox))

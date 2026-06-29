@@ -125,6 +125,7 @@ class DuplicateFileException(Exception):
 @node(num_cpus=0.25)
 def compute_image_metadata(
     filename: os.PathLike,
+    plate_solve: bool | None = None,
 ) -> ImageMetadata:
     log.info("Computing image metadata", filename=str(filename))
 
@@ -169,13 +170,29 @@ def compute_image_metadata(
     # stay a string identifier (else downstream str-keyed lookups KeyError).
     stable_hash = str(header.get("STBLHASH", content_hash))
 
-    if image_types.is_light_frame(header):
+    # `plate_solve` decides whether to solve:
+    #   None  → raw-frame path (identification): solve lights, by IMAGETYP.
+    #   bool  → produced-image path (the op's `@node(plate_solve=...)`): solve
+    #           when asked, but NEVER a calibration master (bias/dark/flat have
+    #           no star field). Calibration is recognized by its IMAGETYP, so a
+    #           default of True is safe for the shared stacker without editing it.
+    if plate_solve is None:
+        should_solve = image_types.is_light_frame(header)
+    else:
+        is_calibration = (
+            image_types.is_bias_frame(header)
+            or image_types.is_dark_frame(header)
+            or image_types.is_flat_frame(header)
+        )
+        should_solve = plate_solve and not is_calibration
+
+    if should_solve:
         plate_solution = plate_solving.solve_field(filename)
         # DONTSOLV synthetic frames legitimately return None; everything
         # else must solve.
         if plate_solution is None and not header.get("DONTSOLV"):
             raise plate_solving.PlateSolveFailedException(
-                f"Failed to plate-solve light frame: {filename}"
+                f"Failed to plate-solve: {filename}"
             )
     else:
         plate_solution = None

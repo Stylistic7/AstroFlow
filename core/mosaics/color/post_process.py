@@ -63,7 +63,7 @@ def _write_color_tiff(path: str, rgb: np.ndarray, name: str) -> None:
 
 # ---- per-channel intermediates (no display=; ephemeral) ----
 
-@node(auto_memory=True)
+@node(auto_memory=True, plate_solve=False)  # derived from an already-solved channel
 def bxt_correct(
     mosaic: Mosaic, filter: str, mock_pixinsight: bool, channel: ImageMetadata,
 ) -> WithSidecar[FitsFilePath]:
@@ -78,7 +78,7 @@ def bxt_correct(
     return WithSidecar(FitsFilePath(out))
 
 
-@node(auto_memory=True)
+@node(auto_memory=True, plate_solve=False)  # starless: no stars to solve against
 def sxt_starless(
     mosaic: Mosaic, filter: str, mock_pixinsight: bool, channel: ImageMetadata,
 ) -> WithSidecar[FitsFilePath]:
@@ -93,7 +93,7 @@ def sxt_starless(
     return WithSidecar(FitsFilePath(out))
 
 
-@node(auto_memory=True)
+@node(auto_memory=True, plate_solve=False)  # derived from an already-solved channel
 def sxt_stars(
     mosaic: Mosaic, filter: str, mock_pixinsight: bool, channel: ImageMetadata,
 ) -> WithSidecar[FitsFilePath]:
@@ -109,7 +109,7 @@ def sxt_stars(
     return WithSidecar(FitsFilePath(out))
 
 
-@node(auto_memory=True)
+@node(auto_memory=True, plate_solve=False)  # nonlinear stretch of an already-solved channel
 def autostretch_channel(
     mosaic: Mosaic, filter: str, channel: ImageMetadata,
 ) -> WithSidecar[FitsFilePath]:
@@ -122,7 +122,7 @@ def autostretch_channel(
 
 # ---- named color deliverables (display=name, filter=None, final=True) ----
 
-@node(display="Stars", final=True, auto_memory=True)
+@node(display="Stars", final=True, auto_memory=True, plate_solve=False)  # 3-channel color
 def combine_star_rgb(
     mosaic: Mosaic, r: ImageMetadata, g: ImageMetadata, b: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
@@ -140,7 +140,7 @@ def _palette_image(out, combine, sii, ha, oiii, stars, name):
     _write_color_tiff(out, rgb, name)
 
 
-@node(display="Hubble", final=True, auto_memory=True)
+@node(display="Hubble", final=True, auto_memory=True, plate_solve=False)  # 3-channel color
 def hubble_image(
     mosaic: Mosaic, sii: ImageMetadata, ha: ImageMetadata, oiii: ImageMetadata, stars,
 ) -> WithSidecar[TiffFilePath]:
@@ -151,7 +151,7 @@ def hubble_image(
     return WithSidecar(TiffFilePath(out))
 
 
-@node(display="Foraxx", final=True, auto_memory=True)
+@node(display="Foraxx", final=True, auto_memory=True, plate_solve=False)  # 3-channel color
 def foraxx_image(
     mosaic: Mosaic, sii: ImageMetadata, ha: ImageMetadata, oiii: ImageMetadata, stars,
 ) -> WithSidecar[TiffFilePath]:

@@ -92,6 +92,7 @@ def _post_process_channel_narrow(args, kwargs):
     cache_key_narrow=_post_process_channel_narrow,
     resources={"PixInsight": 1},
     auto_memory=True,
+    plate_solve=False,  # full mosaic projection — non-square pixels, can't solve
 )
 def post_process_mosaic_color_channel(
     mosaic: Mosaic, filter: str, config: ProcessingConfig,

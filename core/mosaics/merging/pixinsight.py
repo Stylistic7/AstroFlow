@@ -54,6 +54,7 @@ def _blend_pair_numpy(image_0, image_1):
 @node(
     display="Merged",
     resources={"fastest_storage": 0.001},
+    plate_solve=False,  # mosaic projection — non-square pixels, can't solve
 )
 def merge_images_subframe(
     mosaic: Mosaic, filter: str, *inputs,
@@ -183,6 +184,7 @@ def _merge_images_narrow(args, kwargs):
     cache_key_narrow=_merge_images_narrow,
     resources={"PixInsight": 1},
     auto_memory=True,
+    plate_solve=False,  # mosaic projection — non-square pixels, can't solve
 )
 def merge_images(
     mosaic: Mosaic, filter: str, config: ProcessingConfig,

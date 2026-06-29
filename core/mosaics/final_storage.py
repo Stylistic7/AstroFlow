@@ -15,6 +15,7 @@ from metadata.classes import ImageMetadata
     display="Subframe",
     final=True,
     resources={"fastest_storage": 0.001},
+    plate_solve=False,  # 8-bit autostretched preview — not a linear star field
 )
 def store_mosaic_color_channel_subframe(
     mosaic: Mosaic, filter: str, input: ImageMetadata,

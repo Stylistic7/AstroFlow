@@ -93,9 +93,16 @@ def _looks_like_file_return(func) -> bool:
     return False
 
 
-def _metadata_wrap(func):
+def _metadata_wrap(func, plate_solve=True):
     """Run `func`, then synchronously extract image metadata from its
     return value and yield the resulting `ImageMetadata` to callers.
+
+    `plate_solve` (from the `@node(plate_solve=...)` declaration, default
+    True) is forwarded to `compute_image_metadata`: every produced image
+    is plate-solved anew unless the op opts out (e.g. starless or color
+    composites with no solvable star field). Calibration masters are never
+    solved regardless — `compute_image_metadata` skips bias/dark/flat by
+    their IMAGETYP, so the shared stacker needs no special-casing.
 
     Folds the `compute_image_metadata` step into every
     `@node(identity=...)` producer in place of the trace-time chain-
@@ -115,7 +122,7 @@ def _metadata_wrap(func):
     def wrapper(*args, **kwargs):
         result = func(*args, **kwargs)
         from metadata.image_metadata import compute_image_metadata
-        return compute_image_metadata._function(result)
+        return compute_image_metadata._function(result, plate_solve=plate_solve)
 
     # `functools.wraps` copies the wrapped function's `__annotations__`,
     # including its `WithSidecar[...]` return annotation. After this
@@ -196,6 +203,12 @@ class _Node:
         display = ray_opts.pop("display", None)
         custom_filename_fn = ray_opts.pop("filename_fn", None)
         cache_key_narrow = ray_opts.pop("cache_key_narrow", None)
+        # Plate-solve every produced image by default (amateur pipelines lean
+        # on the solution being present). Ops whose output has no solvable star
+        # field — starless bodies, color composites — opt out with
+        # `plate_solve=False`. Calibration masters need no opt-out: the solver
+        # skips bias/dark/flat by IMAGETYP (so the shared stacker is untouched).
+        plate_solve = ray_opts.pop("plate_solve", True)
 
         # A `final=True` op is a deliverable, and a deliverable is always
         # user-facing (shown + openable). So `final` requires an explicit,
@@ -264,7 +277,7 @@ class _Node:
                 # cleanup deletes the whole atom — primary + TIFF — together.)
                 makes_tiff=display is not None,
             )
-            wrapped = _metadata_wrap(wrapped)
+            wrapped = _metadata_wrap(wrapped, plate_solve=plate_solve)
 
         wrapped = capture_logs(wrapped, cache_key_narrow=cache_key_narrow)
         wrapped = measure_performance(wrapped, ray_opts=ray_opts)
