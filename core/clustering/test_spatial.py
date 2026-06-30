@@ -48,7 +48,10 @@ def test_one_perfect_group(test_context) -> None:
     groups = captured[_run_cluster]
 
     metadata = context.get_matching(("compute_image_metadata",))
-    image_hashes = [m.content_hash for m in metadata.values()]
+    # `get_matching` can return >1 cache entry per frame (a frame's metadata
+    # is computed under more than one call_hash), so dedupe by content_hash —
+    # clustering groups the UNIQUE frames (one membership per distinct frame).
+    image_hashes = {m.content_hash for m in metadata.values()}
 
     expected_groups = [tuple(sorted(image_hashes))]
     assert groups == expected_groups

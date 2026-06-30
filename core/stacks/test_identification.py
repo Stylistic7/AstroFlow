@@ -57,7 +57,7 @@ def test_two_stacks_different_image_scales(test_context):
     def find_stack(name_prefix: str):
         for s in stacks.values():
             filenames = [m.filename for m in s.all_metadata().values()]
-            if all(name_prefix in f for f in filenames):
+            if all(name_prefix in str(f) for f in filenames):
                 return s
         raise AssertionError(f"no stack matches prefix {name_prefix!r}")
 
@@ -227,8 +227,8 @@ def test_frames_without_defect_candidates_are_excluded(test_context):
     assert len(stacks) == 1
     stack = next(iter(stacks.values()))
     all_files = [m.filename for m in stack.all_metadata().values()]
-    assert all("good" in f for f in all_files)
-    assert not any("bad" in f for f in all_files)
+    assert all("good" in str(f) for f in all_files)
+    assert not any("bad" in str(f) for f in all_files)
 
 
 def test_prepare_stack_for_ui_emits_camera_id(test_context):
@@ -281,11 +281,11 @@ def test_multiple_exposures(test_context):
     assert set(by_exposure) == {120.0, 300.0}
 
     s120 = by_exposure[120.0]
-    assert all("bar" in f.filename for f in s120.all_metadata().values())
+    assert all("bar" in str(f.filename) for f in s120.all_metadata().values())
     assert len(s120.all_frames()) == 7
     assert s120.integration == 7 * 120
 
     s300 = by_exposure[300.0]
-    assert all("foo" in f.filename for f in s300.all_metadata().values())
+    assert all("foo" in str(f.filename) for f in s300.all_metadata().values())
     assert len(s300.all_frames()) == 5
     assert s300.integration == 5 * 300
