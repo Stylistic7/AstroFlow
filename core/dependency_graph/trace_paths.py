@@ -189,19 +189,13 @@ def _routes_to_item(entry: dict, object_type: str, object_id: str) -> bool:
     )
 
 
-def _read_tap_snapshot(item: tuple[str, str, str]) -> "list[dict] | None":
-    """Read the content-addressed snapshot persisted at graph-build time by
-    `compute_graph._store_tap_snapshot`. **Ray-free** — resolve the live object
-    from the (local) context, hash the pipeline source, build the SAME
-    `(source_hash, stable_hash, content_hash, pipeline)` key, read the diskcache.
-    No trace, no `ray.put`, no `.remote()`.
-
-    Returns the stored entry list, or **None** when no snapshot matches — the
-    pipeline isn't in the current graph, or the code / object content changed
-    and it hasn't been re-traced yet. `traced_paths_for` treats None as "fall
-    through to the on-demand Ray trace"; the web workers never have one, so for
-    them a miss simply yields no taps (never a stale answer — old-key snapshots
-    are harmless orphans, never read)."""
+def _snapshot_key(item: tuple[str, str, str]) -> "tuple | None":
+    """The content-addressed `tap_snapshots` key for a cart item:
+    `(hash_source_code(pipeline_fn), entity.stable_hash, entity.content_hash,
+    pipeline)` — the SAME key `compute_graph._store_tap_snapshot` writes.
+    Resolves the live entity from the (local) context and hashes the pipeline
+    source. Returns None when the entity isn't in context or the pipeline isn't
+    registered."""
     from pipelines.registry import get_pipeline
     from hashing import hash_source_code
     from stacks.composite_stack import Stack
@@ -226,11 +220,55 @@ def _read_tap_snapshot(item: tuple[str, str, str]) -> "list[dict] | None":
         fn = get_pipeline(pipeline, processes=cls)._function
     except KeyError:
         return None
-    key = (hash_source_code(fn), entity.stable_hash, entity.content_hash, pipeline)
+    return (hash_source_code(fn), entity.stable_hash, entity.content_hash, pipeline)
+
+
+def _read_tap_snapshot(item: tuple[str, str, str]) -> "list[dict] | None":
+    """Read the content-addressed snapshot persisted at graph-build time by
+    `compute_graph._store_tap_snapshot`. **Ray-free** — resolve the live object
+    from the (local) context, hash the pipeline source, build the SAME
+    `(source_hash, stable_hash, content_hash, pipeline)` key, read the diskcache.
+    No trace, no `ray.put`, no `.remote()`.
+
+    Returns the stored entry list, or **None** when no snapshot matches — the
+    pipeline isn't in the current graph, or the code / object content changed
+    and it hasn't been re-traced yet. `traced_paths_for` treats None as "fall
+    through to the on-demand Ray trace"; the web workers never have one, so for
+    them a miss simply yields no taps (never a stale answer — old-key snapshots
+    are harmless orphans, never read)."""
+    key = _snapshot_key(item)
+    if key is None:
+        return None
     snap = (context.get("tap_snapshots") or {}).get(key)
     if snap is None:
         return None
     return (snap.get() if hasattr(snap, "get") else snap) or []
+
+
+def invalidate_tap_snapshot(item: tuple[str, str, str]) -> bool:
+    """Drop the build-time tap snapshot for `item` so the next compute-graph
+    build re-walks and re-stores fresh resolved paths.
+
+    `_store_tap_snapshot` keys only on the PIPELINE function's source hash (not
+    the ops it calls) and early-returns on an existing entry. So when an op's
+    source changes — its call_hash, hence output path, moves — the snapshot
+    keeps the stale path and the dashboard resolves the wrong (or deleted) file,
+    with nothing triggering a rebuild. A "discard results" action calls this so
+    the post-discard `drain_and_restart` republishes the current paths. Returns
+    True iff an entry was removed.
+
+    Read-modify-write on the `tap_snapshots` dict; the immediately following
+    rebuild is the source of truth, so a lost concurrent `or_equals` is benign."""
+    key = _snapshot_key(item)
+    if key is None:
+        return False
+    snaps = context.get("tap_snapshots") or {}
+    if key not in snaps:
+        return False
+    new = dict(snaps)
+    new.pop(key, None)
+    context.set("tap_snapshots", new)
+    return True
 
 
 def tap_outputs_for(item: tuple[str, str, str]) -> list[dict]:

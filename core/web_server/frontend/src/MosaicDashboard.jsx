@@ -9,9 +9,11 @@
 // so user pipelines surface in this dashboard automatically.
 import React, { useContext, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Box, Paper, Typography, Divider } from "@mui/material";
+import { Box, Paper, Typography, Divider, Button } from "@mui/material";
+import DeleteSweepIcon from "@mui/icons-material/DeleteSweep";
 
 import AstroFlowContext from "./AstroFlowContext.jsx";
+import DiscardResultsDialog from "./DiscardResultsDialog.jsx";
 import { buildUrl, buildApiUrl } from "./urls.js";
 
 
@@ -73,12 +75,31 @@ function VersionThumbnail({
 
 
 function PipelineSection({ objectType, objectId, pipeline, filters }) {
+    const [discardOpen, setDiscardOpen] = useState(false);
     return (
         <Box sx={{ mb: 4 }}>
-            <Typography variant="h6" sx={{ mb: 1, color: 'primary.main' }}>
-                {pipeline.name}
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                <Typography variant="h6" sx={{ color: 'primary.main' }}>
+                    {pipeline.name}
+                </Typography>
+                <Box sx={{ flexGrow: 1 }} />
+                <Button
+                    size="small"
+                    color="warning"
+                    startIcon={<DeleteSweepIcon />}
+                    onClick={() => setDiscardOpen(true)}
+                >
+                    Discard results…
+                </Button>
+            </Box>
             <Divider sx={{ mb: 2 }} />
+            <DiscardResultsDialog
+                objectType={objectType}
+                objectId={objectId}
+                pipeline={pipeline.name}
+                open={discardOpen}
+                onClose={() => setDiscardOpen(false)}
+            />
             {pipeline.taps.map((tap) => {
                 // outputs[i] aligns with filters[i] (backend
                 // guarantees same order within a tap).

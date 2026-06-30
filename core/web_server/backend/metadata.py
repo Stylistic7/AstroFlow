@@ -2,7 +2,7 @@ import math
 import os
 from pathlib import Path
 import astropy.io.fits as pyfits
-from flask import Blueprint, jsonify, abort
+from flask import Blueprint, jsonify, abort, request
 from typing import Any
 
 from context import local_context as context
@@ -414,5 +414,56 @@ def pipeline_outputs(object_type: str, object_id: str):
         pipelines.append({"name": name, "taps": taps})
 
     return jsonify({"filters": filters, "pipelines": pipelines})
+
+
+@metadata_bp.route(
+    "/api/pipeline_results/<object_type>/<object_id>/<path:pipeline>"
+)
+def pipeline_results(object_type: str, object_id: str, pipeline: str):
+    """Every op in a pipeline's trace for one object, grouped by function —
+    backs the "Discard results" dialog's checkbox list. Unlike
+    `pipeline_outputs` (display taps only), this includes non-display
+    intermediates (`place_image`, `bxt_correct`, …) so any op's cached results
+    can be discarded.
+
+    Shape: `{"pipeline": ..., "ops": [{op_name, display, is_final, count,
+    on_disk, bytes}, ...]}` in trace (≈topological) order."""
+    from web_server.backend._discard import group_ops
+
+    if _resolve_entity(object_type, object_id) is None:
+        return abort(404)
+    return jsonify({
+        "pipeline": pipeline,
+        "ops": group_ops((object_type, object_id, pipeline)),
+    })
+
+
+@metadata_bp.route(
+    "/api/discard_results/<object_type>/<object_id>/<path:pipeline>",
+    methods=["POST"],
+)
+def discard_results(object_type: str, object_id: str, pipeline: str):
+    """Delete the cached outputs (files + sidecars + tile pyramid + diskcache)
+    of the selected ops for this object's pipeline, invalidate the build-time
+    tap snapshot (so the rebuild publishes fresh paths), then drain + restart
+    so the discarded ops re-run. Body: `{"op_names": [...]}`."""
+    from web_server.backend._discard import discard_ops
+    from dependency_graph.trace_paths import invalidate_tap_snapshot
+    from state.actor import state
+    from web_server.backend.announcer import announce
+
+    if _resolve_entity(object_type, object_id) is None:
+        return abort(404)
+
+    op_names = set((request.get_json(silent=True) or {}).get("op_names") or [])
+    if not op_names:
+        return jsonify({"error": "no op_names given"}), 400
+
+    item = (object_type, object_id, pipeline)
+    result = discard_ops(item, op_names)
+    invalidate_tap_snapshot(item)
+    state.drain_and_restart()
+    announce("reload_data")
+    return jsonify({"discarded_ops": sorted(op_names), **result})
 
 
