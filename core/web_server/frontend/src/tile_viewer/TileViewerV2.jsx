@@ -32,6 +32,7 @@ import PolygonOverlay from './PolygonOverlay.jsx';
 import TextOverlay from './TextOverlay.jsx';
 import { computeAutoStretchParams } from '../auto_stretch.js';
 import { computeMaxEntropyLut } from './auto_stretch_maxent.js';
+import { computeGhsLut } from './auto_stretch_ghs.js';
 import { buildApiUrl, buildUrl, inheritView } from '../urls.js';
 
 
@@ -41,6 +42,7 @@ import { buildApiUrl, buildUrl, inheritView } from '../urls.js';
 export const STRETCH_MODES = {
     stf: { label: 'PixInsight STF', shaderMode: 0 },
     maxent: { label: 'Constrained max-entropy', shaderMode: 1 },
+    ghs: { label: 'Generalized Hyperbolic', shaderMode: 1 },
 };
 
 
@@ -181,6 +183,10 @@ export default function TileViewerV2({
     const [localShowPolygons, setLocalShowPolygons] = useState(true);
     const [localShowPanelNumbers, setLocalShowPanelNumbers] = useState(false);
     const [localStretchMode, setLocalStretchMode] = useState('stf');
+    // GHS stretch knobs (only used when stretchMode === 'ghs'). `bg` is the
+    // display level the sky maps to; `intensity` scales the auto-fit lift.
+    const [ghsBg, setGhsBg] = useState(0.10);
+    const [ghsIntensity, setGhsIntensity] = useState(1.0);
     // Default: zoom clamps at 1:1 (one source pixel per screen pixel).
     // Past that the image just gets blurry without revealing detail.
     // Toggle on to allow over-zoom for pixel-peeping or screenshots.
@@ -345,10 +351,13 @@ export default function TileViewerV2({
     useEffect(() => {
         if (!renderer.isReady || !metadata?.statistics) return;
         if (stretchMode === 'maxent') {
-            const lut = computeMaxEntropyLut(metadata.statistics);
-            renderer.setStretchLut(lut);
+            renderer.setStretchLut(computeMaxEntropyLut(metadata.statistics));
+        } else if (stretchMode === 'ghs') {
+            renderer.setStretchLut(computeGhsLut(metadata.statistics, {
+                bg: ghsBg, intensity: ghsIntensity,
+            }));
         }
-    }, [renderer.isReady, metadata?.statistics, stretchMode]);
+    }, [renderer.isReady, metadata?.statistics, stretchMode, ghsBg, ghsIntensity]);
 
     // On viewport change: push uniforms to renderer + recompute visible
     // tiles. The viewport already rAF-coalesces its subscriber fan-out,
@@ -473,6 +482,24 @@ export default function TileViewerV2({
                             ))}
                         </Select>
                     </Box>
+                    {localStretchMode === 'ghs' && (
+                        <Box sx={{ mt: 1 }}>
+                            <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
+                                Background — {ghsBg.toFixed(2)}
+                            </Typography>
+                            <Slider
+                                size="small" value={ghsBg} min={0.02} max={0.25} step={0.01}
+                                onChange={(_, v) => setGhsBg(v)} sx={{ color: '#fff' }}
+                            />
+                            <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
+                                Stretch — {ghsIntensity.toFixed(2)}×
+                            </Typography>
+                            <Slider
+                                size="small" value={ghsIntensity} min={0.3} max={3} step={0.05}
+                                onChange={(_, v) => setGhsIntensity(v)} sx={{ color: '#fff' }}
+                            />
+                        </Box>
+                    )}
                     {renderer.error && (
                         <Typography variant="caption" sx={{ color: '#f55' }}>
                             {renderer.error}
