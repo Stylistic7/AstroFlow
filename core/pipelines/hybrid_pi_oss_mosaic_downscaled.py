@@ -18,6 +18,7 @@ Three entry points, matching the PI Downscaled pipeline.
 """
 from astroflow.pipeline import ephemeral_intermediates, pipeline
 from dependency_graph.tracing import workflow_group
+from mosaics.color.post_process import color_post_process
 from mosaics.merging.oss import merge_images_oss
 from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
@@ -72,13 +73,16 @@ def for_target(target, config):
 @pipeline("Hybrid: PI Downscaled + OSS Mosaic", processes=Mosaic)
 def for_mosaic(mosaic, config):
     """Build an 8×-downscaled mosaic with PI-stacked panels + OSS
-    panel-blending.
+    panel-blending, then turn the per-filter channels into named color images.
 
-    Returns `{filter: store_handle}`. Missing panels are skipped (the
-    pipeline merges what's present). Strips are merged left-to-right
-    first, then strips are merged top-to-bottom — same topology as
-    PI Downscaled, just with `merge_images_oss` swapped in for
-    `merge_images`."""
+    Returns `{filter: channel_handle, name: color_handle}` — the merged
+    per-filter channels PLUS the color deliverables ("Hubble"/"Foraxx" from the
+    starless narrowband, "Stars" from the RGB stars) via `color_post_process`,
+    the same pipeline-agnostic workflow group the other hybrids use.
+
+    Missing panels are skipped (the pipeline merges what's present). Strips are
+    merged left-to-right first, then top-to-bottom — same topology as PI
+    Downscaled, just with `merge_images_oss` swapped in for `merge_images`."""
     targets_by_id = {t.id: t for t in mosaic.targets}
 
     channels = {}
@@ -109,4 +113,8 @@ def for_mosaic(mosaic, config):
                 continue
             out[filter] = merge_images_oss(mosaic, filter, *placed)
 
-    return out
+    # Continue into color post-processing — same pipeline-agnostic workflow
+    # group as the other hybrids, so all three produce identical
+    # "Hubble"/"Foraxx"/"Stars" deliverables.
+    color = color_post_process(mosaic, out, config)
+    return {**out, **color}

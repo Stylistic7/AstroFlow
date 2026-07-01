@@ -27,6 +27,7 @@ Three entry points, matching the PI Master pipeline:
 """
 from astroflow.pipeline import ephemeral_intermediates, pipeline
 from dependency_graph.tracing import workflow_group
+from mosaics.color.post_process import color_post_process
 from mosaics.merging.oss import merge_images_oss
 from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
@@ -75,13 +76,18 @@ def for_target(target, config):
 
 @pipeline("Hybrid: PI Master + OSS Mosaic", processes=Mosaic)
 def for_mosaic(mosaic, config):
-    """Build a mosaic with PI-stacked panels + OSS panel-blending.
+    """Build a mosaic with PI-stacked panels + OSS panel-blending, then turn
+    the per-filter channels into named color images.
 
-    Returns `{filter: store_handle}`. Missing panels are skipped (the
-    pipeline merges what's present). Strips are merged left-to-right
-    first, then strips are merged top-to-bottom — same topology as
-    PI Master, just with `merge_images_oss` swapped in for
-    `merge_images`."""
+    Returns `{filter: channel_handle, name: color_handle}` — the merged
+    per-filter channels (display="Mosaic") PLUS the color deliverables
+    ("Hubble"/"Foraxx" from the starless narrowband, "Stars" from the RGB
+    stars) via `color_post_process`. Identical color topology to the
+    OSS-stack hybrid, so both pipelines produce the same color images.
+
+    Missing panels are skipped (the pipeline merges what's present). Strips
+    are merged left-to-right first, then top-to-bottom — same topology as
+    PI Master, just with `merge_images_oss` swapped in for `merge_images`."""
     targets_by_id = {t.id: t for t in mosaic.targets}
 
     channels = {}
@@ -113,4 +119,9 @@ def for_mosaic(mosaic, config):
                 continue
             out[filter] = merge_images_oss(mosaic, filter, *placed)
 
-    return out
+    # Continue into color post-processing — the same pipeline-agnostic
+    # workflow group the OSS-stack hybrid uses, so both pipelines produce
+    # identical "Hubble"/"Foraxx"/"Stars" deliverables from the merged
+    # per-filter channels.
+    color = color_post_process(mosaic, out, config)
+    return {**out, **color}
