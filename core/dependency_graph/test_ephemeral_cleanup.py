@@ -161,6 +161,44 @@ class TestCleanupHook:
         assert C in rt.done_nodes
 
 
+def test_shared_ephemeral_kept_until_all_pipelines_done():
+    """The cross-pipeline (A/B-testing) invariant: when two pipelines' traced
+    graphs both consume a structurally-identical ephemeral producer, the shared
+    `EphemeralFiles` registry unions their consumers and reclaims the output
+    only after EVERY pipeline's consumer completes — never when the first
+    pipeline finishes. This is the FileNotFoundError race the registry exists
+    to prevent (its module docstring). `TestCleanupHook.test_cleanup_waits_for_
+    all_consumers` covers the single-graph case; this covers the cross-graph
+    merge (one root registry shared by two pipeline sub-graphs).
+    """
+    from dependency_graph.ephemeral_registry import EphemeralFiles
+
+    B = _ephemeral(_node(_FakeTask("shared_producer")))
+    C = _node(_FakeTask("consumer_pipeline_1"))
+    D = _node(_FakeTask("consumer_pipeline_2"))
+
+    reg = EphemeralFiles()
+    # Two SEPARATE pipeline graphs, each consuming the same producer B — the
+    # union keys on B's structural identity (`node:<name>` fallback), so both
+    # consumers land in one pending set.
+    reg.register_from_graph(Graph({C: [B], B: []}), fallback_to_node_key=True)
+    reg.register_from_graph(Graph({D: [B], B: []}), fallback_to_node_key=True)
+
+    key = f"node:{B.name}"
+    assert reg.pending_count(key) == 2   # consumers from BOTH pipelines
+
+    called: list = []
+
+    def cleanup(node, result, args):
+        called.append(node)
+
+    reg.producer_done(key, B, "rb", ["lit"], cleanup)
+    reg.consumer_done(C, cleanup)        # pipeline 1 finished with B
+    assert called == []                  # NOT reclaimed — pipeline 2 still needs it
+    reg.consumer_done(D, cleanup)        # pipeline 2 finished with B
+    assert called == [B]                 # reclaimed only after BOTH are done
+
+
 class TestCleanupAction:
     """The cleanup function itself: deletes the right files, calls invalidate."""
 
