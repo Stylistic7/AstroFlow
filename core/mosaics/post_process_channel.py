@@ -26,15 +26,12 @@ residual, for which data-driven GradientCorrection (the modern DBE
 replacement — no external reference, no WCS) is exactly the right tool and
 the conventional choice for a final whole-mosaic flatten.
 
-Edge erosion before correction: GradientCorrection is documented to be
-"sensitive to sudden changes in brightness ... bright or dark artifacts
-may occur along the edges. Pure black (zero) pixels at the edges are not a
-problem, but very dim, non-zero ... pixels must be cropped out before
-running the process." The assembled mosaic has a ragged footprint with a
-thin partial-coverage ring of dim non-zero pixels; left in place, GC turns
-it into a dark edge band. So we erode the footprint inward to a clean
-pure-black boundary first (same `_erode_edges` shave `place_image` applies
-per panel), which GC then tolerates.
+No edge erosion here: every panel was already edge-eroded to a pure-black
+boundary by `place_image` before the merge, and PhotometricMosaic feathers
+only the interior panel *overlaps*, not the outer frame — so the assembled
+stitch already presents GradientCorrection the clean zero edge it wants.
+(An earlier version re-eroded the whole mosaic preventively "per PI docs";
+that just re-shaved an already-clean boundary, discarding valid data.)
 """
 import os
 from pathlib import Path
@@ -51,38 +48,12 @@ import structlog
 log = structlog.get_logger()
 
 
-def _eroded_copy(src: Path, dst: Path, px: int) -> None:
-    """Write `src` (an XISF mosaic) to `dst` with its ragged footprint
-    eroded inward by `px` pixels to a clean pure-black boundary, preserving
-    image + file metadata. Mirrors `apply_background_pedestal_to_xisf`'s
-    read-modify-write; reuses `place_image`'s `_erode_edges` shave."""
-    from xisf import XISF  # type: ignore
-    from mosaics.placement.astroflow import _erode_edges
-
-    xisf = XISF(str(src))
-    image = xisf.read_image(0)
-    file_meta = xisf.get_file_metadata()
-    ims_meta = xisf.get_images_metadata()
-    # XISF read returns (H, W, C); `_erode_edges` works on the 2-D plane.
-    # These are mono per-filter channels (C=1) — erode the plane, restore
-    # the channel axis so XISF.write gets the shape it expects.
-    if image.ndim == 3:
-        image = _erode_edges(image[..., 0], px)[..., None]
-    else:
-        image = _erode_edges(image, px)
-    del xisf
-    XISF.write(
-        str(dst), image, creator_app="AstroFlow",
-        image_metadata=ims_meta[0], xisf_metadata=file_meta,
-    )
-
-
 def _post_process_channel_narrow(args, kwargs):
-    """Cache-key hook: this op's `config` dependencies are `mock_pixinsight`
-    and `edge_erosion_px`; project `config` to that pair (in its arg slot)
-    so the key stays independent of unrelated config fields."""
+    """Cache-key hook: this op's only `config` dependency is `mock_pixinsight`;
+    project `config` to it (in its arg slot) so the key stays independent of
+    unrelated config fields."""
     mosaic, filter, config, merged = args
-    projected = (config.development_settings.mock_pixinsight, config.edge_erosion_px)
+    projected = config.development_settings.mock_pixinsight
     return (mosaic, filter, projected, merged), kwargs
 
 
@@ -100,11 +71,12 @@ def post_process_mosaic_color_channel(
 ) -> WithSidecar[XisfFilePath]:
     """Flatten the assembled per-filter mosaic channel and persist it.
 
-    `merged` is the output of `merge_images`. We erode the ragged footprint
-    to a clean pure-black edge, run one data-driven GradientCorrection pass
-    to remove the residual large-scale gradient that accumulates across
-    panels (see module docstring), then the additive pedestal pins the
-    result back to the common sky floor.
+    `merged` is the output of `merge_images`. One data-driven
+    GradientCorrection pass removes the residual large-scale gradient that
+    accumulates across panels (see module docstring); the additive pedestal
+    then pins the result back to the common sky floor. No edge erosion is
+    needed — the panels were already eroded by `place_image`, so the stitch
+    reaches GC with a clean pure-black boundary.
     """
     mock_pixinsight = config.development_settings.mock_pixinsight
     output_filename = post_process_mosaic_color_channel.filename_fn(
@@ -112,20 +84,8 @@ def post_process_mosaic_color_channel(
     )
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
 
-    source = merged.filename
-    eroded_tmp: Path | None = None
-    if not mock_pixinsight:
-        # Clean the ragged edge to pure black before GC (see module
-        # docstring). Scratch file alongside the output; removed below.
-        eroded_tmp = Path(output_filename).with_suffix(".eroded.xisf")
-        _eroded_copy(Path(merged.filename), eroded_tmp, config.edge_erosion_px)
-        source = eroded_tmp
-
-    image = Image.open(source, filter=filter)
+    image = Image.open(merged.filename, filter=filter)
     GradientCorrection(image).save_to(output_filename, mock=mock_pixinsight)
-
-    if eroded_tmp is not None:
-        eroded_tmp.unlink(missing_ok=True)
 
     # Re-equalize the flattened channel's sky to the common pedestal so the
     # final master sits at a known, positive sky floor (same additive step

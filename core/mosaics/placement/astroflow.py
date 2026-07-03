@@ -8,7 +8,6 @@ from astropy.wcs import WCS, FITSFixedWarning  # type: ignore
 
 warnings.filterwarnings("ignore", category=FITSFixedWarning)
 from scipy.interpolate import RegularGridInterpolator  # type: ignore
-from scipy.ndimage import binary_fill_holes  # type: ignore
 from itertools import product
 from pathlib import Path
 from typing import Any
@@ -153,21 +152,74 @@ def _project_in_tiles(
 
     return projected_image[0 : viewbox.num_pixels_y, 0 : viewbox.num_pixels_x]
 
-def _erode_edges(image: np.ndarray, px: int) -> np.ndarray:
+# Erosion is done in `_EROSION_TILE`-sized blocks across a thread pool: the
+# global distance transform was the single-threaded, full-canvas-memory tail
+# of `place_image`. Each block distance-transforms its own footprint plus a
+# `px` halo — provably (and empirically, bit-for-bit) identical to the global
+# transform for the only thing we use it for, the `< px` threshold, since a
+# pixel within `px` of the boundary has that boundary pixel inside an
+# axis-aligned `px` box. `_EROSION_HALO_EXTRA` is pure insurance (px alone
+# verified sufficient across shapes/tile sizes).
+_EROSION_TILE = 2048
+_EROSION_HALO_EXTRA = 4
+
+
+def _erode_edges(image: np.ndarray, px: int, tile: int = _EROSION_TILE) -> np.ndarray:
     """Shape-following inward erosion of the valid-data (non-zero) region
     by `px` pixels. Removes the registration interpolation/partial-coverage
     rolloff at frame borders before the mosaic merge — PhotometricMosaic
     samples the overlap, and un-eroded edge pixels cause seam artifacts.
 
     `image != 0` is the footprint (the interpolator zero-fills outside it);
-    `binary_fill_holes` keeps interior zeros from carving craters; the
-    distance transform gives an exact Euclidean inward shave following the
-    footprint's actual shape (not a rectangle crop). `px <= 0` is a no-op."""
+    the distance transform gives an exact Euclidean inward shave following
+    the footprint's actual shape (not a rectangle crop), zeroing every pixel
+    within `px` of the boundary. `px <= 0` is a no-op.
+
+    No hole-filling: `place_image` writes every output pixel by projecting
+    the (gap-free) source rectangle, so the footprint is a solid, simply-
+    connected region — the projection cannot manufacture interior holes, and
+    the pedestal-normalized masters carry a ~0.005 floor so there are no
+    exact-zero *interior* values to erode around either. Distance-to-nearest-
+    zero therefore already measures distance to the single outer boundary,
+    which is the whole point of the shave. Dropping the global
+    `binary_fill_holes` (May-2026 addition) is bit-identical on real data.
+
+    **Erodes IN PLACE and in parallel.** The footprint `mask` is snapshotted
+    from the pre-erosion image so every block reads a stable footprint (a
+    block's halo must not observe a neighbour that's already been eroded);
+    the float pixels are then zeroed in place, block by block, across a thread
+    pool. `cv2.distanceTransform` releases the GIL and blocks write disjoint
+    slices, so this turns the erosion from a single-threaded full-canvas pass
+    (its own `dist` + `where` + `astype` copies, ~2–3× the canvas in RAM) into
+    a many-core pass whose only extra allocation is the uint8 `mask` plus a
+    handful of small per-block temporaries."""
     if px <= 0:
         return image
-    mask = binary_fill_holes(image != 0)
-    dist = cv2.distanceTransform(mask.astype(np.uint8), cv2.DIST_L2, 5)
-    return np.where(dist >= px, image, 0.0).astype(np.float32)
+    from concurrent.futures import ThreadPoolExecutor
+
+    H, W = image.shape
+    mask = (image != 0).astype(np.uint8)
+    halo = px + _EROSION_HALO_EXTRA
+
+    def erode_block(y0: int, x0: int) -> None:
+        y1, x1 = min(y0 + tile, H), min(x0 + tile, W)
+        hy0, hx0 = max(0, y0 - halo), max(0, x0 - halo)
+        hy1, hx1 = min(H, y1 + halo), min(W, x1 + halo)
+        sub = mask[hy0:hy1, hx0:hx1]
+        if not sub.any():
+            image[y0:y1, x0:x1] = 0.0        # block wholly outside footprint
+            return
+        if sub.all():
+            return                            # block wholly interior -> keep
+        dist = cv2.distanceTransform(sub, cv2.DIST_L2, 5)
+        iy, ix = y0 - hy0, x0 - hx0
+        di = dist[iy:iy + (y1 - y0), ix:ix + (x1 - x0)]
+        image[y0:y1, x0:x1][di < px] = 0.0
+
+    coords = [(y0, x0) for y0 in range(0, H, tile) for x0 in range(0, W, tile)]
+    with ThreadPoolExecutor() as ex:
+        list(ex.map(lambda c: erode_block(*c), coords))
+    return image
 
 
 def _place_image_narrow(args, kwargs):
