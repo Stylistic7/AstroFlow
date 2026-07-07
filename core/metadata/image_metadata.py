@@ -122,7 +122,7 @@ class DuplicateFileException(Exception):
     pass
 
 
-@node(num_cpus=0.25)
+@node(num_cpus=0.25, auto_memory=True)
 def compute_image_metadata(
     filename: os.PathLike,
     plate_solve: bool | None = None,

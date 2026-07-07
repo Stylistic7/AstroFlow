@@ -40,6 +40,20 @@ _SKY_QUANTILE = 0.25
 # exposure" diagnostics.
 _CLIP_FRACTION = 0.005
 
+# `compute_image_metadata` chains this op after every artifact, including
+# gigapixel produced masters/mosaics/placed panels. Above `_MAX_EXACT_PIXELS`
+# the sort-based statistics (percentiles, median, MAD, sky, histogram) come
+# from a random `_SAMPLE_PIXELS` subsample; the scalar reductions (max, mean,
+# non-zero count) stay exact via cheap streaming passes. At or below the
+# threshold the full array is used, so small images (subframes, ordinary
+# masters) keep their exact, unchanged output. 64M pixels bounds the exact
+# path's transient float64 copies to ~1.5 GB; a 12M sample keeps percentile
+# error under ~0.1 %. `_SAMPLE_SEED` makes the subsample deterministic, so the
+# same image always yields the same statistics.
+_MAX_EXACT_PIXELS = 64_000_000
+_SAMPLE_PIXELS = 12_000_000
+_SAMPLE_SEED = 0
+
 
 def compute_image_statistics(image: np.ndarray) -> ImageStatistics:
     """Compute the full statistics block from a pixel array.
@@ -58,19 +72,44 @@ def compute_image_statistics(image: np.ndarray) -> ImageStatistics:
     LUT would waste its display brightness on the rectangular border
     instead of on the actual image content.
 
-    For a 50-megapixel float32 master this runs in ~50 ms (most of
-    that is the `np.percentile` calls); for a 1-megapixel float32
-    subframe, ~1 ms. The cost lives one-time per file inside
-    `compute_image_metadata`'s sidecar-cached path, so it's paid only
-    on cold ingestion.
+    Runs on inputs from 1-megapixel subframes to 2.3-gigapixel mosaic
+    masters (the same op is chained after every artifact). At or below
+    `_MAX_EXACT_PIXELS` the full array is used (a 50 MP master ~50 ms,
+    exact); above it the sort-based stats come from a random subsample
+    to bound memory (see `_MAX_EXACT_PIXELS`). The cost lives one-time
+    per file inside `compute_image_metadata`'s sidecar-cached path, so
+    it's paid only on cold ingestion.
     """
-    # Float64 for stable percentile / mean / std computation regardless
-    # of input dtype. Flatten to 1-D — channel breakdown isn't part
-    # of this view.
-    pixels = image.astype(np.float64, copy=False).ravel()
-    # Drop the no-data sentinel. Every percentile, sky stat, and
-    # histogram bin below operates on `pixels` post-mask.
-    pixels = pixels[pixels != 0.0]
+    # Flatten to a 1-D view — channel breakdown isn't part of this view.
+    # For large images, estimate the sort-based stats from a subsample and
+    # take the scalar reductions exactly over the full array (streaming, no
+    # float64 copy); for small images, upcast the whole thing to float64 for
+    # stable percentiles exactly as before. See `_MAX_EXACT_PIXELS`.
+    flat = np.ravel(image)
+    if flat.size > _MAX_EXACT_PIXELS:
+        rng = np.random.default_rng(_SAMPLE_SEED)
+        # Sorted indices so the gather walks memory monotonically
+        # (prefetch-friendly) instead of randomly across a multi-GB array.
+        idx = np.sort(rng.integers(0, flat.size, size=_SAMPLE_PIXELS))
+        pixels = flat[idx].astype(np.float64)
+        pixels = pixels[pixels != 0.0]
+        full_max = float(flat.max())
+        full_nonzero = int(np.count_nonzero(flat))
+        full_mean = (
+            float(flat.sum(dtype=np.float64) / full_nonzero)
+            if full_nonzero else 0.0
+        )
+        # Rescale the sampled histogram to full-image counts so
+        # sum(histogram_counts) still reflects the image's non-zero pixel
+        # count, matching the old full-array behavior consumers may rely on.
+        count_scale = (full_nonzero / pixels.size) if pixels.size else 0.0
+    else:
+        # Float64 for stable percentile / mean / std regardless of input
+        # dtype. Bit-identical to the original implementation.
+        pixels = flat.astype(np.float64, copy=False)
+        pixels = pixels[pixels != 0.0]
+        full_max = full_mean = None
+        count_scale = 1.0
     if pixels.size == 0:
         # Degenerate: empty / all-sentinel image. Return zeros so
         # the sidecar still deserializes cleanly.
@@ -86,8 +125,8 @@ def compute_image_statistics(image: np.ndarray) -> ImageStatistics:
         )
 
     min_value = float(pixels.min())
-    max_value = float(pixels.max())
-    mean_value = float(pixels.mean())
+    max_value = full_max if full_max is not None else float(pixels.max())
+    mean_value = full_mean if full_mean is not None else float(pixels.mean())
 
     # Single percentile call returns every cut we need; cheaper than
     # nine separate calls because the sort happens once.
@@ -141,7 +180,10 @@ def compute_image_statistics(image: np.ndarray) -> ImageStatistics:
         bins=_HISTOGRAM_BINS,
         range=(min_value, max_value) if span > 0 else (min_value, min_value + 1.0),
     )
-    histogram_counts = tuple(int(c) for c in counts)
+    histogram_counts = (
+        tuple(int(c) for c in counts) if count_scale == 1.0
+        else tuple(int(round(c * count_scale)) for c in counts)
+    )
 
     return ImageStatistics(
         histogram_bins=_HISTOGRAM_BINS,

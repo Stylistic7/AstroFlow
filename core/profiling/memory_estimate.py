@@ -22,6 +22,8 @@ per-op default. The estimate is capped at 0.9 × the largest node's
 declared `memory` so the autoscaler can always at least try.
 """
 import math
+import os
+from functools import lru_cache
 from typing import Any, Callable
 
 import psutil
@@ -43,6 +45,62 @@ _DEFAULT_MEMORY_BY_OP = {
     "merge_images":                    16 * _GB,
 }
 _DEFAULT_MEMORY_UNKNOWN = 16 * _GB
+
+# Ops whose only sizing arg is a *filename* (e.g. `compute_image_metadata`)
+# would otherwise bucket into the dimensionless "unknown" bucket, so a 9 GB
+# gigapixel master and a 50 MB subframe get the same reservation. We peek the
+# on-disk header (dimensions incl channels, never pixel data) so each is sized
+# on its real element count. The parse is memoized on (path, mtime, size) so
+# repeated submits of the same file — re-scans, cache hits (the estimate runs
+# before the task consults its cache) — don't re-open it.
+_FITS_EXTS = (".fits", ".fit", ".fts", ".fz")
+_TIFF_EXTS = (".tif", ".tiff")
+_XISF_EXTS = (".xisf",)
+_IMAGE_EXTS = _FITS_EXTS + _TIFF_EXTS + _XISF_EXTS
+
+
+@lru_cache(maxsize=100_000)
+def _pixels_for(path: str, _mtime_ns: int, _size: int) -> int:
+    """Header-only element count (H*W*C — the RAM footprint scales with the
+    total number of samples, so a 3-channel image costs 3x a mono one at the
+    same H*W) for an on-disk image, or 0 on any failure. Cache-keyed on
+    (path, mtime, size) via the caller. NEVER reads pixels."""
+    ext = os.path.splitext(path)[1].lower()
+    try:
+        if ext in _FITS_EXTS:
+            # `read_fits_image_geometry` reads `hdu.data` (the FULL pixel
+            # array) just to get its shape — fine at run time, ruinous at
+            # schedule time on a 9 GB file. `hdu.shape` comes from the
+            # NAXIS/ZNAXIS header (no pixel read) and covers compressed FITS.
+            # Product of ALL axes = element count, independent of axis order.
+            import astropy.io.fits as pyfits
+            with pyfits.open(path, memmap=True, lazy_load_hdus=True) as hdul:
+                for hdu in hdul:
+                    shape = hdu.shape
+                    if shape and len(shape) >= 2:
+                        return math.prod(int(d) for d in shape)
+            return 0
+        if ext in _TIFF_EXTS or ext in _XISF_EXTS:
+            # These geometry readers are already header-only and get the
+            # per-format axis order right (TIFF is H,W,C; FITS/XISF C,H,W).
+            from pathlib import Path
+            from file_io.generic import read_image_geometry
+            g = read_image_geometry(Path(path))
+            return int(g.width_pixels) * int(g.height_pixels) * int(g.channels)
+    except Exception:
+        return 0
+    return 0
+
+
+def _pixels_from_file(path: str) -> int:
+    """Cheap pixel count for a filename arg (stat + memoized header parse)."""
+    if not path.lower().endswith(_IMAGE_EXTS):
+        return 0  # not an image path (filter name, hash, ...) — no I/O
+    try:
+        st = os.stat(path)
+    except OSError:
+        return 0
+    return _pixels_for(path, st.st_mtime_ns, st.st_size)
 
 
 def _pixel_count(args, kwargs) -> int:
@@ -71,12 +129,23 @@ def _pixel_count(args, kwargs) -> int:
         wp = getattr(v, "width_pixels", None)
         hp = getattr(v, "height_pixels", None)
         if isinstance(wp, int) and isinstance(hp, int):
-            total += wp * hp
+            # Count channels too — a 3-channel image holds 3x the samples of a
+            # mono one at the same H*W. `channels` defaults to 1 (mono / absent).
+            c = getattr(v, "channels", 1)
+            total += wp * hp * (c if isinstance(c, int) and c > 0 else 1)
             return
         npx = getattr(v, "num_pixels_x", None)
         npy = getattr(v, "num_pixels_y", None)
         if isinstance(npx, int) and isinstance(npy, int):
             total += npx * npy
+            return
+        # A bare filesystem path arg (e.g. compute_image_metadata(filename)):
+        # peek its on-disk header for the pixel count. Dimensioned objects
+        # (ImageMetadata/Viewbox) are handled above and never reach here, so
+        # this fires only for raw path args. Header-only; a non-image string
+        # (filter, hash) or a missing file contributes 0.
+        if isinstance(v, (str, os.PathLike)):
+            total += _pixels_from_file(os.fspath(v))
             return
         # Also accept WithSidecar-wrapped ImageMetadata: the .path or
         # .metadata might carry the dims.
