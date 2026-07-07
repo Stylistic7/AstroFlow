@@ -46,6 +46,21 @@ _DEFAULT_MEMORY_BY_OP = {
 }
 _DEFAULT_MEMORY_UNKNOWN = 16 * _GB
 
+# Ops that shell out to a fixed-memory external tool (rc-astro BXT/SXT). The
+# profiler only samples the small Python WORKER — which just spawns the CLI and
+# moves a file (see rc_astro_cli.py) — NEVER the CLI child. That child streams
+# the image in tiles, so it uses a roughly size-independent ~6 GB even on a
+# gigapixel input (measured), and is invisible to Ray, which then packs more
+# work on top of it and OOMs. Reserve a fixed worker+child budget so Ray
+# accounts for the child. A fixed override rather than a `@node(memory=)`
+# because these ops are already `auto_memory=True`: editing their decorator
+# would change their source hash and re-run all BXT/SXT.
+_FIXED_MEMORY_BY_OP = {
+    "bxt_correct":  10 * _GB,
+    "sxt_starless": 10 * _GB,
+    "sxt_stars":    10 * _GB,
+}
+
 # Ops whose only sizing arg is a *filename* (e.g. `compute_image_metadata`)
 # would otherwise bucket into the dimensionless "unknown" bucket, so a 9 GB
 # gigapixel master and a 50 MB subframe get the same reservation. We peek the
@@ -242,10 +257,17 @@ def estimate_memory(fn: Callable, args: tuple, kwargs: dict) -> int:
     and finally to the per-op default for cold start. Always capped
     at 0.9 × the largest node's declared `memory`.
     """
+    cap = _max_memory_bytes()
+    # Fixed override for ops that shell out to a fixed-memory external tool
+    # (rc-astro BXT/SXT): the worker-RSS profile can't see the CLI child, which
+    # dominates the footprint. See _FIXED_MEMORY_BY_OP.
+    fixed = _FIXED_MEMORY_BY_OP.get(fn.__name__)
+    if fixed is not None:
+        return min(fixed, cap)
+
     from context import context
 
     fn_hash = hash_source_code(fn)
-    cap = _max_memory_bytes()
     bucket = pixel_bucket(_pixel_count(args, kwargs))
 
     key = ("profile", fn_hash, fn.__name__)

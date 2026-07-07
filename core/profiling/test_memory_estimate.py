@@ -10,7 +10,9 @@ and dimensioned objects behave exactly as before.
 import numpy as np
 import astropy.io.fits as pyfits
 
-from profiling.memory_estimate import _pixel_count
+from profiling.memory_estimate import (
+    _pixel_count, estimate_memory, _FIXED_MEMORY_BY_OP, _max_memory_bytes,
+)
 from file_io.tiff_file_io import write_tiff_image
 from file_io.xisf_file_io import write_xisf_image
 
@@ -69,6 +71,18 @@ def test_dimensioned_object_wins_without_disk_read():
         width_pixels = 10
         height_pixels = 20
     assert _pixel_count((FakeMeta(),), {}) == 200
+
+
+def test_rc_astro_ops_reserve_fixed_worker_plus_child_budget():
+    # bxt_correct / sxt_* shell out to the rc-astro CLI child (which the
+    # worker-RSS profiler can't see), so they must reserve a fixed budget that
+    # covers the child, independent of profile samples / input pixel count.
+    cap = _max_memory_bytes()
+    for name, want in _FIXED_MEMORY_BY_OP.items():
+        f = lambda: None
+        f.__name__ = name
+        # a huge fake input must NOT change the reservation (fixed override)
+        assert estimate_memory(f, (object(),), {}) == min(want, cap), name
 
 
 def test_sums_path_plus_output_viewbox(tmp_path):
