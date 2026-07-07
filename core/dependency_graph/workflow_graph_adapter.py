@@ -144,4 +144,14 @@ def store_node_status(node: Node, result: Any, logs: list[Any]):
     elif isinstance(result, (Path, WithSidecar)):
         status_dict["path"] = str(result)
 
-    context[("node_status", node_to_id(node))] = status_dict
+    nid = node_to_id(node)
+    context[("node_status", nid)] = status_dict
+
+    # Lean companion the workflow-graph serve overlay reads INSTEAD of the
+    # heavyweight status above: {result_type, failed} only, so deriving a
+    # node's display state never deserializes the (bounded but still large)
+    # `logs` blob. Same evictable cache — best-effort, like node_status.
+    context[("node_outcome", nid)] = {
+        "result_type": status_dict["result_type"],
+        "failed": "exception" in status_dict,
+    }

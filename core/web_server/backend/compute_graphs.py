@@ -1,6 +1,7 @@
 import ray
 from flask import Blueprint, Response, request
 import json
+import os
 import subprocess
 
 from context import local_context as context
@@ -72,6 +73,7 @@ def workflow_graph_for_mosaic(mosaic_id, pipeline_name=None, filter=None):
         snapshot = _resolve_ref(wf.get(("mosaic", mosaic_id, pipeline_name)))
     if snapshot is None:
         return _EMPTY_WORKFLOW_GRAPH
+    snapshot = _overlay_durable_state(snapshot)
     if filter:
         snapshot = _slice_workflow_graph_by_filter(snapshot, filter)
     return _strip_server_internal_fields(snapshot)
@@ -111,6 +113,66 @@ def _build_raw_workflow_graph(mosaic_id: str, pipeline_name: str) -> dict | None
     return to_workflow_graph(rt, raw=True)
 
 
+def _overlay_durable_state(snapshot: dict) -> dict:
+    """Rewrite each node's `state` from DURABLE signals so the graph shows
+    the most progress EVER made, not just this session. Mutates & returns
+    `snapshot` (a fresh, deserialized dict).
+
+    Per leaf: its baked `options.expectedPath` on disk ⇒ SUCCEEDED (a file
+    implies the node ran — fully durable, survives restart/eviction); else
+    consult the lean `("node_outcome", id)` record to split ran-then-
+    reclaimed / failed / skipped / never-ran. The heavy `node_status`/logs
+    are never read; `node_outcome` is read ONLY for file-missing nodes and
+    memoized per request. Groups re-aggregate from their children. The
+    internal RECLAIMED state is translated here to the frontend-accepted
+    SUCCEEDED + `deleted` modifier (the DAG component throws on unknown
+    state strings), so no internal state leaks to the client."""
+    from dependency_graph.visual_graph import (
+        _RECLAIMED, aggregate_states, derive_display_state,
+    )
+    state = snapshot.get("state", {})
+    outcome_cache: dict = {}
+
+    def outcome(nid):
+        cid = nid.partition("@")[0]
+        if cid not in outcome_cache:
+            outcome_cache[cid] = context.get(("node_outcome", cid))
+        return outcome_cache[cid]
+
+    def walk(nid, meta):
+        gm = meta.get("groupMeta")
+        if gm:
+            meta["state"] = aggregate_states([walk(c, m) for c, m in gm.items()])
+            return meta["state"]
+        path = (meta.get("options") or {}).get("expectedPath")
+        has_output = path is not None
+        present = has_output and os.path.exists(path)
+        oc = None if present else outcome(nid)
+        internal = derive_display_state(
+            has_output, present, oc, meta.get("state", "NO_STATE_RUNTIME"),
+        )
+        if internal == _RECLAIMED:
+            meta["state"] = "SUCCEEDED"
+            meta["modifiers"] = ["deleted"]
+            meta["callout"] = "reclaimed"
+            meta["stateTooltip"] = (
+                "ran successfully — output reclaimed by ephemeral cleanup"
+            )
+        else:
+            meta["state"] = internal
+            # Clear any stale reclaimed decoration — defensive against a
+            # snapshot dict being reused across serves (e.g. the file
+            # reappeared on a re-run since the last render). These keys are
+            # only ever set here, so dropping them is safe.
+            for k in ("modifiers", "callout", "stateTooltip"):
+                meta.pop(k, None)
+        return internal
+
+    for nid, meta in state.items():
+        walk(nid, meta)
+    return snapshot
+
+
 def _slice_workflow_graph_by_filter(snapshot: dict, filter: str) -> dict:
     """Prune the snapshot's `state` and `skeleton` to entries whose
     `filters` list contains `filter` (or is empty — empty means
@@ -127,20 +189,10 @@ def _slice_workflow_graph_by_filter(snapshot: dict, filter: str) -> dict:
         filters = (meta or {}).get("filters", [])
         return not filters or filter in filters
 
-    def aggregate(states):
-        if not states:
-            return "NO_STATE_RUNTIME"
-        if "FAILED" in states:
-            return "FAILED"
-        if any(s not in ("SUCCEEDED", "SKIPPED", "NO_STATE_RUNTIME") for s in states):
-            return "RUNNING"
-        succeeded = any(s in ("SUCCEEDED", "SKIPPED") for s in states)
-        not_run = any(s == "NO_STATE_RUNTIME" for s in states)
-        if succeeded and not_run:
-            return "RUNNING"
-        if succeeded:
-            return "SUCCEEDED"
-        return "NO_STATE_RUNTIME"
+    # Group re-aggregation after a filter slice — shared with the build side
+    # and the durable overlay via `aggregate_states` (the overlay already ran,
+    # so leaf states here are already frontend-valid; RECLAIMED never appears).
+    from dependency_graph.visual_graph import aggregate_states as aggregate
 
     def slice_meta(m):
         """Return a copy of `m` with its `groupMeta` filtered to
@@ -192,13 +244,17 @@ def _slice_workflow_graph_by_filter(snapshot: dict, filter: str) -> dict:
 
 
 def _strip_server_internal_fields(snapshot: dict) -> dict:
-    """Drop `filters` from every meta entry before returning to the
-    frontend — the DagNode constructor rejects unknown fields.
-    `filters` is used by `_slice_workflow_graph_by_filter` and is
-    not consumed by the client. Recurses into `groupMeta`, which
-    nests meta dicts for synthetic-group / subgraph entries."""
+    """Drop server-only fields from every meta entry before returning to
+    the frontend — the DagNode constructor rejects unknown top-level keys.
+    Removes `filters` (used by `_slice_workflow_graph_by_filter`) and the
+    baked `options.expectedPath` (used by `_overlay_durable_state`; an
+    absolute on-disk path that must not leak). Recurses into `groupMeta`,
+    which nests meta dicts for synthetic-group / subgraph entries."""
     def strip(meta):
         out = {k: v for k, v in meta.items() if k != "filters"}
+        opts = out.get("options")
+        if isinstance(opts, dict) and "expectedPath" in opts:
+            out["options"] = {k: v for k, v in opts.items() if k != "expectedPath"}
         if "groupMeta" in out:
             out["groupMeta"] = {
                 nid: strip(m) for nid, m in out["groupMeta"].items()

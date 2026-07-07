@@ -417,76 +417,39 @@ def _resolve_pipeline_call(
     return fn, entity, config
 
 
-def _walk_and_resolve_filenames_tagged(graph) -> list[dict]:
-    """Topologically walk `graph`, computing each filename_fn-bearing
-    node's filename and threading `_TracedOutput` proxies through to
-    downstream nodes' filename_fn calls.
+def resolve_output_paths(graph) -> dict:
+    """Node -> absolute expected output path for every filename_fn node.
 
-    Returns one dict per resolved filename:
-        {
-            "path": str,           # absolute on-disk path
-            "op_name": str,        # producer's __name__ (e.g. "stack_files")
-            "identity": dict,      # {field_name: stable_hash_of_arg}
-            "is_final": bool,      # producer's `_final` attribute
-        }
-    Identity is what makes `traced_path_for(item, "stack_files",
-    stack=H)`-style lookups possible: callers can pick out a specific
-    (op, entity) combination from the trace without rehashing or
-    re-tracing.
-
-    Non-filename_fn nodes (`compute_image_metadata`,
-    `get_stack_subframe_image`, helpers like `calibrate`) don't write
-    files but DO appear as deps of filename_fn nodes. We propagate a
-    content_hash through them: a node with a single dep inherits that
-    dep's content_hash (compute_image_metadata is a pass-through —
-    `content_hash(ImageMetadata) == content_hash(source file)` under
-    pure Merkle). A leaf without a dep tries to resolve from context.
+    The pure topological hash-propagation core shared with
+    `_walk_and_resolve_filenames_tagged`: it computes each node's
+    filename by threading `_TracedOutput` proxies (dep call-hashes)
+    through downstream `filename_fn` calls. Deterministic function of
+    the graph STRUCTURE (`Node.args` + `task.filename_fn` + propagated
+    dep hashes) — it never reads runtime results, so it works for
+    never-run nodes (the workflow-graph UI bakes these paths per node
+    to check on-disk existence). Insertion order is topological. Never
+    raises: returns `{}` (or a partial map) on failure.
     """
-    order = _topological_order(graph)
+    try:
+        order = _topological_order(graph)
+    except Exception:
+        return {}
     node_hash: dict[Any, str] = {}
-    out: list[dict] = []
-
-    # User-facing tap metadata per Node, so a single traced-paths result serves
-    # the dashboard/tiles (which key on the tap's routing entity + display +
-    # filter) as well as sweep/archive (op_name+identity). The routing entity
-    # (object_type/object_id) matters: a mosaic's trace contains per-panel
-    # `Master` taps that route to STACKS and per-target `Channel` taps that
-    # route to TARGETS — those belong on the stack/target views, not the
-    # mosaic's. Non-display intermediates (e.g. place_image) aren't taps → all
-    # four stay None.
-    from compute_graph.compute_graph import extract_pipeline_taps
-    taps_by_node: dict[Any, tuple] = {
-        node: (object_type, object_id, display, filter_value)
-        for node, (object_type, object_id, display, filter_value)
-        in extract_pipeline_taps(graph)
-    }
-
+    paths: dict[Any, str] = {}
     for n in order:
         if hasattr(n.task, "filename_fn"):
-            args = _resolve_args(n, graph, node_hash)
             try:
+                args = _resolve_args(n, graph, node_hash)
                 path = n.task.filename_fn(*args)
             except (AttributeError, KeyError, TypeError):
                 # Missing upstream proxy or unhashable arg — skip the
                 # subtree from here (downstream nodes that depend on us
                 # will silently lack a hash for us).
                 continue
-            # Filename is `<output_dir>/.../<call_hash>.<ext>`. The
+            # Filename is `<output_dir>/.../<call_hash>.<ext>`; the
             # stem is exactly the call_hash.
             node_hash[n] = Path(path).stem
-            tap_object_type, tap_object_id, display, filter_value = (
-                taps_by_node.get(n, (None, None, None, None))
-            )
-            out.append({
-                "path": str(path),
-                "op_name": _op_name_for_node(n),
-                "identity": _identity_for_node(n),
-                "is_final": bool(getattr(n.task, "_final", False)),
-                "display": display,
-                "filter": filter_value,
-                "object_type": tap_object_type,
-                "object_id": tap_object_id,
-            })
+            paths[n] = str(path)
         else:
             # Pass-through propagation for helpers without filename_fn.
             deps = list(graph.get(n, []) or [])
@@ -503,7 +466,54 @@ def _walk_and_resolve_filenames_tagged(graph) -> list[dict]:
                 leaf_hash = _resolve_leaf_content_hash(n)
                 if leaf_hash is not None:
                     node_hash[n] = leaf_hash
+    return paths
 
+
+def _walk_and_resolve_filenames_tagged(graph) -> list[dict]:
+    """`resolve_output_paths` + user-facing tap/identity metadata.
+
+    Returns one dict per resolved filename:
+        {
+            "path": str,           # absolute on-disk path
+            "op_name": str,        # producer's __name__ (e.g. "stack_files")
+            "identity": dict,      # {field_name: stable_hash_of_arg}
+            "is_final": bool,      # producer's `_final` attribute
+        }
+    Identity is what makes `traced_path_for(item, "stack_files",
+    stack=H)`-style lookups possible: callers can pick out a specific
+    (op, entity) combination from the trace without rehashing or
+    re-tracing.
+    """
+    # User-facing tap metadata per Node, so a single traced-paths result serves
+    # the dashboard/tiles (which key on the tap's routing entity + display +
+    # filter) as well as sweep/archive (op_name+identity). The routing entity
+    # (object_type/object_id) matters: a mosaic's trace contains per-panel
+    # `Master` taps that route to STACKS and per-target `Channel` taps that
+    # route to TARGETS — those belong on the stack/target views, not the
+    # mosaic's. Non-display intermediates (e.g. place_image) aren't taps → all
+    # four stay None.
+    from compute_graph.compute_graph import extract_pipeline_taps
+    taps_by_node: dict[Any, tuple] = {
+        node: (object_type, object_id, display, filter_value)
+        for node, (object_type, object_id, display, filter_value)
+        in extract_pipeline_taps(graph)
+    }
+
+    out: list[dict] = []
+    for n, path in resolve_output_paths(graph).items():
+        tap_object_type, tap_object_id, display, filter_value = (
+            taps_by_node.get(n, (None, None, None, None))
+        )
+        out.append({
+            "path": path,
+            "op_name": _op_name_for_node(n),
+            "identity": _identity_for_node(n),
+            "is_final": bool(getattr(n.task, "_final", False)),
+            "display": display,
+            "filter": filter_value,
+            "object_type": tap_object_type,
+            "object_id": tap_object_id,
+        })
     return out
 
 

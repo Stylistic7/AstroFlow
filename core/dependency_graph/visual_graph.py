@@ -135,14 +135,56 @@ def _state_string(rt, node: Node) -> str:
     )
 
 
-def _aggregate_state(states) -> str:
+# Internal-only state: the node ran & succeeded but its output file is
+# gone (ephemeral cleanup). The serve layer (compute_graphs._overlay_
+# durable_state) translates it to the frontend-accepted SUCCEEDED + a
+# `deleted` modifier before serialization — it must never reach the
+# client (`<google-workflow-graph>` throws on unknown state strings).
+_RECLAIMED = "RECLAIMED"
+
+
+def derive_display_state(has_output, present, outcome, live_state) -> str:
+    """Per-node display state from durable signals, computed at serve time.
+
+    `present`    — the node's expected output file exists on disk. A file
+                   can't exist unless the node ran, so this alone is a
+                   fully-durable "done" (independent of `outcome`).
+    `outcome`    — the lean `("node_outcome", id)` record `{result_type,
+                   failed}`, or None when the node never ran (or the entry
+                   was evicted).
+    `has_output` — the node is a file producer (has a baked expectedPath).
+                   A file-less op that ran fine is SUCCEEDED, never RECLAIMED.
+    `live_state` — the snapshot's baked in-session state; used only when no
+                   durable record exists, so a live RUNNING/SKIPPED survives.
+    """
+    if present:
+        return "SUCCEEDED"
+    if outcome is None:
+        return live_state
+    if outcome.get("failed"):
+        return "FAILED"
+    rtype = outcome.get("result_type")
+    if rtype == "SkippedType":
+        return "SKIPPED"
+    if rtype == "NeverRunType":
+        return "NO_STATE_RUNTIME"
+    return _RECLAIMED if has_output else "SUCCEEDED"
+
+
+def aggregate_states(states) -> str:
+    """Roll a group's state up from its children's states. `RECLAIMED`
+    counts as success-like (the node ran); a group never emits it — only
+    SUCCEEDED/RUNNING/FAILED/NO_STATE_RUNTIME (all frontend-valid) leave here."""
     if not states:
         return "NO_STATE_RUNTIME"
     if "FAILED" in states:
         return "FAILED"
-    if any(s not in ("SUCCEEDED", "SKIPPED", "NO_STATE_RUNTIME") for s in states):
+    done = ("SUCCEEDED", "SKIPPED", _RECLAIMED)
+    known = ("SUCCEEDED", "SKIPPED", "NO_STATE_RUNTIME", _RECLAIMED)
+    if any(s not in known for s in states):
+        # A non-terminal child (RUNNING/PENDING/…): group is in-progress.
         return "RUNNING"
-    succeeded = any(s in ("SUCCEEDED", "SKIPPED") for s in states)
+    succeeded = any(s in done for s in states)
     not_run = any(s == "NO_STATE_RUNTIME" for s in states)
     if succeeded and not_run:
         # Partial: some members done, some not started yet — treat
@@ -152,6 +194,10 @@ def _aggregate_state(states) -> str:
     if succeeded:
         return "SUCCEEDED"
     return "NO_STATE_RUNTIME"
+
+
+def _aggregate_state(states) -> str:
+    return aggregate_states(states)
 
 
 def _filter_of(node: Node) -> str | None:
@@ -213,6 +259,16 @@ def gather_state_from_visual(
     if subgraphs_by_parent is None:
         subgraphs_by_parent = {}
     filters_by_vn = _filter_membership(vg)
+    # Bake each node's UNCONDITIONAL expected output path (deterministic,
+    # NOT existence-gated like `imageUrl`) so the serve layer can `os.path.
+    # exists` it per node — this is what lets completed prior-run nodes
+    # render as done regardless of the current session. Lazy import + guard
+    # to avoid an import cycle / never break snapshot building.
+    try:
+        from dependency_graph.trace_paths import resolve_output_paths
+        path_map = resolve_output_paths(rt.graph)
+    except Exception:
+        path_map = {}
     meta: dict[str, dict] = {}
 
     for vn in vg:
@@ -225,6 +281,9 @@ def gather_state_from_visual(
                 "imageUrl": f"/api/open_image/{_resolved_filename(rt, node)}",
             },
         }
+        expected = path_map.get(node)
+        if expected is not None:
+            entry["options"]["expectedPath"] = expected
         if node.name:
             entry["description"] = node.name
         elif node.args:
