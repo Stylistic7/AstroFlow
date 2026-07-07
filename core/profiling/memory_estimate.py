@@ -48,20 +48,21 @@ _DEFAULT_MEMORY_UNKNOWN = 16 * _GB
 
 # Ops that shell out to an external tool (rc-astro BXT/SXT). The profiler only
 # samples the small Python WORKER — which just spawns the CLI and moves a file
-# (see rc_astro_cli.py) — NEVER the CLI child. The child tiles the image, but
-# its RSS still grows with input size: ~6 GB on ordinary masters, up to ~14.5 GB
-# observed on a 2.25-gigapixel mosaic channel (live, 2026-07-06). Invisible to
-# Ray, it packs more work on top of the child and swap-thrashes. Reserve a fixed
-# worker+child budget so Ray accounts for it. 18 GB both covers the ~14.5 GB peak
-# and — crucially — exceeds `44.8 GB pool − 32 GB place_image = 12.8 GB`, so Ray
-# can no longer co-schedule a BXT alongside a place_image (the observed OOM
-# coincidence). A fixed override rather than a `@node(memory=)`: these ops are
-# already `auto_memory=True`, so editing their decorator would change the source
-# hash and re-run all BXT/SXT.
+# (see rc_astro_cli.py) — NEVER the CLI child, which is invisible to Ray. That
+# child's RSS grows with input size and is HARD to bound: measured ~6 GB on
+# ordinary masters, 14.5 GB then 20 GB on a 2.25-gigapixel mosaic channel, and
+# TWO ran concurrently (20 + 14 = 34 GB) and swap-thrashed the machine to 36 GB
+# (live, 2026-07-06/07). Since we can't reliably predict the child's size,
+# reserve MORE THAN HALF THE POOL (2 × 26 = 52 > 44.8 GB): Ray then runs at most
+# ONE BXT/SXT at a time, and never alongside a place_image (32 GB) or merge
+# (~40 GB). One bounded external process + baseline is always < physical RAM, so
+# it cannot thrash regardless of how big the child gets. Serial BXT is the cost;
+# safety is the point. A fixed override, not a `@node(memory=)`: these ops are
+# already `auto_memory=True`, so editing their decorator would re-run all BXT/SXT.
 _FIXED_MEMORY_BY_OP = {
-    "bxt_correct":  18 * _GB,
-    "sxt_starless": 18 * _GB,
-    "sxt_stars":    18 * _GB,
+    "bxt_correct":  26 * _GB,
+    "sxt_starless": 26 * _GB,
+    "sxt_stars":    26 * _GB,
 }
 
 # Ops whose only sizing arg is a *filename* (e.g. `compute_image_metadata`)
