@@ -46,19 +46,22 @@ _DEFAULT_MEMORY_BY_OP = {
 }
 _DEFAULT_MEMORY_UNKNOWN = 16 * _GB
 
-# Ops that shell out to a fixed-memory external tool (rc-astro BXT/SXT). The
-# profiler only samples the small Python WORKER — which just spawns the CLI and
-# moves a file (see rc_astro_cli.py) — NEVER the CLI child. That child streams
-# the image in tiles, so it uses a roughly size-independent ~6 GB even on a
-# gigapixel input (measured), and is invisible to Ray, which then packs more
-# work on top of it and OOMs. Reserve a fixed worker+child budget so Ray
-# accounts for the child. A fixed override rather than a `@node(memory=)`
-# because these ops are already `auto_memory=True`: editing their decorator
-# would change their source hash and re-run all BXT/SXT.
+# Ops that shell out to an external tool (rc-astro BXT/SXT). The profiler only
+# samples the small Python WORKER — which just spawns the CLI and moves a file
+# (see rc_astro_cli.py) — NEVER the CLI child. The child tiles the image, but
+# its RSS still grows with input size: ~6 GB on ordinary masters, up to ~14.5 GB
+# observed on a 2.25-gigapixel mosaic channel (live, 2026-07-06). Invisible to
+# Ray, it packs more work on top of the child and swap-thrashes. Reserve a fixed
+# worker+child budget so Ray accounts for it. 18 GB both covers the ~14.5 GB peak
+# and — crucially — exceeds `44.8 GB pool − 32 GB place_image = 12.8 GB`, so Ray
+# can no longer co-schedule a BXT alongside a place_image (the observed OOM
+# coincidence). A fixed override rather than a `@node(memory=)`: these ops are
+# already `auto_memory=True`, so editing their decorator would change the source
+# hash and re-run all BXT/SXT.
 _FIXED_MEMORY_BY_OP = {
-    "bxt_correct":  10 * _GB,
-    "sxt_starless": 10 * _GB,
-    "sxt_stars":    10 * _GB,
+    "bxt_correct":  18 * _GB,
+    "sxt_starless": 18 * _GB,
+    "sxt_stars":    18 * _GB,
 }
 
 # Ops whose only sizing arg is a *filename* (e.g. `compute_image_metadata`)
