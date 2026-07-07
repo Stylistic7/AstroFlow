@@ -129,14 +129,14 @@ def test_palette_glue_with_and_without_stars(tmp_path):
     write_tiff_image(stars_path, np.zeros((128, 128, 3), np.float32), {})
     stars = SimpleNamespace(filename=stars_path)
     out1 = tmp_path / "hubble.tif"
-    pp._palette_image(str(out1), pp.palettes.hubble,
+    pp._palette_image(str(out1), pp.palettes.hubble_vips,
                       metas["S"], metas["H"], metas["O"], stars, "Hubble")
     img = read_image(out1)
     assert img.shape == (128, 128, 3) and img.min() >= 0 and img.max() <= 1
 
     # Without stars (None) + the Foraxx formula
     out2 = tmp_path / "foraxx.tif"
-    pp._palette_image(str(out2), pp.palettes.foraxx,
+    pp._palette_image(str(out2), pp.palettes.foraxx_vips,
                       metas["S"], metas["H"], metas["O"], None, "Foraxx")
     img2 = read_image(out2)
     assert img2.shape == (128, 128, 3) and np.all(np.isfinite(img2))

@@ -9,6 +9,7 @@ free so the math is unit-testable on its own.
 from __future__ import annotations
 
 import numpy as np
+import pyvips
 
 
 def _mtf(x: np.ndarray, midtones: float) -> np.ndarray:
@@ -95,3 +96,44 @@ def screen(base: np.ndarray, overlay: np.ndarray) -> np.ndarray:
     base = np.clip(base, 0.0, 1.0).astype(np.float32)
     overlay = np.clip(overlay, 0.0, 1.0).astype(np.float32)
     return (1.0 - (1.0 - base) * (1.0 - overlay)).astype(np.float32)
+
+
+# --- pyvips ports (streaming, memory-bounded) -------------------------------
+# The @node deliverables run these on full-res mosaic channels (a single 2.25
+# Gpx RGB image is 27 GB), so the palette math must not materialize whole
+# arrays. pyvips composes these lazily and evaluates them tile-by-tile in the
+# `tiffsave` sink. They mirror the numpy functions above byte-for-byte (element-
+# wise ops + band-joins); `test_palettes` asserts the equivalence, so the numpy
+# versions above stay the readable, tested spec.
+
+
+def _clip01(img: pyvips.Image) -> pyvips.Image:
+    """Clamp a vips image to [0,1] (vips has no direct clip)."""
+    return (img < 0).ifthenelse(0, (img > 1).ifthenelse(1, img))
+
+
+def hubble_vips(sii: pyvips.Image, ha: pyvips.Image, oiii: pyvips.Image) -> pyvips.Image:
+    """Vips port of `hubble`: R=SII, G=Hα, B=OIII."""
+    return _clip01(sii.bandjoin([ha, oiii]))
+
+
+def foraxx_vips(sii: pyvips.Image, ha: pyvips.Image, oiii: pyvips.Image) -> pyvips.Image:
+    """Vips port of `foraxx` (per-pixel data-dependent narrowband weights)."""
+    s, h, o = _clip01(sii), _clip01(ha), _clip01(oiii)
+    wR = o ** (1.0 - o)
+    R = wR * s + (1.0 - wR) * h
+    m = o * h
+    wG = m ** (1.0 - m)
+    G = wG * h + (1.0 - wG) * o
+    B = o
+    return _clip01(R.bandjoin([G, B]))
+
+
+def combine_star_rgb_vips(r: pyvips.Image, g: pyvips.Image, b: pyvips.Image) -> pyvips.Image:
+    """Vips port of `combine_star_rgb`: stack three mono star channels to RGB."""
+    return _clip01(r.bandjoin([g, b]))
+
+
+def screen_vips(base: pyvips.Image, overlay: pyvips.Image) -> pyvips.Image:
+    """Vips port of `screen`: 1 − (1−base)·(1−overlay)."""
+    return 1.0 - (1.0 - _clip01(base)) * (1.0 - _clip01(overlay))

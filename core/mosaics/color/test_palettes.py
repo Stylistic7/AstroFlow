@@ -1,12 +1,17 @@
 """Unit tests for the pure-numpy color math (autostretch, palettes, screen)."""
 import numpy as np
+import pyvips
 
 from mosaics.color.palettes import (
     autostretch,
     combine_star_rgb,
+    combine_star_rgb_vips,
     foraxx,
+    foraxx_vips,
     hubble,
+    hubble_vips,
     screen,
+    screen_vips,
 )
 
 
@@ -68,3 +73,35 @@ def test_screen_identity_bounds_and_brighten():
     out = screen(base, stars)
     assert out.min() >= 0.0 and out.max() <= 1.0
     assert np.all(out >= base - 1e-6)                                  # screen only brightens
+
+
+# --- pyvips ports must match the numpy reference ----------------------------
+# The @node deliverables run the streaming vips versions on full-res mosaics
+# (a 2.25 Gpx RGB image is 27 GB); this pins them to the tested numpy math.
+
+def _to_vips(a: np.ndarray) -> pyvips.Image:
+    a = np.ascontiguousarray(a, np.float32)
+    bands = 1 if a.ndim == 2 else a.shape[2]
+    return pyvips.Image.new_from_memory(a.tobytes(), a.shape[1], a.shape[0], bands, "float")
+
+
+def _to_np(im: pyvips.Image) -> np.ndarray:
+    return np.ndarray(buffer=im.write_to_memory(), dtype=np.float32,
+                      shape=[im.height, im.width, im.bands])
+
+
+def test_vips_ports_match_numpy():
+    rng = np.random.default_rng(3)
+    s, h, o = (rng.random((48, 48)).astype(np.float32) for _ in range(3))
+    r, g, b = (rng.random((48, 48)).astype(np.float32) for _ in range(3))
+    base = rng.random((48, 48, 3)).astype(np.float32)
+    overlay = rng.random((48, 48, 3)).astype(np.float32)
+
+    def close(np_out, vips_out):
+        return np.allclose(np_out, _to_np(vips_out), atol=1e-5)
+
+    assert close(hubble(s, h, o), hubble_vips(_to_vips(s), _to_vips(h), _to_vips(o)))
+    assert close(foraxx(s, h, o), foraxx_vips(_to_vips(s), _to_vips(h), _to_vips(o)))
+    assert close(combine_star_rgb(r, g, b),
+                 combine_star_rgb_vips(_to_vips(r), _to_vips(g), _to_vips(b)))
+    assert close(screen(base, overlay), screen_vips(_to_vips(base), _to_vips(overlay)))

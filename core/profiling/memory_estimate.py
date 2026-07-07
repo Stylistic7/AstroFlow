@@ -43,6 +43,12 @@ _DEFAULT_MEMORY_BY_OP = {
     "merge_target_channel":            16 * _GB,
     "store_mosaic_color_channel_xisf": 16 * _GB,
     "merge_images":                    16 * _GB,
+    # autostretch_channel is the one full-array numpy op left in the OSS color
+    # path (its input is XISF, which libvips can't stream): ~40 GB on a 2.25 Gpx
+    # channel. Measurable, so this is only a safe COLD-START (the profiled p95
+    # takes over after the first run); 26 GB keeps it from co-scheduling with a
+    # BXT/SXT (26 GB) into an OOM before it's profiled.
+    "autostretch_channel":             26 * _GB,
 }
 _DEFAULT_MEMORY_UNKNOWN = 16 * _GB
 
