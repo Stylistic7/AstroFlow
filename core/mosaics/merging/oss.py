@@ -56,71 +56,148 @@ def _solve_flux_scales(n: int, overlap_means: dict) -> np.ndarray:
     return np.clip(np.exp(log_scales), 0.5, 2.0).astype(np.float32)
 
 
+def _panel_bbox(mask: np.ndarray) -> tuple[int, int, int, int] | None:
+    """Tight (r0, r1, c0, c1) bounding box of the True region, or None if the
+    mask is all-False. Row/col `any` reductions — no full-size intermediate."""
+    rows = np.any(mask, axis=1)
+    if not rows.any():
+        return None
+    cols = np.any(mask, axis=0)
+    r0 = int(np.argmax(rows))
+    r1 = int(len(rows) - np.argmax(rows[::-1]))
+    c0 = int(np.argmax(cols))
+    c1 = int(len(cols) - np.argmax(cols[::-1]))
+    return (r0, r1, c0, c1)
+
+
+def _intersect(a, b):
+    """Canvas-coordinate intersection of two bboxes, or None if disjoint."""
+    r0, r1 = max(a[0], b[0]), min(a[1], b[1])
+    c0, c1 = max(a[2], b[2]), min(a[3], b[3])
+    return (r0, r1, c0, c1) if (r0 < r1 and c0 < c1) else None
+
+
+def _sub(mask_crop, bbox, region):
+    """View of a panel's bbox-cropped mask over the canvas rectangle `region`
+    (which must lie within `bbox`)."""
+    br0, _, bc0, _ = bbox
+    rr0, rr1, rc0, rc1 = region
+    return mask_crop[rr0 - br0:rr1 - br0, rc0 - bc0:rc1 - bc0]
+
+
+def _edt_weight(mask_crop, bbox, canvas_shape):
+    """`edt.edt` of a panel restricted to its bbox — bit-identical to
+    transforming the full-canvas mask and slicing to the bbox.
+
+    Distance-to-background is local, so we transform the crop, not the canvas.
+    A 1-px zero border is added on every side interior to the canvas so an
+    edge-of-footprint pixel finds the same nearest background it would across
+    the full canvas; a side flush against the canvas edge gets no pad, matching
+    `black_border=False` there. 1 px suffices: a footprint pixel's nearest
+    background is either the footprint boundary (inside the bbox) or one step
+    outside the bbox (supplied by the pad)."""
+    r0, r1, c0, c1 = bbox
+    H, W = canvas_shape
+    pt, pb = int(r0 > 0), int(r1 < H)
+    pl, pr = int(c0 > 0), int(c1 < W)
+    padded = np.pad(mask_crop.astype(np.uint8), ((pt, pb), (pl, pr)))
+    # `black_border=False` + `parallel=0` (all cores): matches
+    # scipy.ndimage.distance_transform_edt, ~13x faster (was ~91% of wall time).
+    dist = edt.edt(padded, black_border=False, parallel=0).astype(
+        np.float32, copy=False)
+    return dist[pt:pt + (r1 - r0), pl:pl + (c1 - c0)]
+
+
 def _blend_many(paths: list[Path]) -> np.ndarray:
     """Variadic distance-weighted blend with least-squares flux solve.
 
-    Streams every panel off disk one at a time; never holds more than
-    one full-res image in memory alongside the accumulators. The
-    weighting is `distance_transform_edt` of each panel's mask, the
-    flux scaling comes from a global log-space least-squares over the
-    overlap graph, and the final value is `Σ wᵢ · scaleᵢ · imageᵢ /
-    Σ wᵢ`. Single global feather, no order dependence.
+    Streams every panel off disk one at a time and works per-panel in its
+    on-disk BOUNDING BOX, not the full mosaic canvas: a placed panel fills only
+    a fraction of the canvas (the rest is `place_image`-zero), so its retained
+    mask, its distance-transform weight, and its accumulation slice are all
+    bbox-sized — only the numerator/denominator accumulators are full-canvas.
+    The weighting is the Euclidean distance transform of each panel's mask, the
+    flux scaling is a global log-space least-squares over the overlap graph, and
+    the value is `Σ wᵢ · scaleᵢ · imageᵢ / Σ wᵢ` — a single global feather, no
+    order dependence.
+
+    Bit-identical to the full-canvas formulation: every term it skips outside a
+    panel's bbox is exactly `+0` (there `imageᵢ` and its weight are both zero),
+    and `_edt_weight` reproduces the canvas EDT within the bbox. See
+    `test_oss_blend.py`. Peak RAM: ~3 full-canvas float32 arrays vs the old
+    ~5-6 plus a full-canvas mask per panel.
     """
     if len(paths) == 1:
         return read_image(paths[0]).astype(np.float32)
 
     n = len(paths)
 
-    # Pass 1: collect each panel's mask, plus the i-side of every pairwise
-    # overlap mean. Each image is loaded once here. Storing only one mask
-    # at a time would force a second pass per pair to recover image_i's
-    # mean over its overlap with each image_j, so we keep all masks
-    # (bool, ~1/32 the size of float32) and the running list of partial
-    # overlap means.
+    # Pass 1: each panel's bbox + bbox-cropped mask, plus the i-side of every
+    # pairwise overlap mean. One image in memory at a time; retained masks are
+    # bbox-sized, not full-canvas.
+    canvas_shape: tuple[int, int] | None = None
+    bboxes: list[tuple[int, int, int, int] | None] = []
     masks: list[np.ndarray] = []
     overlap_means: dict[tuple[int, int], tuple[float, float | None]] = {}
     for i, p in enumerate(paths):
-        img = read_image(p).astype(np.float32)
-        mask = img > 0
-        for j, mask_j in enumerate(masks):
-            both = mask & mask_j
+        img = read_image(p).astype(np.float32)  # copy: writable for in-place Pass 3
+        canvas_shape = img.shape
+        bbox = _panel_bbox(img > 0)
+        bboxes.append(bbox)
+        if bbox is None:
+            masks.append(np.zeros((0, 0), dtype=bool))  # blank panel
+            continue
+        r0, r1, c0, c1 = bbox
+        mask = (img[r0:r1, c0:c1] > 0)
+        for j in range(i):
+            if bboxes[j] is None:
+                continue
+            region = _intersect(bbox, bboxes[j])
+            if region is None:
+                continue
+            both = _sub(mask, bbox, region) & _sub(masks[j], bboxes[j], region)
             if not both.any():
                 continue
-            mi = float(img[both].mean())
+            rr0, rr1, rc0, rc1 = region
+            mi = float(img[rr0:rr1, rc0:rc1][both].mean())
             overlap_means[(j, i)] = (None, mi)  # j-side filled in pass 2
         masks.append(mask)
-        # img drops out of scope; numpy frees the buffer.
 
-    # Pass 2: fill in the j-side mean for each pair. We re-load each
-    # image once and compute its mean over the overlap masks where it's
-    # the j (lower-index) side.
+    # Pass 2: fill in the j (lower-index) side mean of each overlapping pair,
+    # re-loading only images that are the a-side of some pending overlap.
     for j, p in enumerate(paths):
-        img = read_image(p).astype(np.float32)
+        if not any(a == j for (a, _) in overlap_means):
+            continue
+        img = read_image(p).astype(np.float32)  # copy: writable for in-place Pass 3
         for (a, b), (_, mi) in list(overlap_means.items()):
             if a != j:
                 continue
-            both = masks[a] & masks[b]
-            mj = float(img[both].mean()) if both.any() else 0.0
+            region = _intersect(bboxes[a], bboxes[b])
+            both = _sub(masks[a], bboxes[a], region) & _sub(masks[b], bboxes[b], region)
+            rr0, rr1, rc0, rc1 = region
+            mj = float(img[rr0:rr1, rc0:rc1][both].mean()) if both.any() else 0.0
             overlap_means[(a, b)] = (mj, mi)
 
     scales = _solve_flux_scales(n, overlap_means)
 
-    # Pass 3: streaming weighted sum.
-    shape = masks[0].shape
-    numer = np.zeros(shape, dtype=np.float32)
-    denom = np.zeros(shape, dtype=np.float32)
+    # Pass 3: streaming weighted sum, accumulated per-panel into its bbox slice.
+    numer = np.zeros(canvas_shape, dtype=np.float32)
+    denom = np.zeros(canvas_shape, dtype=np.float32)
     for i, p in enumerate(paths):
-        img = read_image(p).astype(np.float32)
-        # Multithreaded exact Euclidean distance transform. `black_border=
-        # False` matches scipy.ndimage.distance_transform_edt (the array
-        # border is NOT treated as background); `parallel=0` uses all cores.
-        # Verified numerically identical to scipy on real panels (max abs
-        # diff ~5e-4, float32-sqrt noise) at ~13x the speed — scipy's EDT
-        # was single-threaded and ~91% of merge wall-time.
-        weight = edt.edt(masks[i].astype(np.uint8),
-                         black_border=False, parallel=0).astype(np.float32)
-        numer += weight * (img * scales[i])
-        denom += weight
+        bbox = bboxes[i]
+        if bbox is None:
+            continue
+        r0, r1, c0, c1 = bbox
+        img = read_image(p).astype(np.float32)  # copy: writable for in-place Pass 3
+        weight = _edt_weight(masks[i], bbox, canvas_shape)
+        # Fold scale + weight into the panel's bbox in place, so Pass 3 holds
+        # no extra full-canvas temporaries. `(img·scale)·weight == weight·
+        # (img·scale)` bit-for-bit (float multiply commutes).
+        sub = img[r0:r1, c0:c1]
+        sub *= scales[i]
+        sub *= weight
+        numer[r0:r1, c0:c1] += sub
+        denom[r0:r1, c0:c1] += weight
 
     denom[denom == 0] = 1.0
     return numer / denom
