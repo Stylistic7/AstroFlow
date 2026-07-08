@@ -24,7 +24,7 @@ from astroflow.pipeline import ephemeral_intermediates
 from decorators import node
 from dependency_graph.tracing import workflow_group
 from file_io.generic import read_image
-from file_io.tiff_file_io import write_tiff_image
+from file_io.tiff_file_io import write_tiff_image, TIFF_COMPRESSION
 from file_io.types import TiffFilePath, WithSidecar, XisfFilePath
 from file_io.xisf_file_io import write_xisf_image
 from metadata.classes import ImageMetadata
@@ -86,7 +86,7 @@ def _save_color_vips(path: str, img: pyvips.Image, name: str) -> None:
     img.set_type(pyvips.GValue.gstr_type, "image-description",
                  json.dumps({"PALETTE": name, "PIPELINE": "AstroFlow-OSS"}))
     tmp = f"{path}.{os.getpid()}.tmp.tiff"
-    img.tiffsave(tmp, compression="deflate", tile=True, bigtiff=True)
+    img.tiffsave(tmp, compression=TIFF_COMPRESSION, tile=True, bigtiff=True)
     os.replace(tmp, path)
 
 

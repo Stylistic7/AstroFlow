@@ -43,6 +43,13 @@ _DESC = "image-description"
 # Classic TIFF offsets are 32-bit (4 GB); force BigTIFF well before that. libvips
 # does NOT auto-enable BigTIFF, so we decide from the pixel budget.
 _BIGTIFF_THRESHOLD = 2 * 1024**3
+# Compression codec for every TIFF we write. zstd over deflate: deflate's zlib
+# encode is single-threaded (~25 MB/s, one core pegged for minutes on a gigapixel
+# color TIFF); zstd is far faster at a comparable ratio and libvips reads it back
+# transparently. Single source of truth — the color deliverable path
+# (mosaics/color/post_process._save_color_vips) imports this too, so the two
+# tiffsave sites can't drift apart.
+TIFF_COMPRESSION = "zstd"
 
 
 def _open(filename: Path) -> pyvips.Image:
@@ -75,7 +82,7 @@ def _atomic_tiffsave(
     img: pyvips.Image, filename: Path, tile: tuple[int, int] | None = None
 ) -> None:
     """Save via a sibling tmp + atomic rename (readers never see a half-written
-    file). Deflate-compressed; BigTIFF forced for large images."""
+    file). Zstd-compressed; BigTIFF forced for large images."""
     filename = Path(filename)
     filename.parent.mkdir(parents=True, exist_ok=True)
     tmp = filename.with_name(f".{filename.name}.{uuid.uuid4().hex}.tmp")
@@ -86,7 +93,7 @@ def _atomic_tiffsave(
     )
     try:
         img.tiffsave(
-            str(tmp), compression="deflate",
+            str(tmp), compression=TIFF_COMPRESSION,
             bigtiff=nbytes >= _BIGTIFF_THRESHOLD, **tile_kwargs,
         )
         os.replace(tmp, filename)
