@@ -223,6 +223,30 @@ def _slice_workflow_graph_by_filter(snapshot: dict, filter: str) -> dict:
     def visible_id(node_id):
         return visible(state.get(node_id, {}))
 
+    # A shared group (fan-in from >1 parent — e.g. `color_post_process`,
+    # consumed by every filter's merge) has its `definition` baked onto only the
+    # FIRST skeleton reference; later references are bare `{id, type:"group"}`
+    # stubs (build_skeleton_from_visual's dedup). If the slice prunes the one
+    # definition-bearing copy — its parent lives under a hidden filter — the
+    # surviving stub renders as an un-expandable group. Index every group's full
+    # definition so `prune` can graft it onto whichever copy survives, then
+    # slice that too (mirrors what `slice_meta` already does for `groupMeta`).
+    skeleton = snapshot.get("skeleton", [])
+    full_defs: dict[str, list] = {}
+
+    def _collect_defs(entries):
+        for e in entries:
+            if not isinstance(e, dict):
+                continue
+            eid = e.get("id")
+            if eid is not None and isinstance(e.get("definition"), list):
+                full_defs.setdefault(eid, e["definition"])
+            for key in ("next", "definition"):
+                if isinstance(e.get(key), list):
+                    _collect_defs(e[key])
+
+    _collect_defs(skeleton)
+
     def prune(entries):
         out = []
         for e in entries:
@@ -232,13 +256,20 @@ def _slice_workflow_graph_by_filter(snapshot: dict, filter: str) -> dict:
             new_e = dict(e)
             if "next" in new_e:
                 new_e["next"] = prune(new_e["next"])
-            if "definition" in new_e:
-                new_e["definition"] = prune(new_e["definition"])
+            # Reconstruct the definition for any surviving group: a bare stub
+            # grafts the id's full definition; every copy is then sliced to its
+            # visible children (so `/H` expands to H's ops + the shared
+            # deliverables, not all six filters' worth).
+            defn = new_e.get("definition")
+            if defn is None and new_e.get("type") == "group" and nid in full_defs:
+                defn = full_defs[nid]
+            if isinstance(defn, list):
+                new_e["definition"] = prune(defn)
             out.append(new_e)
         return out
 
     return {
-        "skeleton": prune(snapshot.get("skeleton", [])),
+        "skeleton": prune(skeleton),
         "state": new_state,
     }
 

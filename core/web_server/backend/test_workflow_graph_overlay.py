@@ -100,3 +100,44 @@ def test_strip_removes_expected_path(tmp_path, monkeypatch):
     out = compute_graphs._strip_server_internal_fields(snap)
     for meta in out["state"].values():
         assert "expectedPath" not in (meta.get("options") or {})
+
+
+def test_slice_reconstructs_shared_group_definition():
+    """A shared group (fan-in from >1 filter's merge) bakes its `definition`
+    onto only one skeleton copy; the others are bare stubs. If the slice prunes
+    the definition-bearing copy (its parent is a hidden filter), the surviving
+    stub must still be expandable — reconstructed + sliced to visible children.
+    """
+    snap = {
+        "skeleton": [
+            {"id": "mergeS", "type": "execution", "next": [
+                {"id": "color", "type": "group", "definition": [   # full copy (under S)
+                    {"id": "bxtS", "type": "execution"},
+                    {"id": "bxtH", "type": "execution"},
+                    {"id": "hubble", "type": "execution"},
+                ]},
+            ]},
+            {"id": "mergeH", "type": "execution", "next": [
+                {"id": "color", "type": "group"},                  # bare stub (under H)
+            ]},
+        ],
+        "state": {
+            "mergeS": {"displayName": "merge", "filters": ["S"]},
+            "mergeH": {"displayName": "merge", "filters": ["H"]},
+            "color":  {"displayName": "color_post_process", "filters": []},
+            "bxtS":   {"displayName": "bxt_correct", "filters": ["S"]},
+            "bxtH":   {"displayName": "bxt_correct", "filters": ["H"]},
+            "hubble": {"displayName": "hubble_image", "filters": []},
+        },
+    }
+    out = compute_graphs._slice_workflow_graph_by_filter(snap, "H")
+    ids = [e["id"] for e in out["skeleton"]]
+    assert "mergeH" in ids and "mergeS" not in ids       # S-only parent pruned
+
+    color = out["skeleton"][ids.index("mergeH")]["next"][0]
+    assert color["id"] == "color"
+    # the fix: the formerly-bare surviving group is expandable again...
+    assert isinstance(color.get("definition"), list), "sliced group must expand"
+    # ...pruned to visible children: H's bxt + the shared deliverable, not S's
+    defids = {c["id"] for c in color["definition"]}
+    assert defids == {"bxtH", "hubble"}, defids
