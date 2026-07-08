@@ -1,1 +1,9 @@
 astroflow.egg-info/
+
+# pytest / junit test-run artifacts (see `make tests`, scripts/run_parallel_tests.py)
+serial.xml
+exclusive.xml
+merged.xml
+shard*.xml
+light.xml
+heavy.xml

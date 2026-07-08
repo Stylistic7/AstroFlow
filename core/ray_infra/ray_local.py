@@ -6,6 +6,7 @@ import time
 import ray
 import uuid
 import tempfile
+import psutil
 from typing import Any
 
 
@@ -47,10 +48,48 @@ def enable_test_mode(ray_temp_dir: str | None = None) -> None:
     if ray_temp_dir is None:
         ray_temp_dir = tempfile.mkdtemp(prefix="ray-test-", dir="/tmp")
 
-    _log(f"ray.init START namespace={namespace} working_dir={working_dir} temp_dir={ray_temp_dir}")
+    # Each xdist worker starts its OWN private Ray cluster — deliberate: tests
+    # reset/clear caches, so a shared cluster would let workers stomp each
+    # other. But an unbounded ray.init() grabs ALL CPUs and ~30% of RAM for its
+    # object store; N private clusters then over-subscribe the box (N×30% RAM)
+    # and OOM-kill workers — the intermittent `KeyError: <WorkerController gwN>`
+    # xdist crashes. Fix: size each private cluster to a fair 1/N slice of the
+    # machine. PYTEST_XDIST_WORKER_COUNT is set by xdist in each worker; unset
+    # (serial / -n0 / non-test) => 1 => the whole machine, unchanged.
+    # How many test Ray clusters share this machine right now: the xdist worker
+    # count, or ASTROFLOW_TEST_CONCURRENCY set by the process-per-file runner
+    # (scripts/run_parallel_tests.py) which runs N single-process pytest shards
+    # in parallel. Whichever is larger; unset => 1 => the whole machine.
+    n_workers = max(1,
+                    int(os.environ.get("PYTEST_XDIST_WORKER_COUNT", "1")),
+                    int(os.environ.get("ASTROFLOW_TEST_CONCURRENCY", "1")))
+    # Divide num_cpus by the shard count. This is essential, not just tidy: an
+    # unbounded local cluster pre-spawns ~one worker process per CPU (24 here),
+    # so N unbounded clusters = N×24 Ray worker processes, which destabilizes
+    # Ray's GCS (intermittent gcs_error_subscriber failures) and exhausts RAM.
+    # Correctness tests don't need high intra-shard parallelism — they
+    # parallelize ACROSS shards; the few tests that assert task parallelism /
+    # wall time are marked `serial` and run alone (ASTROFLOW_TEST_CONCURRENCY=1
+    # => the whole machine), where their timing assertions are valid.
+    num_cpus = max(1, (os.cpu_count() or 4) // n_workers)
+    # Object store: cap total test object-store use to ~25% of RAM, split across
+    # the N clusters. Ray spills to disk past this (a cap, not a hard wall); the
+    # 256 MB floor keeps a lone cluster usable; the 1.5 GB ceiling is mandatory
+    # on macOS — Ray *hard-errors* if object_store_memory exceeds 2 GB (the /tmp
+    # shared-memory perf cliff).
+    obj_budget = int(0.25 * psutil.virtual_memory().total)
+    object_store_memory = max(256 * 1024**2,
+                              min(1536 * 1024**2, obj_budget // n_workers))
+
+    _log(f"ray.init START namespace={namespace} working_dir={working_dir} "
+         f"temp_dir={ray_temp_dir} n_workers={n_workers} num_cpus={num_cpus} "
+         f"object_store_mb={object_store_memory // 1024**2}")
     ray.init(
         address="local",
         namespace=namespace,
+        num_cpus=num_cpus,
+        object_store_memory=object_store_memory,
+        include_dashboard=False,  # tests don't need it; trims per-cluster overhead
         resources={"diskcache": 1, "fastest_storage": 1, "PixInsight": 1},
         ignore_reinit_error=False,
         _temp_dir=ray_temp_dir,
@@ -154,7 +193,16 @@ def disable_test_mode() -> None:
 
     try:
         _log("ray.shutdown START")
-        ray.shutdown(_exiting_interpreter=True)
+        # Full shutdown — NOT _exiting_interpreter=True. This runs in a fixture
+        # teardown (session end), not real interpreter exit, so we WANT Ray to
+        # join its in-process CoreWorker / gRPC / raylet threads right now.
+        # _exiting_interpreter=True skips that join (it assumes the dying
+        # interpreter will reap them), which leaves ~24 _raylet.so threads alive
+        # to SIGABRT during the xdist worker's Py_Finalize — reported as
+        # "node down: Not properly terminated", i.e. the intermittent
+        # parallel-test flake. Joining here means Ray is fully down before
+        # finalization, so nothing is left to abort.
+        ray.shutdown()
         _log("ray.shutdown DONE")
     except Exception as e:
         _log(f"ray.shutdown raised: {e}")

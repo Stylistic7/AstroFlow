@@ -1,10 +1,9 @@
 PYTEST = pytest
-JUNIT_LIGHT = light.xml
-JUNIT_HEAVY = heavy.xml
+JUNIT_SERIAL = serial.xml
 JUNIT_EXCLUSIVE = exclusive.xml
 JUNIT_MERGED = merged.xml
 
-.PHONY: install tests tests-full clean ray-clean ray-status
+.PHONY: install tests tests-full clean ray-clean ray-status start stop restart
 
 # Build/repair the project venv so it EXACTLY matches uv.lock — the
 # single source of truth every Mac in the cluster syncs to. `--frozen`
@@ -15,22 +14,37 @@ install:
 	cd .. && uv sync --frozen
 	@echo "✅ venv synced to uv.lock. Run the app with: uv run python main.py"
 
+# Two-phase strategy that works around Ray + parallel-pytest instability:
+#   SERIAL phase — `serial` (timing/benchmark) + `exclusive` (state-isolation)
+#     tests as plain `pytest -n 0`. They flake under xdist/parallelism (Ray
+#     cluster init/teardown races) but are rock-solid single-process, and few.
+#   PARALLEL phase — all correctness tests, sharded across process-per-file
+#     `-n 0` runs (scripts/run_parallel_tests.py): the reliable way to
+#     parallelize Ray tests (each shard is its own process + Ray cluster).
+# Every phase runs even if an earlier one fails; exits non-zero if any did.
 tests:
-	PYTHONPATH=. $(PYTEST) -n auto --dist=loadscope -m "not exclusive and not slow and not heavy" --junitxml=$(JUNIT_LIGHT)
-	PYTHONPATH=. $(PYTEST) -n 1 -m "heavy and not exclusive and not slow" --junitxml=$(JUNIT_HEAVY)
-	PYTHONPATH=. $(PYTEST) -n 1 -m exclusive --junitxml=$(JUNIT_EXCLUSIVE)
-	python merge_junitxml.py $(JUNIT_LIGHT) $(JUNIT_HEAVY) $(JUNIT_EXCLUSIVE) > $(JUNIT_MERGED)
-	@echo "✅ Tests complete. Merged report saved to $(JUNIT_MERGED)"
+	@rm -f $(JUNIT_SERIAL) $(JUNIT_EXCLUSIVE) $(JUNIT_MERGED) shard*.xml; rc=0; \
+	echo "→ serial (timing/benchmark) tests — plain -n 0"; \
+	PYTHONPATH=. uv run pytest -n 0 -m "not exhaustive and serial and not slow" --junitxml=$(JUNIT_SERIAL) || rc=1; \
+	echo "→ exclusive tests — plain -n 0"; \
+	PYTHONPATH=. uv run pytest -n 0 -m "not exhaustive and exclusive and not slow" --junitxml=$(JUNIT_EXCLUSIVE) || rc=1; \
+	echo "→ parallel correctness tests — process-per-file shards"; \
+	uv run python scripts/run_parallel_tests.py || rc=1; \
+	python merge_junitxml.py $(JUNIT_SERIAL) $(JUNIT_EXCLUSIVE) shard*.xml > $(JUNIT_MERGED) 2>/dev/null || true; \
+	[ $$rc -eq 0 ] && echo "✅ all phases green — report: $(JUNIT_MERGED)" || echo "❌ a phase failed — report: $(JUNIT_MERGED)"; \
+	exit $$rc
 
+# Same, but also include tests marked `slow` (threaded to the runner via INCLUDE_SLOW).
 tests-full:
-	PYTHONPATH=. $(PYTEST) -n auto --dist=loadscope -m "not exclusive and not heavy" --junitxml=$(JUNIT_LIGHT)
-	PYTHONPATH=. $(PYTEST) -n 1 -m "heavy and not exclusive" --junitxml=$(JUNIT_HEAVY)
-	PYTHONPATH=. $(PYTEST) -n 1 -m exclusive --junitxml=$(JUNIT_EXCLUSIVE)
-	python merge_junitxml.py $(JUNIT_LIGHT) $(JUNIT_HEAVY) $(JUNIT_EXCLUSIVE) > $(JUNIT_MERGED)
-	@echo "✅ Tests complete. Merged report saved to $(JUNIT_MERGED)"
+	@rm -f $(JUNIT_SERIAL) $(JUNIT_EXCLUSIVE) $(JUNIT_MERGED) shard*.xml; rc=0; \
+	PYTHONPATH=. uv run pytest -n 0 -m "not exhaustive and serial" --junitxml=$(JUNIT_SERIAL) || rc=1; \
+	PYTHONPATH=. uv run pytest -n 0 -m "not exhaustive and exclusive" --junitxml=$(JUNIT_EXCLUSIVE) || rc=1; \
+	INCLUDE_SLOW=1 uv run python scripts/run_parallel_tests.py || rc=1; \
+	python merge_junitxml.py $(JUNIT_SERIAL) $(JUNIT_EXCLUSIVE) shard*.xml > $(JUNIT_MERGED) 2>/dev/null || true; \
+	exit $$rc
 
 clean:
-	rm -f $(JUNIT_LIGHT) $(JUNIT_HEAVY) $(JUNIT_EXCLUSIVE) $(JUNIT_MERGED)
+	rm -f $(JUNIT_SERIAL) $(JUNIT_EXCLUSIVE) $(JUNIT_MERGED) shard*.xml
 
 # Aggressive Ray reset — as close to a reboot as you can get without one.
 # Use when tests hang or `ray.init()` blows up with
@@ -89,3 +103,26 @@ ray-status:
 	@printf "  TIME_WAIT/CLOSE_WAIT: %s\n" $$(netstat -anp tcp 2>/dev/null | grep -cE "TIME_WAIT|CLOSE_WAIT")
 	@echo "=== swap usage ==="
 	@sysctl vm.swapusage 2>/dev/null | sed 's/^/  /'
+
+# --- App lifecycle ---------------------------------------------------------
+# Start the live app (Ray head + gunicorn web server) in the FOREGROUND.
+# Run from core/. Ctrl-C stops it (main.py's atexit cleans up gunicorn + ray).
+start:
+	uv run python main.py
+
+# Stop the live app: `ray stop; pkill -f gunicorn; pkill -f PixInsight`.
+# NOTE the `[g]unicorn` / `[P]ixInsight` bracket trick: `pkill -f` matches
+# against full command lines, and this recipe's own shell has the pattern in
+# its command line — a bare `pkill -f gunicorn` would SIGTERM the recipe shell
+# and abort `stop` before it reached PixInsight. `[g]unicorn` is the same regex
+# but its literal text no longer matches itself. `-` prefixes ignore "no match".
+stop:
+	-ray stop
+	-pkill -f "[g]unicorn"
+	-pkill -f "[P]ixInsight"
+	@echo "✅ app stopped (ray + gunicorn + PixInsight)"
+
+# Bounce the app: stop, let ray/sockets settle, start again (foreground).
+restart: stop
+	@sleep 2
+	@$(MAKE) start
