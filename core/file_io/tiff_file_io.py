@@ -53,7 +53,15 @@ TIFF_COMPRESSION = "zstd"
 
 
 def _open(filename: Path) -> pyvips.Image:
-    return pyvips.Image.new_from_file(str(filename))
+    # revalidate=True bypasses libvips's operation cache so a file that was
+    # overwritten in place is never read stale. Without it, a read that
+    # populated the cache BEFORE an in-place rewrite (e.g. update_tiff_header
+    # opens the file to merge metadata, then overwrites it with the CONTHASH
+    # stamp) returns the OLD header on the next same-process read — so produced
+    # images silently lose their content-hash stamp and get_content_hash falls
+    # back to pixel-hashing, giving them a non-deterministic identity that
+    # never cache-hits (the "re-derives all night" churn).
+    return pyvips.Image.new_from_file(str(filename), revalidate=True)
 
 
 def _get_description(img: pyvips.Image) -> str:
