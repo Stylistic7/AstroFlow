@@ -47,7 +47,7 @@ def _mono(meta: ImageMetadata) -> np.ndarray:
 
 
 def _write_mono_tiff(path: str, data: np.ndarray, filter: str) -> None:
-    """Write a mono channel as BigTIFF (tifffile auto-enables BigTIFF >4 GB).
+    """Write a mono channel as TIFF (write_tiff_image forces BigTIFF past 2 GB).
     autostretch emits this so XISF dies at the rc-astro boundary — from here on
     the color path is TIFF + pyvips (see module docstring)."""
     os.makedirs(os.path.dirname(path), exist_ok=True)

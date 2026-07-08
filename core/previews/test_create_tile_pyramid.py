@@ -5,9 +5,9 @@ import brotli
 import numpy as np
 import cv2
 import pyvips
-import tifffile
 import astropy.io.fits as pyfits
 
+from file_io.tiff_file_io import write_tiff_image
 from previews.create_tile_pyramid import (
     _CONTEXT_MAGIC,
     _CONTEXT_RATIO,
@@ -67,7 +67,7 @@ def test_pyramid_thumbnail_handles_legacy_single_resolution_tiff(tmp_path):
     # must not blow up reading the whole thing.
     arr = (np.mgrid[0:4096, 0:4096][0] % 256).astype(np.uint8)
     legacy = tmp_path / "legacy.tiff"
-    tifffile.imwrite(str(legacy), arr, tile=(256, 256), compression="deflate")
+    write_tiff_image(legacy, arr, tile=(256, 256))
     assert pyvips.Image.tiffload(str(legacy), page=0).get("n-pages") == 1
     png = pyramid_thumbnail(legacy, min_px=1200)
     assert png[:8] == b"\x89PNG\r\n\x1a\n"
@@ -98,7 +98,7 @@ def test_pyramid_thumbnail_autostretches_float32_so_data_isnt_binary(tmp_path):
         cx = int(rng.integers(side // 4, 3 * side // 4))
         arr[cy - 3:cy + 4, cx - 3:cx + 4] = 65535
     src = tmp_path / "raw_float.tiff"
-    tifffile.imwrite(str(src), arr, compression="deflate")
+    write_tiff_image(src, arr)
 
     png = pyramid_thumbnail(src, min_px=800)
     decoded = cv2.imdecode(np.frombuffer(png, np.uint8), cv2.IMREAD_UNCHANGED)
