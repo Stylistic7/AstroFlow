@@ -248,6 +248,27 @@ def _resolved_filename(rt, node: Node) -> str | None:
     return None
 
 
+def _node_description(node) -> str | None:
+    """Friendly subtitle for a graph node: the **panel number** — the one
+    identifier the user recognizes (it labels the mosaic-viewer polygons and is
+    the "Panel N" prefix of the Telescopius/text export, via
+    `Mosaic.panel_numbers`). Only per-panel ops carry a `Target`; everything else
+    gets no subtitle (blank beats the opaque node id). Best-effort, never raises;
+    duck-typed so it stays a local read of `node.args`, not a type dependency."""
+    try:
+        args = getattr(node, "args", ()) or ()
+        mosaic = next(
+            (a for a in args if callable(getattr(a, "panel_numbers", None))), None
+        )
+        if mosaic is None:
+            return None
+        panels = mosaic.panel_numbers()
+        target = next((a for a in args if getattr(a, "id", None) in panels), None)
+        return f"Panel {panels[target.id]}" if target is not None else None
+    except Exception:
+        return None
+
+
 def gather_state_from_visual(
     vg: VisualGraph,
     rt,
@@ -284,10 +305,9 @@ def gather_state_from_visual(
         expected = path_map.get(node)
         if expected is not None:
             entry["options"]["expectedPath"] = expected
-        if node.name:
-            entry["description"] = node.name
-        elif node.args:
-            entry["description"] = str(node.args[0])
+        desc = _node_description(node)
+        if desc:
+            entry["description"] = desc
         if node in subgraphs_by_parent:
             sub_rt = subgraphs_by_parent[node]
             sub_vg = to_visual_graph(sub_rt.graph)
