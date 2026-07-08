@@ -32,6 +32,22 @@ from pathlib import Path
 
 import pytest
 
+from testing.seam_metrics import join_step, seam_column_profile
+
+# The PhotometricMosaic apex tests need PixInsight + Stylistic7's PMM script; skip
+# them (rather than fail) when it's absent, so a headless CI stays green. The
+# OSS seam coverage that supersedes them — headless, on `merge_images_oss`, the
+# default merger — lives in mosaics/merging/test_oss_seam.py.
+_PMM_SCRIPT = Path(
+    "/Applications/PixInsight/src/scripts/JohnMurphy/PhotometricMosaic/"
+    "AstroFlowPhotometricMosaic.js"
+)
+_requires_pmm = pytest.mark.skipif(
+    not _PMM_SCRIPT.exists(),
+    reason="AstroFlowPhotometricMosaic.js not installed; OSS seam coverage is in "
+           "mosaics/merging/test_oss_seam.py",
+)
+
 # Where the mosaic + seam-profile artifacts land. Override with
 # SEAM_TEST_IMAGE_DIR=/path.
 _SEAM_IMAGE_DIR = Path(
@@ -137,6 +153,7 @@ def _force_real_pixinsight() -> None:
 
 @pytest.mark.slow
 @pytest.mark.timeout(2400)
+@_requires_pmm
 def test_diagnose_corner_glow(test_context, monkeypatch):
     """TEMP diagnostic: the apex mosaic shows a bright bottom-right corner
     glow even though the synthetic sky is uniform (no gradient). Disable
@@ -252,76 +269,13 @@ def test_two_synthetic_panels_identified_as_mosaic(test_context):
     )
 
 
-def _seam_column_profile(mosaic) -> dict:
-    """Per-column sky-background median across the assembled mosaic.
-
-    The panels are offset in RA, so the join is roughly vertical — a
-    column-wise sky profile is the natural seam probe: a flat mosaic is
-    essentially one value everywhere, stars aside. For each column we
-    take the median of valid, non-star pixels; a seam shows up as a step
-    between the panels. Returns the profile plus its peak-to-peak spread
-    relative to the sky noise."""
-    import numpy as np
-
-    valid = mosaic > 0
-    med = float(np.median(mosaic[valid]))
-    mad = float(np.median(np.abs(mosaic[valid] - med))) + 1e-12
-    star = mosaic > med + 6.0 * 1.4826 * mad
-    keep = valid & ~star
-
-    W = mosaic.shape[1]
-    prof = np.full(W, np.nan)
-    for x in range(W):
-        col = mosaic[:, x][keep[:, x]]
-        if col.size > 50:
-            prof[x] = np.median(col)
-
-    good = np.where(np.isfinite(prof))[0]
-    sky_pixels = mosaic[keep]
-    sky_rms = float(np.std(sky_pixels[sky_pixels < np.percentile(sky_pixels, 75)]))
-    # Peak-to-peak of the column sky profile over the valid span, ignoring
-    # the outer 2% (edge-erosion ramps) at each end.
-    inner = good[int(0.02 * good.size): max(1, int(0.98 * good.size))]
-    pp = float(np.nanmax(prof[inner]) - np.nanmin(prof[inner])) if inner.size else float("nan")
-    return {
-        "profile": prof, "good_cols": good,
-        "sky_median": med, "sky_rms": sky_rms,
-        "seam_pp_adu": pp, "seam_over_rms": pp / max(sky_rms, 1e-12),
-    }
-
-
-def _join_step(seam: dict) -> dict:
-    """Local seam discontinuity across the panel join — the field-
-    independent 'is there a visible seam?' invariant. Smooth the column
-    sky profile, then take the largest change over a ~50px window: a real
-    join step is a sharp jump, whereas a per-panel smile or a smooth
-    MARS-vs-synthetic gradient changes only gradually and is NOT a seam."""
-    import numpy as np
-
-    prof = seam["profile"]
-    good = seam["good_cols"]
-    if good.size < 200:
-        return {"step_adu": float("nan"), "step_over_rms": float("nan")}
-    # Measure the INTERIOR join, excluding the outer 2% at each end — the
-    # same edge trim `_seam_column_profile` applies to the global p-p. The
-    # extreme-edge columns are footprint-boundary / GC edge ramps (and on
-    # synthetic MGC fields the synthetic↔MARS glow surfaces there); the
-    # panel join lies in the interior, not at the mosaic edge.
-    m = int(0.02 * good.size)
-    inner = good[m: good.size - m] if good.size - 2 * m > 200 else good
-    p = prof[inner]
-    k = 25
-    sm = np.convolve(p, np.ones(2 * k + 1) / (2 * k + 1), mode="valid")
-    W = 25
-    if sm.size <= 2 * W:
-        return {"step_adu": float("nan"), "step_over_rms": float("nan")}
-    step = float(np.max(np.abs(sm[2 * W:] - sm[:-2 * W])))
-    return {"step_adu": step,
-            "step_over_rms": step / max(seam["sky_rms"], 1e-12)}
+# The seam metric (`seam_column_profile` / `join_step`) is shared with the OSS
+# `merge_images_oss` seam test — see `testing.seam_metrics`.
 
 
 @pytest.mark.slow
 @pytest.mark.timeout(2400)
+@_requires_pmm
 @pytest.mark.parametrize("field", list(_APEX_FIELDS))
 def test_synthetic_mosaic_is_seamless(test_context, field):
     """Apex: source FITS → seamless mosaic, fully automatic, via the real
@@ -331,7 +285,7 @@ def test_synthetic_mosaic_is_seamless(test_context, field):
     identify the mosaic, drop it in the shopping cart, run again to build.
 
     Universal invariant asserted for EVERY field: the JOIN is seamless —
-    no local step across the panel boundary (`_join_step`). Global flatness
+    no local step across the panel boundary (`join_step`). Global flatness
     is reported but NOT asserted: on MARS/MGC fields, MGC subtracts the
     real-sky model from synthetic uniform data, leaving a smooth gradient
     that is a synthetic↔MARS mismatch, not a seam; only the data-driven ABE
@@ -376,8 +330,8 @@ def test_synthetic_mosaic_is_seamless(test_context, field):
         array_to_png(autostretch(mosaic.astype(np.float32)))
     )
 
-    seam = _seam_column_profile(mosaic)
-    js = _join_step(seam)
+    seam = seam_column_profile(mosaic)
+    js = join_step(seam)
     fig, ax = plt.subplots(figsize=(11, 4))
     ax.plot(seam["good_cols"], seam["profile"][seam["good_cols"]],
             lw=0.7, color="0.2")
