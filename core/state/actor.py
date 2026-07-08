@@ -127,7 +127,12 @@ class StateActor:
             totals = progress.get("_totals", {"total_number": 0, "remaining_number": 0})
             total = totals["total_number"]
             remaining = totals["remaining_number"]
-            print(f"### progress: {total - remaining}/{total} done, {len(progress) - 1} task types")
+            done = total - remaining
+            # Fires on every scheduler tick; only log when the count actually
+            # advances so the console isn't 5x the same "36663/37725" line.
+            if done != getattr(self, "_last_progress_done", None):
+                self._last_progress_done = done
+                print(f"### progress: {done}/{total} done, {len(progress) - 1} task types")
 
             from context.context import _get_namespace
             actor = ray.get_actor("context", namespace=_get_namespace())
