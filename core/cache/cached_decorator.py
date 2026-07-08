@@ -90,6 +90,73 @@ def _is_head_node() -> bool:
     return False
 
 
+# Whether THIS worker process runs on the head node that owns the canonical
+# diskcache. Constant for a process's lifetime, so compute it once (the check
+# does a `ray.nodes()` RPC) and reuse.
+_PROCESS_IS_HEAD: Optional[bool] = None
+
+
+def _log_node_exec(
+    op: str,
+    call_hash: str,
+    outcome: str,
+    elapsed_s: Optional[float] = None,
+    result: Any = None,
+    size_mb: Optional[float] = None,
+) -> None:
+    """Emit one structured `### node_exec` record per real (non-dry-run) node
+    call. Grepping/parsing `### node_exec` then surfaces a broad class of
+    execution problems, not just today's re-run hunt:
+
+        field      what it catches
+        op         which operation ran.
+        call_hash  the cache key. Same (op, call_hash) with outcome=miss more
+                   than once => a cache-miss RE-RUN (memo not hit). Many
+                   *distinct* call_hashes for one op => upstream content-hash
+                   INSTABILITY (a determinism leak feeding the trace).
+        outcome    hit | miss — the cache hit rate; a low rate is wasted compute.
+        node,pid   which machine / worker ran it. Two misses of one call_hash on
+                   different `node`s => per-machine diskcache divergence
+                   (HEAD-PINNING); `pid` isolates a single bad worker.
+        head       ran on the head (canonical-cache) node or not — off-head
+                   misses that then re-run elsewhere are the head-pinning smell.
+        elapsed_s  run time — outliers flag slow ops, hangs, perf regressions.
+        result_mb  result size — outliers flag memory bloat / oversized cache.
+        rtype,out  result type and output path — a miss whose `out` file is then
+                   absent flags a producer that didn't write, or reclaim churn.
+
+    Never raises — telemetry must never break the pipeline."""
+    global _PROCESS_IS_HEAD
+    try:
+        node = str(get_runtime_context().get_node_id())[:12]
+    except Exception:
+        node = "?"
+    if _PROCESS_IS_HEAD is None:
+        try:
+            _PROCESS_IS_HEAD = _is_head_node()
+        except Exception:
+            _PROCESS_IS_HEAD = False
+    out = "-"
+    try:
+        r = result
+        from file_io.types import WithSidecar
+        if isinstance(r, WithSidecar):
+            r = r.path
+        if isinstance(r, Path):
+            out = str(r)
+        elif getattr(r, "filename", None) is not None:
+            out = str(r.filename)
+    except Exception:
+        pass
+    print(
+        f"### node_exec op={op} call_hash={call_hash} outcome={outcome} "
+        f"node={node} pid={os.getpid()} head={_PROCESS_IS_HEAD} "
+        f"elapsed_s={f'{elapsed_s:.3f}' if elapsed_s is not None else '-'} "
+        f"result_mb={f'{size_mb:.2f}' if size_mb is not None else '-'} "
+        f"rtype={type(result).__name__ if result is not None else '-'} out={out}"
+    )
+
+
 def _bind_args(
     func: Callable, args: tuple, kwargs: dict, injected_context: Optional[dict]
 ) -> inspect.BoundArguments:
@@ -183,6 +250,9 @@ def make_cached_decorator(
             bound = _bind_args(func, args, kwargs, injected_context)
             key, call_hash, valid, cached_result = _key_and_lookup(bound)
             if valid:
+                if not dry_run:  # dry-run tracing isn't real work — don't log it
+                    _log_node_exec(func.__name__, call_hash, "hit",
+                                   result=cached_result)
                 if isinstance(cached_result, ContextRef):
                     assert cached_result.ref is None
                 return cached_result
@@ -193,13 +263,15 @@ def make_cached_decorator(
             start_time = time.time()
             result = func(*bound.args, **bound.kwargs)
             elapsed_time = time.time() - start_time
+            size_mb = objsize.get_deep_size(result) / 1024.0 / 1024.0
+            _log_node_exec(func.__name__, call_hash, "miss",
+                           elapsed_s=elapsed_time, result=result, size_mb=size_mb)
             if TRACE_TASKS:
                 print(f"<<< {func.__name__} ({elapsed_time:.3f}s)")
             if elapsed_time > 0.5:
                 debug_print(
                     f"### fn {func.__name__} was slow to run, took {elapsed_time=} s"
                 )
-            size_mb = objsize.get_deep_size(result) / 1024.0 / 1024.0
             if size_mb > 5:
                 debug_print(
                     f"### fn {func.__name__} returned large object, {size_mb:0.3f} MB"
