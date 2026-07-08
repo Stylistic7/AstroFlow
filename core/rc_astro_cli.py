@@ -113,20 +113,28 @@ def run_bxt(
     sharpen_stars: float = 0.0,
     sharpen_nonstellar: float = 0.0,
     correct_only: bool = False,
+    ml_version: int = 0,
+    overlap: float = 0.2,
     timeout: float | None = 1800.0,
 ) -> None:
     """BlurXTerminator `input_image` to `output_xisf` (32-bit float, WCS preserved).
 
     Output is XISF (see module docstring: the FITS writer overflows on
     >2**31-pixel channels). Operates on LINEAR data. `correct_only` corrects PSF
-    aberrations without sharpening (mutually exclusive with the sharpen amounts)."""
+    aberrations without sharpening (mutually exclusive with the sharpen amounts).
+
+    The sharpen defaults are 0.0 to mirror the rc-astro CLI's own defaults (this
+    is a neutral primitive) — callers that want the normal sharpened look must
+    ask for it; the OSS pipeline does, via BxtSettings. `ml_version`/`overlap` are
+    always passed so the model + tiling are pinned, not left to CLI defaults."""
     input_image, output_xisf = Path(input_image), Path(output_xisf)
     with tempfile.TemporaryDirectory(prefix="rcastro_bxt_") as td:
         # Explicit `.xisf` output filename forces XISF format (the input is a
         # FITS mosaic channel; a bare `-o <dir>` would inherit FITS and overflow).
         produced = Path(td) / f"{input_image.stem}-bxt.xisf"
         args = ["bxt", str(input_image), "-o", str(produced),
-                "--depth", "32F", "--overwrite"]
+                "--depth", "32F", "--overwrite",
+                "--ml-version", str(ml_version), "--overlap", str(overlap)]
         if correct_only:
             args.append("--correct-only")
         else:
@@ -142,6 +150,8 @@ def run_sxt(
     *,
     stars_out: Path | str | None = None,
     unscreen: bool = False,
+    ml_version: int = 0,
+    overlap: float = 0.2,
     timeout: float | None = 1800.0,
 ) -> None:
     """StarXTerminator `input_image`, writing the requested output(s).
@@ -150,12 +160,16 @@ def run_sxt(
     added whenever `stars_out` is requested; `--unscreen` (only with `--stars`)
     writes screen-ready stars to re-apply with a screen blend. Operates on
     LINEAR data. Products inherit the input's format via `-o <dir>`; fed the
-    XISF BXT output, they are XISF (the FITS writer overflows on big channels)."""
+    XISF BXT output, they are XISF (the FITS writer overflows on big channels).
+
+    SXT has no strength dial; `ml_version`/`overlap` are always passed so the
+    model + tiling are pinned rather than left to (drifting) CLI defaults."""
     if starless_out is None and stars_out is None:
         raise ValueError("run_sxt needs starless_out and/or stars_out")
     input_image = Path(input_image)
     with tempfile.TemporaryDirectory(prefix="rcastro_sxt_") as td:
-        args = ["sxt", str(input_image), "-o", td, "--depth", "32F", "--overwrite"]
+        args = ["sxt", str(input_image), "-o", td, "--depth", "32F", "--overwrite",
+                "--ml-version", str(ml_version), "--overlap", str(overlap)]
         if stars_out is not None:
             args.append("--stars")
             if unscreen:

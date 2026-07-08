@@ -61,6 +61,9 @@ def test_bxt_command_and_relocates_output(fake, tmp_path):
     assert "--depth" in cmd and cmd[cmd.index("--depth") + 1] == "32F"
     assert "--overwrite" in cmd
     assert cmd[cmd.index("--sharpen-stars") + 1] == "0.1"
+    # Model + tiling are always pinned, never left to the CLI's own defaults.
+    assert cmd[cmd.index("--ml-version") + 1] == "0"
+    assert cmd[cmd.index("--overlap") + 1] == "0.2"
     # BXT forces XISF via an explicit `.xisf` output path (else FITS overflows).
     assert cmd[cmd.index("-o") + 1].endswith(".xisf")
     assert out.exists()  # moved from the temp -o file to the requested path
@@ -76,6 +79,9 @@ def test_sxt_starless_only_no_stars_flag(fake, tmp_path):
     out = tmp_path / "starless.xisf"
     rc_astro_cli.run_sxt(tmp_path / "chan.xisf", starless_out=out)
     assert "--stars" not in fake.cmd
+    # SXT pins model + tiling too (its only output-affecting flags).
+    assert fake.cmd[fake.cmd.index("--ml-version") + 1] == "0"
+    assert fake.cmd[fake.cmd.index("--overlap") + 1] == "0.2"
     assert out.exists()
 
 

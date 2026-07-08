@@ -21,6 +21,7 @@ import pyvips
 import structlog
 
 from astroflow.pipeline import ephemeral_intermediates
+from decisions.settings import ProcessingConfig
 from decorators import node
 from dependency_graph.tracing import workflow_group
 from file_io.generic import read_image
@@ -92,58 +93,90 @@ def _save_color_vips(path: str, img: pyvips.Image, name: str) -> None:
 
 # ---- per-channel intermediates (no display=; ephemeral) ----
 
-@node(auto_memory=True, plate_solve=False)  # derived from an already-solved channel
+def _bxt_correct_narrow(args, kwargs):
+    """Cache-key hook: project `config` to (mock, config.bxt) — the only things a
+    BXT'd channel depends on. `channel` is the trailing data-dependency; `config`
+    sits just before it (as in place_image's _place_image_narrow)."""
+    mosaic, filter, config, channel = args
+    mock = config.development_settings.mock_pixinsight
+    return (mosaic, filter, (mock, config.bxt), channel), kwargs
+
+
+def _sxt_narrow(args, kwargs):
+    """Cache-key hook for sxt_starless/sxt_stars: project `config` to
+    (mock, config.sxt). Shared by both ops — their differing bodies (starless vs
+    unscreened stars) already give them distinct call hashes via op identity."""
+    mosaic, filter, config, channel = args
+    mock = config.development_settings.mock_pixinsight
+    return (mosaic, filter, (mock, config.sxt), channel), kwargs
+
+
+@node(cache_key_narrow=_bxt_correct_narrow, auto_memory=True, plate_solve=False)  # derived from an already-solved channel
 def bxt_correct(
-    mosaic: Mosaic, filter: str, mock_pixinsight: bool, channel: ImageMetadata,
+    mosaic: Mosaic, filter: str, config: ProcessingConfig, channel: ImageMetadata,
 ) -> WithSidecar[XisfFilePath]:
     """BlurXTerminator a per-filter mosaic channel (linear deconvolution).
 
+    Runs the normal sharpening deconvolution (config.bxt; defaults to the
+    PixInsight-GUI look), NOT --correct-only unless config.bxt.correct_only is set.
+    The cache key is narrowed to (mock, config.bxt), so tuning the BXT settings
+    re-derives BXT and its downstream, and nothing else.
+
     XISF output: full-res channels exceed rc-astro's cfitsio FITS-writer limit
     (2**31 px); XISF has none. See `rc_astro_cli`."""
-    out = bxt_correct.filename_fn(mosaic, filter, mock_pixinsight, channel)
+    out = bxt_correct.filename_fn(mosaic, filter, config, channel)
     os.makedirs(os.path.dirname(out), exist_ok=True)
-    if mock_pixinsight:
+    if config.development_settings.mock_pixinsight:
         _write_mono_xisf(out, _mono(channel), filter)
     else:
         from rc_astro_cli import run_bxt
-        run_bxt(channel.filename, out)
+        run_bxt(channel.filename, out,
+                sharpen_stars=config.bxt.sharpen_stars,
+                sharpen_nonstellar=config.bxt.sharpen_nonstellar,
+                correct_only=config.bxt.correct_only,
+                ml_version=config.bxt.ml_version,
+                overlap=config.bxt.overlap)
     return WithSidecar(XisfFilePath(out))
 
 
-@node(auto_memory=True, plate_solve=False)  # starless: no stars to solve against
+@node(cache_key_narrow=_sxt_narrow, auto_memory=True, plate_solve=False)  # starless: no stars to solve against
 def sxt_starless(
-    mosaic: Mosaic, filter: str, mock_pixinsight: bool, channel: ImageMetadata,
+    mosaic: Mosaic, filter: str, config: ProcessingConfig, channel: ImageMetadata,
 ) -> WithSidecar[XisfFilePath]:
     """StarXTerminator a narrowband channel; keep the starless body (linear).
 
-    XISF output (its FITS writer overflows on full-res channels; `channel` is
-    the XISF BXT output, so rc-astro reads and writes XISF here)."""
-    out = sxt_starless.filename_fn(mosaic, filter, mock_pixinsight, channel)
+    Cache key narrowed to (mock, config.sxt). XISF output (its FITS writer
+    overflows on full-res channels; `channel` is the XISF BXT output, so rc-astro
+    reads and writes XISF here)."""
+    out = sxt_starless.filename_fn(mosaic, filter, config, channel)
     os.makedirs(os.path.dirname(out), exist_ok=True)
-    if mock_pixinsight:
+    if config.development_settings.mock_pixinsight:
         _write_mono_xisf(out, _mono(channel), filter)
     else:
         from rc_astro_cli import run_sxt
-        run_sxt(channel.filename, starless_out=out)
+        run_sxt(channel.filename, starless_out=out,
+                ml_version=config.sxt.ml_version, overlap=config.sxt.overlap)
     return WithSidecar(XisfFilePath(out))
 
 
-@node(auto_memory=True, plate_solve=False)  # derived from an already-solved channel
+@node(cache_key_narrow=_sxt_narrow, auto_memory=True, plate_solve=False)  # derived from an already-solved channel
 def sxt_stars(
-    mosaic: Mosaic, filter: str, mock_pixinsight: bool, channel: ImageMetadata,
+    mosaic: Mosaic, filter: str, config: ProcessingConfig, channel: ImageMetadata,
 ) -> WithSidecar[XisfFilePath]:
     """StarXTerminator a broadband channel; keep the UNSCREENED stars (linear),
     ready to re-apply with a screen blend.
 
-    XISF output (its FITS writer overflows on full-res channels; `channel` is
-    the XISF BXT output, so rc-astro reads and writes XISF here)."""
-    out = sxt_stars.filename_fn(mosaic, filter, mock_pixinsight, channel)
+    Cache key narrowed to (mock, config.sxt). XISF output (its FITS writer
+    overflows on full-res channels; `channel` is the XISF BXT output, so rc-astro
+    reads and writes XISF here)."""
+    out = sxt_stars.filename_fn(mosaic, filter, config, channel)
     os.makedirs(os.path.dirname(out), exist_ok=True)
-    if mock_pixinsight:
+    if config.development_settings.mock_pixinsight:
         _write_mono_xisf(out, _mono(channel), filter)
     else:
         from rc_astro_cli import run_sxt
-        run_sxt(channel.filename, stars_out=out, unscreen=True)
+        run_sxt(channel.filename, stars_out=out, unscreen=True,
+                ml_version=config.sxt.ml_version, overlap=config.sxt.overlap)
     return WithSidecar(XisfFilePath(out))
 
 
@@ -217,7 +250,6 @@ def color_post_process(mosaic: Mosaic, channels: dict, config) -> dict:
     stars; autostretch; then build the Hubble + Foraxx palettes (screening the
     combined RGB stars in). Returns `{name: handle}` for the color deliverables.
     """
-    mock = config.development_settings.mock_pixinsight
     by_class = {normalize_filter(f): ch for f, ch in channels.items()}
 
     stretched_nb: dict[str, object] = {}
@@ -225,12 +257,12 @@ def color_post_process(mosaic: Mosaic, channels: dict, config) -> dict:
     with ephemeral_intermediates():
         for cf, channel in by_class.items():
             if cf in _NARROWBAND:
-                corrected = bxt_correct(mosaic, cf, mock, channel)
-                starless = sxt_starless(mosaic, cf, mock, corrected)
+                corrected = bxt_correct(mosaic, cf, config, channel)
+                starless = sxt_starless(mosaic, cf, config, corrected)
                 stretched_nb[cf] = autostretch_channel(mosaic, cf, starless)
             elif cf in _BROADBAND:
-                corrected = bxt_correct(mosaic, cf, mock, channel)
-                stars = sxt_stars(mosaic, cf, mock, corrected)
+                corrected = bxt_correct(mosaic, cf, config, channel)
+                stars = sxt_stars(mosaic, cf, config, corrected)
                 stretched_bb[cf] = autostretch_channel(mosaic, cf, stars)
 
     out: dict[str, object] = {}

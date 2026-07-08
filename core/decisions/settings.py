@@ -53,6 +53,40 @@ class DevelopmentSettings:
 
 
 @dataclass(frozen=True)
+class BxtSettings:
+    """BlurXTerminator (rc-astro CLI) knobs — the external-tool settings for the
+    OSS color pipeline's deconvolution step.
+
+    `sharpen_*` default to the PixInsight-GUI values (the normal "make it sharper
+    and clearer" look), NOT the rc-astro CLI's own defaults, which are 0.0/0.0
+    (no sharpening). Every output-affecting flag is pinned here so a BXT'd channel
+    is a pure function of (input, these settings) and doesn't silently change when
+    the CLI's defaults drift across rc-astro versions. Narrowed into bxt_correct's
+    cache key (see mosaics/color/post_process._bxt_correct_narrow), so changing a
+    field re-derives only BXT and its downstream, nothing else."""
+    sharpen_stars: float = 0.25          # rc-astro range [0, 0.7]
+    sharpen_nonstellar: float = 0.90     # rc-astro range [0, 1]
+    correct_only: bool = False           # correct PSF aberrations without sharpening
+    ml_version: int = 0                  # 0 = latest installed model
+    overlap: float = 0.2                 # tile-overlap fraction, range [0, 0.5]
+
+    def __hash__(self):
+        return hash_dataclass(self)
+
+
+@dataclass(frozen=True)
+class SxtSettings:
+    """StarXTerminator (rc-astro CLI) knobs. SXT has no strength/amount dial; only
+    these flags affect the output. Pinned for the same version-determinism reason
+    as BxtSettings; narrowed into the sxt_* cache keys."""
+    ml_version: int = 0                  # 0 = latest installed model
+    overlap: float = 0.2                 # tile-overlap fraction, range [0, 0.5]
+
+    def __hash__(self):
+        return hash_dataclass(self)
+
+
+@dataclass(frozen=True)
 class ProcessingConfig:
     """The "how to process" parameters passed through the compute graph.
 
@@ -85,6 +119,11 @@ class ProcessingConfig:
     # the post_process_stack{,_oss} cache keys, so changing it re-derives only
     # those masters, nothing upstream.
     background_pedestal: float = 0.005
+    # External-tool (rc-astro BXT/SXT) settings for the OSS color pipeline. Each
+    # is narrowed into only its own op's cache key (bxt_correct / sxt_*), so
+    # tuning them re-derives just the color tail. See BxtSettings/SxtSettings.
+    bxt: "BxtSettings" = field(default_factory=lambda: BxtSettings())
+    sxt: "SxtSettings" = field(default_factory=lambda: SxtSettings())
 
     def get_calibration_stacks(self):
         """Dereference calibration_stacks (may be a ContextRef or a plain dict)."""

@@ -140,3 +140,43 @@ def test_palette_glue_with_and_without_stars(tmp_path):
                       metas["S"], metas["H"], metas["O"], None, "Foraxx")
     img2 = read_image(out2)
     assert img2.shape == (128, 128, 3) and np.all(np.isfinite(img2))
+
+
+def test_bxt_narrow_keys_on_bxt_settings_only():
+    """bxt_correct's cache key changes iff (mock, config.bxt) changes — the
+    _StackKey guarantee applied to the color tail: tuning BXT re-derives BXT and
+    its downstream, while an unrelated ProcessingConfig field never does."""
+    from dataclasses import replace
+    base = ProcessingConfig()
+    args = ("m", "H", base, "chan")
+
+    # Unrelated field (background_pedestal): identical projection → no re-derive.
+    unrelated = replace(base, background_pedestal=base.background_pedestal + 0.1)
+    assert pp._bxt_correct_narrow(args, {}) == \
+        pp._bxt_correct_narrow(("m", "H", unrelated, "chan"), {})
+
+    # A BXT knob: different projection → proper invalidation.
+    sharper = replace(base, bxt=replace(base.bxt, sharpen_stars=0.5))
+    assert pp._bxt_correct_narrow(args, {}) != \
+        pp._bxt_correct_narrow(("m", "H", sharper, "chan"), {})
+
+    # The mock flag flows into the key (mock path produces a different image).
+    mocked = replace(base, development_settings=replace(
+        base.development_settings, mock_pixinsight=True))
+    assert pp._bxt_correct_narrow(args, {}) != \
+        pp._bxt_correct_narrow(("m", "H", mocked, "chan"), {})
+
+
+def test_sxt_narrow_keys_on_sxt_settings_only():
+    """sxt_* keys on (mock, config.sxt); a BXT-only change must NOT touch it."""
+    from dataclasses import replace
+    base = ProcessingConfig()
+    args = ("m", "O", base, "chan")
+
+    bxt_only = replace(base, bxt=replace(base.bxt, sharpen_stars=0.5))
+    assert pp._sxt_narrow(args, {}) == \
+        pp._sxt_narrow(("m", "O", bxt_only, "chan"), {})
+
+    changed = replace(base, sxt=replace(base.sxt, overlap=0.4))
+    assert pp._sxt_narrow(args, {}) != \
+        pp._sxt_narrow(("m", "O", changed, "chan"), {})
