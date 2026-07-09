@@ -119,7 +119,16 @@ from flask_cors import CORS
 # and handles OPTIONS preflights without each view needing its own
 # decorator. The per-route `@cross_origin` inside `stateful_route` is
 # idempotent with this.
-CORS(app, resources={r"/*": {"origins": "*"}})
+# `expose_headers`: tiles are fetched cross-origin (frontend origin → the
+# object's sharded backend port), and the WebGPU loader reads the tile's
+# dimensions + band count from RESPONSE HEADERS. Without an explicit
+# Access-Control-Expose-Headers, the browser hides all non-safelisted response
+# headers from JS, so `X-Tile-Bands` reads as null → defaults to 1 → a colour
+# (3-band) tile uploads as r32float → the shader's colour branch samples
+# `(R,0,0)` and the image renders ALL RED. Mono is unaffected (bands defaults to
+# 1 anyway). Expose the tile headers so colour tiles decode correctly.
+CORS(app, resources={r"/*": {"origins": "*"}},
+     expose_headers=["X-Tile-Width", "X-Tile-Height", "X-Tile-Bands"])
 
 app.register_blueprint(files_bp)
 app.register_blueprint(tiles_bp)
