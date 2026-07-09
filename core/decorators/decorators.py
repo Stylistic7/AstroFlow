@@ -201,6 +201,13 @@ class _Node:
         ray_opts = dict(all_kwargs)
         final = ray_opts.pop("final", False)
         display = ray_opts.pop("display", None)
+        # Declarative tap filter for deliverables that have NO `filter` signature
+        # param and no per-filter input entity — i.e. colour composites, which
+        # combine every channel into one image. Their tap would otherwise route
+        # as `filter=None` and fall out of the filter-keyed dashboard/tap/tile
+        # plumbing. A sentinel string (e.g. "RGB") lets them flow through it
+        # exactly like a mono per-filter tap. `filter_of` reads this first.
+        tap_filter = ray_opts.pop("filter", None)
         custom_filename_fn = ray_opts.pop("filename_fn", None)
         cache_key_narrow = ray_opts.pop("cache_key_narrow", None)
         # Plate-solve every produced image by default (amateur pipelines lean
@@ -321,6 +328,8 @@ class _Node:
             wrapper._final = final
             if display is not None:
                 wrapper._display = display
+            if tap_filter is not None:
+                wrapper._tap_filter = tap_filter
             from products.registry import register_producer
             register_producer(wrapper, func)
         elif hasattr(func, "video_fn"):

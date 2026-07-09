@@ -208,7 +208,7 @@ def autostretch_channel(
 
 # ---- named color deliverables (display=name, filter=None, final=True) ----
 
-@node(display="Stars", final=True, auto_memory=True, plate_solve=False)  # 3-channel color
+@node(display="Stars", filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-channel color
 def combine_star_rgb(
     mosaic: Mosaic, r: ImageMetadata, g: ImageMetadata, b: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
@@ -227,7 +227,7 @@ def _palette_image(out, combine_vips, sii, ha, oiii, stars, name):
     _save_color_vips(out, rgb, name)
 
 
-@node(display="Hubble", final=True, auto_memory=True, plate_solve=False)  # 3-channel color
+@node(display="Hubble", filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-channel color
 def hubble_image(
     mosaic: Mosaic, sii: ImageMetadata, ha: ImageMetadata, oiii: ImageMetadata, stars,
 ) -> WithSidecar[TiffFilePath]:
@@ -238,7 +238,7 @@ def hubble_image(
     return WithSidecar(TiffFilePath(out))
 
 
-@node(display="Foraxx", final=True, auto_memory=True, plate_solve=False)  # 3-channel color
+@node(display="Foraxx", filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-channel color
 def foraxx_image(
     mosaic: Mosaic, sii: ImageMetadata, ha: ImageMetadata, oiii: ImageMetadata, stars,
 ) -> WithSidecar[TiffFilePath]:

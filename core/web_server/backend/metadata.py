@@ -390,21 +390,37 @@ def pipeline_outputs(object_type: str, object_id: str):
         if stable == entity.stable_hash and content == entity.content_hash
     })
 
-    pipelines = []
+    # One cached trace per pipeline → its user-facing taps with predicted paths,
+    # grouped by display (preserving trace/graph-reach order, which also orders
+    # the "Merged"/"Merged 2" suffix series). Collect first so we can discover
+    # sentinel filters (e.g. a colour composite's "RGB", which isn't one of the
+    # entity's filters) and give EVERY tap a column for them.
+    entity_filter_strs = {str(f) for f in iter_filters}
+    traces: dict[str, dict[str, dict[str, str]]] = {}
+    extras: set[str] = set()
     for name in applicable:
-        # One cached trace per pipeline → its user-facing taps with predicted
-        # paths. Group by display (preserving trace/graph-reach order, which
-        # also orders the "Merged"/"Merged 2" suffix series).
         by_display: dict[str, dict[str, str]] = {}
         for e in tap_outputs_for((object_type, object_id, name)):
-            by_display.setdefault(e["display"], {})[str(e["filter"])] = e["path"]
+            fk = str(e["filter"])
+            by_display.setdefault(e["display"], {})[fk] = e["path"]
+            if fk not in entity_filter_strs:
+                extras.add(fk)
+        traces[name] = by_display
 
+    # Global column list: entity filters + any sentinels. The frontend aligns
+    # `tap.outputs[i]` to `filters[i]`, so every tap's outputs must span this
+    # same list (mono taps leave the sentinel column empty; a colour composite
+    # lights only its sentinel column).
+    columns = list(iter_filters) + sorted(extras)
+
+    pipelines = []
+    for name in applicable:
         taps = []
-        for display, paths_by_filter in by_display.items():
+        for display, paths_by_filter in traces[name].items():
             outputs = []
-            for f in iter_filters:
+            for f in columns:
                 p = paths_by_filter.get(str(f))
-                exists = p is not None and os.path.exists(p)
+                exists = os.path.exists(p) if p else False
                 outputs.append({
                     "filter": f,
                     "exists": exists,
@@ -413,7 +429,7 @@ def pipeline_outputs(object_type: str, object_id: str):
             taps.append({"display": display, "outputs": outputs})
         pipelines.append({"name": name, "taps": taps})
 
-    return jsonify({"filters": filters, "pipelines": pipelines})
+    return jsonify({"filters": columns, "pipelines": pipelines})
 
 
 @metadata_bp.route(

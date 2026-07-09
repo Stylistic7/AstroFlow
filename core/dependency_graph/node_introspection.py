@@ -28,9 +28,16 @@ def filter_of(node, input_values) -> str | None:
        ``BaseStack`` handed to ``stack_files`` (whether a literal, or the
        resolved result of an upstream ``downscale_stack``).
 
-    Returns ``None`` for genuinely filter-less nodes (e.g. the
-    color-combine master, whose inputs are a multi-filter dict).
+    A node may also DECLARE a fixed tap filter via ``@node(filter="RGB")``
+    (``_tap_filter``) — colour composites use this so their otherwise
+    filter-less tap routes through the filter-keyed dashboard/tile plumbing.
+    It wins over both sources below.
     """
+    task = node.task
+    declared = (getattr(task, "_tap_filter", None)
+                or getattr(getattr(task, "_function", task), "_tap_filter", None))
+    if declared:
+        return str(declared)
     fn = getattr(node.task, "_function", node.task)
     try:
         params = list(inspect.signature(fn).parameters.keys())
