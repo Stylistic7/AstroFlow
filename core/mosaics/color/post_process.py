@@ -253,6 +253,28 @@ def foraxx_image(
     return WithSidecar(TiffFilePath(out))
 
 
+@node(display="Hubble Starless", filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-channel color
+def hubble_starless(
+    mosaic: Mosaic, sii: ImageMetadata, ha: ImageMetadata, oiii: ImageMetadata,
+) -> WithSidecar[TiffFilePath]:
+    """Hubble (SHO) palette of the stretched starless narrowband, NO stars
+    screened in — the pure starless palette (the `Hubble` tap adds RGB stars)."""
+    out = hubble_starless.filename_fn(mosaic, sii, ha, oiii)
+    _palette_image(out, palettes.hubble_vips, sii, ha, oiii, None, "Hubble Starless")
+    return WithSidecar(TiffFilePath(out))
+
+
+@node(display="Foraxx Starless", filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-channel color
+def foraxx_starless(
+    mosaic: Mosaic, sii: ImageMetadata, ha: ImageMetadata, oiii: ImageMetadata,
+) -> WithSidecar[TiffFilePath]:
+    """Foraxx palette of the stretched starless narrowband, NO stars screened in
+    — the pure starless palette (the `Foraxx` tap adds RGB stars)."""
+    out = foraxx_starless.filename_fn(mosaic, sii, ha, oiii)
+    _palette_image(out, palettes.foraxx_vips, sii, ha, oiii, None, "Foraxx Starless")
+    return WithSidecar(TiffFilePath(out))
+
+
 @workflow_group
 def color_post_process(mosaic: Mosaic, channels: dict, config) -> dict:
     """Turn merged per-filter mosaic channels into named color images.
@@ -286,6 +308,11 @@ def color_post_process(mosaic: Mosaic, channels: dict, config) -> dict:
         out["Stars"] = rgb_stars
     if _NARROWBAND <= set(stretched_nb):
         s, h, o = stretched_nb["S"], stretched_nb["H"], stretched_nb["O"]
-        out["Hubble"] = hubble_image(mosaic, s, h, o, rgb_stars)
-        out["Foraxx"] = foraxx_image(mosaic, s, h, o, rgb_stars)
+        # Always emit the pure starless palettes; add the with-stars variants
+        # only when broadband RGB stars exist to screen in.
+        out["Hubble Starless"] = hubble_starless(mosaic, s, h, o)
+        out["Foraxx Starless"] = foraxx_starless(mosaic, s, h, o)
+        if rgb_stars is not None:
+            out["Hubble"] = hubble_image(mosaic, s, h, o, rgb_stars)
+            out["Foraxx"] = foraxx_image(mosaic, s, h, o, rgb_stars)
     return out
