@@ -32,9 +32,13 @@ def read_xisf_header(filename: Path | str, debug: bool = False) -> dict:
     header = {k: _eval(fits_header[k][0]["value"]) for k in fits_header.keys()}
 
     width, height, depth = ims_meta[0]["geometry"]
-    assert depth == 1
+    # Mono stays NAXIS=2; a 3-band colour XISF (combine_broadband_rgb writes an
+    # RGB for a single StarXTerminator pass) records NAXIS=3 + NAXIS3=depth.
     header["NAXIS1"], header["NAXIS2"] = width, height
-    header["NAXIS"] = 2
+    if depth == 1:
+        header["NAXIS"] = 2
+    else:
+        header["NAXIS"], header["NAXIS3"] = 3, depth
 
     header = normalize_header(header)
 

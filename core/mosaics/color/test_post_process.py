@@ -96,12 +96,18 @@ def test_color_post_process_traces_and_runs(test_context, tmp_path):
 
     counts = _count_by_op(graph)
     assert counts.get("bxt_correct") == 6        # one per filter
-    assert counts.get("sxt_starless") == 3       # H, O, S
-    assert counts.get("sxt_stars") == 3          # R, G, B
-    assert counts.get("autostretch_channel") == 6
+    assert counts.get("sxt_starless") == 3       # H, O, S (narrowband, per-channel)
+    assert counts.get("autostretch_channel") == 3  # narrowband only (H, O, S)
+    # Broadband stars: combine R+G+B into one linear RGB, then a SINGLE SXT pass
+    # (coherent stars) — not per-channel.
+    assert counts.get("combine_broadband_rgb") == 1
+    assert counts.get("sxt_stars_rgb") == 1
+    assert counts.get("sxt_stars") is None       # old per-channel path removed
     assert counts.get("combine_star_rgb") == 1
     assert counts.get("hubble_image") == 1
     assert counts.get("foraxx_image") == 1
+    assert counts.get("hubble_starless") == 1
+    assert counts.get("foraxx_starless") == 1
 
     run_graph(graph)
 

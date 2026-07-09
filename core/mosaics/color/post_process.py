@@ -115,7 +115,7 @@ def _bxt_correct_narrow(args, kwargs):
 
 
 def _sxt_narrow(args, kwargs):
-    """Cache-key hook for sxt_starless/sxt_stars: project `config` to
+    """Cache-key hook for sxt_starless: project `config` to
     (mock, config.sxt). Shared by both ops — their differing bodies (starless vs
     unscreened stars) already give them distinct call hashes via op identity."""
     mosaic, filter, config, channel = args
@@ -171,23 +171,48 @@ def sxt_starless(
     return WithSidecar(XisfFilePath(out))
 
 
-@node(cache_key_narrow=_sxt_narrow, auto_memory=True, plate_solve=False)  # derived from an already-solved channel
-def sxt_stars(
-    mosaic: Mosaic, filter: str, config: ProcessingConfig, channel: ImageMetadata,
-) -> WithSidecar[XisfFilePath]:
-    """StarXTerminator a broadband channel; keep the UNSCREENED stars (linear),
-    ready to re-apply with a screen blend.
+def _sxt_rgb_narrow(args, kwargs):
+    """Cache-key hook for sxt_stars_rgb: project `config` to (mock, config.sxt)."""
+    mosaic, config, rgb = args
+    mock = config.development_settings.mock_pixinsight
+    return (mosaic, (mock, config.sxt), rgb), kwargs
 
-    Cache key narrowed to (mock, config.sxt). XISF output (its FITS writer
-    overflows on full-res channels; `channel` is the XISF BXT output, so rc-astro
-    reads and writes XISF here)."""
-    out = sxt_stars.filename_fn(mosaic, filter, config, channel)
+
+@node(auto_memory=True, plate_solve=False)  # pure bandjoin, no PixInsight
+def combine_broadband_rgb(
+    mosaic: Mosaic, r: ImageMetadata, g: ImageMetadata, b: ImageMetadata,
+) -> WithSidecar[XisfFilePath]:
+    """Combine the three LINEAR BXT'd broadband channels into one linear RGB
+    XISF so StarXTerminator can extract stars from all channels AT ONCE.
+
+    Extracting per-channel (the old path) let SXT catch a different set of
+    marginal stars in each of R/G/B — a faint star found in R but missed in
+    G/B became a pure-red dot, giving 'confetti' stars of impossible primary
+    colours. Seeing the combined image, SXT's star decision is identical across
+    channels. XISF keeps rc-astro happy at gigapixel sizes."""
+    out = combine_broadband_rgb.filename_fn(mosaic, r, g, b)
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    rgb = np.stack([_mono(r), _mono(g), _mono(b)], axis=2).astype(np.float32)
+    write_xisf_image(Path(out), rgb, {"PIPELINE": "AstroFlow-OSS"})
+    return WithSidecar(XisfFilePath(out))
+
+
+@node(cache_key_narrow=_sxt_rgb_narrow, auto_memory=True, plate_solve=False)  # coherent RGB stars
+def sxt_stars_rgb(
+    mosaic: Mosaic, config: ProcessingConfig, rgb: ImageMetadata,
+) -> WithSidecar[XisfFilePath]:
+    """StarXTerminator the combined linear RGB; keep the UNSCREENED RGB stars.
+    One SXT pass over the RGB (not one per channel) makes the extracted stars
+    coherent across R/G/B, so the star image has natural colours instead of
+    per-channel primary-colour confetti."""
+    out = sxt_stars_rgb.filename_fn(mosaic, config, rgb)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     if config.development_settings.mock_pixinsight:
-        _write_mono_xisf(out, _mono(channel), filter)
+        write_xisf_image(Path(out), read_image(Path(rgb.filename)).astype(np.float32),
+                         {"PIPELINE": "AstroFlow-OSS"})
     else:
         from rc_astro_cli import run_sxt
-        run_sxt(channel.filename, stars_out=out, unscreen=True,
+        run_sxt(rgb.filename, stars_out=out, unscreen=True,
                 ml_version=config.sxt.ml_version, overlap=config.sxt.overlap)
     return WithSidecar(XisfFilePath(out))
 
@@ -214,13 +239,18 @@ def autostretch_channel(
 
 @node(display="Stars", filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-channel color
 def combine_star_rgb(
-    mosaic: Mosaic, r: ImageMetadata, g: ImageMetadata, b: ImageMetadata,
+    mosaic: Mosaic, rgb_stars: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
-    """Stack the three unscreened star channels into one RGB star image."""
-    out = combine_star_rgb.filename_fn(mosaic, r, g, b)
-    rgb = palettes.combine_star_rgb_vips(
-        _load_mono_vips(r), _load_mono_vips(g), _load_mono_vips(b))
-    _save_color_vips(out, rgb, "Stars")
+    """The RGB-stars deliverable: a LINKED autostretch of the coherent SXT'd RGB
+    stars. `palettes.autostretch` takes one median/MAD over all three bands, so
+    every channel gets the same MTF — star colour is preserved (no per-channel
+    cast). Saved as the scRGB TIFF deliverable."""
+    out = combine_star_rgb.filename_fn(mosaic, rgb_stars)
+    arr = read_image(Path(rgb_stars.filename)).astype(np.float32)  # (H, W, 3) linear
+    stretched = np.ascontiguousarray(palettes.autostretch(arr), dtype=np.float32)
+    h, w = stretched.shape[:2]
+    vimg = pyvips.Image.new_from_memory(stretched.data, w, h, 3, "float")
+    _save_color_vips(out, vimg, "Stars")
     return WithSidecar(TiffFilePath(out))
 
 
@@ -287,7 +317,7 @@ def color_post_process(mosaic: Mosaic, channels: dict, config) -> dict:
     by_class = {normalize_filter(f): ch for f, ch in channels.items()}
 
     stretched_nb: dict[str, object] = {}
-    stretched_bb: dict[str, object] = {}
+    bxt_bb: dict[str, object] = {}
     with ephemeral_intermediates():
         for cf, channel in by_class.items():
             if cf in _NARROWBAND:
@@ -295,16 +325,20 @@ def color_post_process(mosaic: Mosaic, channels: dict, config) -> dict:
                 starless = sxt_starless(mosaic, cf, config, corrected)
                 stretched_nb[cf] = autostretch_channel(mosaic, cf, starless)
             elif cf in _BROADBAND:
-                corrected = bxt_correct(mosaic, cf, config, channel)
-                stars = sxt_stars(mosaic, cf, config, corrected)
-                stretched_bb[cf] = autostretch_channel(mosaic, cf, stars)
+                bxt_bb[cf] = bxt_correct(mosaic, cf, config, channel)
+
+        # Broadband stars: combine the linear BXT'd channels into one RGB, then
+        # SXT ONCE on that RGB so the extracted stars are coherent across R/G/B
+        # (no per-channel primary-colour confetti).
+        rgb_star_lin = None
+        if _BROADBAND <= set(bxt_bb):
+            rgb_lin = combine_broadband_rgb(mosaic, bxt_bb["R"], bxt_bb["G"], bxt_bb["B"])
+            rgb_star_lin = sxt_stars_rgb(mosaic, config, rgb_lin)
 
     out: dict[str, object] = {}
     rgb_stars = None
-    if _BROADBAND <= set(stretched_bb):
-        rgb_stars = combine_star_rgb(
-            mosaic, stretched_bb["R"], stretched_bb["G"], stretched_bb["B"],
-        )
+    if rgb_star_lin is not None:
+        rgb_stars = combine_star_rgb(mosaic, rgb_star_lin)
         out["Stars"] = rgb_stars
     if _NARROWBAND <= set(stretched_nb):
         s, h, o = stretched_nb["S"], stretched_nb["H"], stretched_nb["O"]

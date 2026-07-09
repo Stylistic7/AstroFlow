@@ -66,9 +66,9 @@ _DEFAULT_MEMORY_UNKNOWN = 16 * _GB
 # safety is the point. A fixed override, not a `@node(memory=)`: these ops are
 # already `auto_memory=True`, so editing their decorator would re-run all BXT/SXT.
 _FIXED_MEMORY_BY_OP = {
-    "bxt_correct":  26 * _GB,
-    "sxt_starless": 26 * _GB,
-    "sxt_stars":    26 * _GB,
+    "bxt_correct":   26 * _GB,
+    "sxt_starless":  26 * _GB,
+    "sxt_stars_rgb": 26 * _GB,  # StarXTerminator on the combined 3-band RGB
     # compute_image_metadata is auto_memory=True but its footprint is now
     # roughly constant (a header read + plate-solve), and it's dispatched ~30k
     # times per run (inline in every producer via _metadata_wrap, plus standalone
