@@ -68,7 +68,7 @@ class BxtSettings:
     sharpen_nonstellar: float = 0.90     # rc-astro range [0, 1]
     correct_only: bool = False           # correct PSF aberrations without sharpening
     ml_version: int = 0                  # 0 = latest installed model
-    overlap: float = 0.2                 # tile-overlap fraction, range [0, 0.5]
+    overlap: float = 0.5                 # MAX tile overlap: seam-free, ~2.5x compute
 
     def __hash__(self):
         return hash_dataclass(self)
@@ -80,7 +80,7 @@ class SxtSettings:
     these flags affect the output. Pinned for the same version-determinism reason
     as BxtSettings; narrowed into the sxt_* cache keys."""
     ml_version: int = 0                  # 0 = latest installed model
-    overlap: float = 0.2                 # tile-overlap fraction, range [0, 0.5]
+    overlap: float = 0.5                 # MAX tile overlap: seam-free, ~2.5x compute
 
     def __hash__(self):
         return hash_dataclass(self)
