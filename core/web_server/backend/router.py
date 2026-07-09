@@ -25,7 +25,16 @@ def stateful_route(
         accepts_port = inject_name in sig.parameters
 
         @functools.wraps(func)
-        @cross_origin(origins=cors_origins)
+        # `expose_headers`: this per-route @cross_origin takes precedence over
+        # the app-global CORS for stateful routes, so the global expose_headers
+        # doesn't reach them. The tile route (a stateful route, fetched
+        # cross-origin from a sharded port) returns tile width/height/BAND COUNT
+        # in response headers; without exposing them the browser hides them from
+        # JS → `X-Tile-Bands` reads null → colour tiles decode as mono (r32float)
+        # → the image renders all red. Exposing non-present headers on other
+        # stateful routes is a harmless no-op.
+        @cross_origin(origins=cors_origins,
+                      expose_headers=["X-Tile-Width", "X-Tile-Height", "X-Tile-Bands"])
         def wrapper(*args, **kwargs):
             if fixed_port is not None:
                 port = fixed_port
