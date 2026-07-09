@@ -86,7 +86,12 @@ def _save_color_vips(path: str, img: pyvips.Image, name: str) -> None:
     tmp+rename), tagging the palette name / pipeline in the TIFF description
     (the same JSON `read_tiff_header` expects)."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    img = img.copy()
+    # Force scRGB: the bandjoined float palette otherwise inherits a `b-w`
+    # (grayscale) interpretation, so tiffsave writes a MINISBLACK photometric and
+    # every interp-aware reader (pyvips thumbnails, the gallery preview) renders
+    # the 3 real colour channels as luminance → grey. scRGB is the correct
+    # float-RGB interpretation and matches the pre-regression deliverables.
+    img = img.copy(interpretation="scrgb")
     img.set_type(pyvips.GValue.gstr_type, "image-description",
                  json.dumps({"PALETTE": name, "PIPELINE": "AstroFlow-OSS"}))
     tmp = f"{path}.{os.getpid()}.tmp.tiff"
