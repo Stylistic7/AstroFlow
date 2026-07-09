@@ -1,7 +1,6 @@
 import os
 import shutil
 import ray
-import numpy as np
 import structlog
 from beartype import beartype
 from pathlib import Path
@@ -16,8 +15,7 @@ from mosaics.types import Mosaic
 from previews.create_tile_pyramid import default_make_tile_pyramid
 from decorators import node
 from decisions.settings import ProcessingConfig
-from file_io.tiff_file_io import write_tiff_image
-from file_io.types import XisfFilePath, TiffFilePath, WithSidecar
+from file_io.types import XisfFilePath, WithSidecar
 from hashing import hash_list
 from mosaics.placement.panel_io import rehydrate_placed_panel
 
@@ -51,48 +49,6 @@ def _panel_count(image_metadata: ImageMetadata) -> int:
 def _set_panel_count(path, count: int) -> None:
     set_section(Path(path), "panel_count", count)
 
-
-
-@node(
-    display="Merged",
-    resources={"fastest_storage": 0.001},
-    plate_solve=False,  # mosaic projection — non-square pixels, can't solve
-)
-def merge_images_subframe(
-    mosaic: Mosaic, filter: str, *inputs,
-) -> WithSidecar[TiffFilePath]:
-    """Cheap pixel-overlap blend for the Subframe preview pipeline.
-    Variadic *inputs gives ONE call per (mosaic, filter); pairwise
-    blend is done inside the Ray task. Same call_hash-filename
-    convention as `merge_images`: one output file per (mosaic, filter)
-    in `merge_images_subframe/`."""
-    assert len(inputs) >= 1
-    # `*inputs` MUST flow into the call_hash — otherwise every
-    # pairwise `merge_images_subframe(mosaic, filter, row, p)`
-    # call in the sequential reduce produces the same filename,
-    # multiple writers race on it, and downstream readers see
-    # half-written zlib streams (corrupt TIFF).
-    output_filename = merge_images_subframe.filename_fn(mosaic, filter, *inputs)
-    Path(output_filename).parent.mkdir(parents=True, exist_ok=True)
-
-    paths = [i.filename.resolve(strict=True) for i in inputs]
-    # Subframe panels are tiny (downscaled), so reuse the real OSS blend
-    # (`_blend_many`) — variadic, flux-equalized, seamless — rather than a
-    # separate max/avg reduce. The subframe pipeline hands ALL panels to ONE
-    # call, so every input is a real bbox-on-disk placed panel (no fed-back
-    # full-canvas accumulator), exactly what `_blend_many` expects.
-    from mosaics.merging.oss import _blend_many
-    acc = _blend_many(paths)
-    assert not np.isnan(np.min(acc))
-
-    stable_hash = hash_list([i.stable_hash for i in inputs])
-    write_tiff_image(Path(output_filename), acc, {"FILTER": filter, "STBLHASH": stable_hash})
-
-    new_count = sum(_panel_count(i) for i in inputs)
-    _set_panel_count(output_filename, new_count)
-    log.info("Merge images (subframe) complete", output=output_filename,
-             panel_count=new_count, input_count=len(inputs))
-    return WithSidecar(output_filename)
 
 
 def _merge_images_pi_impl(

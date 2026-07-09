@@ -23,7 +23,7 @@ quality master, so showing whatever frames exist is fine.
 from astroflow.pipeline import pipeline
 from metadata.image_metadata import compute_image_metadata
 from mosaics.final_storage import store_mosaic_color_channel_subframe
-from mosaics.merging.pixinsight import merge_images_subframe
+from mosaics.merging.oss import merge_images_subframe
 from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
 from stacks.compute_graph import get_stack_subframe_image

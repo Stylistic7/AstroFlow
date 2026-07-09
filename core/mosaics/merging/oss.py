@@ -20,9 +20,9 @@ import astropy.io.fits as pyfits
 import edt
 
 from decorators import node
-from file_io.generic import read_image
 from mosaics.placement.panel_io import read_placed_panel
-from file_io.types import FitsFilePath, WithSidecar
+from file_io.tiff_file_io import write_tiff_image
+from file_io.types import FitsFilePath, TiffFilePath, WithSidecar
 from hashing import hash_list
 from metadata.classes import ImageMetadata
 from mosaics.merging.pixinsight import (
@@ -245,4 +245,39 @@ def merge_images_oss(
 
     log.info("OSS merge complete", output=str(output_filename),
              panel_count=new_count, n_inputs=len(inputs))
+    return WithSidecar(output_filename)
+
+
+@node(
+    display="Merged",
+    resources={"fastest_storage": 0.001},
+    plate_solve=False,  # mosaic projection — non-square pixels, can't solve
+)
+def merge_images_subframe(
+    mosaic: Mosaic, filter: str, *inputs,
+) -> WithSidecar[TiffFilePath]:
+    """The Subframe preview pipeline's mosaic merge — the SAME distance-weighted
+    blend as `merge_images_oss` (`_blend_many`), just emitting the preview tap
+    (`display="Merged"`, non-final, TIFF) instead of the final Mosaic deliverable.
+
+    Subframe panels are tiny (downscaled), so this variadic single-call blend
+    over every placed panel is near-instant. One call per (mosaic, filter) →
+    one output file in `merge_images_subframe/`."""
+    assert len(inputs) >= 1
+    # `*inputs` MUST flow into the call_hash so distinct panel sets get distinct
+    # filenames (no writer races / half-written TIFFs).
+    output_filename = merge_images_subframe.filename_fn(mosaic, filter, *inputs)
+    Path(output_filename).parent.mkdir(parents=True, exist_ok=True)
+
+    paths = [i.filename.resolve(strict=True) for i in inputs]
+    acc = _blend_many(paths)
+    assert not np.isnan(np.min(acc))
+
+    stable_hash = hash_list([i.stable_hash for i in inputs])
+    write_tiff_image(Path(output_filename), acc, {"FILTER": filter, "STBLHASH": stable_hash})
+
+    new_count = sum(_panel_count(i) for i in inputs)
+    _set_panel_count(output_filename, new_count)
+    log.info("Merge images (subframe) complete", output=output_filename,
+             panel_count=new_count, input_count=len(inputs))
     return WithSidecar(output_filename)
