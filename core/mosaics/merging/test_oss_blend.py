@@ -10,21 +10,30 @@ across the two EDT-padding branches (a rotated rect with zero bbox corners,
 interior to the canvas; and a rect flush against the canvas edge).
 """
 import numpy as np
-import astropy.io.fits as pyfits
 import edt
 
-from mosaics.merging.oss import _blend_many, _solve_flux_scales
-from file_io.generic import read_image
+from mosaics.merging.oss import _blend_many, _solve_flux_scales, _panel_bbox
+from mosaics.placement.panel_io import write_placed_panel, read_placed_panel
+
+
+def _read_full_canvas(p):
+    """Reconstruct the full-canvas array a placed panel represents — what the
+    pre-bbox `_blend_many` read directly off disk."""
+    arr, (x0, y0), (cw, ch) = read_placed_panel(p)
+    full = np.zeros((ch, cw), np.float32)
+    full[y0:y0 + arr.shape[0], x0:x0 + arr.shape[1]] = arr
+    return full
 
 
 def _blend_many_reference(paths):
-    """The pre-bbox full-canvas implementation, verbatim, as the golden ref."""
+    """The pre-bbox full-canvas implementation, verbatim, as the golden ref —
+    now reading the full canvas back from the bbox-on-disk panels."""
     if len(paths) == 1:
-        return read_image(paths[0]).astype(np.float32)
+        return _read_full_canvas(paths[0])
     n = len(paths)
     masks, overlap_means = [], {}
     for i, p in enumerate(paths):
-        img = read_image(p).astype(np.float32)
+        img = _read_full_canvas(p)
         mask = img > 0
         for j, mask_j in enumerate(masks):
             both = mask & mask_j
@@ -32,7 +41,7 @@ def _blend_many_reference(paths):
                 overlap_means[(j, i)] = (None, float(img[both].mean()))
         masks.append(mask)
     for j, p in enumerate(paths):
-        img = read_image(p).astype(np.float32)
+        img = _read_full_canvas(p)
         for (a, b), (_, mi) in list(overlap_means.items()):
             if a != j:
                 continue
@@ -43,7 +52,7 @@ def _blend_many_reference(paths):
     numer = np.zeros(masks[0].shape, np.float32)
     denom = np.zeros(masks[0].shape, np.float32)
     for i, p in enumerate(paths):
-        img = read_image(p).astype(np.float32)
+        img = _read_full_canvas(p)
         weight = edt.edt(masks[i].astype(np.uint8),
                          black_border=False, parallel=0).astype(np.float32)
         numer += weight * (img * scales[i])
@@ -53,8 +62,14 @@ def _blend_many_reference(paths):
 
 
 def _write(tmp_path, name, img):
-    p = tmp_path / f"{name}.fits"
-    pyfits.writeto(p, img)
+    """Persist a full-canvas panel as bbox-on-disk — place_image's format: the
+    tight non-zero bbox pixels + their canvas offset in the header."""
+    p = tmp_path / f"{name}.tiff"
+    r0, r1, c0, c1 = _panel_bbox(img > 0)
+    write_placed_panel(
+        p, img[r0:r1, c0:c1].astype(np.float32),
+        offset_xy=(c0, r0), canvas_size=(img.shape[1], img.shape[0]),
+    )
     return p
 
 
@@ -104,4 +119,4 @@ def test_blend_disjoint_panels(tmp_path):
 def test_blend_single_panel_passthrough(tmp_path):
     img = np.zeros((100, 120), np.float32); img[10:90, 20:100] = 4.0
     p = _write(tmp_path, "solo", img)
-    assert np.array_equal(_blend_many([p]), read_image(p).astype(np.float32))
+    assert np.array_equal(_blend_many([p]), _read_full_canvas(p))

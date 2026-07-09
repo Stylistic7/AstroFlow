@@ -17,9 +17,9 @@ that the input was already flat. Seam metric is shared with the PMM apex test
 from pathlib import Path
 
 import numpy as np
-import astropy.io.fits as pyfits
 
-from mosaics.merging.oss import _blend_many
+from mosaics.merging.oss import _blend_many, _panel_bbox
+from mosaics.placement.panel_io import write_placed_panel
 from testing.seam_metrics import join_step, seam_column_profile
 
 
@@ -49,8 +49,16 @@ def _panel(truth: np.ndarray, region, flux: float, rng) -> np.ndarray:
 
 
 def _write(tmp_path, name, arr) -> "Path":
-    p = tmp_path / name
-    pyfits.PrimaryHDU(arr.astype(np.float32)).writeto(str(p), overwrite=True)
+    """Persist a full-canvas panel as bbox-on-disk — exactly what `place_image`
+    now emits: the tight non-zero bbox pixels + their canvas offset in the
+    header. `_blend_many` reads panel-sized arrays, not the full canvas."""
+    p = tmp_path / f"{name}.tiff"
+    r0, r1, c0, c1 = _panel_bbox(arr > 0)
+    write_placed_panel(
+        p, arr[r0:r1, c0:c1].astype(np.float32),
+        offset_xy=(c0, r0),
+        canvas_size=(arr.shape[1], arr.shape[0]),
+    )
     return p
 
 

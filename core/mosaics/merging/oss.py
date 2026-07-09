@@ -21,6 +21,7 @@ import edt
 
 from decorators import node
 from file_io.generic import read_image
+from mosaics.placement.panel_io import read_placed_panel
 from file_io.types import FitsFilePath, WithSidecar
 from hashing import hash_list
 from metadata.classes import ImageMetadata
@@ -124,76 +125,82 @@ def _blend_many(paths: list[Path]) -> np.ndarray:
     Bit-identical to the full-canvas formulation: every term it skips outside a
     panel's bbox is exactly `+0` (there `imageᵢ` and its weight are both zero),
     and `_edt_weight` reproduces the canvas EDT within the bbox. See
-    `test_oss_blend.py`. Peak RAM: ~3 full-canvas float32 arrays vs the old
-    ~5-6 plus a full-canvas mask per panel.
+    `test_oss_blend.py`.
+
+    Panels are stored **bbox-on-disk** (bbox pixels + offset in the header; see
+    `panel_io`), so each is read exactly ONCE as a small array — no full-canvas
+    decompression, and the three passes reuse the retained crop instead of the
+    old 3x re-read. The tight non-zero bbox is recomputed from the small array
+    (it lies inside the stored bbox rectangle), keeping the math identical.
     """
     if len(paths) == 1:
-        return read_image(paths[0]).astype(np.float32)
+        arr, (x0, y0), (cw, ch) = read_placed_panel(paths[0])
+        out = np.zeros((ch, cw), dtype=np.float32)
+        h, w = arr.shape
+        out[y0:y0 + h, x0:x0 + w] = arr
+        return out
 
     n = len(paths)
 
-    # Pass 1: each panel's bbox + bbox-cropped mask, plus the i-side of every
-    # pairwise overlap mean. One image in memory at a time; retained masks are
-    # bbox-sized, not full-canvas.
+    # Read every panel ONCE (small bbox array + its canvas offset), and retain
+    # the tight non-zero crop + mask for all three passes. `bbox` is in canvas
+    # coordinates (offset + tight bbox within the stored array); `canvas_shape`
+    # comes from the header, not from an `img.shape`.
     canvas_shape: tuple[int, int] | None = None
     bboxes: list[tuple[int, int, int, int] | None] = []
     masks: list[np.ndarray] = []
-    overlap_means: dict[tuple[int, int], tuple[float, float | None]] = {}
-    for i, p in enumerate(paths):
-        img = read_image(p).astype(np.float32)  # copy: writable for in-place Pass 3
-        canvas_shape = img.shape
-        bbox = _panel_bbox(img > 0)
-        bboxes.append(bbox)
-        if bbox is None:
-            masks.append(np.zeros((0, 0), dtype=bool))  # blank panel
+    crops: list[np.ndarray | None] = []
+    for p in paths:
+        arr, (x0, y0), (cw, ch) = read_placed_panel(p)
+        canvas_shape = (ch, cw)
+        tight = _panel_bbox(arr > 0)
+        if tight is None:
+            bboxes.append(None)
+            masks.append(np.zeros((0, 0), dtype=bool))
+            crops.append(None)
             continue
-        r0, r1, c0, c1 = bbox
-        mask = (img[r0:r1, c0:c1] > 0)
+        tr0, tr1, tc0, tc1 = tight
+        crop = np.ascontiguousarray(arr[tr0:tr1, tc0:tc1], dtype=np.float32)  # writable for pass 3
+        bboxes.append((y0 + tr0, y0 + tr1, x0 + tc0, x0 + tc1))
+        masks.append(crop > 0)
+        crops.append(crop)
+
+    # Pass 1: i-side (higher-index) overlap mean of every overlapping pair.
+    overlap_means: dict[tuple[int, int], tuple[float | None, float | None]] = {}
+    for i in range(n):
+        if bboxes[i] is None:
+            continue
         for j in range(i):
             if bboxes[j] is None:
                 continue
-            region = _intersect(bbox, bboxes[j])
+            region = _intersect(bboxes[i], bboxes[j])
             if region is None:
                 continue
-            both = _sub(mask, bbox, region) & _sub(masks[j], bboxes[j], region)
+            both = _sub(masks[i], bboxes[i], region) & _sub(masks[j], bboxes[j], region)
             if not both.any():
                 continue
-            rr0, rr1, rc0, rc1 = region
-            mi = float(img[rr0:rr1, rc0:rc1][both].mean())
+            mi = float(_sub(crops[i], bboxes[i], region)[both].mean())
             overlap_means[(j, i)] = (None, mi)  # j-side filled in pass 2
-        masks.append(mask)
 
-    # Pass 2: fill in the j (lower-index) side mean of each overlapping pair,
-    # re-loading only images that are the a-side of some pending overlap.
-    for j, p in enumerate(paths):
-        if not any(a == j for (a, _) in overlap_means):
-            continue
-        img = read_image(p).astype(np.float32)  # copy: writable for in-place Pass 3
-        for (a, b), (_, mi) in list(overlap_means.items()):
-            if a != j:
-                continue
-            region = _intersect(bboxes[a], bboxes[b])
-            both = _sub(masks[a], bboxes[a], region) & _sub(masks[b], bboxes[b], region)
-            rr0, rr1, rc0, rc1 = region
-            mj = float(img[rr0:rr1, rc0:rc1][both].mean()) if both.any() else 0.0
-            overlap_means[(a, b)] = (mj, mi)
+    # Pass 2: fill in the j (lower-index) side mean — from the retained crop.
+    for (a, b) in list(overlap_means):
+        _, mi = overlap_means[(a, b)]
+        region = _intersect(bboxes[a], bboxes[b])
+        both = _sub(masks[a], bboxes[a], region) & _sub(masks[b], bboxes[b], region)
+        mj = float(_sub(crops[a], bboxes[a], region)[both].mean()) if both.any() else 0.0
+        overlap_means[(a, b)] = (mj, mi)
 
     scales = _solve_flux_scales(n, overlap_means)
 
-    # Pass 3: streaming weighted sum, accumulated per-panel into its bbox slice.
+    # Pass 3: weighted sum, accumulated per-panel into its bbox slice.
     numer = np.zeros(canvas_shape, dtype=np.float32)
     denom = np.zeros(canvas_shape, dtype=np.float32)
-    for i, p in enumerate(paths):
-        bbox = bboxes[i]
-        if bbox is None:
+    for i in range(n):
+        if bboxes[i] is None:
             continue
-        r0, r1, c0, c1 = bbox
-        img = read_image(p).astype(np.float32)  # copy: writable for in-place Pass 3
-        weight = _edt_weight(masks[i], bbox, canvas_shape)
-        # Fold scale + weight into the panel's bbox in place, so Pass 3 holds
-        # no extra full-canvas temporaries. `(img·scale)·weight == weight·
-        # (img·scale)` bit-for-bit (float multiply commutes).
-        sub = img[r0:r1, c0:c1]
+        r0, r1, c0, c1 = bboxes[i]
+        weight = _edt_weight(masks[i], bboxes[i], canvas_shape)
+        sub = crops[i]  # the retained crop, mutated in place (last use)
         sub *= scales[i]
         sub *= weight
         numer[r0:r1, c0:c1] += sub

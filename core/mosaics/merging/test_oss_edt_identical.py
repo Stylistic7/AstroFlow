@@ -14,7 +14,16 @@ import numpy as np
 from scipy.ndimage import distance_transform_edt
 
 import mosaics.merging.oss as oss
-from file_io.tiff_file_io import write_tiff_image
+from mosaics.placement.panel_io import write_placed_panel
+
+
+def _write_panel(fp: Path, img: np.ndarray) -> None:
+    """Persist a full-canvas panel as bbox-on-disk (place_image's format)."""
+    r0, r1, c0, c1 = oss._panel_bbox(img > 0)
+    write_placed_panel(
+        fp, img[r0:r1, c0:c1].astype(np.float32),
+        offset_xy=(c0, r0), canvas_size=(img.shape[1], img.shape[0]),
+    )
 
 
 class _ScipyEDT:
@@ -46,7 +55,7 @@ def _write_synth_panels(d: Path) -> list[Path]:
     paths = []
     for i, p in enumerate(panels):
         fp = d / f"panel_{i}.tiff"
-        write_tiff_image(fp, p)
+        _write_panel(fp, p)
         paths.append(fp)
     return paths
 
@@ -84,7 +93,7 @@ def test_single_panel_returns_input():
         img = np.zeros((40, 50), np.float32)
         img[5:35, 5:45] = 1.23
         fp = d / "solo.tiff"
-        write_tiff_image(fp, img)
+        _write_panel(fp, img)
         out = oss._blend_many([fp])
         assert np.array_equal(out, img)
 

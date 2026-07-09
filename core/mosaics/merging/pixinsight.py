@@ -19,8 +19,17 @@ from decisions.settings import ProcessingConfig
 from file_io.tiff_file_io import write_tiff_image
 from file_io.types import XisfFilePath, TiffFilePath, WithSidecar
 from hashing import hash_list
+from mosaics.placement.panel_io import read_placed_panel, rehydrate_placed_panel
 
 log = structlog.get_logger()
+
+
+@dataclass
+class _PanelInput:
+    """Minimal `ImageMetadata` stand-in (filename + stable_hash) for a
+    re-hydrated placed panel handed to the pairwise PI merge."""
+    filename: Path
+    stable_hash: str
 
 
 @dataclass(frozen=True)
@@ -74,13 +83,18 @@ def merge_images_subframe(
     Path(output_filename).parent.mkdir(parents=True, exist_ok=True)
 
     paths = [i.filename.resolve(strict=True) for i in inputs]
-    arrays = [read_image(p) for p in paths]
-    for a in arrays:
-        assert not np.isnan(np.min(a))
-
-    acc = arrays[0]
-    for arr in arrays[1:]:
-        acc = _blend_pair_numpy(acc, arr)
+    # bbox-on-disk panels: place each into a full-canvas accumulator at its
+    # offset, max/avg-compositing overlaps (the old full-canvas _blend_pair_numpy,
+    # now bbox-aware). The subframe merge output is the assembled preview mosaic.
+    panels = [read_placed_panel(p) for p in paths]
+    for arr, _, _ in panels:
+        assert not np.isnan(np.min(arr))
+    canvas_w, canvas_h = panels[0][2]
+    acc = np.zeros((canvas_h, canvas_w), dtype=np.float32)
+    for arr, (x0, y0), _ in panels:
+        h, w = arr.shape
+        region = acc[y0:y0 + h, x0:x0 + w]
+        acc[y0:y0 + h, x0:x0 + w] = _blend_pair_numpy(region, arr.astype(np.float32))
     assert not np.isnan(np.min(acc))
 
     stable_hash = hash_list([i.stable_hash for i in inputs])
@@ -109,14 +123,25 @@ def _merge_images_pi_impl(
     output_filename = Path(output_filename)
     output_filename.parent.mkdir(parents=True, exist_ok=True)
 
-    if len(inputs) == 1:
-        path = inputs[0].filename.resolve(strict=True)
-        shutil.copy(path, output_filename)
-        return WithSidecar(output_filename)
-
     import tempfile
     work_dir = Path(tempfile.mkdtemp(prefix="merge_images_"))
     try:
+        # Placed panels are bbox-on-disk (zstd); PhotometricMosaic needs full-canvas
+        # panels sharing one coordinate frame and can only read deflate. Re-hydrate
+        # each to a full-canvas deflate temp and merge those. panel_count comes from
+        # the original inputs (each placed panel is one panel).
+        orig_inputs = inputs
+        rehydrated = []
+        for k, inp in enumerate(inputs):
+            temp = work_dir / f"rehydrated_{k}.tiff"
+            rehydrate_placed_panel(inp.filename.resolve(strict=True), temp)
+            rehydrated.append(_PanelInput(filename=temp, stable_hash=inp.stable_hash))
+        inputs = tuple(rehydrated)
+
+        if len(inputs) == 1:
+            shutil.copy(inputs[0].filename, output_filename)
+            return WithSidecar(output_filename)
+
         # Pairwise tree: take pairs, merge each pair → next level.
         current = list(inputs)
         step = 0
@@ -149,7 +174,7 @@ def _merge_images_pi_impl(
                 next_level.append(_intermediate_metadata(out_path, a, b))
             current = next_level
 
-        new_count = sum(_panel_count(i) for i in inputs)
+        new_count = sum(_panel_count(i) for i in orig_inputs)
         _set_panel_count(output_filename, new_count)
         log.info("Merge images complete", output=str(output_filename),
                  panel_count=new_count, input_count=len(inputs))

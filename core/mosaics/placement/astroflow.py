@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from stacks.composite_stack import Stack
 from targets.types import Target
 from file_io.generic import read_image
-from file_io.tiff_file_io import write_tiff_embedded
+from mosaics.placement.panel_io import write_placed_panel
 from file_io.types import TiffFilePath, WithSidecar
 from context import context
 from mosaics.types import Mosaic, Viewbox
@@ -112,6 +112,19 @@ def _make_interpolator(
     )
     return interp, (source_height, source_width)
 
+
+# Threads for the per-tile projection pool. Capped WELL below the default
+# (~cpu+4 = 28): each concurrent tile holds ~700 MB of float64 projection
+# temporaries + a scipy RGI query, so the default spiked place_image to ~20 GB
+# (measured phys_footprint_peak) and its honest memory reservation serialized it
+# to ~2 concurrent Ray tasks. `all_world2pix` is GIL-bound single-core anyway, so
+# the pool only parallelizes the interp step — capping to 4 cuts the peak ~7x for
+# little wall-time cost, and lets Ray run many more place_image TASKS at once
+# (real cross-process parallelism for the single-core transform). Lives in
+# _project_in_tiles, not place_image's source, so no cache invalidation.
+_PROJECTION_THREADS = 4
+
+
 def _project_in_tiles(
     viewbox: Viewbox,
     interp: RegularGridInterpolator,
@@ -144,7 +157,7 @@ def _project_in_tiles(
     projected_image = np.zeros((buf_h, buf_w), dtype=np.float32)
 
     tiles = list(product(range(ty0, ty1), range(tx0, tx1)))
-    with ThreadPoolExecutor() as ex:
+    with ThreadPoolExecutor(max_workers=_PROJECTION_THREADS) as ex:
         for tile_y, tile_x, tile_data in ex.map(
             lambda tx: place_tile(
                 viewbox, tx[0], tx[1], wcs, interp, skip_empty,
@@ -391,12 +404,13 @@ def place_image(
             f"likely indicates a WCS or viewbox mismatch."
         )
 
-    # Deliberately uses write_tiff_embedded's widely-compatible default codec
-    # (deflate) rather than zstd: placed panels can be consumed by PixInsight's
-    # PhotometricMosaic in the PI pipelines, and PI can't read zstd, so keeping
-    # them on the compatible codec is a correctness requirement. Cheap regardless
-    # — the panel is mostly place_image-zero, so there's little to compress.
-    write_tiff_embedded(
+    # bbox-on-disk: persist only the projected bbox pixels + the bbox's (x, y)
+    # offset and the canvas size (in the header), NOT a full-canvas embed. The
+    # OSS/Subframe mergers read the small array + offset directly (no full-canvas
+    # decompress); the PI PhotometricMosaic path re-hydrates to full-canvas
+    # deflate on demand (see panel_io). zstd is fine — place_image no longer feeds
+    # PixInsight directly.
+    write_placed_panel(
         output_filename, image,
         offset_xy=(x0_px, y0_px),
         canvas_size=(viewbox.num_pixels_x, viewbox.num_pixels_y),

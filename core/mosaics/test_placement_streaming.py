@@ -108,6 +108,38 @@ def test_write_tiff_embedded_matches_numpy_reconstruction(tmp_path):
     assert np.array_equal(got, expected)
 
 
+def test_placed_panel_roundtrip_and_rehydrate(tmp_path):
+    """bbox-on-disk round-trip: `write_placed_panel` stores the bbox pixels +
+    offset + canvas size; `read_placed_panel` returns them (what the OSS/Subframe
+    mergers consume); `rehydrate_placed_panel` reconstructs exactly the
+    full-canvas embed the PhotometricMosaic path needs."""
+    from mosaics.placement.panel_io import (
+        write_placed_panel, read_placed_panel, rehydrate_placed_panel,
+    )
+    from file_io.tiff_file_io import read_tiff_image
+
+    panel = np.arange(1, 1 + 40 * 30, dtype=np.float32).reshape(30, 40)
+    canvas_w, canvas_h, x0, y0 = 200, 150, 64, 32
+    src = tmp_path / "panel.tiff"
+    write_placed_panel(
+        src, panel, offset_xy=(x0, y0), canvas_size=(canvas_w, canvas_h),
+        metadata={"FILTER": "Ha"},
+    )
+
+    arr, (rx, ry), (rw, rh) = read_placed_panel(src)
+    assert np.array_equal(arr, panel)
+    assert (rx, ry) == (x0, y0)
+    assert (rw, rh) == (canvas_w, canvas_h)
+
+    dst = tmp_path / "rehydrated.tiff"
+    rehydrate_placed_panel(src, dst)
+    got = read_tiff_image(dst)
+    expected = np.zeros((canvas_h, canvas_w), dtype=np.float32)
+    expected[y0:y0 + 30, x0:x0 + 40] = panel
+    assert got.shape == (canvas_h, canvas_w)
+    assert np.array_equal(got, expected)
+
+
 def test_footprint_entirely_off_canvas_returns_none():
     """A source that projects nowhere near the viewbox yields no bbox (the
     caller raises ProjectionFailedException)."""
