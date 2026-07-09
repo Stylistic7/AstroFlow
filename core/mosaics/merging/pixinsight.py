@@ -7,7 +7,7 @@ from beartype import beartype
 from pathlib import Path
 from dataclasses import dataclass
 
-from file_io.generic import read_header, read_image, update_header
+from file_io.generic import update_header
 from file_io.sidecar import get_section, set_section
 from pix import Image
 from pix.tasks import PhotometricMosaic
@@ -19,7 +19,7 @@ from decisions.settings import ProcessingConfig
 from file_io.tiff_file_io import write_tiff_image
 from file_io.types import XisfFilePath, TiffFilePath, WithSidecar
 from hashing import hash_list
-from mosaics.placement.panel_io import read_placed_panel, rehydrate_placed_panel
+from mosaics.placement.panel_io import rehydrate_placed_panel
 
 log = structlog.get_logger()
 
@@ -53,13 +53,6 @@ def _set_panel_count(path, count: int) -> None:
 
 
 
-def _blend_pair_numpy(image_0, image_1):
-    overlap = np.where((image_0 > 0) & (image_1 > 0))
-    output = np.maximum(image_0, image_1)
-    output[overlap] = (image_0[overlap] + image_1[overlap]) / 2.0
-    return output
-
-
 @node(
     display="Merged",
     resources={"fastest_storage": 0.001},
@@ -83,18 +76,13 @@ def merge_images_subframe(
     Path(output_filename).parent.mkdir(parents=True, exist_ok=True)
 
     paths = [i.filename.resolve(strict=True) for i in inputs]
-    # bbox-on-disk panels: place each into a full-canvas accumulator at its
-    # offset, max/avg-compositing overlaps (the old full-canvas _blend_pair_numpy,
-    # now bbox-aware). The subframe merge output is the assembled preview mosaic.
-    panels = [read_placed_panel(p) for p in paths]
-    for arr, _, _ in panels:
-        assert not np.isnan(np.min(arr))
-    canvas_w, canvas_h = panels[0][2]
-    acc = np.zeros((canvas_h, canvas_w), dtype=np.float32)
-    for arr, (x0, y0), _ in panels:
-        h, w = arr.shape
-        region = acc[y0:y0 + h, x0:x0 + w]
-        acc[y0:y0 + h, x0:x0 + w] = _blend_pair_numpy(region, arr.astype(np.float32))
+    # Subframe panels are tiny (downscaled), so reuse the real OSS blend
+    # (`_blend_many`) — variadic, flux-equalized, seamless — rather than a
+    # separate max/avg reduce. The subframe pipeline hands ALL panels to ONE
+    # call, so every input is a real bbox-on-disk placed panel (no fed-back
+    # full-canvas accumulator), exactly what `_blend_many` expects.
+    from mosaics.merging.oss import _blend_many
+    acc = _blend_many(paths)
     assert not np.isnan(np.min(acc))
 
     stable_hash = hash_list([i.stable_hash for i in inputs])

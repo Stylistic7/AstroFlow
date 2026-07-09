@@ -79,27 +79,21 @@ def for_mosaic(mosaic, config):
     for filter in mosaic.filters:
         viewbox = mosaic.viewbox("Subframe")
 
-        # Merge per strip first, then merge strips together.
-        rows = []
-        for strip in mosaic.strips:
-            placed = [
-                place_image(mosaic, targets_by_id[tid], filter, viewbox,
-                            config, channels[(tid, filter)])
-                for tid in strip if (tid, filter) in channels
-            ]
-            if not placed:
-                continue
-            row = placed[0]
-            for p in placed[1:]:
-                row = merge_images_subframe(mosaic, filter, row, p)
-            rows.append(row)
-        if not rows:
+        # One variadic blend over every placed panel for this filter. Subframe
+        # panels are tiny (downscaled), so `merge_images_subframe` (now the same
+        # `_blend_many` as the real mosaic) blends them all in a single seamless,
+        # order-independent pass — no strip/row reduce, and no fed-back
+        # full-canvas accumulator.
+        placed = [
+            place_image(mosaic, targets_by_id[tid], filter, viewbox,
+                        config, channels[(tid, filter)])
+            for strip in mosaic.strips
+            for tid in strip if (tid, filter) in channels
+        ]
+        if not placed:
             continue
 
-        merged = rows[0]
-        for r in rows[1:]:
-            merged = merge_images_subframe(mosaic, filter, merged, r)
-
+        merged = merge_images_subframe(mosaic, filter, *placed)
         out[filter] = store_mosaic_color_channel_subframe(mosaic, filter, merged)
 
     return out

@@ -126,8 +126,9 @@ def test_orion_mosaic(test_context) -> None:
     # test_orion_pipeline_structures' op counts).
     assert_files("merge_images/*.xisf", 3, {"FILTER": "H"})
 
-    # Subframe-pipeline mosaic merge (numpy TIFF). Same pairwise shape: 3.
-    assert_files("merge_images_subframe/*.tiff", 3,
+    # Subframe-pipeline mosaic merge (numpy TIFF). One variadic `_blend_many`
+    # over all 4 panels → a single node/file per filter (no pairwise reduce).
+    assert_files("merge_images_subframe/*.tiff", 1,
                  {"FILTER": "H"})
 
     assert_files("store_mosaic_color_channel_subframe/*.tiff", 1, {"FILTER": "H"})

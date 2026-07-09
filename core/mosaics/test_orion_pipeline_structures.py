@@ -759,7 +759,7 @@ def test_pi_downscaled_orion_op_counts(test_context):
 def test_subframe_orion_op_counts(test_context):
     """`Subframe`.for_mosaic — no stacking / calibration; each
     panel's best light frame is taken directly, projected, then
-    pairwise-merged across strips."""
+    blended in one variadic `_blend_many` pass per filter."""
     mosaic = _identify(test_context)
     config = _make_config()
 
@@ -771,5 +771,5 @@ def test_subframe_orion_op_counts(test_context):
 
     assert counts["get_stack_subframe_image"] == 4, counts
     assert counts["place_image"] == 4, counts
-    assert counts["merge_images_subframe"] == 3, counts
+    assert counts["merge_images_subframe"] == 1, counts
     assert counts["store_mosaic_color_channel_subframe"] == 1, counts
