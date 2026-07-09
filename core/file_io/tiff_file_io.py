@@ -43,13 +43,20 @@ _DESC = "image-description"
 # Classic TIFF offsets are 32-bit (4 GB); force BigTIFF well before that. libvips
 # does NOT auto-enable BigTIFF, so we decide from the pixel budget.
 _BIGTIFF_THRESHOLD = 2 * 1024**3
-# Compression codec for every TIFF we write. zstd over deflate: deflate's zlib
-# encode is single-threaded (~25 MB/s, one core pegged for minutes on a gigapixel
-# color TIFF); zstd is far faster at a comparable ratio and libvips reads it back
-# transparently. Single source of truth — the color deliverable path
-# (mosaics/color/post_process._save_color_vips) imports this too, so the two
-# tiffsave sites can't drift apart.
-TIFF_COMPRESSION = "zstd"
+# DEFAULT TIFF codec. deflate/ZIP is the widely-compatible one — essentially every
+# TIFF reader ever written handles it (uncompressed, LZW, and deflate are the
+# universal codecs), so a TIFF we write can be consumed by anything, including
+# external/legacy tools. This matters because a node generally can't know whether
+# its output will later feed, say, PixInsight — whose reader (PhotometricMosaic,
+# ImageIntegration, …) CANNOT decode zstd. So we default to the compatible codec
+# and let the few provably-pyvips-only paths opt into the faster one below.
+COMPATIBLE_COMPRESSION = "deflate"
+# Multi-core codec, ~18x faster than deflate's single-threaded zlib on dense
+# gigapixel data (deflate pegs one core for ~12 min on a 27 GB color TIFF; zstd
+# ~40 s). NOT universally readable — PixInsight errors on it — so opt into this
+# ONLY where the output is provably terminal and pyvips-only: the OSS color mosaic
+# path (color deliverable + mono channels). libvips reads it back transparently.
+FAST_COMPRESSION = "zstd"
 
 
 def _open(filename: Path) -> pyvips.Image:
@@ -87,10 +94,15 @@ def _vips_from_numpy(arr: np.ndarray) -> pyvips.Image:
 
 
 def _atomic_tiffsave(
-    img: pyvips.Image, filename: Path, tile: tuple[int, int] | None = None
+    img: pyvips.Image,
+    filename: Path,
+    tile: tuple[int, int] | None = None,
+    compression: str = COMPATIBLE_COMPRESSION,
 ) -> None:
     """Save via a sibling tmp + atomic rename (readers never see a half-written
-    file). Zstd-compressed; BigTIFF forced for large images."""
+    file). deflate (widely compatible) by default; pass `compression=FAST_COMPRESSION`
+    for dense, pyvips-only writes that need the multi-core speed. BigTIFF forced for
+    large images."""
     filename = Path(filename)
     filename.parent.mkdir(parents=True, exist_ok=True)
     tmp = filename.with_name(f".{filename.name}.{uuid.uuid4().hex}.tmp")
@@ -101,7 +113,7 @@ def _atomic_tiffsave(
     )
     try:
         img.tiffsave(
-            str(tmp), compression=TIFF_COMPRESSION,
+            str(tmp), compression=compression,
             bigtiff=nbytes >= _BIGTIFF_THRESHOLD, **tile_kwargs,
         )
         os.replace(tmp, filename)
@@ -138,13 +150,47 @@ def write_tiff_image(
     image: np.ndarray,
     metadata: dict[str, Any] | None = None,
     tile: tuple[int, int] | None = None,
+    compression: str = COMPATIBLE_COMPRESSION,
     **_legacy: Any,  # absorbs old tifffile-only kwargs (e.g. bigtiff); ignored
 ) -> None:
     metadata = metadata or {}
     arr = np.ascontiguousarray(image)  # kept alive through the tiffsave below
     img = _vips_from_numpy(arr).copy()
     img.set_type(pyvips.GValue.gstr_type, _DESC, json.dumps(metadata, ensure_ascii=True))
-    _atomic_tiffsave(img, Path(filename), tile=tile)
+    _atomic_tiffsave(img, Path(filename), tile=tile, compression=compression)
+    assert Path(filename).exists()
+    del arr  # explicit: buffer no longer referenced after the save
+
+
+def write_tiff_embedded(
+    filename: Path,
+    image: np.ndarray,
+    offset_xy: tuple[int, int],
+    canvas_size: tuple[int, int],
+    metadata: dict[str, Any] | None = None,
+    compression: str = COMPATIBLE_COMPRESSION,
+) -> None:
+    """Write a full `canvas_size` (W, H) TIFF holding `image` at `offset_xy`
+    (x, y) with the rest black — WITHOUT ever materializing the full canvas.
+
+    libvips `embed` builds a lazy canvas whose out-of-image region is
+    synthesized as zeros tile-by-tile on demand, so `tiffsave` streams the
+    whole (possibly gigapixel) output while only `image` sits in RAM. This is
+    what lets `place_image` keep its RSS at panel-bbox size instead of
+    full-mosaic-canvas size: a placed panel fills only a small bbox of the
+    canvas, the rest is `place_image`-zero anyway (the OSS merge relies on
+    exactly that), so the bytes on disk are identical to writing a
+    fully-materialized zero-padded canvas — just without the ~9 GB array.
+    """
+    metadata = metadata or {}
+    arr = np.ascontiguousarray(image)  # kept alive through the tiffsave below
+    x0, y0 = offset_xy
+    canvas_w, canvas_h = canvas_size
+    img = _vips_from_numpy(arr).embed(
+        x0, y0, canvas_w, canvas_h, extend="black"
+    ).copy()
+    img.set_type(pyvips.GValue.gstr_type, _DESC, json.dumps(metadata, ensure_ascii=True))
+    _atomic_tiffsave(img, Path(filename), compression=compression)
     assert Path(filename).exists()
     del arr  # explicit: buffer no longer referenced after the save
 

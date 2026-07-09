@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from stacks.composite_stack import Stack
 from targets.types import Target
 from file_io.generic import read_image
-from file_io.tiff_file_io import write_tiff_image
+from file_io.tiff_file_io import write_tiff_embedded
 from file_io.types import TiffFilePath, WithSidecar
 from context import context
 from mosaics.types import Mosaic, Viewbox
@@ -94,46 +94,56 @@ def place_tile(
     tile_data = interp((source_ys, source_xs)).astype(np.float32)
     return tile_y, tile_x, tile_data
 
-def _make_interpolator(filename: Path):
+def _make_interpolator(
+    filename: Path,
+) -> tuple[RegularGridInterpolator, tuple[int, int]]:
     # TODO: The subframes need to be calibrated before being placed.
     image = read_image(filename)
 
     # TODO: This seems to take up a huge amount of memory with method 'cubic.'
     # Maybe tiling would reduce the intermediate memory usage.
     source_height, source_width = image.shape
-    return RegularGridInterpolator(
+    interp = RegularGridInterpolator(
         (range(source_height), range(source_width)),
         image,
         method="linear",
         bounds_error=False,
         fill_value=0,
     )
+    return interp, (source_height, source_width)
 
 def _project_in_tiles(
     viewbox: Viewbox,
     interp: RegularGridInterpolator,
     wcs: WCS,
-    skip_empty: bool = True,
-):
-    """Project every tile of the source image into `viewbox`.
-    `interp` and `wcs` stay in this worker's Python heap; per-tile
-    work runs on a thread pool sharing both references. The
-    interpolation call (`interp((source_ys, source_xs))`) is
-    numpy-heavy and releases the GIL, so threads get real
-    parallelism without copying anything."""
+    tile_range: tuple[int, int, int, int] | None = None,
+    skip_empty: bool = False,
+) -> tuple[np.ndarray, int, int]:
+    """Project the source image into `viewbox`, restricted to the tile
+    sub-rectangle `tile_range = (ty0, ty1, tx0, tx1)` (default: the whole
+    canvas). Returns `(image, y0_px, x0_px)`: the projected, canvas-clipped
+    buffer and its top-left position in full-canvas pixel coordinates.
+
+    Restricting to the footprint's tile bbox is what keeps `place_image`'s RSS
+    at bbox size instead of allocating the full ~9 GB canvas: tiles outside the
+    range are `place_image`-zero anyway, so skipping them is bit-identical.
+    Every surviving `place_tile` call uses the GLOBAL tile indices, so its
+    pixels are byte-for-byte the full-canvas result — only the destination
+    slice is shifted into the smaller buffer.
+
+    `interp` and `wcs` stay in this worker's Python heap; per-tile work runs on
+    a thread pool sharing both references. The interpolation call is numpy-heavy
+    and releases the GIL, so threads get real parallelism without copying."""
     from concurrent.futures import ThreadPoolExecutor
 
-    projected_image = np.zeros(
-        (
-            viewbox.num_tiles_y * viewbox.tile_height,
-            viewbox.num_tiles_x * viewbox.tile_width,
-        ),
-        dtype=np.float32,
+    ty0, ty1, tx0, tx1 = tile_range or (
+        0, viewbox.num_tiles_y, 0, viewbox.num_tiles_x,
     )
+    buf_h = (ty1 - ty0) * viewbox.tile_height
+    buf_w = (tx1 - tx0) * viewbox.tile_width
+    projected_image = np.zeros((buf_h, buf_w), dtype=np.float32)
 
-    tiles = list(product(
-        range(viewbox.num_tiles_y), range(viewbox.num_tiles_x),
-    ))
+    tiles = list(product(range(ty0, ty1), range(tx0, tx1)))
     with ThreadPoolExecutor() as ex:
         for tile_y, tile_x, tile_data in ex.map(
             lambda tx: place_tile(
@@ -143,14 +153,97 @@ def _project_in_tiles(
         ):
             if tile_data is None:
                 continue
-            tile_y_idx = tile_y * viewbox.tile_height
-            tile_x_idx = tile_x * viewbox.tile_width
+            ly = (tile_y - ty0) * viewbox.tile_height
+            lx = (tile_x - tx0) * viewbox.tile_width
             projected_image[
-                tile_y_idx : tile_y_idx + viewbox.tile_height,
-                tile_x_idx : tile_x_idx + viewbox.tile_width,
+                ly : ly + viewbox.tile_height,
+                lx : lx + viewbox.tile_width,
             ] = tile_data
 
-    return projected_image[0 : viewbox.num_pixels_y, 0 : viewbox.num_pixels_x]
+    # Drop tile-grid padding that spills past the canvas edge (num_pixels is
+    # <= num_tiles * tile_size). Matching the old full-canvas slice keeps the
+    # eroded canvas-edge behaviour unchanged.
+    y0_px, x0_px = ty0 * viewbox.tile_height, tx0 * viewbox.tile_width
+    clip_h = min(buf_h, viewbox.num_pixels_y - y0_px)
+    clip_w = min(buf_w, viewbox.num_pixels_x - x0_px)
+    return projected_image[:clip_h, :clip_w], y0_px, x0_px
+
+# One whole tile of guaranteed-zero slack snapped around the projected
+# footprint. The tile-snap already rounds the pixel bbox OUT to whole tiles;
+# this extra tile absorbs the sub-pixel disagreement between the polygon
+# projection here and place_image's own per-pixel unproject path when a
+# footprint edge lands right on a tile boundary. Far larger than the erosion
+# halo, so the eroded boundary always sees the same zeros the full canvas had.
+_BBOX_TILE_MARGIN = 1
+# Per-edge WCS samples for the footprint polygon — follows the image edges
+# (incl. SIP distortion) closely; project_polygon then densifies each
+# great-circle edge further, so the projected bounds bound the true footprint.
+_FOOTPRINT_WCS_STEPS = 16
+
+
+def _footprint_tile_bbox(
+    wcs: WCS, viewbox: Viewbox, source_shape: tuple[int, int],
+) -> tuple[int, int, int, int] | None:
+    """Tile sub-rectangle `(ty0, ty1, tx0, tx1)` of `viewbox` covering where the
+    source image projects — or None if it lands entirely off-canvas.
+
+    Reuses the mosaic footprint machinery: `from_wcs` samples the WCS boundary
+    into a spherical polygon, `project_to_viewbox` maps it to canvas pixels via
+    the same `(x - x_min)/resolution` that `place_tile`'s unproject is the
+    inverse of. We take the pixel bounds, snap OUT to whole tiles plus a
+    one-tile margin, and clip to the canvas. Whole tiles keep each `place_tile`
+    call byte-identical to the full-canvas run; the margin makes the cover a
+    superset, so streaming just the bbox is bit-identical to the full canvas."""
+    from spherical_geometry.polygon import SingleSphericalPolygon
+    from mosaics.trimming import project_to_viewbox
+
+    # `from_wcs` reads the image size off the WCS; set it explicitly from the
+    # source we actually read, so the footprint is right even if the plate-
+    # solution header carries no NAXIS.
+    src_h, src_w = source_shape
+    wcs.pixel_shape = (src_w, src_h)
+    footprint = SingleSphericalPolygon.from_wcs(wcs, steps=_FOOTPRINT_WCS_STEPS)
+    minx, miny, maxx, maxy = project_to_viewbox(footprint, viewbox).bounds
+    if not all(np.isfinite([minx, miny, maxx, maxy])):
+        return None
+
+    m = _BBOX_TILE_MARGIN
+    ty0 = max(0, int(np.floor(miny / viewbox.tile_height)) - m)
+    ty1 = min(viewbox.num_tiles_y, int(np.ceil(maxy / viewbox.tile_height)) + m)
+    tx0 = max(0, int(np.floor(minx / viewbox.tile_width)) - m)
+    tx1 = min(viewbox.num_tiles_x, int(np.ceil(maxx / viewbox.tile_width)) + m)
+    if ty0 >= ty1 or tx0 >= tx1:
+        return None
+    return (ty0, ty1, tx0, tx1)
+
+
+def _assert_footprint_within_bbox(
+    image: np.ndarray, y0_px: int, x0_px: int, viewbox: Viewbox,
+) -> None:
+    """Fail-fast guard that the projected footprint really fits inside the bbox
+    buffer: no non-zero pixel may touch a buffer border that is interior to the
+    canvas (a border flush against the canvas edge is fine — the footprint
+    legitimately reaches the mosaic edge there). If this fires, the bbox
+    under-covered and streaming just the bbox would drop footprint the full
+    canvas had, so we refuse rather than write a wrong panel."""
+    h, w = image.shape
+    rows = np.any(image != 0, axis=1)
+    if not rows.any():
+        return  # blank panel; place_image's own np.any check raises
+    cols = np.any(image != 0, axis=0)
+    top = int(np.argmax(rows)) == 0
+    bottom = int(np.argmax(rows[::-1])) == 0
+    left = int(np.argmax(cols)) == 0
+    right = int(np.argmax(cols[::-1])) == 0
+    # A buffer border is on the canvas edge (so touching it is legitimate) when
+    # its canvas coordinate is 0 or num_pixels.
+    assert not (top and y0_px != 0), "footprint hits interior top of bbox"
+    assert not (bottom and y0_px + h != viewbox.num_pixels_y), \
+        "footprint hits interior bottom of bbox"
+    assert not (left and x0_px != 0), "footprint hits interior left of bbox"
+    assert not (right and x0_px + w != viewbox.num_pixels_x), \
+        "footprint hits interior right of bbox"
+
 
 # Erosion is done in `_EROSION_TILE`-sized blocks across a thread pool: the
 # global distance transform was the single-threaded, full-canvas-memory tail
@@ -262,8 +355,22 @@ def place_image(
              filter=filter, filename=image_metadata.filename, viewbox=str(viewbox))
 
     wcs = WCS(image_metadata.plate_solution.header)
-    interp = _make_interpolator(image_metadata.filename)
-    image = _project_in_tiles(viewbox, interp, wcs, skip_empty=False)
+    interp, source_shape = _make_interpolator(image_metadata.filename)
+
+    # Project only the tiles the source footprint actually covers, into a
+    # bbox-sized buffer, then stream a full-canvas TIFF by lazily embedding that
+    # bbox on a black canvas — so RSS stays at bbox size, not the ~9 GB gigapixel
+    # canvas that most panels barely touch. The file on disk is byte-identical
+    # to the old full-canvas write; only the peak memory changes.
+    bbox = _footprint_tile_bbox(wcs, viewbox, source_shape)
+    if bbox is None:
+        raise ProjectionFailedException(
+            f"Source for target {target.stable_hash} in mosaic "
+            f"{mosaic.stable_hash} ({filter}) projects entirely off the "
+            f"viewbox — likely a WCS or viewbox mismatch."
+        )
+    image, y0_px, x0_px = _project_in_tiles(viewbox, interp, wcs, tile_range=bbox)
+    _assert_footprint_within_bbox(image, y0_px, x0_px, viewbox)
     image = _erode_edges(image, config.edge_erosion_px)
 
     # `image_metadata` MUST flow into the call_hash. Three
@@ -284,10 +391,17 @@ def place_image(
             f"likely indicates a WCS or viewbox mismatch."
         )
 
-    write_tiff_image(output_filename, image, {
-        "FILTER": filter,
-        "STBLHASH": target.stable_hash,
-    })
+    # Deliberately uses write_tiff_embedded's widely-compatible default codec
+    # (deflate) rather than zstd: placed panels can be consumed by PixInsight's
+    # PhotometricMosaic in the PI pipelines, and PI can't read zstd, so keeping
+    # them on the compatible codec is a correctness requirement. Cheap regardless
+    # — the panel is mostly place_image-zero, so there's little to compress.
+    write_tiff_embedded(
+        output_filename, image,
+        offset_xy=(x0_px, y0_px),
+        canvas_size=(viewbox.num_pixels_x, viewbox.num_pixels_y),
+        metadata={"FILTER": filter, "STBLHASH": target.stable_hash},
+    )
     # A placed image is one panel by definition. merge_images sums
     # input counts to track "most complete merge so far." Stored in the
     # context cache (not the file sidecar) because @makes_image wipes

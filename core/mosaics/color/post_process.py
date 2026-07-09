@@ -25,7 +25,7 @@ from decisions.settings import ProcessingConfig
 from decorators import node
 from dependency_graph.tracing import workflow_group
 from file_io.generic import read_image
-from file_io.tiff_file_io import write_tiff_image, TIFF_COMPRESSION
+from file_io.tiff_file_io import write_tiff_image, FAST_COMPRESSION
 from file_io.types import TiffFilePath, WithSidecar, XisfFilePath
 from file_io.xisf_file_io import write_xisf_image
 from metadata.classes import ImageMetadata
@@ -52,8 +52,11 @@ def _write_mono_tiff(path: str, data: np.ndarray, filter: str) -> None:
     autostretch emits this so XISF dies at the rc-astro boundary — from here on
     the color path is TIFF + pyvips (see module docstring)."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    # Gigapixel mono channel, read only by pyvips (the color combine) — opt into
+    # the fast multi-core codec; nothing downstream feeds it to PixInsight.
     write_tiff_image(Path(path), data.astype(np.float32),
-                     {"FILTER": filter, "PIPELINE": "AstroFlow-OSS"})
+                     {"FILTER": filter, "PIPELINE": "AstroFlow-OSS"},
+                     compression=FAST_COMPRESSION)
 
 
 def _write_mono_xisf(path: str, data: np.ndarray, filter: str) -> None:
@@ -87,7 +90,7 @@ def _save_color_vips(path: str, img: pyvips.Image, name: str) -> None:
     img.set_type(pyvips.GValue.gstr_type, "image-description",
                  json.dumps({"PALETTE": name, "PIPELINE": "AstroFlow-OSS"}))
     tmp = f"{path}.{os.getpid()}.tmp.tiff"
-    img.tiffsave(tmp, compression=TIFF_COMPRESSION, tile=True, bigtiff=True)
+    img.tiffsave(tmp, compression=FAST_COMPRESSION, tile=True, bigtiff=True)
     os.replace(tmp, path)
 
 
