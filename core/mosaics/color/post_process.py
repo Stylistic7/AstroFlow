@@ -25,7 +25,7 @@ from decisions.settings import ProcessingConfig
 from decorators import node
 from dependency_graph.tracing import workflow_group
 from file_io.generic import read_image
-from file_io.tiff_file_io import write_tiff_image, FAST_COMPRESSION
+from file_io.tiff_file_io import write_tiff_image, FAST_COMPRESSION, COMPATIBLE_COMPRESSION
 from file_io.types import TiffFilePath, WithSidecar, XisfFilePath
 from file_io.xisf_file_io import write_xisf_image
 from metadata.classes import ImageMetadata
@@ -95,7 +95,11 @@ def _save_color_vips(path: str, img: pyvips.Image, name: str) -> None:
     img.set_type(pyvips.GValue.gstr_type, "image-description",
                  json.dumps({"PALETTE": name, "PIPELINE": "AstroFlow-OSS"}))
     tmp = f"{path}.{os.getpid()}.tmp.tiff"
-    img.tiffsave(tmp, compression=FAST_COMPRESSION, tile=True, bigtiff=True)
+    # deflate, NOT zstd: these named colour images are the user-facing
+    # deliverables, opened directly in PixInsight and other tools — and PI can't
+    # read zstd ("ZSTD compression support is not configured"). Widest
+    # compatibility wins over zstd's speed/size for a final deliverable.
+    img.tiffsave(tmp, compression=COMPATIBLE_COMPRESSION, tile=True, bigtiff=True)
     os.replace(tmp, path)
 
 
