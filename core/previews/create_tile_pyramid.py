@@ -86,8 +86,16 @@ def default_make_tile_pyramid(source_path: Path, dest_path: Path) -> None:
         bands = arr.shape[2]
 
     height, width = arr.shape[:2]
+    # Hand pyvips the numpy buffer directly (zero-copy). `arr.tobytes()`
+    # would materialize a SECOND full copy of the array before pyvips even
+    # starts, doubling peak memory to ~2x the source — enough to OOM the
+    # build on multi-GB masters (a 9 GB FITS peaked at ~18 GB). That OOM is
+    # caught by the caller and swallowed, silently leaving a master with no
+    # display pyramid (→ 404 in the viewer). pyvips references this buffer
+    # and pins it alive on the returned image, so `arr` must outlive
+    # `image`; both are locals here and `tiffsave` completes before return.
     image = pyvips.Image.new_from_memory(
-        arr.tobytes(), width, height, bands, "float",
+        arr.data, width, height, bands, "float",
     )
 
     tmp = dest_path.with_suffix(dest_path.suffix + ".tmp")
@@ -208,9 +216,43 @@ def default_make_context_map(source_path: Path, dest_path: Path) -> bool:
     return True
 
 
+def pyramid_path_for(primary: Path) -> Path:
+    """Convention: the display tile pyramid for a deliverable lives at
+    the sibling `<stem>_tiles.tiff`.
+
+    The pyramid is an internal display artifact, NOT the user's file.
+    Keeping it in its own namespace means a deliverable can itself be a
+    `.tiff` (a first-class output format) without colliding with its
+    pyramid — the whole reason color images (baked RGB `.tiff`s) and
+    mono masters (`.fits`/`.xisf`) are treated uniformly. One function
+    owns this name so the builder and the tile-serving resolver can't
+    drift."""
+    return Path(primary).with_name(Path(primary).stem + "_tiles.tiff")
+
+
+def needs_display_pyramid(source: Path) -> bool:
+    """Whether `source` gets a separate `_tiles.tiff` display pyramid.
+
+    Linear/float deliverables (`.fits`/`.xisf`, and float `.tiff`s like
+    the baked-stretch color images) DO — the viewer tone-maps / zooms
+    them from a multi-resolution pyramid. Already-display-ready uint8
+    `.tiff`s (the autostretched Subframe previews) do NOT: they are their
+    own display artifact and serve directly (the tile route's `uchar`
+    branch rescales /255), so building a float pyramid from them would
+    blow them out. Non-tiff sources are always linear float."""
+    source = Path(source)
+    if source.suffix.lower() not in (".tif", ".tiff"):
+        return True
+    try:
+        from file_io.tiff_file_io import read_tiff_image_geometry
+        return np.issubdtype(read_tiff_image_geometry(source).dtype, np.floating)
+    except Exception:
+        return True  # unreadable geometry → default to building (safe)
+
+
 def context_map_path_for(tile_pyramid_path: Path) -> Path:
-    """Convention: <master>.tiff has its context map at
-    <master>.context (brotli-precompressed). One sibling file per
+    """Convention: <pyramid>_tiles.tiff has its context map at
+    <pyramid>_tiles.context (brotli-precompressed). One sibling file per
     master; consumers know to fetch the context map alongside the
     pyramid metadata."""
     return tile_pyramid_path.with_suffix(".context")
@@ -268,16 +310,18 @@ def make_create_tile_pyramid_decorator(
 
             if tile_filename is not None:
                 tile_pyramid_path = Path(tile_filename(*args, **kwargs))
-                tile_pyramid_path.parent.mkdir(parents=True, exist_ok=True)
-                try:
-                    make_tile_pyramid(source, tile_pyramid_path)
-                except Exception as e:
-                    print(f"### Failed to make tile pyramid for {source}: {e}")
-                    return result
-            elif source.suffix.lower() in (".tif", ".tiff"):
+            elif not needs_display_pyramid(source):
+                # Already-display-ready uint8 tiff (Subframe preview): it
+                # IS its own display artifact and serves directly. No
+                # separate pyramid — the resolver falls back to the master.
                 tile_pyramid_path = source
             else:
-                tile_pyramid_path = source.with_suffix(".tiff")
+                # Linear/float deliverable: the pyramid is a separate
+                # `_tiles.tiff` sibling, even when the deliverable is itself
+                # a `.tiff` — the display artifact never aliases the file.
+                tile_pyramid_path = pyramid_path_for(source)
+            if tile_pyramid_path != source:
+                tile_pyramid_path.parent.mkdir(parents=True, exist_ok=True)
                 try:
                     make_tile_pyramid(source, tile_pyramid_path)
                 except Exception as e:

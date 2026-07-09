@@ -13,8 +13,10 @@ const TILE_SIZE = 256;
 
 
 /**
- * Fetch a tile as a Float32Array. Returns { array, width, height } or
- * null for 404 (off the edge of the image).
+ * Fetch a tile as a Float32Array. Returns { array, width, height, bands }
+ * or null for 404 (off the edge of the image). `bands` is 1 for a linear
+ * mono channel (client-side tone-mapping) or 3 for a baked-stretch RGB
+ * color image (pass-through); the array is band-interleaved (RGBRGB…).
  */
 export async function fetchLinearTile(url) {
     const resp = await fetch(url);
@@ -25,9 +27,11 @@ export async function fetchLinearTile(url) {
     const buffer = await resp.arrayBuffer();
     const width = parseInt(resp.headers.get("X-Tile-Width") || TILE_SIZE, 10);
     const height = parseInt(resp.headers.get("X-Tile-Height") || TILE_SIZE, 10);
+    const bands = parseInt(resp.headers.get("X-Tile-Bands") || "1", 10);
     return {
         array: new Float32Array(buffer),
         width,
         height,
+        bands,
     };
 }

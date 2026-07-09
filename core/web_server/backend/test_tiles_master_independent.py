@@ -17,8 +17,9 @@ import pytest
 
 
 class TestTilePyramidPathForTap:
-    """`_tile_pyramid_path_for_tap` must return the `.tiff` path when the
-    `.tiff` exists, regardless of whether the master FITS/XISF does."""
+    """`_tile_pyramid_path_for_tap` must return the `<stem>_tiles.tiff`
+    display-pyramid path when it exists, regardless of whether the master
+    FITS/XISF/TIFF deliverable does."""
 
     def _patch_tap_path(self, monkeypatch, returned_path: str):
         """Make the trace-based `tap_path_for` (the single path predictor)
@@ -33,8 +34,9 @@ class TestTilePyramidPathForTap:
     def test_resolves_when_tiff_exists_and_master_does_not(
         self, tmp_path, monkeypatch,
     ):
+        from previews.create_tile_pyramid import pyramid_path_for
         master = tmp_path / "merged_abc.fits"  # NOT created
-        tiff = master.with_suffix(".tiff")
+        tiff = pyramid_path_for(master)
         tiff.write_bytes(b"fake pyramid")
 
         self._patch_tap_path(monkeypatch, str(master))
@@ -48,9 +50,10 @@ class TestTilePyramidPathForTap:
         self, tmp_path, monkeypatch,
     ):
         """Common case: master not yet reclaimed; tile pyramid sits beside it."""
+        from previews.create_tile_pyramid import pyramid_path_for
         master = tmp_path / "merged_xyz.fits"
         master.write_bytes(b"fake fits")
-        tiff = master.with_suffix(".tiff")
+        tiff = pyramid_path_for(master)
         tiff.write_bytes(b"fake pyramid")
 
         self._patch_tap_path(monkeypatch, str(master))
@@ -74,14 +77,35 @@ class TestTilePyramidPathForTap:
         )
         assert result is None
 
-    def test_returns_master_when_master_is_itself_tiff(
+    def test_resolves_tiles_sibling_when_master_is_itself_tiff(
         self, tmp_path, monkeypatch,
     ):
-        """Subframe-style tap: the master IS already a .tiff (place_image,
-        store_mosaic_color_channel_subframe). No sibling — the master is
-        the tile pyramid."""
+        """A `.tiff` deliverable (place_image, color images, Subframe
+        mosaics) has its display pyramid at the separate `<stem>_tiles.tiff`
+        sibling — the pyramid never aliases the user's deliverable, so the
+        resolver returns the `_tiles.tiff`, NOT the master itself."""
+        from previews.create_tile_pyramid import pyramid_path_for
         master = tmp_path / "subframe.tiff"
-        master.write_bytes(b"fake tiff")
+        master.write_bytes(b"fake tiff deliverable")
+        tiff = pyramid_path_for(master)  # subframe_tiles.tiff
+        tiff.write_bytes(b"fake pyramid")
+
+        self._patch_tap_path(monkeypatch, str(master))
+        from web_server.backend.tiles import _tile_pyramid_path_for_tap
+        result = _tile_pyramid_path_for_tap(
+            "Subframe", "Mosaic", "mosaic", "id", "H",
+        )
+        assert result == str(tiff)
+
+    def test_falls_back_to_master_tiff_when_no_tiles_sibling(
+        self, tmp_path, monkeypatch,
+    ):
+        """Already-display-ready uint8 tiffs (Subframe previews) have no
+        separate `_tiles.tiff` — they serve themselves, so the resolver
+        falls back to the master tiff when no pyramid sibling exists."""
+        master = tmp_path / "subframe_uint8.tiff"
+        master.write_bytes(b"fake uint8 subframe tiff")
+        # No `_tiles.tiff` sibling built for it.
 
         self._patch_tap_path(monkeypatch, str(master))
         from web_server.backend.tiles import _tile_pyramid_path_for_tap

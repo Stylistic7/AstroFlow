@@ -30,9 +30,13 @@ from pathlib import Path
 from typing import Any, Callable, Union
 
 import numpy as np
+import structlog
 
 from file_io.types import ContentHashable, WithSidecar
 from context import context
+
+
+log = structlog.get_logger()
 
 
 type FilenameFn = Union[str, Callable[..., Path]]
@@ -309,11 +313,14 @@ def _generate_presentations(
 
 
 def _make_tile_pyramid(result) -> "Path | None":
-    """Build a pyramidal tile-pyramid `.tiff` sibling for `result`.
+    """Build the display tile pyramid — a separate `<stem>_tiles.tiff`
+    sibling — for `result`.
 
-    The pyramid is the single human-facing artifact: a true multi-
-    resolution TIFF that backs both 1:1 zoom (tiles) and thumbnails
-    (its coarsest level). Always built for file-backed outputs."""
+    The pyramid is the web-serving artifact backing both 1:1 zoom
+    (tiles) and thumbnails (its coarsest level). It lives in its own
+    `_tiles.tiff` namespace so the deliverable can itself be a `.tiff`
+    (a first-class output format) without the pyramid aliasing it.
+    Always built for file-backed outputs."""
     if isinstance(result, np.ndarray):
         return None
     if isinstance(result, tempfile._TemporaryFileWrapper):
@@ -322,14 +329,28 @@ def _make_tile_pyramid(result) -> "Path | None":
         source = Path(os.fspath(result))
     if not source.exists():
         return None
-    if source.suffix.lower() in (".tif", ".tiff"):
+    from previews.create_tile_pyramid import (
+        default_make_tile_pyramid, pyramid_path_for, needs_display_pyramid,
+    )
+    # Already-display-ready uint8 tiffs (Subframe previews) are their own
+    # display artifact and serve directly — no separate pyramid.
+    if not needs_display_pyramid(source):
         return source
-    tile_path = source.with_suffix(".tiff")
+    tile_path = pyramid_path_for(source)
     try:
-        from previews.create_tile_pyramid import default_make_tile_pyramid
         default_make_tile_pyramid(source, tile_path)
     except Exception as e:
-        print(f"### Failed to make tile pyramid for {source}: {e}")
+        # Non-fatal by design: the pyramid is an optional display artifact,
+        # and failing here would throw away the (expensive) master the body
+        # just produced. But it must NOT be invisible — a swallowed build
+        # failure leaves a master with no pyramid, which surfaces as a 404
+        # in the viewer with no other trace. Log loud + structured so it's
+        # greppable (historically the OOM on multi-GB masters landed here).
+        log.warning(
+            "tile_pyramid_build_failed",
+            source=str(source), tile_path=str(tile_path),
+            error=str(e), error_type=type(e).__name__,
+        )
         return None
     return tile_path
 

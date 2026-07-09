@@ -47,12 +47,14 @@ def cleanup_ephemeral_artifact(node, result: Any, fn_args: list) -> None:
     if master is None:
         return
 
-    # Delete the whole atom: primary, its sidecar, the tile-pyramid TIFF (if
-    # one was built — `display=` ops), and the TIFF's `.context` map. `.tiff`
-    # may equal `master` (tiff-primary ops like place_image); unlink is
-    # idempotent. Convention: pyramid = master.with_suffix(".tiff"), context
-    # = pyramid.with_suffix(".context") (previews/create_tile_pyramid.py).
-    tiff = master.with_suffix(".tiff")
+    # Delete the whole atom: primary, its sidecar, the display tile-pyramid
+    # TIFF (if one was built — `display=` ops), and the pyramid's `.context`
+    # map. The pyramid is a separate `<stem>_tiles.tiff` sibling that never
+    # aliases `master`; unlink is idempotent. Convention: pyramid =
+    # pyramid_path_for(master), context = pyramid.with_suffix(".context")
+    # (previews/create_tile_pyramid.py).
+    from previews.create_tile_pyramid import pyramid_path_for
+    tiff = pyramid_path_for(master)
     atom = [
         master,
         sidecar_path_for(master),

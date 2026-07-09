@@ -194,9 +194,10 @@ def get_thumbnail(entity, *extra_args):
         # Largest, fresher wins.
         candidates.sort(key=lambda t: (t[0], t[1]), reverse=True)
         _size, _mtime, producer, path = candidates[0]
-        # Prefer the pyramidal `.tiff` sibling — serve a small stored
-        # level instead of decoding the (possibly multi-GB) source.
-        tiff = Path(path).with_suffix(".tiff")
+        # Prefer the pyramidal `_tiles.tiff` sibling — serve a small
+        # stored level instead of decoding the (possibly multi-GB) source.
+        from previews.create_tile_pyramid import pyramid_path_for
+        tiff = pyramid_path_for(Path(path))
         if tiff.exists():
             from previews.create_tile_pyramid import pyramid_thumbnail
             try:

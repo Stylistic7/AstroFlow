@@ -119,13 +119,13 @@ def _rename_with_siblings(old: Path, new: Path) -> None:
         new_sidecar = new.with_suffix(new.suffix + ".json")
         old_sidecar.rename(new_sidecar)
 
-    # Tile pyramid is `<stem>.tiff` next to the primary. Only meaningful
-    # when the primary isn't itself a .tiff (then no separate pyramid).
-    if old.suffix != ".tiff":
-        old_pyramid = old.with_suffix(".tiff")
-        if old_pyramid.exists():
-            new_pyramid = new.with_suffix(".tiff")
-            old_pyramid.rename(new_pyramid)
+    # Display tile pyramid is the separate `<stem>_tiles.tiff` sibling
+    # (never aliases the primary, so this applies uniformly — including
+    # `.tiff` deliverables).
+    from previews.create_tile_pyramid import pyramid_path_for
+    old_pyramid = pyramid_path_for(old)
+    if old_pyramid.exists():
+        old_pyramid.rename(pyramid_path_for(new))
 
 
 def _update_value_path(value: Any, new_path: Path) -> Any:

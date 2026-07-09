@@ -205,11 +205,12 @@ class TestCleanupAction:
     def test_non_tiff_master_deletes_whole_atom_including_tiff(self, tmp_path):
         from file_io.sidecar import sidecar_path_for
 
+        from previews.create_tile_pyramid import pyramid_path_for
         master = tmp_path / "abc123.fits"
         master.write_bytes(b"fake fits")
         sidecar = sidecar_path_for(master)
         sidecar.write_text('{"astroflow": {}}')
-        tiff = master.with_suffix(".tiff")
+        tiff = pyramid_path_for(master)
         tiff.write_bytes(b"fake tiff")
 
         # Fake node WITH display: it built a tile-pyramid tiff for viewing,

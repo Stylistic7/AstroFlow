@@ -49,6 +49,10 @@ export default function MosaicViewer() {
 	const [hdrEnabled, setHdrEnabled] = useState(false);
 	const [peakBrightness, setPeakBrightness] = useState(2.0);
 	const [stretchMode, setStretchMode] = useState('stf');
+	// True once the viewer reports the current tap is a baked-stretch
+	// color image (>=3 bands): its stretch is baked in, so HDR + stretch
+	// controls don't apply and are hidden.
+	const [isColor, setIsColor] = useState(false);
 
     const mosaic = mosaics?.[mosaic_id];
 
@@ -127,28 +131,30 @@ export default function MosaicViewer() {
 					checked={showPanelNumbers}
 					handleChange={() => setShowPanelNumbers((v) => !v)}
 				/>
-				<HdrControls
-					hdrCapable={hdrCapable}
-					hdrEnabled={hdrEnabled}
-					setHdrEnabled={setHdrEnabled}
-					peakBrightness={peakBrightness}
-					setPeakBrightness={setPeakBrightness}
-				/>
-				<Tooltip title="Stretch mode">
-					<Select
-						size="small"
-						value={stretchMode}
-						onChange={(e) => setStretchMode(e.target.value)}
-						sx={{
-							minWidth: 160,
-							'& .MuiSelect-select': { py: 0.5, fontSize: '0.85rem' },
-						}}
-					>
-						{Object.entries(STRETCH_MODES).map(([k, m]) => (
-							<MenuItem key={k} value={k}>{m.label}</MenuItem>
-						))}
-					</Select>
-				</Tooltip>
+				{!isColor && (<>
+					<HdrControls
+						hdrCapable={hdrCapable}
+						hdrEnabled={hdrEnabled}
+						setHdrEnabled={setHdrEnabled}
+						peakBrightness={peakBrightness}
+						setPeakBrightness={setPeakBrightness}
+					/>
+					<Tooltip title="Stretch mode">
+						<Select
+							size="small"
+							value={stretchMode}
+							onChange={(e) => setStretchMode(e.target.value)}
+							sx={{
+								minWidth: 160,
+								'& .MuiSelect-select': { py: 0.5, fontSize: '0.85rem' },
+							}}
+						>
+							{Object.entries(STRETCH_MODES).map(([k, m]) => (
+								<MenuItem key={k} value={k}>{m.label}</MenuItem>
+							))}
+						</Select>
+					</Tooltip>
+				</>)}
 				<Tooltip title="Export to Telescopius">
 					<IconButton
 						size="small"
@@ -218,6 +224,7 @@ export default function MosaicViewer() {
 						hdrEnabled={hdrEnabled}
 						peakBrightness={peakBrightness}
 						stretchMode={stretchMode}
+						onColorDetected={setIsColor}
 					/>
 				</Box>
 

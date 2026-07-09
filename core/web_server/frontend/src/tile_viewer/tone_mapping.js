@@ -33,7 +33,10 @@ struct Globals {
     //       the constrained-max-entropy stretch (and any future
     //       LUT-based modes).
     stretchMode: f32,
-    _pad0: f32,
+    // >0.5 = baked-stretch RGB color image: sample .rgb and pass it
+    // through (stretch is already applied), skipping all mono tone-
+    // mapping. 0.0 = linear mono channel, tone-mapped below.
+    isColor: f32,
     _pad1: f32,
     _pad2: f32,
 };
@@ -101,7 +104,15 @@ fn vs_main(@builtin(vertex_index) idx: u32) -> VsOut {
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    let xRaw = textureSample(tileTexture, tileSampler, in.uv).r;
+    // Sample once, in uniform control flow (valid derivatives), then
+    // branch. Color tiles carry the stretch baked in — pass .rgb
+    // straight through (zeros → black is inherent, no sentinel needed).
+    let tex = textureSample(tileTexture, tileSampler, in.uv);
+    if (globals.isColor > 0.5) {
+        return vec4<f32>(tex.rgb * globals.peakBrightness, 1.0);
+    }
+
+    let xRaw = tex.r;
 
     // Zero is the "no data" sentinel for the irregular mosaic
     // footprint inside the rectangular tile bbox. Opaque black.

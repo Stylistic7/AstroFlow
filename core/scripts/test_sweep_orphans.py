@@ -73,11 +73,13 @@ def test_live_set_includes_archive_paths_and_their_siblings(
     temp_output_dir,
 ):
     """Archive entries' paths are live. Their sibling sidecar
-    (`.xisf.json`) and tile pyramid (`.tiff`) are also live so
+    (`.xisf.json`) and tile pyramid (`_tiles.tiff`) are also live so
     the sweep doesn't strand them when a primary is preserved."""
     primary = temp_output_dir / "mosaic" / "preserved.xisf"
     sidecar = temp_output_dir / "mosaic" / "preserved.xisf.json"
-    tile = temp_output_dir / "mosaic" / "preserved.tiff"
+    # `_tiles.tiff` pyramid rename (previews.create_tile_pyramid.pyramid_path_for);
+    # the old name was `preserved.tiff`.
+    tile = temp_output_dir / "mosaic" / "preserved_tiles.tiff"
     _make_file(primary); _make_file(sidecar); _make_file(tile)
 
     context.archive = [("mosaic", "abc", "P", [str(primary)])]

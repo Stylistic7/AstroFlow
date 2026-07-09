@@ -152,6 +152,10 @@ export default function TileViewerV2({
     hdrEnabled: hdrEnabledProp,
     peakBrightness: peakBrightnessProp,
     stretchMode: stretchModeProp,
+    // Called with true/false once the tile metadata reveals whether this
+    // tap is a baked-stretch color image (>=3 bands). Lets the parent
+    // toolbar hide the stretch/HDR controls that don't apply to color.
+    onColorDetected,
 } = {}) {
     const routeParams = useParams();
     const objectType = objectTypeProp ?? routeParams.objectType;
@@ -199,6 +203,14 @@ export default function TileViewerV2({
     const stretchMode = stretchModeProp ?? localStretchMode;
     // hdrEnabled gates brightness: when off, force peak=1.0 (SDR).
     const effectivePeak = (hdrEnabledProp === false) ? 1.0 : peakBrightness;
+
+    // Baked-stretch color image? The backend reports band count on
+    // /tap/tile_metadata; >=3 means RGB the shader passes through, so
+    // all client-side stretch controls are irrelevant.
+    const isColor = (tileMeta?.bands ?? 1) >= 3;
+    useEffect(() => {
+        onColorDetected?.(isColor);
+    }, [isColor, onColorDetected]);
 
     const navigate = useNavigate();
     const params = useParams();
@@ -333,7 +345,18 @@ export default function TileViewerV2({
     // `stretchMode` integer; STF reads e1/e5/max, LUT samples the
     // texture uploaded by the effect below.
     useEffect(() => {
-        if (!renderer.isReady || !metadata?.statistics) return;
+        if (!renderer.isReady) return;
+        // Baked-stretch color: fixed identity pass-through (e1=0, e5=0.5,
+        // max=1 ⇒ y=x) at SDR (peak=1.0); the shader's isColor branch
+        // samples .rgb directly. No stats needed.
+        if (isColor) {
+            renderer.setGlobals({
+                e1: 0, e5: 0.5, max: 1.0, peakBrightness: 1.0,
+                stretchMode: 0, isColor: true,
+            });
+            return;
+        }
+        if (!metadata?.statistics) return;
         const { E1, E5, identity } = computeAutoStretchParams(metadata.statistics);
         const shaderMode = STRETCH_MODES[stretchMode]?.shaderMode ?? 0;
         renderer.setGlobals({
@@ -342,14 +365,15 @@ export default function TileViewerV2({
             max: metadata.statistics.max_value || 1.0,
             peakBrightness: effectivePeak,
             stretchMode: shaderMode,
+            isColor: false,
         });
-    }, [renderer.isReady, metadata?.statistics, effectivePeak, stretchMode]);
+    }, [renderer.isReady, isColor, metadata?.statistics, effectivePeak, stretchMode]);
 
     // Recompute + upload the stretch LUT whenever stats change or the
     // mode flips into a LUT-based path. STF mode doesn't sample the
-    // LUT so we skip the upload there.
+    // LUT so we skip the upload there. Color images never sample it.
     useEffect(() => {
-        if (!renderer.isReady || !metadata?.statistics) return;
+        if (!renderer.isReady || isColor || !metadata?.statistics) return;
         if (stretchMode === 'maxent') {
             renderer.setStretchLut(computeMaxEntropyLut(metadata.statistics));
         } else if (stretchMode === 'ghs') {
@@ -357,7 +381,7 @@ export default function TileViewerV2({
                 bg: ghsBg, intensity: ghsIntensity,
             }));
         }
-    }, [renderer.isReady, metadata?.statistics, stretchMode, ghsBg, ghsIntensity]);
+    }, [renderer.isReady, isColor, metadata?.statistics, stretchMode, ghsBg, ghsIntensity]);
 
     // On viewport change: push uniforms to renderer + recompute visible
     // tiles. The viewport already rAF-coalesces its subscriber fan-out,
@@ -418,15 +442,17 @@ export default function TileViewerV2({
                     border: '1px solid rgba(255,255,255,0.12)', borderRadius: 1,
                     color: '#fff', backdropFilter: 'blur(6px)',
                 }}>
-                    <Typography variant="caption">
-                        HDR brightness: {effectivePeak.toFixed(1)}×
-                    </Typography>
-                    <Slider
-                        size="small"
-                        value={localPeakBrightness}
-                        onChange={(_, v) => setLocalPeakBrightness(v)}
-                        min={1} max={8} step={0.1}
-                    />
+                    {!isColor && (<>
+                        <Typography variant="caption">
+                            HDR brightness: {effectivePeak.toFixed(1)}×
+                        </Typography>
+                        <Slider
+                            size="small"
+                            value={localPeakBrightness}
+                            onChange={(_, v) => setLocalPeakBrightness(v)}
+                            min={1} max={8} step={0.1}
+                        />
+                    </>)}
                     <FormControlLabel
                         control={
                             <Switch
@@ -460,44 +486,46 @@ export default function TileViewerV2({
                         label={<Typography variant="caption">Allow over-zoom past 1:1</Typography>}
                         sx={{ mt: -1, ml: -1 }}
                     />
-                    <Box sx={{ mt: 1 }}>
-                        <Typography variant="caption" sx={{ display: 'block', opacity: 0.85, mb: 0.5 }}>
-                            Stretch
-                        </Typography>
-                        <Select
-                            size="small"
-                            value={localStretchMode}
-                            onChange={(e) => setLocalStretchMode(e.target.value)}
-                            sx={{
-                                width: '100%',
-                                color: '#fff',
-                                '& .MuiSelect-icon': { color: '#fff' },
-                                '& .MuiOutlinedInput-notchedOutline': {
-                                    borderColor: 'rgba(255,255,255,0.3)',
-                                },
-                            }}
-                        >
-                            {Object.entries(STRETCH_MODES).map(([k, m]) => (
-                                <MenuItem key={k} value={k}>{m.label}</MenuItem>
-                            ))}
-                        </Select>
-                    </Box>
-                    {localStretchMode === 'ghs' && (
+                    {!isColor && (
                         <Box sx={{ mt: 1 }}>
-                            <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
-                                Background — {ghsBg.toFixed(2)}
+                            <Typography variant="caption" sx={{ display: 'block', opacity: 0.85, mb: 0.5 }}>
+                                Stretch
                             </Typography>
-                            <Slider
-                                size="small" value={ghsBg} min={0.02} max={0.25} step={0.01}
-                                onChange={(_, v) => setGhsBg(v)} sx={{ color: '#fff' }}
-                            />
-                            <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
-                                Stretch — {ghsIntensity.toFixed(2)}×
-                            </Typography>
-                            <Slider
-                                size="small" value={ghsIntensity} min={0.3} max={3} step={0.05}
-                                onChange={(_, v) => setGhsIntensity(v)} sx={{ color: '#fff' }}
-                            />
+                            <Select
+                                size="small"
+                                value={localStretchMode}
+                                onChange={(e) => setLocalStretchMode(e.target.value)}
+                                sx={{
+                                    width: '100%',
+                                    color: '#fff',
+                                    '& .MuiSelect-icon': { color: '#fff' },
+                                    '& .MuiOutlinedInput-notchedOutline': {
+                                        borderColor: 'rgba(255,255,255,0.3)',
+                                    },
+                                }}
+                            >
+                                {Object.entries(STRETCH_MODES).map(([k, m]) => (
+                                    <MenuItem key={k} value={k}>{m.label}</MenuItem>
+                                ))}
+                            </Select>
+                            {localStretchMode === 'ghs' && (
+                                <Box sx={{ mt: 1 }}>
+                                    <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
+                                        Background — {ghsBg.toFixed(2)}
+                                    </Typography>
+                                    <Slider
+                                        size="small" value={ghsBg} min={0.02} max={0.25} step={0.01}
+                                        onChange={(_, v) => setGhsBg(v)} sx={{ color: '#fff' }}
+                                    />
+                                    <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
+                                        Stretch — {ghsIntensity.toFixed(2)}×
+                                    </Typography>
+                                    <Slider
+                                        size="small" value={ghsIntensity} min={0.3} max={3} step={0.05}
+                                        onChange={(_, v) => setGhsIntensity(v)} sx={{ color: '#fff' }}
+                                    />
+                                </Box>
+                            )}
                         </Box>
                     )}
                     {renderer.error && (

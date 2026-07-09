@@ -83,22 +83,25 @@ def _tile_pyramid_path_for_tap(
     object_type: str, object_id: str, pipeline: str, display: str,
     filter: str | None,
 ):
-    """Find the tile pyramid for a specific (pipeline, tap) — the
-    `.tiff` sibling of the master file. Path resolution uses
-    `_tap_path_unchecked` and gates solely on `.tiff` existence, so a
-    tile request still resolves when the master FITS/XISF has been
-    reclaimed by ephemeral cleanup."""
+    """Find the display tile pyramid for a specific (pipeline, tap) —
+    the `<stem>_tiles.tiff` sibling of the master file. Path resolution
+    uses `_tap_path_unchecked` and gates solely on the pyramid's
+    existence, so a tile request still resolves when the master
+    FITS/XISF/TIFF deliverable has been reclaimed by ephemeral cleanup."""
     from pathlib import Path
     from web_server.backend.metadata import _tap_path_unchecked
+    from previews.create_tile_pyramid import pyramid_path_for
     master = _tap_path_unchecked(
         pipeline, display, object_type, object_id, filter,
     )
     if master is None:
         return None
-    tiff = Path(str(master)).with_suffix(".tiff")
+    tiff = pyramid_path_for(Path(str(master)))
     if tiff.exists():
         return str(tiff)
-    # Some tap outputs are themselves tiffs (e.g., Subframe mosaics).
+    # Already-display-ready uint8 tiffs (e.g. Subframe previews) have no
+    # separate pyramid — they serve directly. Fall back to the master when
+    # it's itself a tiff.
     if str(master).endswith((".tiff", ".tif")) and os.path.exists(master):
         return str(master)
     return None
@@ -127,6 +130,10 @@ def _tile_metadata_response(path, backend_port):
         "tileWidth": _TILE_SIZE,
         "tileHeight": _TILE_SIZE,
         "maxZoom": levels - 1,
+        # Band count is the single source of truth for the client's
+        # color-vs-mono branch: >=3 → baked-stretch RGB (pass-through),
+        # 1 → linear channel (client-side tone-mapping).
+        "bands": base.bands,
         "port": backend_port,
         "mtime": os.path.getmtime(path),
     })
@@ -196,19 +203,24 @@ def _serve_tile_response(path, object_type, object_id, x, y, z):
         else:
             arr = np.frombuffer(raw, dtype=np.float32).reshape(h, w, bands).astype("<f4")
 
-        # Mono channel today. RGB-aware tile serving is a separate
-        # change (pack 3 channels + shader samples .rgb).
-        arr = arr[..., 0]
+        # Color path: 3-band baked-stretch RGB served interleaved; the
+        # shader samples .rgb and passes it through (stretch is baked in).
+        # Mono path: a single linear channel the shader tone-maps client-
+        # side. `X-Tile-Bands` tells the client which decode/texture to use.
+        color = bands >= 3
+        send_bands = 3 if color else 1
+        arr = arr[..., :3] if color else arr[..., 0]
 
         # Edge tiles get padded to a full _TILE_SIZE × _TILE_SIZE with
-        # zeros — the shader's zero-short-circuit renders those pixels
-        # as opaque black, which is the correct "no data" appearance
-        # past the image's actual bounds. Padding eliminates the
-        # frontend's "the texture is smaller than the mesh" case and
-        # sidesteps any NPOT-R32F-on-WebGL-1 weirdness. Matches what
-        # `large_image.getTile()` used to do implicitly.
+        # zeros — the shader renders those pixels as opaque black, which
+        # is the correct "no data" appearance past the image's actual
+        # bounds (mono short-circuits on xRaw==0; color emits vec3(0)).
+        # Padding eliminates the frontend's "texture smaller than the
+        # mesh" case. Matches what `large_image.getTile()` did implicitly.
         if h < _TILE_SIZE or w < _TILE_SIZE:
-            padded = np.zeros((_TILE_SIZE, _TILE_SIZE), dtype=np.float32)
+            pad_shape = ((_TILE_SIZE, _TILE_SIZE, send_bands) if color
+                         else (_TILE_SIZE, _TILE_SIZE))
+            padded = np.zeros(pad_shape, dtype=np.float32)
             padded[:h, :w] = arr
             arr = padded
             h = w = _TILE_SIZE
@@ -219,6 +231,7 @@ def _serve_tile_response(path, object_type, object_id, x, y, z):
         resp.headers["Content-Encoding"] = "br"
         resp.headers["X-Tile-Width"] = str(w)
         resp.headers["X-Tile-Height"] = str(h)
+        resp.headers["X-Tile-Bands"] = str(send_bands)
         return resp
     except Exception as e:
         print(f"Error serving tile for {object_type, object_id}: {e}")

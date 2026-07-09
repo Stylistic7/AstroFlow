@@ -211,7 +211,7 @@ export function useTileRenderer({ canvasRef }) {
                 pending: new Set(),     // keys whose fetch is in-flight
                 wantsFilterable,
                 // 8 floats: e1, e5, max, peakBrightness, stretchMode,
-                // and 3 of std140 padding.
+                // isColor, and 2 of std140 padding.
                 lastGlobals: new Float32Array([0, 0.5, 1, 1, 0, 0, 0, 0]),
                 lastViewport: new Float32Array(8),
                 // rAF coalescing — multiple redraw() calls within one
@@ -304,8 +304,11 @@ export function useTileRenderer({ canvasRef }) {
 
     /** Push new STF parameters + brightness + stretch mode; paints
      * synchronously so the slider reflects on the next frame.
-     * `stretchMode`: 0 = STF closed-form, 1 = LUT lookup. */
-    function setGlobals({ e1, e5, max, peakBrightness, stretchMode = 0 }) {
+     * `stretchMode`: 0 = STF closed-form, 1 = LUT lookup.
+     * `isColor`: when set, the shader samples .rgb and passes the baked
+     * color through (no tone-mapping). Passed explicitly so a color↔mono
+     * tap switch on a reused renderer resets the flag both directions. */
+    function setGlobals({ e1, e5, max, peakBrightness, stretchMode = 0, isColor }) {
         const s = stateRef.current;
         if (!s) return;
         s.lastGlobals[0] = e1;
@@ -313,6 +316,7 @@ export function useTileRenderer({ canvasRef }) {
         s.lastGlobals[2] = max;
         s.lastGlobals[3] = peakBrightness;
         s.lastGlobals[4] = stretchMode;
+        if (isColor !== undefined) s.lastGlobals[5] = isColor ? 1 : 0;
         paint();
     }
 
@@ -417,17 +421,35 @@ export function useTileRenderer({ canvasRef }) {
                 if (data === null) return;
                 if (!stateRef.current) return;
 
+                // Color tiles (bands>=3) arrive band-interleaved (RGB);
+                // WebGPU has no 3-channel float format, so expand to
+                // RGBA (alpha=1) and upload as rgba32float. Mono tiles
+                // stay single-channel r32float. The tile bind-group
+                // layout's float sampleType accepts both, so the same
+                // pipeline renders either (shader branches on isColor).
+                const isColor = data.bands >= 3;
+                let uploadArray = data.array;
+                if (isColor) {
+                    const px = data.width * data.height;
+                    uploadArray = new Float32Array(px * 4);
+                    for (let i = 0; i < px; i++) {
+                        uploadArray[i * 4 + 0] = data.array[i * 3 + 0];
+                        uploadArray[i * 4 + 1] = data.array[i * 3 + 1];
+                        uploadArray[i * 4 + 2] = data.array[i * 3 + 2];
+                        uploadArray[i * 4 + 3] = 1.0;
+                    }
+                }
                 const texture = device.createTexture({
                     size: [data.width, data.height],
-                    format: 'r32float',
+                    format: isColor ? 'rgba32float' : 'r32float',
                     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
                 });
                 device.queue.writeTexture(
                     { texture },
-                    data.array.buffer,
+                    uploadArray.buffer,
                     {
-                        offset: data.array.byteOffset,
-                        bytesPerRow: data.width * 4,
+                        offset: uploadArray.byteOffset,
+                        bytesPerRow: data.width * (isColor ? 16 : 4),
                         rowsPerImage: data.height,
                     },
                     { width: data.width, height: data.height, depthOrArrayLayers: 1 },

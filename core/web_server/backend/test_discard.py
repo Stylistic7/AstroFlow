@@ -16,14 +16,15 @@ from web_server.backend import _discard
 
 
 def _make_atom(d: Path, op: str, stem: str) -> Path:
-    """Create a fake op-output atom (primary .fits + .json sidecar + .tiff
-    pyramid + .context) under d/op/, return the primary path."""
+    """Create a fake op-output atom (primary .fits + .json sidecar +
+    `_tiles.tiff` pyramid + .context) under d/op/, return the primary path."""
+    from previews.create_tile_pyramid import pyramid_path_for
     opdir = d / op
     opdir.mkdir(parents=True, exist_ok=True)
     primary = opdir / f"{stem}.fits"
     primary.write_bytes(b"x" * 10)
     _discard.sidecar_path_for(primary).write_text("{}")
-    tiff = primary.with_suffix(".tiff")
+    tiff = pyramid_path_for(primary)
     tiff.write_bytes(b"y" * 20)
     tiff.with_suffix(".context").write_bytes(b"z" * 5)
     return primary

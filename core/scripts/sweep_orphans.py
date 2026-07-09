@@ -12,9 +12,11 @@ The live set is the union of:
   the cart).
 
 Plus the obvious siblings of each live primary file: the `.json`
-sidecar (`file_io.sidecar.sidecar_path_for`) and the auto-
-generated `.tiff` tile pyramid (built by
-`_make_tile_pyramid_if_warranted` for outputs over 8 MP).
+sidecar (`file_io.sidecar.sidecar_path_for`) and the separate
+`<stem>_tiles.tiff` display pyramid (`previews.create_tile_pyramid.
+pyramid_path_for`). Note: the OLD pyramid name was `<stem>.tiff`
+(same stem, `.tiff` suffix); after the `_tiles.tiff` rename those
+old files are no longer protected and are correctly swept as orphans.
 
 Anything on disk under `context.output_dir` that's not in the
 live set is an orphan. Dry-run by default; `--delete` actually
@@ -121,8 +123,9 @@ def _siblings_of(primary: str) -> list[Path]:
     unconditionally so the sweep doesn't blow away a sidecar
     whose primary is live but whose sibling-derivation logic we
     missed."""
+    from previews.create_tile_pyramid import pyramid_path_for
     p = Path(primary)
-    return [sidecar_path_for(p), p.with_suffix(".tiff")]
+    return [sidecar_path_for(p), pyramid_path_for(p)]
 
 
 def _walk_and_classify(

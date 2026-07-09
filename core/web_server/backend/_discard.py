@@ -21,9 +21,10 @@ from dependency_graph.trace_paths import traced_paths_for
 
 def _atom_paths(primary: Path) -> list[Path]:
     """The full on-disk atom for one produced file: primary, its `.json`
-    sidecar, the tile-pyramid `.tiff`, and the `.tiff`'s `.context` map.
-    Mirrors `cache/ephemeral_cleanup.cleanup_ephemeral_artifact`."""
-    tiff = primary.with_suffix(".tiff")
+    sidecar, the display tile-pyramid `_tiles.tiff`, and the pyramid's
+    `.context` map. Mirrors `cache/ephemeral_cleanup.cleanup_ephemeral_artifact`."""
+    from previews.create_tile_pyramid import pyramid_path_for
+    tiff = pyramid_path_for(primary)
     return [primary, sidecar_path_for(primary), tiff, tiff.with_suffix(".context")]
 
 
@@ -48,7 +49,8 @@ def group_ops(item: tuple[str, str, str]) -> list[dict]:
         primary = Path(e["path"])
         if primary.exists():
             g["on_disk"] += 1
-            for p in (primary, primary.with_suffix(".tiff")):
+            from previews.create_tile_pyramid import pyramid_path_for
+            for p in (primary, pyramid_path_for(primary)):
                 try:
                     g["bytes"] += p.stat().st_size
                 except OSError:

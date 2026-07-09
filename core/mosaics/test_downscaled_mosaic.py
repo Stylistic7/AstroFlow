@@ -106,8 +106,9 @@ def test_downscaled_orion_mosaic_produces_tiled_tiff(test_context):
     # This loop is a no-op for downscaled outputs (which are below the
     # 8 MP threshold and skip pyramid generation) but locks in the
     # path convention for the full-resolution case.
+    from previews.create_tile_pyramid import pyramid_path_for
     for xisf in xisfs:
-        sibling = xisf.with_suffix(".tiff")
+        sibling = pyramid_path_for(xisf)
         if sibling.exists():
             assert sibling.parent == xisf.parent
 

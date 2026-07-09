@@ -1,25 +1,30 @@
-"""Backfill pyramidal tile-pyramid `.tiff` siblings for existing outputs.
+"""Backfill display tile pyramids (`<stem>_tiles.tiff`) for existing masters.
 
 Usage: `python -m scripts.backfill_tile_pyramids [ROOT] [--force] [--dry-run]`
-(from the `core/` working dir).
+(run as a module from the `core/` working dir — it imports `previews`).
 
 Walks ROOT (default: the cache's `output_dir`, e.g. /Volumes/Astro/Processed)
-and, for every produced image source (`.xisf` / `.fits`), (re)writes its
-`<stem>.tiff` sibling as a *true* multi-resolution pyramid via
+and, for every linear master (`.xisf` / `.fits`), (re)writes its separate
+`<stem>_tiles.tiff` display pyramid — a *true* multi-resolution TIFF — via
 `default_make_tile_pyramid`.
+
+Deliberately sources ONLY `.xisf`/`.fits`, NOT `.tiff`: the `output_dir` is full
+of huge ephemeral `.tiff` intermediates (e.g. the 100+ MP `place_image/*.tiff`
+panels), and pyramiding those would read each fully into memory across the thread
+pool — an OOM. `.tiff` display DELIVERABLES (the baked-stretch color images) don't
+need this script: the tile resolver serves them directly (single-LOD) via its
+`.tiff` fallback, and their next node run builds the multi-resolution `_tiles.tiff`.
 
 Does NOT touch the source files or the cache: output filenames are content-
 addressed by the producing call hash, and the web server derives the pyramid
-path as `source.with_suffix('.tiff')` — so nothing is invalidated and no re-run
-is triggered. It just upgrades the on-disk `.tiff` derivatives that the
-thumbnail / tile routes read.
+path as `pyramid_path_for(source)` (`<stem>_tiles.tiff`) — so nothing is
+invalidated and no re-run is triggered. It just upgrades the on-disk display
+derivatives that the thumbnail / tile routes read.
 
-Idempotent: skips siblings already pyramidal (n-pages > 1) unless `--force`, so
-it is safe to re-run / resume after an interruption. Each source is read fully
-(autostretch), so it is I/O- and memory-heavy on large masters — prefer running
-it when the pipeline is idle. `.tiff` primary outputs (e.g. Subframe mosaics)
-are intentionally skipped: they are already autostretched uint8, and re-running
-autostretch on them would distort the image.
+Idempotent: skips pyramids already built (n-pages > 1) unless `--force`, so it
+is safe to re-run / resume after an interruption. Each source is read fully
+(linear float32), so it is I/O- and memory-heavy on large masters — prefer
+running it when the pipeline is idle.
 """
 import argparse
 import contextlib
@@ -38,8 +43,12 @@ os.environ.setdefault("VIPS_CONCURRENCY", "1")
 
 import pyvips  # noqa: E402 - must follow the VIPS_CONCURRENCY env set
 
-from previews.create_tile_pyramid import default_make_tile_pyramid  # noqa: E402
+from previews.create_tile_pyramid import (  # noqa: E402
+    default_make_tile_pyramid, pyramid_path_for,
+)
 
+# Only linear masters — NOT `.tiff` (see module docstring: the output_dir is
+# full of huge ephemeral `.tiff` intermediates like the place_image panels).
 _SOURCE_SUFFIXES = {".xisf", ".fits", ".fit"}
 
 # Sources above this size are memory monsters: decoding to float32 + the
@@ -61,7 +70,7 @@ def _process(src: Path, force: bool, dry_run: bool, big_sem: threading.Semaphore
     work — safe to run concurrently (each source maps to a distinct dest +
     temp file; the write is atomic). Sources > `_BIG_BYTES` acquire
     `big_sem` first so a handful of giant masters can't OOM the machine."""
-    tiff = src.with_suffix(".tiff")
+    tiff = pyramid_path_for(src)
     if not force and tiff.exists() and _is_pyramidal(tiff):
         return ("skipped", src, None)
     if dry_run:
