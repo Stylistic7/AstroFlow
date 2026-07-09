@@ -69,6 +69,14 @@ _FIXED_MEMORY_BY_OP = {
     "bxt_correct":  26 * _GB,
     "sxt_starless": 26 * _GB,
     "sxt_stars":    26 * _GB,
+    # compute_image_metadata is auto_memory=True but its footprint is now
+    # roughly constant (a header read + plate-solve), and it's dispatched ~30k
+    # times per run (inline in every producer via _metadata_wrap, plus standalone
+    # via scatter_compute_image_metadata). A flat reservation right-sizes it AND
+    # keeps it in the fixed set — which excludes it from the max_calls=1
+    # fresh-worker rule (see decorators.py), so it keeps worker reuse instead of
+    # paying a ~2-4s respawn on every one of those 30k calls.
+    "compute_image_metadata": 1 * _GB,
 }
 
 # Ops whose only sizing arg is a *filename* (e.g. `compute_image_metadata`)

@@ -33,7 +33,7 @@ from previews.create_thumbnail import make_create_thumbnail_decorator
 from previews.create_tile_pyramid import make_create_tile_pyramid_decorator
 from previews.create_video import make_create_video_decorator
 from profiling.measure_performance import make_measure_performance_decorator
-from profiling.memory_estimate import estimate_memory
+from profiling.memory_estimate import estimate_memory, _FIXED_MEMORY_BY_OP
 from dependency_graph.logging import make_capture_logs_decorator
 from hashing import hash_call, hash_source_code
 from context import context, get_cache
@@ -290,6 +290,22 @@ class _Node:
 
         wrapped = capture_logs(wrapped, cache_key_narrow=cache_key_narrow)
         wrapped = measure_performance(wrapped, ray_opts=ray_opts)
+
+        # Isolate PROFILED auto_memory ops in a fresh worker so the absolute
+        # peak-RSS that measure_performance records (see measure_performance.py)
+        # reflects THIS op only. Ray reuses CPU task workers across ops, so
+        # without this a small op inherits a big op's resident footprint and its
+        # memory= reservation balloons — over-reserving and serializing the pool.
+        # max_calls=1 makes the worker EXIT after one task -> a fresh worker per
+        # invocation. Excluded: ops with a FIXED reservation (_FIXED_MEMORY_BY_OP)
+        # never consult the profile and don't need measurement — and
+        # compute_image_metadata in particular is dispatched ~30k times, so it
+        # must keep worker reuse (a ~2-4s respawn each would dominate). max_calls
+        # is task-only and cannot be set via .options(), so it's baked here at
+        # ray.remote decoration time (Ray preserves it through .options(memory=)).
+        if ray_opts.get("auto_memory") and func.__name__ not in _FIXED_MEMORY_BY_OP:
+            ray_opts["max_calls"] = 1
+
         wrapper = cached.remote(
             wrapped,
             canonical_call_hash=canonical_call_hash,

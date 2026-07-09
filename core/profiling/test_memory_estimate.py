@@ -73,10 +73,12 @@ def test_dimensioned_object_wins_without_disk_read():
     assert _pixel_count((FakeMeta(),), {}) == 200
 
 
-def test_rc_astro_ops_reserve_fixed_worker_plus_child_budget():
-    # bxt_correct / sxt_* shell out to the rc-astro CLI child (which the
-    # worker-RSS profiler can't see), so they must reserve a fixed budget that
-    # covers the child, independent of profile samples / input pixel count.
+def test_fixed_memory_ops_reserve_their_fixed_budget():
+    # Ops in _FIXED_MEMORY_BY_OP bypass profiling entirely: bxt_correct / sxt_*
+    # shell out to an rc-astro CLI child the worker-RSS profiler can't see, and
+    # compute_image_metadata is a roughly-constant op dispatched ~30k times that
+    # we keep on a flat reservation. Each must reserve its fixed budget
+    # regardless of profile samples / input pixel count.
     cap = _max_memory_bytes()
     for name, want in _FIXED_MEMORY_BY_OP.items():
         f = lambda: None
@@ -93,3 +95,45 @@ def test_sums_path_plus_output_viewbox(tmp_path):
         num_pixels_x = 1000
         num_pixels_y = 2000
     assert _pixel_count((p, FakeViewbox()), {}) == 50 * 60 + 1000 * 2000
+
+
+# --- max_calls=1 wiring (Change 1): profiled auto_memory ops are isolated in a
+# fresh worker so their absolute-RSS profile sample reflects only that op. These
+# assert the baked Ray option; the actual isolation is proven in
+# profiling/test_worker_isolation.py. `-> int` returns keep decoration off the
+# artifact-producer/registry path, so no Ray/context is needed here.
+
+def _baked_max_calls(op):
+    # The @node wrapper exposes the underlying Ray RemoteFunction via `.options`
+    # (a bound method); `_default_options["max_calls"]` is the baked value.
+    # None => unset => Ray's default worker reuse.
+    return op.options.__self__._default_options.get("max_calls")
+
+
+def test_profiled_auto_memory_op_gets_max_calls_1():
+    from decorators import node
+    @node(auto_memory=True)
+    def place_image(x) -> int:        # name NOT in _FIXED_MEMORY_BY_OP -> profiled
+        return x
+    assert _baked_max_calls(place_image) == 1
+
+
+def test_fixed_auto_memory_ops_keep_worker_reuse():
+    from decorators import node
+    assert "compute_image_metadata" in _FIXED_MEMORY_BY_OP   # guards the Change-2 entry
+    @node(auto_memory=True)
+    def compute_image_metadata(x) -> int:   # fixed -> excluded from max_calls
+        return x
+    @node(auto_memory=True)
+    def bxt_correct(x) -> int:              # fixed -> excluded from max_calls
+        return x
+    assert _baked_max_calls(compute_image_metadata) is None
+    assert _baked_max_calls(bxt_correct) is None
+
+
+def test_non_auto_memory_op_keeps_worker_reuse():
+    from decorators import node
+    @node
+    def plain_op(x) -> int:
+        return x
+    assert _baked_max_calls(plain_op) is None
