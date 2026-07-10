@@ -185,18 +185,14 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let nS = (S - loS) / max(globals.pS - loS, 1e-6) * globals.trimS;
         let nH = (H - loH) / max(globals.pH - loH, 1e-6) * globals.trimH;
         let nO = (O - loO) / max(globals.pO - loO, 1e-6) * globals.trimO;
-        // 2. Palette combine (0 = SHO Gold, 1 = Hubble, 2 = Foraxx).
+        // 2. Palette combine (0 = Hubble, 1 = Foraxx). Standard SHO: the gold
+        //    comes from Hubble (R=S,G=H,B=O) + SCNR green below, on the
+        //    NXT-denoised channels — the textbook narrowband workflow.
         var rgb: vec3<f32>;
-        if (globals.paletteMode < 0.5) {
-            // SHO Gold: the gold comes from the CLEAN Hα (routed into R+G), so
-            // an Hα-only region stays as smooth as the Hα master — SCNR would
-            // instead replace bright Hα with the noisy (SII+OIII)/2. SII adds
-            // warmth (R), OIII adds blue (B) only where it has real signal.
-            rgb = vec3<f32>(nS + nH, 0.5 * nH, nO);
-        } else if (globals.paletteMode < 1.5) {
-            rgb = vec3<f32>(nS, nH, nO);   // Hubble: R=S, G=H, B=O
-        } else {
+        if (globals.paletteMode > 0.5) {
             rgb = foraxxPalette(nS, nH, nO);
+        } else {
+            rgb = vec3<f32>(nS, nH, nO);   // Hubble: R=S, G=H, B=O
         }
         // 3. Deep black point.
         let bp = globals.blackPoint;

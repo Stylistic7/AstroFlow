@@ -69,6 +69,7 @@ _FIXED_MEMORY_BY_OP = {
     "bxt_correct":   26 * _GB,
     "sxt_starless":  26 * _GB,
     "sxt_stars_rgb": 26 * _GB,  # StarXTerminator on the combined 3-band RGB
+    "linear_sho":    26 * _GB,  # stacks 3 gigapixel channels + NoiseXTerminator
     # compute_image_metadata is auto_memory=True but its footprint is now
     # roughly constant (a header read + plate-solve), and it's dispatched ~30k
     # times per run (inline in every producer via _metadata_wrap, plus standalone

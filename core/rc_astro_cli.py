@@ -179,3 +179,40 @@ def run_sxt(
             _move(_locate(Path(td), f"{input_image.stem}-sxt"), Path(starless_out))
         if stars_out is not None:
             _move(_locate(Path(td), f"{input_image.stem}-sxt-stars"), Path(stars_out))
+
+
+def run_nxt(
+    input_image: Path | str,
+    output_xisf: Path | str,
+    *,
+    denoise_intensity_hf: float = 0.85,   # HF intensity: manual says 80-90%
+    denoise_intensity_lf: float = 0.60,   # LF intensity: 50-70% (keeps dust-cloud variation)
+    denoise_color_hf: float = 0.95,       # HF colour: 90-100%
+    denoise_color_lf: float = 1.00,       # LF colour: 100% (kills large-scale colour blotches)
+    frequency_scale: float = 5.0,         # HF/LF transition scale (rc-astro default)
+    iterations: int = 2,                  # successive-approximation steps (AI3)
+    timeout: float | None = 1800.0,
+) -> None:
+    """NoiseXTerminator `input_image` → `output_xisf` (32-bit float).
+
+    Per the RC-Astro manual, NXT is applied AFTER deconvolution (BXT) and AFTER
+    channel combination, on the COLOR (multi-band) image, on LINEAR data. The
+    intensity/colour + high/low-frequency separation only works on a multi-band
+    image and is the whole point for narrowband — it lets us reduce the colour
+    noise hard (weak SII/OIII chroma → the objectionable blotches) while keeping
+    intensity (Hα-dominated luminance detail) light. Defaults are the manual's
+    recommended best-quality combination. XISF output (gigapixel-safe; rc-astro's
+    FITS writer overflows on huge images)."""
+    input_image, output_xisf = Path(input_image), Path(output_xisf)
+    with tempfile.TemporaryDirectory(prefix="rcastro_nxt_") as td:
+        produced = Path(td) / f"{input_image.stem}-nxt.xisf"
+        args = ["nxt", str(input_image), "-o", str(produced),
+                "--depth", "32F", "--overwrite",
+                "--iterations", str(iterations),
+                "--frequency-scale", str(frequency_scale),
+                "--denoise-intensity-high-freq", str(denoise_intensity_hf),
+                "--denoise-intensity-low-freq", str(denoise_intensity_lf),
+                "--denoise-color-high-freq", str(denoise_color_hf),
+                "--denoise-color-low-freq", str(denoise_color_lf)]
+        _run(args, timeout)
+        _move(_locate(Path(td), f"{input_image.stem}-nxt"), output_xisf)

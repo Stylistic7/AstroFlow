@@ -244,26 +244,60 @@ def autostretch_channel(
 LINEAR_SHO_DISPLAY = "Linear SHO"
 
 
-@node(display=LINEAR_SHO_DISPLAY, filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-channel LINEAR
+def _linear_sho_narrow(args, kwargs):
+    """Cache-key hook: project `config` to (mock, config.nxt) — the only config a
+    denoised linear-SHO master depends on. Mirrors _bxt_correct_narrow: the three
+    channel data-deps sit before `config`."""
+    mosaic, sii, ha, oiii, config = args
+    mock = config.development_settings.mock_pixinsight
+    return (mosaic, sii, ha, oiii, (mock, config.nxt)), kwargs
+
+
+@node(cache_key_narrow=_linear_sho_narrow, display=LINEAR_SHO_DISPLAY, filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-channel LINEAR, NXT-denoised
 def linear_sho(
     mosaic: Mosaic, sii: ImageMetadata, ha: ImageMetadata, oiii: ImageMetadata,
+    config: ProcessingConfig,
 ) -> WithSidecar[XisfFilePath]:
     """Stack the three LINEAR starless narrowband channels (S→R, H→G, O→B) into
-    one 3-band linear master — the source the WebGPU tile viewer finishes live.
+    one 3-band linear master, then denoise it with NoiseXTerminator — the source
+    the WebGPU tile viewer finishes live.
 
-    Deliberately NO stretch / palette / SCNR here: the shader does the whole
-    per-pixel colour finish (normalise → Hubble/Foraxx → black point → shaped
-    stretch → SCNR green → saturation) from uniforms, so the palette and balance
-    are a real-time toggle. Being `final=True`, this consumes the otherwise-
-    ephemeral `sxt_starless` outputs and keeps them alive until it runs. The three
-    channels share the mosaic viewbox (co-registered), so they stack pixel-aligned.
-    XISF keeps the gigapixel master within rc-astro/format limits (the pyramid the
-    tile server serves is the auto-built `_tiles.tiff` sibling)."""
-    out = linear_sho.filename_fn(mosaic, sii, ha, oiii)
+    NXT placement follows the RC-Astro manual: AFTER deconvolution (`bxt_correct`)
+    and AFTER channel combination (this stack), on the LINEAR combined colour
+    image, so its intensity/colour + HF/LF separation reduces the weak-channel
+    (SII/OIII) colour noise hard while keeping the Hα-dominated luminance detail.
+    The shader then does only the STANDARD per-channel stretch + Hubble/SCNR
+    palette on this clean data — deliberately NO stretch/palette here.
+
+    Being `final=True`, this consumes the otherwise-ephemeral `sxt_starless`
+    outputs and keeps them alive until it runs. The channels share the mosaic
+    viewbox (co-registered), so they stack pixel-aligned. XISF keeps the gigapixel
+    master within rc-astro/format limits (the served pyramid is the auto-built
+    `_tiles.tiff` sibling)."""
+    out = linear_sho.filename_fn(mosaic, sii, ha, oiii, config)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     sho = np.stack([_mono(sii), _mono(ha), _mono(oiii)], axis=2).astype(np.float32)
-    write_xisf_image(Path(out), sho,
-                     {"PIPELINE": "AstroFlow-OSS", "COLORSPC": "linear-sho"})
+    meta = {"PIPELINE": "AstroFlow-OSS", "COLORSPC": "linear-sho"}
+    if config.development_settings.mock_pixinsight:
+        write_xisf_image(Path(out), sho, meta)
+    else:
+        # Stack → temp XISF → NXT (rc-astro reads/writes XISF at gigapixel; its
+        # FITS writer overflows). NXT runs on the 3-band colour image so its
+        # intensity/colour separation applies (the whole point for narrowband).
+        tmp = f"{out}.stack.xisf"
+        write_xisf_image(Path(tmp), sho, meta)
+        from rc_astro_cli import run_nxt
+        run_nxt(tmp, out,
+                denoise_intensity_hf=config.nxt.denoise_intensity_hf,
+                denoise_intensity_lf=config.nxt.denoise_intensity_lf,
+                denoise_color_hf=config.nxt.denoise_color_hf,
+                denoise_color_lf=config.nxt.denoise_color_lf,
+                frequency_scale=config.nxt.frequency_scale,
+                iterations=config.nxt.iterations)
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
     return WithSidecar(XisfFilePath(out))
 
 
@@ -373,9 +407,10 @@ def color_post_process(mosaic: Mosaic, channels: dict, config) -> dict:
         rgb_stars = combine_star_rgb(mosaic, rgb_star_lin)
         out["Stars"] = rgb_stars
     if _NARROWBAND <= set(starless_nb):
-        # The linear S/H/O viewer source (finished live in the WebGPU shader).
+        # The linear S/H/O viewer source: stacked + NXT-denoised, finished live
+        # in the WebGPU shader with the standard Hubble/SCNR palette.
         out["Linear SHO"] = linear_sho(
-            mosaic, starless_nb["S"], starless_nb["H"], starless_nb["O"])
+            mosaic, starless_nb["S"], starless_nb["H"], starless_nb["O"], config)
     if _NARROWBAND <= set(stretched_nb):
         s, h, o = stretched_nb["S"], stretched_nb["H"], stretched_nb["O"]
         # Always emit the pure starless palettes; add the with-stars variants

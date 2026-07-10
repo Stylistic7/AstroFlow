@@ -219,19 +219,17 @@ export default function TileViewerV2({
     // stretch, ~1.8× saturation, full green removal) so the tap opens
     // close and the user trims from there. `nbMidtone` is the MTF midtone
     // reused as the per-channel stretch (lower = brighter).
-    // Defaults tuned against the AstroBin "north star" on real PI-master data
-    // (rendered through this exact finish): Hubble palette + full SCNR makes the
-    // gold, a strong stretch (low midtone) reveals faint structure, a mild warm
-    // trim + reduced OIII tames the blue edge.
-    const [palette, setPalette] = useState('gold');         // 'gold' | 'hubble' | 'foraxx'
+    // Textbook narrowband finish on the NXT-denoised linear channels: standard
+    // Hubble SHO combine + SCNR green (→ gold) + STF-style stretch. NXT handles
+    // the noise, so the shadow clip stays light and no invented tricks are needed.
+    const [palette, setPalette] = useState('hubble');       // 'hubble' | 'foraxx'
     const [nbBlackPoint, setNbBlackPoint] = useState(0.0);
-    const [nbMidtone, setNbMidtone] = useState(0.05);
-    const [nbSaturation, setNbSaturation] = useState(1.5);
-    const [nbScnr, setNbScnr] = useState(0.0);              // Gold palette needs no SCNR
-    // Per-channel shadow clip: low anchor = median + shadowClip·σ. The single
-    // biggest smoothness knob — clips weak-channel (SII/OIII) noise; lower =
-    // more faint nebula (noisier), higher = smoother/cleaner.
-    const [nbShadowClip, setNbShadowClip] = useState(1.5);
+    const [nbMidtone, setNbMidtone] = useState(0.08);
+    const [nbSaturation, setNbSaturation] = useState(1.35);
+    const [nbScnr, setNbScnr] = useState(1.0);             // standard green removal → gold
+    // Per-channel shadow clip: low anchor = median + shadowClip·σ (STF-style).
+    // Light by default since NXT already denoised; raise for an even cleaner base.
+    const [nbShadowClip, setNbShadowClip] = useState(1.0);
     // Per-channel gain on the normalised S/H/O.
     const [nbTrimS, setNbTrimS] = useState(1.0);
     const [nbTrimH, setNbTrimH] = useState(1.0);
@@ -427,7 +425,7 @@ export default function TileViewerV2({
                 ? { m: tileMeta.channelMedians, p: tileMeta.channelP99 }
                 : { m: [0, 0, 0], p: [1, 1, 1] };
             const sigmas = tileMeta?.channelSigma || [0, 0, 0];
-            const paletteMode = palette === 'gold' ? 0 : palette === 'hubble' ? 1 : 2;
+            const paletteMode = palette === 'foraxx' ? 1 : 0;
             renderer.setGlobals({
                 e1: 0, e5: nbMidtone, max: 1.0, peakBrightness: 1.0,
                 stretchMode: 0, isColor: false, finishMode: true,
@@ -556,7 +554,6 @@ export default function TileViewerV2({
                             '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.3)' },
                         }}
                     >
-                        <MenuItem value="gold">SHO Gold</MenuItem>
                         <MenuItem value="hubble">Hubble (SHO)</MenuItem>
                         <MenuItem value="foraxx">Foraxx (dynamic)</MenuItem>
                     </Select>

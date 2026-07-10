@@ -87,6 +87,27 @@ class SxtSettings:
 
 
 @dataclass(frozen=True)
+class NxtSettings:
+    """NoiseXTerminator (rc-astro CLI) knobs. Applied to the COMBINED 3-band
+    linear SHO master AFTER BXT+SXT — RC-Astro's recommended placement (denoise
+    after deconvolution and after channel combination, on linear data, so the
+    intensity/colour + HF/LF separation can 'see' all channels). Defaults are the
+    manual's recommended best-quality combination: colour noise reduced hard (the
+    weak SII/OIII chroma blotches) while intensity is kept lighter so Hα-dominated
+    luminance detail is retained. Narrowed into linear_sho's cache key, so tuning
+    these re-derives only the denoised master."""
+    denoise_intensity_hf: float = 0.85   # manual: 80-90%
+    denoise_intensity_lf: float = 0.60   # manual: 50-70% (retain dust-cloud variation)
+    denoise_color_hf: float = 0.95       # manual: 90-100%
+    denoise_color_lf: float = 1.00       # manual: 100% (kill large-scale colour blotches)
+    frequency_scale: float = 5.0         # HF/LF transition scale (rc-astro default)
+    iterations: int = 2                  # successive-approximation steps (AI3)
+
+    def __hash__(self):
+        return hash_dataclass(self)
+
+
+@dataclass(frozen=True)
 class ProcessingConfig:
     """The "how to process" parameters passed through the compute graph.
 
@@ -124,6 +145,7 @@ class ProcessingConfig:
     # tuning them re-derives just the color tail. See BxtSettings/SxtSettings.
     bxt: "BxtSettings" = field(default_factory=lambda: BxtSettings())
     sxt: "SxtSettings" = field(default_factory=lambda: SxtSettings())
+    nxt: "NxtSettings" = field(default_factory=lambda: NxtSettings())
 
     def get_calibration_stacks(self):
         """Dereference calibration_stacks (may be a ContextRef or a plain dict)."""
@@ -152,6 +174,8 @@ class ProcessingConfig:
             return BxtSettings()
         if name == "sxt":
             return SxtSettings()
+        if name == "nxt":
+            return NxtSettings()
         raise AttributeError(name)
 
 
