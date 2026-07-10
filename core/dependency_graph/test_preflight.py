@@ -119,6 +119,22 @@ class TestPredictCallHashes:
         assert set(predicted) == {R, BLD, SRC}
         assert predicted[SRC] == hash_call(scatter._fn_hash)  # resolved as a source
 
+    def test_bare_remote_function_dep_without_task(self):
+        """The REAL meta-graph dep is a raw @ray.remote RemoteFunction — no
+        `.task`/`.name`/`._fn_hash` at all (unlike a Node-wrapped source). Predict
+        it as 'unpredictable' instead of raising `AttributeError: 'RemoteFunction'
+        object has no attribute 'task'`, which silently skipped the whole preflight
+        (→ no pruning, every satisfied node re-dispatched as a cache hit)."""
+        class RemoteFunction:               # mimics ray's RemoteFunction: no .task
+            def __hash__(self): return id(self)
+            def __eq__(self, o): return o is self
+        R = _node(_make_task("regroup", n_params=1))
+        SRC = RemoteFunction()              # bare dep, NOT a Node
+        graph = Graph({R: [SRC]})
+        predicted = predict_call_hashes(graph)          # must not raise
+        assert set(predicted) == {R, SRC}
+        assert predicted[SRC].startswith("unpredictable")
+
 
 # ──────────────────────────────────────────────────────────────────────────
 # Reverse-walk: nodes_to_dispatch

@@ -75,7 +75,10 @@ def _data_deps(node, graph) -> list:
     signature-vs-literal check. `_after` (ordering-only) deps come after
     data deps in `graph[node]` per `record()` and don't appear in fn_args.
     """
-    sig = inspect.signature(node.task._function)
+    task = getattr(node, "task", None)
+    if task is None:
+        return []          # bare source dep (raw @ray.remote) — no data deps
+    sig = inspect.signature(task._function)
     n_literals = len(node.args)
     n_data_deps = max(0, len(sig.parameters) - n_literals)
     return list(graph.get(node, []))[:n_data_deps]
@@ -131,10 +134,14 @@ def _predict_one(node, predicted: dict, graph) -> str:
     unsatisfied — preflight degrades to "run everything that depends
     on this branch" without disabling the whole optimisation.
     """
-    task = node.task
+    # A bare source dep (a raw @ray.remote RemoteFunction normalised in by
+    # GraphRuntime) has no `.task`/`.name`: treat it as its own task so the
+    # missing `_fn_hash` below routes it to the unpredictable fallback rather
+    # than raising AttributeError (which would skip the whole preflight).
+    task = getattr(node, "task", node)
     fn_hash = getattr(task, "_fn_hash", None)
     if fn_hash is None:
-        return f"unpredictable:{node.name}"
+        return f"unpredictable:{getattr(node, 'name', repr(node))}"
     cache_key_narrow = getattr(task, "_cache_key_narrow", None)
 
     fn_args = _predicted_fn_args(node, predicted, graph)
@@ -242,7 +249,7 @@ def expected_output_path(node, predicted: dict, graph) -> Path | None:
     `canonical_call_hash` to produce the same call_hash this module
     predicted. Result: a Path equivalent to what the runtime would write.
     """
-    filename_fn = getattr(node.task, "filename_fn", None)
+    filename_fn = getattr(getattr(node, "task", node), "filename_fn", None)
     if filename_fn is None:
         return None
     fn_args = _predicted_fn_args(node, predicted, graph)
@@ -293,7 +300,7 @@ def nodes_to_dispatch(graph, predicted: dict) -> set:
 
     result_bearing = [
         n for n in graph
-        if getattr(n.task, "_final", False) or not successors.get(n)
+        if getattr(getattr(n, "task", n), "_final", False) or not successors.get(n)
     ]
 
     unsatisfied = [
