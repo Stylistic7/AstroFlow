@@ -126,23 +126,27 @@ def tile_metadata_tap(
 
 
 def _per_channel_linear_stats(path):
-    """Per-band (background median, high percentile) over a cheap coarse pyramid
-    page, ignoring the zero no-data footprint. These seed the shader's normalise
-    anchors (mS/mH/mO, pS/pH/pO) so the live finish opens on a sensible balance;
-    the user then trims them by hand. Approximate by design — a coarse page is
-    plenty for a starting point, and the vips page handle is already cached."""
+    """Per-band (background median, bright-signal anchor) for the shader's
+    (c-m)/(p-m) normalise.
+
+    The high anchor MUST be a genuinely bright level: if (p-m) is only a few σ,
+    the per-pixel background NOISE fills most of [0,1] after normalise and the
+    finish renders as pure speckle. Two things guard against that: (1) compute on
+    a moderately-fine page (~16 Mpx), not the thumbnail — a coarse page averages
+    the nebula down toward the sky pedestal and collapses the gap; (2) anchor on
+    p99.9 (nebula cores/filaments) with a wide σ floor so the gap stays large
+    relative to the noise even for a faint channel. Approximate but stable; the
+    user fine-tunes via the sliders."""
     levels = _pyramid_levels(path)
-    # Finest page whose pixel count is small enough to pull to numpy cheaply;
-    # fall back to the coarsest (smallest) page.
+    # Finest page still cheap to pull to numpy (~16 Mpx ≈ 190 MB at 3×float).
     page = levels - 1
-    for p in range(levels):
-        img0 = _get_vips_page(path, p)
-        if img0.width * img0.height <= 4_000_000:
-            page = p
+    for p_idx in range(levels):
+        img0 = _get_vips_page(path, p_idx)
+        if img0.width * img0.height <= 16_000_000:
+            page = p_idx
             break
     img = _get_vips_page(path, page)
-    # Safety for a single-page (un-pyramided) giant master: subsample down.
-    shrink = max(1, int((img.width * img.height / 2_000_000) ** 0.5))
+    shrink = max(1, int((img.width * img.height / 16_000_000) ** 0.5))
     if shrink > 1:
         img = img.subsample(shrink, shrink)
     arr = np.frombuffer(img.write_to_memory(), dtype=np.float32).reshape(
@@ -158,21 +162,16 @@ def _per_channel_linear_stats(path):
         med = float(np.median(c))
         mad = float(np.median(np.abs(c - med)))
         sigma = 1.4826 * mad if mad > 0 else max(med * 1e-3, 1e-6)
-        medians.append(med)
-        # Background (median) → 0 and a bright SIGNAL level → 1 under the
-        # shader's (c-m)/(p-m) normalise. The nebula is a small fraction of the
-        # full mosaic canvas, so a plain high percentile lands on the sky
-        # pedestal (p≈m) and makes the ratio explode. Instead take a bright
-        # percentile of pixels that are clearly ABOVE background; fall back to a
-        # very-high global percentile for near-signal-free channels, and floor
-        # the gap so p is always comfortably above m. (Field kept as
-        # `channelP99` for the client; the value is a signal anchor, not p99.)
-        signal = c[c > med + 5.0 * sigma]
-        if signal.size >= 256:
-            p = float(np.percentile(signal, 95.0))
-        else:
-            p = float(np.percentile(c, 99.9))
-        highs.append(max(p, med + 20.0 * sigma))
+        # LOW anchor = median + 3σ, a PER-CHANNEL shadow clip. Narrowband
+        # channels differ wildly in SNR (measured on real data: Hα ~13σ but
+        # SII ~2σ, OIII <1σ), and the noise is per-channel — so a weak channel
+        # gets its noise floor cut (no speckle) while a strong channel is barely
+        # touched. This is the single biggest cleanliness lever; a global black
+        # point downstream cannot do it. (Wire field stays `channelMedians`.)
+        medians.append(med + 3.0 * sigma)
+        # HIGH anchor = bright signal (p99.9), floored at median+60σ so the gap
+        # stays wide relative to the noise for a faint channel.
+        highs.append(max(float(np.percentile(c, 99.9)), med + 60.0 * sigma))
     return medians, highs
 
 

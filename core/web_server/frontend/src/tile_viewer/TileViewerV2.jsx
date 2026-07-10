@@ -219,11 +219,19 @@ export default function TileViewerV2({
     // stretch, ~1.8× saturation, full green removal) so the tap opens
     // close and the user trims from there. `nbMidtone` is the MTF midtone
     // reused as the per-channel stretch (lower = brighter).
-    const [palette, setPalette] = useState('foraxx');       // 'hubble' | 'foraxx'
-    const [nbBlackPoint, setNbBlackPoint] = useState(0.03);
-    const [nbMidtone, setNbMidtone] = useState(0.18);
-    const [nbSaturation, setNbSaturation] = useState(1.8);
+    // Defaults tuned against the AstroBin "north star" on real PI-master data
+    // (rendered through this exact finish): Hubble palette + full SCNR makes the
+    // gold, a strong stretch (low midtone) reveals faint structure, a mild warm
+    // trim + reduced OIII tames the blue edge.
+    const [palette, setPalette] = useState('hubble');       // 'hubble' | 'foraxx'
+    const [nbBlackPoint, setNbBlackPoint] = useState(0.0);   // σ-aware anchor already clips noise
+    const [nbMidtone, setNbMidtone] = useState(0.05);
+    const [nbSaturation, setNbSaturation] = useState(1.7);
     const [nbScnr, setNbScnr] = useState(1.0);
+    // Per-channel gain on the normalised S/H/O (tame e.g. an over-bright OIII/blue).
+    const [nbTrimS, setNbTrimS] = useState(1.1);
+    const [nbTrimH, setNbTrimH] = useState(1.0);
+    const [nbTrimO, setNbTrimO] = useState(0.9);
     const [nbAddStars, setNbAddStars] = useState(false);
     // Metadata of the sibling "Stars" tap (for availability + port/mtime).
     const [starsMeta, setStarsMeta] = useState(null);
@@ -420,7 +428,7 @@ export default function TileViewerV2({
                 paletteMode: palette === 'foraxx' ? 1 : 0,
                 blackPoint: nbBlackPoint, scnrAmount: nbScnr,
                 saturation: nbSaturation, addStars: nbAddStars && starsAvailable,
-                anchors, trims: [1, 1, 1],
+                anchors, trims: [nbTrimS, nbTrimH, nbTrimO],
             });
             return;
         }
@@ -447,7 +455,7 @@ export default function TileViewerV2({
         });
     }, [renderer.isReady, isNarrowband, isBakedColor, metadata?.statistics,
         effectivePeak, stretchMode, palette, nbBlackPoint, nbMidtone,
-        nbSaturation, nbScnr, nbAddStars, starsAvailable,
+        nbSaturation, nbScnr, nbTrimS, nbTrimH, nbTrimO, nbAddStars, starsAvailable,
         tileMeta?.channelMedians, tileMeta?.channelP99]);
 
     // Recompute + upload the stretch LUT whenever stats change or the
@@ -547,14 +555,14 @@ export default function TileViewerV2({
                         Black point — {nbBlackPoint.toFixed(3)}
                     </Typography>
                     <Slider
-                        size="small" value={nbBlackPoint} min={0} max={0.15} step={0.005}
+                        size="small" value={nbBlackPoint} min={0} max={0.6} step={0.005}
                         onChange={(_, v) => setNbBlackPoint(v)} sx={{ color: '#fff' }}
                     />
                     <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
                         Stretch midtone — {nbMidtone.toFixed(2)} (lower = brighter)
                     </Typography>
                     <Slider
-                        size="small" value={nbMidtone} min={0.03} max={0.5} step={0.01}
+                        size="small" value={nbMidtone} min={0.02} max={0.6} step={0.01}
                         onChange={(_, v) => setNbMidtone(v)} sx={{ color: '#fff' }}
                     />
                     <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
@@ -571,6 +579,19 @@ export default function TileViewerV2({
                         size="small" value={nbScnr} min={0} max={1} step={0.05}
                         onChange={(_, v) => setNbScnr(v)} sx={{ color: '#fff' }}
                     />
+                    <Typography variant="caption" sx={{ display: 'block', opacity: 0.85, mt: 0.5 }}>
+                        Channel gain — S {nbTrimS.toFixed(2)} · H {nbTrimH.toFixed(2)} · O {nbTrimO.toFixed(2)}
+                    </Typography>
+                    {[['S', nbTrimS, setNbTrimS, '#e05a5a'],
+                      ['H', nbTrimH, setNbTrimH, '#5ae05a'],
+                      ['O', nbTrimO, setNbTrimO, '#5a8ae0']].map(([label, val, set, col]) => (
+                        <Slider
+                            key={label}
+                            size="small" value={val} min={0.2} max={2.5} step={0.05}
+                            onChange={(_, v) => set(v)}
+                            sx={{ color: col, py: 0.4 }}
+                        />
+                    ))}
                     <FormControlLabel
                         control={
                             <Switch
