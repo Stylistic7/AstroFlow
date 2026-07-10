@@ -102,6 +102,23 @@ class TestPredictCallHashes:
         with pytest.raises(ValueError, match="cycle"):
             predict_call_hashes(graph)
 
+    def test_bare_dep_is_normalised_to_a_source(self):
+        """A dep that isn't itself a graph key (a bare scatter/builder dep, as in
+        the top-level `build_compute_graph` meta-graph where `regroup` depends on
+        `scatter_compute_image_metadata`) is treated as a source node — matching
+        `GraphRuntime.__init__` — instead of raising a spurious
+        'cycle or orphan (0/N resolved)'. Regression for the ominous
+        preflight-skip on the meta-graph."""
+        regroup = _make_task("regroup", n_params=1)
+        builder = _make_task("builder", n_params=1)
+        scatter = _make_task("scatter", n_params=0)
+        R, BLD, SRC = _node(regroup), _node(builder), _node(scatter)
+        # R depends on SRC, but SRC is NOT a key — exactly the meta-graph shape.
+        graph = Graph({R: [SRC], BLD: [R]})
+        predicted = predict_call_hashes(graph)          # must not raise
+        assert set(predicted) == {R, BLD, SRC}
+        assert predicted[SRC] == hash_call(scatter._fn_hash)  # resolved as a source
+
 
 # ──────────────────────────────────────────────────────────────────────────
 # Reverse-walk: nodes_to_dispatch

@@ -179,11 +179,33 @@ def _dump_unreconstructable_node(node, fn_args, graph, exc) -> None:
     )
 
 
+def _with_source_nodes(graph) -> dict:
+    """Return `graph` with every dep that isn't itself a key added as a source
+    node (empty deps) — mirroring `GraphRuntime.__init__`, which does exactly
+    this so a bare-function dependency runs as a source.
+
+    Preflight callers pass the raw graph. The top-level meta-graph
+    (`build_compute_graph`) lists `scatter_compute_image_metadata` as a bare dep
+    of `regroup` without a key entry; without this normalisation that dep is an
+    unresolvable orphan — `predict_call_hashes` finds no in-degree-0 node and
+    raises `graph cycle or orphan (0/N resolved)`. A well-formed graph (every dep
+    is a key) is returned unchanged, so this is a no-op for real work graphs and
+    a genuine cycle still raises."""
+    g = dict(graph)
+    for deps in list(g.values()):
+        for d in deps:
+            if d not in g:
+                g[d] = []
+    return g
+
+
 def predict_call_hashes(graph) -> dict:
     """Topologically walk `graph` and predict every node's call_hash.
 
-    Returns `dict[Node, str]`. Raises `ValueError` on a cycle.
+    Returns `dict[Node, str]`. Raises `ValueError` on a real cycle (after
+    normalising bare-dep source nodes, so a mere orphan dep is not a cycle).
     """
+    graph = _with_source_nodes(graph)
     in_degree = {n: len(graph.get(n, [])) for n in graph}
     successors: dict = defaultdict(list)
     for n, deps in graph.items():
@@ -263,6 +285,7 @@ def nodes_to_dispatch(graph, predicted: dict) -> set:
          on disk are assumed correct because they're load-bearing for
          some already-satisfied final).
     """
+    graph = _with_source_nodes(graph)   # match predict_call_hashes' node set
     successors: dict = defaultdict(set)
     for n, deps in graph.items():
         for d in deps:

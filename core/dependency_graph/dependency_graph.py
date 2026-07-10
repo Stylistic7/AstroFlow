@@ -140,17 +140,21 @@ def _apply_preflight(graph: Graph) -> Graph:
         return graph
     try:
         from dependency_graph.preflight import (
-            predict_call_hashes, nodes_to_dispatch,
+            predict_call_hashes, nodes_to_dispatch, _with_source_nodes,
         )
-        predicted = predict_call_hashes(graph)
-        to_run = nodes_to_dispatch(graph, predicted)
+        # Normalise bare-dep sources into nodes exactly as GraphRuntime does, so
+        # the prune set + reconstruction below share that node set (and the
+        # top-level meta-graph no longer trips a spurious 'cycle or orphan').
+        norm = _with_source_nodes(graph)
+        predicted = predict_call_hashes(norm)
+        to_run = nodes_to_dispatch(norm, predicted)
     except Exception as e:
         print(f"### preflight skipped due to {type(e).__name__}: {e}")
         return graph
-    if len(to_run) == len(graph):
+    if len(to_run) == len(norm):
         return graph
     return Graph(
-        {n: [d for d in graph[n] if d in to_run] for n in to_run},
+        {n: [d for d in norm[n] if d in to_run] for n in to_run},
         graph_update_fn=getattr(graph, "graph_update_fn", None),
         node_status_fn=getattr(graph, "node_status_fn", None),
     )
