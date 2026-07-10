@@ -44,13 +44,14 @@ const GLOBALS_LAYOUT_ENTRIES_BASE = [
 
 const LUT_SIZE = 1024;
 
-// Per-tile bind-group layout: r32float texture + TileRect uniform.
-// r32float in WebGPU is by default `unfilterable-float`; we sample
-// with manual interpolation in the shader if needed. Linear filtering
-// on r32float requires the `float32-filterable` feature.
+// Per-tile bind-group layout: tile texture + TileRect uniform + stars
+// texture (RGB stars for the narrowband finish; a shared black dummy for
+// tiles without stars). r32float/rgba32float are `unfilterable-float` by
+// default; linear filtering requires the `float32-filterable` feature.
 const TILE_LAYOUT_ENTRIES = [
     { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float' } },
     { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
+    { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float' } },
 ];
 
 
@@ -110,11 +111,14 @@ export function useTileRenderer({ canvasRef }) {
                 addressModeV: 'clamp-to-edge',
             });
 
-            // Globals uniform buffer: e1, e5, max, peakBrightness,
-            // stretchMode + 3 floats of std140 padding to round to
-            // a 32-byte boundary.
+            // Globals uniform buffer: 24 f32 (96 bytes) — the 6 STF/colour
+            // scalars, then the narrowband-finish params (finishMode,
+            // paletteMode, blackPoint, scnrAmount, saturation, addStars),
+            // the six normalise anchors + three trims, and 3 f32 of padding
+            // to the 16-byte boundary. See the Globals struct in
+            // tone_mapping.js for the exact index layout used by setGlobals.
             const globalsBuffer = device.createBuffer({
-                size: 32,
+                size: 96,
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
 
@@ -146,6 +150,22 @@ export function useTileRenderer({ canvasRef }) {
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
 
+            // Shared 1×1 black stars texture. Every tile bind group binds a
+            // stars texture at group(1)/binding(2) (the narrowband finish
+            // screens it on top); tiles/taps without stars bind this dummy,
+            // for which the screen blend 1−(1−rgb)(1−0) is an identity no-op.
+            const dummyStarsTexture = device.createTexture({
+                size: [1, 1],
+                format: 'rgba32float',
+                usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+            });
+            device.queue.writeTexture(
+                { texture: dummyStarsTexture },
+                new Float32Array([0, 0, 0, 1]).buffer,
+                { bytesPerRow: 16, rowsPerImage: 1 },
+                { width: 1, height: 1, depthOrArrayLayers: 1 },
+            );
+
             // LUT texture sampleType: 'float' (filterable) when the
             // adapter exposes float32-filterable; otherwise
             // 'unfilterable-float' with nearest sampling. 1024 LUT
@@ -160,7 +180,7 @@ export function useTileRenderer({ canvasRef }) {
             });
             const tileLayout = device.createBindGroupLayout({
                 entries: wantsFilterable
-                    ? TILE_LAYOUT_ENTRIES.map((e) => e.binding === 0
+                    ? TILE_LAYOUT_ENTRIES.map((e) => (e.binding === 0 || e.binding === 2)
                         ? { ...e, texture: { sampleType: 'float' } }
                         : e)
                     : TILE_LAYOUT_ENTRIES,
@@ -200,6 +220,7 @@ export function useTileRenderer({ canvasRef }) {
                 globalsBuffer,
                 viewportBuffer,
                 stretchLutTexture,
+                dummyStarsTexture,
                 // `tiles` is the LOADED tile cache, keyed on tile key
                 // (e.g. "z/x/y"). Tiles stay here after leaving the
                 // visible set so re-panning over them doesn't trigger
@@ -210,9 +231,20 @@ export function useTileRenderer({ canvasRef }) {
                 visible: new Set(),     // subset of `tiles` to draw this frame
                 pending: new Set(),     // keys whose fetch is in-flight
                 wantsFilterable,
-                // 8 floats: e1, e5, max, peakBrightness, stretchMode,
-                // isColor, and 2 of std140 padding.
-                lastGlobals: new Float32Array([0, 0.5, 1, 1, 0, 0, 0, 0]),
+                // 24 floats — index layout mirrors the Globals struct in
+                // tone_mapping.js:
+                //   0 e1, 1 e5, 2 maxVal, 3 peakBrightness, 4 stretchMode,
+                //   5 isColor, 6 finishMode, 7 paletteMode, 8 blackPoint,
+                //   9 scnrAmount, 10 saturation, 11 addStars,
+                //   12-14 mS/mH/mO, 15-17 pS/pH/pO, 18-20 trimS/trimH/trimO,
+                //   21-23 pad. Anchors default to identity normalise (m=0,p=1)
+                //   and trims to 1 so an un-seeded finish still renders.
+                lastGlobals: new Float32Array([
+                    0, 0.5, 1, 1, 0, 0, 0, 0,
+                    0, 0, 1, 0,
+                    0, 0, 0, 1, 1, 1,
+                    1, 1, 1, 0, 0, 0,
+                ]),
                 lastViewport: new Float32Array(8),
                 // rAF coalescing — multiple redraw() calls within one
                 // frame collapse into a single paint.
@@ -305,18 +337,38 @@ export function useTileRenderer({ canvasRef }) {
     /** Push new STF parameters + brightness + stretch mode; paints
      * synchronously so the slider reflects on the next frame.
      * `stretchMode`: 0 = STF closed-form, 1 = LUT lookup.
-     * `isColor`: when set, the shader samples .rgb and passes the baked
-     * color through (no tone-mapping). Passed explicitly so a color↔mono
-     * tap switch on a reused renderer resets the flag both directions. */
-    function setGlobals({ e1, e5, max, peakBrightness, stretchMode = 0, isColor }) {
+     * `isColor`: baked-RGB pass-through. `finishMode`: LINEAR narrowband
+     * S/H/O — run the live colour finish (see the Globals struct). Both
+     * are passed explicitly by TileViewerV2 on every uniform update so a
+     * tap switch on a reused renderer resets the modes in every direction.
+     * `paletteMode/blackPoint/scnrAmount/saturation/addStars` drive the
+     * finish; `anchors` = { m:[S,H,O], p:[S,H,O] } normalise anchors;
+     * `trims` = [S,H,O] per-channel gains. Any omitted field is left as-is. */
+    function setGlobals({
+        e1, e5, max, peakBrightness, stretchMode = 0, isColor,
+        finishMode, paletteMode, blackPoint, scnrAmount, saturation, addStars,
+        anchors, trims,
+    }) {
         const s = stateRef.current;
         if (!s) return;
-        s.lastGlobals[0] = e1;
-        s.lastGlobals[1] = e5;
-        s.lastGlobals[2] = max;
-        s.lastGlobals[3] = peakBrightness;
-        s.lastGlobals[4] = stretchMode;
-        if (isColor !== undefined) s.lastGlobals[5] = isColor ? 1 : 0;
+        const g = s.lastGlobals;
+        if (e1 !== undefined) g[0] = e1;
+        if (e5 !== undefined) g[1] = e5;
+        if (max !== undefined) g[2] = max;
+        if (peakBrightness !== undefined) g[3] = peakBrightness;
+        g[4] = stretchMode;
+        if (isColor !== undefined) g[5] = isColor ? 1 : 0;
+        if (finishMode !== undefined) g[6] = finishMode ? 1 : 0;
+        if (paletteMode !== undefined) g[7] = paletteMode;
+        if (blackPoint !== undefined) g[8] = blackPoint;
+        if (scnrAmount !== undefined) g[9] = scnrAmount;
+        if (saturation !== undefined) g[10] = saturation;
+        if (addStars !== undefined) g[11] = addStars ? 1 : 0;
+        if (anchors) {
+            g[12] = anchors.m[0]; g[13] = anchors.m[1]; g[14] = anchors.m[2];
+            g[15] = anchors.p[0]; g[16] = anchors.p[1]; g[17] = anchors.p[2];
+        }
+        if (trims) { g[18] = trims[0]; g[19] = trims[1]; g[20] = trims[2]; }
         paint();
     }
 
@@ -408,52 +460,69 @@ export function useTileRenderer({ canvasRef }) {
             for (const [key, tile] of evictList) {
                 tile.texture.destroy();
                 tile.rectBuffer.destroy();
+                if (tile.starsTexture) tile.starsTexture.destroy();
                 tiles.delete(key);
             }
         }
 
-        // Fetch missing tiles.
+        // Upload one decoded tile as a GPU texture. Color tiles (bands>=3)
+        // arrive band-interleaved (RGB); WebGPU has no 3-channel float
+        // format, so expand to RGBA (alpha=1) and upload as rgba32float.
+        // Mono tiles stay single-channel r32float. The tile layout's float
+        // sampleType accepts both, so the same pipeline renders either.
+        const uploadTile = (data) => {
+            const color = data.bands >= 3;
+            let uploadArray = data.array;
+            if (color) {
+                const px = data.width * data.height;
+                uploadArray = new Float32Array(px * 4);
+                for (let i = 0; i < px; i++) {
+                    uploadArray[i * 4 + 0] = data.array[i * 3 + 0];
+                    uploadArray[i * 4 + 1] = data.array[i * 3 + 1];
+                    uploadArray[i * 4 + 2] = data.array[i * 3 + 2];
+                    uploadArray[i * 4 + 3] = 1.0;
+                }
+            }
+            const texture = device.createTexture({
+                size: [data.width, data.height],
+                format: color ? 'rgba32float' : 'r32float',
+                usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+            });
+            device.queue.writeTexture(
+                { texture },
+                uploadArray.buffer,
+                {
+                    offset: uploadArray.byteOffset,
+                    bytesPerRow: data.width * (color ? 16 : 4),
+                    rowsPerImage: data.height,
+                },
+                { width: data.width, height: data.height, depthOrArrayLayers: 1 },
+            );
+            return texture;
+        };
+
+        // Fetch missing tiles (nebula + optional sibling RGB-stars tile,
+        // fetched eagerly so the Add-stars toggle is instant).
         for (const tw of wanted) {
             if (tiles.has(tw.key) || pending.has(tw.key)) continue;
             pending.add(tw.key);
-            fetchLinearTile(tw.url).then((data) => {
+            Promise.all([
+                fetchLinearTile(tw.url),
+                tw.starsUrl ? fetchLinearTile(tw.starsUrl) : Promise.resolve(null),
+            ]).then(([data, starsData]) => {
                 pending.delete(tw.key);
                 if (data === null) return;
                 if (!stateRef.current) return;
 
-                // Color tiles (bands>=3) arrive band-interleaved (RGB);
-                // WebGPU has no 3-channel float format, so expand to
-                // RGBA (alpha=1) and upload as rgba32float. Mono tiles
-                // stay single-channel r32float. The tile bind-group
-                // layout's float sampleType accepts both, so the same
-                // pipeline renders either (shader branches on isColor).
-                const isColor = data.bands >= 3;
-                let uploadArray = data.array;
-                if (isColor) {
-                    const px = data.width * data.height;
-                    uploadArray = new Float32Array(px * 4);
-                    for (let i = 0; i < px; i++) {
-                        uploadArray[i * 4 + 0] = data.array[i * 3 + 0];
-                        uploadArray[i * 4 + 1] = data.array[i * 3 + 1];
-                        uploadArray[i * 4 + 2] = data.array[i * 3 + 2];
-                        uploadArray[i * 4 + 3] = 1.0;
-                    }
+                const texture = uploadTile(data);
+
+                // Optional RGB stars for the narrowband finish. A shared
+                // 1×1 black dummy is bound when this tile/tap has none, so
+                // the shader's screen blend is an identity no-op there.
+                let starsTexture = null;   // non-null ⇒ owned (destroy on evict)
+                if (starsData && starsData.bands >= 3) {
+                    starsTexture = uploadTile(starsData);
                 }
-                const texture = device.createTexture({
-                    size: [data.width, data.height],
-                    format: isColor ? 'rgba32float' : 'r32float',
-                    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-                });
-                device.queue.writeTexture(
-                    { texture },
-                    uploadArray.buffer,
-                    {
-                        offset: uploadArray.byteOffset,
-                        bytesPerRow: data.width * (isColor ? 16 : 4),
-                        rowsPerImage: data.height,
-                    },
-                    { width: data.width, height: data.height, depthOrArrayLayers: 1 },
-                );
 
                 // Per-tile rect uniform: worldX, worldY, tileW, tileH
                 // (16 bytes, fits in std140 vec4-aligned uniform).
@@ -474,10 +543,11 @@ export function useTileRenderer({ canvasRef }) {
                     entries: [
                         { binding: 0, resource: texture.createView() },
                         { binding: 1, resource: { buffer: rectBuffer } },
+                        { binding: 2, resource: (starsTexture ?? s.dummyStarsTexture).createView() },
                     ],
                 });
 
-                tiles.set(tw.key, { texture, bindGroup, rectBuffer, worldRect: tw.worldRect });
+                tiles.set(tw.key, { texture, bindGroup, rectBuffer, starsTexture, worldRect: tw.worldRect });
                 // Only redraw if this tile is still on-screen; an
                 // arrival from a stale pan can land for an offscreen
                 // tile that's now in the LRU cache rather than the
@@ -504,6 +574,7 @@ export function useTileRenderer({ canvasRef }) {
         for (const tile of s.tiles.values()) {
             tile.texture.destroy();
             tile.rectBuffer.destroy();
+            if (tile.starsTexture) tile.starsTexture.destroy();
         }
         s.tiles.clear();
         s.visible = new Set();

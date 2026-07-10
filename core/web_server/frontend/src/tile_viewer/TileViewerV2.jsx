@@ -71,7 +71,8 @@ function pointInPolygon(x, y, points) {
  * world coordinate system is the FULL-resolution image; each pyramid
  * level renders at world coords scaled by `2^(maxZoom - z)`.
  */
-function computeVisibleTiles({ viewport, meta, view, objectType, imageHash }) {
+function computeVisibleTiles({ viewport, meta, view, objectType, imageHash,
+                              starsView, starsMeta }) {
     const { tx, ty, scale, screenW, screenH } = viewport;
     const { maxZoom, width: imageW, height: imageH, port, mtime } = meta;
 
@@ -106,6 +107,7 @@ function computeVisibleTiles({ viewport, meta, view, objectType, imageHash }) {
     const x1 = Math.min(tilesX - 1, Math.floor(worldRight  / sourceTileWorld) + 1);
     const y1 = Math.min(tilesY - 1, Math.floor(worldBottom / sourceTileWorld) + 1);
 
+    const origin = `${window.location.protocol}//${window.location.hostname}`;
     const wanted = [];
     for (let ty_ = y0; ty_ <= y1; ty_++) {
         for (let tx_ = x0; tx_ <= x1; tx_++) {
@@ -118,12 +120,29 @@ function computeVisibleTiles({ viewport, meta, view, objectType, imageHash }) {
                 view,
                 `/${z}/${tx_}/${ty_}.f32`,
             );
-            const url = new URL(rel,
-                `${window.location.protocol}//${window.location.hostname}:${port}`);
+            const url = new URL(rel, `${origin}:${port}`);
             if (mtime) url.searchParams.set('v', mtime);
+            // Sibling RGB-stars tile (same z/x/y — the Stars pyramid shares
+            // the mosaic geometry). Present only for the narrowband finish;
+            // the 's' key suffix keeps stars/no-stars tiles distinct so the
+            // Stars tap becoming available refetches rather than reusing a
+            // stale starless bind group.
+            let starsUrl;
+            if (starsView && starsMeta) {
+                const srel = buildApiUrl(
+                    '/tap/tile',
+                    [{ type: objectType, id: imageHash }],
+                    starsView,
+                    `/${z}/${tx_}/${ty_}.f32`,
+                );
+                const surl = new URL(srel, `${origin}:${starsMeta.port ?? port}`);
+                if (starsMeta.mtime) surl.searchParams.set('v', starsMeta.mtime);
+                starsUrl = surl.href;
+            }
             wanted.push({
-                key: `${z}/${tx_}/${ty_}`,
+                key: `${z}/${tx_}/${ty_}${starsUrl ? 's' : ''}`,
                 url: url.href,
+                starsUrl,
                 worldRect: {
                     x: tx_ * sourceTileWorld,
                     y: ty_ * sourceTileWorld,
@@ -195,6 +214,19 @@ export default function TileViewerV2({
     // Past that the image just gets blurry without revealing detail.
     // Toggle on to allow over-zoom for pixel-peeping or screenshots.
     const [allowOverZoom, setAllowOverZoom] = useState(false);
+    // Narrowband (Linear SHO) live-finish controls. Defaults are seeded
+    // toward the measured "AstroBin look" (deep black point, strong
+    // stretch, ~1.8× saturation, full green removal) so the tap opens
+    // close and the user trims from there. `nbMidtone` is the MTF midtone
+    // reused as the per-channel stretch (lower = brighter).
+    const [palette, setPalette] = useState('foraxx');       // 'hubble' | 'foraxx'
+    const [nbBlackPoint, setNbBlackPoint] = useState(0.03);
+    const [nbMidtone, setNbMidtone] = useState(0.18);
+    const [nbSaturation, setNbSaturation] = useState(1.8);
+    const [nbScnr, setNbScnr] = useState(1.0);
+    const [nbAddStars, setNbAddStars] = useState(false);
+    // Metadata of the sibling "Stars" tap (for availability + port/mtime).
+    const [starsMeta, setStarsMeta] = useState(null);
 
     // Resolve each control to "parent prop if provided, else local state".
     const peakBrightness = peakBrightnessProp ?? localPeakBrightness;
@@ -204,13 +236,27 @@ export default function TileViewerV2({
     // hdrEnabled gates brightness: when off, force peak=1.0 (SDR).
     const effectivePeak = (hdrEnabledProp === false) ? 1.0 : peakBrightness;
 
-    // Baked-stretch color image? The backend reports band count on
-    // /tap/tile_metadata; >=3 means RGB the shader passes through, so
-    // all client-side stretch controls are irrelevant.
+    // 3-band tiles come in two flavours, disambiguated by `colorspace`
+    // on /tap/tile_metadata:
+    //   isBakedColor  — baked-stretch RGB deliverable, shader passes through;
+    //   isNarrowband  — LINEAR S/H/O, shader runs the live colour finish.
+    // `isColor` (either) still gates out the mono stretch/HDR controls; the
+    // narrowband finish has its own control panel below.
     const isColor = (tileMeta?.bands ?? 1) >= 3;
+    const isNarrowband = tileMeta?.colorspace === 'linear-sho';
+    const isBakedColor = isColor && !isNarrowband;
     useEffect(() => {
         onColorDetected?.(isColor);
     }, [isColor, onColorDetected]);
+
+    // Is the sibling Stars tap real, and does it share this tap's geometry
+    // (so z/x/y tile coords line up)? Gates the Add-stars toggle + fetches.
+    const starsAvailable = isNarrowband && !!view && starsMeta
+        && starsMeta.width === tileMeta?.width
+        && starsMeta.maxZoom === tileMeta?.maxZoom;
+    const starsView = starsAvailable
+        ? { pipeline: view.pipeline, display: 'Stars', filter: 'RGB' }
+        : null;
 
     const navigate = useNavigate();
     const params = useParams();
@@ -259,6 +305,21 @@ export default function TileViewerV2({
             if (m) setMetadata(m);
         });
     }, [objectType, imageHash, view?.pipeline, view?.display, view?.filter]);
+
+    // Narrowband finish only: probe the sibling "Stars" tap's tile metadata
+    // (existence + geometry + port/mtime) so the finish can screen the RGB
+    // stars in. Null when there's no broadband stars deliverable.
+    useEffect(() => {
+        setStarsMeta(null);
+        if (!isNarrowband || !view) return;
+        const starsV = { pipeline: view.pipeline, display: 'Stars', filter: 'RGB' };
+        const url = buildApiUrl(
+            '/tap/tile_metadata',
+            [{ type: objectType, id: imageHash }],
+            starsV,
+        );
+        fetch(url).then((r) => r.ok ? r.json() : null).then(setStarsMeta);
+    }, [isNarrowband, objectType, imageHash, view?.pipeline]);
 
     // Hit-test polygons at the tapped world position. Precedence
     // matches the Pixi viewer: stack > target > mosaic.
@@ -346,13 +407,30 @@ export default function TileViewerV2({
     // texture uploaded by the effect below.
     useEffect(() => {
         if (!renderer.isReady) return;
+        // Linear narrowband S/H/O: the shader runs the whole per-pixel
+        // colour finish. The stretch reuses e1/e5 (e1=0 shadow, e5=midtone);
+        // normalise anchors come from the metadata's per-channel stats.
+        if (isNarrowband) {
+            const anchors = (tileMeta?.channelMedians && tileMeta?.channelP99)
+                ? { m: tileMeta.channelMedians, p: tileMeta.channelP99 }
+                : { m: [0, 0, 0], p: [1, 1, 1] };
+            renderer.setGlobals({
+                e1: 0, e5: nbMidtone, max: 1.0, peakBrightness: 1.0,
+                stretchMode: 0, isColor: false, finishMode: true,
+                paletteMode: palette === 'foraxx' ? 1 : 0,
+                blackPoint: nbBlackPoint, scnrAmount: nbScnr,
+                saturation: nbSaturation, addStars: nbAddStars && starsAvailable,
+                anchors, trims: [1, 1, 1],
+            });
+            return;
+        }
         // Baked-stretch color: fixed identity pass-through (e1=0, e5=0.5,
         // max=1 ⇒ y=x) at SDR (peak=1.0); the shader's isColor branch
         // samples .rgb directly. No stats needed.
-        if (isColor) {
+        if (isBakedColor) {
             renderer.setGlobals({
                 e1: 0, e5: 0.5, max: 1.0, peakBrightness: 1.0,
-                stretchMode: 0, isColor: true,
+                stretchMode: 0, isColor: true, finishMode: false,
             });
             return;
         }
@@ -365,9 +443,12 @@ export default function TileViewerV2({
             max: metadata.statistics.max_value || 1.0,
             peakBrightness: effectivePeak,
             stretchMode: shaderMode,
-            isColor: false,
+            isColor: false, finishMode: false,
         });
-    }, [renderer.isReady, isColor, metadata?.statistics, effectivePeak, stretchMode]);
+    }, [renderer.isReady, isNarrowband, isBakedColor, metadata?.statistics,
+        effectivePeak, stretchMode, palette, nbBlackPoint, nbMidtone,
+        nbSaturation, nbScnr, nbAddStars, starsAvailable,
+        tileMeta?.channelMedians, tileMeta?.channelP99]);
 
     // Recompute + upload the stretch LUT whenever stats change or the
     // mode flips into a LUT-based path. STF mode doesn't sample the
@@ -396,6 +477,7 @@ export default function TileViewerV2({
             });
             const wanted = computeVisibleTiles({
                 viewport: s, meta: tileMeta, view, objectType, imageHash,
+                starsView, starsMeta,
             });
             renderer.setTileUrls(wanted);
         };
@@ -403,7 +485,7 @@ export default function TileViewerV2({
         apply(viewport.get());
         return unsub;
     }, [renderer.isReady, tileMeta, view?.pipeline, view?.display, view?.filter,
-        viewport, objectType, imageHash]);
+        viewport, objectType, imageHash, starsAvailable, starsMeta]);
 
     return (
         <Box ref={containerRef} sx={{
@@ -435,6 +517,78 @@ export default function TileViewerV2({
                 polygons={polygons}
                 show={showPanelNumbers}
             />
+            {/* Live SHO colour finish — shown for the Linear SHO tap in
+                both embedded (MosaicViewer) and standalone modes, since the
+                finish is intrinsic to this tap, not the parent toolbar. */}
+            {isNarrowband && (
+                <Box sx={{
+                    position: 'absolute', top: 12, left: 12, width: 232,
+                    p: 1.5, backgroundColor: 'rgba(20,20,22,0.80)',
+                    border: '1px solid rgba(255,255,255,0.12)', borderRadius: 1,
+                    color: '#fff', backdropFilter: 'blur(6px)',
+                }}>
+                    <Typography variant="caption" sx={{ display: 'block', fontWeight: 600, mb: 0.75 }}>
+                        SHO colour finish
+                    </Typography>
+                    <Select
+                        size="small"
+                        value={palette}
+                        onChange={(e) => setPalette(e.target.value)}
+                        sx={{
+                            width: '100%', color: '#fff', mb: 1,
+                            '& .MuiSelect-icon': { color: '#fff' },
+                            '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.3)' },
+                        }}
+                    >
+                        <MenuItem value="hubble">Hubble (SHO)</MenuItem>
+                        <MenuItem value="foraxx">Foraxx (dynamic)</MenuItem>
+                    </Select>
+                    <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
+                        Black point — {nbBlackPoint.toFixed(3)}
+                    </Typography>
+                    <Slider
+                        size="small" value={nbBlackPoint} min={0} max={0.15} step={0.005}
+                        onChange={(_, v) => setNbBlackPoint(v)} sx={{ color: '#fff' }}
+                    />
+                    <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
+                        Stretch midtone — {nbMidtone.toFixed(2)} (lower = brighter)
+                    </Typography>
+                    <Slider
+                        size="small" value={nbMidtone} min={0.03} max={0.5} step={0.01}
+                        onChange={(_, v) => setNbMidtone(v)} sx={{ color: '#fff' }}
+                    />
+                    <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
+                        Saturation — {nbSaturation.toFixed(2)}×
+                    </Typography>
+                    <Slider
+                        size="small" value={nbSaturation} min={0} max={3} step={0.05}
+                        onChange={(_, v) => setNbSaturation(v)} sx={{ color: '#fff' }}
+                    />
+                    <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
+                        Green removal (SCNR) — {nbScnr.toFixed(2)}
+                    </Typography>
+                    <Slider
+                        size="small" value={nbScnr} min={0} max={1} step={0.05}
+                        onChange={(_, v) => setNbScnr(v)} sx={{ color: '#fff' }}
+                    />
+                    <FormControlLabel
+                        control={
+                            <Switch
+                                size="small"
+                                checked={nbAddStars && starsAvailable}
+                                disabled={!starsAvailable}
+                                onChange={(_, v) => setNbAddStars(v)}
+                            />
+                        }
+                        label={
+                            <Typography variant="caption">
+                                Add stars{starsAvailable ? '' : ' (none)'}
+                            </Typography>
+                        }
+                        sx={{ mt: -0.5, ml: -1 }}
+                    />
+                </Box>
+            )}
             {!embedded && (
                 <Box sx={{
                     position: 'absolute', top: 12, right: 12, width: 260,

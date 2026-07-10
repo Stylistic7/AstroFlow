@@ -37,8 +37,23 @@ struct Globals {
     // through (stretch is already applied), skipping all mono tone-
     // mapping. 0.0 = linear mono channel, tone-mapped below.
     isColor: f32,
-    _pad1: f32,
-    _pad2: f32,
+    // >0.5 = LINEAR narrowband S/H/O tile: run the per-pixel colour
+    // finish below (normalise → palette → black point → shaped stretch
+    // → SCNR green → saturation → screen stars). Takes precedence over
+    // isColor. The stretch reuses e1/e5 as the per-channel MTF.
+    finishMode: f32,
+    paletteMode: f32,   // 0 = Hubble (R=S,G=H,B=O), 1 = Foraxx dynamic
+    blackPoint: f32,    // deep black point applied after the palette
+    scnrAmount: f32,    // 0..1 green removal: G=min(G, mix(G,(R+B)/2, a))
+    saturation: f32,    // luma-preserving chroma gain (1 = identity)
+    addStars: f32,      // >0.5 = screen the stars texture on top
+    // Per-channel normalise anchors (background median m, high pct p):
+    // n = (c - m)/(p - m). Seeded from the tile metadata's per-channel
+    // stats; trims are user gain on top (default 1).
+    mS: f32, mH: f32, mO: f32,
+    pS: f32, pH: f32, pO: f32,
+    trimS: f32, trimH: f32, trimO: f32,
+    _pad0: f32, _pad1: f32, _pad2: f32,
 };
 struct Viewport {
     tx: f32,
@@ -67,6 +82,10 @@ struct TileRect {
 @group(0) @binding(4) var stretchLutSampler: sampler;
 @group(1) @binding(0) var tileTexture: texture_2d<f32>;
 @group(1) @binding(1) var<uniform> tileRect: TileRect;
+// RGB stars for the narrowband finish (screened on top when addStars).
+// A shared 1×1 black texture is bound for tiles/taps without stars, so
+// the screen blend is an identity no-op there.
+@group(1) @binding(2) var starsTexture: texture_2d<f32>;
 
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
@@ -102,12 +121,88 @@ fn vs_main(@builtin(vertex_index) idx: u32) -> VsOut {
     return out;
 }
 
+// Per-channel affine normalise to a common scale: (c - m)/(p - m).
+fn normLin(c: f32, m: f32, p: f32) -> f32 {
+    return (c - m) / max(p - m, 1e-6);
+}
+
+// Closed-form PixInsight MTF stretch (reuses globals.e1/e5), per channel.
+fn stfChannel(x: f32) -> f32 {
+    let E2 = max(0.0, (x - globals.e1) / max(1.0 - globals.e1, 1e-12));
+    let num = (globals.e5 - 1.0) * E2;
+    let den = (2.0 * globals.e5 - 1.0) * E2 - globals.e5;
+    if (abs(den) < 1e-12) {
+        return 0.0;
+    }
+    return clamp(num / den, 0.0, 1.0);
+}
+
+// Foraxx dynamic narrowband palette (mirrors palettes.foraxx). Inputs
+// are the normalised, brightness-matched channels.
+fn foraxxPalette(s: f32, h: f32, o: f32) -> vec3<f32> {
+    let sc = clamp(s, 0.0, 1.0);
+    let hc = clamp(h, 0.0, 1.0);
+    let oc = clamp(o, 0.0, 1.0);
+    let wR = pow(oc, 1.0 - oc);
+    let R = wR * sc + (1.0 - wR) * hc;
+    let m = oc * hc;
+    let wG = pow(m, 1.0 - m);
+    let G = wG * hc + (1.0 - wG) * oc;
+    let B = oc;
+    return vec3<f32>(R, G, B);
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    // Sample once, in uniform control flow (valid derivatives), then
-    // branch. Color tiles carry the stretch baked in — pass .rgb
-    // straight through (zeros → black is inherent, no sentinel needed).
+    // Sample both textures once, in uniform control flow (valid
+    // derivatives), then branch. Color tiles carry the stretch baked in —
+    // pass .rgb straight through (zeros → black is inherent, no sentinel
+    // needed). starsTexture is always bound (a 1×1 black dummy when the
+    // tap/tile has no stars) so sampling it here is always legal.
     let tex = textureSample(tileTexture, tileSampler, in.uv);
+    let starTex = textureSample(starsTexture, tileSampler, in.uv);
+
+    // Linear narrowband S/H/O: run the full per-pixel colour finish.
+    if (globals.finishMode > 0.5) {
+        let S = tex.r;
+        let H = tex.g;
+        let O = tex.b;
+        // All-zero is the no-data footprint sentinel → opaque black.
+        if (S == 0.0 && H == 0.0 && O == 0.0) {
+            return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+        }
+        // 1. Cross-channel normalise (off-diagonal balance fix) + trim.
+        let nS = normLin(S, globals.mS, globals.pS) * globals.trimS;
+        let nH = normLin(H, globals.mH, globals.pH) * globals.trimH;
+        let nO = normLin(O, globals.mO, globals.pO) * globals.trimO;
+        // 2. Palette combine.
+        var rgb: vec3<f32>;
+        if (globals.paletteMode > 0.5) {
+            rgb = foraxxPalette(nS, nH, nO);
+        } else {
+            rgb = vec3<f32>(nS, nH, nO);   // Hubble: R=S, G=H, B=O
+        }
+        // 3. Deep black point.
+        let bp = globals.blackPoint;
+        rgb = max(vec3<f32>(0.0), (rgb - vec3<f32>(bp)) / max(1.0 - bp, 1e-6));
+        // 4. Shaped stretch (per-channel MTF).
+        rgb = vec3<f32>(stfChannel(rgb.r), stfChannel(rgb.g), stfChannel(rgb.b));
+        // 5. SCNR green (average-neutral, amount-scaled).
+        let cap = mix(rgb.g, (rgb.r + rgb.b) * 0.5, globals.scnrAmount);
+        rgb.g = min(rgb.g, cap);
+        // 6. Luma-preserving saturation.
+        let luma = dot(rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
+        rgb = clamp(mix(vec3<f32>(luma), rgb, globals.saturation),
+                    vec3<f32>(0.0), vec3<f32>(1.0));
+        // 7. Screen the (already display-space) RGB stars on top.
+        if (globals.addStars > 0.5) {
+            let st = clamp(starTex.rgb, vec3<f32>(0.0), vec3<f32>(1.0));
+            rgb = 1.0 - (1.0 - rgb) * (1.0 - st);
+        }
+        // 8. Output.
+        return vec4<f32>(rgb * globals.peakBrightness, 1.0);
+    }
+
     if (globals.isColor > 0.5) {
         return vec4<f32>(tex.rgb * globals.peakBrightness, 1.0);
     }

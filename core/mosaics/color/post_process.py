@@ -237,6 +237,36 @@ def autostretch_channel(
 
 # ---- named color deliverables (display=name, filter=None, final=True) ----
 
+# The display= of the linear-SHO viewer source. Kept as a constant because the
+# tile server keys `colorspace="linear-sho"` on this exact display name (see
+# web_server/backend/tiles.py LINEAR_FINISH_DISPLAYS) so the WebGPU shader knows
+# to run the live colour finish instead of passing the tile through as baked RGB.
+LINEAR_SHO_DISPLAY = "Linear SHO"
+
+
+@node(display=LINEAR_SHO_DISPLAY, filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-channel LINEAR
+def linear_sho(
+    mosaic: Mosaic, sii: ImageMetadata, ha: ImageMetadata, oiii: ImageMetadata,
+) -> WithSidecar[XisfFilePath]:
+    """Stack the three LINEAR starless narrowband channels (S→R, H→G, O→B) into
+    one 3-band linear master — the source the WebGPU tile viewer finishes live.
+
+    Deliberately NO stretch / palette / SCNR here: the shader does the whole
+    per-pixel colour finish (normalise → Hubble/Foraxx → black point → shaped
+    stretch → SCNR green → saturation) from uniforms, so the palette and balance
+    are a real-time toggle. Being `final=True`, this consumes the otherwise-
+    ephemeral `sxt_starless` outputs and keeps them alive until it runs. The three
+    channels share the mosaic viewbox (co-registered), so they stack pixel-aligned.
+    XISF keeps the gigapixel master within rc-astro/format limits (the pyramid the
+    tile server serves is the auto-built `_tiles.tiff` sibling)."""
+    out = linear_sho.filename_fn(mosaic, sii, ha, oiii)
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    sho = np.stack([_mono(sii), _mono(ha), _mono(oiii)], axis=2).astype(np.float32)
+    write_xisf_image(Path(out), sho,
+                     {"PIPELINE": "AstroFlow-OSS", "COLORSPC": "linear-sho"})
+    return WithSidecar(XisfFilePath(out))
+
+
 @node(display="Stars", filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-channel color
 def combine_star_rgb(
     mosaic: Mosaic, rgb_stars: ImageMetadata,
@@ -316,6 +346,7 @@ def color_post_process(mosaic: Mosaic, channels: dict, config) -> dict:
     """
     by_class = {normalize_filter(f): ch for f, ch in channels.items()}
 
+    starless_nb: dict[str, object] = {}
     stretched_nb: dict[str, object] = {}
     bxt_bb: dict[str, object] = {}
     with ephemeral_intermediates():
@@ -323,6 +354,7 @@ def color_post_process(mosaic: Mosaic, channels: dict, config) -> dict:
             if cf in _NARROWBAND:
                 corrected = bxt_correct(mosaic, cf, config, channel)
                 starless = sxt_starless(mosaic, cf, config, corrected)
+                starless_nb[cf] = starless  # linear source for the Linear SHO tap
                 stretched_nb[cf] = autostretch_channel(mosaic, cf, starless)
             elif cf in _BROADBAND:
                 bxt_bb[cf] = bxt_correct(mosaic, cf, config, channel)
@@ -340,6 +372,10 @@ def color_post_process(mosaic: Mosaic, channels: dict, config) -> dict:
     if rgb_star_lin is not None:
         rgb_stars = combine_star_rgb(mosaic, rgb_star_lin)
         out["Stars"] = rgb_stars
+    if _NARROWBAND <= set(starless_nb):
+        # The linear S/H/O viewer source (finished live in the WebGPU shader).
+        out["Linear SHO"] = linear_sho(
+            mosaic, starless_nb["S"], starless_nb["H"], starless_nb["O"])
     if _NARROWBAND <= set(stretched_nb):
         s, h, o = stretched_nb["S"], stretched_nb["H"], stretched_nb["O"]
         # Always emit the pure starless palettes; add the with-stars variants

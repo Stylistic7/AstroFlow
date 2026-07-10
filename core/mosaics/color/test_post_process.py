@@ -108,6 +108,9 @@ def test_color_post_process_traces_and_runs(test_context, tmp_path):
     assert counts.get("foraxx_image") == 1
     assert counts.get("hubble_starless") == 1
     assert counts.get("foraxx_starless") == 1
+    # The linear S/H/O viewer source: one op, consuming the (otherwise
+    # ephemeral) starless channels so the tile viewer can finish them live.
+    assert counts.get("linear_sho") == 1
 
     run_graph(graph)
 
@@ -121,6 +124,20 @@ def test_color_post_process_traces_and_runs(test_context, tmp_path):
         assert img.ndim == 3 and img.shape[2] == 3, f"{name} not 3-channel: {img.shape}"
         assert np.all(np.isfinite(img))
         assert img.min() >= 0.0 and img.max() <= 1.0001
+
+    # Linear SHO: a 3-band XISF master that is LINEAR — no autostretch/palette.
+    # In the mock pass-through path each starless channel equals its raw input,
+    # so the stacked master must equal the raw S/H/O bands (proving no stretch
+    # was applied; the WebGPU shader does the finish live from these linear px).
+    lin_files = list(out.rglob("linear_sho/*.xisf"))
+    assert lin_files, "no Linear SHO output produced under linear_sho/"
+    lin = read_image(lin_files[0])
+    assert lin.ndim == 3 and lin.shape[2] == 3, f"Linear SHO not 3-channel: {lin.shape}"
+    assert np.all(np.isfinite(lin))
+    for band, f in enumerate(("S", "H", "O")):
+        raw = read_image(channels[f].filename).astype(np.float32)
+        assert np.allclose(lin[:, :, band], raw, atol=1e-5), \
+            f"Linear SHO band {f} differs from the linear channel (was it stretched?)"
 
 
 def test_palette_glue_with_and_without_stars(tmp_path):

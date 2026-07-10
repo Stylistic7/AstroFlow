@@ -38,6 +38,12 @@ from web_server.backend._route import tap_route
 
 _TILE_SIZE = 256
 
+# Display names whose 3-band tiles are LINEAR narrowband S/H/O (not baked RGB):
+# the client must run the live colour finish in the shader rather than passing
+# the tile through. Must match linear_sho's display= (mosaics/color/post_process.py
+# LINEAR_SHO_DISPLAY). A 3-band tile under any other display is a baked deliverable.
+LINEAR_FINISH_DISPLAYS = frozenset({"Linear SHO"})
+
 
 tiles_bp = Blueprint("tiles", __name__)
 
@@ -116,27 +122,72 @@ def tile_metadata_tap(
     backend_port: int = None,
 ):
     path = _tile_pyramid_path_for_tap(object_type, object_id, pipeline, display, filter)
-    return _tile_metadata_response(path, backend_port)
+    return _tile_metadata_response(path, backend_port, display)
 
 
-def _tile_metadata_response(path, backend_port):
+def _per_channel_linear_stats(path):
+    """Per-band (background median, high percentile) over a cheap coarse pyramid
+    page, ignoring the zero no-data footprint. These seed the shader's normalise
+    anchors (mS/mH/mO, pS/pH/pO) so the live finish opens on a sensible balance;
+    the user then trims them by hand. Approximate by design — a coarse page is
+    plenty for a starting point, and the vips page handle is already cached."""
+    levels = _pyramid_levels(path)
+    # Finest page whose pixel count is small enough to pull to numpy cheaply;
+    # fall back to the coarsest (smallest) page.
+    page = levels - 1
+    for p in range(levels):
+        img0 = _get_vips_page(path, p)
+        if img0.width * img0.height <= 4_000_000:
+            page = p
+            break
+    img = _get_vips_page(path, page)
+    # Safety for a single-page (un-pyramided) giant master: subsample down.
+    shrink = max(1, int((img.width * img.height / 2_000_000) ** 0.5))
+    if shrink > 1:
+        img = img.subsample(shrink, shrink)
+    arr = np.frombuffer(img.write_to_memory(), dtype=np.float32).reshape(
+        img.height, img.width, img.bands)
+    medians, p99s = [], []
+    for b in range(min(3, img.bands)):
+        c = arr[..., b]
+        c = c[np.isfinite(c) & (c > 0.0)]
+        if c.size == 0:
+            medians.append(0.0)
+            p99s.append(1.0)
+            continue
+        medians.append(float(np.median(c)))
+        p99s.append(float(np.percentile(c, 99.0)))
+    return medians, p99s
+
+
+def _tile_metadata_response(path, backend_port, display=None):
     if path is None:
         return abort(404)
     base = _get_vips_page(path, 0)
     levels = _pyramid_levels(path)
-    return jsonify({
+    meta = {
         "width": base.width,
         "height": base.height,
         "tileWidth": _TILE_SIZE,
         "tileHeight": _TILE_SIZE,
         "maxZoom": levels - 1,
         # Band count is the single source of truth for the client's
-        # color-vs-mono branch: >=3 → baked-stretch RGB (pass-through),
-        # 1 → linear channel (client-side tone-mapping).
+        # color-vs-mono branch: >=3 → 3-band RGB, 1 → linear mono channel.
         "bands": base.bands,
         "port": backend_port,
         "mtime": os.path.getmtime(path),
-    })
+    }
+    # `colorspace` disambiguates the two 3-band cases the band count alone can't:
+    #   "linear-sho" → linear S/H/O, shader runs the live colour finish;
+    #   "display"    → baked RGB deliverable, shader passes it through.
+    if display in LINEAR_FINISH_DISPLAYS and base.bands >= 3:
+        meta["colorspace"] = "linear-sho"
+        medians, p99s = _per_channel_linear_stats(path)
+        meta["channelMedians"] = medians
+        meta["channelP99"] = p99s
+    else:
+        meta["colorspace"] = "display"
+    return jsonify(meta)
 
 
 @stateful_route(
