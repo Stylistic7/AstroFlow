@@ -151,28 +151,29 @@ def _per_channel_linear_stats(path):
         img = img.subsample(shrink, shrink)
     arr = np.frombuffer(img.write_to_memory(), dtype=np.float32).reshape(
         img.height, img.width, img.bands)
-    medians, highs = [], []
+    medians, sigmas, highs = [], [], []
     for b in range(min(3, img.bands)):
         c = arr[..., b]
         c = c[np.isfinite(c) & (c > 0.0)]
         if c.size == 0:
             medians.append(0.0)
+            sigmas.append(1.0)
             highs.append(1.0)
             continue
         med = float(np.median(c))
         mad = float(np.median(np.abs(c - med)))
         sigma = 1.4826 * mad if mad > 0 else max(med * 1e-3, 1e-6)
-        # LOW anchor = median + 3σ, a PER-CHANNEL shadow clip. Narrowband
-        # channels differ wildly in SNR (measured on real data: Hα ~13σ but
-        # SII ~2σ, OIII <1σ), and the noise is per-channel — so a weak channel
-        # gets its noise floor cut (no speckle) while a strong channel is barely
-        # touched. This is the single biggest cleanliness lever; a global black
-        # point downstream cannot do it. (Wire field stays `channelMedians`.)
-        medians.append(med + 3.0 * sigma)
+        # Send the raw background median + robust σ; the shader clips the LOW
+        # anchor at median + shadowClip·σ PER CHANNEL (user slider). Narrowband
+        # channels differ wildly in SNR (measured: Hα ~13σ, SII ~2σ, OIII <1σ)
+        # and the noise is per-channel, so the clip must be too — a weak channel
+        # gets its noise floor cut while strong Hα is untouched.
+        medians.append(med)
+        sigmas.append(sigma)
         # HIGH anchor = bright signal (p99.9), floored at median+60σ so the gap
         # stays wide relative to the noise for a faint channel.
         highs.append(max(float(np.percentile(c, 99.9)), med + 60.0 * sigma))
-    return medians, highs
+    return medians, sigmas, highs
 
 
 def _tile_metadata_response(path, backend_port, display=None):
@@ -197,8 +198,9 @@ def _tile_metadata_response(path, backend_port, display=None):
     #   "display"    → baked RGB deliverable, shader passes it through.
     if display in LINEAR_FINISH_DISPLAYS and base.bands >= 3:
         meta["colorspace"] = "linear-sho"
-        medians, p99s = _per_channel_linear_stats(path)
+        medians, sigmas, p99s = _per_channel_linear_stats(path)
         meta["channelMedians"] = medians
+        meta["channelSigma"] = sigmas
         meta["channelP99"] = p99s
     else:
         meta["colorspace"] = "display"

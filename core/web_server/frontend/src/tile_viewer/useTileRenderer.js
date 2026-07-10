@@ -118,7 +118,7 @@ export function useTileRenderer({ canvasRef }) {
             // to the 16-byte boundary. See the Globals struct in
             // tone_mapping.js for the exact index layout used by setGlobals.
             const globalsBuffer = device.createBuffer({
-                size: 96,
+                size: 112,
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
 
@@ -231,19 +231,20 @@ export function useTileRenderer({ canvasRef }) {
                 visible: new Set(),     // subset of `tiles` to draw this frame
                 pending: new Set(),     // keys whose fetch is in-flight
                 wantsFilterable,
-                // 24 floats — index layout mirrors the Globals struct in
+                // 28 floats — index layout mirrors the Globals struct in
                 // tone_mapping.js:
                 //   0 e1, 1 e5, 2 maxVal, 3 peakBrightness, 4 stretchMode,
                 //   5 isColor, 6 finishMode, 7 paletteMode, 8 blackPoint,
                 //   9 scnrAmount, 10 saturation, 11 addStars,
                 //   12-14 mS/mH/mO, 15-17 pS/pH/pO, 18-20 trimS/trimH/trimO,
-                //   21-23 pad. Anchors default to identity normalise (m=0,p=1)
-                //   and trims to 1 so an un-seeded finish still renders.
+                //   21-23 sigmaS/sigmaH/sigmaO, 24 shadowClip, 25-27 pad.
                 lastGlobals: new Float32Array([
                     0, 0.5, 1, 1, 0, 0, 0, 0,
                     0, 0, 1, 0,
                     0, 0, 0, 1, 1, 1,
-                    1, 1, 1, 0, 0, 0,
+                    1, 1, 1,
+                    0, 0, 0, 3,
+                    0, 0, 0,
                 ]),
                 lastViewport: new Float32Array(8),
                 // rAF coalescing — multiple redraw() calls within one
@@ -347,7 +348,7 @@ export function useTileRenderer({ canvasRef }) {
     function setGlobals({
         e1, e5, max, peakBrightness, stretchMode = 0, isColor,
         finishMode, paletteMode, blackPoint, scnrAmount, saturation, addStars,
-        anchors, trims,
+        anchors, trims, sigmas, shadowClip,
     }) {
         const s = stateRef.current;
         if (!s) return;
@@ -369,6 +370,8 @@ export function useTileRenderer({ canvasRef }) {
             g[15] = anchors.p[0]; g[16] = anchors.p[1]; g[17] = anchors.p[2];
         }
         if (trims) { g[18] = trims[0]; g[19] = trims[1]; g[20] = trims[2]; }
+        if (sigmas) { g[21] = sigmas[0]; g[22] = sigmas[1]; g[23] = sigmas[2]; }
+        if (shadowClip !== undefined) g[24] = shadowClip;
         paint();
     }
 

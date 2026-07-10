@@ -53,6 +53,11 @@ struct Globals {
     mS: f32, mH: f32, mO: f32,
     pS: f32, pH: f32, pO: f32,
     trimS: f32, trimH: f32, trimO: f32,
+    // Per-channel background sigma + a shared shadow-clip strength: the low
+    // normalise anchor is m + shadowClip·sigma PER CHANNEL, so a noisy channel
+    // (SII/OIII) has its noise floor cut while clean Hα is untouched. Slider.
+    sigmaS: f32, sigmaH: f32, sigmaO: f32,
+    shadowClip: f32,
     _pad0: f32, _pad1: f32, _pad2: f32,
 };
 struct Viewport {
@@ -171,16 +176,27 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         if (S == 0.0 && H == 0.0 && O == 0.0) {
             return vec4<f32>(0.0, 0.0, 0.0, 1.0);
         }
-        // 1. Cross-channel normalise (off-diagonal balance fix) + trim.
-        let nS = normLin(S, globals.mS, globals.pS) * globals.trimS;
-        let nH = normLin(H, globals.mH, globals.pH) * globals.trimH;
-        let nO = normLin(O, globals.mO, globals.pO) * globals.trimO;
-        // 2. Palette combine.
+        // 1. Cross-channel normalise (off-diagonal balance fix) + trim, with a
+        //    PER-CHANNEL shadow clip at m + shadowClip·sigma (kills weak-channel
+        //    noise without touching a strong channel).
+        let loS = globals.mS + globals.shadowClip * globals.sigmaS;
+        let loH = globals.mH + globals.shadowClip * globals.sigmaH;
+        let loO = globals.mO + globals.shadowClip * globals.sigmaO;
+        let nS = (S - loS) / max(globals.pS - loS, 1e-6) * globals.trimS;
+        let nH = (H - loH) / max(globals.pH - loH, 1e-6) * globals.trimH;
+        let nO = (O - loO) / max(globals.pO - loO, 1e-6) * globals.trimO;
+        // 2. Palette combine (0 = SHO Gold, 1 = Hubble, 2 = Foraxx).
         var rgb: vec3<f32>;
-        if (globals.paletteMode > 0.5) {
-            rgb = foraxxPalette(nS, nH, nO);
-        } else {
+        if (globals.paletteMode < 0.5) {
+            // SHO Gold: the gold comes from the CLEAN Hα (routed into R+G), so
+            // an Hα-only region stays as smooth as the Hα master — SCNR would
+            // instead replace bright Hα with the noisy (SII+OIII)/2. SII adds
+            // warmth (R), OIII adds blue (B) only where it has real signal.
+            rgb = vec3<f32>(nS + nH, 0.5 * nH, nO);
+        } else if (globals.paletteMode < 1.5) {
             rgb = vec3<f32>(nS, nH, nO);   // Hubble: R=S, G=H, B=O
+        } else {
+            rgb = foraxxPalette(nS, nH, nO);
         }
         // 3. Deep black point.
         let bp = globals.blackPoint;

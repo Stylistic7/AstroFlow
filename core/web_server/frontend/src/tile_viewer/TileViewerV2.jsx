@@ -223,15 +223,19 @@ export default function TileViewerV2({
     // (rendered through this exact finish): Hubble palette + full SCNR makes the
     // gold, a strong stretch (low midtone) reveals faint structure, a mild warm
     // trim + reduced OIII tames the blue edge.
-    const [palette, setPalette] = useState('hubble');       // 'hubble' | 'foraxx'
-    const [nbBlackPoint, setNbBlackPoint] = useState(0.0);   // σ-aware anchor already clips noise
+    const [palette, setPalette] = useState('gold');         // 'gold' | 'hubble' | 'foraxx'
+    const [nbBlackPoint, setNbBlackPoint] = useState(0.0);
     const [nbMidtone, setNbMidtone] = useState(0.05);
-    const [nbSaturation, setNbSaturation] = useState(1.7);
-    const [nbScnr, setNbScnr] = useState(1.0);
-    // Per-channel gain on the normalised S/H/O (tame e.g. an over-bright OIII/blue).
-    const [nbTrimS, setNbTrimS] = useState(1.1);
+    const [nbSaturation, setNbSaturation] = useState(1.5);
+    const [nbScnr, setNbScnr] = useState(0.0);              // Gold palette needs no SCNR
+    // Per-channel shadow clip: low anchor = median + shadowClip·σ. The single
+    // biggest smoothness knob — clips weak-channel (SII/OIII) noise; lower =
+    // more faint nebula (noisier), higher = smoother/cleaner.
+    const [nbShadowClip, setNbShadowClip] = useState(1.5);
+    // Per-channel gain on the normalised S/H/O.
+    const [nbTrimS, setNbTrimS] = useState(1.0);
     const [nbTrimH, setNbTrimH] = useState(1.0);
-    const [nbTrimO, setNbTrimO] = useState(0.9);
+    const [nbTrimO, setNbTrimO] = useState(1.0);
     const [nbAddStars, setNbAddStars] = useState(false);
     // Metadata of the sibling "Stars" tap (for availability + port/mtime).
     const [starsMeta, setStarsMeta] = useState(null);
@@ -422,13 +426,16 @@ export default function TileViewerV2({
             const anchors = (tileMeta?.channelMedians && tileMeta?.channelP99)
                 ? { m: tileMeta.channelMedians, p: tileMeta.channelP99 }
                 : { m: [0, 0, 0], p: [1, 1, 1] };
+            const sigmas = tileMeta?.channelSigma || [0, 0, 0];
+            const paletteMode = palette === 'gold' ? 0 : palette === 'hubble' ? 1 : 2;
             renderer.setGlobals({
                 e1: 0, e5: nbMidtone, max: 1.0, peakBrightness: 1.0,
                 stretchMode: 0, isColor: false, finishMode: true,
-                paletteMode: palette === 'foraxx' ? 1 : 0,
+                paletteMode,
                 blackPoint: nbBlackPoint, scnrAmount: nbScnr,
                 saturation: nbSaturation, addStars: nbAddStars && starsAvailable,
                 anchors, trims: [nbTrimS, nbTrimH, nbTrimO],
+                sigmas, shadowClip: nbShadowClip,
             });
             return;
         }
@@ -455,8 +462,9 @@ export default function TileViewerV2({
         });
     }, [renderer.isReady, isNarrowband, isBakedColor, metadata?.statistics,
         effectivePeak, stretchMode, palette, nbBlackPoint, nbMidtone,
-        nbSaturation, nbScnr, nbTrimS, nbTrimH, nbTrimO, nbAddStars, starsAvailable,
-        tileMeta?.channelMedians, tileMeta?.channelP99]);
+        nbSaturation, nbScnr, nbShadowClip, nbTrimS, nbTrimH, nbTrimO, nbAddStars,
+        starsAvailable, tileMeta?.channelMedians, tileMeta?.channelSigma,
+        tileMeta?.channelP99]);
 
     // Recompute + upload the stretch LUT whenever stats change or the
     // mode flips into a LUT-based path. STF mode doesn't sample the
@@ -548,9 +556,17 @@ export default function TileViewerV2({
                             '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.3)' },
                         }}
                     >
+                        <MenuItem value="gold">SHO Gold</MenuItem>
                         <MenuItem value="hubble">Hubble (SHO)</MenuItem>
                         <MenuItem value="foraxx">Foraxx (dynamic)</MenuItem>
                     </Select>
+                    <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
+                        Smoothness — {nbShadowClip.toFixed(1)}σ (higher = cleaner, less faint)
+                    </Typography>
+                    <Slider
+                        size="small" value={nbShadowClip} min={0.5} max={6} step={0.1}
+                        onChange={(_, v) => setNbShadowClip(v)} sx={{ color: '#fff' }}
+                    />
                     <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
                         Black point — {nbBlackPoint.toFixed(3)}
                     </Typography>
