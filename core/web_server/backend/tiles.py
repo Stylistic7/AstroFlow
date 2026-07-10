@@ -147,17 +147,33 @@ def _per_channel_linear_stats(path):
         img = img.subsample(shrink, shrink)
     arr = np.frombuffer(img.write_to_memory(), dtype=np.float32).reshape(
         img.height, img.width, img.bands)
-    medians, p99s = [], []
+    medians, highs = [], []
     for b in range(min(3, img.bands)):
         c = arr[..., b]
         c = c[np.isfinite(c) & (c > 0.0)]
         if c.size == 0:
             medians.append(0.0)
-            p99s.append(1.0)
+            highs.append(1.0)
             continue
-        medians.append(float(np.median(c)))
-        p99s.append(float(np.percentile(c, 99.0)))
-    return medians, p99s
+        med = float(np.median(c))
+        mad = float(np.median(np.abs(c - med)))
+        sigma = 1.4826 * mad if mad > 0 else max(med * 1e-3, 1e-6)
+        medians.append(med)
+        # Background (median) → 0 and a bright SIGNAL level → 1 under the
+        # shader's (c-m)/(p-m) normalise. The nebula is a small fraction of the
+        # full mosaic canvas, so a plain high percentile lands on the sky
+        # pedestal (p≈m) and makes the ratio explode. Instead take a bright
+        # percentile of pixels that are clearly ABOVE background; fall back to a
+        # very-high global percentile for near-signal-free channels, and floor
+        # the gap so p is always comfortably above m. (Field kept as
+        # `channelP99` for the client; the value is a signal anchor, not p99.)
+        signal = c[c > med + 5.0 * sigma]
+        if signal.size >= 256:
+            p = float(np.percentile(signal, 95.0))
+        else:
+            p = float(np.percentile(c, 99.9))
+        highs.append(max(p, med + 20.0 * sigma))
+    return medians, highs
 
 
 def _tile_metadata_response(path, backend_port, display=None):
