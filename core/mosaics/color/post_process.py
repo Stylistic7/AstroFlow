@@ -286,6 +286,13 @@ def linear_sho(
         # intensity/colour separation applies (the whole point for narrowband).
         tmp = f"{out}.stack.xisf"
         write_xisf_image(Path(tmp), sho, meta)
+        # Free the stacked array before NXT's subprocess runs — NXT re-reads the
+        # channels from tmp itself, so holding the ~gigapixel stack in-process
+        # only adds to the peak that co-scheduled with this op's rc-astro child
+        # (the OOM that killed Flaming Star's first attempt on the worker).
+        del sho
+        import gc
+        gc.collect()
         from rc_astro_cli import run_nxt
         run_nxt(tmp, out,
                 denoise_intensity_hf=config.nxt.denoise_intensity_hf,
