@@ -59,7 +59,7 @@ _BIG_BYTES = 2 * 1024 ** 3
 
 def _is_pyramidal(tiff: Path) -> bool:
     try:
-        return pyvips.Image.tiffload(str(tiff), page=0).get("n-pages") > 1
+        return pyvips.Image.tiffload(str(tiff), page=0, unlimited=True).get("n-pages") > 1
     except Exception:
         return False
 

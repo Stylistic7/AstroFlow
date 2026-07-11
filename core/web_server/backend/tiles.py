@@ -71,7 +71,7 @@ def _get_vips_page(path: str, page: int):
             img, cached_mtime = cached
             if cached_mtime == current_mtime:
                 return img
-        img = pyvips.Image.tiffload(path, page=page)
+        img = pyvips.Image.tiffload(path, page=page, unlimited=True)
         _vips_page_cache[key] = (img, current_mtime)
         return img
 

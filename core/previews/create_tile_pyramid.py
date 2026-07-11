@@ -160,7 +160,14 @@ def default_make_context_map(source_path: Path, dest_path: Path) -> bool:
         offset 12: pixel data      (width × height × 2 bytes, float16
                                     row-major)
     """
-    image = pyvips.Image.new_from_file(str(source_path), access="sequential")
+    # unlimited=True lifts libvips's ~50 MB anti-bomb cap on a single TIFF strip
+    # decode (our wide gigapixel TIFF masters have strips >50 MB — see
+    # file_io.tiff_file_io._open). It's a TIFF-loader-only kwarg, so only pass it
+    # for TIFF sources; a FITS source's loader rejects the option.
+    _tiff = str(source_path).lower().endswith((".tif", ".tiff"))
+    image = pyvips.Image.new_from_file(
+        str(source_path), access="sequential",
+        **({"unlimited": True} if _tiff else {}))
     w, h = image.width, image.height
     new_w = w // _CONTEXT_RATIO
     new_h = h // _CONTEXT_RATIO
@@ -406,7 +413,7 @@ def pyramid_thumbnail(tile_pyramid_path, min_px: int = _THUMBNAIL_MIN_PX) -> byt
     import cv2
 
     path = os.fspath(tile_pyramid_path)
-    base = pyvips.Image.tiffload(path, page=0)
+    base = pyvips.Image.tiffload(path, page=0, unlimited=True)
 
     try:
         n_pages = base.get("n-pages")
@@ -419,7 +426,7 @@ def pyramid_thumbnail(tile_pyramid_path, min_px: int = _THUMBNAIL_MIN_PX) -> byt
         while level + 1 < n_pages and dim // 2 >= min_px:
             level += 1
             dim //= 2
-        image = pyvips.Image.tiffload(path, page=level)
+        image = pyvips.Image.tiffload(path, page=level, unlimited=True)
     else:
         # Single-page TIFF. For float sources we MUST autostretch
         # before any uint8 conversion (otherwise the >255 pixels clip

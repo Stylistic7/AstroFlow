@@ -68,7 +68,14 @@ def _open(filename: Path) -> pyvips.Image:
     # images silently lose their content-hash stamp and get_content_hash falls
     # back to pixel-hashing, giving them a non-deterministic identity that
     # never cache-hits (the "re-derives all night" churn).
-    return pyvips.Image.new_from_file(str(filename), revalidate=True)
+    #
+    # unlimited=True disables libvips's anti-decompression-bomb guard, a fixed
+    # ~50 MB cap on the cumulated libtiff scratch allocation for a *single*
+    # strip/tile decode. Our masters are wide (a 48206px-wide float32×3 image at
+    # 128 rows/strip = ~74 MB per strip), so a legitimate read of one strip
+    # trips the cap and aborts ("No space for data buffer"). These are our own
+    # trusted pipeline outputs, so the DoS guard buys us nothing.
+    return pyvips.Image.new_from_file(str(filename), revalidate=True, unlimited=True)
 
 
 def _get_description(img: pyvips.Image) -> str:
