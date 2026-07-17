@@ -14,6 +14,7 @@ rc-astro ML calls straight through so the suite runs without rc-astro.
 """
 import json
 import os
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -25,13 +26,17 @@ from decisions.settings import ProcessingConfig
 from decorators import node
 from dependency_graph.tracing import workflow_group
 from file_io.generic import read_image
-from file_io.tiff_file_io import write_tiff_image, FAST_COMPRESSION, COMPATIBLE_COMPRESSION
+from file_io.tiff_file_io import (write_tiff_image, _atomic_tiffsave,
+                                  FAST_COMPRESSION, COMPATIBLE_COMPRESSION)
+from file_io.tiling import feather_blend_to_bigtiff, tile_size_for
 from file_io.types import TiffFilePath, WithSidecar, XisfFilePath
 from file_io.xisf_file_io import write_xisf_image
 from metadata.classes import ImageMetadata
 from mosaics.color import palettes
+from mosaics.tiled import process_in_tiles
 from mosaics.types import Mosaic
 from pix.tasks.filters import normalize_filter
+from targets.types import Target
 
 log = structlog.get_logger()
 
@@ -151,6 +156,42 @@ def bxt_correct(
     return WithSidecar(XisfFilePath(out))
 
 
+def _bxt_correct_only_narrow(args, kwargs):
+    """Cache-key hook: project `config` to (mock, config.bxt). `correct_only` is
+    forced True in the body, so the sharpen fields don't affect the output, but
+    keying on config.bxt is harmless and matches bxt_correct."""
+    target, filter, config, channel = args
+    mock = config.development_settings.mock_pixinsight
+    return (target, filter, (mock, config.bxt), channel), kwargs
+
+
+@node(cache_key_narrow=_bxt_correct_only_narrow, auto_memory=True, plate_solve=True)  # RE-SOLVE the corrected panel (Croman)
+def bxt_correct_only(
+    target: Target, filter: str, config: ProcessingConfig, channel: ImageMetadata,
+) -> WithSidecar[XisfFilePath]:
+    """BlurXTerminator Correct-Only on a mosaic PANEL, BEFORE assembly — the first
+    half of Croman's recommended two-pass mosaic workflow.
+
+    Correct-Only fixes each frame's optical aberrations (coma, tilt, chromatic,
+    guiding-elongation) WITHOUT sharpening. Aberrations differ between panels — a
+    corner of one frame is the OPPOSITE corner of the next, so they don't match —
+    which is why correcting them per-panel, before merging, is more accurate than
+    only correcting the assembled mosaic. `plate_solve=True` RE-solves the
+    corrected panel (also per Croman: aberration correction shifts the geometry),
+    which `place_image` requires (it asserts a plate solution and projects from
+    that WCS). The SHARPENING BXT pass runs later, on the assembled mosaic
+    (`bxt_correct` in `color_post_process`)."""
+    out = bxt_correct_only.filename_fn(target, filter, config, channel)
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    if config.development_settings.mock_pixinsight:
+        _write_mono_xisf(out, _mono(channel), filter)
+    else:
+        from rc_astro_cli import run_bxt
+        run_bxt(channel.filename, out, correct_only=True,
+                ml_version=config.bxt.ml_version, overlap=config.bxt.overlap)
+    return WithSidecar(XisfFilePath(out))
+
+
 @node(cache_key_narrow=_sxt_narrow, auto_memory=True, plate_solve=False)  # starless: no stars to solve against
 def sxt_starless(
     mosaic: Mosaic, filter: str, config: ProcessingConfig, channel: ImageMetadata,
@@ -244,68 +285,117 @@ def autostretch_channel(
 LINEAR_SHO_DISPLAY = "Linear SHO"
 
 
-def _linear_sho_narrow(args, kwargs):
-    """Cache-key hook: project `config` to (mock, config.nxt) — the only config a
-    denoised linear-SHO master depends on. Mirrors _bxt_correct_narrow: the three
-    channel data-deps sit before `config`."""
-    mosaic, sii, ha, oiii, config = args
+def _nxt_narrow(args, kwargs):
+    """Cache-key hook: project `config` to (mock, config.nxt) — the only config an
+    NXT'd image depends on. `image` (whole OR one tile) is the trailing data-dep."""
+    mosaic, config, image = args
     mock = config.development_settings.mock_pixinsight
-    return (mosaic, sii, ha, oiii, (mock, config.nxt)), kwargs
+    return (mosaic, (mock, config.nxt), image), kwargs
 
 
-@node(cache_key_narrow=_linear_sho_narrow, display=LINEAR_SHO_DISPLAY, filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-channel LINEAR, NXT-denoised
+def _blend_sho_narrow(args, kwargs):
+    """Cache-key hook for the reassembly: beyond the tile handles + their rects,
+    only the feather params (config.tiling) matter."""
+    mosaic, config, rects, *tiles = args
+    return (mosaic, config.tiling, rects, *tiles), kwargs
+
+
+@node(auto_memory=True, plate_solve=False)  # streaming bandjoin of the 3 starless channels
+def stack_sho_channels(
+    mosaic: Mosaic, sii: ImageMetadata, ha: ImageMetadata, oiii: ImageMetadata,
+) -> WithSidecar[TiffFilePath]:
+    """Stack the three LINEAR starless narrowband channels (S→R, H→G, O→B) into
+    one 3-band linear BigTIFF — the pyvips-streamable source the NXT tiles crop
+    from. Bounded memory: each channel is read once (XISF → numpy, ~8 GB) into a
+    temp mono BigTIFF, then the three are lazily band-joined and streamed to the
+    tiled output (the 3-band ~25 GB array is never held — that stack was the
+    memory the old whole-image path carried alongside NXT's child)."""
+    out = stack_sho_channels.filename_fn(mosaic, sii, ha, oiii)
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    meta = {"PIPELINE": "AstroFlow-OSS", "COLORSPC": "linear-sho"}
+    with tempfile.TemporaryDirectory(prefix="sho_stack_") as td:
+        monos = []
+        for m, band in ((sii, "S"), (ha, "H"), (oiii, "O")):
+            p = os.path.join(td, f"{band}.tiff")
+            write_tiff_image(Path(p), _mono(m), {"FILTER": band})   # strip; bandjoin reads whole
+            monos.append(pyvips.Image.new_from_file(p, unlimited=True))
+        stacked = monos[0].bandjoin([monos[1], monos[2]]).copy()
+        stacked.set_type(pyvips.GValue.gstr_type, "image-description", json.dumps(meta))
+        _atomic_tiffsave(stacked, Path(out),
+                         tile=tile_size_for(stacked.width, stacked.height))
+    return WithSidecar(TiffFilePath(out))
+
+
+@node(cache_key_narrow=_nxt_narrow, auto_memory=True, plate_solve=False)  # NXT on an image (whole OR one tile)
+def nxt(
+    mosaic: Mosaic, config: ProcessingConfig, image: ImageMetadata,
+) -> WithSidecar[TiffFilePath]:
+    """NoiseXTerminator on an image — whole, or ONE tile fed by process_in_tiles;
+    SAME code either way (it just sees a smaller image when tiled). A display-less
+    transform: the deliverable identity lives on the blend passed to
+    process_in_tiles. rc-astro reads `image` directly (crop_tile writes it
+    strip-based; rc-astro rejects tiled TIFF); its forced-XISF output is converted
+    to the node's BigTIFF artifact."""
+    out = nxt.filename_fn(mosaic, config, image)
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    if config.development_settings.mock_pixinsight:
+        write_tiff_image(Path(out), read_image(Path(image.filename)), {"PIPELINE": "AstroFlow-OSS"})
+    else:
+        from rc_astro_cli import run_nxt
+        with tempfile.TemporaryDirectory(prefix="nxt_") as td:
+            tout = os.path.join(td, "out.xisf")
+            run_nxt(image.filename, tout,
+                    denoise_intensity_hf=config.nxt.denoise_intensity_hf,
+                    denoise_intensity_lf=config.nxt.denoise_intensity_lf,
+                    denoise_color_hf=config.nxt.denoise_color_hf,
+                    denoise_color_lf=config.nxt.denoise_color_lf,
+                    frequency_scale=config.nxt.frequency_scale,
+                    iterations=config.nxt.iterations)
+            write_tiff_image(Path(out), read_image(Path(tout)), {"PIPELINE": "AstroFlow-OSS"})
+    return WithSidecar(TiffFilePath(out))
+
+
+@node(cache_key_narrow=_blend_sho_narrow, display=LINEAR_SHO_DISPLAY, filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-channel LINEAR, NXT-denoised
+def blend_linear_sho(
+    mosaic: Mosaic, config: ProcessingConfig, rects: tuple, *tiles: ImageMetadata,
+) -> WithSidecar[TiffFilePath]:
+    """Feather the NXT'd tiles back into the single linear-SHO master — the
+    source the WebGPU tile viewer finishes live. Fully streaming (see
+    file_io/tiling.feather_blend_to_bigtiff): never materializes the canvas.
+    `final=True` keeps the ephemeral tiles alive until it runs and exempts this
+    deliverable from reclaim. display="Linear SHO" makes the tap run the live SHO
+    colour finish (see LINEAR_SHO_DISPLAY)."""
+    out = blend_linear_sho.filename_fn(mosaic, config, rects, *tiles)
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    feather_blend_to_bigtiff(
+        [tuple(r) for r in rects], [t.filename for t in tiles], out,
+        overlap=config.tiling.overlap, blend=config.tiling.blend,
+        metadata={"PIPELINE": "AstroFlow-OSS", "COLORSPC": "linear-sho"})
+    return WithSidecar(TiffFilePath(out))
+
+
 def linear_sho(
     mosaic: Mosaic, sii: ImageMetadata, ha: ImageMetadata, oiii: ImageMetadata,
-    config: ProcessingConfig,
-) -> WithSidecar[XisfFilePath]:
-    """Stack the three LINEAR starless narrowband channels (S→R, H→G, O→B) into
-    one 3-band linear master, then denoise it with NoiseXTerminator — the source
-    the WebGPU tile viewer finishes live.
+    config: ProcessingConfig, viewbox,
+):
+    """Traced helper (NOT a @node): the linear-SHO deliverable = stack the 3
+    starless channels into a streamable BigTIFF source, then NoiseXTerminator it.
+    `nxt` is the ordinary display-less NXT op; `process_in_tiles(nxt, …,
+    blend=blend_linear_sho)` runs it over big overlapping tiles across the cluster
+    (or whole when tiling is disabled), and `blend_linear_sho` — carrying
+    display="Linear SHO", final=True — feathers them into the deliverable. Same
+    `nxt` node would run whole if called directly; wrapping it in process_in_tiles
+    is the only difference.
 
-    NXT placement follows the RC-Astro manual: AFTER deconvolution (`bxt_correct`)
-    and AFTER channel combination (this stack), on the LINEAR combined colour
-    image, so its intensity/colour + HF/LF separation reduces the weak-channel
-    (SII/OIII) colour noise hard while keeping the Hα-dominated luminance detail.
-    The shader then does only the STANDARD per-channel stretch + Hubble/SCNR
-    palette on this clean data — deliberately NO stretch/palette here.
-
-    Being `final=True`, this consumes the otherwise-ephemeral `sxt_starless`
-    outputs and keeps them alive until it runs. The channels share the mosaic
-    viewbox (co-registered), so they stack pixel-aligned. XISF keeps the gigapixel
-    master within rc-astro/format limits (the served pyramid is the auto-built
-    `_tiles.tiff` sibling)."""
-    out = linear_sho.filename_fn(mosaic, sii, ha, oiii, config)
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    sho = np.stack([_mono(sii), _mono(ha), _mono(oiii)], axis=2).astype(np.float32)
-    meta = {"PIPELINE": "AstroFlow-OSS", "COLORSPC": "linear-sho"}
-    if config.development_settings.mock_pixinsight:
-        write_xisf_image(Path(out), sho, meta)
-    else:
-        # Stack → temp XISF → NXT (rc-astro reads/writes XISF at gigapixel; its
-        # FITS writer overflows). NXT runs on the 3-band colour image so its
-        # intensity/colour separation applies (the whole point for narrowband).
-        tmp = f"{out}.stack.xisf"
-        write_xisf_image(Path(tmp), sho, meta)
-        # Free the stacked array before NXT's subprocess runs — NXT re-reads the
-        # channels from tmp itself, so holding the ~gigapixel stack in-process
-        # only adds to the peak that co-scheduled with this op's rc-astro child
-        # (the OOM that killed Flaming Star's first attempt on the worker).
-        del sho
-        import gc
-        gc.collect()
-        from rc_astro_cli import run_nxt
-        run_nxt(tmp, out,
-                denoise_intensity_hf=config.nxt.denoise_intensity_hf,
-                denoise_intensity_lf=config.nxt.denoise_intensity_lf,
-                denoise_color_hf=config.nxt.denoise_color_hf,
-                denoise_color_lf=config.nxt.denoise_color_lf,
-                frequency_scale=config.nxt.frequency_scale,
-                iterations=config.nxt.iterations)
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-    return WithSidecar(XisfFilePath(out))
+    `viewbox` supplies the trace-time canvas dims (the graph is built before any
+    node runs, so the grid can't read the image); it's the mosaic viewbox at the
+    pipeline's quality (`mosaic.viewbox("Master")` / `"DownscaledMaster"`)."""
+    with ephemeral_intermediates():
+        source = stack_sho_channels(mosaic, sii, ha, oiii)
+    return process_in_tiles(
+        nxt, mosaic, config, source,
+        dims=(viewbox.num_pixels_x, viewbox.num_pixels_y),
+        blend=blend_linear_sho)
 
 
 @node(display="Stars", filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-channel color
@@ -377,14 +467,20 @@ def foraxx_starless(
 
 
 @workflow_group
-def color_post_process(mosaic: Mosaic, channels: dict, config) -> dict:
+def color_post_process(mosaic: Mosaic, channels: dict, config, viewbox=None) -> dict:
     """Turn merged per-filter mosaic channels into named color images.
 
     `channels` is `{filter: merged-channel handle}` from `for_mosaic`. BXT every
     channel; SXT the narrowband to starless and the broadband to unscreened
     stars; autostretch; then build the Hubble + Foraxx palettes (screening the
     combined RGB stars in). Returns `{name: handle}` for the color deliverables.
+
+    `viewbox` gives the trace-time canvas dims for the tiled ops (`linear_sho`);
+    each pipeline passes its quality-specific viewbox. Defaults to the Master
+    viewbox for callers (e.g. tests) that don't tile at another quality.
     """
+    if viewbox is None:
+        viewbox = mosaic.viewbox("Master")
     by_class = {normalize_filter(f): ch for f, ch in channels.items()}
 
     starless_nb: dict[str, object] = {}
@@ -417,7 +513,7 @@ def color_post_process(mosaic: Mosaic, channels: dict, config) -> dict:
         # The linear S/H/O viewer source: stacked + NXT-denoised, finished live
         # in the WebGPU shader with the standard Hubble/SCNR palette.
         out["Linear SHO"] = linear_sho(
-            mosaic, starless_nb["S"], starless_nb["H"], starless_nb["O"], config)
+            mosaic, starless_nb["S"], starless_nb["H"], starless_nb["O"], config, viewbox)
     if _NARROWBAND <= set(stretched_nb):
         s, h, o = stretched_nb["S"], stretched_nb["H"], stretched_nb["O"]
         # Always emit the pure starless palettes; add the with-stars variants

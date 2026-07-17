@@ -19,7 +19,7 @@ import astropy.io.fits as pyfits
 
 from attributes.astrometric_attributes import healpix_cells_from_poly
 from context import context
-from decisions.settings import DevelopmentSettings, ProcessingConfig
+from decisions.settings import DevelopmentSettings, ProcessingConfig, TilingSettings
 from dependency_graph import run_graph
 from dependency_graph.classes import Node
 from dependency_graph.tracing import trace
@@ -37,13 +37,13 @@ _FOOTPRINT = SingleSphericalPolygon.from_radec(
 _HEALPIX = healpix_cells_from_poly(_FOOTPRINT)
 
 
-def _write_channel(path: Path, seed: int) -> None:
+def _write_channel(path: Path, seed: int, h: int, w: int) -> None:
     rng = np.random.default_rng(seed)
-    h = w = 128
     yy, xx = np.mgrid[0:h, 0:w]
     img = np.full((h, w), 0.05, np.float32)
-    img += 0.2 * np.exp(-(((xx - 64) ** 2 + (yy - 64) ** 2) / (2 * 30.0 ** 2)))
-    for _ in range(15):
+    img += 0.2 * np.exp(-(((xx - w / 2) ** 2 + (yy - h / 2) ** 2)
+                          / (2 * (min(h, w) / 4.0) ** 2)))
+    for _ in range(max(15, (h * w) // 40000)):   # star count scales with area
         cy, cx = rng.uniform(8, h - 8), rng.uniform(8, w - 8)
         img += rng.uniform(0.2, 0.8) * np.exp(
             -(((xx - cx) ** 2 + (yy - cy) ** 2) / (2 * 2.0 ** 2))
@@ -56,7 +56,7 @@ def _mosaic() -> Mosaic:
         name="color-test", content_hash="content_color", stable_hash="mosaic_color",
         target_ids=("a",), strips=(("a",),), panel_target_ids=("a",),
         oldest_date=_DATE, newest_date=_DATE,
-        center=(Degrees(0.0), Degrees(0.0)), image_scale=ArcsecondsPerPixel(1.0),
+        center=(Degrees(0.0), Degrees(0.0)), image_scale=ArcsecondsPerPixel(8.0),
         rotation_angle=Radians(0.0), footprint=_FOOTPRINT, healpix_cells=_HEALPIX,
         projected_footprints=frozendict(),
     )
@@ -75,23 +75,31 @@ def _count_by_op(graph) -> dict[str, int]:
 
 
 def test_color_post_process_traces_and_runs(test_context, tmp_path):
+    # Size the synthetic channels to the mosaic viewbox — as the real merged
+    # channels are — so the tiled linear_sho grid matches its source. A small
+    # tile_px makes it fan out into MANY real tiles (crop_tile + nxt per tile +
+    # feather), exercising the full tiling path rather than a 1-tile shortcut.
+    mosaic = _mosaic()
+    vb = mosaic.viewbox("Master")
+    h, w = vb.num_pixels_y, vb.num_pixels_x
     channels = {}
     for i, f in enumerate(("S", "H", "O", "R", "G", "B")):
         p = tmp_path / f"chan_{f}.fits"
-        _write_channel(p, i)
+        _write_channel(p, i, h, w)
         # Construct the input metadata directly (compute_image_metadata is a
         # remote @node, callable only inside a graph); the ops only read
         # `.filename`, and `content_hash` keys the cache.
         channels[f] = ImageMetadata(
             content_hash=f"chan_{f}", stable_hash=f"chan_{f}", filename=p,
-            header={"FILTER": f}, width_pixels=128, height_pixels=128,
+            header={"FILTER": f}, width_pixels=w, height_pixels=h,
             channels=1, dtype=np.dtype("float32"),
         )
 
     config = ProcessingConfig(
         development_settings=DevelopmentSettings(mock_pixinsight=True),
+        tiling=TilingSettings(tile_px=512),
     )
-    graph = trace(pp.color_post_process, _mosaic(), channels, config)
+    graph = trace(pp.color_post_process, mosaic, channels, config)
     assert graph is not None
 
     counts = _count_by_op(graph)
@@ -108,9 +116,14 @@ def test_color_post_process_traces_and_runs(test_context, tmp_path):
     assert counts.get("foraxx_image") == 1
     assert counts.get("hubble_starless") == 1
     assert counts.get("foraxx_starless") == 1
-    # The linear S/H/O viewer source: one op, consuming the (otherwise
-    # ephemeral) starless channels so the tile viewer can finish them live.
-    assert counts.get("linear_sho") == 1
+    # The linear S/H/O viewer source: stack the 3 starless channels, then
+    # NoiseXTerminator via process_in_tiles (crop_tile + nxt per tile), feathered
+    # into the deliverable. `linear_sho` is now a traced helper, not a node.
+    assert counts.get("linear_sho") is None
+    assert counts.get("stack_sho_channels") == 1
+    assert counts.get("blend_linear_sho") == 1        # the display="Linear SHO" deliverable
+    assert counts.get("nxt", 0) >= 1
+    assert counts.get("crop_tile") == counts.get("nxt")   # one op per cropped tile
 
     run_graph(graph)
 
@@ -125,13 +138,16 @@ def test_color_post_process_traces_and_runs(test_context, tmp_path):
         assert np.all(np.isfinite(img))
         assert img.min() >= 0.0 and img.max() <= 1.0001
 
-    # Linear SHO: a 3-band XISF master that is LINEAR — no autostretch/palette.
-    # In the mock pass-through path each starless channel equals its raw input,
-    # so the stacked master must equal the raw S/H/O bands (proving no stretch
-    # was applied; the WebGPU shader does the finish live from these linear px).
-    lin_files = list(out.rglob("linear_sho/*.xisf"))
-    assert lin_files, "no Linear SHO output produced under linear_sho/"
-    lin = read_image(lin_files[0])
+    # Linear SHO: a 3-band LINEAR BigTIFF master — no autostretch/palette. In the
+    # mock pass-through path each starless channel equals its raw input, and the
+    # tiled NXT + single-tile feather are identities, so the stacked master must
+    # equal the raw S/H/O bands (proving no stretch; the WebGPU shader finishes
+    # them live). The deliverable is now `blend_linear_sho` (TIFF), not the old
+    # single `linear_sho` XISF node.
+    lin_files = (list(out.rglob("blend_linear_sho/*.tiff"))
+                 + list(out.rglob("blend_linear_sho/*.tif")))
+    assert lin_files, "no Linear SHO output produced under blend_linear_sho/"
+    lin = read_image(lin_files[0]).astype(np.float32)
     assert lin.ndim == 3 and lin.shape[2] == 3, f"Linear SHO not 3-channel: {lin.shape}"
     assert np.all(np.isfinite(lin))
     for band, f in enumerate(("S", "H", "O")):
@@ -144,7 +160,7 @@ def test_palette_glue_with_and_without_stars(tmp_path):
     metas = {}
     for i, f in enumerate(("S", "H", "O")):
         p = tmp_path / f"{f}.fits"
-        _write_channel(p, i + 10)
+        _write_channel(p, i + 10, 128, 128)
         metas[f] = SimpleNamespace(filename=p)
 
     # With stars (a black stars layer screens to a no-op, but exercises the path)

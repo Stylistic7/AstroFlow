@@ -108,6 +108,29 @@ class NxtSettings:
 
 
 @dataclass(frozen=True)
+class TilingSettings:
+    """External-tiling knobs for memory-heavy external ops (rc-astro BXT/SXT/NXT).
+
+    Distinct from rc-astro's OWN `--overlap` (its internal GPU-tile blend): these
+    control HIGHER-level tiling that splits the whole image into large overlapping
+    tiles run as separate compute-graph nodes, to bound RAM and distribute the
+    work across the cluster (rc-astro loads the whole image, so a gigapixel master
+    OOM-kills it). `tile_px` is the square crop fed to the tool (fixed → per-tile
+    RAM is bounded regardless of image size); `overlap` is feathered away at
+    reassembly (see file_io/tiling.py). Narrowed into each rc-astro op's cache
+    key, so flipping/tuning re-derives only the color tail — and because the
+    output genuinely differs (tiled+feathered vs whole-image), that re-derive is
+    correct, not spurious."""
+    enabled: bool = True
+    tile_px: int = 10000                 # ~100 Mpx square; ~20-80 tiles on a 2.25 Gpx master
+    overlap: float = 0.5                 # OUR external overlap; feathered at reassembly
+    blend: str = "hann"                  # "hann" (raised-cosine) | "edt" (mosaics/merging/oss)
+
+    def __hash__(self):
+        return hash_dataclass(self)
+
+
+@dataclass(frozen=True)
 class ProcessingConfig:
     """The "how to process" parameters passed through the compute graph.
 
@@ -146,6 +169,10 @@ class ProcessingConfig:
     bxt: "BxtSettings" = field(default_factory=lambda: BxtSettings())
     sxt: "SxtSettings" = field(default_factory=lambda: SxtSettings())
     nxt: "NxtSettings" = field(default_factory=lambda: NxtSettings())
+    # External-tiling settings (split gigapixel masters into distributable,
+    # memory-bounded tiles for the rc-astro ops). Narrowed into each rc-astro
+    # op's cache key. See TilingSettings and file_io/tiling.py.
+    tiling: "TilingSettings" = field(default_factory=lambda: TilingSettings())
 
     def get_calibration_stacks(self):
         """Dereference calibration_stacks (may be a ContextRef or a plain dict)."""
@@ -176,6 +203,8 @@ class ProcessingConfig:
             return SxtSettings()
         if name == "nxt":
             return NxtSettings()
+        if name == "tiling":
+            return TilingSettings()
         raise AttributeError(name)
 
 

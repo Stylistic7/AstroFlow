@@ -19,7 +19,7 @@ once they are all on disk.
 """
 from astroflow.pipeline import ephemeral_intermediates, pipeline
 from dependency_graph.tracing import workflow_group
-from mosaics.color.post_process import color_post_process
+from mosaics.color.post_process import bxt_correct_only, color_post_process
 from mosaics.merging.oss import merge_images_oss
 from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
@@ -104,9 +104,13 @@ def for_mosaic(mosaic, config):
     for filter in mosaic.filters:
         viewbox = mosaic.viewbox("Master")
         with ephemeral_intermediates():
+            # Croman two-pass mosaic: BXT Correct-Only on each PANEL (re-solved)
+            # before placement — per-panel aberrations differ across the mosaic —
+            # then the sharpening BXT runs on the assembled mosaic (color_post_process).
             placed = [
-                place_image(mosaic, targets_by_id[tid], filter, viewbox,
-                            config, channels[(tid, filter)])
+                place_image(mosaic, targets_by_id[tid], filter, viewbox, config,
+                            bxt_correct_only(targets_by_id[tid], filter, config,
+                                             channels[(tid, filter)]))
                 for strip in mosaic.strips
                 for tid in strip
                 if (tid, filter) in channels
@@ -115,5 +119,5 @@ def for_mosaic(mosaic, config):
                 continue
             out[filter] = merge_images_oss(mosaic, filter, *placed)
 
-    color = color_post_process(mosaic, out, config)
+    color = color_post_process(mosaic, out, config, mosaic.viewbox("Master"))
     return {**out, **color}

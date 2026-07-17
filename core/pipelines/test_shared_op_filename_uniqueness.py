@@ -77,8 +77,7 @@ def _use_real_pixinsight():
     )
 
 
-@pytest.mark.exhaustive
-@pytest.mark.timeout(1200)  # real PixInsight stacking across two pipelines
+@pytest.mark.exhaustive  # timeout auto-disabled for exhaustive tests (see conftest)
 def test_shared_op_distinct_outputs_per_pipeline(test_context):
     _use_real_pixinsight()
     _add_one_stack_worth_of_frames()

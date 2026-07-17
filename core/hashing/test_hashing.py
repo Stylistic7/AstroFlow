@@ -37,7 +37,7 @@ def test_hashes_and_metadata(test_context) -> None:
 
     # --- Metadata hash ---
     metadata = ray.get(load_metadata.remote())
-    assert metadata.content_hash == "977b6cfb2a98f2ba"
+    assert metadata.content_hash == "f7d2afc361d2b308"
 
     # Adding more frames changes the metadata hash.
     add_orion_mosaic_images(
@@ -46,7 +46,7 @@ def test_hashes_and_metadata(test_context) -> None:
     run_graph(build_compute_graph())
 
     metadata = ray.get(load_metadata.remote())
-    assert metadata.content_hash != "977b6cfb2a98f2ba"
+    assert metadata.content_hash != "f7d2afc361d2b308"
 
 
 def test_frozendict_hash_call_stable():

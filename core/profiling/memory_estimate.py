@@ -67,9 +67,21 @@ _DEFAULT_MEMORY_UNKNOWN = 16 * _GB
 # already `auto_memory=True`, so editing their decorator would re-run all BXT/SXT.
 _FIXED_MEMORY_BY_OP = {
     "bxt_correct":   26 * _GB,
+    "bxt_correct_only": 26 * _GB,  # BXT Correct-Only on a panel before assembly (Croman two-pass)
     "sxt_starless":  26 * _GB,
     "sxt_stars_rgb": 26 * _GB,  # StarXTerminator on the combined 3-band RGB
-    "linear_sho":    26 * _GB,  # stacks 3 gigapixel channels + NoiseXTerminator
+    # Tiled path (process_in_tiles) — replaces the 26 GB whole-image linear_sho
+    # node that OOM-killed NXT on gigapixel masters. Each op is memory-BOUNDED to
+    # one ~100 Mpx tile, so — unlike the whole-image rc-astro ops above — several
+    # co-schedule (on-node concurrency now, cluster fan-out when deployed). `nxt`
+    # spawns the rc-astro child on a tile (invisible to the profiler → must be
+    # fixed); crop/stack/blend are pyvips/numpy but fixed too so they keep worker
+    # reuse (excluded from the max_calls=1 rule).
+    "nxt":                 12 * _GB,  # rc-astro NXT child on a ~100 Mpx image/tile
+    "crop_tile":            4 * _GB,  # streaming crop of one tile out of the source
+    "stack_sho_channels":  12 * _GB,  # sequential per-channel XISF→BigTIFF (~8 GB each)
+    "blend_tiles":          6 * _GB,  # streaming pyvips feather (generic intermediate)
+    "blend_linear_sho":     6 * _GB,  # streaming pyvips feather (deliverable)
     # compute_image_metadata is auto_memory=True but its footprint is now
     # roughly constant (a header read + plate-solve), and it's dispatched ~30k
     # times per run (inline in every producer via _metadata_wrap, plus standalone

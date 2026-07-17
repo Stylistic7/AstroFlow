@@ -99,6 +99,16 @@ def pytest_unconfigure(config):
 
 
 def pytest_collection_modifyitems(config, items):
+    # The 120s default timeout (pytest.ini) is a *fast-test* regression tripwire:
+    # a core test blowing past it means something substantive changed (e.g. the
+    # graph executor regressed). Exhaustive tests are *known*-slow by design —
+    # full mosaic builds, WBPP runs, benchmarks — so a wall-clock ceiling on them
+    # is meaningless noise. Disable the timeout for anything marked `exhaustive`
+    # (timeout(0) == disabled in pytest-timeout), overriding the ini default.
+    for item in items:
+        if "exhaustive" in item.keywords:
+            item.add_marker(pytest.mark.timeout(0))
+
     exclusive = [item for item in items if "exclusive" in item.keywords]
     normal = [item for item in items if "exclusive" not in item.keywords]
     items[:] = normal + exclusive  # run normal tests first

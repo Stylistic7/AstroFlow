@@ -579,7 +579,7 @@ def test_flat_frame_selection(test_context) -> None:
     # frames.
     def find_cal_stack(filename_fragment: str) -> StackHash | None:
         for stack_id, stack in context.calibration_stacks.items():
-            filenames = [m.filename for m in stack.all_metadata().values()]
+            filenames = [str(m.filename) for m in stack.all_metadata().values()]
             if all(filename_fragment in f for f in filenames):
                 return stack_id
         return None

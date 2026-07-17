@@ -56,8 +56,26 @@ def read_placed_panel(
 def rehydrate_placed_panel(src_path: Path, dst_path: Path) -> None:
     """Reconstruct the full-canvas deflate TIFF a PixInsight consumer needs
     (PhotometricMosaic infers placement from each image's canvas rect, and PI
-    can't read zstd). Embeds the bbox on a black canvas — exactly what place_image
-    wrote before bbox-on-disk."""
-    arr, (x0, y0), (cw, ch) = read_placed_panel(src_path)
-    write_tiff_embedded(Path(dst_path), arr, offset_xy=(x0, y0),
-                        canvas_size=(cw, ch), compression=COMPATIBLE_COMPRESSION)
+    can't read zstd).
+
+    Two input shapes reach here, because `merge_images` chains pairwise:
+      * a bbox-on-disk placed panel (TIFF with BBOX_*/CANVAS_* headers) — embed
+        the bbox on a black canvas, exactly what place_image wrote pre-bbox;
+      * an already-full-canvas master from a PRIOR `merge_images` (XISF, no bbox
+        headers) — a straight transcode to deflate TIFF (it's already in the
+        mosaic frame, so no embedding).
+    Reads are suffix-dispatched (`file_io.generic`) so the XISF case doesn't hit
+    the TIFF-only pyvips loader (which has no `xisfload`)."""
+    from file_io.generic import read_header, read_image
+    src_path = Path(src_path)
+    hdr = read_header(src_path)
+    arr = read_image(src_path)
+    if _BBOX_X in hdr:
+        write_tiff_embedded(
+            Path(dst_path), arr,
+            offset_xy=(int(hdr[_BBOX_X]), int(hdr[_BBOX_Y])),
+            canvas_size=(int(hdr[_CANVAS_W]), int(hdr[_CANVAS_H])),
+            compression=COMPATIBLE_COMPRESSION)
+    else:
+        write_tiff_image(Path(dst_path), arr, dict(hdr),
+                         compression=COMPATIBLE_COMPRESSION)
