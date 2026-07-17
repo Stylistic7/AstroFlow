@@ -5,6 +5,7 @@ import brotli
 import numpy as np
 import cv2
 import pyvips
+import pytest
 import astropy.io.fits as pyfits
 
 from file_io.tiff_file_io import write_tiff_image
@@ -13,6 +14,9 @@ from previews.create_tile_pyramid import (
     _CONTEXT_RATIO,
     _MIN_CONTEXT_DIM,
     _TILE_SIZE,
+    _THUMBNAIL_MAX_SRC_PX,
+    _exceeds_thumbnail_budget,
+    NoPreviewAvailable,
     context_map_path_for,
     default_make_context_map,
     default_make_tile_pyramid,
@@ -358,3 +362,32 @@ def test_context_map_is_deterministic(tmp_path):
     default_make_context_map(source, a)
     default_make_context_map(source, b)
     assert a.read_bytes() == b.read_bytes()
+
+
+# ── size guard: never brute-decode a full un-pyramided image for a thumbnail ──
+
+def test_exceeds_thumbnail_budget():
+    assert not _exceeds_thumbnail_budget(1000, 1000)      # 1 Mpx — fine
+    assert _exceeds_thumbnail_budget(50000, 50000)        # 2.5 Gpx — refuse
+    assert _exceeds_thumbnail_budget(_THUMBNAIL_MAX_SRC_PX, 1)   # boundary is inclusive
+    assert not _exceeds_thumbnail_budget(_THUMBNAIL_MAX_SRC_PX - 1, 1)
+
+
+def test_pyramid_thumbnail_refuses_oversized_single_page(tmp_path, monkeypatch):
+    # A single-resolution (non-pyramid) source over budget must raise rather than
+    # decode in full — the web layer turns this into a 404 ("no preview yet").
+    import previews.create_tile_pyramid as ctp
+    src = tmp_path / "single.tiff"
+    pyvips.Image.black(64, 64).cast("float").tiffsave(str(src))  # no pyramid → 1 page
+    monkeypatch.setattr(ctp, "_THUMBNAIL_MAX_SRC_PX", 100)       # 64*64=4096 ≥ 100
+    with pytest.raises(NoPreviewAvailable):
+        pyramid_thumbnail(str(src))
+
+
+def test_pyramid_thumbnail_allows_small_single_page(tmp_path):
+    # Below budget, a single-page source still previews cheaply (no refusal).
+    src = tmp_path / "small.tiff"
+    # A ramp (not constant) so autostretch has real dynamic range.
+    (pyvips.Image.grey(64, 64).cast("float") * 100.0).tiffsave(str(src))
+    png = pyramid_thumbnail(str(src))
+    assert isinstance(png, (bytes, bytearray)) and len(png) > 0

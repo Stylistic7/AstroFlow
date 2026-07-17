@@ -245,7 +245,7 @@ def thumbnail_tap(
     Served straight from the tap's pyramidal `.tiff` (a small stored
     level), never by decoding the full-resolution master."""
     from web_server.backend.tiles import _tile_pyramid_path_for_tap
-    from previews.create_tile_pyramid import pyramid_thumbnail
+    from previews.create_tile_pyramid import pyramid_thumbnail, NoPreviewAvailable
     tiff = _tile_pyramid_path_for_tap(
         object_type, object_id, pipeline, display, filter,
     )
@@ -253,6 +253,8 @@ def thumbnail_tap(
         return abort(404)
     try:
         thumbnail = pyramid_thumbnail(tiff)
+    except NoPreviewAvailable:
+        return abort(404)  # no pyramid yet → no preview yet (never full-load)
     except Exception:
         return abort(500)
     return _png_response(thumbnail, display)

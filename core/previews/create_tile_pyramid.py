@@ -391,6 +391,27 @@ def make_create_tile_pyramid_decorator(
 
 _THUMBNAIL_MIN_PX = 1200
 
+# Cap on a SINGLE-RESOLUTION source we'll decode in-process for a thumbnail. A
+# real pyramid is multi-page and previews from a small stored level; a single
+# page that is also this large means there's no usable pyramid yet (mid-build,
+# or the raw deliverable), and brute-decoding it would balloon the web worker —
+# the gigapixel-mosaic case that drove a web worker to 10 GB. Above this, the
+# thumbnail layer reports "no preview yet" (HTTP 404) instead. 50 Mpx still lets
+# an ordinary subframe / small master preview (~600 MB for 3-band float).
+_THUMBNAIL_MAX_SRC_PX = 50_000_000
+
+
+class NoPreviewAvailable(Exception):
+    """A thumbnail cannot be produced without decoding a full, un-pyramided,
+    over-budget image. The web layer turns this into a 404 (no preview yet)
+    rather than materializing a gigapixel array in the serving process."""
+
+
+def _exceeds_thumbnail_budget(width, height) -> bool:
+    """Whether a single-resolution source of these dims is too large to decode
+    in-process for a thumbnail (see `_THUMBNAIL_MAX_SRC_PX`)."""
+    return int(width) * int(height) >= _THUMBNAIL_MAX_SRC_PX
+
 
 def pyramid_thumbnail(tile_pyramid_path, min_px: int = _THUMBNAIL_MIN_PX) -> bytes:
     """PNG bytes of a thumbnail of the tile pyramid.
@@ -428,10 +449,19 @@ def pyramid_thumbnail(tile_pyramid_path, min_px: int = _THUMBNAIL_MIN_PX) -> byt
             dim //= 2
         image = pyvips.Image.tiffload(path, page=level, unlimited=True)
     else:
-        # Single-page TIFF. For float sources we MUST autostretch
-        # before any uint8 conversion (otherwise the >255 pixels clip
-        # to white, producing the binary-mask failure). Read the full
-        # image, autostretch, then cv2-resize to fit.
+        # Single-page TIFF — no pyramid to draw a small level from. If it's also
+        # large, there is no usable pyramid yet and decoding it in full would
+        # balloon the serving process (the gigapixel case): report "no preview
+        # yet" instead of brute-loading it. Small single-page sources still
+        # preview cheaply below.
+        if _exceeds_thumbnail_budget(base.width, base.height):
+            raise NoPreviewAvailable(
+                f"{path}: single-resolution {base.width}x{base.height} exceeds "
+                f"the thumbnail budget; no pyramid built yet"
+            )
+        # For float sources we MUST autostretch before any uint8 conversion
+        # (otherwise the >255 pixels clip to white, producing the binary-mask
+        # failure). Read the (now size-bounded) image, autostretch, cv2-resize.
         if base.format in ("float", "double"):
             arr = read_image(Path(path))
             arr_u8 = (autostretch(arr) * 255.0).astype(np.uint8)

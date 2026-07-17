@@ -368,7 +368,18 @@ def _make_thumbnail(result, resize_array, autostretch, array_to_png, width=1920)
     else:
         filename = os.fspath(result)
     if os.path.exists(filename):
-        from file_io.generic import read_image
+        from file_io.generic import read_image, read_image_geometry
+        from previews.create_tile_pyramid import _exceeds_thumbnail_budget
+        # No pyramid sibling exists (that path is preferred upstream) — so this
+        # would decode the full deliverable. Refuse if it's over budget: a
+        # gigapixel master has no preview until its pyramid is built, rather
+        # than ballooning the serving process (see _THUMBNAIL_MAX_SRC_PX).
+        try:
+            g = read_image_geometry(Path(filename))
+            if _exceeds_thumbnail_budget(g.width_pixels, g.height_pixels):
+                return None
+        except Exception:
+            pass
         return array_to_png(
             autostretch(np.clip(resize_array(read_image(filename), width), 0.0, 1.0))
         )
