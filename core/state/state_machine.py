@@ -730,6 +730,10 @@ ctrl_c_count = 0
 def _force_cleanup():
     ray_path = get_bin_dir() / "ray"
     subprocess.run(["pkill", "-f", "gunicorn"], capture_output=True)
+    # Kill orphan PixInsight on hard shutdown too (see main._force_cleanup): its
+    # output is never cached once Ray is gone, and a survivor collides with the
+    # next launch's PI.
+    subprocess.run(["pkill", "-f", "PixInsight"], capture_output=True)
     subprocess.run([ray_path, "stop", "--force"], capture_output=True)
 
 

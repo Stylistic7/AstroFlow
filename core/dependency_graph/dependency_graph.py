@@ -214,6 +214,16 @@ _MEM_SAFETY_MARGIN_BYTES = int(
     float(os.environ.get("ASTROFLOW_MEM_SAFETY_MARGIN_GB", "6")) * (1024 ** 3)
 )
 
+# Only tasks estimated at/above this (or declaring a custom resource) go through
+# the per-node placement gate + NodeAffinity pin. Below it, a task dispatches
+# unpinned/SPREAD as before — Ray still reserves its `memory=` estimate, which
+# bounds it fine because a small op's estimate is accurate (unlike PixInsight /
+# rc-astro CLI heavies, whose real footprint Ray can't see — those are all far
+# above this). This keeps the ~30k high-volume 1 GB `compute_image_metadata`
+# tasks (and any other small op) on the cheap fast path: no per-node selection,
+# no pin, and — since a pass with no gated task never samples — no fan-out.
+_GATE_MIN_BYTES = 2 * (1024 ** 3)
+
 
 def _estimate_node_memory(rt, node) -> int:
     """Predicted peak-RSS bytes for ``node``, for the admission gate.
@@ -425,7 +435,9 @@ def run_graph(
     def _draining() -> bool:
         return bool(drain_event and drain_event.is_set())
 
-    _refresh_node_snapshot()  # eager: give pass 1 real per-node numbers
+    # No eager sample: a pass with no heavy task never samples at all (phase-1
+    # metadata stays on the cheap path). The first gated task triggers a refresh
+    # via `_maybe_refresh_snapshot` (last_mem_sample starts at 0 → always due).
 
     while root.is_active():
         if len(ready_cache) < RESCAN_THRESHOLD:
@@ -439,7 +451,6 @@ def run_graph(
         ref_meta: dict[ray.ObjectRef, tuple[GraphRuntime, Node]] = {}
 
         while ready_cache or pending:
-            _maybe_refresh_snapshot()  # re-measure per-node free RAM (≤ every 2 s)
             # Admit ready nodes up to the concurrency cap. A HEAVY task (declares
             # memory and/or a custom resource) is placed on a specific node by the
             # measured per-node gate (`_select_node`) and PINNED there; a task
@@ -457,9 +468,10 @@ def run_graph(
                 rt, node = ready_cache.pop()
                 need_custom = _declared_custom_resources(node.task)
                 need_mem = _node_mem(rt, node)
-                gated = bool(need_mem) or bool(need_custom)
+                gated = bool(need_custom) or need_mem >= _GATE_MIN_BYTES
                 node_id = None
                 if gated:
+                    _maybe_refresh_snapshot()  # sample only when placing a heavy task
                     node_id = _select_node(
                         need_mem, need_custom,
                         free_by_node, total_by_node, reserved_by_node,
