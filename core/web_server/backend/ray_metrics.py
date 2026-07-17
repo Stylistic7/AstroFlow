@@ -176,6 +176,77 @@ def get_object_store_history() -> list[float]:
     return _read_history(_OBJ_KEY)
 
 
+# ── Per-node MEASURED free RAM, for run_graph's admission gate ───────────────
+# Distinct from the chip sampler above (which aggregates cpu%/mem% by max for a
+# sparkline). This returns per-node *available bytes* so the scheduler can place
+# a heavy task only on a node that actually has room — see
+# dependency_graph.run_graph. Same NodeAffinity fan-out idiom, but keyed per node
+# and with no CPU sleep.
+_sample_node_mem_fn = None  # lazily-defined @ray.remote
+
+
+def _try_import_node_mem_remote():
+    """Define `_sample_node_mem` lazily so this module still imports in
+    Ray-less processes. Returns the wrapped fn or None."""
+    try:
+        import ray
+
+        # num_cpus=0: a measurement probe must never queue behind compute — on a
+        # CPU-saturated node a fractional-CPU task would wait, and we'd lose
+        # memory visibility exactly when the node is busiest. A 0-CPU pinned task
+        # schedules immediately regardless of load.
+        @ray.remote(num_cpus=0)
+        def _sample_node_mem():
+            import psutil
+            import ray as _ray
+            vm = psutil.virtual_memory()
+            node_id = _ray.get_runtime_context().get_node_id()
+            return (node_id, int(vm.available), int(vm.total))
+
+        return _sample_node_mem
+    except Exception:
+        return None
+
+
+def sample_node_memory(timeout: float = 4.0) -> dict:
+    """Measure REAL free RAM on every alive Ray node.
+
+    Fires one tiny task per node, pinned via `NodeAffinitySchedulingStrategy` so
+    it runs ON that node — its `psutil` reading therefore reflects EVERY process
+    there (PixInsight included), not just Ray's workers, which is the whole point
+    of measuring instead of trusting Ray's declared reservations.
+
+    Returns `{node_id: (available_bytes, total_bytes)}`. A node that fails or
+    times out is simply omitted (per-ref, so one flaky node can't blank the
+    batch); the caller drops its stale snapshot entry, so it falls out of
+    scheduling until it answers again. Whole fan-out is milliseconds — unlike the
+    chip sampler there is no 0.5 s CPU-percent sleep."""
+    global _sample_node_mem_fn
+    out: dict[str, tuple[int, int]] = {}
+    try:
+        import ray
+        if _sample_node_mem_fn is None:
+            _sample_node_mem_fn = _try_import_node_mem_remote()
+        if _sample_node_mem_fn is None:
+            return out
+
+        from ray.util.scheduling_strategies import NodeAffinitySchedulingStrategy
+        alive = [n for n in ray.nodes() if n.get("Alive")]
+        refs = []
+        for n in alive:
+            strategy = NodeAffinitySchedulingStrategy(node_id=n["NodeID"], soft=False)
+            refs.append(_sample_node_mem_fn.options(scheduling_strategy=strategy).remote())
+        for ref in refs:
+            try:
+                node_id, avail, total = ray.get(ref, timeout=timeout)
+                out[node_id] = (int(avail), int(total))
+            except Exception as e:
+                print(f"### sample_node_memory per-node sample failed: {type(e).__name__}: {e}")
+    except Exception as e:
+        print(f"### sample_node_memory failed: {type(e).__name__}: {e}")
+    return out
+
+
 def start_polling() -> None:
     """Spawn the 1 Hz sampler greenlet. Called from gunicorn's
     `post_fork` so it runs once per worker, after gevent's monkey

@@ -1,3 +1,4 @@
+import os
 import ray
 import threading
 from functools import reduce
@@ -76,9 +77,21 @@ def matching_nodes(
 
 
 def _submit_node(
-    rt: GraphRuntime, node: Node, dry_run: bool, debug: bool
+    rt: GraphRuntime, node: Node, dry_run: bool, debug: bool,
+    node_id: "str | None" = None, memory: "int | None" = None,
 ) -> ray.ObjectRef:
     """Submit a node to Ray for execution. Returns an ObjectRef.
+
+    When ``node_id`` is given (a memory/resource-gated task the scheduler placed
+    on a specific node), pin the task there with ``NodeAffinitySchedulingStrategy
+    (node_id, soft=False)`` so Ray honours the placement the admission gate chose
+    instead of SPREAD-ing it elsewhere. ``memory`` MUST be passed for a pinned
+    ``auto_memory`` op: ``node.task.options(...)`` is the RAW Ray handle and
+    bypasses the ``memory=estimate`` injection that ``node.task.remote`` does, so
+    the node's raylet would otherwise reserve nothing. ``.options`` overrides only
+    the fields we pass, so baked ``resources={"PixInsight":1}`` etc. still apply.
+    ``node_id is None`` → the light-task path, unpinned and SPREAD-scheduled as
+    before.
 
     Raises AncestorsNeverRan or AncestorsFailed if the node should be
     skipped due to ancestor state.
@@ -93,11 +106,19 @@ def _submit_node(
     if any(x in [NeverRun, Skipped] for x in fn_args):
         raise AncestorsNeverRan(node)
 
+    task = node.task
+    if node_id is not None:
+        from ray.util.scheduling_strategies import NodeAffinitySchedulingStrategy
+        opts = {"scheduling_strategy": NodeAffinitySchedulingStrategy(node_id, soft=False)}
+        if memory is not None:
+            opts["memory"] = memory
+        task = node.task.options(**opts)
+
     # TODO: This is hacky. Make it more explicit.
     try:
-        result = node.task.remote(*fn_args, dry_run=dry_run)
+        result = task.remote(*fn_args, dry_run=dry_run)
     except:
-        result = node.task.remote(*fn_args)
+        result = task.remote(*fn_args)
 
     elapsed_time = time.time() - start_time
     if elapsed_time > 1.0:
@@ -183,6 +204,118 @@ def _fits(need: dict, avail: dict) -> bool:
     return all(avail.get(name, 0.0) >= amt for name, amt in need.items())
 
 
+# Headroom kept free above what a task is predicted to need, so the machine can
+# drift into "yellow" pressure but not run-and-crash. Absolute (not a fraction):
+# the danger is PixInsight, a SEPARATE persistent process whose RSS Ray can't
+# see and that spikes fast — a fixed buffer covers that estimation blind spot on
+# any machine size. Override live (frozen-SHA deploys still read env at launch)
+# via ASTROFLOW_MEM_SAFETY_MARGIN_GB.
+_MEM_SAFETY_MARGIN_BYTES = int(
+    float(os.environ.get("ASTROFLOW_MEM_SAFETY_MARGIN_GB", "6")) * (1024 ** 3)
+)
+
+
+def _estimate_node_memory(rt, node) -> int:
+    """Predicted peak-RSS bytes for ``node``, for the admission gate.
+
+    Returns 0 for any node without an ``auto_memory`` estimator — the light
+    tasks, which stay ungated (governed only by ``MAX_IN_FLIGHT``). For an
+    ``auto_memory`` node, resolves its call args and runs the SAME estimator Ray
+    uses at submit (``profiling.memory_estimate.estimate_memory``), so the gate
+    and Ray's own ``memory=`` reservation agree. Never raises — an estimator
+    failure degrades to 0 (ungated) rather than stalling the run."""
+    task = getattr(node, "task", None)
+    est = getattr(task, "_auto_memory_estimator", None)
+    if est is None:
+        return 0
+    try:
+        args = rt.make_fn_args(node)
+        return int(est(task._function, tuple(args), {}))
+    except Exception:
+        return 0
+
+
+def _custom_fits(need: dict, capacity: dict, reserved: dict) -> bool:
+    """Whether a node with total custom ``capacity`` and ``reserved`` (both
+    ``{resource: amount}``) has every resource in ``need`` free."""
+    return all(
+        capacity.get(r, 0.0) - reserved.get(r, 0.0) >= amt for r, amt in need.items()
+    )
+
+
+def _select_node(
+    need_mem: int,
+    need_custom: dict,
+    free_by_node: dict,
+    total_by_node: dict,
+    reserved_by_node: dict,
+    capacity_by_node: dict,
+    reserved_custom_by_node: dict,
+    *,
+    any_in_flight: bool,
+    margin: int = _MEM_SAFETY_MARGIN_BYTES,
+) -> "str | None":
+    """Pick a node that can run a task needing ``need_mem`` bytes and
+    ``need_custom`` resources RIGHT NOW, or ``None`` to hold it for a later pass.
+
+    Candidate = a MEASURED node (present in ``free_by_node``) that has every
+    declared custom resource free (``capacity - reserved >= amt``). This single
+    per-node check subsumes the old cluster-aggregate custom-resource gate — and
+    naturally keeps head-only resources (``fastest_storage``/``diskcache``) off
+    workers, since only the head's capacity carries them.
+
+    Memory admission for a candidate ``n`` uses the two-leg min:
+        effective_free(n) = min(free_by_node[n], total_by_node[n] - reserved_by_node[n]) - margin
+    * ACTUAL leg (measured psutil free) sees PixInsight's out-of-process RSS and
+      anything else Ray never reserved.
+    * RESERVED leg (total - reserved) covers the lag before a just-launched task
+      has allocated and shows up in the measurement.
+    We place on the ROOMIEST candidate. ``need_mem == 0`` (a custom-resource-only
+    task) passes the memory test trivially.
+
+    If nothing fits and something is in flight, return ``None`` (hold; a
+    completion will free room). If nothing is in flight either, we MUST place
+    something or the run stalls forever — the idle-escape returns the roomiest
+    candidate (or, if no measured node satisfies the custom resources, the
+    largest-capacity node that does, so a missing sample can't wedge the run).
+    It then runs alone and OOMs loudly if genuinely too big — traceable, unlike a
+    silent hang."""
+    scored = []  # (effective_free, node_id)
+    for nid, avail in free_by_node.items():
+        if not _custom_fits(
+            need_custom,
+            capacity_by_node.get(nid, {}),
+            reserved_custom_by_node.get(nid, {}),
+        ):
+            continue
+        total = total_by_node.get(nid, avail)
+        eff = min(avail, total - reserved_by_node.get(nid, 0)) - margin
+        scored.append((eff, nid))
+
+    if scored:
+        best_eff, best_nid = max(scored)
+        if need_mem <= 0 or need_mem <= best_eff:
+            return best_nid
+
+    if any_in_flight:
+        return None  # hold — wait for a completion to free room
+
+    # Idle-escape: nothing in flight, so place something or stall forever.
+    if scored:
+        return max(scored)[1]  # roomiest measured candidate, run alone
+    # No measured candidate — fall back to the largest-capacity node that still
+    # satisfies the custom resources (may be None only if NO node advertises a
+    # required resource at all, i.e. a genuine misconfiguration).
+    fallback, fallback_cap = None, -1.0
+    for nid, capacity in capacity_by_node.items():
+        if not _custom_fits(need_custom, capacity, reserved_custom_by_node.get(nid, {})):
+            continue
+        cap_mem = float(capacity.get("memory", 0))
+        if cap_mem > fallback_cap:
+            fallback, fallback_cap = nid, cap_mem
+    return fallback
+
+
 def run_graph(
     graph: Graph,
     dry_run: bool = False,
@@ -204,10 +337,66 @@ def run_graph(
     from cache.ephemeral_cleanup import cleanup_ephemeral_artifact
     root = GraphRuntime(graph, cleanup_fn=cleanup_ephemeral_artifact)
 
-    # Constants; tune per cluster/workload
-    MAX_IN_FLIGHT = 4 * int(ray.cluster_resources().get("CPU", 1))
+    # Constants; tune per cluster/workload. 2x cores (was 4x): each in-flight
+    # slot is a fresh Python worker carrying the full scientific stack (~0.3-1 GB
+    # RSS each), so the slot COUNT is itself a static memory tax — 4x on a 24-core
+    # box spun up 96 workers and ~half the RAM before any real work. The
+    # memory-aware admission gate below (not MAX_IN_FLIGHT) is what bounds the
+    # heavy ops; this just stops the worker baseline from dominating.
+    MAX_IN_FLIGHT = 2 * int(ray.cluster_resources().get("CPU", 1))
     WAIT_BATCH = 16
     TIMEOUT = 0.2  # seconds
+
+    # Per-node memory-aware admission state. The head IS the broker: run_graph is
+    # the sole, single-threaded dispatcher, so these in-process dicts need no lock
+    # and no per-node actor. Ledgers (persist across samples):
+    #   reserved_by_node        : node_id -> summed memory estimates in flight
+    #   reserved_custom_by_node : node_id -> {resource: reserved} (e.g. PixInsight)
+    #   lease_by_ref            : ObjectRef -> (node_id, mem, custom), released on done
+    # Snapshots (re-measured at most every MEM_SAMPLE_INTERVAL s):
+    #   free_by_node/total_by_node : MEASURED psutil available/total per node —
+    #                                reflects PixInsight's real out-of-process RSS
+    #   capacity_by_node           : ray.nodes() Resources (memory + custom caps)
+    reserved_by_node: dict[str, int] = {}
+    reserved_custom_by_node: dict[str, dict[str, float]] = {}
+    lease_by_ref: dict[ray.ObjectRef, tuple] = {}
+    free_by_node: dict[str, int] = {}
+    total_by_node: dict[str, int] = {}
+    capacity_by_node: dict[str, dict[str, float]] = {}
+    MEM_SAMPLE_INTERVAL = 2.0  # seconds between per-node free-RAM re-measurements
+    last_mem_sample: float = 0.0
+
+    # Per-node estimate memoized for the run (a retained node is reconsidered
+    # every pass; recomputing its estimate — which can read image headers /
+    # profile samples — each time would be wasteful).
+    mem_est_cache: dict[Node, int] = {}
+
+    def _node_mem(rt, node) -> int:
+        if node not in mem_est_cache:
+            mem_est_cache[node] = _estimate_node_memory(rt, node)
+        return mem_est_cache[node]
+
+    def _refresh_node_snapshot():
+        """Re-measure per-node free RAM and re-read per-node capacity. A fresh
+        measurement supersedes the in-pass ``free_by_node`` draw-downs (the ACTUAL
+        leg re-anchors to truth); the reservation ledgers persist across it. Best
+        effort — if the psutil fan-out returns nothing, capacity from
+        ``ray.nodes()`` still populates so the idle-escape can place work."""
+        nonlocal free_by_node, total_by_node, capacity_by_node, last_mem_sample
+        from web_server.backend.ray_metrics import sample_node_memory
+        meas = sample_node_memory()
+        if meas:
+            free_by_node = {nid: a for nid, (a, _t) in meas.items()}
+            total_by_node = {nid: t for nid, (_a, t) in meas.items()}
+        capacity_by_node = {
+            n["NodeID"]: dict(n.get("Resources", {}))
+            for n in ray.nodes() if n.get("Alive")
+        }
+        last_mem_sample = time.time()
+
+    def _maybe_refresh_snapshot():
+        if time.time() - last_mem_sample >= MEM_SAMPLE_INTERVAL:
+            _refresh_node_snapshot()
 
     # Cache of ready nodes. Re-scan the tree only when running low.
     ready_cache: list[tuple[GraphRuntime, Node]] = []
@@ -236,6 +425,8 @@ def run_graph(
     def _draining() -> bool:
         return bool(drain_event and drain_event.is_set())
 
+    _refresh_node_snapshot()  # eager: give pass 1 real per-node numbers
+
     while root.is_active():
         if len(ready_cache) < RESCAN_THRESHOLD:
             _refill_cache()
@@ -248,17 +439,15 @@ def run_graph(
         ref_meta: dict[ray.ObjectRef, tuple[GraphRuntime, Node]] = {}
 
         while ready_cache or pending:
-            # Fill up to concurrency cap — but only admit a node while Ray has
-            # room for the *custom* resources it declares. The ready set is
-            # already sorted by the priority hint; submitting only what can run
-            # now keeps a scarce, serialized resource (e.g. one PixInsight slot)
-            # from building a deep FIFO backlog inside Ray that would defeat the
-            # sort. A node that doesn't fit is *retained* — still ready — for a
-            # later pass once an in-flight task frees the resource. The
-            # `available_resources()` snapshot is eventually-consistent; with a
-            # local decrement per admit (below) over-submission stays ~zero, and
-            # the executor's per-pass cost is irrelevant against task runtimes.
-            avail = None  # lazily fetched only if a custom-resource node appears
+            _maybe_refresh_snapshot()  # re-measure per-node free RAM (≤ every 2 s)
+            # Admit ready nodes up to the concurrency cap. A HEAVY task (declares
+            # memory and/or a custom resource) is placed on a specific node by the
+            # measured per-node gate (`_select_node`) and PINNED there; a task
+            # that fits nowhere right now is *retained* — still ready — and
+            # reconsidered next pass once a completion frees room. LIGHT tasks
+            # (no memory estimate, no custom resource) skip the gate entirely and
+            # dispatch unpinned/SPREAD as before. `_select_node` subsumes the old
+            # cluster-aggregate custom-resource gate: placement is per-node.
             retained: list[tuple[GraphRuntime, Node]] = []
             while (
                 ready_cache
@@ -266,23 +455,41 @@ def run_graph(
                 and len(pending) < MAX_IN_FLIGHT
             ):
                 rt, node = ready_cache.pop()
-                need = _declared_custom_resources(node.task)
-                if need:
-                    if avail is None:
-                        avail = dict(ray.available_resources())
-                    # Hold a node only when something is in flight to free the
-                    # resource later; with nothing pending we must admit (even
-                    # against a stale snapshot) so the run can't stall.
-                    if pending and not _fits(need, avail):
+                need_custom = _declared_custom_resources(node.task)
+                need_mem = _node_mem(rt, node)
+                gated = bool(need_mem) or bool(need_custom)
+                node_id = None
+                if gated:
+                    node_id = _select_node(
+                        need_mem, need_custom,
+                        free_by_node, total_by_node, reserved_by_node,
+                        capacity_by_node, reserved_custom_by_node,
+                        any_in_flight=bool(pending),
+                    )
+                    if node_id is None:  # fits nowhere now — hold for a later pass
                         retained.append((rt, node))
                         continue
                 rt.start(node)
                 try:
-                    ref = _submit_node(rt, node, dry_run, debug)
+                    ref = _submit_node(
+                        rt, node, dry_run, debug,
+                        node_id=node_id, memory=(need_mem or None),
+                    )
                     ref_meta[ref] = (rt, node)
                     pending.append(ref)
-                    for name, amt in need.items():  # consumed iff it launched
-                        avail[name] = avail.get(name, 0.0) - amt
+                    if gated:  # reserve on the chosen node iff it launched
+                        reserved_by_node[node_id] = (
+                            reserved_by_node.get(node_id, 0) + need_mem
+                        )
+                        if need_custom:
+                            rc = reserved_custom_by_node.setdefault(node_id, {})
+                            for r, amt in need_custom.items():
+                                rc[r] = rc.get(r, 0.0) + amt
+                        if need_mem and node_id in free_by_node:
+                            # In-pass draw-down so same-pass admits see it before
+                            # the next measurement would (task hasn't allocated).
+                            free_by_node[node_id] -= need_mem
+                        lease_by_ref[ref] = (node_id, need_mem, need_custom)
                 except AncestorsNeverRan:
                     rt.node_completed(node, NeverRun)
                 except AncestorsFailed:
@@ -304,6 +511,18 @@ def run_graph(
 
             for ref in ready_refs:
                 rt, node = ref_meta.pop(ref)
+                # Release the reservation on the ref RESOLVING (success or terminal
+                # error) — held correctly across Ray retries (ref stays unresolved
+                # while retrying). A leak here would only inflate `reserved` →
+                # more conservative, never unsafe.
+                lease = lease_by_ref.pop(ref, None)
+                if lease is not None:
+                    nid, mem, custom = lease
+                    reserved_by_node[nid] = reserved_by_node.get(nid, 0) - mem
+                    rc = reserved_custom_by_node.get(nid)
+                    if rc:
+                        for r, amt in custom.items():
+                            rc[r] = rc.get(r, 0.0) - amt
                 if trace:
                     trace_list.append(node)
                 if debug:

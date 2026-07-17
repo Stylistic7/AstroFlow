@@ -333,8 +333,15 @@ def make_cached_decorator(
                 estimate = memory_estimator(func, args, kwargs)
                 return ray_func.options(memory=estimate).remote(*args, **kwargs)
             wrapper.remote = _auto_memory_remote
+            # Exposed so the graph executor can predict this node's peak-RSS
+            # estimate BEFORE submitting — the memory-aware admission gate uses
+            # it to hold a heavy task until the machine actually has room (see
+            # dependency_graph._estimate_node_memory). Signature mirrors the
+            # call above: estimator(func, args, kwargs) -> bytes.
+            wrapper._auto_memory_estimator = memory_estimator
         else:
             wrapper.remote = ray_func.remote
+            wrapper._auto_memory_estimator = None
 
         wrapper.options = ray_func.options
         wrapper._original = func
