@@ -30,7 +30,12 @@ class Target(
         from hashing import hash_list
         stable_hash = sorted(stacks, key=lambda s: s.oldest_date)[0].stable_hash
         stack_ids = tuple(s.stable_hash for s in stacks)
-        content_hash = hash_list(sorted(stack_ids))
+        # content_hash composes the children's CONTENT hashes (mirror
+        # Stack.content_hash), NOT their stable/identity hashes — so a Target's
+        # content_hash changes whenever any member stack's *content* changes, not
+        # only when the set of member identities changes. (stack_ids stays the
+        # identity list.)
+        content_hash = hash_list(sorted(s.content_hash for s in stacks))
 
         attributes: dict[str, Any] = (
             asdict(chronology_attributes)

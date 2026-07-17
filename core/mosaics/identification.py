@@ -468,7 +468,11 @@ def identify_mosaics(
 
         from hashing import hash_list
         target_ids = tuple(sorted(mosaic))
-        content_hash = hash_list(sorted(target_ids))
+        # content_hash composes the children's CONTENT hashes (mirror
+        # Stack/Target), NOT their stable/identity hashes — so a Mosaic's
+        # content_hash changes whenever any member target's *content* changes.
+        # (target_ids stays the identity list.)
+        content_hash = hash_list(sorted(resolved[t].content_hash for t in mosaic))
 
         # Panel order — observer-independent, sorted by RA with the
         # sequence rotated to start after the largest RA gap so the
