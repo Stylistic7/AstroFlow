@@ -18,6 +18,7 @@
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
 import Slider from '@mui/material/Slider';
 import Switch from '@mui/material/Switch';
 import FormControlLabel from '@mui/material/FormControlLabel';
@@ -28,6 +29,7 @@ import Typography from '@mui/material/Typography';
 import AstroFlowContext from '../AstroFlowContext.jsx';
 import { useViewport } from './useViewport.js';
 import { useTileRenderer } from './useTileRenderer.js';
+import { buildCellParams, applyMove, sampleMoves, cellFromClick, describeMove, rng } from './grid_explore.js';
 import PolygonOverlay from './PolygonOverlay.jsx';
 import TextOverlay from './TextOverlay.jsx';
 import { computeAutoStretchParams } from '../auto_stretch.js';
@@ -234,6 +236,19 @@ export default function TileViewerV2({
     const [nbTrimS, setNbTrimS] = useState(1.0);
     const [nbTrimH, setNbTrimH] = useState(1.0);
     const [nbTrimO, setNbTrimO] = useState(1.0);
+
+    // 3×3 taste-grid explorer (narrowband only). While active, the view is
+    // rendered 9× — cell 4 is the current finish, the 8 neighbours are sampled
+    // "suggestion" moves across the finish axes. Clicking a neighbour applies
+    // its move and keeps that same move under the cell (click again = keep going
+    // that way); the other 7 reshuffle. Clicking the centre reshuffles all 8.
+    // Committing on exit writes the chosen knobs back to the sliders. See
+    // grid_explore.js.
+    const [gridActive, setGridActive] = useState(false);
+    const [gridCenter, setGridCenter] = useState(null);   // knobs incl. trimS/H/O
+    const [gridMoves, setGridMoves] = useState(null);     // { cellIndex: move }
+    const gridHistoryRef = useRef({ stack: [], idx: -1 }); // [{ center, moves }]
+    const gridSeedRef = useRef(1);   // deterministic PRNG counter (reproducible grids)
     const [nbAddStars, setNbAddStars] = useState(false);
     // Metadata of the sibling "Stars" tap (for availability + port/mtime).
     const [starsMeta, setStarsMeta] = useState(null);
@@ -426,15 +441,22 @@ export default function TileViewerV2({
                 : { m: [0, 0, 0], p: [1, 1, 1] };
             const sigmas = tileMeta?.channelSigma || [0, 0, 0];
             const paletteMode = palette === 'foraxx' ? 1 : 0;
-            renderer.setGlobals({
-                e1: 0, e5: nbMidtone, max: 1.0, peakBrightness: 1.0,
-                stretchMode: 0, isColor: false, finishMode: true,
-                paletteMode,
-                blackPoint: nbBlackPoint, scnrAmount: nbScnr,
-                saturation: nbSaturation, addStars: nbAddStars && starsAvailable,
-                anchors, trims: [nbTrimS, nbTrimH, nbTrimO],
-                sigmas, shadowClip: nbShadowClip,
-            });
+            // Fields shared by the single view and every 3×3 grid cell.
+            const base = {
+                e1: 0, max: 1.0, peakBrightness: 1.0, stretchMode: 0,
+                isColor: false, finishMode: true, paletteMode,
+                addStars: nbAddStars && starsAvailable,
+                anchors, trims: [nbTrimS, nbTrimH, nbTrimO], sigmas,
+            };
+            if (gridActive && gridCenter && gridMoves) {
+                renderer.setGrid(buildCellParams(gridCenter, base, gridMoves));
+            } else {
+                renderer.setGlobals({
+                    ...base, e5: nbMidtone, blackPoint: nbBlackPoint,
+                    scnrAmount: nbScnr, saturation: nbSaturation,
+                    shadowClip: nbShadowClip,
+                });
+            }
             return;
         }
         // Baked-stretch color: fixed identity pass-through (e1=0, e5=0.5,
@@ -462,7 +484,7 @@ export default function TileViewerV2({
         effectivePeak, stretchMode, palette, nbBlackPoint, nbMidtone,
         nbSaturation, nbScnr, nbShadowClip, nbTrimS, nbTrimH, nbTrimO, nbAddStars,
         starsAvailable, tileMeta?.channelMedians, tileMeta?.channelSigma,
-        tileMeta?.channelP99]);
+        tileMeta?.channelP99, gridActive, gridCenter, gridMoves]);
 
     // Recompute + upload the stretch LUT whenever stats change or the
     // mode flips into a LUT-based path. STF mode doesn't sample the
@@ -501,6 +523,86 @@ export default function TileViewerV2({
     }, [renderer.isReady, tileMeta, view?.pipeline, view?.display, view?.filter,
         viewport, objectType, imageHash, starsAvailable, starsMeta]);
 
+    // ── 3×3 taste-grid handlers ─────────────────────────────────────────
+    // Next deterministic PRNG stream. The seed counter lives in a ref so a
+    // given sequence of clicks always yields the same suggestions.
+    const nextRng = () => rng((gridSeedRef.current = (gridSeedRef.current + 1) | 0));
+
+    const enterGrid = () => {
+        const c = {
+            midtone: nbMidtone, saturation: nbSaturation, scnr: nbScnr,
+            shadowClip: nbShadowClip, blackPoint: nbBlackPoint,
+            trimS: nbTrimS, trimH: nbTrimH, trimO: nbTrimO,
+        };
+        const moves = sampleMoves(nextRng());
+        gridHistoryRef.current = { stack: [{ center: c, moves }], idx: 0 };
+        setGridCenter(c);
+        setGridMoves(moves);
+        setGridActive(true);
+    };
+
+    // Commit writes the explored centre back to the sliders; cancel discards.
+    const exitGrid = (commit) => {
+        if (commit && gridCenter) {
+            setNbMidtone(gridCenter.midtone);
+            setNbSaturation(gridCenter.saturation);
+            setNbScnr(gridCenter.scnr);
+            setNbShadowClip(gridCenter.shadowClip);
+            setNbBlackPoint(gridCenter.blackPoint);
+            setNbTrimS(gridCenter.trimS);
+            setNbTrimH(gridCenter.trimH);
+            setNbTrimO(gridCenter.trimO);
+        }
+        setGridActive(false);
+        renderer.clearGrid();
+    };
+
+    // Push a new grid state (center + the 8 cell moves) onto the history,
+    // truncating any redo tail.
+    const pushGrid = (center, moves) => {
+        const h = gridHistoryRef.current;
+        const stack = h.stack.slice(0, h.idx + 1);
+        stack.push({ center, moves });
+        gridHistoryRef.current = { stack, idx: stack.length - 1 };
+        setGridCenter(center);
+        setGridMoves(moves);
+    };
+
+    const stepGridHistory = (dir) => {
+        const h = gridHistoryRef.current;
+        const idx = h.idx + dir;
+        if (idx < 0 || idx >= h.stack.length) return;
+        h.idx = idx;
+        setGridCenter(h.stack[idx].center);
+        setGridMoves(h.stack[idx].moves);
+    };
+    const undoGrid = () => stepGridHistory(-1);
+    const redoGrid = () => stepGridHistory(+1);
+
+    const handleGridClick = (e) => {
+        if (!canvasRef.current || !gridCenter || !gridMoves) return;
+        const rect = canvasRef.current.getBoundingClientRect();
+        const cell = cellFromClick(
+            e.clientX - rect.left, e.clientY - rect.top, rect.width, rect.height);
+        const moves = sampleMoves(nextRng());
+        if (cell === 4) {
+            // Centre = keep this finish, reshuffle all 8 suggestions ("new ideas").
+            pushGrid(gridCenter, moves);
+            return;
+        }
+        // Apply the clicked cell's move and KEEP that same move under that cell,
+        // so clicking it again travels further the same way; the other 7 are the
+        // fresh suggestions just sampled above.
+        const move = gridMoves[cell];
+        moves[cell] = move;
+        pushGrid(applyMove(gridCenter, move), moves);
+    };
+
+    const gridBtnSx = {
+        flex: 1, minWidth: 0, color: '#fff', fontSize: 11,
+        borderColor: 'rgba(255,255,255,0.3)',
+    };
+
     return (
         <Box ref={containerRef} sx={{
             position: 'relative', width: '100%', height: '100%',
@@ -517,6 +619,40 @@ export default function TileViewerV2({
                     touchAction: 'none',
                 }}
             />
+            {gridActive && (
+                <Box
+                    onClick={handleGridClick}
+                    sx={{
+                        position: 'absolute', inset: 0, zIndex: 4, cursor: 'pointer',
+                        backgroundImage:
+                            'linear-gradient(rgba(255,255,255,0.35) 1px, transparent 1px),'
+                            + 'linear-gradient(90deg, rgba(255,255,255,0.35) 1px, transparent 1px)',
+                        backgroundSize: '33.333% 33.333%',
+                    }}
+                >
+                    <Box sx={{
+                        position: 'absolute', left: '33.333%', top: '33.333%',
+                        width: '33.334%', height: '33.334%', boxSizing: 'border-box',
+                        border: '2px solid rgba(120,200,255,0.9)', pointerEvents: 'none',
+                    }} />
+                    {gridMoves && [0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                        <Box key={i} sx={{
+                            position: 'absolute',
+                            left: `${(i % 3) * 33.333}%`, top: `${((i / 3) | 0) * 33.333}%`,
+                            width: '33.333%', height: '33.333%', pointerEvents: 'none',
+                            display: 'flex', alignItems: 'flex-end', justifyContent: 'center', pb: 0.5,
+                        }}>
+                            <Typography variant="caption" sx={{
+                                px: 0.5, borderRadius: 0.5, fontSize: 10, lineHeight: 1.5,
+                                color: '#fff', backgroundColor: 'rgba(0,0,0,0.55)',
+                                fontWeight: i === 4 ? 600 : 400, whiteSpace: 'nowrap',
+                            }}>
+                                {i === 4 ? 'current' : describeMove(gridMoves[i])}
+                            </Typography>
+                        </Box>
+                    ))}
+                </Box>
+            )}
             <PolygonOverlay
                 viewport={viewport}
                 polygons={polygons}
@@ -557,6 +693,30 @@ export default function TileViewerV2({
                         <MenuItem value="hubble">Hubble (SHO)</MenuItem>
                         <MenuItem value="foraxx">Foraxx (dynamic)</MenuItem>
                     </Select>
+                    {/* 3×3 taste-grid explorer: render the view 9 ways, click to refine. */}
+                    {!gridActive ? (
+                        <Button size="small" fullWidth variant="outlined"
+                            onClick={enterGrid}
+                            sx={{ mb: 1, color: '#fff', borderColor: 'rgba(255,255,255,0.3)' }}>
+                            Explore 3×3
+                        </Button>
+                    ) : (
+                        <Box sx={{ mb: 1 }}>
+                            <Typography variant="caption" sx={{ display: 'block', opacity: 0.85, mb: 0.5 }}>
+                                Click a look you like — it recenters and the others reshuffle to new
+                                ideas. Click the same tile again to keep going that way. Centre = keep this + new ideas.
+                            </Typography>
+                            <Box sx={{ display: 'flex', gap: 0.5, mb: 0.5 }}>
+                                <Button size="small" variant="outlined" onClick={undoGrid} sx={gridBtnSx}>Undo</Button>
+                                <Button size="small" variant="outlined" onClick={redoGrid} sx={gridBtnSx}>Redo</Button>
+                            </Box>
+                            <Box sx={{ display: 'flex', gap: 0.5 }}>
+                                <Button size="small" variant="contained" onClick={() => exitGrid(true)}
+                                    sx={{ ...gridBtnSx, color: '#000' }}>Keep</Button>
+                                <Button size="small" variant="outlined" onClick={() => exitGrid(false)} sx={gridBtnSx}>Cancel</Button>
+                            </Box>
+                        </Box>
+                    )}
                     <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
                         Smoothness — {nbShadowClip.toFixed(1)}σ (higher = cleaner, less faint)
                     </Typography>

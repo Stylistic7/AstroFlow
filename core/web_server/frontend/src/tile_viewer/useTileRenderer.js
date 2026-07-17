@@ -218,6 +218,12 @@ export function useTileRenderer({ canvasRef }) {
                 tileLayout,
                 globalsBindGroup,
                 globalsBuffer,
+                // Kept so the 3×3 taste-grid can build one globals
+                // bind group per cell (same layout + shared viewport/
+                // sampler/LUT, only the globals buffer differs).
+                globalsLayout,
+                sampler,
+                grid: null,   // { active, buffers[9], bindGroups[9] } — lazy
                 viewportBuffer,
                 stretchLutTexture,
                 dummyStarsTexture,
@@ -286,35 +292,34 @@ export function useTileRenderer({ canvasRef }) {
      * Off-screen cached tiles are filtered out so we don't waste draw
      * calls (the GPU would clip them anyway, but skipping is cheaper).
      */
+    /** The overlapping cached tiles for the current viewport, coarsest
+     * LOD (largest worldW) first. Shared by the single-view paint() and
+     * the 3×3 taste-grid, which draw the identical view. */
+    function drawListFor(s) {
+        const v = s.lastViewport;
+        const worldL = -v[0], worldT = -v[1];
+        const worldR = -v[0] + v[3] / v[2], worldB = -v[1] + v[4] / v[2];
+        const list = [];
+        for (const tile of s.tiles.values()) {
+            const r = tile.worldRect;
+            if (r.x >= worldR || r.x + r.w <= worldL ||
+                r.y >= worldB || r.y + r.h <= worldT) continue;
+            list.push(tile);
+        }
+        list.sort((a, b) => b.worldRect.w - a.worldRect.w);
+        return list;
+    }
+
     function paint() {
         const s = stateRef.current;
         if (!s) return;
-        const { device, ctx, pipeline, globalsBindGroup, tiles, lastViewport } = s;
+        if (s.grid && s.grid.active) { paintGrid(s); return; }
+        const { device, ctx, pipeline, globalsBindGroup, lastViewport } = s;
 
         device.queue.writeBuffer(s.globalsBuffer, 0, s.lastGlobals);
         device.queue.writeBuffer(s.viewportBuffer, 0, lastViewport);
 
-        // Visible world-space rect from viewport uniforms.
-        const tx = lastViewport[0];
-        const ty = lastViewport[1];
-        const scale = lastViewport[2];
-        const screenW = lastViewport[3];
-        const screenH = lastViewport[4];
-        const worldL = -tx;
-        const worldT = -ty;
-        const worldR = -tx + screenW / scale;
-        const worldB = -ty + screenH / scale;
-
-        // Build the draw list: overlapping cached tiles, sorted so
-        // coarsest LOD (largest worldW) draws first.
-        const drawList = [];
-        for (const tile of tiles.values()) {
-            const r = tile.worldRect;
-            if (r.x >= worldR || r.x + r.w <= worldL ||
-                r.y >= worldB || r.y + r.h <= worldT) continue;
-            drawList.push(tile);
-        }
-        drawList.sort((a, b) => b.worldRect.w - a.worldRect.w);
+        const drawList = drawListFor(s);
 
         const encoder = device.createCommandEncoder();
         const pass = encoder.beginRenderPass({
@@ -333,6 +338,113 @@ export function useTileRenderer({ canvasRef }) {
         }
         pass.end();
         device.queue.submit([encoder.finish()]);
+    }
+
+    /** Render the current view 9× into a 3×3 grid, one finish per cell —
+     * the taste-explorer. Same tiles + same viewport transform; only the
+     * globals (finish) uniform differs per cell, selected by
+     * `pass.setViewport` into each sub-rect. `s.grid.cellGlobals` is 9×
+     * Float32Array(28) mirroring lastGlobals; cell 4 is the centre. */
+    function paintGrid(s) {
+        const { device, ctx, pipeline, viewportBuffer } = s;
+        const g = s.grid;
+        device.queue.writeBuffer(viewportBuffer, 0, s.lastViewport);
+        for (let i = 0; i < 9; i++)
+            device.queue.writeBuffer(g.buffers[i], 0, g.cellGlobals[i]);
+
+        const drawList = drawListFor(s);
+        const tex = ctx.getCurrentTexture();
+        const W = tex.width, H = tex.height;
+        const gap = Math.max(2, Math.round(Math.min(W, H) * 0.006));
+        const cw = (W - 2 * gap) / 3, ch = (H - 2 * gap) / 3;
+
+        const encoder = device.createCommandEncoder();
+        const pass = encoder.beginRenderPass({
+            colorAttachments: [{
+                view: tex.createView(),
+                clearValue: { r: 0.02, g: 0.02, b: 0.02, a: 1 },
+                loadOp: 'clear', storeOp: 'store',
+            }],
+        });
+        pass.setPipeline(pipeline);
+        for (let i = 0; i < 9; i++) {
+            const col = i % 3, row = (i / 3) | 0;
+            pass.setViewport(col * (cw + gap), row * (ch + gap), cw, ch, 0, 1);
+            pass.setBindGroup(0, g.bindGroups[i]);
+            for (const tile of drawList) {
+                pass.setBindGroup(1, tile.bindGroup);
+                pass.draw(4);
+            }
+        }
+        pass.end();
+        device.queue.submit([encoder.finish()]);
+    }
+
+    /** Build a full 28-float Globals array from a setGlobals-style params
+     * object (the taste-grid passes one per cell). Index layout mirrors
+     * setGlobals / the Globals struct in tone_mapping.js. */
+    function buildGlobals(p) {
+        const g = new Float32Array(28);
+        g[0] = p.e1 ?? 0;
+        g[1] = p.e5 ?? 0.5;
+        g[2] = p.max ?? 1;
+        g[3] = p.peakBrightness ?? 1;
+        g[4] = p.stretchMode ?? 0;
+        g[5] = p.isColor ? 1 : 0;
+        g[6] = p.finishMode ? 1 : 0;
+        g[7] = p.paletteMode ?? 0;
+        g[8] = p.blackPoint ?? 0;
+        g[9] = p.scnrAmount ?? 0;
+        g[10] = p.saturation ?? 1;
+        g[11] = p.addStars ? 1 : 0;
+        const m = p.anchors?.m ?? [0, 0, 0], pp = p.anchors?.p ?? [1, 1, 1];
+        g[12] = m[0]; g[13] = m[1]; g[14] = m[2];
+        g[15] = pp[0]; g[16] = pp[1]; g[17] = pp[2];
+        const t = p.trims ?? [1, 1, 1]; g[18] = t[0]; g[19] = t[1]; g[20] = t[2];
+        const sg = p.sigmas ?? [1, 1, 1]; g[21] = sg[0]; g[22] = sg[1]; g[23] = sg[2];
+        g[24] = p.shadowClip ?? 0;
+        return g;
+    }
+
+    /** Enter/refresh 3×3 taste-grid mode. `cellParams` = 9 setGlobals-style
+     * param objects; cell 4 is the unperturbed centre. Lazily builds 9 globals
+     * buffers + bind groups that share the viewport, sampler and stretch-LUT
+     * bindings — only binding 0 (globals) differs per cell. */
+    function setGrid(cellParams) {
+        const s = stateRef.current;
+        if (!s) return;
+        if (!s.grid) {
+            const buffers = [], bindGroups = [];
+            for (let i = 0; i < 9; i++) {
+                const buf = s.device.createBuffer({
+                    size: s.lastGlobals.byteLength,
+                    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+                });
+                buffers.push(buf);
+                bindGroups.push(s.device.createBindGroup({
+                    layout: s.globalsLayout,
+                    entries: [
+                        { binding: 0, resource: { buffer: buf } },
+                        { binding: 1, resource: { buffer: s.viewportBuffer } },
+                        { binding: 2, resource: s.sampler },
+                        { binding: 3, resource: s.stretchLutTexture.createView() },
+                        { binding: 4, resource: s.sampler },
+                    ],
+                }));
+            }
+            s.grid = { active: false, buffers, bindGroups, cellGlobals: null };
+        }
+        s.grid.cellGlobals = cellParams.map(buildGlobals);
+        s.grid.active = true;
+        redraw();
+    }
+
+    /** Leave grid mode; the next paint() is the single pan/zoom view. */
+    function clearGrid() {
+        const s = stateRef.current;
+        if (!s || !s.grid) return;
+        s.grid.active = false;
+        redraw();
     }
 
     /** Push new STF parameters + brightness + stretch mode; paints
@@ -585,5 +697,5 @@ export function useTileRenderer({ canvasRef }) {
     }
 
     return { isReady, error, setGlobals, setViewport, setTileUrls,
-             setStretchLut, redraw, clearTiles };
+             setStretchLut, redraw, clearTiles, setGrid, clearGrid };
 }
