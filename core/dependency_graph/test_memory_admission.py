@@ -17,16 +17,18 @@ _GB = 1024 ** 3
 # --- node selection: the two-leg memory decision --------------------------------
 
 def _sel(need_mem, *, free, total=None, reserved=None, capacity=None,
-         reserved_custom=None, need_custom=None, any_in_flight=True, margin=10):
+         reserved_custom=None, need_custom=None, any_in_flight=True, margin=10,
+         pressure=None):
     """Thin wrapper with small-integer 'units' so the arithmetic is obvious.
-    `free`/`total`/`reserved` are {node: int}; capacity/reserved_custom optional."""
+    `free`/`total`/`reserved` are {node: int}; capacity/reserved_custom/pressure
+    optional."""
     total = total or {n: 100 for n in free}
     return _select_node(
         need_mem, need_custom or {},
         free, total, reserved or {},
         capacity if capacity is not None else {n: {} for n in free},
         reserved_custom or {},
-        any_in_flight=any_in_flight, margin=margin,
+        any_in_flight=any_in_flight, margin=margin, pressure_by_node=pressure,
     )
 
 
@@ -69,6 +71,33 @@ def test_reserve_before_next_prevents_the_herd():
     free["A"] -= 30
     assert _select_node(30, {}, free, {"A": 100}, {"A": 30}, {"A": {}}, {},
                         any_in_flight=True, margin=0) is None  # second denied
+
+
+# --- the OS memory-pressure veto ------------------------------------------------
+
+def test_pressure_veto_blocks_yellow_and_red():
+    # Plenty of free RAM + no reservations, but the node is under memory pressure
+    # (yellow=2, red=4) → hold, don't add to the fire.
+    for level in (2, 4):
+        assert _sel(20, free={"A": 90}, pressure={"A": level}, any_in_flight=True) is None
+
+
+def test_pressure_green_and_unknown_do_not_block():
+    assert _sel(20, free={"A": 50}, pressure={"A": 1}, any_in_flight=True) == "A"  # green
+    assert _sel(20, free={"A": 50}, pressure={"A": 0}, any_in_flight=True) == "A"  # unknown
+    assert _sel(20, free={"A": 50}, pressure={}, any_in_flight=True) == "A"        # absent
+
+
+def test_pressure_prefers_the_green_node():
+    # A is roomier but yellow; B is green → B wins despite less free RAM.
+    assert _sel(20, free={"A": 90, "B": 40}, pressure={"A": 2, "B": 1},
+                any_in_flight=True) == "B"
+
+
+def test_pressure_idle_escape_places_despite_red():
+    # Everything red AND nothing in flight → the idle-escape ignores pressure and
+    # places something rather than stall the run forever.
+    assert _sel(20, free={"A": 90}, pressure={"A": 4}, any_in_flight=False) == "A"
 
 
 # --- the custom-resource dimension (subsumes the old cluster-aggregate gate) -----

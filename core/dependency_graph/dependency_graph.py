@@ -263,6 +263,7 @@ def _select_node(
     reserved_custom_by_node: dict,
     *,
     any_in_flight: bool,
+    pressure_by_node: "dict | None" = None,
     margin: int = _MEM_SAFETY_MARGIN_BYTES,
 ) -> "str | None":
     """Pick a node that can run a task needing ``need_mem`` bytes and
@@ -280,6 +281,9 @@ def _select_node(
       anything else Ray never reserved.
     * RESERVED leg (total - reserved) covers the lag before a just-launched task
       has allocated and shows up in the measurement.
+    A node whose OS memory PRESSURE is yellow/red (``pressure_by_node[n] >= 2``)
+    is dropped from candidates regardless of the byte math — the macOS-accurate
+    brake the ACTUAL leg misses (``available`` over-counts reclaimable pages).
     We place on the ROOMIEST candidate. ``need_mem == 0`` (a custom-resource-only
     task) passes the memory test trivially.
 
@@ -290,6 +294,7 @@ def _select_node(
     largest-capacity node that does, so a missing sample can't wedge the run).
     It then runs alone and OOMs loudly if genuinely too big — traceable, unlike a
     silent hang."""
+    pressure = pressure_by_node or {}
     scored = []  # (effective_free, node_id)
     for nid, avail in free_by_node.items():
         if not _custom_fits(
@@ -297,6 +302,14 @@ def _select_node(
             capacity_by_node.get(nid, {}),
             reserved_custom_by_node.get(nid, {}),
         ):
+            continue
+        # Pressure veto: a node under OS memory pressure (yellow/red, level >= 2)
+        # takes no new heavy task, even when the free/reserved math says there's
+        # room — on macOS `available` over-counts reclaimable/compressed pages, so
+        # the kernel's pressure level is the truer OOM brake. Only tightens (a
+        # heavy task reaching here is already gated). The idle-escape below
+        # IGNORES pressure — it must place *something* rather than stall forever.
+        if pressure.get(nid, 0) >= 2:
             continue
         total = total_by_node.get(nid, avail)
         eff = min(avail, total - reserved_by_node.get(nid, 0)) - margin
@@ -372,6 +385,7 @@ def run_graph(
     lease_by_ref: dict[ray.ObjectRef, tuple] = {}
     free_by_node: dict[str, int] = {}
     total_by_node: dict[str, int] = {}
+    pressure_by_node: dict[str, int] = {}   # node_id -> OS pressure (1/2/4, 0 unknown)
     capacity_by_node: dict[str, dict[str, float]] = {}
     MEM_SAMPLE_INTERVAL = 2.0  # seconds between per-node free-RAM re-measurements
     last_mem_sample: float = 0.0
@@ -392,12 +406,13 @@ def run_graph(
         leg re-anchors to truth); the reservation ledgers persist across it. Best
         effort — if the psutil fan-out returns nothing, capacity from
         ``ray.nodes()`` still populates so the idle-escape can place work."""
-        nonlocal free_by_node, total_by_node, capacity_by_node, last_mem_sample
+        nonlocal free_by_node, total_by_node, pressure_by_node, capacity_by_node, last_mem_sample
         from web_server.backend.ray_metrics import sample_node_memory
         meas = sample_node_memory()
         if meas:
-            free_by_node = {nid: a for nid, (a, _t) in meas.items()}
-            total_by_node = {nid: t for nid, (_a, t) in meas.items()}
+            free_by_node = {nid: a for nid, (a, _t, _p) in meas.items()}
+            total_by_node = {nid: t for nid, (_a, t, _p) in meas.items()}
+            pressure_by_node = {nid: p for nid, (_a, _t, p) in meas.items()}
         capacity_by_node = {
             n["NodeID"]: dict(n.get("Resources", {}))
             for n in ray.nodes() if n.get("Alive")
@@ -477,6 +492,7 @@ def run_graph(
                         free_by_node, total_by_node, reserved_by_node,
                         capacity_by_node, reserved_custom_by_node,
                         any_in_flight=bool(pending),
+                        pressure_by_node=pressure_by_node,
                     )
                     if node_id is None:  # fits nowhere now — hold for a later pass
                         retained.append((rt, node))

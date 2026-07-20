@@ -198,10 +198,36 @@ def _try_import_node_mem_remote():
         @ray.remote(num_cpus=0)
         def _sample_node_mem():
             import psutil
+            import sys
+            import subprocess
             import ray as _ray
             vm = psutil.virtual_memory()
             node_id = _ray.get_runtime_context().get_node_id()
-            return (node_id, int(vm.available), int(vm.total))
+            # OS memory-PRESSURE level (1 green, 2 yellow, 4 red, 0 unknown) — the
+            # kernel's own distress signal, which is what actually predicts the
+            # OOM-killer / macOS "out of application memory". On macOS `available`
+            # over-counts reclaimable/compressed pages, so pressure is the truer
+            # brake; read it here, ON the node, alongside the psutil reading.
+            pressure = 0
+            try:
+                if sys.platform == "darwin":
+                    r = subprocess.run(
+                        ["sysctl", "-n", "kern.memorystatus_vm_pressure_level"],
+                        capture_output=True, text=True, timeout=2)
+                    v = int(r.stdout.strip())
+                    pressure = v if v in (1, 2, 4) else 0
+                elif sys.platform.startswith("linux"):
+                    # PSI: fraction of time ALL work stalled on memory (avg10).
+                    with open("/proc/pressure/memory") as f:
+                        for line in f:
+                            if line.startswith("full"):
+                                kv = dict(p.split("=") for p in line.split()[1:])
+                                avg10 = float(kv.get("avg10", 0.0))
+                                pressure = 4 if avg10 >= 10.0 else 2 if avg10 >= 1.0 else 1
+                                break
+            except Exception:
+                pressure = 0  # unknown → don't let the gate block on it
+            return (node_id, int(vm.available), int(vm.total), pressure)
 
         return _sample_node_mem
     except Exception:
@@ -216,13 +242,14 @@ def sample_node_memory(timeout: float = 4.0) -> dict:
     there (PixInsight included), not just Ray's workers, which is the whole point
     of measuring instead of trusting Ray's declared reservations.
 
-    Returns `{node_id: (available_bytes, total_bytes)}`. A node that fails or
-    times out is simply omitted (per-ref, so one flaky node can't blank the
-    batch); the caller drops its stale snapshot entry, so it falls out of
-    scheduling until it answers again. Whole fan-out is milliseconds — unlike the
-    chip sampler there is no 0.5 s CPU-percent sleep."""
+    Returns `{node_id: (available_bytes, total_bytes, pressure_level)}` where
+    pressure_level is the node's OS memory-pressure (1 green, 2 yellow, 4 red, 0
+    unknown). A node that fails or times out is simply omitted (per-ref, so one
+    flaky node can't blank the batch); the caller drops its stale snapshot entry,
+    so it falls out of scheduling until it answers again. Whole fan-out is
+    milliseconds — unlike the chip sampler there is no 0.5 s CPU-percent sleep."""
     global _sample_node_mem_fn
-    out: dict[str, tuple[int, int]] = {}
+    out: dict[str, tuple[int, int, int]] = {}
     try:
         import ray
         if _sample_node_mem_fn is None:
@@ -238,8 +265,8 @@ def sample_node_memory(timeout: float = 4.0) -> dict:
             refs.append(_sample_node_mem_fn.options(scheduling_strategy=strategy).remote())
         for ref in refs:
             try:
-                node_id, avail, total = ray.get(ref, timeout=timeout)
-                out[node_id] = (int(avail), int(total))
+                node_id, avail, total, pressure = ray.get(ref, timeout=timeout)
+                out[node_id] = (int(avail), int(total), int(pressure))
             except Exception as e:
                 print(f"### sample_node_memory per-node sample failed: {type(e).__name__}: {e}")
     except Exception as e:
