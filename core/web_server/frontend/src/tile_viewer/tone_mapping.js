@@ -21,8 +21,14 @@
  * world-space corners come from `tileRect`. The viewport transform
  * places it into clip space. The same shader handles every tile;
  * tiles are differentiated by the per-tile bind group (group 1).
+ *
+ * SHADER_PREAMBLE (the structs + bindings 0–4 + group-1 bindings + vs_main
+ * + normLin) is factored out and re-used by the data-driven finish shader
+ * (generic_finish_shader.js) so the Globals struct layout can't drift
+ * between the built-in GHS finish and a Python DisplayFinish — both bind
+ * the SAME globals buffer.
  */
-export const TONE_MAPPING_WGSL = /* wgsl */ `
+export const SHADER_PREAMBLE = /* wgsl */ `
 struct Globals {
     e1: f32,
     e5: f32,
@@ -58,7 +64,18 @@ struct Globals {
     // (SII/OIII) has its noise floor cut while clean Hα is untouched. Slider.
     sigmaS: f32, sigmaH: f32, sigmaO: f32,
     shadowClip: f32,
-    _pad0: f32, _pad1: f32, _pad2: f32,
+    // Per-channel Generalized Hyperbolic Stretch (GHS) — replaces the single MTF
+    // in the finish. Each S/H/O is stretched INDEPENDENTLY: D_ = strength (shader
+    // uses exp(D)-1, the ghsastro convFacD=1 convention), b_ = local intensity /
+    // curve form (b<0 asinh-ish, 0 exp, >0 hyperbolic), SP_ = symmetry point
+    // (seeded to each channel's dark-tail background so the sky lifts, never
+    // crushes). LP/HP = shadow/highlight linear-protection; BP/WP = black/white
+    // clip. Grid axes perturb per-channel D/b/SP; LP/HP/BP/WP are sliders.
+    DS: f32, DH: f32, DO: f32,
+    bS: f32, bH: f32, bO: f32,
+    SPS: f32, SPH: f32, SPO: f32,
+    LP: f32, HP: f32, BP: f32, WP: f32,
+    _pad0: f32, _pad1: f32,
 };
 struct Viewport {
     tx: f32,
@@ -130,7 +147,11 @@ fn vs_main(@builtin(vertex_index) idx: u32) -> VsOut {
 fn normLin(c: f32, m: f32, p: f32) -> f32 {
     return (c - m) / max(p - m, 1e-6);
 }
+`;
 
+// The built-in finish (mono STF/LUT + baked color + per-channel GHS narrowband)
+// = the shared preamble followed by its own helpers and fs_main.
+export const TONE_MAPPING_WGSL = SHADER_PREAMBLE + /* wgsl */ `
 // Closed-form PixInsight MTF stretch (reuses globals.e1/e5), per channel.
 fn stfChannel(x: f32) -> f32 {
     let E2 = max(0.0, (x - globals.e1) / max(1.0 - globals.e1, 1e-12));
@@ -157,6 +178,79 @@ fn foraxxPalette(s: f32, h: f32, o: f32) -> vec3<f32> {
     return vec3<f32>(R, G, B);
 }
 
+// Generalized Hyperbolic Stretch (ghsastro / mikec1485 reference math), applied
+// per channel. Dslider maps as D = exp(Dslider)-1 (convFacD=1). The curve is
+// piecewise: linear below LP, generalized-hyperbolic LP→SP→HP (form set by b —
+// exp for b=0, pow for b≷0), linear above HP. Coefficients computed inline (they
+// depend only on the uniforms, constant across the tile — cheap on the GPU). SP
+// is seeded to each channel's dark-tail background so the sky LIFTS, never crushes.
+fn ghsChannel(x: f32, Dslider: f32, bIn: f32, SP: f32, LP: f32, HP: f32) -> f32 {
+    let D = exp(Dslider) - 1.0;
+    let z = clamp(x, 0.0, 1.0);
+    if (D <= 0.0) { return z; }
+    // Guard the log singularity at b=-1 (integral form divides by (|b|-1)).
+    var b = bIn;
+    if (abs(b + 1.0) < 0.02) { b = -0.98; }
+
+    var b1 = 0.0;
+    var a2 = 0.0; var b2 = 0.0; var c2 = 0.0; var d2 = 0.0; var e2 = 0.0;
+    var a3 = 0.0; var b3 = 0.0; var c3 = 0.0; var d3 = 0.0; var e3 = 0.0;
+    var a4 = 0.0; var b4 = 0.0;
+    var isExp = false;
+
+    if (b == 0.0) {                                   // exponential
+        isExp = true;
+        let qlp = exp(-D * (SP - LP));
+        let q0 = qlp - D * LP * exp(-D * (SP - LP));
+        let qwp = 2.0 - exp(-D * (HP - SP));
+        let q1 = qwp + D * (1.0 - HP) * exp(-D * (HP - SP));
+        let q = 1.0 / (q1 - q0);
+        b1 = D * exp(-D * (SP - LP)) * q;
+        a2 = -q0 * q; b2 = q; c2 = -D * SP; d2 = D;
+        a3 = (2.0 - q0) * q; b3 = -q; c3 = D * SP; d3 = -D;
+        a4 = (qwp - q0 - D * HP * exp(-D * (HP - SP))) * q;
+        b4 = D * exp(-D * (HP - SP)) * q;
+    } else if (b > 0.0) {                             // hyperbolic (pow)
+        let B = b;
+        let qlp = pow(1.0 + D * B * (SP - LP), -1.0 / B);
+        let q0 = qlp - D * LP * pow(1.0 + D * B * (SP - LP), -(1.0 + B) / B);
+        let qwp = 2.0 - pow(1.0 + D * B * (HP - SP), -1.0 / B);
+        let q1 = qwp + D * (1.0 - HP) * pow(1.0 + D * B * (HP - SP), -(1.0 + B) / B);
+        let q = 1.0 / (q1 - q0);
+        b1 = D * pow(1.0 + D * B * (SP - LP), -(1.0 + B) / B) * q;
+        a2 = -q0 * q; b2 = q; c2 = 1.0 + D * B * SP; d2 = -D * B; e2 = -1.0 / B;
+        a3 = (2.0 - q0) * q; b3 = -q; c3 = 1.0 - D * B * SP; d3 = D * B; e3 = -1.0 / B;
+        a4 = (qwp - q0 - D * HP * pow(1.0 + D * B * (HP - SP), -(B + 1.0) / B)) * q;
+        b4 = D * pow(1.0 + D * B * (HP - SP), -(B + 1.0) / B) * q;
+    } else {                                          // integral (b<0, pow)
+        let B = -b;
+        let qlp = (1.0 - pow(1.0 + D * B * (SP - LP), (B - 1.0) / B)) / (B - 1.0);
+        let q0 = qlp - D * LP * pow(1.0 + D * B * (SP - LP), -1.0 / B);
+        let qwp = (pow(1.0 + D * B * (HP - SP), (B - 1.0) / B) - 1.0) / (B - 1.0);
+        let q1 = qwp + D * (1.0 - HP) * pow(1.0 + D * B * (HP - SP), -1.0 / B);
+        let q = 1.0 / (q1 - q0);
+        b1 = D * pow(1.0 + D * B * (SP - LP), -1.0 / B) * q;
+        a2 = (1.0 / (B - 1.0) - q0) * q; b2 = -q / (B - 1.0); c2 = 1.0 + D * B * SP; d2 = -D * B; e2 = (B - 1.0) / B;
+        a3 = (-1.0 / (B - 1.0) - q0) * q; b3 = q / (B - 1.0); c3 = 1.0 - D * B * SP; d3 = D * B; e3 = (B - 1.0) / B;
+        a4 = (qwp - q0 - D * HP * pow(1.0 + D * B * (HP - SP), -1.0 / B)) * q;
+        b4 = D * pow(1.0 + D * B * (HP - SP), -1.0 / B) * q;
+    }
+
+    var y: f32;
+    if (z < LP) {
+        y = b1 * z;                                   // a1 is always 0
+    } else if (z < SP) {
+        let u = c2 + d2 * z;
+        if (isExp) { y = a2 + b2 * exp(u); } else { y = a2 + b2 * pow(max(u, 1e-12), e2); }
+    } else if (z < HP) {
+        let u = c3 + d3 * z;
+        if (isExp) { y = a3 + b3 * exp(u); } else { y = a3 + b3 * pow(max(u, 1e-12), e3); }
+    } else {
+        y = a4 + b4 * z;
+    }
+    return clamp(y, 0.0, 1.0);
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // Sample both textures once, in uniform control flow (valid
@@ -176,29 +270,33 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         if (S == 0.0 && H == 0.0 && O == 0.0) {
             return vec4<f32>(0.0, 0.0, 0.0, 1.0);
         }
-        // 1. Cross-channel normalise (off-diagonal balance fix) + trim, with a
-        //    PER-CHANNEL shadow clip at m + shadowClip·sigma (kills weak-channel
-        //    noise without touching a strong channel).
-        let loS = globals.mS + globals.shadowClip * globals.sigmaS;
-        let loH = globals.mH + globals.shadowClip * globals.sigmaH;
-        let loO = globals.mO + globals.shadowClip * globals.sigmaO;
-        let nS = (S - loS) / max(globals.pS - loS, 1e-6) * globals.trimS;
-        let nH = (H - loH) / max(globals.pH - loH, 1e-6) * globals.trimH;
-        let nO = (O - loO) / max(globals.pO - loO, 1e-6) * globals.trimO;
-        // 2. Palette combine (0 = Hubble, 1 = Foraxx). Standard SHO: the gold
-        //    comes from Hubble (R=S,G=H,B=O) + SCNR green below, on the
-        //    NXT-denoised channels — the textbook narrowband workflow.
+        // 1. Per-channel normalise to [0,1]. The low anchor sits BELOW the median
+        //    (m - shadowClip·sigma) so the sky background SURVIVES as a small
+        //    positive value — the GHS below lifts it to a grey rather than the old
+        //    m + shadowClip·sigma anchor that clipped the sky to pure black.
+        let loS = globals.mS - globals.shadowClip * globals.sigmaS;
+        let loH = globals.mH - globals.shadowClip * globals.sigmaH;
+        let loO = globals.mO - globals.shadowClip * globals.sigmaO;
+        let nS = clamp((S - loS) / max(globals.pS - loS, 1e-6), 0.0, 1.0) * globals.trimS;
+        let nH = clamp((H - loH) / max(globals.pH - loH, 1e-6), 0.0, 1.0) * globals.trimH;
+        let nO = clamp((O - loO) / max(globals.pO - loO, 1e-6), 0.0, 1.0) * globals.trimO;
+        // 2. Per-channel GHS view transform — each channel stretched INDEPENDENTLY
+        //    with its own D/b/SP (SP seeded to its dark-tail background). Replaces
+        //    the single MTF; this is the grid's per-channel stretch surface.
+        let gS = ghsChannel(nS, globals.DS, globals.bS, globals.SPS, globals.LP, globals.HP);
+        let gH = ghsChannel(nH, globals.DH, globals.bH, globals.SPH, globals.LP, globals.HP);
+        let gO = ghsChannel(nO, globals.DO, globals.bO, globals.SPO, globals.LP, globals.HP);
+        // 3. Palette combine (0 = Hubble R=S/G=H/B=O, 1 = Foraxx) on the stretched
+        //    channels; SCNR green below turns the Hα green into the SHO gold.
         var rgb: vec3<f32>;
         if (globals.paletteMode > 0.5) {
-            rgb = foraxxPalette(nS, nH, nO);
+            rgb = foraxxPalette(gS, gH, gO);
         } else {
-            rgb = vec3<f32>(nS, nH, nO);   // Hubble: R=S, G=H, B=O
+            rgb = vec3<f32>(gS, gH, gO);
         }
-        // 3. Deep black point.
-        let bp = globals.blackPoint;
-        rgb = max(vec3<f32>(0.0), (rgb - vec3<f32>(bp)) / max(1.0 - bp, 1e-6));
-        // 4. Shaped stretch (per-channel MTF).
-        rgb = vec3<f32>(stfChannel(rgb.r), stfChannel(rgb.g), stfChannel(rgb.b));
+        // 4. Black / white point clip.
+        rgb = clamp((rgb - vec3<f32>(globals.BP)) / max(globals.WP - globals.BP, 1e-6),
+                    vec3<f32>(0.0), vec3<f32>(1.0));
         // 5. SCNR green (average-neutral, amount-scaled).
         let cap = mix(rgb.g, (rgb.r + rgb.b) * 0.5, globals.scnrAmount);
         rgb.g = min(rgb.g, cap);

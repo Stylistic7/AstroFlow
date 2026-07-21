@@ -26,6 +26,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { TONE_MAPPING_WGSL } from './tone_mapping.js';
+import { buildFinishShader } from './generic_finish_shader.js';
 import { fetchLinearTile } from './tile_loader.js';
 
 
@@ -40,9 +41,19 @@ const GLOBALS_LAYOUT_ENTRIES_BASE = [
     { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
     { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float' } },
     { binding: 4, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+    // Binding 5: the data-driven finish's DisplayParams uniform (a
+    // Python DisplayFinish's extracted params, packed by index). The
+    // built-in GHS/mono/color shaders don't declare it — a pipeline
+    // needn't use every binding in its layout — so adding it here is
+    // invisible to them; only the generic finish pipeline reads it.
+    { binding: 5, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
 ];
 
 const LUT_SIZE = 1024;
+// DisplayParams uniform buffer: fixed 256 B (64 f32) — comfortably larger
+// than any finish's param count. Each finish's DisplayParams struct is a
+// prefix; the shader reads only its own fields, the rest is slack.
+const FINISH_PARAMS_BYTES = 256;
 
 // Per-tile bind-group layout: tile texture + TileRect uniform + stars
 // texture (RGB stars for the narrowband finish; a shared black dummy for
@@ -118,7 +129,7 @@ export function useTileRenderer({ canvasRef }) {
             // to the 16-byte boundary. See the Globals struct in
             // tone_mapping.js for the exact index layout used by setGlobals.
             const globalsBuffer = device.createBuffer({
-                size: 112,
+                size: 160,   // 40 f32: base 25 + per-channel GHS (D/b/SP ×3) + LP/HP/BP/WP + 2 pad
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
 
@@ -147,6 +158,14 @@ export function useTileRenderer({ canvasRef }) {
             // alignment for the struct).
             const viewportBuffer = device.createBuffer({
                 size: 32,
+                usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            });
+
+            // DisplayParams uniform for the data-driven finish (binding 5).
+            // Init to zeros; the generic pipeline reads it, the built-in
+            // shaders ignore it.
+            const finishParamsBuffer = device.createBuffer({
+                size: FINISH_PARAMS_BYTES,
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
 
@@ -194,6 +213,7 @@ export function useTileRenderer({ canvasRef }) {
                     { binding: 2, resource: sampler },
                     { binding: 3, resource: stretchLutTexture.createView() },
                     { binding: 4, resource: sampler },
+                    { binding: 5, resource: { buffer: finishParamsBuffer } },
                 ],
             });
 
@@ -214,10 +234,19 @@ export function useTileRenderer({ canvasRef }) {
             stateRef.current = {
                 device,
                 ctx,
+                format,
                 pipeline,
+                // The data-driven finish pipeline, compiled from a Python
+                // DisplayFinish's served WGSL via setFinishShader(). null =
+                // no generic finish selected → the built-in `pipeline` runs.
+                // `useGeneric` flips paint()/paintGrid() to it.
+                genericPipeline: null,
+                useGeneric: false,
+                pipelineLayout,
                 tileLayout,
                 globalsBindGroup,
                 globalsBuffer,
+                finishParamsBuffer,
                 // Kept so the 3×3 taste-grid can build one globals
                 // bind group per cell (same layout + shared viewport/
                 // sampler/LUT, only the globals buffer differs).
@@ -227,6 +256,8 @@ export function useTileRenderer({ canvasRef }) {
                 viewportBuffer,
                 stretchLutTexture,
                 dummyStarsTexture,
+                // Latest DisplayParams (64 f32; a finish uses a prefix).
+                lastFinishParams: new Float32Array(FINISH_PARAMS_BYTES / 4),
                 // `tiles` is the LOADED tile cache, keyed on tile key
                 // (e.g. "z/x/y"). Tiles stay here after leaving the
                 // visible set so re-panning over them doesn't trigger
@@ -245,12 +276,16 @@ export function useTileRenderer({ canvasRef }) {
                 //   12-14 mS/mH/mO, 15-17 pS/pH/pO, 18-20 trimS/trimH/trimO,
                 //   21-23 sigmaS/sigmaH/sigmaO, 24 shadowClip, 25-27 pad.
                 lastGlobals: new Float32Array([
-                    0, 0.5, 1, 1, 0, 0, 0, 0,
-                    0, 0, 1, 0,
-                    0, 0, 0, 1, 1, 1,
-                    1, 1, 1,
-                    0, 0, 0, 3,
-                    0, 0, 0,
+                    0, 0.5, 1, 1, 0, 0, 0, 0,   // 0-7  e1,e5,max,peak,stretchMode,isColor,finishMode,palette
+                    0, 0, 1, 0,                  // 8-11 blackPoint,scnr,saturation,addStars
+                    0, 0, 0, 1, 1, 1,            // 12-17 mS/mH/mO, pS/pH/pO
+                    1, 1, 1,                     // 18-20 trimS/H/O
+                    0, 0, 0, 1,                  // 21-24 sigmaS/H/O, shadowClip
+                    2.2, 2.2, 2.2,               // 25-27 GHS DS/DH/DO (strength)
+                    0, 0, 0,                     // 28-30 GHS bS/bH/bO (contrast)
+                    0.1, 0.1, 0.1,               // 31-33 GHS SPS/SPH/SPO (dark-tail; seeded per tap)
+                    0, 1, 0, 1,                  // 34-37 LP, HP, BP, WP
+                    0, 0,                        // 38-39 pad
                 ]),
                 lastViewport: new Float32Array(8),
                 // rAF coalescing — multiple redraw() calls within one
@@ -314,9 +349,11 @@ export function useTileRenderer({ canvasRef }) {
         const s = stateRef.current;
         if (!s) return;
         if (s.grid && s.grid.active) { paintGrid(s); return; }
-        const { device, ctx, pipeline, globalsBindGroup, lastViewport } = s;
+        const { device, ctx, globalsBindGroup, lastViewport } = s;
+        const pipeline = (s.useGeneric && s.genericPipeline) ? s.genericPipeline : s.pipeline;
 
         device.queue.writeBuffer(s.globalsBuffer, 0, s.lastGlobals);
+        device.queue.writeBuffer(s.finishParamsBuffer, 0, s.lastFinishParams);
         device.queue.writeBuffer(s.viewportBuffer, 0, lastViewport);
 
         const drawList = drawListFor(s);
@@ -346,11 +383,14 @@ export function useTileRenderer({ canvasRef }) {
      * `pass.setViewport` into each sub-rect. `s.grid.cellGlobals` is 9×
      * Float32Array(28) mirroring lastGlobals; cell 4 is the centre. */
     function paintGrid(s) {
-        const { device, ctx, pipeline, viewportBuffer } = s;
+        const { device, ctx, viewportBuffer } = s;
+        const pipeline = (s.useGeneric && s.genericPipeline) ? s.genericPipeline : s.pipeline;
         const g = s.grid;
         device.queue.writeBuffer(viewportBuffer, 0, s.lastViewport);
-        for (let i = 0; i < 9; i++)
+        for (let i = 0; i < 9; i++) {
             device.queue.writeBuffer(g.buffers[i], 0, g.cellGlobals[i]);
+            device.queue.writeBuffer(g.finishBuffers[i], 0, g.cellFinish[i]);
+        }
 
         const drawList = drawListFor(s);
         const tex = ctx.getCurrentTexture();
@@ -384,7 +424,7 @@ export function useTileRenderer({ canvasRef }) {
      * object (the taste-grid passes one per cell). Index layout mirrors
      * setGlobals / the Globals struct in tone_mapping.js. */
     function buildGlobals(p) {
-        const g = new Float32Array(28);
+        const g = new Float32Array(40);
         g[0] = p.e1 ?? 0;
         g[1] = p.e5 ?? 0.5;
         g[2] = p.max ?? 1;
@@ -402,8 +442,24 @@ export function useTileRenderer({ canvasRef }) {
         g[15] = pp[0]; g[16] = pp[1]; g[17] = pp[2];
         const t = p.trims ?? [1, 1, 1]; g[18] = t[0]; g[19] = t[1]; g[20] = t[2];
         const sg = p.sigmas ?? [1, 1, 1]; g[21] = sg[0]; g[22] = sg[1]; g[23] = sg[2];
-        g[24] = p.shadowClip ?? 0;
+        g[24] = p.shadowClip ?? 1;
+        // Per-channel GHS: D (strength), b (contrast), SP (dark-tail pivot).
+        const D = p.ghsD ?? [2.2, 2.2, 2.2]; g[25] = D[0]; g[26] = D[1]; g[27] = D[2];
+        const gb = p.ghsB ?? [0, 0, 0]; g[28] = gb[0]; g[29] = gb[1]; g[30] = gb[2];
+        const sp = p.ghsSP ?? [0.1, 0.1, 0.1]; g[31] = sp[0]; g[32] = sp[1]; g[33] = sp[2];
+        g[34] = p.LP ?? 0; g[35] = p.HP ?? 1; g[36] = p.BP ?? 0; g[37] = p.WP ?? 1;
         return g;
+    }
+
+    /** Pack a data-driven finish's params into the DisplayParams buffer layout.
+     * `p.finishParams` is one value per Python `Param`, in declared order — the
+     * exact order the served `DisplayParams` struct fields sit in, so index i of
+     * the array is field i of the struct. Absent ⇒ zeros (built-in finishes). */
+    function buildFinishParams(p) {
+        const out = new Float32Array(FINISH_PARAMS_BYTES / 4);
+        const fp = p && p.finishParams;
+        if (fp) for (let i = 0; i < fp.length && i < out.length; i++) out[i] = fp[i];
+        return out;
     }
 
     /** Enter/refresh 3×3 taste-grid mode. `cellParams` = 9 setGlobals-style
@@ -414,13 +470,18 @@ export function useTileRenderer({ canvasRef }) {
         const s = stateRef.current;
         if (!s) return;
         if (!s.grid) {
-            const buffers = [], bindGroups = [];
+            const buffers = [], finishBuffers = [], bindGroups = [];
             for (let i = 0; i < 9; i++) {
                 const buf = s.device.createBuffer({
                     size: s.lastGlobals.byteLength,
                     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
                 });
+                const fbuf = s.device.createBuffer({
+                    size: FINISH_PARAMS_BYTES,
+                    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+                });
                 buffers.push(buf);
+                finishBuffers.push(fbuf);
                 bindGroups.push(s.device.createBindGroup({
                     layout: s.globalsLayout,
                     entries: [
@@ -429,12 +490,15 @@ export function useTileRenderer({ canvasRef }) {
                         { binding: 2, resource: s.sampler },
                         { binding: 3, resource: s.stretchLutTexture.createView() },
                         { binding: 4, resource: s.sampler },
+                        { binding: 5, resource: { buffer: fbuf } },
                     ],
                 }));
             }
-            s.grid = { active: false, buffers, bindGroups, cellGlobals: null };
+            s.grid = { active: false, buffers, finishBuffers, bindGroups,
+                       cellGlobals: null, cellFinish: null };
         }
         s.grid.cellGlobals = cellParams.map(buildGlobals);
+        s.grid.cellFinish = cellParams.map(buildFinishParams);
         s.grid.active = true;
         redraw();
     }
@@ -444,6 +508,37 @@ export function useTileRenderer({ canvasRef }) {
         const s = stateRef.current;
         if (!s || !s.grid) return;
         s.grid.active = false;
+        redraw();
+    }
+
+    /** Install (or clear) the data-driven finish. `finishWgsl` is a Python
+     * DisplayFinish's served WGSL chunk (its DisplayParams struct + helpers +
+     * displayFinish). We wrap it in the tile-shader template and compile a
+     * pipeline that SHARES the built-in layouts (so all the tile/grid bind
+     * groups just work); paint()/paintGrid() switch to it while `useGeneric`.
+     * Pass null/'' to fall back to the built-in GHS/mono/color pipeline. The
+     * compiled pipeline is cached on the source string (recompiles only when
+     * the selected finish's WGSL actually changes). */
+    function setFinishShader(finishWgsl) {
+        const s = stateRef.current;
+        if (!s) return;
+        if (!finishWgsl) {
+            s.useGeneric = false;
+            redraw();
+            return;
+        }
+        if (finishWgsl !== s.genericShaderSrc) {
+            const code = buildFinishShader(finishWgsl);
+            const module = s.device.createShaderModule({ code });
+            s.genericPipeline = s.device.createRenderPipeline({
+                layout: s.pipelineLayout,
+                vertex: { module, entryPoint: 'vs_main' },
+                fragment: { module, entryPoint: 'fs_main', targets: [{ format: s.format }] },
+                primitive: { topology: 'triangle-strip' },
+            });
+            s.genericShaderSrc = finishWgsl;
+        }
+        s.useGeneric = true;
         redraw();
     }
 
@@ -461,10 +556,17 @@ export function useTileRenderer({ canvasRef }) {
         e1, e5, max, peakBrightness, stretchMode = 0, isColor,
         finishMode, paletteMode, blackPoint, scnrAmount, saturation, addStars,
         anchors, trims, sigmas, shadowClip,
+        ghsD, ghsB, ghsSP, LP, HP, BP, WP,
+        finishParams,
     }) {
         const s = stateRef.current;
         if (!s) return;
         const g = s.lastGlobals;
+        if (finishParams) {
+            const fp = s.lastFinishParams;
+            fp.fill(0);
+            for (let i = 0; i < finishParams.length && i < fp.length; i++) fp[i] = finishParams[i];
+        }
         if (e1 !== undefined) g[0] = e1;
         if (e5 !== undefined) g[1] = e5;
         if (max !== undefined) g[2] = max;
@@ -484,6 +586,13 @@ export function useTileRenderer({ canvasRef }) {
         if (trims) { g[18] = trims[0]; g[19] = trims[1]; g[20] = trims[2]; }
         if (sigmas) { g[21] = sigmas[0]; g[22] = sigmas[1]; g[23] = sigmas[2]; }
         if (shadowClip !== undefined) g[24] = shadowClip;
+        if (ghsD) { g[25] = ghsD[0]; g[26] = ghsD[1]; g[27] = ghsD[2]; }
+        if (ghsB) { g[28] = ghsB[0]; g[29] = ghsB[1]; g[30] = ghsB[2]; }
+        if (ghsSP) { g[31] = ghsSP[0]; g[32] = ghsSP[1]; g[33] = ghsSP[2]; }
+        if (LP !== undefined) g[34] = LP;
+        if (HP !== undefined) g[35] = HP;
+        if (BP !== undefined) g[36] = BP;
+        if (WP !== undefined) g[37] = WP;
         paint();
     }
 
@@ -697,5 +806,6 @@ export function useTileRenderer({ canvasRef }) {
     }
 
     return { isReady, error, setGlobals, setViewport, setTileUrls,
-             setStretchLut, redraw, clearTiles, setGrid, clearGrid };
+             setStretchLut, redraw, clearTiles, setGrid, clearGrid,
+             setFinishShader };
 }
