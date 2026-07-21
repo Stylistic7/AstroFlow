@@ -8,10 +8,17 @@ import AstroFlowContext from './AstroFlowContext.jsx';
 
 import { ra_to_hms, dec_to_dms, format_duration } from './units.js'
 
-const StackHeader = ({ stack_type, stack, stack_id }) => {
+const StackHeader = ({ stack_type, stack, stack_id, pipeline }) => {
   const { isQuarantined } = useContext(AstroFlowContext);
   const handleOpenStack = async () => {
-    const res = await fetch(`/api/open_stack_master/${stack_id}`, { method: 'HEAD' });
+    // Pass the CURRENT pipeline so the backend traces the right stacker's
+    // master (e.g. WBPP `stack_files` for "Hybrid: PI Master + OSS Mosaic").
+    // Without it the route falls back to the "PixInsight" default, which
+    // traces the wrong pipeline for this stack and 404s (nothing opens).
+    const url = pipeline
+      ? `/api/open_stack_master/${stack_id}/${encodeURIComponent(pipeline)}`
+      : `/api/open_stack_master/${stack_id}`;
+    await fetch(url, { method: 'HEAD' });
   };
 
   return (

@@ -41,7 +41,7 @@ const StackViewer = () => {
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <StackHeader stack_type={stack_type} stack={stack} stack_id={unified_stack_id} />
+      <StackHeader stack_type={stack_type} stack={stack} stack_id={unified_stack_id} pipeline={pipeline} />
       <StackTabs
         stack_type={stack_type}
         stack={stack}
