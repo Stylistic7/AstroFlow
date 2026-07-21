@@ -131,7 +131,7 @@ def _sxt_narrow(args, kwargs):
 @node(cache_key_narrow=_bxt_correct_narrow, auto_memory=True, plate_solve=False)  # derived from an already-solved channel
 def bxt_correct(
     mosaic: Mosaic, filter: str, config: ProcessingConfig, channel: ImageMetadata,
-) -> WithSidecar[XisfFilePath]:
+) -> WithSidecar[TiffFilePath]:
     """BlurXTerminator a per-filter mosaic channel (linear deconvolution).
 
     Runs the normal sharpening deconvolution (config.bxt; defaults to the
@@ -144,7 +144,7 @@ def bxt_correct(
     out = bxt_correct.filename_fn(mosaic, filter, config, channel)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     if config.development_settings.mock_pixinsight:
-        _write_mono_xisf(out, _mono(channel), filter)
+        _write_mono_tiff(out, _mono(channel), filter)
     else:
         from rc_astro_cli import run_bxt
         run_bxt(channel.filename, out,
@@ -153,7 +153,7 @@ def bxt_correct(
                 correct_only=config.bxt.correct_only,
                 ml_version=config.bxt.ml_version,
                 overlap=config.bxt.overlap)
-    return WithSidecar(XisfFilePath(out))
+    return WithSidecar(TiffFilePath(out))
 
 
 def _bxt_correct_only_narrow(args, kwargs):
@@ -168,7 +168,7 @@ def _bxt_correct_only_narrow(args, kwargs):
 @node(cache_key_narrow=_bxt_correct_only_narrow, auto_memory=True, plate_solve=True)  # RE-SOLVE the corrected panel (Croman)
 def bxt_correct_only(
     target: Target, filter: str, config: ProcessingConfig, channel: ImageMetadata,
-) -> WithSidecar[XisfFilePath]:
+) -> WithSidecar[TiffFilePath]:
     """BlurXTerminator Correct-Only on a mosaic PANEL, BEFORE assembly — the first
     half of Croman's recommended two-pass mosaic workflow.
 
@@ -184,18 +184,18 @@ def bxt_correct_only(
     out = bxt_correct_only.filename_fn(target, filter, config, channel)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     if config.development_settings.mock_pixinsight:
-        _write_mono_xisf(out, _mono(channel), filter)
+        _write_mono_tiff(out, _mono(channel), filter)
     else:
         from rc_astro_cli import run_bxt
         run_bxt(channel.filename, out, correct_only=True,
                 ml_version=config.bxt.ml_version, overlap=config.bxt.overlap)
-    return WithSidecar(XisfFilePath(out))
+    return WithSidecar(TiffFilePath(out))
 
 
 @node(cache_key_narrow=_sxt_narrow, auto_memory=True, plate_solve=False)  # starless: no stars to solve against
 def sxt_starless(
     mosaic: Mosaic, filter: str, config: ProcessingConfig, channel: ImageMetadata,
-) -> WithSidecar[XisfFilePath]:
+) -> WithSidecar[TiffFilePath]:
     """StarXTerminator a narrowband channel; keep the starless body (linear).
 
     Cache key narrowed to (mock, config.sxt). XISF output (its FITS writer
@@ -204,12 +204,12 @@ def sxt_starless(
     out = sxt_starless.filename_fn(mosaic, filter, config, channel)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     if config.development_settings.mock_pixinsight:
-        _write_mono_xisf(out, _mono(channel), filter)
+        _write_mono_tiff(out, _mono(channel), filter)
     else:
         from rc_astro_cli import run_sxt
         run_sxt(channel.filename, starless_out=out,
                 ml_version=config.sxt.ml_version, overlap=config.sxt.overlap)
-    return WithSidecar(XisfFilePath(out))
+    return WithSidecar(TiffFilePath(out))
 
 
 def _sxt_rgb_narrow(args, kwargs):
@@ -222,7 +222,7 @@ def _sxt_rgb_narrow(args, kwargs):
 @node(auto_memory=True, plate_solve=False)  # pure bandjoin, no PixInsight
 def combine_broadband_rgb(
     mosaic: Mosaic, r: ImageMetadata, g: ImageMetadata, b: ImageMetadata,
-) -> WithSidecar[XisfFilePath]:
+) -> WithSidecar[TiffFilePath]:
     """Combine the three LINEAR BXT'd broadband channels into one linear RGB
     XISF so StarXTerminator can extract stars from all channels AT ONCE.
 
@@ -234,14 +234,14 @@ def combine_broadband_rgb(
     out = combine_broadband_rgb.filename_fn(mosaic, r, g, b)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     rgb = np.stack([_mono(r), _mono(g), _mono(b)], axis=2).astype(np.float32)
-    write_xisf_image(Path(out), rgb, {"PIPELINE": "AstroFlow-OSS"})
-    return WithSidecar(XisfFilePath(out))
+    write_tiff_image(Path(out), rgb, {"PIPELINE": "AstroFlow-OSS"})   # BigTIFF past 2GB; feeds sxt_stars_rgb, which inherits this format
+    return WithSidecar(TiffFilePath(out))
 
 
 @node(cache_key_narrow=_sxt_rgb_narrow, auto_memory=True, plate_solve=False)  # coherent RGB stars
 def sxt_stars_rgb(
     mosaic: Mosaic, config: ProcessingConfig, rgb: ImageMetadata,
-) -> WithSidecar[XisfFilePath]:
+) -> WithSidecar[TiffFilePath]:
     """StarXTerminator the combined linear RGB; keep the UNSCREENED RGB stars.
     One SXT pass over the RGB (not one per channel) makes the extracted stars
     coherent across R/G/B, so the star image has natural colours instead of
@@ -249,13 +249,13 @@ def sxt_stars_rgb(
     out = sxt_stars_rgb.filename_fn(mosaic, config, rgb)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     if config.development_settings.mock_pixinsight:
-        write_xisf_image(Path(out), read_image(Path(rgb.filename)).astype(np.float32),
+        write_tiff_image(Path(out), read_image(Path(rgb.filename)).astype(np.float32),
                          {"PIPELINE": "AstroFlow-OSS"})
     else:
         from rc_astro_cli import run_sxt
         run_sxt(rgb.filename, stars_out=out, unscreen=True,
                 ml_version=config.sxt.ml_version, overlap=config.sxt.overlap)
-    return WithSidecar(XisfFilePath(out))
+    return WithSidecar(TiffFilePath(out))
 
 
 @node(auto_memory=True, plate_solve=False)  # nonlinear stretch of an already-solved channel

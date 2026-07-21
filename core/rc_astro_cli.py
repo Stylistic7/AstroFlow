@@ -41,6 +41,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import uuid
 from pathlib import Path
 
 import structlog
@@ -84,10 +85,29 @@ def _run(subcommand_args: list[str], timeout: float | None) -> None:
 
 
 def _move(produced: Path, dest: Path) -> None:
+    """Publish rc-astro's product to `dest` ATOMICALLY.
+
+    `produced` lives in a local TemporaryDirectory — a DIFFERENT filesystem than
+    `dest` — so a plain `shutil.move`/`copy2` writes incrementally straight into
+    the final content-addressed path, non-atomically. Under the scheduler's
+    re-dispatch (over-submission + broken-file re-queue) two publishers race into
+    the same `HASH.xisf`; one truncates the other mid-write, leaving a file cut
+    off at the image/metadata boundary that never satisfies the cache → endless
+    re-derivation (the BXT loop). Fix: copy to a unique staging file ON THE DEST
+    FILESYSTEM, then `os.replace` — a same-filesystem replace is atomic, so a
+    reader or a concurrent publisher never observes a partial file, and two
+    publishers just both land complete files (last wins), never a torn one.
+    """
     if not produced.exists():
         raise FileNotFoundError(f"rc-astro produced no file at {produced}")
     dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(produced), str(dest))  # cross-filesystem safe (temp -> output)
+    staging = dest.with_name(f"{dest.name}.tmp.{os.getpid()}.{uuid.uuid4().hex}")
+    try:
+        shutil.copy2(str(produced), str(staging))  # full copy onto dest's filesystem
+        os.replace(str(staging), str(dest))        # atomic same-fs publish
+    finally:
+        staging.unlink(missing_ok=True)            # clean up if copy/replace failed
+    produced.unlink(missing_ok=True)               # drop the source temp (as shutil.move did)
 
 
 def _locate(td: Path, base: str) -> Path:
@@ -108,7 +128,7 @@ def _locate(td: Path, base: str) -> Path:
 
 def run_bxt(
     input_image: Path | str,
-    output_xisf: Path | str,
+    output: Path | str,
     *,
     sharpen_stars: float = 0.0,
     sharpen_nonstellar: float = 0.0,
@@ -117,21 +137,26 @@ def run_bxt(
     overlap: float = 0.2,
     timeout: float | None = 1800.0,
 ) -> None:
-    """BlurXTerminator `input_image` to `output_xisf` (32-bit float, WCS preserved).
+    """BlurXTerminator `input_image` to `output` (32-bit float, WCS preserved).
 
-    Output is XISF (see module docstring: the FITS writer overflows on
-    >2**31-pixel channels). Operates on LINEAR data. `correct_only` corrects PSF
-    aberrations without sharpening (mutually exclusive with the sharpen amounts).
+    Output FORMAT follows `output`'s extension. Prefer `.tiff`: rc-astro's XISF
+    *writer* is broken — above ~245 MB it silently truncates (declares
+    attachment blocks it never writes) while exiting 0, producing unreadable
+    files that loop the whole pipeline on re-derivation. Its TIFF writer is fine
+    up to classic-TIFF's 4 GB, which covers per-panel/channel data. A bare
+    `-o <dir>` would inherit the input's format and can overflow, so we always
+    pass an explicit filename carrying the desired extension. Operates on LINEAR
+    data. `correct_only` corrects PSF aberrations without sharpening (mutually
+    exclusive with the sharpen amounts).
 
     The sharpen defaults are 0.0 to mirror the rc-astro CLI's own defaults (this
     is a neutral primitive) — callers that want the normal sharpened look must
     ask for it; the OSS pipeline does, via BxtSettings. `ml_version`/`overlap` are
     always passed so the model + tiling are pinned, not left to CLI defaults."""
-    input_image, output_xisf = Path(input_image), Path(output_xisf)
+    input_image, output = Path(input_image), Path(output)
     with tempfile.TemporaryDirectory(prefix="rcastro_bxt_") as td:
-        # Explicit `.xisf` output filename forces XISF format (the input is a
-        # FITS mosaic channel; a bare `-o <dir>` would inherit FITS and overflow).
-        produced = Path(td) / f"{input_image.stem}-bxt.xisf"
+        # Extension drives rc-astro's output format; mirror the caller's request.
+        produced = Path(td) / f"{input_image.stem}-bxt{output.suffix}"
         args = ["bxt", str(input_image), "-o", str(produced),
                 "--depth", "32F", "--overwrite",
                 "--ml-version", str(ml_version), "--overlap", str(overlap)]
@@ -141,7 +166,7 @@ def run_bxt(
             args += ["--sharpen-stars", str(sharpen_stars),
                      "--sharpen-nonstellar", str(sharpen_nonstellar)]
         _run(args, timeout)
-        _move(_locate(Path(td), f"{input_image.stem}-bxt"), output_xisf)
+        _move(_locate(Path(td), f"{input_image.stem}-bxt"), output)
 
 
 def run_sxt(
