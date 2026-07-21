@@ -110,17 +110,26 @@ ray-status:
 start:
 	uv run python main.py
 
-# Stop the live app: `ray stop; pkill -f gunicorn; pkill -f PixInsight`.
-# NOTE the `[g]unicorn` / `[P]ixInsight` bracket trick: `pkill -f` matches
-# against full command lines, and this recipe's own shell has the pattern in
-# its command line — a bare `pkill -f gunicorn` would SIGTERM the recipe shell
-# and abort `stop` before it reached PixInsight. `[g]unicorn` is the same regex
-# but its literal text no longer matches itself. `-` prefixes ignore "no match".
+# Stop the live app: kill the DRIVER (main.py) first, then ray + gunicorn +
+# PixInsight. `make stop` used to leave `main.py` running (it only stopped
+# ray/gunicorn/PixInsight), so `make stop` + a fresh launch STACKED a second
+# driver — multiple mains then fought over the same diskcache/output dir and the
+# derivation crawled to a halt. Killing main.py here is the fix.
+# NOTE the `[g]unicorn` / `[P]ixInsight` / ` [m]ain.py` bracket trick: `pkill -f`
+# matches full command lines, and this recipe's own shell has the pattern in its
+# command line — a bare pattern would SIGTERM the recipe shell and abort `stop`.
+# The bracketed form is the same regex whose literal text no longer matches
+# itself. ` [m]ain.py` (LEADING SPACE) hits the app driver `python main.py` and
+# its `uv run` parent, but NOT ray's own `.../agent/main.py` (slash-prefixed).
+# `-9` guarantees the driver dies (it survived plain SIGTERM in the wild); the
+# explicit ray/gunicorn/PixInsight kills then reap the orphans a hard-killed
+# main.py leaves behind (no atexit runs). `-` prefixes ignore "no match".
 stop:
+	-pkill -9 -f " [m]ain.py"
 	-ray stop
 	-pkill -f "[g]unicorn"
 	-pkill -f "[P]ixInsight"
-	@echo "✅ app stopped (ray + gunicorn + PixInsight)"
+	@echo "✅ app stopped (main.py + ray + gunicorn + PixInsight)"
 
 # Bounce the app: stop, let ray/sockets settle, start again (foreground).
 restart: stop
