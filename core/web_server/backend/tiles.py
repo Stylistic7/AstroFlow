@@ -151,29 +151,35 @@ def _per_channel_linear_stats(path):
         img = img.subsample(shrink, shrink)
     arr = np.frombuffer(img.write_to_memory(), dtype=np.float32).reshape(
         img.height, img.width, img.bands)
-    medians, sigmas, highs = [], [], []
+    # GENERIC per-channel statistics (median, robust σ/MAD, min/max, percentiles).
+    # Finish-agnostic: the frontend's display finishes compute their own starting
+    # values from these (e.g. the STF/MTF seed = median − 2.8σ, p99, midtones-to-
+    # target). The backend ships scene + stats, never finish logic. Narrowband
+    # channels differ wildly in SNR (Hα ~13σ, SII ~2σ, OIII <1σ), so everything is
+    # per-channel.
+    stats = []
     for b in range(min(3, img.bands)):
         c = arr[..., b]
         c = c[np.isfinite(c) & (c > 0.0)]
         if c.size == 0:
-            medians.append(0.0)
-            sigmas.append(1.0)
-            highs.append(1.0)
+            stats.append({"median": 0.0, "mad": 0.0, "sigma": 1.0, "min": 0.0,
+                          "max": 1.0, "p1": 0.0, "p95": 1.0, "p99": 1.0,
+                          "p999": 1.0, "high": 1.0})
             continue
         med = float(np.median(c))
         mad = float(np.median(np.abs(c - med)))
         sigma = 1.4826 * mad if mad > 0 else max(med * 1e-3, 1e-6)
-        # Send the raw background median + robust σ; the shader clips the LOW
-        # anchor at median + shadowClip·σ PER CHANNEL (user slider). Narrowband
-        # channels differ wildly in SNR (measured: Hα ~13σ, SII ~2σ, OIII <1σ)
-        # and the noise is per-channel, so the clip must be too — a weak channel
-        # gets its noise floor cut while strong Hα is untouched.
-        medians.append(med)
-        sigmas.append(sigma)
-        # HIGH anchor = bright signal (p99.9), floored at median+60σ so the gap
-        # stays wide relative to the noise for a faint channel.
-        highs.append(max(float(np.percentile(c, 99.9)), med + 60.0 * sigma))
-    return medians, sigmas, highs
+        p1, p95, p99, p999 = (float(np.percentile(c, q)) for q in (1, 95, 99, 99.9))
+        stats.append({
+            "median": med, "mad": mad, "sigma": sigma,
+            "min": float(c.min()), "max": float(c.max()),
+            "p1": p1, "p95": p95, "p99": p99, "p999": p999,
+            # Legacy HIGH anchor the built-in GHS finish reads: p99.9 floored at
+            # median + 60σ so the gap stays wide relative to noise for a faint
+            # channel.
+            "high": max(p999, med + 60.0 * sigma),
+        })
+    return stats
 
 
 def _tile_metadata_response(path, backend_port, display=None):
@@ -198,10 +204,13 @@ def _tile_metadata_response(path, backend_port, display=None):
     #   "display"    → baked RGB deliverable, shader passes it through.
     if display in LINEAR_FINISH_DISPLAYS and base.bands >= 3:
         meta["colorspace"] = "linear-sho"
-        medians, sigmas, p99s = _per_channel_linear_stats(path)
-        meta["channelMedians"] = medians
-        meta["channelSigma"] = sigmas
-        meta["channelP99"] = p99s
+        stats = _per_channel_linear_stats(path)
+        # Rich generic per-channel stats — frontend finishes seed from these.
+        meta["channelStats"] = stats
+        # Legacy arrays the built-in GHS finish still reads (median / σ / high).
+        meta["channelMedians"] = [s["median"] for s in stats]
+        meta["channelSigma"] = [s["sigma"] for s in stats]
+        meta["channelP99"] = [s["high"] for s in stats]
     else:
         meta["colorspace"] = "display"
     return jsonify(meta)
