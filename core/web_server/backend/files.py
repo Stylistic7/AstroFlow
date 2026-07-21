@@ -195,60 +195,37 @@ def invalidate_stack(stack_id):
     return jsonify({"stack_id": stack_id, "deleted": deleted})
 
 
-@files_bp.route("/api/open_stack_master/<stack_id>", defaults={"pipeline": "PixInsight"})
+@files_bp.route("/api/open_stack_master/<stack_id>", defaults={"pipeline": "PixInsight Master"})
 @files_bp.route("/api/open_stack_master/<stack_id>/<path:pipeline>")
 def open_stack_master(stack_id, pipeline):
-    """Open the stack's master file in PixInsight.
+    """Open the stack's Master file in PixInsight.
 
-    `pipeline` (URL-encoded) names the pipeline whose master we want —
-    different pipelines produce masters at different paths (downscaled
-    vs full-res, OSS vs PixInsight backend, etc.). Default "PixInsight"
-    matches the legacy single-segment URL the frontend uses today.
-    Resolved through the cached pipeline trace, same path the op
-    actually wrote to.
+    Resolves the on-disk master through the SAME tap system the stack page
+    uses to DISPLAY it (`tap_path_for`, existence-gated) — so open stays in
+    lockstep with what's shown, and works for any stacker backend (WBPP
+    `stack_files`, OSS `stack_files_oss`, downscaled, ...). The old
+    `traced_path_for(..., "stack_files", stack=...)` path was broken: the
+    trace's stack_files entries carry an empty `identity`, so it never
+    matched. `pipeline` (URL-encoded) selects which pipeline's master; the
+    caller passes the pipeline it is currently viewing.
     """
-    from dependency_graph.trace_paths import traced_path_for
-    stack = context.stacks[stack_id].get()
-    # The cart item walks the trace from the most-specific entity that
-    # could own the stack — typically the target the stack belongs to.
-    # Falling back to the bare stack works for stack-targeted pipelines.
-    cart_item = _cart_item_for_stack(stack, pipeline)
-    if cart_item is None:
+    from web_server.backend.metadata import tap_path_for
+    if stack_id not in (context.stacks or {}):
         return Response(status=404)
-    filename = traced_path_for(
-        cart_item, "stack_files", stack=stack.stable_hash,
+    stack = context.stacks[stack_id].get()
+    filename = tap_path_for(
+        pipeline, "Master", "stack", stack_id, getattr(stack, "filter", None),
     )
     if filename is None:
         return Response(status=404)
-    print(f"### opening filename {filename}")
+    print(f"### opening filename {filename}", flush=True)
     subprocess.Popen(
         [
             "/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight",
             str(filename),
         ]
     )
-
     return Response(status=200)
-
-
-def _cart_item_for_stack(stack, pipeline: str) -> tuple[str, str, str] | None:
-    """Pick a cart item whose trace will include `stack`'s stack_files
-    call. Prefers the owning target/mosaic so the trace reflects the
-    same config the pipeline would use end-to-end."""
-    for t_id, t_ref in (context.targets or {}).items():
-        target = t_ref.get() if hasattr(t_ref, "get") else t_ref
-        if stack.stable_hash in target.stack_ids:
-            return ("target", t_id, pipeline)
-    for m_id, m_ref in (context.mosaics or {}).items():
-        mosaic = m_ref.get() if hasattr(m_ref, "get") else m_ref
-        for t_id in mosaic.target_ids:
-            t_ref = (context.targets or {}).get(t_id)
-            if t_ref is None:
-                continue
-            target = t_ref.get() if hasattr(t_ref, "get") else t_ref
-            if stack.stable_hash in target.stack_ids:
-                return ("mosaic", m_id, pipeline)
-    return ("stack", stack.stable_hash, pipeline)
 
 
 def _find_unsolved_light_frames():
