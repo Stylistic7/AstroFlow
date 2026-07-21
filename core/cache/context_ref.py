@@ -151,6 +151,15 @@ class ContextRef(Generic[T]):
         from context import context
         import time
 
+        # Web/gunicorn workers connect to Ray lazily (same idiom as Context.get):
+        # a fresh worker whose FIRST Ray touch is this ray.put — e.g. the
+        # stack-level tile_metadata path, which store_large's the calibration
+        # stacks before any Context.get has run — would otherwise raise "Ray has
+        # not been started yet". Ensure the connection first.
+        if not ray.is_initialized():
+            from ray_infra.ray_init import connect_to_ray_cluster
+            connect_to_ray_cluster()
+
         ref = ray.put(obj)
 
         attempts = 0
