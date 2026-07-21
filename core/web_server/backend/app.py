@@ -39,6 +39,7 @@ from web_server.backend.decisions import decisions_bp
 from web_server.backend.suggestions import suggestions_bp
 from web_server.backend.asiair_panel import asiair_panel_bp
 from web_server.backend.code_sync import code_sync_bp
+from web_server.backend.display_finishes import display_finishes_bp
 from web_server.backend.router import stateful_route
 
 import plotly.express as px
@@ -182,6 +183,7 @@ app.register_blueprint(decisions_bp)
 app.register_blueprint(suggestions_bp)
 app.register_blueprint(asiair_panel_bp)
 app.register_blueprint(code_sync_bp)
+app.register_blueprint(display_finishes_bp)
 
 
 class CustomJSONProvider(DefaultJSONProvider):
