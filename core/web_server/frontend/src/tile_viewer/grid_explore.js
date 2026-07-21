@@ -24,21 +24,30 @@
 // "more of label" EXCEPT for the inverted axes below (see INVERT), where the
 // knob runs backwards relative to how it reads.
 export const AXES = {
-    midtone:    { range: [0.02, 0.6], step: 0.05, label: 'bright' },  // lower knob = brighter
-    saturation: { range: [0, 3],     step: 0.35, label: 'sat' },
-    scnr:       { range: [0, 1],     step: 0.20, label: 'green' },     // higher knob = less green
-    shadowClip: { range: [0.5, 6],   step: 0.80, label: 'smooth' },
-    blackPoint: { range: [0, 0.6],   step: 0.05, label: 'black' },
-    trimS:      { range: [0.2, 2.5], step: 0.25, label: 'S' },
-    trimH:      { range: [0.2, 2.5], step: 0.25, label: 'H' },
-    trimO:      { range: [0.2, 2.5], step: 0.25, label: 'O' },
+    // Per-channel Generalized Hyperbolic Stretch — the heart of the grid. Each
+    // S/H/O channel is stretched independently by strength (D), contrast (b), and
+    // symmetry point (SP, the dark-tail pivot). D uses the ghsastro slider domain
+    // (actual = exp(D)-1). See project_scene_display_seam: this is op #1 of the
+    // display-referred finish.
+    dS:  { range: [0.4, 4.0], step: 0.4,  label: 'S str' },
+    dH:  { range: [0.4, 4.0], step: 0.4,  label: 'H str' },
+    dO:  { range: [0.4, 4.0], step: 0.4,  label: 'O str' },
+    bS:  { range: [-2.0, 4.0], step: 0.6, label: 'S con' },
+    bH:  { range: [-2.0, 4.0], step: 0.6, label: 'H con' },
+    bO:  { range: [-2.0, 4.0], step: 0.6, label: 'O con' },
+    spS: { range: [0.02, 0.4], step: 0.03, label: 'S piv' },
+    spH: { range: [0.02, 0.4], step: 0.03, label: 'H piv' },
+    spO: { range: [0.02, 0.4], step: 0.03, label: 'O piv' },
+    // Colour knobs.
+    saturation: { range: [0, 3], step: 0.35, label: 'sat' },
+    scnr:       { range: [0, 1], step: 0.20, label: 'green' },  // higher knob = less green
 };
 
 const KEYS = Object.keys(AXES);
 
 // Axes whose knob runs opposite to its label: a positive knob delta reads as
-// LESS of the labelled quantity (brighter = lower midtone; greener = lower scnr).
-const INVERT = new Set(['midtone', 'scnr']);
+// LESS of the labelled quantity (greener = lower scnr).
+const INVERT = new Set(['scnr']);
 
 // How many axes a single suggestion moves. Weighted toward two, since combined
 // moves are often more obviously good than a single-knob nudge. Index = n − 1.
@@ -69,9 +78,18 @@ function axisCount(rand) {
     return AXIS_COUNT_WEIGHTS.length;
 }
 
-/** One suggestion = a move: n distinct axes, each a signed 1–2 step nudge. */
-export function makeMove(rand) {
-    const pool = [...KEYS];
+// Named focus groups so the grid explores a COHERENT subset at a time — 11 axes
+// perturbed at once is unreadable. The user picks a focus; the sampler draws
+// only from that group. These are the "soft steps" of the workflow.
+export const AXIS_GROUPS = {
+    Stretch: ['dS', 'dH', 'dO', 'bS', 'bH', 'bO'],  // per-channel strength + contrast
+    Pivot:   ['spS', 'spH', 'spO'],                  // per-channel dark-tail pivot
+    Color:   ['saturation', 'scnr'],
+};
+
+/** One suggestion = a move: n distinct axes (from `keys`), each a signed nudge. */
+export function makeMove(rand, keys = KEYS) {
+    const pool = [...keys];
     const n = Math.min(axisCount(rand), pool.length);
     const move = [];
     for (let i = 0; i < n; i++) {
@@ -83,9 +101,9 @@ export function makeMove(rand) {
 }
 
 /** Fresh suggestions for the 8 non-centre cells → { cellIndex: move }. */
-export function sampleMoves(rand) {
+export function sampleMoves(rand, keys = KEYS) {
     const moves = {};
-    for (const c of NON_CENTRE_CELLS) moves[c] = makeMove(rand);
+    for (const c of NON_CENTRE_CELLS) moves[c] = makeMove(rand, keys);
     return moves;
 }
 
@@ -103,12 +121,11 @@ export function applyMove(center, move) {
 function paramsFor(knobs, base) {
     return {
         ...base,
-        e5: knobs.midtone,
+        ghsD: [knobs.dS, knobs.dH, knobs.dO],   // per-channel strength
+        ghsB: [knobs.bS, knobs.bH, knobs.bO],   // per-channel contrast
+        ghsSP: [knobs.spS, knobs.spH, knobs.spO], // per-channel dark-tail pivot
         saturation: knobs.saturation,
         scnrAmount: knobs.scnr,
-        shadowClip: knobs.shadowClip,
-        blackPoint: knobs.blackPoint,
-        trims: [knobs.trimS, knobs.trimH, knobs.trimO],
     };
 }
 

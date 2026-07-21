@@ -29,7 +29,15 @@ import Typography from '@mui/material/Typography';
 import AstroFlowContext from '../AstroFlowContext.jsx';
 import { useViewport } from './useViewport.js';
 import { useTileRenderer } from './useTileRenderer.js';
-import { buildCellParams, applyMove, sampleMoves, cellFromClick, describeMove, rng } from './grid_explore.js';
+import { buildCellParams, applyMove, sampleMoves, cellFromClick, describeMove, rng, AXIS_GROUPS } from './grid_explore.js';
+import {
+    axesFromParams,
+    sampleMoves as gSampleMoves,
+    applyMove as gApplyMove,
+    describeMove as gDescribeMove,
+    buildCellFinishParams,
+} from './generic_grid.js';
+import { stfSeed } from './finish_seed.js';
 import PolygonOverlay from './PolygonOverlay.jsx';
 import TextOverlay from './TextOverlay.jsx';
 import { computeAutoStretchParams } from '../auto_stretch.js';
@@ -216,22 +224,24 @@ export default function TileViewerV2({
     // Past that the image just gets blurry without revealing detail.
     // Toggle on to allow over-zoom for pixel-peeping or screenshots.
     const [allowOverZoom, setAllowOverZoom] = useState(false);
-    // Narrowband (Linear SHO) live-finish controls. Defaults are seeded
-    // toward the measured "AstroBin look" (deep black point, strong
-    // stretch, ~1.8× saturation, full green removal) so the tap opens
-    // close and the user trims from there. `nbMidtone` is the MTF midtone
-    // reused as the per-channel stretch (lower = brighter).
-    // Textbook narrowband finish on the NXT-denoised linear channels: standard
-    // Hubble SHO combine + SCNR green (→ gold) + STF-style stretch. NXT handles
-    // the noise, so the shadow clip stays light and no invented tricks are needed.
+    // Narrowband (Linear SHO) live-finish controls — the display-referred view
+    // transform (see project_scene_display_seam). The stretch is per-channel GHS
+    // (Generalized Hyperbolic Stretch, ghsastro math): D = strength, b = contrast,
+    // SP = the dark-tail pivot (auto-seeded per channel from the background so the
+    // sky LIFTS to a grey rather than crushing). D/b here are shared sliders
+    // applied to all three channels; the 3×3 grid perturbs them PER channel.
     const [palette, setPalette] = useState('hubble');       // 'hubble' | 'foraxx'
-    const [nbBlackPoint, setNbBlackPoint] = useState(0.0);
-    const [nbMidtone, setNbMidtone] = useState(0.08);
+    const [nbD, setNbD] = useState(2.2);                    // GHS strength (exp(D)-1)
+    const [nbB, setNbB] = useState(0.0);                   // GHS contrast (b)
+    const [nbLP, setNbLP] = useState(0.0);                 // shadow protection point
+    const [nbHP, setNbHP] = useState(1.0);                 // highlight protection point
+    const [nbBP, setNbBP] = useState(0.0);                 // black point clip
+    const [nbWP, setNbWP] = useState(1.0);                 // white point clip
     const [nbSaturation, setNbSaturation] = useState(1.35);
     const [nbScnr, setNbScnr] = useState(1.0);             // standard green removal → gold
-    // Per-channel shadow clip: low anchor = median + shadowClip·σ (STF-style).
-    // Light by default since NXT already denoised; raise for an even cleaner base.
-    const [nbShadowClip, setNbShadowClip] = useState(1.0);
+    // Normalise floor: low anchor = median − shadowClip·σ (BELOW the sky, so it
+    // survives as a small positive for GHS to lift). Also sets where SP lands.
+    const [nbShadowClip, setNbShadowClip] = useState(2.0);
     // Per-channel gain on the normalised S/H/O.
     const [nbTrimS, setNbTrimS] = useState(1.0);
     const [nbTrimH, setNbTrimH] = useState(1.0);
@@ -249,9 +259,27 @@ export default function TileViewerV2({
     const [gridMoves, setGridMoves] = useState(null);     // { cellIndex: move }
     const gridHistoryRef = useRef({ stack: [], idx: -1 }); // [{ center, moves }]
     const gridSeedRef = useRef(1);   // deterministic PRNG counter (reproducible grids)
+    // Which coherent axis group the grid explores (keeps it legible vs all 11).
+    const [gridFocus, setGridFocus] = useState('Stretch');
+    // Global multiplier on each finish axis's declared grid step — how far the 8
+    // neighbour cells wander from the centre (data-driven finishes only). 1 = the
+    // finish's own steps; the live "Spread" slider scales it.
+    const [gridSpread, setGridSpread] = useState(1.0);
     const [nbAddStars, setNbAddStars] = useState(false);
     // Metadata of the sibling "Stars" tap (for availability + port/mtime).
     const [starsMeta, setStarsMeta] = useState(null);
+
+    // Data-driven display finishes served from /api/display/finishes — each a
+    // Python DisplayFinish's spec { name, inputs, params, wgsl }. The narrowband
+    // "Colour finish" dropdown lists 'ghs' (the built-in per-channel GHS) plus
+    // these; selecting one compiles its served WGSL into the renderer and builds
+    // its sliders + 3×3 grid axes FROM its extracted params. See
+    // project_scene_display_seam.
+    const [finishes, setFinishes] = useState([]);
+    const [finishName, setFinishName] = useState('ghs');
+    // Current values of the selected data-driven finish's params, keyed by name
+    // (seeded from each param's default when the finish is picked).
+    const [genericValues, setGenericValues] = useState({});
 
     // Resolve each control to "parent prop if provided, else local state".
     const peakBrightness = peakBrightnessProp ?? localPeakBrightness;
@@ -273,6 +301,17 @@ export default function TileViewerV2({
     useEffect(() => {
         onColorDetected?.(isColor);
     }, [isColor, onColorDetected]);
+
+    // The picked data-driven finish (null = the built-in per-channel GHS). It
+    // consumes Linear SHO (its input contract), so genericMode also gates on
+    // isNarrowband. gridAxes/paramOrder are extracted from its params — the grid
+    // axes and the DisplayParams packing order both come from the Python def.
+    const activeFinish = finishName === 'ghs'
+        ? null
+        : (finishes.find((f) => f.name === finishName) ?? null);
+    const genericMode = isNarrowband && !!activeFinish;
+    const gridAxes = genericMode ? axesFromParams(activeFinish.params) : null;
+    const paramOrder = genericMode ? activeFinish.params.map((p) => p.name) : null;
 
     // Is the sibling Stars tap real, and does it share this tap's geometry
     // (so z/x/y tile coords line up)? Gates the Add-stars toggle + fetches.
@@ -330,6 +369,37 @@ export default function TileViewerV2({
             if (m) setMetadata(m);
         });
     }, [objectType, imageHash, view?.pipeline, view?.display, view?.filter]);
+
+    // Fetch the data-driven display-finish registry once (served from the
+    // Python FINISHES). Relative URL resolves against the page origin, which is
+    // one of the app ports that serves this endpoint.
+    useEffect(() => {
+        fetch('/api/display/finishes')
+            .then((r) => (r.ok ? r.json() : []))
+            .then((list) => setFinishes(Array.isArray(list) ? list : []))
+            .catch(() => setFinishes([]));
+    }, []);
+
+    // Seed the picked finish's param values. Start from the static defaults, then
+    // — if the tap ships per-channel stats — compute IMAGE-ADAPTIVE starting
+    // values (the STF AutoStretch of THIS image) ON THE FRONTEND and use them as
+    // the grid centre. The seed is applied to whichever stretch params the finish
+    // actually has (black/white/midtones), so a non-stretch finish is untouched.
+    // Backend ships only generic stats — no finish logic. Re-runs on finish
+    // switch or tap change.
+    useEffect(() => {
+        if (!activeFinish) return;
+        const init = {};
+        for (const p of activeFinish.params) init[p.name] = p.default;
+        const seed = stfSeed(tileMeta?.channelStats);
+        if (seed) {
+            for (const p of activeFinish.params) {
+                if (p.name in seed) init[p.name] = Math.min(p.hi, Math.max(p.lo, seed[p.name]));
+            }
+        }
+        setGenericValues(init);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [finishName, tileMeta?.channelStats]);
 
     // Narrowband finish only: probe the sibling "Stars" tap's tile metadata
     // (existence + geometry + port/mtime) so the finish can screen the RGB
@@ -426,6 +496,14 @@ export default function TileViewerV2({
         renderer.clearTiles();
     }, [renderer.isReady, tileMeta?.mtime]);
 
+    // Install (or clear) the data-driven finish's compiled shader. When a Python
+    // finish is picked on a Linear SHO tap, the renderer switches to a pipeline
+    // built from its served WGSL; otherwise it falls back to the built-in one.
+    useEffect(() => {
+        if (!renderer.isReady) return;
+        renderer.setFinishShader(genericMode ? activeFinish.wgsl : null);
+    }, [renderer.isReady, genericMode, activeFinish?.wgsl]);
+
     // Push shader uniforms when statistics + brightness + mode change.
     // The shader picks STF (closed-form) vs LUT (max-entropy) via the
     // `stretchMode` integer; STF reads e1/e5/max, LUT samples the
@@ -436,25 +514,54 @@ export default function TileViewerV2({
         // colour finish. The stretch reuses e1/e5 (e1=0 shadow, e5=midtone);
         // normalise anchors come from the metadata's per-channel stats.
         if (isNarrowband) {
-            const anchors = (tileMeta?.channelMedians && tileMeta?.channelP99)
-                ? { m: tileMeta.channelMedians, p: tileMeta.channelP99 }
-                : { m: [0, 0, 0], p: [1, 1, 1] };
-            const sigmas = tileMeta?.channelSigma || [0, 0, 0];
+            const med = tileMeta?.channelMedians || [0, 0, 0];
+            const sig = tileMeta?.channelSigma || [0, 0, 0];
+            const p99 = tileMeta?.channelP99 || [1, 1, 1];
+            // Data-driven finish: feed the SAME normalise context (median −
+            // shadowClip·σ anchors) to the compiled displayFinish; its params
+            // come from genericValues (single view) or the grid (per cell).
+            if (genericMode) {
+                const gbase = {
+                    peakBrightness: 1.0, finishMode: false, isColor: false,
+                    anchors: { m: med, p: p99 }, sigmas: sig, shadowClip: nbShadowClip,
+                    trims: [nbTrimS, nbTrimH, nbTrimO],
+                };
+                if (gridActive && gridCenter && gridMoves) {
+                    renderer.setGrid(buildCellFinishParams(
+                        gridAxes, paramOrder, gridCenter, gbase, gridMoves));
+                } else {
+                    renderer.setGlobals({
+                        ...gbase,
+                        finishParams: activeFinish.params.map(
+                            (p) => genericValues[p.name] ?? p.default),
+                    });
+                }
+                return;
+            }
             const paletteMode = palette === 'foraxx' ? 1 : 0;
+            // Per-channel SP = where the background median lands in the shader's
+            // normalised domain (lo = m − shadowClip·σ, hi = p99). GHS pivots there
+            // so the sky lifts to a grey. Nudged per channel by the grid.
+            const ghsSP = [0, 1, 2].map((i) => {
+                const lo = med[i] - nbShadowClip * sig[i];
+                return Math.min(0.5, Math.max(0.01, (med[i] - lo) / Math.max(p99[i] - lo, 1e-9)));
+            });
             // Fields shared by the single view and every 3×3 grid cell.
             const base = {
-                e1: 0, max: 1.0, peakBrightness: 1.0, stretchMode: 0,
+                max: 1.0, peakBrightness: 1.0, stretchMode: 0,
                 isColor: false, finishMode: true, paletteMode,
                 addStars: nbAddStars && starsAvailable,
-                anchors, trims: [nbTrimS, nbTrimH, nbTrimO], sigmas,
+                anchors: { m: med, p: p99 }, sigmas: sig, shadowClip: nbShadowClip,
+                trims: [nbTrimS, nbTrimH, nbTrimO],
+                LP: nbLP, HP: nbHP, BP: nbBP, WP: nbWP, ghsSP,
             };
             if (gridActive && gridCenter && gridMoves) {
                 renderer.setGrid(buildCellParams(gridCenter, base, gridMoves));
             } else {
                 renderer.setGlobals({
-                    ...base, e5: nbMidtone, blackPoint: nbBlackPoint,
+                    ...base,
+                    ghsD: [nbD, nbD, nbD], ghsB: [nbB, nbB, nbB],
                     scnrAmount: nbScnr, saturation: nbSaturation,
-                    shadowClip: nbShadowClip,
                 });
             }
             return;
@@ -481,10 +588,11 @@ export default function TileViewerV2({
             isColor: false, finishMode: false,
         });
     }, [renderer.isReady, isNarrowband, isBakedColor, metadata?.statistics,
-        effectivePeak, stretchMode, palette, nbBlackPoint, nbMidtone,
+        effectivePeak, stretchMode, palette, nbD, nbB, nbLP, nbHP, nbBP, nbWP,
         nbSaturation, nbScnr, nbShadowClip, nbTrimS, nbTrimH, nbTrimO, nbAddStars,
         starsAvailable, tileMeta?.channelMedians, tileMeta?.channelSigma,
-        tileMeta?.channelP99, gridActive, gridCenter, gridMoves]);
+        tileMeta?.channelP99, gridActive, gridCenter, gridMoves,
+        genericMode, genericValues, finishName]);
 
     // Recompute + upload the stretch LUT whenever stats change or the
     // mode flips into a LUT-based path. STF mode doesn't sample the
@@ -528,13 +636,44 @@ export default function TileViewerV2({
     // given sequence of clicks always yields the same suggestions.
     const nextRng = () => rng((gridSeedRef.current = (gridSeedRef.current + 1) | 0));
 
+    // Grid mechanics dispatch on the active finish: a data-driven finish uses
+    // axes EXTRACTED from its params (generic_grid); the built-in GHS uses its
+    // hardcoded per-channel axes + focus groups (grid_explore).
+    const sampleMovesM = (rand, center, rel = gridSpread) => genericMode
+        ? gSampleMoves(rand, gridAxes, center, rel)
+        : sampleMoves(rand, AXIS_GROUPS[gridFocus]);
+    const applyMoveM = (center, move) => genericMode
+        ? gApplyMove(gridAxes, center, move)
+        : applyMove(center, move);
+    const describeMoveM = (move) => genericMode
+        ? gDescribeMove(gridAxes, move)
+        : describeMove(move);
+
     const enterGrid = () => {
-        const c = {
-            midtone: nbMidtone, saturation: nbSaturation, scnr: nbScnr,
-            shadowClip: nbShadowClip, blackPoint: nbBlackPoint,
-            trimS: nbTrimS, trimH: nbTrimH, trimO: nbTrimO,
-        };
-        const moves = sampleMoves(nextRng());
+        let c;
+        if (genericMode) {
+            // Centre = the finish's current param values; the grid perturbs each
+            // extracted param axis from here.
+            c = { ...genericValues };
+        } else {
+            // Seed the centre from the current sliders (D/b shared across channels)
+            // + the per-channel dark-tail SP. The grid then perturbs D/b/SP PER
+            // channel from here.
+            const med = tileMeta?.channelMedians || [0, 0, 0];
+            const sig = tileMeta?.channelSigma || [0, 0, 0];
+            const p99 = tileMeta?.channelP99 || [1, 1, 1];
+            const sp = [0, 1, 2].map((i) => {
+                const lo = med[i] - nbShadowClip * sig[i];
+                return Math.min(0.5, Math.max(0.01, (med[i] - lo) / Math.max(p99[i] - lo, 1e-9)));
+            });
+            c = {
+                dS: nbD, dH: nbD, dO: nbD,
+                bS: nbB, bH: nbB, bO: nbB,
+                spS: sp[0], spH: sp[1], spO: sp[2],
+                saturation: nbSaturation, scnr: nbScnr,
+            };
+        }
+        const moves = sampleMovesM(nextRng(), c);
         gridHistoryRef.current = { stack: [{ center: c, moves }], idx: 0 };
         setGridCenter(c);
         setGridMoves(moves);
@@ -542,16 +681,19 @@ export default function TileViewerV2({
     };
 
     // Commit writes the explored centre back to the sliders; cancel discards.
+    // NOTE: the GHS sliders are shared-across-channels, so a per-channel result
+    // collapses to the mean on commit (per-channel keep is a later refinement).
     const exitGrid = (commit) => {
         if (commit && gridCenter) {
-            setNbMidtone(gridCenter.midtone);
-            setNbSaturation(gridCenter.saturation);
-            setNbScnr(gridCenter.scnr);
-            setNbShadowClip(gridCenter.shadowClip);
-            setNbBlackPoint(gridCenter.blackPoint);
-            setNbTrimS(gridCenter.trimS);
-            setNbTrimH(gridCenter.trimH);
-            setNbTrimO(gridCenter.trimO);
+            if (genericMode) {
+                setGenericValues({ ...gridCenter });
+            } else {
+                const g = gridCenter;
+                setNbD((g.dS + g.dH + g.dO) / 3);
+                setNbB((g.bS + g.bH + g.bO) / 3);
+                setNbSaturation(g.saturation);
+                setNbScnr(g.scnr);
+            }
         }
         setGridActive(false);
         renderer.clearGrid();
@@ -584,7 +726,7 @@ export default function TileViewerV2({
         const rect = canvasRef.current.getBoundingClientRect();
         const cell = cellFromClick(
             e.clientX - rect.left, e.clientY - rect.top, rect.width, rect.height);
-        const moves = sampleMoves(nextRng());
+        const moves = sampleMovesM(nextRng(), gridCenter);
         if (cell === 4) {
             // Centre = keep this finish, reshuffle all 8 suggestions ("new ideas").
             pushGrid(gridCenter, moves);
@@ -595,12 +737,17 @@ export default function TileViewerV2({
         // fresh suggestions just sampled above.
         const move = gridMoves[cell];
         moves[cell] = move;
-        pushGrid(applyMove(gridCenter, move), moves);
+        pushGrid(applyMoveM(gridCenter, move), moves);
     };
 
     const gridBtnSx = {
         flex: 1, minWidth: 0, color: '#fff', fontSize: 11,
         borderColor: 'rgba(255,255,255,0.3)',
+    };
+    const selectSx = {
+        width: '100%', color: '#fff',
+        '& .MuiSelect-icon': { color: '#fff' },
+        '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.3)' },
     };
 
     return (
@@ -647,7 +794,7 @@ export default function TileViewerV2({
                                 color: '#fff', backgroundColor: 'rgba(0,0,0,0.55)',
                                 fontWeight: i === 4 ? 600 : 400, whiteSpace: 'nowrap',
                             }}>
-                                {i === 4 ? 'current' : describeMove(gridMoves[i])}
+                                {i === 4 ? 'current' : describeMoveM(gridMoves[i])}
                             </Typography>
                         </Box>
                     ))}
@@ -672,27 +819,44 @@ export default function TileViewerV2({
                 finish is intrinsic to this tap, not the parent toolbar. */}
             {isNarrowband && (
                 <Box sx={{
-                    position: 'absolute', top: 12, left: 12, width: 232,
+                    // Above the 3×3 grid overlay (zIndex 4) so this panel's
+                    // controls (Spread, Keep, Cancel, sliders) receive clicks
+                    // instead of the overlay reading them as a grid-cell tap.
+                    position: 'absolute', top: 12, left: 12, width: 232, zIndex: 10,
                     p: 1.5, backgroundColor: 'rgba(20,20,22,0.80)',
                     border: '1px solid rgba(255,255,255,0.12)', borderRadius: 1,
                     color: '#fff', backdropFilter: 'blur(6px)',
                 }}>
                     <Typography variant="caption" sx={{ display: 'block', fontWeight: 600, mb: 0.75 }}>
-                        SHO colour finish
+                        Colour finish
                     </Typography>
+                    {/* Finish picker — the built-in per-channel GHS plus every
+                        Python DisplayFinish served from /api/display/finishes.
+                        Selecting one rebuilds the sliders + grid axes + shader
+                        from ITS extracted params (project_scene_display_seam). */}
                     <Select
                         size="small"
-                        value={palette}
-                        onChange={(e) => setPalette(e.target.value)}
-                        sx={{
-                            width: '100%', color: '#fff', mb: 1,
-                            '& .MuiSelect-icon': { color: '#fff' },
-                            '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.3)' },
-                        }}
+                        value={finishName}
+                        onChange={(e) => { if (gridActive) exitGrid(false); setFinishName(e.target.value); }}
+                        sx={{ ...selectSx, mb: 1 }}
                     >
-                        <MenuItem value="hubble">Hubble (SHO)</MenuItem>
-                        <MenuItem value="foraxx">Foraxx (dynamic)</MenuItem>
+                        <MenuItem value="ghs">Narrowband GHS (per-channel)</MenuItem>
+                        {finishes.map((f) => (
+                            <MenuItem key={f.name} value={f.name}>{f.name}</MenuItem>
+                        ))}
                     </Select>
+                    {/* Palette is a GHS-finish knob; hidden for data-driven finishes. */}
+                    {!genericMode && (
+                        <Select
+                            size="small"
+                            value={palette}
+                            onChange={(e) => setPalette(e.target.value)}
+                            sx={{ ...selectSx, mb: 1 }}
+                        >
+                            <MenuItem value="hubble">Hubble (SHO)</MenuItem>
+                            <MenuItem value="foraxx">Foraxx (dynamic)</MenuItem>
+                        </Select>
+                    )}
                     {/* 3×3 taste-grid explorer: render the view 9 ways, click to refine. */}
                     {!gridActive ? (
                         <Button size="small" fullWidth variant="outlined"
@@ -703,9 +867,38 @@ export default function TileViewerV2({
                     ) : (
                         <Box sx={{ mb: 1 }}>
                             <Typography variant="caption" sx={{ display: 'block', opacity: 0.85, mb: 0.5 }}>
-                                Click a look you like — it recenters and the others reshuffle to new
-                                ideas. Click the same tile again to keep going that way. Centre = keep this + new ideas.
+                                Click a look you like — it recenters and the others reshuffle. Click the
+                                same tile again to keep going that way. Centre = keep this + new ideas.
                             </Typography>
+                            {/* Spread: how far the 8 neighbours wander from the centre
+                                (fraction of each knob's value). Re-samples on release. */}
+                            {genericMode && (<>
+                                <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
+                                    Spread — {gridSpread.toFixed(2)}×
+                                </Typography>
+                                <Slider size="small" value={gridSpread} min={0.25} max={4} step={0.25}
+                                    onChange={(_, v) => setGridSpread(v)}
+                                    onChangeCommitted={(_, v) => pushGrid(gridCenter, sampleMovesM(nextRng(), gridCenter, v))}
+                                    sx={{ color: '#fff', mb: 0.5 }} />
+                            </>)}
+                            {/* Focus: which coherent group the grid explores.
+                                GHS-only — a data-driven finish explores all its
+                                extracted params directly, no focus groups. */}
+                            {!genericMode && (
+                            <Box sx={{ display: 'flex', gap: 0.5, mb: 0.5 }}>
+                                {Object.keys(AXIS_GROUPS).map((f) => (
+                                    <Button key={f} size="small"
+                                        variant={gridFocus === f ? 'contained' : 'outlined'}
+                                        onClick={() => {
+                                            setGridFocus(f);
+                                            pushGrid(gridCenter, sampleMoves(nextRng(), AXIS_GROUPS[f]));
+                                        }}
+                                        sx={{ ...gridBtnSx, flex: 1, ...(gridFocus === f ? { color: '#000' } : {}) }}>
+                                        {f}
+                                    </Button>
+                                ))}
+                            </Box>
+                            )}
                             <Box sx={{ display: 'flex', gap: 0.5, mb: 0.5 }}>
                                 <Button size="small" variant="outlined" onClick={undoGrid} sx={gridBtnSx}>Undo</Button>
                                 <Button size="small" variant="outlined" onClick={redoGrid} sx={gridBtnSx}>Redo</Button>
@@ -717,27 +910,67 @@ export default function TileViewerV2({
                             </Box>
                         </Box>
                     )}
+                    {/* Per-axis sliders — hidden in grid mode (the grid IS the
+                        control there; palette + stars below stay as globals). */}
+                    {!gridActive && (<>
+                    {genericMode ? (
+                        // Data-driven sliders — one per param EXTRACTED from the
+                        // Python finish (name/label/range/step all from the spec).
+                        // A data-driven finish gets RAW linear input (no global
+                        // normalise / Sky floor); its own params do all scaling.
+                        activeFinish.params.map((p) => (
+                            <Box key={p.name}>
+                                <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
+                                    {p.label} — {(genericValues[p.name] ?? p.default).toFixed(3)}
+                                </Typography>
+                                <Slider
+                                    size="small"
+                                    value={genericValues[p.name] ?? p.default}
+                                    min={p.lo} max={p.hi}
+                                    step={Math.max((p.hi - p.lo) / 200, 1e-4)}
+                                    onChange={(_, v) => setGenericValues((s) => ({ ...s, [p.name]: v }))}
+                                    sx={{ color: '#fff' }}
+                                />
+                            </Box>
+                        ))
+                    ) : (<>
+                    {/* Sky floor lives with the built-in GHS finish only — it's
+                        that pipeline's normalise anchor, not a global. */}
                     <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
-                        Smoothness — {nbShadowClip.toFixed(1)}σ (higher = cleaner, less faint)
+                        Sky floor — {nbShadowClip.toFixed(1)}σ below median (higher = more lift)
                     </Typography>
                     <Slider
                         size="small" value={nbShadowClip} min={0.5} max={6} step={0.1}
                         onChange={(_, v) => setNbShadowClip(v)} sx={{ color: '#fff' }}
                     />
                     <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
-                        Black point — {nbBlackPoint.toFixed(3)}
+                        GHS strength (D) — {nbD.toFixed(2)}
                     </Typography>
                     <Slider
-                        size="small" value={nbBlackPoint} min={0} max={0.6} step={0.005}
-                        onChange={(_, v) => setNbBlackPoint(v)} sx={{ color: '#fff' }}
+                        size="small" value={nbD} min={0.4} max={4} step={0.1}
+                        onChange={(_, v) => setNbD(v)} sx={{ color: '#fff' }}
                     />
                     <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
-                        Stretch midtone — {nbMidtone.toFixed(2)} (lower = brighter)
+                        GHS contrast (b) — {nbB.toFixed(2)}
                     </Typography>
                     <Slider
-                        size="small" value={nbMidtone} min={0.02} max={0.6} step={0.01}
-                        onChange={(_, v) => setNbMidtone(v)} sx={{ color: '#fff' }}
+                        size="small" value={nbB} min={-2} max={4} step={0.1}
+                        onChange={(_, v) => setNbB(v)} sx={{ color: '#fff' }}
                     />
+                    <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
+                        Shadow / highlight protect — LP {nbLP.toFixed(2)} · HP {nbHP.toFixed(2)}
+                    </Typography>
+                    <Slider size="small" value={nbLP} min={0} max={0.5} step={0.01}
+                        onChange={(_, v) => setNbLP(v)} sx={{ color: '#888', py: 0.3 }} />
+                    <Slider size="small" value={nbHP} min={0.5} max={1} step={0.01}
+                        onChange={(_, v) => setNbHP(v)} sx={{ color: '#ccc', py: 0.3 }} />
+                    <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
+                        Black / white point — BP {nbBP.toFixed(3)} · WP {nbWP.toFixed(3)}
+                    </Typography>
+                    <Slider size="small" value={nbBP} min={0} max={0.3} step={0.005}
+                        onChange={(_, v) => setNbBP(v)} sx={{ color: '#000', py: 0.3 }} />
+                    <Slider size="small" value={nbWP} min={0.7} max={1} step={0.005}
+                        onChange={(_, v) => setNbWP(v)} sx={{ color: '#fff', py: 0.3 }} />
                     <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
                         Saturation — {nbSaturation.toFixed(2)}×
                     </Typography>
@@ -765,22 +998,26 @@ export default function TileViewerV2({
                             sx={{ color: col, py: 0.4 }}
                         />
                     ))}
-                    <FormControlLabel
-                        control={
-                            <Switch
-                                size="small"
-                                checked={nbAddStars && starsAvailable}
-                                disabled={!starsAvailable}
-                                onChange={(_, v) => setNbAddStars(v)}
-                            />
-                        }
-                        label={
-                            <Typography variant="caption">
-                                Add stars{starsAvailable ? '' : ' (none)'}
-                            </Typography>
-                        }
-                        sx={{ mt: -0.5, ml: -1 }}
-                    />
+                    </>)}
+                    </>)}
+                    {!genericMode && (
+                        <FormControlLabel
+                            control={
+                                <Switch
+                                    size="small"
+                                    checked={nbAddStars && starsAvailable}
+                                    disabled={!starsAvailable}
+                                    onChange={(_, v) => setNbAddStars(v)}
+                                />
+                            }
+                            label={
+                                <Typography variant="caption">
+                                    Add stars{starsAvailable ? '' : ' (none)'}
+                                </Typography>
+                            }
+                            sx={{ mt: -0.5, ml: -1 }}
+                        />
+                    )}
                 </Box>
             )}
             {!embedded && (
