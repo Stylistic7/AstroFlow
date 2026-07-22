@@ -48,7 +48,10 @@ def run_wbpp(
         working_dir: Directory containing input subframes.
         output_dir: Directory where WBPP writes its outputs.
         slots: PixInsight slot numbers to use.
-        timeout: Maximum seconds to wait for completion.
+        timeout: Optional ABSOLUTE wall-clock ceiling (seconds); None =
+            unlimited. Liveness is enforced by the runner's inactivity
+            watchdog, so a legitimately-long stack should pass None and let
+            it run as long as it keeps making progress.
         **kwargs: Additional WBPP parameters.
     """
     from pix.runner import run_scp
@@ -70,7 +73,10 @@ def run_wbpp(
     scp = f'run -x {args_str} {params_str} "{_SCRIPT_FILENAME}"'
 
     with tempfile.TemporaryDirectory(prefix="pix-wbpp-") as tmp_dir:
-        run_scp(scp, Path(tmp_dir), slots=slots, timeout=timeout)
+        # Watch `output_dir` (not the sentinel `tmp_dir`): that's where WBPP
+        # streams its per-frame calibrated/registered intermediates, so its
+        # mtime is the file-activity signal for the inactivity watchdog.
+        run_scp(scp, Path(tmp_dir), slots=slots, watch_dir=output_dir, timeout=timeout)
 
     # Re-emit WBPP's log files via structlog so the surrounding
     # @capture_logs decorator on stack_files picks them up alongside its

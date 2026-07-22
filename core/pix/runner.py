@@ -275,7 +275,26 @@ def _acquire_slot(slots: list[int]):
 
 
 _START_SENTINEL_TIMEOUT = 60      # seconds to wait for PixInsight to begin executing
-_END_SENTINEL_TIMEOUT = 3600      # seconds to wait for the script to finish (1 hour)
+
+# Liveness watchdog for the running script. A flat wall-clock cap is wrong
+# for this workload: a big WBPP integration legitimately takes hours, so a
+# fixed cap guillotines it mid-run and throws the work away — while a PI
+# wedged on a modal error dialog would burn the whole cap doing nothing. So
+# instead of capping total runtime we cap INACTIVITY: keep waiting as long
+# as the instance shows signs of life, and kill only after
+# `_PIX_INACTIVITY_TIMEOUT` seconds with no progress. "Progress" =
+#   * the OS reporting the process burned CPU (`cpu_times`, the PRIMARY
+#     signal — true even during a silent final integration that writes
+#     nothing until the end), OR
+#   * new bytes landing in the watch dir (WBPP's per-frame intermediates).
+# A stuck-on-a-dialog PI is quiet on both and gets reaped in minutes.
+# (psutil exposes no per-process `io_counters()` on macOS, so watch-dir
+# mtime is the I/O proxy; CPU carries the rest.)
+_PIX_INACTIVITY_TIMEOUT = float(
+    os.environ.get("ASTROFLOW_PIX_INACTIVITY_TIMEOUT", "300")
+)
+_CPU_ACTIVE_FRACTION = 0.05       # ≥5% of one core over a poll interval = "working"
+_WATCHDOG_POLL_INTERVAL = 2.0     # seconds between liveness samples
 # `--execute` only DISPATCHES the script to the persistent slot instance
 # and returns promptly (actual execution is tracked via the sentinels
 # below) — so this guards the dispatch client itself wedging, not the
@@ -288,6 +307,7 @@ def run_scp(
     scp_commands: str,
     tmp_dir: Path,
     slots: list[int] | None = None,
+    watch_dir: Path | None = None,
     timeout: float | None = None,
 ) -> None:
     """Execute a .scp script in a PixInsight instance.
@@ -299,8 +319,16 @@ def run_scp(
         scp_commands: The .scp commands (run -x lines, etc.)
         tmp_dir: Working directory for temp files and sentinels.
         slots: PixInsight slot numbers to try. Defaults to [1].
-        timeout: Maximum seconds to wait for the end sentinel.
-            Defaults to _END_SENTINEL_TIMEOUT (1 hour).
+        watch_dir: Directory whose file-write activity counts as progress
+            for the inactivity watchdog. Defaults to `tmp_dir` (where a
+            recipe writes its output); WBPP passes its separate
+            `output_dir`, since that — not the sentinel `tmp_dir` — is where
+            it streams per-frame intermediates.
+        timeout: Optional ABSOLUTE wall-clock ceiling in seconds; None
+            (default) = unlimited. The real liveness bound is the inactivity
+            watchdog (`_PIX_INACTIVITY_TIMEOUT`); this is only a hard cap for
+            callers that want one (e.g. tests). A legitimately-long stack
+            passes None and runs as long as it keeps making progress.
     """
     if slots is None:
         slots = _DEFAULT_SLOTS
@@ -375,21 +403,70 @@ def run_scp(
                 )
             time.sleep(5)
 
-        # Wait for end sentinel — the actual script execution. WBPP on
-        # a big stack can legitimately take an hour. Check that
-        # PixInsight is still alive on every poll so a user-quit is
-        # detected within seconds, not after the full timeout.
-        end_deadline = start_time + (timeout if timeout is not None else _END_SENTINEL_TIMEOUT)
+        # Wait for the end sentinel — the real script execution. Rather than
+        # a flat wall-clock cap (which kills a legitimately-hours-long WBPP
+        # integration and wastes it), watch for LIVENESS: keep waiting as
+        # long as PixInsight burns CPU (kernel-reported `cpu_times` — true
+        # even during a silent final integration that writes nothing until
+        # the end) or writes new bytes into `watch_dir` (WBPP's per-frame
+        # intermediates), and kill only after `_PIX_INACTIVITY_TIMEOUT`
+        # seconds with NO progress — what a PI stuck on a modal error dialog
+        # looks like. The per-poll alive check still surfaces a crash /
+        # user-quit within seconds; `timeout`, if given, is an extra absolute
+        # ceiling on top of the watchdog.
+        watch_dir = watch_dir or tmp_dir
+        proc = psutil.Process(instance_pid) if instance_pid else None
+        absolute_deadline = start_time + timeout if timeout is not None else None
+
+        def _cpu_seconds() -> float:
+            if proc is None:
+                return 0.0
+            try:
+                t = proc.cpu_times()
+            except psutil.NoSuchProcess:
+                return 0.0
+            return t.user + t.system
+
+        def _latest_write_mtime() -> float:
+            try:
+                return max((p.stat().st_mtime for p in watch_dir.rglob("*")
+                            if p.is_file()), default=0.0)
+            except OSError:
+                return 0.0
+
+        last_progress = prev_sample = time.monotonic()
+        prev_cpu, prev_mtime = _cpu_seconds(), _latest_write_mtime()
         while not end_sentinel.exists():
             if not _instance_alive():
                 print(f"### pix: PixInsight died during script execution")
                 _start_instance(slot)
                 raise TimeoutError("PixInsight exited during script execution")
-            if time.monotonic() > end_deadline:
-                print(f"### pix: End sentinel not written after timeout, killing instance")
+
+            now = time.monotonic()
+            cpu, mtime = _cpu_seconds(), _latest_write_mtime()
+            # "Working" = burned >5% of one core since the last sample (any
+            # real work, single- or multi-threaded, clears this by 20×+), OR
+            # a new/updated file landed in the watch dir.
+            active = (cpu - prev_cpu > _CPU_ACTIVE_FRACTION * (now - prev_sample)
+                      or mtime > prev_mtime)
+            prev_cpu, prev_mtime, prev_sample = cpu, mtime, now
+            if active:
+                last_progress = now
+            elif now - last_progress > _PIX_INACTIVITY_TIMEOUT:
+                idle = now - last_progress
+                print(
+                    f"### pix: No CPU or output activity for {idle:.0f}s "
+                    f"(inactivity limit {_PIX_INACTIVITY_TIMEOUT:.0f}s), "
+                    f"PixInsight presumed stuck — killing instance"
+                )
                 _kill_instance(slot)
-                raise TimeoutError("PixInsight script did not finish within timeout")
-            time.sleep(1)
+                raise TimeoutError(f"PixInsight made no progress for {idle:.0f}s (stuck?)")
+
+            if absolute_deadline is not None and now > absolute_deadline:
+                print(f"### pix: Exceeded absolute timeout of {timeout:.0f}s, killing instance")
+                _kill_instance(slot)
+                raise TimeoutError(f"PixInsight script did not finish within {timeout:.0f}s")
+            time.sleep(_WATCHDOG_POLL_INTERVAL)
 
         print(f"### pix: Script completed in {time.monotonic() - start_time:.1f}s")
 

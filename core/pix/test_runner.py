@@ -7,6 +7,7 @@ silently returning an empty registry.
 """
 import subprocess
 from contextlib import contextmanager
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -160,3 +161,105 @@ def test_run_scp_dispatch_timeout_raises_and_kills(monkeypatch, tmp_path):
     with pytest.raises(TimeoutError):
         runner.run_scp("// noop", tmp_path)
     assert killed == [1]
+
+
+# The inactivity watchdog: a running script is killed only after it stops
+# making progress (no CPU, no output-dir writes) — NOT after a flat cap — so
+# a legitimately-long WBPP integration survives while a PI wedged on a modal
+# dialog gets reaped. Both signals are exercised via a deterministic fake
+# clock so the timing is exact, not wall-clock-dependent.
+
+def _watchdog_env(monkeypatch, tmp_path, proc_cls):
+    """Shared mocks to drive run_scp through to the end-sentinel loop.
+
+    Returns (clock, killed, sleep_hooks): `clock` is the fake monotonic
+    time (a mutable dict), `killed` records _kill_instance calls, and
+    `sleep_hooks` is a list of extra callbacks the fake sleep runs each tick
+    (used to write the start/end sentinels)."""
+    monkeypatch.setattr(runner, "_PIX_INACTIVITY_TIMEOUT", 10.0)
+    monkeypatch.setattr(runner, "_WATCHDOG_POLL_INTERVAL", 2.0)
+
+    @contextmanager
+    def _fake_slot(slots):
+        yield 1
+
+    monkeypatch.setattr(runner, "_acquire_slot", _fake_slot)
+    monkeypatch.setattr(runner, "_start_instance", lambda slot: None)
+    monkeypatch.setattr(runner, "_find_running_instances", lambda: {1: 4242})
+    monkeypatch.setattr(runner, "_should_restart", lambda slot: False)
+    monkeypatch.setattr(runner.psutil, "pid_exists", lambda pid: True)
+    monkeypatch.setattr(runner.psutil, "Process", proc_cls)
+    monkeypatch.setattr(runner.subprocess, "run", lambda *a, **k: _completed(0))
+
+    killed: list[int] = []
+    monkeypatch.setattr(runner, "_kill_instance", lambda slot: killed.append(slot))
+
+    clock = {"t": 1000.0}
+    sleep_hooks: list = []
+    monkeypatch.setattr(runner.time, "monotonic", lambda: clock["t"])
+
+    def _sleep(dt):
+        clock["t"] += dt
+        # PI "wrote" the start sentinel so run_scp gets past the start loop.
+        for scp in tmp_path.glob("*.scp"):
+            start = tmp_path / f"start_{scp.stem}.txt"
+            if not start.exists():
+                start.write_text("start")
+        for hook in sleep_hooks:
+            hook()
+
+    monkeypatch.setattr(runner.time, "sleep", _sleep)
+    return clock, killed, sleep_hooks
+
+
+def test_run_scp_inactivity_watchdog_kills_stuck_instance(monkeypatch, tmp_path):
+    """An instance that's alive but makes NO progress — constant CPU, no new
+    files (a PI wedged on a modal dialog) — is killed after the inactivity
+    window, not after a flat 1-hour cap."""
+
+    class _FrozenProc:
+        def __init__(self, pid):
+            pass
+
+        def cpu_times(self):
+            return SimpleNamespace(user=5.0, system=1.0)  # never advances
+
+    _clock, killed, _hooks = _watchdog_env(monkeypatch, tmp_path, _FrozenProc)
+
+    # End sentinel is never written → the script "hangs"; with frozen CPU and
+    # no new writes, the watchdog must fire.
+    with pytest.raises(TimeoutError, match="no progress"):
+        runner.run_scp("// noop", tmp_path)
+    assert killed == [1]
+
+
+def test_run_scp_watchdog_tolerates_long_cpu_active_run(monkeypatch, tmp_path):
+    """As long as the process keeps burning CPU, the watchdog does NOT kill it
+    even well past the inactivity window — a long integration runs to
+    completion. Proves CPU activity alone (no file writes) counts as progress."""
+    cpu = {"t": 6.0}
+
+    class _BusyProc:
+        def __init__(self, pid):
+            pass
+
+        def cpu_times(self):
+            return SimpleNamespace(user=cpu["t"], system=0.0)
+
+    clock, killed, hooks = _watchdog_env(monkeypatch, tmp_path, _BusyProc)
+
+    ticks = {"n": 0}
+
+    def _advance():
+        cpu["t"] += 100.0        # lots of CPU each poll → always "working"
+        ticks["n"] += 1
+        # Let it finish only AFTER we're well past the 10s inactivity window.
+        if clock["t"] > 1000.0 + 3 * runner._PIX_INACTIVITY_TIMEOUT:
+            for scp in tmp_path.glob("*.scp"):
+                (tmp_path / f"end_{scp.stem}.txt").write_text("end")
+
+    hooks.append(_advance)
+
+    runner.run_scp("// noop", tmp_path)  # completes without raising
+    assert killed == []
+    assert clock["t"] > 1000.0 + runner._PIX_INACTIVITY_TIMEOUT  # ran past the window
