@@ -19,6 +19,25 @@ def get_unique_instance_name():
     return f"AstroFlow-{short_hash}"
 
 
+def _pick_peer_ip(addresses: list[str]) -> str:
+    """Choose which of a peer's resolved addresses to connect to.
+
+    A peer's hostname resolves to EVERY interface it has — the OS publishes an
+    A-record per interface (10 GbE + WiFi) — so `parsed_addresses()` returns
+    them all, in arbitrary order. Taking `[0]` blindly can land on the slow
+    WiFi and defeat the fast-link pinning. Prefer a direct-link (link-local,
+    169.254/16) address for the 10 GbE, then any routable address, and only
+    then loopback. This is the fallback; a peer's explicit `advertised_ip` TXT
+    (the interface it *chose* to advertise) wins over it when present.
+    """
+    if not addresses:
+        return ""
+    link_local = [a for a in addresses if a.startswith("169.254.")]
+    routable = [a for a in addresses
+                if a != "127.0.0.1" and not a.startswith("169.254.")]
+    return (link_local or routable or addresses)[0]
+
+
 class AstroFlowListener(ServiceListener):
     def __init__(self, dispatch_fn):
         self.instances = {}  # Store discovered instances
@@ -34,8 +53,6 @@ class AstroFlowListener(ServiceListener):
         info = zc.get_service_info(type, name)
         print(f"### add_service {info}")
         if info:
-            ip = info.parsed_addresses()[0]
-
             def prop(key: bytes, default: bytes) -> str:
                 # `.get(key, default)` substitutes the default only when the
                 # key is ABSENT. A TXT property advertised with an empty value
@@ -43,6 +60,12 @@ class AstroFlowListener(ServiceListener):
                 # reads back as None, so guard for that explicitly.
                 value = info.properties.get(key)
                 return (value if value is not None else default).decode()
+
+            # Prefer the peer's EXPLICITLY-advertised interface IP (the one it
+            # pinned via `advertised_ip`); fall back to choosing among resolved
+            # A-records — preferring the fast direct link, never blind `[0]`,
+            # which mixes every interface and can land on the slow WiFi.
+            ip = prop(b"advertised_ip", b"") or _pick_peer_ip(info.parsed_addresses())
 
             status = {
                 "name": name,
@@ -134,6 +157,10 @@ class AstroFlowZeroconf:
             "ray_head": "yes" if self.is_ray_head else "no",
             "mounted_volumes": json.dumps(self.mounted_volumes),
             "cluster_version": self.cluster_version,
+            # The interface IP this node CHOSE to advertise (the pinned cluster
+            # interface, e.g. 10 GbE). Peers use this directly instead of
+            # guessing from the hostname's A-records, which mix every interface.
+            "advertised_ip": self.get_ip(),
         }
 
         hostname = socket.gethostname()
