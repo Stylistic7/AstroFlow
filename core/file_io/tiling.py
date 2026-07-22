@@ -82,9 +82,10 @@ def crop_source_region(source_path: Path | str, rect: TileRect) -> np.ndarray:
     """Stream one tile out of a (tiled) BigTIFF without loading the whole image.
 
     Reuses the tile-server idiom (`web_server/backend/tiles.py:_serve_tile_
-    response`): open lazily with `unlimited=True` (our wide gigapixel strips
-    exceed libvips' anti-bomb cap) and `crop` the region — libvips decodes only
-    the touched tiles. Returns `(h, w)` for mono or `(h, w, bands)` for colour.
+    response`): open lazily with `unlimited=True` (our wide gigapixel BigTIFF
+    strips exceed libvips' anti-bomb cap) and `crop` the region — libvips decodes
+    only the touched tiles. All tiled sources are BigTIFF. Returns `(h, w)` for
+    mono or `(h, w, bands)` for colour.
     """
     x0, y0, w, h = rect
     img = pyvips.Image.new_from_file(str(source_path), unlimited=True)

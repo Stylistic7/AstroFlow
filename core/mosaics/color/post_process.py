@@ -489,12 +489,12 @@ def color_post_process(mosaic: Mosaic, channels: dict, config, viewbox=None) -> 
     with ephemeral_intermediates():
         for cf, channel in by_class.items():
             if cf in _NARROWBAND:
-                corrected = bxt_correct(mosaic, cf, config, channel)
-                starless = sxt_starless(mosaic, cf, config, corrected)
+                corrected = process_in_tiles(bxt_correct, mosaic, cf, config, channel, dims=(viewbox.num_pixels_x, viewbox.num_pixels_y))
+                starless = process_in_tiles(sxt_starless, mosaic, cf, config, corrected, dims=(viewbox.num_pixels_x, viewbox.num_pixels_y))
                 starless_nb[cf] = starless  # linear source for the Linear SHO tap
                 stretched_nb[cf] = autostretch_channel(mosaic, cf, starless)
             elif cf in _BROADBAND:
-                bxt_bb[cf] = bxt_correct(mosaic, cf, config, channel)
+                bxt_bb[cf] = process_in_tiles(bxt_correct, mosaic, cf, config, channel, dims=(viewbox.num_pixels_x, viewbox.num_pixels_y))
 
         # Broadband stars: combine the linear BXT'd channels into one RGB, then
         # SXT ONCE on that RGB so the extracted stars are coherent across R/G/B
@@ -502,7 +502,7 @@ def color_post_process(mosaic: Mosaic, channels: dict, config, viewbox=None) -> 
         rgb_star_lin = None
         if _BROADBAND <= set(bxt_bb):
             rgb_lin = combine_broadband_rgb(mosaic, bxt_bb["R"], bxt_bb["G"], bxt_bb["B"])
-            rgb_star_lin = sxt_stars_rgb(mosaic, config, rgb_lin)
+            rgb_star_lin = process_in_tiles(sxt_stars_rgb, mosaic, config, rgb_lin, dims=(viewbox.num_pixels_x, viewbox.num_pixels_y))
 
     out: dict[str, object] = {}
     rgb_stars = None

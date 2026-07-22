@@ -16,13 +16,12 @@ import numpy as np
 import structlog
 from pathlib import Path
 
-import astropy.io.fits as pyfits
 import edt
 
 from decorators import node
 from mosaics.placement.panel_io import read_placed_panel
 from file_io.tiff_file_io import write_tiff_image
-from file_io.types import FitsFilePath, TiffFilePath, WithSidecar
+from file_io.types import TiffFilePath, WithSidecar
 from hashing import hash_list
 from metadata.classes import ImageMetadata
 from mosaics.merging.pixinsight import (
@@ -213,7 +212,7 @@ def _blend_many(paths: list[Path]) -> np.ndarray:
 @node(display="Mosaic", final=True, auto_memory=True, plate_solve=False)  # mosaic projection — non-square pixels
 def merge_images_oss(
     mosaic: Mosaic, filter: str, *inputs: ImageMetadata,
-) -> WithSidecar[FitsFilePath]:
+) -> WithSidecar[TiffFilePath]:
     """Variadic distance-weighted OSS blend across every input panel.
 
     This single variadic call IS the finished per-filter mosaic channel —
@@ -232,13 +231,10 @@ def merge_images_oss(
     paths = [inp.filename.resolve(strict=True) for inp in inputs]
     result = _blend_many(paths)
 
-    header = pyfits.Header()
-    header["FILTER"] = filter
-    header["STBLHASH"] = hash_list([inp.stable_hash for inp in inputs])
-    header["PIPELINE"] = "AstroFlow-OSS"
-    pyfits.PrimaryHDU(data=result.astype(np.float32), header=header).writeto(
-        str(output_filename), overwrite=True,
-    )
+    write_tiff_image(Path(output_filename), result.astype(np.float32),
+                     {"FILTER": filter,
+                      "STBLHASH": hash_list([inp.stable_hash for inp in inputs]),
+                      "PIPELINE": "AstroFlow-OSS"})
 
     new_count = sum(_panel_count(inp) for inp in inputs)
     _set_panel_count(output_filename, new_count)

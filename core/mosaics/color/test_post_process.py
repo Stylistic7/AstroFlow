@@ -15,8 +15,6 @@ import pytest
 from frozendict import frozendict
 from spherical_geometry.polygon import SingleSphericalPolygon  # type: ignore
 
-import astropy.io.fits as pyfits
-
 from attributes.astrometric_attributes import healpix_cells_from_poly
 from context import context
 from decisions.settings import DevelopmentSettings, ProcessingConfig, TilingSettings
@@ -48,7 +46,7 @@ def _write_channel(path: Path, seed: int, h: int, w: int) -> None:
         img += rng.uniform(0.2, 0.8) * np.exp(
             -(((xx - cx) ** 2 + (yy - cy) ** 2) / (2 * 2.0 ** 2))
         )
-    pyfits.PrimaryHDU(np.clip(img, 0, 1).astype(np.float32)).writeto(path, overwrite=True)
+    write_tiff_image(path, np.clip(img, 0, 1).astype(np.float32), {"PIPELINE": "AstroFlow-OSS"})
 
 
 def _mosaic() -> Mosaic:
@@ -84,7 +82,7 @@ def test_color_post_process_traces_and_runs(test_context, tmp_path):
     h, w = vb.num_pixels_y, vb.num_pixels_x
     channels = {}
     for i, f in enumerate(("S", "H", "O", "R", "G", "B")):
-        p = tmp_path / f"chan_{f}.fits"
+        p = tmp_path / f"chan_{f}.tiff"
         _write_channel(p, i, h, w)
         # Construct the input metadata directly (compute_image_metadata is a
         # remote @node, callable only inside a graph); the ops only read
@@ -103,13 +101,18 @@ def test_color_post_process_traces_and_runs(test_context, tmp_path):
     assert graph is not None
 
     counts = _count_by_op(graph)
-    assert counts.get("bxt_correct") == 6        # one per filter
-    assert counts.get("sxt_starless") == 3       # H, O, S (narrowband, per-channel)
-    assert counts.get("autostretch_channel") == 3  # narrowband only (H, O, S)
+    # Every rc-astro op (BXT, SXT, NXT) now runs via process_in_tiles: each
+    # op-invocation fans into `n` tiles (crop_tile -> op -> feather), so per-op
+    # node counts are `base x n`. tile_px=512 on the viewbox-sized channels -> n>1.
+    n = counts["bxt_correct"] // 6               # tiles per channel
+    assert n > 1                                  # actually tiled, not a 1-tile shortcut
+    assert counts.get("bxt_correct") == 6 * n     # 6 channels, each BXT tiled
+    assert counts.get("sxt_starless") == 3 * n    # H, O, S narrowband, each SXT tiled
+    assert counts.get("autostretch_channel") == 3  # narrowband only (H, O, S) — NOT tiled
     # Broadband stars: combine R+G+B into one linear RGB, then a SINGLE SXT pass
-    # (coherent stars) — not per-channel.
+    # (coherent stars) — not per-channel; the SXT is tiled.
     assert counts.get("combine_broadband_rgb") == 1
-    assert counts.get("sxt_stars_rgb") == 1
+    assert counts.get("sxt_stars_rgb") == 1 * n   # single RGB SXT, tiled
     assert counts.get("sxt_stars") is None       # old per-channel path removed
     assert counts.get("combine_star_rgb") == 1
     assert counts.get("hubble_image") == 1
@@ -121,9 +124,14 @@ def test_color_post_process_traces_and_runs(test_context, tmp_path):
     # into the deliverable. `linear_sho` is now a traced helper, not a node.
     assert counts.get("linear_sho") is None
     assert counts.get("stack_sho_channels") == 1
-    assert counts.get("blend_linear_sho") == 1        # the display="Linear SHO" deliverable
-    assert counts.get("nxt", 0) >= 1
-    assert counts.get("crop_tile") == counts.get("nxt")   # one op per cropped tile
+    assert counts.get("blend_linear_sho") == 1        # the display="Linear SHO" deliverable (NXT's feather)
+    assert counts.get("nxt") == n                      # linear_sho NXT, tiled
+    # Intermediate feather blends: one per tiled rc-astro op-invocation —
+    # 6 bxt_correct + 3 sxt_starless + 1 sxt_stars_rgb = 10 (NXT uses blend_linear_sho).
+    assert counts.get("blend_tiles") == 10
+    # crop_tile: one per (tiled op-invocation x tile) = (6 bxt + 3 sxt_starless +
+    # 1 sxt_stars_rgb + 1 nxt) x n = 11n.
+    assert counts.get("crop_tile") == 11 * n
 
     run_graph(graph)
 
@@ -159,7 +167,7 @@ def test_color_post_process_traces_and_runs(test_context, tmp_path):
 def test_palette_glue_with_and_without_stars(tmp_path):
     metas = {}
     for i, f in enumerate(("S", "H", "O")):
-        p = tmp_path / f"{f}.fits"
+        p = tmp_path / f"{f}.tiff"
         _write_channel(p, i + 10, 128, 128)
         metas[f] = SimpleNamespace(filename=p)
 
