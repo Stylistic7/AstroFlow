@@ -542,7 +542,9 @@ def _start_ray_subordinate_node(
         )
         state["connected_head_ip"] = head_ip
         announce("ray_status")
-        connect_to_ray_cluster()
+        # Compute-only: the head owns the orchestrator actors. A worker pinning
+        # them onto itself takes the whole derivation down when it unplugs.
+        connect_to_ray_cluster(create_orchestrator_actors=False)
     except Exception as e:
         print(f"### Failed to connect to head node: {e}")
         # Clean up so the next periodic re-check can retry.

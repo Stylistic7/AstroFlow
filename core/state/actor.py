@@ -21,6 +21,24 @@ from dependency_graph import (
 from metadata.image_metadata import scatter_compute_image_metadata
 
 
+# Ray INFRASTRUCTURE failures — a worker node/raylet died or became
+# unreachable (e.g. the observed worker raylet SIGABRT), NOT a bug in a task
+# (that's RayTaskError). The lost tasks are idempotent + content-addressed, so
+# on one of these we re-run the whole graph: finished work cache-hits instantly
+# and only the dead node's tasks re-dispatch, now onto live nodes. Bounded so a
+# persistently-unstable node can't spin the head forever.
+_NODE_LOST_ERRORS = (
+    ray.exceptions.NodeDiedError,
+    ray.exceptions.WorkerCrashedError,
+    ray.exceptions.LocalRayletDiedError,
+    ray.exceptions.TaskUnschedulableError,
+    ray.exceptions.ActorUnavailableError,
+    ray.exceptions.ActorDiedError,
+    ray.exceptions.OwnerDiedError,
+)
+_MAX_INFRA_RETRIES = 5
+
+
 def _get_namespace() -> str:
     return os.environ.get("ASTROFLOW_MOCK_NAMESPACE", "AstroFlow")
 
@@ -155,7 +173,26 @@ class StateActor:
         except GraphCancelled:
             print("### Graph drained; restart already enqueued")
             return state, [Action(type="announce", message="reload_data")]
+        except _NODE_LOST_ERRORS as e:
+            # A worker node/raylet died mid-run (infra failure, not a task bug).
+            # Re-run: finished work cache-hits, the dead node's tasks re-dispatch
+            # onto live nodes. Bounded so a persistently-unstable node can't spin
+            # the head forever.
+            self._infra_retries = getattr(self, "_infra_retries", 0) + 1
+            if self._infra_retries > _MAX_INFRA_RETRIES:
+                print(
+                    f"### Node lost mid-run ({type(e).__name__}) "
+                    f"{self._infra_retries}x — giving up auto-retry; a node is "
+                    "persistently unstable. Derivation idle until re-triggered."
+                )
+                return state, [Action(type="announce", message="reload_data")]
+            print(
+                f"### Node lost mid-run ({type(e).__name__}); re-running the graph "
+                f"(attempt {self._infra_retries}/{_MAX_INFRA_RETRIES})"
+            )
+            return state, [Action(type="run_entire_graph")]
 
+        self._infra_retries = 0  # a clean run resets the retry budget
         return state, [Action(type="announce", message="reload_data")]
 
     # TODO: Complete this. The goal is to iterate over the graph's dry run result,

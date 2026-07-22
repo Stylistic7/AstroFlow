@@ -15,7 +15,18 @@ _scheduler_actor = None
 _ray_init_lock = threading.Lock()
 
 
-def connect_to_ray_cluster():
+def connect_to_ray_cluster(create_orchestrator_actors: bool = True):
+    """Join the Ray cluster; the HEAD also creates + pins the singleton
+    orchestrator actors (context/state/scheduler) to itself.
+
+    Workers MUST pass `create_orchestrator_actors=False` and join for COMPUTE
+    ONLY. They must never create or pin these actors: `get_node_id()` from a
+    worker driver returns the WORKER's node, so a worker would pin the
+    orchestrator onto itself — and when that worker unplugs or its raylet
+    crashes, it drags the whole derivation down with it (the observed head
+    stall). The actors live on the head so their LocalContext cache writes land
+    on the Flask reader's machine, and so they outlive any worker.
+    """
     if ray.is_initialized():
         return
 
@@ -57,6 +68,13 @@ def connect_to_ray_cluster():
         register_context_ref_serializer()
 
         print("Ray dashboard:", ray_context.dashboard_url)
+
+        if not create_orchestrator_actors:
+            # Worker: joined for compute only. The head owns the singleton
+            # orchestrator actors; a worker (re)pinning them onto its own node
+            # is the cluster-killer described in the docstring.
+            print("### Joined cluster as a worker (orchestrator stays on head)")
+            return
 
         # Pin all orchestrator actors to the head node. They write to
         # ~/Pictures/AstroFlow/cache via LocalContext, which only works
