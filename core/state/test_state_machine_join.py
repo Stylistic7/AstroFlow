@@ -126,26 +126,29 @@ def test_head_does_not_follow_anyone(monkeypatch):
     assert actions == []
 
 
-def test_reclaim_local_slate_force_stops_and_never_probes_remote(monkeypatch):
-    # A leftover local raylet is reclaimed by force_stop_ray — and, crucially,
-    # startup NEVER calls is_ray_connected (no remote GCS probe that could hang
-    # on a dead cached head address before discovery ever runs).
+def test_reclaim_local_slate_worker_is_a_noop(monkeypatch):
+    # A WORKER must do NOTHING here: no force_stop (the "leftover" check is a
+    # false-positive on the worker's OWN just-bound raylet during the
+    # pull-deploy overlap, and force-stopping killed it), no local-raylet
+    # inspection, and no remote GCS probe.
+    monkeypatch.setattr(sm, "force_stop_ray",
+                        lambda: pytest.fail("a worker must not force-stop Ray (kills its own raylet)"))
+    monkeypatch.setattr(sm, "local_raylet_running",
+                        lambda: pytest.fail("a worker must not inspect/reclaim the local raylet"))
+    monkeypatch.setattr(sm, "is_ray_connected",
+                        lambda *a, **k: pytest.fail("startup must not probe a remote GCS"))
+    sm._reclaim_local_slate(is_head=False)  # returns immediately, does nothing
+
+
+def test_reclaim_local_slate_head_reclaims_and_waits_for_port(monkeypatch):
+    # The HEAD (no pull-deploy overlap) force-stops any leftover + does a
+    # purely-local port-8000 wait — and never probes a remote GCS.
     calls = []
     monkeypatch.setattr(sm, "local_raylet_running", lambda: True)
     monkeypatch.setattr(sm, "force_stop_ray", lambda: calls.append("stop"))
     monkeypatch.setattr(sm, "is_ray_connected",
                         lambda *a, **k: pytest.fail("startup must not probe a remote GCS"))
-    sm._reclaim_local_slate(is_head=False)  # worker: no port wait
-    assert calls == ["stop"]
-
-
-def test_reclaim_local_slate_head_waits_for_port_locally(monkeypatch):
-    # Clean slate (no raylet) still force-stops (idempotent), and the head does
-    # a purely-local port-8000 wait — no remote probe anywhere.
-    monkeypatch.setattr(sm, "local_raylet_running", lambda: False)
-    monkeypatch.setattr(sm, "force_stop_ray", lambda: None)
-    monkeypatch.setattr(sm, "is_ray_connected",
-                        lambda *a, **k: pytest.fail("startup must not probe a remote GCS"))
     import socket
     monkeypatch.setattr(socket.socket, "connect_ex", lambda self, addr: 1)  # 8000 free
     sm._reclaim_local_slate(is_head=True, port_timeout=2)  # returns promptly
+    assert calls == ["stop"]

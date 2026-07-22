@@ -158,28 +158,32 @@ def _await_port_free(port: int, timeout: int) -> None:
 
 
 def _reclaim_local_slate(is_head: bool, port_timeout: int = 40) -> None:
-    """Start from a clean, self-owned local slate — reclaim, don't probe.
+    """Head-only clean-slate before binding singletons.
 
-    This process is about to bind its OWN Ray node, so a raylet already
-    running here is never ours to keep: it's an orphan from a crashed/killed
-    prior run, or a self-restart's outgoing instance on its way out. Either
-    way we forcibly reclaim (`force_stop_ray`, which also drops the `/tmp/ray`
-    session so its cached GCS address can't be reused). We deliberately do NOT
-    run `ray status` here: it probes the *remembered* (for a worker, remote)
-    cluster address, which both answers the wrong question and hangs on a dead
-    head — that's the boot-into-a-stale-IP failure this replaces.
+    A WORKER does nothing here. `ray start --address` binds its own node, and
+    the bounded `is_ray_connected` already handles a stale `/tmp/ray`, so there
+    is nothing for a worker to reclaim — and force-stopping RACED the worker's
+    OWN just-started raylet during the pull-deploy restart and killed it (the
+    two-process overlap: the replacement's `_init` force-stopped the raylet the
+    first process had just bound). Symptom: even after a reboot with no Ray
+    running, startup reported a "leftover" and the raylet died right after. The
+    worker's own `ray start` owns its node; we must not touch it.
 
-    Port 8000 (head only) IS a real local wait: a held port means the outgoing
-    instance is genuinely still serving, so we bounded-wait for the handoff.
+    The HEAD does reclaim: it has no pull-deploy overlap and must own port 8000
+    and a clean local Ray head node before `ray start --head`. Force-stop any
+    leftover (a crash orphan or a self-restart's outgoing instance) + drop the
+    stale `/tmp/ray` session, then bounded-wait for port 8000. We never run
+    `ray status` (it probes the remembered cluster and hangs on a dead head).
     """
+    if not is_head:
+        return
     if local_raylet_running():
         print(
             "### Startup found a leftover local Ray node (unclean prior exit) "
             "— reclaiming a clean slate before binding ours."
         )
     force_stop_ray()  # idempotent; also clears any stale /tmp/ray GCS address
-    if is_head:
-        _await_port_free(8000, port_timeout)
+    _await_port_free(8000, port_timeout)
 
 
 def _init(state: State, action: Action) -> tuple[State, list[Action]]:
