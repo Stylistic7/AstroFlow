@@ -19,9 +19,6 @@ from state.ray_control import (
     start_ray_head_node,
     start_ray_subordinate_node,
     stop_ray_node,
-    is_ray_connected,
-    local_raylet_running,
-    force_stop_ray,
 )
 from state.astroflow_zeroconf import AstroFlowZeroconf
 from state.network_settings import (
@@ -137,62 +134,7 @@ def is_head_node() -> bool:
     return get_network_settings().ray_head_node_enabled
 
 
-def _await_port_free(port: int, timeout: int) -> None:
-    """Bounded, purely-LOCAL wait for a TCP port to free — used (head only)
-    when a self-restart's outgoing instance may still be serving it. Connects
-    to 127.0.0.1, so it can't hang on a remote peer.
-    """
-    import socket as _socket
-
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
-        try:
-            if s.connect_ex(("127.0.0.1", port)) != 0:
-                return  # port free
-        finally:
-            s.close()
-        print(f"### Waiting for a previous instance to release port {port}…")
-        time.sleep(1)
-    print(f"### Proceeding despite port {port} still busy after {timeout}s.")
-
-
-def _reclaim_local_slate(is_head: bool, port_timeout: int = 40) -> None:
-    """Head-only clean-slate before binding singletons.
-
-    A WORKER does nothing here. `ray start --address` binds its own node, and
-    the bounded `is_ray_connected` already handles a stale `/tmp/ray`, so there
-    is nothing for a worker to reclaim — and force-stopping RACED the worker's
-    OWN just-started raylet during the pull-deploy restart and killed it (the
-    two-process overlap: the replacement's `_init` force-stopped the raylet the
-    first process had just bound). Symptom: even after a reboot with no Ray
-    running, startup reported a "leftover" and the raylet died right after. The
-    worker's own `ray start` owns its node; we must not touch it.
-
-    The HEAD does reclaim: it has no pull-deploy overlap and must own port 8000
-    and a clean local Ray head node before `ray start --head`. Force-stop any
-    leftover (a crash orphan or a self-restart's outgoing instance) + drop the
-    stale `/tmp/ray` session, then bounded-wait for port 8000. We never run
-    `ray status` (it probes the remembered cluster and hangs on a dead head).
-    """
-    if not is_head:
-        return
-    if local_raylet_running():
-        print(
-            "### Startup found a leftover local Ray node (unclean prior exit) "
-            "— reclaiming a clean slate before binding ours."
-        )
-    force_stop_ray()  # idempotent; also clears any stale /tmp/ray GCS address
-    _await_port_free(8000, port_timeout)
-
-
 def _init(state: State, action: Action) -> tuple[State, list[Action]]:
-    # This process is about to bind its own local Ray node, so reclaim a clean
-    # slate first — force-stop any leftover local Ray (crash orphan or a
-    # self-restart's outgoing instance) and clear its stale session. No remote
-    # GCS probe, so a dead cached head address can't hang boot before discovery.
-    _reclaim_local_slate(is_head_node())
-
     new_actions = []
 
     # A head runs from its own dev repo, never a synced worker checkout. Clear
@@ -420,21 +362,20 @@ def _update_astroflow_services(
         None,
     )
 
-    # If no head node is advertising, check if we've lost our connection.
+    # No head advertising → nothing to do. We do NOT tear our own node down here:
+    # Ray owns connection/health tracking, and our probes on top of it caused
+    # more harm than good (a flaky check with the authority to kill things).
     if head is None:
-        if "ray_process" in state and not is_ray_connected():
-            print("### Lost connection to head node, cleaning up")
-            stop_ray_node()
-            state.pop("ray_process", None)
-            state.pop("connected_head_ip", None)
         return state, []
 
     head_ip = head["ip"]
     version = head.get("cluster_version", "")
     shares = head.get("mounted_volumes", [])
 
-    # Head moved interface / restarted at a new IP: tear down Ray and drop the
-    # stale SMB mounts (a hung mount blocks os.listdir ~60s) before reconnecting.
+    # Head restarted at a NEW IP (e.g. its 10 GbE link-local re-rolled): the old
+    # Ray connection + SMB mounts point at a dead address, so drop them and
+    # reconnect to the new one. This is a concrete advertised-IP change, not a
+    # health probe — it only fires when the IP genuinely differs.
     if "ray_process" in state and state.get("connected_head_ip") != head_ip:
         print(
             f"### Head IP changed "
@@ -448,25 +389,14 @@ def _update_astroflow_services(
         state.pop("ray_process", None)
         state.pop("connected_head_ip", None)
 
-    # Connected and alive → nothing to do. We deliberately do NOT poll for the
-    # head advancing to a new version: deploying new code means restarting the
-    # apps (the head re-freezes; workers re-sync on their next start/connect).
-    # A dead Ray connection (e.g. the head bounced) is torn down so the next
-    # discovery tick re-joins and re-syncs to whatever the head now serves.
+    # Already joined this head → nothing to do. We do NOT probe connection health
+    # (Ray does that; our `ray status` probe flaked and tore down healthy
+    # raylets) and we do NOT poll for the head advancing to a new version
+    # (deploying restarts the apps; workers re-sync on their next start).
     if "ray_process" in state:
-        if not is_ray_connected():
-            print("### Ray connection lost; tearing down to re-join.")
-            try:
-                stop_ray_node()
-            except Exception:
-                pass
-            _unmount_worker_shares(state)
-            state.pop("ray_process", None)
-            state.pop("connected_head_ip", None)
-        else:
-            return state, []
+        return state, []
 
-    # Not connected → mount disks, sync code, join.
+    # Not joined → mount disks, sync code, join.
     return state, [
         Action(type="join_head", head_ip=head_ip, version=version, shares=shares)
     ]
