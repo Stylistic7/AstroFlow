@@ -54,7 +54,7 @@ def test_sync_downloads_and_extracts_when_behind(monkeypatch, tmp_path):
     assert extracted["tar"] == b"TARBYTES" and extracted["sha"] == sha
 
 
-def test_mount_uses_explicit_ip_current_user_and_volumes_path(monkeypatch):
+def test_mount_uses_explicit_ip_no_user_and_volumes_path(monkeypatch):
     cmds = []
     mounted = {"Astro": False}
 
@@ -64,7 +64,6 @@ def test_mount_uses_explicit_ip_current_user_and_volumes_path(monkeypatch):
         return subprocess.CompletedProcess(cmd, 0, "", "")
 
     monkeypatch.setattr(ws.subprocess, "run", fake_run)
-    monkeypatch.setattr(ws.getpass, "getuser", lambda: "nobody")
     monkeypatch.setattr(ws.os.path, "ismount",
                         lambda p: mounted.get(str(p).rsplit("/", 1)[-1], False))
 
@@ -72,9 +71,11 @@ def test_mount_uses_explicit_ip_current_user_and_volumes_path(monkeypatch):
 
     assert len(cmds) == 1
     assert cmds[0][0] == "osascript"
-    # Mounts as the current user (same account across the LAN), never `guest`.
-    assert 'mount volume "smb://nobody@10.0.0.53/Astro"' in cmds[0][-1]
-    assert "guest@" not in cmds[0][-1]
+    # Explicit IP (forces the 10 GbE link), and NO user in the URL — an explicit
+    # user@/guest@ made the mount silently fail to appear; bare IP uses the
+    # current login session (same Apple ID).
+    assert 'mount volume "smb://10.0.0.53/Astro"' in cmds[0][-1]
+    assert "@" not in cmds[0][-1]
 
 
 def test_mount_is_skipped_when_already_mounted(monkeypatch):
