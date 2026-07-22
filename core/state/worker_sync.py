@@ -13,6 +13,7 @@ takes), which creates the mountpoint and mounts as the user. The share is
 addressed by EXPLICIT IP so the directly-connected 10 GbE route is used rather
 than WiFi.
 """
+import getpass
 import os
 import subprocess
 import time
@@ -39,14 +40,16 @@ def _is_mounted(mp: Path) -> bool:
 
 
 def mount_head_shares(head_ip: str, shares: list[str]) -> None:
-    """Mount each `//head_ip/<share>` at `/Volumes/<share>` (guest auth — same
-    Apple ID everywhere means passwordless). Idempotent; raises if a mount
-    can't be established."""
+    """Mount each `//head_ip/<share>` at `/Volumes/<share>` as the CURRENT user
+    (the same account/Apple ID across the LAN → the head authenticates it from
+    the keychain, so no `guest`). Idempotent; raises if a mount can't be
+    established."""
+    user = getpass.getuser()
     for share in shares:
         mp = _mountpoint(share)
         if _is_mounted(mp):
             continue
-        url = f"smb://guest@{head_ip}/{share}"
+        url = f"smb://{user}@{head_ip}/{share}"
         result = subprocess.run(
             ["osascript", "-e", f'mount volume "{url}"'],
             capture_output=True,
