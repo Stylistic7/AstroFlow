@@ -1,11 +1,12 @@
 """1 Hz cluster-utilization sampler for the Ray status chip's
 sparkline.
 
-Runs as a gevent greenlet inside the SSE-stream gunicorn worker
-(which is the only worker that loads `gunicorn_config.py:post_fork`)
-and persists samples to diskcache via `local_context` so the OTHER
-gunicorn worker — the main Flask app, which actually serves
-`/api/ray/status` — can read them out across the process boundary.
+`sample_once()` is driven by `SchedulerActor._ray_metrics_loop` — a
+head-pinned Ray actor, where Ray is initialized (commit 9ff4073a) —
+which also `announce()`s `ray_status` after each sample so the SSE
+stream tells the frontend to refetch. Samples persist to diskcache
+via `local_context` so the Flask worker serving `/api/ray/status`
+reads them across the process boundary.
 
 The diskcache hit per write is tiny (3 × 60 floats × 8 B ≈ 1.5 KB
 per second) — well under any reasonable budget.
@@ -30,7 +31,6 @@ from typing import Any
 
 
 _HISTORY_LEN = 60
-_SAMPLE_INTERVAL_S = 1.0
 
 # Diskcache keys. Three lockstep streams of last-60 samples.
 _CPU_KEY = "ray_metrics_cpu_history"
@@ -272,28 +272,3 @@ def sample_node_memory(timeout: float = 4.0) -> dict:
     except Exception as e:
         print(f"### sample_node_memory failed: {type(e).__name__}: {e}")
     return out
-
-
-def start_polling() -> None:
-    """Spawn the 1 Hz sampler greenlet. Called from gunicorn's
-    `post_fork` so it runs once per worker, after gevent's monkey
-    patching is in place."""
-    import gevent
-    gevent.spawn(_poll_loop)
-
-
-def _poll_loop() -> None:
-    """Tight loop: sample, then `gevent.sleep` so other greenlets
-    (notably the SSE announcer's `event_loop`) get scheduled. Also
-    announces `ray_status` once per second so the frontend's SSE
-    handler refetches `/api/ray/status` and the chip's sparkline
-    keeps marching."""
-    from web_server.backend.announcer import announce
-    while True:
-        sample_once()
-        try:
-            announce("ray_status")
-        except Exception:
-            pass
-        import gevent
-        gevent.sleep(_SAMPLE_INTERVAL_S)

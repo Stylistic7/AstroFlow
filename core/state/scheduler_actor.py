@@ -201,6 +201,15 @@ class SchedulerActor:
                 try:
                     from web_server.backend.ray_metrics import sample_once
                     sample_once()
+                    # Tell the frontend a fresh sample landed. The sampler moved
+                    # here from ray_metrics._poll_loop (9ff4073a) but the paired
+                    # SSE announce was left behind in that now-orphaned loop, so
+                    # the RayStatus chip stopped live-updating. announce() is a
+                    # cross-process queue.put; this head-pinned actor reaches the
+                    # web workers' SSE event_loop exactly like StateActor's
+                    # compute_graph_status announce does.
+                    from web_server.backend.announcer import announce
+                    announce("ray_status")
                 except Exception as e:
                     print(f"### ray_metrics sample raised, ignoring: {e}")
                 await asyncio.sleep(interval_s)
