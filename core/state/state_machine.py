@@ -20,6 +20,8 @@ from state.ray_control import (
     start_ray_subordinate_node,
     stop_ray_node,
     is_ray_connected,
+    local_raylet_running,
+    force_stop_ray,
 )
 from state.astroflow_zeroconf import AstroFlowZeroconf
 from state.network_settings import (
@@ -135,36 +137,57 @@ def is_head_node() -> bool:
     return get_network_settings().ray_head_node_enabled
 
 
-def _await_clean_slate(is_head: bool, timeout: int = 40) -> None:
-    """Before a (re)start binds its singletons, wait for any previous instance
-    on this machine to release them: the local Ray node, and (head only) the
-    web-server port 8000. A restart spawns the replacement *then* quits the old
-    process, so without this the new process can race the old one for those
-    resources. On a fresh launch nothing is held and this returns immediately.
+def _await_port_free(port: int, timeout: int) -> None:
+    """Bounded, purely-LOCAL wait for a TCP port to free — used (head only)
+    when a self-restart's outgoing instance may still be serving it. Connects
+    to 127.0.0.1, so it can't hang on a remote peer.
     """
     import socket as _socket
 
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        ray_down = not is_ray_connected()
-        port_free = True
-        if is_head:
-            s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
-            try:
-                port_free = s.connect_ex(("127.0.0.1", 8000)) != 0
-            finally:
-                s.close()
-        if ray_down and port_free:
-            return
-        print("### Waiting for a previous instance to release Ray / port 8000…")
+        s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+        try:
+            if s.connect_ex(("127.0.0.1", port)) != 0:
+                return  # port free
+        finally:
+            s.close()
+        print(f"### Waiting for a previous instance to release port {port}…")
         time.sleep(1)
-    print("### Proceeding despite a busy slate after timeout.")
+    print(f"### Proceeding despite port {port} still busy after {timeout}s.")
+
+
+def _reclaim_local_slate(is_head: bool, port_timeout: int = 40) -> None:
+    """Start from a clean, self-owned local slate — reclaim, don't probe.
+
+    This process is about to bind its OWN Ray node, so a raylet already
+    running here is never ours to keep: it's an orphan from a crashed/killed
+    prior run, or a self-restart's outgoing instance on its way out. Either
+    way we forcibly reclaim (`force_stop_ray`, which also drops the `/tmp/ray`
+    session so its cached GCS address can't be reused). We deliberately do NOT
+    run `ray status` here: it probes the *remembered* (for a worker, remote)
+    cluster address, which both answers the wrong question and hangs on a dead
+    head — that's the boot-into-a-stale-IP failure this replaces.
+
+    Port 8000 (head only) IS a real local wait: a held port means the outgoing
+    instance is genuinely still serving, so we bounded-wait for the handoff.
+    """
+    if local_raylet_running():
+        print(
+            "### Startup found a leftover local Ray node (unclean prior exit) "
+            "— reclaiming a clean slate before binding ours."
+        )
+    force_stop_ray()  # idempotent; also clears any stale /tmp/ray GCS address
+    if is_head:
+        _await_port_free(8000, port_timeout)
 
 
 def _init(state: State, action: Action) -> tuple[State, list[Action]]:
-    # If this process is a freshly-spawned replacement (code/role change), the
-    # outgoing instance may still hold Ray / port 8000 — wait for it to release.
-    _await_clean_slate(is_head_node())
+    # This process is about to bind its own local Ray node, so reclaim a clean
+    # slate first — force-stop any leftover local Ray (crash orphan or a
+    # self-restart's outgoing instance) and clear its stale session. No remote
+    # GCS probe, so a dead cached head address can't hang boot before discovery.
+    _reclaim_local_slate(is_head_node())
 
     new_actions = []
 

@@ -126,19 +126,26 @@ def test_head_does_not_follow_anyone(monkeypatch):
     assert actions == []
 
 
-def test_clean_slate_returns_immediately_when_idle(monkeypatch):
-    # Fresh launch: no local Ray, port free → no waiting.
-    monkeypatch.setattr(sm, "is_ray_connected", lambda: False)
+def test_reclaim_local_slate_force_stops_and_never_probes_remote(monkeypatch):
+    # A leftover local raylet is reclaimed by force_stop_ray — and, crucially,
+    # startup NEVER calls is_ray_connected (no remote GCS probe that could hang
+    # on a dead cached head address before discovery ever runs).
+    calls = []
+    monkeypatch.setattr(sm, "local_raylet_running", lambda: True)
+    monkeypatch.setattr(sm, "force_stop_ray", lambda: calls.append("stop"))
+    monkeypatch.setattr(sm, "is_ray_connected",
+                        lambda *a, **k: pytest.fail("startup must not probe a remote GCS"))
+    sm._reclaim_local_slate(is_head=False)  # worker: no port wait
+    assert calls == ["stop"]
+
+
+def test_reclaim_local_slate_head_waits_for_port_locally(monkeypatch):
+    # Clean slate (no raylet) still force-stops (idempotent), and the head does
+    # a purely-local port-8000 wait — no remote probe anywhere.
+    monkeypatch.setattr(sm, "local_raylet_running", lambda: False)
+    monkeypatch.setattr(sm, "force_stop_ray", lambda: None)
+    monkeypatch.setattr(sm, "is_ray_connected",
+                        lambda *a, **k: pytest.fail("startup must not probe a remote GCS"))
     import socket
-    monkeypatch.setattr(socket.socket, "connect_ex", lambda self, addr: 1)  # closed
-    sm._await_clean_slate(is_head=True, timeout=2)  # must return promptly
-
-
-def test_clean_slate_times_out_if_predecessor_lingers(monkeypatch):
-    # Old instance never releases Ray → barrier gives up after the timeout
-    # rather than hanging forever.
-    monkeypatch.setattr(sm, "is_ray_connected", lambda: True)
-    monkeypatch.setattr(sm.time, "sleep", lambda s: None)  # don't actually wait
-    ticks = iter([0, 0.5, 1.0, 1.5, 2.0, 99])
-    monkeypatch.setattr(sm.time, "monotonic", lambda: next(ticks))
-    sm._await_clean_slate(is_head=False, timeout=1)  # returns after deadline
+    monkeypatch.setattr(socket.socket, "connect_ex", lambda self, addr: 1)  # 8000 free
+    sm._reclaim_local_slate(is_head=True, port_timeout=2)  # returns promptly

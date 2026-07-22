@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import time
 import socket
@@ -22,11 +23,57 @@ def _ray_memory_bytes() -> int:
     return int(psutil.virtual_memory().total * 0.7)
 
 
-def is_ray_connected():
-    """Check if the local Ray node is connected to a live cluster."""
+def is_ray_connected(timeout: float = 10.0):
+    """Whether the local Ray node is connected to a live cluster.
+
+    `ray status` targets whatever cluster the local session last pointed at —
+    for a worker that's a REMOTE head address — so a dead head would hang this
+    with no bound. We cap it: on timeout, report "not connected" so the caller
+    re-joins instead of blocking forever. This is only a safety net for the
+    genuinely-remote reconnect check; startup no longer probes a remote GCS at
+    all (it reclaims the local slate via `force_stop_ray`).
+    """
     ray_path = get_bin_dir() / "ray"
-    result = subprocess.run([ray_path, "status"], capture_output=True, text=True)
+    try:
+        result = subprocess.run(
+            [ray_path, "status"], capture_output=True, text=True, timeout=timeout
+        )
+    except subprocess.TimeoutExpired:
+        return False
     return "Autoscaler status" in result.stdout
+
+
+def local_raylet_running() -> bool:
+    """Whether a Ray raylet is alive on THIS machine.
+
+    A purely local check — it scans the process table and never contacts a
+    GCS — so unlike `ray status` it can't hang when the remembered cluster
+    address is a dead remote head. A raylet here at startup is never ours to
+    reuse: it's an orphan from a crashed/killed prior run, or a self-restart's
+    outgoing instance. Either way the caller reclaims (see `force_stop_ray`).
+    """
+    for proc in psutil.process_iter(["name"]):
+        try:
+            if proc.info["name"] == "raylet":
+                return True
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    return False
+
+
+def force_stop_ray() -> None:
+    """Forcibly tear down any Ray node on THIS machine and drop its session
+    dir. Purely local — never contacts a (possibly dead) remote GCS, so it
+    can't hang — and it clears the cached cluster address under `/tmp/ray`
+    (Ray's default temp dir) that a subsequent `ray status` would otherwise
+    reuse. That cached address is the "boots straight into a dead IP" bug.
+    Idempotent: a no-op when nothing is running.
+    """
+    ray_path = get_bin_dir() / "ray"
+    subprocess.run(
+        [ray_path, "stop", "--force"], capture_output=True, text=True, timeout=30
+    )
+    shutil.rmtree("/tmp/ray", ignore_errors=True)
 
 
 def _wait_for_ray(timeout):
