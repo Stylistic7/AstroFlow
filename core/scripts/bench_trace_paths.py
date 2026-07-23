@@ -47,14 +47,14 @@ def main():
 
     print(f"tracing item: {item}")
 
-    # First trace: potentially cold (cache miss) if this is the first
-    # time we've called with this exact (item, config, metadata, source).
+    # First read: snapshot hit (~0.1ms) if this item was built, else a cold
+    # inline trace (recompute) if it's absent from the current graph.
     t0 = time.perf_counter()
     paths = paths_for_cart_item(item)
     cold = time.perf_counter() - t0
     print(f"first trace:  {cold*1000:.1f} ms ({len(paths)} paths)")
 
-    # Subsequent traces: same inputs → diskcache hit on _traced_paths.
+    # Subsequent reads: build-time snapshot hit (`context.get`), no trace.
     N = 5
     warm_times = []
     for i in range(N):

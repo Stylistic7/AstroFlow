@@ -195,17 +195,10 @@ def test_pipeline_outputs_reads_snapshot_not_trace(client, with_orion_mosaic):
     """Regression for the live-app failure mode: /api/pipeline_outputs taking
     tens of seconds (or 500ing on the Ray-free web worker) because it traced on
     demand. It now reads the build-time tap snapshot straight from the diskcache
-    — no trace, no Ray — so it's fast on EVERY call.
-
-    Clear the on-demand `_traced_paths` @node cache first: it must be irrelevant
-    now, because the endpoint serves from the snapshot and never traces, so the
-    response stays fast even cold."""
+    — no trace, no Ray — so it's fast on EVERY call. There is no on-demand trace
+    cache to clear: a snapshot miss on a read-only caller returns `[]`, it never
+    traces."""
     import time
-    from context import local_context as context
-
-    for k in list((context.get_matching(("_traced_paths",)) or {}).keys()):
-        if k in context:
-            context.delete(k)
 
     mosaics = client.get("/api/mosaics").get_json()
     mosaic_id = next(iter(mosaics.keys()))

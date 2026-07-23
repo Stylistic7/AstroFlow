@@ -43,7 +43,7 @@ import TextOverlay from './TextOverlay.jsx';
 import { computeAutoStretchParams } from '../auto_stretch.js';
 import { computeMaxEntropyLut } from './auto_stretch_maxent.js';
 import { computeGhsLut } from './auto_stretch_ghs.js';
-import { buildApiUrl, buildUrl, inheritView } from '../urls.js';
+import { buildApiUrl, buildUrl, inheritView, ancestorsFromParams } from '../urls.js';
 
 
 /** Supported stretch modes. Numeric value is what the shader's
@@ -82,7 +82,7 @@ function pointInPolygon(x, y, points) {
  * level renders at world coords scaled by `2^(maxZoom - z)`.
  */
 function computeVisibleTiles({ viewport, meta, view, objectType, imageHash,
-                              starsView, starsMeta }) {
+                              starsView, starsMeta, ancestors = '' }) {
     const { tx, ty, scale, screenW, screenH } = viewport;
     const { maxZoom, width: imageW, height: imageH, port, mtime } = meta;
 
@@ -129,6 +129,7 @@ function computeVisibleTiles({ viewport, meta, view, objectType, imageHash,
                 [{ type: objectType, id: imageHash }],
                 view,
                 `/${z}/${tx_}/${ty_}.f32`,
+                { ancestors },
             );
             const url = new URL(rel, `${origin}:${port}`);
             if (mtime) url.searchParams.set('v', mtime);
@@ -144,6 +145,7 @@ function computeVisibleTiles({ viewport, meta, view, objectType, imageHash,
                     [{ type: objectType, id: imageHash }],
                     starsView,
                     `/${z}/${tx_}/${ty_}.f32`,
+                    { ancestors },
                 );
                 const surl = new URL(srel, `${origin}:${starsMeta.port ?? port}`);
                 if (starsMeta.mtime) surl.searchParams.set('v', starsMeta.mtime);
@@ -324,6 +326,11 @@ export default function TileViewerV2({
 
     const navigate = useNavigate();
     const params = useParams();
+    // Cart-item ANCESTOR chain (root→leaf, minus this leaf) for tap resolution:
+    // a child stack has no snapshot of its own, so tile/metadata reads must name
+    // its target/mosaic so the backend can filter their snapshot down to it. ''
+    // for a cart item viewed directly (a mosaic). A stable string → safe in deps.
+    const ancestors = ancestorsFromParams(params, objectType, imageHash);
     const { mosaics, stacks, targets, showQuarantined, isQuarantined, computeGraphStatus }
         = useContext(AstroFlowContext);
 
@@ -351,11 +358,11 @@ export default function TileViewerV2({
         const url = buildApiUrl(
             '/tap/tile_metadata',
             [{ type: objectType, id: imageHash }],
-            view,
+            view, '', { ancestors },
         );
         fetch(url).then((r) => r.ok ? r.json() : null).then(setTileMeta);
     }, [objectType, imageHash, view?.pipeline, view?.display, view?.filter,
-        computeGraphStatus]);
+        ancestors, computeGraphStatus]);
 
     // Fetch ImageMetadata (statistics) so we can drive auto-stretch.
     useEffect(() => {
@@ -363,12 +370,12 @@ export default function TileViewerV2({
         const url = buildApiUrl(
             '/api/metadata',
             [{ type: objectType, id: imageHash }],
-            view,
+            view, '', { ancestors },
         );
         fetch(url).then((r) => r.ok ? r.json() : null).then((m) => {
             if (m) setMetadata(m);
         });
-    }, [objectType, imageHash, view?.pipeline, view?.display, view?.filter]);
+    }, [objectType, imageHash, view?.pipeline, view?.display, view?.filter, ancestors]);
 
     // Fetch the data-driven display-finish registry once (served from the
     // Python FINISHES). Relative URL resolves against the page origin, which is
@@ -411,10 +418,10 @@ export default function TileViewerV2({
         const url = buildApiUrl(
             '/tap/tile_metadata',
             [{ type: objectType, id: imageHash }],
-            starsV,
+            starsV, '', { ancestors },
         );
         fetch(url).then((r) => r.ok ? r.json() : null).then(setStarsMeta);
-    }, [isNarrowband, objectType, imageHash, view?.pipeline]);
+    }, [isNarrowband, objectType, imageHash, view?.pipeline, ancestors]);
 
     // Hit-test polygons at the tapped world position. Precedence
     // matches the Pixi viewer: stack > target > mosaic.
@@ -621,7 +628,7 @@ export default function TileViewerV2({
             });
             const wanted = computeVisibleTiles({
                 viewport: s, meta: tileMeta, view, objectType, imageHash,
-                starsView, starsMeta,
+                starsView, starsMeta, ancestors,
             });
             renderer.setTileUrls(wanted);
         };
@@ -629,7 +636,7 @@ export default function TileViewerV2({
         apply(viewport.get());
         return unsub;
     }, [renderer.isReady, tileMeta, view?.pipeline, view?.display, view?.filter,
-        viewport, objectType, imageHash, starsAvailable, starsMeta]);
+        viewport, objectType, imageHash, starsAvailable, starsMeta, ancestors]);
 
     // ── 3×3 taste-grid handlers ─────────────────────────────────────────
     // Next deterministic PRNG stream. The seed counter lives in a ref so a

@@ -67,21 +67,22 @@ def stacking_report(stack_id):
     uniform shape (StackingReport). Returns `null` when the tap point
     hasn't produced an artifact yet.
 
-    Query params (defaults reflect the PixInsight Master pipeline's
-    Master tap):
-      pipeline (default "PixInsight Master")
-      display  (default "Master")
+    Query params (defaults come from the catalog — the preferred pipeline that
+    actually produced a tap for this stack, and that type's default display):
+      pipeline (default: `catalog.default_pipeline_for`)
+      display  (default: `catalog.default_display_for`)
     """
     from stacks.stacking_report import read_stacking_report
-    from web_server.backend.metadata import tap_path_for
+    from web_server.backend.metadata import available_tap_path
+    from catalog import default_pipeline_for, default_display_for
 
     if stack_id not in (context.stacks or {}):
         return jsonify({"error": "stack not found"}), 404
 
-    pipeline = request.args.get("pipeline", "PixInsight Master")
-    display = request.args.get("display", "Master")
+    pipeline = request.args.get("pipeline") or default_pipeline_for("stack", stack_id)
+    display = request.args.get("display") or default_display_for("stack")
 
-    master_path = tap_path_for(pipeline, display, "stack", stack_id, None)
+    master_path = available_tap_path(pipeline, display, "stack", stack_id, None)
     if not master_path or not Path(master_path).exists():
         return jsonify(None)
 
@@ -195,25 +196,29 @@ def invalidate_stack(stack_id):
     return jsonify({"stack_id": stack_id, "deleted": deleted})
 
 
-@files_bp.route("/api/open_stack_master/<stack_id>", defaults={"pipeline": "PixInsight Master"})
+@files_bp.route("/api/open_stack_master/<stack_id>", defaults={"pipeline": None})
 @files_bp.route("/api/open_stack_master/<stack_id>/<path:pipeline>")
 def open_stack_master(stack_id, pipeline):
     """Open the stack's Master file in PixInsight.
 
     Resolves the on-disk master through the SAME tap system the stack page
-    uses to DISPLAY it (`tap_path_for`, existence-gated) — so open stays in
+    uses to DISPLAY it (`available_tap_path`, existence-gated) — so open stays in
     lockstep with what's shown, and works for any stacker backend (WBPP
     `stack_files`, OSS `stack_files_oss`, downscaled, ...). The old
     `traced_path_for(..., "stack_files", stack=...)` path was broken: the
     trace's stack_files entries carry an empty `identity`, so it never
     matched. `pipeline` (URL-encoded) selects which pipeline's master; the
-    caller passes the pipeline it is currently viewing.
+    caller passes the pipeline it is currently viewing, or omits it to open
+    the catalog's default (`catalog.default_pipeline_for`).
     """
-    from web_server.backend.metadata import tap_path_for
+    from web_server.backend.metadata import available_tap_path
+    from catalog import default_pipeline_for
     if stack_id not in (context.stacks or {}):
         return Response(status=404)
+    if pipeline is None:
+        pipeline = default_pipeline_for("stack", stack_id)
     stack = context.stacks[stack_id].get()
-    filename = tap_path_for(
+    filename = available_tap_path(
         pipeline, "Master", "stack", stack_id, getattr(stack, "filter", None),
     )
     if filename is None:
@@ -303,14 +308,14 @@ def open_image(filename):
 def open_mosaic_master(mosaic_id, pipeline, display, filter):
     """Open a specific (pipeline, tap) of a mosaic+filter in PixInsight.
     Path resolution goes through the cached pipeline trace + disk
-    (`tap_path_for`)."""
-    from web_server.backend.metadata import tap_path_for
+    (`available_tap_path`)."""
+    from web_server.backend.metadata import available_tap_path
 
     mosaics = context.mosaics or {}
     if mosaic_id not in mosaics:
         return jsonify({"error": "mosaic not found"}), 404
 
-    path = tap_path_for(pipeline, display, "mosaic", mosaic_id, filter)
+    path = available_tap_path(pipeline, display, "mosaic", mosaic_id, filter)
     if path is None:
         return jsonify({"error": "no image available to open"}), 404
 

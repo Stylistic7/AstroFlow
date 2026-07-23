@@ -1,4 +1,4 @@
-"""Unit tests for trace-time content_hash propagation and @node-caching.
+"""Unit tests for trace-time content_hash propagation.
 
 The pure-Merkle invariant requires that the tracer's `_TracedOutput`
 proxy hashes to its `content_hash` field (= the upstream's `call_hash`)
@@ -6,16 +6,10 @@ through the same `_maybe_use_content_hash` path the runtime uses for
 real upstream `Path`/`ImageMetadata` values. If that fails, every
 downstream call_hash diverges from runtime and the sweep produces
 wrong filenames.
-
-Plus: `_traced_paths` (the cached `@node` wrapping the actual trace) must
-cache hits cheaply and invalidate when the pipeline source changes —
-the trick that turns 17 s repeat-traces into sub-ms cache hits.
 """
 from __future__ import annotations
 
-import ray
-
-from dependency_graph.trace_paths import _TracedOutput, _traced_paths
+from dependency_graph.trace_paths import _TracedOutput
 from hashing import hash_call
 from hashing.hashing import _maybe_use_content_hash
 
@@ -57,59 +51,6 @@ def test_proxy_produces_same_call_hash_as_raw_string():
     h_via_string = hash_call(fn_hash, "literal_arg", "upstream_call_hash_xyz")
 
     assert h_via_proxy == h_via_string
-
-
-def test_traced_paths_is_node_wrapped(test_context):
-    """Sanity: `_traced_paths` is a `@node`, so the cache machinery is
-    available (`.remote`, `.is_cached`). Without these, the whole
-    'cache the trace' design collapses."""
-    assert hasattr(_traced_paths, "remote")
-    assert hasattr(_traced_paths, "is_cached")
-
-
-def test_traced_paths_caches_result_for_same_inputs(test_context):
-    """Calling `_traced_paths` twice with identical args is a cache hit
-    on the second call. Verified via `.is_cached`."""
-    args = (
-        "no_such_pipeline",  # unknown name → function short-circuits to []
-        "entity-A", "config-A", "metadata-A", "source-hash-A",
-    )
-    # First call: cache miss; result is [] (unknown pipeline). Stored.
-    result = ray.get(_traced_paths.remote(*args))
-    assert result == []
-
-    # Same args → cache hit.
-    assert _traced_paths.is_cached(*args)
-
-
-def test_traced_paths_invalidates_on_pipeline_source_hash_change(test_context):
-    """The whole point of the `pipeline_source_hash` arg: changing it
-    must produce a fresh cache key (i.e. miss on the new value)."""
-    base = (
-        "no_such_pipeline", "entity-A", "config-A", "metadata-A",
-    )
-    ray.get(_traced_paths.remote(*base, "source-hash-A"))
-    assert _traced_paths.is_cached(*base, "source-hash-A")
-
-    # Edit to the pipeline body → caller passes a new source hash.
-    # That call must miss (different cache key), then store its own entry.
-    assert not _traced_paths.is_cached(*base, "source-hash-B")
-    ray.get(_traced_paths.remote(*base, "source-hash-B"))
-    assert _traced_paths.is_cached(*base, "source-hash-B")
-    # Original entry is untouched — both coexist.
-    assert _traced_paths.is_cached(*base, "source-hash-A")
-
-
-def test_traced_paths_invalidates_on_metadata_change(test_context):
-    """Changing the `metadata_ref` arg's content_hash invalidates the
-    cache. This is the mechanism by which adding/removing subframes or
-    external masters triggers a re-trace."""
-    base = (
-        "no_such_pipeline", "entity-A", "config-A",
-    )
-    ray.get(_traced_paths.remote(*base, "metadata-v1", "source-hash"))
-    assert _traced_paths.is_cached(*base, "metadata-v1", "source-hash")
-    assert not _traced_paths.is_cached(*base, "metadata-v2", "source-hash")
 
 
 # --- display/filter tagging of the walk (the output_index replacement) ---
@@ -227,7 +168,8 @@ def test_tap_outputs_for_scopes_to_queried_entity(monkeypatch):
         {"display": None, "filter": None, "object_type": None,
          "object_id": None, "path": "/out/place.tiff"},      # non-tap intermediate
     ]
-    monkeypatch.setattr(tp, "traced_paths_for", lambda item: entries)
+    monkeypatch.setattr(tp, "traced_paths_for",
+                        lambda item, recompute=True, ancestors=(): entries)
 
     # Queried as the mosaic → only the Mosaic tap (the colliding Stack Master
     # is excluded by TYPE despite sharing the id).
@@ -251,8 +193,113 @@ def test_tap_path_for_scopes_to_queried_entity(monkeypatch):
         {"display": "Master", "filter": "H", "object_type": "Stack",
          "object_id": mid, "path": "/out/master.fits"},
     ]
-    monkeypatch.setattr(tp, "traced_paths_for", lambda item: entries)
+    monkeypatch.setattr(tp, "traced_paths_for",
+                        lambda item, recompute=True, ancestors=(): entries)
 
     assert str(tp.tap_path_for(("mosaic", mid, "P"), "Mosaic", "H")) == "/out/mosaic.fits"
     # The mosaic owns no "Master" tap — the colliding stack's must not leak in.
     assert tp.tap_path_for(("mosaic", mid, "P"), "Master", "H") is None
+
+
+def test_traced_paths_for_snapshot_miss_recompute_false_returns_empty(monkeypatch):
+    """A read-only caller (viewer / catalog) that misses the snapshot gets `[]`
+    and NEVER traces — no snapshot means the object×pipeline was never built, so
+    there's nothing on disk to show. Tracing on an HTTP request is the failure
+    mode this contract exists to prevent."""
+    import dependency_graph.trace_paths as tp
+
+    monkeypatch.setattr(tp, "_read_tap_snapshot", lambda item: None)
+    # Reaching the recompute path at all would be the bug — make it explode.
+    def _boom(item):
+        raise AssertionError("recompute=False must not trace")
+    monkeypatch.setattr(tp, "_resolve_pipeline_call", _boom)
+
+    assert tp.traced_paths_for(("stack", "s", "P"), recompute=False) == []
+
+
+def test_traced_paths_for_snapshot_miss_recompute_true_traces_inline(monkeypatch):
+    """A head-driver caller (sweep / archive) that misses the snapshot recomputes
+    the trace INLINE — resolve the call, `trace`, walk — with no Ray and no
+    `@node` dispatch (the removed second cache)."""
+    import dependency_graph.trace_paths as tp
+    import dependency_graph.tracing as tracing
+
+    seen = {}
+    monkeypatch.setattr(tp, "_read_tap_snapshot", lambda item: None)
+    monkeypatch.setattr(tp, "_resolve_pipeline_call",
+                        lambda item: ("fn", "entity", "config"))
+
+    def _fake_trace(fn, entity, config):
+        seen["traced"] = (fn, entity, config)
+        return "GRAPH"
+    monkeypatch.setattr(tracing, "trace", _fake_trace)
+    monkeypatch.setattr(tp, "_walk_and_resolve_filenames_tagged",
+                        lambda graph: [{"path": "/o/x", "graph": graph}])
+
+    result = tp.traced_paths_for(("stack", "s", "P"), recompute=True)
+
+    assert seen["traced"] == ("fn", "entity", "config")   # traced inline
+    assert result == [{"path": "/o/x", "graph": "GRAPH"}]  # walked the graph
+
+
+def test_traced_paths_for_recompute_true_unresolvable_returns_empty(monkeypatch):
+    """Inline recompute short-circuits to `[]` when the cart item is unresolvable
+    (entity not in context / pipeline unregistered) — no crash, no trace."""
+    import dependency_graph.trace_paths as tp
+
+    monkeypatch.setattr(tp, "_read_tap_snapshot", lambda item: None)
+    monkeypatch.setattr(tp, "_resolve_pipeline_call",
+                        lambda item: (None, None, None))
+
+    assert tp.traced_paths_for(("stack", "gone", "P"), recompute=True) == []
+
+
+def test_traced_paths_for_falls_back_to_ancestor_snapshot(monkeypatch):
+    """A child leaf with no snapshot of its own resolves from a named cart-item
+    ANCESTOR's snapshot (the shared-graph trace holding its taps). The URL says
+    which ancestor — no scan. The full ancestor list is returned; the caller's
+    `_routes_to_item` filter scopes it to the leaf."""
+    import dependency_graph.trace_paths as tp
+
+    parent_entries = [
+        {"object_type": "Stack", "object_id": "child", "display": "Master"},
+        {"object_type": "Target", "object_id": "parent", "display": "Channel"},
+    ]
+
+    def _snap(item):
+        # Only the TARGET (parent) has a snapshot; the child stack has none.
+        return parent_entries if item == ("target", "parent", "P") else None
+    monkeypatch.setattr(tp, "_read_tap_snapshot", _snap)
+
+    result = tp.traced_paths_for(
+        ("stack", "child", "P"), ancestors=(("target", "parent"),))
+    assert result == parent_entries   # whole ancestor trace; caller filters
+
+
+def test_traced_paths_for_ancestor_miss_then_recompute_false_empty(monkeypatch):
+    """No own snapshot and no ancestor snapshot → read-only caller gets `[]`
+    (never traces), even with ancestors named."""
+    import dependency_graph.trace_paths as tp
+    monkeypatch.setattr(tp, "_read_tap_snapshot", lambda item: None)
+    assert tp.traced_paths_for(
+        ("stack", "child", "P"), recompute=False,
+        ancestors=(("target", "parent"),)) == []
+
+
+def test_tap_outputs_for_scopes_ancestor_trace_to_leaf(monkeypatch):
+    """`tap_outputs_for` on a child, given an ancestor, keeps only the display
+    taps routing to the LEAF — the sibling target's own taps are dropped."""
+    import dependency_graph.trace_paths as tp
+    parent_entries = [
+        {"object_type": "Stack", "object_id": "child",
+         "display": "Master", "filter": "H", "path": "/o/child"},
+        {"object_type": "Target", "object_id": "parent",
+         "display": "Channel", "filter": "H", "path": "/o/parent"},
+    ]
+    monkeypatch.setattr(
+        tp, "_read_tap_snapshot",
+        lambda item: parent_entries if item == ("target", "parent", "P") else None)
+
+    out = tp.tap_outputs_for(
+        ("stack", "child", "P"), ancestors=(("target", "parent"),))
+    assert [e["path"] for e in out] == ["/o/child"]   # sibling's Channel dropped

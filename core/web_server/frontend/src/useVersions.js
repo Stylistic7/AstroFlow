@@ -1,36 +1,32 @@
 import { useEffect, useState } from "react";
 
 
-// Default tap-point display label per object-type. Used when a viewer
-// URL carries a `:pipeline` segment but no `:display` (the user
-// clicked a thumbnail; we fill in the most prominent tap point).
-// Pipelines emit tap names freely via `@makes_image(display="X")`;
-// the dashboard surfaces every emitted name, so these defaults only
-// matter for code paths that need to construct a URL from scratch.
-export const DEFAULT_DISPLAY_FOR_TYPE = {
-    mosaic: "Mosaic",
-    stack: "Master",
-    target: "Channel",
-    calibration_stack: "Master",
-};
-
-
-// One fetcher for the per-object pipeline / tap matrix. Pulls from
-// /api/pipeline_outputs, which is the single source of truth for
-// "what artifacts has each registered pipeline produced for this
-// object". URL params are the single source of truth for "what's
-// currently being viewed"; this hook never stores selection state.
+// One fetcher for the per-object pipeline / tap matrix (the ONLY hook for
+// /api/pipeline_outputs — usePipelineOutputs.js was a duplicate and is gone).
+// The endpoint is the single source of truth for "what artifacts has each
+// registered pipeline produced for this object" AND the default landing view
+// (`.default = {pipeline, display, filter}` — the backend owns the pipeline/
+// display preference now, see catalog.default_product_for). URL params remain
+// the single source of truth for "what's currently being viewed"; this hook
+// never stores selection state.
+//
+// Returns `null` until the first response lands (callers treat null as "still
+// resolving"); keeps the previous payload across refetches so live SSE ticks
+// don't flash the UI empty.
 //
 // `refreshKey` is an opaque value that, when changed, forces a re-fetch.
 // Pass `computeGraphStatus` (or any SSE-driven counter) so the
 // breadcrumb pills light up live as new outputs finish producing.
-export function useVersionsMatrix(objectType, objectId, refreshKey) {
-    const [data, setData] = useState({ filters: [], pipelines: [] });
+export function useVersionsMatrix(objectType, objectId, refreshKey, ancestors = "") {
+    const [data, setData] = useState(null);
 
     useEffect(() => {
         if (!objectType || !objectId) return;
         let cancelled = false;
-        fetch(`/api/pipeline_outputs/${objectType}/${objectId}`)
+        // A child leaf (a stack under a target) has no snapshot of its own; the
+        // ancestors let the backend resolve its taps from the cart-item ancestor.
+        const qs = ancestors ? `?ancestors=${encodeURIComponent(ancestors)}` : "";
+        fetch(`/api/pipeline_outputs/${objectType}/${objectId}${qs}`)
             .then((res) => (res.ok ? res.json() : null))
             .then((d) => {
                 if (!cancelled && d) setData(d);
@@ -39,7 +35,7 @@ export function useVersionsMatrix(objectType, objectId, refreshKey) {
         return () => {
             cancelled = true;
         };
-    }, [objectType, objectId, refreshKey]);
+    }, [objectType, objectId, refreshKey, ancestors]);
 
     return data;
 }

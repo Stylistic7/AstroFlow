@@ -72,6 +72,11 @@ def _count_by_op(graph) -> dict[str, int]:
     return counts
 
 
+# Overrides the global 120s (pytest.ini): this mock-graph run takes ~131s even
+# ISOLATED — it dispatches ~11n small Ray tasks through run_graph + the memory
+# admission gate — and slower under parallel-shard contention. Not a real-PI
+# test (mock_pixinsight=True); just genuinely graph-dispatch-heavy.
+@pytest.mark.timeout(300)
 def test_color_post_process_traces_and_runs(test_context, tmp_path):
     # Size the synthetic channels to the mosaic viewbox — as the real merged
     # channels are — so the tiled linear_sho grid matches its source. A small

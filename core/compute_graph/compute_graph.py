@@ -363,14 +363,11 @@ def _eager_trace_pipeline(
     for that entry.
     """
     from pipelines.registry import get_pipeline
-    from stacks.composite_stack import Stack
-    from targets.types import Target
-    from mosaics.types import Mosaic
+    from products.product import object_class
     from dependency_graph.graph_runtime import GraphRuntime
     from dependency_graph.workflow_graph_adapter import store_workflow_graph
 
-    type_to_class = {"stack": Stack, "target": Target, "mosaic": Mosaic}
-    pipeline_fn = get_pipeline(pipeline_name, processes=type_to_class[type_tag])
+    pipeline_fn = get_pipeline(pipeline_name, processes=object_class(type_tag))
     graph = pipeline_fn(entity, cfg)
     if graph is None:
         return None
@@ -404,6 +401,14 @@ def _store_tap_snapshot(pipeline_fn, pipeline_name: str, entity, graph) -> None:
     # unchanged cart confirms presence in ~ms instead of re-walking — the walk
     # is cheap (~0.5 s) but this makes a warm restart free, and the expensive
     # part (the ~25 s trace) was already a `trace_pipeline` @node cache hit.
+    #
+    # NOTE: this stores ONLY the cart item's key — but that one snapshot holds
+    # EVERY descendant's taps too (a target's snapshot contains its stacks'
+    # `Master` taps; a mosaic's contains its targets' `Channel` taps), because
+    # the shared graph produced them. A child view is surfaced by reading THIS
+    # (the ancestor's) snapshot and filtering to the child via `_routes_to_item`
+    # — the reader supplies the ancestor from the URL hierarchy. No separate
+    # child key, no re-key, no closure to maintain.
     key = (
         hash_source_code(pipeline_fn._function),
         entity.stable_hash, entity.content_hash, pipeline_name,
@@ -456,14 +461,11 @@ def run_pipeline(entity, cfg, pipeline_name: str, type_tag: str) -> "Graph":
     plumbing.
     """
     from pipelines.registry import get_pipeline
-    from stacks.composite_stack import Stack
-    from targets.types import Target
-    from mosaics.types import Mosaic
+    from products.product import object_class
     from hashing.hashing import hash_source_code
     from dependency_graph import Graph
 
-    type_to_class = {"stack": Stack, "target": Target, "mosaic": Mosaic}
-    pipeline_fn = get_pipeline(pipeline_name, processes=type_to_class[type_tag])
+    pipeline_fn = get_pipeline(pipeline_name, processes=object_class(type_tag))
 
     # Cached trace. The graph is freshly deserialized from diskcache
     # on each cache hit so in-place mutation downstream is safe.
@@ -651,14 +653,10 @@ def build_main_processing_graph(
 
     log.info("Building main processing graph", shopping_cart=shopping_cart)
 
-    # Cart's URL-friendly type-string → @pipeline-registered class.
-    # The cart and routes use strings; @pipeline decorators key on
-    # the actual class (typo-safe, self-documenting in pipeline
-    # bodies). This dict is the only place those conventions meet.
-    from stacks.composite_stack import Stack
-    from targets.types import Target
-    from mosaics.types import Mosaic
-    type_to_class = {"stack": Stack, "target": Target, "mosaic": Mosaic}
+    # Cart's URL-friendly type-string → @pipeline-registered class via the
+    # canonical `object_class` (the cart and routes use strings; @pipeline
+    # decorators key on the actual class).
+    from products.product import object_class
     objects_by_type = {"stack": stacks, "target": targets, "mosaic": mosaics}
 
     def config_for(stack_id=None):
@@ -699,7 +697,7 @@ def build_main_processing_graph(
         if id not in objects_by_type[type]:
             log.warning("Cart entry refers to missing object", entry=entry)
             continue
-        if (pipeline_name, type_to_class[type]) not in registered:
+        if (pipeline_name, object_class(type)) not in registered:
             log.warning("Unknown pipeline in cart", entry=entry)
             continue
         entity = objects_by_type[type][id].get()

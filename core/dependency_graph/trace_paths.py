@@ -7,26 +7,26 @@ beyond ImageMetadata already in context.
 
 The trace itself can be expensive (real measurement on a "PixInsight
 Downscaled" mosaic with 730 nodes: ~17 s — dominated by
-`resolve_calibration`'s filesystem-walking calibration matching). Since
-the trace result is a deterministic pure function of (pipeline source,
-entity, ProcessingConfig, metadata), it's cached as a `@node`:
-`_traced_paths`. First call pays the cost; every subsequent call with the
-same inputs is a sub-ms diskcache hit, durably persisted across restarts.
+`resolve_calibration`'s filesystem-walking calibration matching), but it's
+a deterministic PURE function of (pipeline source, entity, ProcessingConfig,
+metadata), so it's never recomputed on the read path. `compute_graph.
+_store_tap_snapshot` walks the graph once at build time and persists the
+resolved taps into the `tap_snapshots` ContextActor dict, content-addressed
+by `(pipeline_source_hash, stable_hash, content_hash, pipeline)`. Every
+read — the web dashboard, tiles, the catalog — is then a ~0.1 ms
+`context.get` of that snapshot (`_read_tap_snapshot`): no Ray, no trace.
 
-**Developer note on cache invalidation.** The trace cache key invalidates
-when ANY of these change:
-  - pipeline body source (`pipeline_source_hash` arg)
-  - entity (via stable_hash)
-  - ProcessingConfig (decisions, dev settings, cal_stacks ref)
-  - metadata_ref content_hash (subframe set + external master set)
-It does NOT invalidate when helper functions change (`resolve_calibration`,
-`find_external_master`, `_stack_files_narrow`, etc.) — consistent with
-the codebase-wide policy that `@node`'s fn_hash covers only the wrapped
-function, not its transitive closure. When you edit one of those helpers
-and need the trace to re-fire, bust the relevant cache entries explicitly.
-
-Used by `scripts.sweep_orphans` to compute the live set and by
-`state.archive` to populate archive entries at cart→archive transition.
+A read that misses the snapshot means the object×pipeline was never built.
+`recompute=False` callers (the viewer / catalog — see `tap_outputs_for`)
+take the miss as "nothing on disk to show" and return `[]` rather than
+tracing on an HTTP request. Only head-driver callers that legitimately need
+a trace for something NOT in the current graph — `scripts.sweep_orphans`
+(live set) and `state.archive` (cart→archive) — pass `recompute=True`, and
+for them the miss recomputes the trace INLINE (pure, in-process). There is
+deliberately no persistent trace cache beyond the build-time snapshot: the
+trace is authoritative and cheap-to-recompute, so a second (diskcache) copy
+would only add a consistency surface, head-pinning, and stale-read bugs to
+keep in sync — see `feedback_avoid_derived_state`.
 """
 from __future__ import annotations
 
@@ -37,7 +37,6 @@ from pathlib import Path
 from typing import Any
 
 from context import local_context as context
-from decorators import node
 
 
 @dataclass(frozen=True)
@@ -78,23 +77,26 @@ def paths_for_cart_item(
     `@node(... final=True)` — used by archive transition with
     `preserve="finals"`.
 
-    Dispatches via the cached `_traced_paths` `@node`: first call per
-    (pipeline, entity, config, metadata, source) pays the trace cost
-    (~17 s for a large mosaic); every subsequent call with identical
-    inputs is a diskcache hit.
+    Reads the build-time snapshot (Ray-free, ~0.1 ms, via
+    `traced_paths_for`); on a snapshot miss, `recompute=True` recomputes
+    the trace inline.
     """
     return [Path(e["path"]) for e in traced_paths_for(item)
             if not finals_only or e["is_final"]]
 
 
-def traced_paths_for(item: tuple[str, str, str]) -> list[dict]:
+def traced_paths_for(
+    item: tuple[str, str, str],
+    recompute: bool = True,
+    ancestors: tuple[tuple[str, str], ...] = (),
+) -> list[dict]:
     """Return the raw trace result for `item`: one dict per
     filename_fn-resolvable node, with keys `path`, `op_name`,
     `identity`, `is_final`.
 
-    One Ray round-trip per call. Use this when you need to look up
-    multiple paths from the same cart item — hoist it out of any loop,
-    iterate the returned list in pure Python.
+    A ~0.1 ms snapshot read per call (no Ray on the read path). Use this
+    when you need to look up multiple paths from the same cart item —
+    hoist it out of any loop, iterate the returned list in pure Python.
 
     `paths_for_cart_item` and `traced_path_for` are thin convenience
     wrappers; prefer this helper directly when you're doing per-entity
@@ -106,43 +108,49 @@ def traced_paths_for(item: tuple[str, str, str]) -> list[dict]:
 
     **Snapshot-first (Ray-free):** if `compute_graph._store_tap_snapshot`
     persisted this exact `(source, stable, content, pipeline)` at graph-build
-    time — which it does for every cart entry — return that directly. The web
-    workers (no Ray) always hit this path for cart items. Only a MISS (e.g. a
-    sweep/archive item not in the current graph) falls through to the on-demand
-    Ray trace below, which is fine because sweep/archive run on the head driver.
+    time — which it does for every cart entry — return that directly (a
+    `context.get`). A MISS means the object×pipeline was never built:
+    `recompute=False` (the viewer / catalog) returns `[]`; `recompute=True`
+    (sweep / archive on the head driver) recomputes the pure trace inline.
     """
     snapshot = _read_tap_snapshot(item)
     if snapshot is not None:
         return snapshot
 
-    import ray
-    from hashing import hash_source_code
-    from metadata.image_metadata import load_metadata
+    # Leaf has no snapshot of its own — but a cart-item ANCESTOR named in the URL
+    # hierarchy does, and its shared-graph trace already holds this leaf's taps (a
+    # target's snapshot carries every child stack's `Master` tap). Read the
+    # ancestor's snapshot (a 0.1ms `context.get`) and return it whole; the
+    # caller's `_routes_to_item` filter scopes it to the leaf. Only ONE ancestor
+    # is the cart item, so the first hit is authoritative. The URL says which
+    # snapshot holds the data — no scan, no index (feedback_avoid_derived_state).
+    _, _, pipeline = item
+    for anc_type, anc_id in ancestors:
+        anc_snapshot = _read_tap_snapshot((anc_type, anc_id, pipeline))
+        if anc_snapshot is not None:
+            return anc_snapshot
 
+    if not recompute:
+        # Read-only caller (viewer / catalog): a snapshot miss (own AND every
+        # named ancestor) means this object×pipeline was never built — nothing on
+        # disk to show. Never trace on an HTTP request; just report "no taps".
+        return []
+
+    # Genuine on-demand miss on the head driver (sweep / archive of an item not
+    # in the current graph). The trace is a PURE function — recompute it inline,
+    # in-process. No @node, no Ray dispatch, no second diskcache to keep
+    # canonical, no metadata_ref (that only existed to key the old @node).
     fn, entity, config = _resolve_pipeline_call(item)
     if fn is None:
         return []
-
-    # Prefer the published ContextRef (cheap diskcache read or one
-    # actor RPC; the ref itself is small). Fall back to a fresh scan
-    # only when nothing has published yet (first ever call before any
-    # regroup cycle has run). load_metadata is ~20-30 s on a populated
-    # cache, and we need its result on every call here to form the
-    # trace @node's cache key — without the published ref the cache
-    # might be hot but the web server still pays the full scan cost.
-    metadata_ref = context.get("metadata_ref")
-    if metadata_ref is None:
-        metadata_ref = ray.get(load_metadata.remote())
-
-    pipeline_source_hash = hash_source_code(fn)
-    _, _, pipeline_name = item
-
+    from dependency_graph.tracing import trace
     try:
-        return ray.get(_traced_paths.remote(
-            pipeline_name, entity, config, metadata_ref, pipeline_source_hash,
-        ))
+        graph = trace(fn, entity, config)
     except Exception:
         return []
+    if graph is None:
+        return []
+    return _walk_and_resolve_filenames_tagged(graph)
 
 
 def traced_path_for(
@@ -198,18 +206,15 @@ def _snapshot_key(item: tuple[str, str, str]) -> "tuple | None":
     registered."""
     from pipelines.registry import get_pipeline
     from hashing import hash_source_code
-    from stacks.composite_stack import Stack
-    from targets.types import Target
-    from mosaics.types import Mosaic
+    from products.product import object_class
 
     object_type, object_id, pipeline = item
-    type_to_class = {"stack": Stack, "target": Target, "mosaic": Mosaic}
     type_to_dict = {
         "stack": context.stacks or {},
         "target": context.targets or {},
         "mosaic": context.mosaics or {},
     }
-    cls = type_to_class.get(object_type)
+    cls = object_class(object_type)
     if cls is None:
         return None
     entity_ref = type_to_dict[object_type].get(object_id)
@@ -271,16 +276,25 @@ def invalidate_tap_snapshot(item: tuple[str, str, str]) -> bool:
     return True
 
 
-def tap_outputs_for(item: tuple[str, str, str]) -> list[dict]:
+def tap_outputs_for(
+    item: tuple[str, str, str],
+    recompute: bool = True,
+    ancestors: tuple[tuple[str, str], ...] = (),
+) -> list[dict]:
     """The user-facing taps for `item`'s pipeline that belong to `item`'s
     entity: every `display=` tap routing to `(object_type, object_id)`. Sourced
     from the build-time snapshot (Ray-free via `traced_paths_for`); the dashboard
     groups by `display` + checks `os.path.exists` per filter. Replaces the old
     stateful PipelineOutputIndex `for_object` (keyed by object type+id likewise),
-    but from a complete single-shot trace, not a two-phase recorder."""
+    but from a complete single-shot trace, not a two-phase recorder.
+
+    `ancestors` lets a child object (a stack under a target) resolve its taps
+    from the ancestor's snapshot; the `_routes_to_item` filter below then keeps
+    only the taps that route to THIS leaf, so the shared ancestor trace is
+    correctly scoped."""
     object_type, object_id, _pipeline = item
     return [
-        e for e in traced_paths_for(item)
+        e for e in traced_paths_for(item, recompute=recompute, ancestors=ancestors)
         if e.get("display") is not None
         and _routes_to_item(e, object_type, object_id)
     ]
@@ -288,13 +302,17 @@ def tap_outputs_for(item: tuple[str, str, str]) -> list[dict]:
 
 def tap_path_for(
     item: tuple[str, str, str], display: str, filter: str | None,
+    ancestors: tuple[tuple[str, str], ...] = (),
 ) -> "Path | None":
     """The on-disk primary path of one tap `(display, filter)` belonging to
     `item`'s entity, or None on miss. From the build-time snapshot (Ray-free);
-    the file may or may not exist yet — callers check `os.path.exists`."""
+    the file may or may not exist yet — callers check `os.path.exists`.
+
+    `ancestors` (a child's cart-item chain) lets a leaf without its own snapshot
+    resolve from the ancestor's; `_routes_to_item` scopes the shared trace."""
     object_type, object_id, _pipeline = item
     f = str(filter)
-    for e in traced_paths_for(item):
+    for e in traced_paths_for(item, ancestors=ancestors):
         if (
             e.get("display") == display
             and str(e.get("filter")) == f
@@ -302,64 +320,6 @@ def tap_path_for(
         ):
             return Path(e["path"])
     return None
-
-
-# Head-pinned: like trace_pipeline, this is orchestration whose @node
-# wrapper memoizes a file-less result (list[dict]) into the local
-# diskcache. Only the head has the `diskcache` resource, so requesting a
-# sliver keeps it on the head's canonical cache instead of SPREAD-ing onto
-# a worker's local disk (the silent-write-to-worker-disk bug).
-@node(resources={"diskcache": 0.001})
-def _traced_paths(
-    pipeline_name: str,
-    entity,
-    config,
-    metadata_ref,
-    pipeline_source_hash: str,
-) -> list[dict]:
-    """Cacheable core of `paths_for_cart_item` and `traced_path_for`.
-
-    Returns one dict per filename_fn-resolvable node:
-    `{"path", "op_name", "identity", "is_final"}`. Tagging every
-    relevant axis in one cache entry means a single trace serves all
-    consumers (sweep_orphans wants finals_only; the web server's
-    metadata route wants identity-based lookup; archive wants finals).
-
-    `pipeline_source_hash` is an invalidation key only — looked up at
-    runtime via `pipeline_name` (the source hash is captured here purely
-    to participate in `canonical_call_hash`). `metadata_ref` similarly:
-    its content_hash enters the cache key; the trace body doesn't
-    consume it directly (the pipeline's downstream tasks read it via
-    `config.calibration_stacks` and `context` lookups).
-    """
-    # Output-schema version. `@node`'s fn_hash covers THIS body but NOT the
-    # `_walk_and_resolve_filenames_tagged` helper whose dict shape we return —
-    # so when that shape changes, bump this literal to change the fn_hash and
-    # re-fire the cache cluster-wide. Without it, stale entries in the old shape
-    # are served on cache-hit and readers expecting the new keys silently get
-    # nothing (v2 added object_type/object_id for entity-scoped taps — old
-    # entries lacked them and the dashboard filter dropped every tap).
-    _OUTPUT_SCHEMA_VERSION = 2  # noqa: F841 — participates in fn_hash only
-    from dependency_graph.tracing import trace
-
-    fn = _lookup_pipeline_fn(pipeline_name, entity)
-    if fn is None:
-        return []
-    try:
-        graph = trace(fn, entity, config)
-    except Exception:
-        return []
-    if graph is None:
-        return []
-    return _walk_and_resolve_filenames_tagged(graph)
-
-
-def _lookup_pipeline_fn(pipeline_name: str, entity):
-    from pipelines.registry import get_pipeline
-    try:
-        return get_pipeline(pipeline_name, processes=type(entity))._function
-    except KeyError:
-        return None
 
 
 def _resolve_pipeline_call(
@@ -374,20 +334,17 @@ def _resolve_pipeline_call(
     object_type, object_id, pipeline_name = item
 
     from pipelines.registry import get_pipeline
-    from stacks.composite_stack import Stack
-    from targets.types import Target
-    from mosaics.types import Mosaic
+    from products.product import object_class
     from cache.context_ref import ContextRef
     from decisions.settings import ProcessingConfig
 
-    type_to_class = {"stack": Stack, "target": Target, "mosaic": Mosaic}
     type_to_dict = {
         "stack": context.stacks or {},
         "target": context.targets or {},
         "mosaic": context.mosaics or {},
     }
 
-    cls = type_to_class.get(object_type)
+    cls = object_class(object_type)
     if cls is None:
         return None, None, None
 

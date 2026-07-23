@@ -33,7 +33,7 @@ from flask import Blueprint, request, send_file, abort, jsonify, Response
 
 from previews.create_tile_pyramid import context_map_path_for
 from web_server.backend.router import stateful_route
-from web_server.backend._route import tap_route
+from web_server.backend._route import tap_route, parse_ancestors
 
 
 _TILE_SIZE = 256
@@ -87,30 +87,29 @@ def _pyramid_levels(path: str) -> int:
 
 def _tile_pyramid_path_for_tap(
     object_type: str, object_id: str, pipeline: str, display: str,
-    filter: str | None,
+    filter: str | None, ancestors: tuple[tuple[str, str], ...] = (),
 ):
-    """Find the display tile pyramid for a specific (pipeline, tap) —
-    the `<stem>_tiles.tiff` sibling of the master file. Path resolution
-    uses `_tap_path_unchecked` and gates solely on the pyramid's
-    existence, so a tile request still resolves when the master
-    FITS/XISF/TIFF deliverable has been reclaimed by ephemeral cleanup."""
-    from pathlib import Path
-    from web_server.backend.metadata import _tap_path_unchecked
-    from previews.create_tile_pyramid import pyramid_path_for
-    master = _tap_path_unchecked(
-        pipeline, display, object_type, object_id, filter,
+    """The display tile pyramid (or a directly-servable master tiff) for a tap
+    — the ONE "viewable" definition, now owned by the catalog. Gates on the
+    pyramid's existence, so a tile request still resolves when the primary
+    FITS/XISF/TIFF master was reclaimed by ephemeral cleanup; already-display-
+    ready uint8 tiffs (e.g. Subframe previews) that have no separate pyramid
+    fall back to the master.
+
+    `ancestors` (a child leaf's cart-item chain, from the `ancestors` query
+    param) lets a stack under a target resolve its tile path from the target's
+    snapshot — the stack has none of its own."""
+    from catalog import viewable_path, Product
+    p = viewable_path(
+        Product(object_type, object_id, pipeline, display, filter),
+        ancestors=ancestors,
     )
-    if master is None:
-        return None
-    tiff = pyramid_path_for(Path(str(master)))
-    if tiff.exists():
-        return str(tiff)
-    # Already-display-ready uint8 tiffs (e.g. Subframe previews) have no
-    # separate pyramid — they serve directly. Fall back to the master when
-    # it's itself a tiff.
-    if str(master).endswith((".tiff", ".tif")) and os.path.exists(master):
-        return str(master)
-    return None
+    return str(p) if p is not None else None
+
+
+def _request_ancestors() -> tuple[tuple[str, str], ...]:
+    """The `ancestors` query param for the current tile request, parsed."""
+    return parse_ancestors(request.args.get("ancestors"))
 
 
 @stateful_route(
@@ -121,7 +120,8 @@ def tile_metadata_tap(
     object_type: str, object_id: str, pipeline: str, display: str, filter: str,
     backend_port: int = None,
 ):
-    path = _tile_pyramid_path_for_tap(object_type, object_id, pipeline, display, filter)
+    path = _tile_pyramid_path_for_tap(
+        object_type, object_id, pipeline, display, filter, _request_ancestors())
     return _tile_metadata_response(path, backend_port, display)
 
 
@@ -228,7 +228,8 @@ def serve_tile_tap(
     object_type: str, object_id: str, pipeline: str, display: str, filter: str,
     z: int, x: int, y: int,
 ):
-    path = _tile_pyramid_path_for_tap(object_type, object_id, pipeline, display, filter)
+    path = _tile_pyramid_path_for_tap(
+        object_type, object_id, pipeline, display, filter, _request_ancestors())
     return _serve_tile_response(path, object_type, object_id, x, y, z)
 
 
@@ -338,7 +339,7 @@ def serve_context_map_tap(
     that size).
     """
     pyramid_path = _tile_pyramid_path_for_tap(
-        object_type, object_id, pipeline, display, filter,
+        object_type, object_id, pipeline, display, filter, _request_ancestors(),
     )
     if pyramid_path is None:
         return abort(404)

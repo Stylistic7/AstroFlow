@@ -66,7 +66,7 @@ export default function MosaicViewer() {
     // doesn't 404-loop on every tile-metadata fetch.
     useEffect(() => {
         if (!pipeline || !display) return;
-        const pipelines = versionsData.pipelines || [];
+        const pipelines = versionsData?.pipelines || [];  // null until first fetch
         if (pipelines.length === 0) return;
         const current = pipelines.find((p) => p.name === pipeline);
         if (!current) return;

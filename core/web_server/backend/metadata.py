@@ -16,14 +16,14 @@ from mosaics.trimming import project_to_viewbox
 from metadata.sidecar_io import read_image_metadata, _statistics_to_obj
 from attributes.astrometric_attributes import _spherical_polygon_for_wcs
 from decisions.decisions import ObjectType, get_decisions_for_object
-from web_server.backend._route import tap_route
+from web_server.backend._route import tap_route, parse_ancestors
 
 metadata_bp = Blueprint("metadata", __name__)
 
 
 def _tap_path_unchecked(
     pipeline: str, display: str, object_type: str, object_id: str,
-    filter: str | None,
+    filter: str | None, ancestors: tuple[tuple[str, str], ...] = (),
 ) -> str | None:
     """The on-disk primary path of a tap `(pipeline, display, type, id,
     filter)`, predicted from the pipeline trace — WITHOUT checking the file
@@ -33,51 +33,26 @@ def _tap_path_unchecked(
 
     Use this when you need the path regardless of current existence — e.g.
     to derive a `.tiff` sibling for tile-serving. For "is this tap currently
-    available" semantics use `tap_path_for`.
-    """
+    available" semantics use `available_tap_path`. `ancestors` resolves a
+    child leaf from its cart-item ancestor's snapshot."""
     from dependency_graph.trace_paths import tap_path_for as _trace_tap_path
-    p = _trace_tap_path((object_type, object_id, pipeline), display, filter)
+    p = _trace_tap_path(
+        (object_type, object_id, pipeline), display, filter, ancestors=ancestors)
     return str(p) if p is not None else None
 
 
-def tap_path_for(
+def available_tap_path(
     pipeline: str, display: str, object_type: str, object_id: str,
-    filter: str | None,
+    filter: str | None, ancestors: tuple[tuple[str, str], ...] = (),
 ) -> str | None:
     """The tap's on-disk path, or None if the predicted file isn't on disk.
     Existence-gated wrapper around `_tap_path_unchecked` — "tap is currently
     available" semantics for download / metadata callers. Disk is the source
-    of truth for done-ness."""
-    p = _tap_path_unchecked(pipeline, display, object_type, object_id, filter)
+    of truth for done-ness. (Distinct from the trace's `tap_path_for(item, …)`:
+    this takes positional web args and gates on the master existing on disk.)"""
+    p = _tap_path_unchecked(
+        pipeline, display, object_type, object_id, filter, ancestors)
     return p if p and os.path.exists(p) else None
-
-_MOSAIC_FILTERS_MEMO: dict[str, list[str]] = {}
-
-
-def _mosaic_filters(mosaic) -> list[str]:
-    """All filters that any target in the mosaic has a stack in.
-
-    Memoized on `mosaic.stable_hash`: target_ids and per-target
-    stack_ids are structural (don't change as a cart progresses).
-    Walking 23 targets × ~3 stacks × ContextRef.get() each costs
-    0.25–2 s; the memo collapses that to a dict lookup."""
-    cached = _MOSAIC_FILTERS_MEMO.get(mosaic.stable_hash)
-    if cached is not None:
-        return cached
-    stacks = context.stacks or {}
-    targets = context.targets or {}
-    filters = set()
-    for target_id in mosaic.target_ids:
-        target = targets[target_id].get()
-        for stack_id in target.stack_ids:
-            stack_ref = stacks.get(stack_id)
-            if stack_ref is None:
-                continue
-            filters.add(stack_ref.get().filter)
-    order = ["L", "H", "S", "O", "R", "G", "B"]
-    out = sorted(filters, key=lambda f: (order.index(f) if f in order else len(order), f))
-    _MOSAIC_FILTERS_MEMO[mosaic.stable_hash] = out
-    return out
 
 
 def _viewbox_quality_for_pipeline(pipeline: str) -> str:
@@ -279,7 +254,9 @@ def _resolve_object(object_type_str, object_id, filter):
 def metadata(object_type: str, object_id: str, pipeline: str, display: str, filter: str):
     args = _resolve_object(object_type, object_id, filter)
 
-    path = tap_path_for(pipeline, display, object_type, object_id, filter)
+    ancestors = parse_ancestors(request.args.get("ancestors"))
+    path = available_tap_path(
+        pipeline, display, object_type, object_id, filter, ancestors)
     image_path = path if path and os.path.exists(path) else None
 
     objects = _get_polygons(pipeline, *args)
@@ -305,38 +282,12 @@ def metadata(object_type: str, object_id: str, pipeline: str, display: str, filt
 
 
 def _resolve_entity(object_type: str, object_id: str):
-    """Return the in-context entity (Stack, Target, Mosaic, etc.) for
-    an (object_type, object_id) pair, or None if not present. The
-    dashboard endpoint uses this to know which pipelines accept the
-    entity as input + to discover its filters."""
-    if object_type == "stack":
-        s = (context.stacks or {}).get(object_id)
-        return s.get() if s else None
-    if object_type == "calibration_stack":
-        return (context.calibration_stacks or {}).get(object_id)
-    if object_type == "target":
-        t = (context.targets or {}).get(object_id)
-        return t.get() if t else None
-    if object_type == "mosaic":
-        m = (context.mosaics or {}).get(object_id)
-        return m.get() if m else None
-    return None
-
-
-def _entity_filters(entity, object_type: str) -> list[str]:
-    """Filters the dashboard's per-tap columns iterate over."""
-    if object_type == "mosaic":
-        return _mosaic_filters(entity)
-    if object_type == "target":
-        stacks_dict = context.stacks or {}
-        return sorted({
-            stacks_dict[sid].get().filter
-            for sid in entity.stack_ids
-            if sid in stacks_dict and stacks_dict[sid].get().filter
-        })
-    if object_type in ("stack", "calibration_stack"):
-        return [entity.filter] if getattr(entity, "filter", None) else []
-    return []
+    """The in-context entity for an (object_type, object_id), or None. Delegates
+    to the catalog (its canonical home); kept as a module-level name so tests
+    can still patch `metadata._resolve_entity`. Filter enumeration also lives in
+    the catalog now (`catalog.filters_for`)."""
+    from catalog.queries import resolve_entity
+    return resolve_entity(object_type, object_id)
 
 
 @metadata_bp.route("/api/pipeline_outputs/<object_type>/<object_id>")
@@ -360,57 +311,62 @@ def pipeline_outputs(object_type: str, object_id: str):
           },
           ...
         ],
+        "default": {"pipeline": "PixInsight Master", "display": "Master",
+                    "filter": "H"},
       }
 
-    Each pipeline's taps are derived live from a (cached) trace of the
-    pipeline for this object: `tap_outputs_for` predicts every
-    `@node(display=...)` op's on-disk path via the Merkle call_hash
-    convention, and `os.path.exists` per filter says whether it's done.
-    No stateful index — disk is the source of truth, so this can never go
-    stale. Unprocessed objects still show their full tap structure (every
-    predicted path simply doesn't exist yet).
+    A slice of the catalog: every pipeline that processes this object's class,
+    its display taps, and whether each `(display, filter)` is VIEWABLE on disk,
+    plus the `default` landing view the frontend redirects to (the catalog's
+    single source of truth for pipeline/display preference).
+    Fast and read-only — reads are snapshot-only (`recompute=False`), so a
+    produced pipeline hits its per-object snapshot in 0.1ms and an un-run one
+    skips; a web request never triggers a live trace. "exists" is
+    pyramid-or-master, matching what the tile server serves.
     """
+    from catalog import queries as cat
     from dependency_graph.trace_paths import tap_outputs_for
 
     entity = _resolve_entity(object_type, object_id)
     if entity is None:
         return abort(404)
 
-    filters = _entity_filters(entity, object_type)
-    iter_filters = filters or [None]
+    ancestors = parse_ancestors(request.args.get("ancestors"))
 
-    # Only the pipelines the user has actually ENGAGED for this object — i.e.
-    # ones with a build-time tap snapshot for its current (source_hash,
-    # stable_hash, content_hash) state. Never-run pipelines have no snapshot,
-    # so they no longer clutter the page with all-missing taps. The snapshot
-    # keys are `(source_hash, stable_hash, content_hash, pipeline)`.
+    iter_filters = cat.filters_for(object_type, object_id) or [None]
+    entity_filter_strs = {str(f) for f in iter_filters}
+
+    # Scope to pipelines whose build-time snapshot can hold THIS leaf's taps: the
+    # leaf's own `(stable, content)`, plus each cart-item ANCESTOR's — a child
+    # stack has no snapshot of its own, but its target's shared-graph snapshot
+    # carries the stack's `Master` tap. The URL hierarchy (the `ancestors` query
+    # param) names those ancestors; `tap_outputs_for(..., ancestors=)` then filters
+    # each ancestor trace back down to this leaf via `_routes_to_item`. No scan,
+    # no per-object index — see feedback_avoid_derived_state. Existence stays
+    # `viewable_from_master` (pyramid-or-master, matching the tile server).
+    keyed = {(entity.stable_hash, entity.content_hash)}
+    for anc_type, anc_id in ancestors:
+        anc = _resolve_entity(anc_type, anc_id)
+        if anc is not None:
+            keyed.add((anc.stable_hash, anc.content_hash))
+
     snapshots = context.get("tap_snapshots") or {}
     applicable = sorted({
         pipeline for (_src, stable, content, pipeline) in snapshots
-        if stable == entity.stable_hash and content == entity.content_hash
+        if (stable, content) in keyed
     })
 
-    # One cached trace per pipeline → its user-facing taps with predicted paths,
-    # grouped by display (preserving trace/graph-reach order, which also orders
-    # the "Merged"/"Merged 2" suffix series). Collect first so we can discover
-    # sentinel filters (e.g. a colour composite's "RGB", which isn't one of the
-    # entity's filters) and give EVERY tap a column for them.
-    entity_filter_strs = {str(f) for f in iter_filters}
     traces: dict[str, dict[str, dict[str, str]]] = {}
     extras: set[str] = set()
     for name in applicable:
         by_display: dict[str, dict[str, str]] = {}
-        for e in tap_outputs_for((object_type, object_id, name)):
+        for e in tap_outputs_for((object_type, object_id, name), ancestors=ancestors):
             fk = str(e["filter"])
             by_display.setdefault(e["display"], {})[fk] = e["path"]
             if fk not in entity_filter_strs:
                 extras.add(fk)
         traces[name] = by_display
 
-    # Global column list: entity filters + any sentinels. The frontend aligns
-    # `tap.outputs[i]` to `filters[i]`, so every tap's outputs must span this
-    # same list (mono taps leave the sentinel column empty; a colour composite
-    # lights only its sentinel column).
     columns = list(iter_filters) + sorted(extras)
 
     pipelines = []
@@ -420,16 +376,27 @@ def pipeline_outputs(object_type: str, object_id: str):
             outputs = []
             for f in columns:
                 p = paths_by_filter.get(str(f))
-                exists = os.path.exists(p) if p else False
+                path = cat.viewable_from_master(p) if p else None
+                exists = path is not None
                 outputs.append({
                     "filter": f,
                     "exists": exists,
-                    "mtime": os.path.getmtime(p) if exists else None,
+                    "mtime": os.path.getmtime(str(path)) if exists else None,
                 })
             taps.append({"display": display, "outputs": outputs})
         pipelines.append({"name": name, "taps": taps})
 
-    return jsonify({"filters": columns, "pipelines": pipelines})
+    # The default landing view (pipeline + display + filter) for a bare object
+    # URL, computed by the catalog from `_PIPELINE_PREFERENCE` + what exists on
+    # disk. The frontend redirects to this instead of keeping its own preference
+    # list — one source of truth (see feedback_avoid_derived_state). None when
+    # nothing is on disk yet.
+    default = cat.default_product_for(object_type, object_id, ancestors=ancestors)
+    return jsonify({
+        "filters": columns,
+        "pipelines": pipelines,
+        "default": default.as_view() if default else None,
+    })
 
 
 @metadata_bp.route(

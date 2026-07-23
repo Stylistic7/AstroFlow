@@ -26,8 +26,8 @@ import {
     useVersionsMatrix,
     usePipelines,
     pipelineOptions,
-    DEFAULT_DISPLAY_FOR_TYPE,
 } from './useVersions.js';
+import { defaultDisplayFor } from './urls.js';
 import { filterLabel } from './filters.js';
 
 function capitalizeFirst(str) {
@@ -176,7 +176,7 @@ export default function AstroFlowBreadcrumbs() {
 
     const versionsData = useVersionsMatrix(
         viewerObjectType, viewerObjectId, computeGraphStatus,
-    );
+    ) || { filters: [], pipelines: [] };  // null until the first fetch lands
     const availablePipelines = usePipelines();
     const implementations = pipelineOptions(versionsData.pipelines, availablePipelines);
     const filters = versionsData.filters || [];
@@ -206,9 +206,7 @@ export default function AstroFlowBreadcrumbs() {
         );
         const validDisplays = (nextPipelineData?.taps || []).map((t) => t.display);
         const d = (display && validDisplays.includes(display)) ? display
-            : (validDisplays[0]
-               || DEFAULT_DISPLAY_FOR_TYPE[viewerObjectType]
-               || "Master");
+            : (validDisplays[0] || defaultDisplayFor(viewerObjectType));
         const segs = [
             viewerPathPrefix,
             encodeURIComponent(nextPipeline),
@@ -219,7 +217,7 @@ export default function AstroFlowBreadcrumbs() {
     };
     const goToFilter = (f) => {
         if (!pipeline) return;
-        const d = display || DEFAULT_DISPLAY_FOR_TYPE[viewerObjectType] || "Master";
+        const d = display || defaultDisplayFor(viewerObjectType);
         // On a stack page, switching filter means showing a sibling
         // stack — each stack has exactly one filter, so we have to
         // navigate to a different stack_id. Resolve via target.stack_ids
