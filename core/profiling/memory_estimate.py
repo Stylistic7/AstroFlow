@@ -52,32 +52,34 @@ _DEFAULT_MEMORY_BY_OP = {
 }
 _DEFAULT_MEMORY_UNKNOWN = 16 * _GB
 
-# Ops that shell out to an external tool (rc-astro BXT/SXT). The profiler only
-# samples the small Python WORKER — which just spawns the CLI and moves a file
-# (see rc_astro_cli.py) — NEVER the CLI child, which is invisible to Ray. That
-# child's RSS grows with input size and is HARD to bound: measured ~6 GB on
-# ordinary masters, 14.5 GB then 20 GB on a 2.25-gigapixel mosaic channel, and
-# TWO ran concurrently (20 + 14 = 34 GB) and swap-thrashed the machine to 36 GB
-# (live, 2026-07-06/07). Since we can't reliably predict the child's size,
-# reserve MORE THAN HALF THE POOL (2 × 26 = 52 > 44.8 GB): Ray then runs at most
-# ONE BXT/SXT at a time, and never alongside a place_image (32 GB) or merge
-# (~40 GB). One bounded external process + baseline is always < physical RAM, so
-# it cannot thrash regardless of how big the child gets. Serial BXT is the cost;
-# safety is the point. A fixed override, not a `@node(memory=)`: these ops are
-# already `auto_memory=True`, so editing their decorator would re-run all BXT/SXT.
+# Ops that shell out to rc-astro (BXT/SXT/NXT). The profiler only samples the
+# small Python WORKER — which spawns the CLI and moves a file (see rc_astro_cli.py)
+# — NEVER the CLI child, which is invisible to Ray. So these genuinely can't be
+# auto-estimated; the `auto_memory=True` on their decorators just routes them
+# through `estimate_memory`, which short-circuits to this fixed value — keeping the
+# admission gate and Ray's `memory=` reservation reading the SAME number. Kept as a
+# side-table (not `@node(memory=)`) so the value can change WITHOUT a decorator edit
+# re-running every cached tile.
+#
+# The old value was 26 GB — one RGB copy of a 2.25-Gpx WHOLE mosaic — deliberately
+# inflated (2 × 26 > pool) to SERIALIZE BXT/SXT to one-at-a-time, after two
+# gigapixel children ran together and swap-thrashed the machine (live 2026-07-06).
+# Every rc-astro op now runs on a <=100 Mpx TILE (process_in_tiles): measured child
+# RSS ~1.8 GB + ~0.5 GB worker ≈ 2.3 GB (live 2026-07-24), so 5 GB is the honest
+# reservation (~2× headroom). Serialization is no longer smuggled through an
+# inflated memory number — a `{"gpu_slots": 1}` request on each op, against the
+# `gpu_slots` each node advertises (state/ray_control), caps GPU parallelism per
+# machine to that node's real capacity. The macOS memory-pressure veto backstops
+# any per-tile spike the 5 GB estimate misses.
 _FIXED_MEMORY_BY_OP = {
-    "bxt_correct":   26 * _GB,
-    "bxt_correct_only": 26 * _GB,  # BXT Correct-Only on a panel before assembly (Croman two-pass)
-    "sxt_starless":  26 * _GB,
-    "sxt_stars_rgb": 26 * _GB,  # StarXTerminator on the combined 3-band RGB
-    # Tiled path (process_in_tiles) — replaces the 26 GB whole-image linear_sho
-    # node that OOM-killed NXT on gigapixel masters. Each op is memory-BOUNDED to
-    # one ~100 Mpx tile, so — unlike the whole-image rc-astro ops above — several
-    # co-schedule (on-node concurrency now, cluster fan-out when deployed). `nxt`
-    # spawns the rc-astro child on a tile (invisible to the profiler → must be
-    # fixed); crop/stack/blend are pyvips/numpy but fixed too so they keep worker
-    # reuse (excluded from the max_calls=1 rule).
-    "nxt":                 12 * _GB,  # rc-astro NXT child on a ~100 Mpx image/tile
+    "bxt_correct":      5 * _GB,
+    "bxt_correct_only": 5 * _GB,  # BXT Correct-Only on a panel before assembly (Croman two-pass)
+    "sxt_starless":     5 * _GB,
+    "sxt_stars_rgb":    5 * _GB,  # StarXTerminator on the combined 3-band RGB
+    "nxt":              5 * _GB,  # NoiseXTerminator on a tile — same rc-astro CLI path
+    # Other fixed-memory tile ops (process_in_tiles), NOT rc-astro: pyvips/numpy,
+    # each memory-BOUNDED to one ~100 Mpx tile. Fixed (not auto) so they keep worker
+    # reuse — excluded from the max_calls=1 fresh-worker rule (see decorators.py).
     "crop_tile":            4 * _GB,  # streaming crop of one tile out of the source
     "stack_sho_channels":  12 * _GB,  # sequential per-channel XISF→BigTIFF (~8 GB each)
     "blend_tiles":          6 * _GB,  # streaming pyvips feather (generic intermediate)

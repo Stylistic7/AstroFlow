@@ -128,7 +128,7 @@ def _sxt_narrow(args, kwargs):
     return (mosaic, filter, (mock, config.sxt), channel), kwargs
 
 
-@node(cache_key_narrow=_bxt_correct_narrow, auto_memory=True, plate_solve=False)  # derived from an already-solved channel
+@node(cache_key_narrow=_bxt_correct_narrow, auto_memory=True, resources={"gpu_slots": 1}, plate_solve=False)  # derived from an already-solved channel
 def bxt_correct(
     mosaic: Mosaic, filter: str, config: ProcessingConfig, channel: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
@@ -165,7 +165,7 @@ def _bxt_correct_only_narrow(args, kwargs):
     return (target, filter, (mock, config.bxt), channel), kwargs
 
 
-@node(cache_key_narrow=_bxt_correct_only_narrow, auto_memory=True, plate_solve=True)  # RE-SOLVE the corrected panel (Croman)
+@node(cache_key_narrow=_bxt_correct_only_narrow, auto_memory=True, resources={"gpu_slots": 1}, plate_solve=True)  # RE-SOLVE the corrected panel (Croman)
 def bxt_correct_only(
     target: Target, filter: str, config: ProcessingConfig, channel: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
@@ -192,7 +192,7 @@ def bxt_correct_only(
     return WithSidecar(TiffFilePath(out))
 
 
-@node(cache_key_narrow=_sxt_narrow, auto_memory=True, plate_solve=False)  # starless: no stars to solve against
+@node(cache_key_narrow=_sxt_narrow, auto_memory=True, resources={"gpu_slots": 1}, plate_solve=False)  # starless: no stars to solve against
 def sxt_starless(
     mosaic: Mosaic, filter: str, config: ProcessingConfig, channel: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
@@ -238,7 +238,7 @@ def combine_broadband_rgb(
     return WithSidecar(TiffFilePath(out))
 
 
-@node(cache_key_narrow=_sxt_rgb_narrow, auto_memory=True, plate_solve=False)  # coherent RGB stars
+@node(cache_key_narrow=_sxt_rgb_narrow, auto_memory=True, resources={"gpu_slots": 1}, plate_solve=False)  # coherent RGB stars
 def sxt_stars_rgb(
     mosaic: Mosaic, config: ProcessingConfig, rgb: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
@@ -326,7 +326,7 @@ def stack_sho_channels(
     return WithSidecar(TiffFilePath(out))
 
 
-@node(cache_key_narrow=_nxt_narrow, auto_memory=True, plate_solve=False)  # NXT on an image (whole OR one tile)
+@node(cache_key_narrow=_nxt_narrow, auto_memory=True, resources={"gpu_slots": 1}, plate_solve=False)  # NXT on an image (whole OR one tile)
 def nxt(
     mosaic: Mosaic, config: ProcessingConfig, image: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
