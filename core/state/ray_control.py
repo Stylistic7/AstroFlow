@@ -79,7 +79,7 @@ def start_ray_head_node(node_ip_address: str | None = None, timeout=60):
     # TODO: Put these resources in the UI.
     # For debug-style one-task-at-a-time serialization, add {"fake_resource": 1}
     # here and tag the target functions with resources={"fake_resource": 1}.
-    resources = """'{"PixInsight": 1, "diskcache": 1, "fastest_storage": 1, "gpu_slots": 2}'"""
+    resources = """'{"PixInsight": 1, "diskcache": 1, "fastest_storage": 1, "gpu_slots": 3}'"""
     bind = f" --node-ip-address {node_ip_address}" if node_ip_address else ""
     command = f"""ulimit -n 10000 && RAY_num_workers_soft_limit={_workers_soft_limit()} {ray_path} start --head{bind} --memory {_ray_memory_bytes()} --resources {resources}"""
     print(f'### Starting Ray head node with command "{command}"')
