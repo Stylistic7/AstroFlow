@@ -1,3 +1,4 @@
+import os
 import subprocess
 import time
 import socket
@@ -5,6 +6,25 @@ import socket
 import psutil
 
 from base_path import get_bin_dir
+
+
+def _workers_soft_limit() -> int:
+    """Idle-worker soft limit: a quarter of the local box's cores.
+
+    Left unset, Ray's soft limit defaults to num_cpus, so it keeps ~num_cpus
+    idle workers resident (and prestarts one per core at startup). On the 24-core
+    head that's ~24 idle Python workers holding ~15 GB even when nothing is
+    running — which drops the head's free memory below the worker's, so the
+    memory-aware scheduler (`_select_node` places on the ROOMIEST node) steers
+    heavy ops onto the worker and the head sits idle. It is also pure waste when
+    an external heavyweight process (PixInsight, a stack) owns the whole box.
+
+    Exported as RAY_num_workers_soft_limit at `ray start`, this caps the warm
+    pool low. num_cpus stays on auto, so Ray still scales the pool UP to full
+    cores on demand for light-op bursts and reaps back down to this floor when
+    idle — no task-concurrency is surrendered. Per-machine, so nodes self-size.
+    """
+    return max(1, (os.cpu_count() or 4) // 4)
 
 
 def _ray_memory_bytes() -> int:
@@ -61,7 +81,7 @@ def start_ray_head_node(node_ip_address: str | None = None, timeout=60):
     # here and tag the target functions with resources={"fake_resource": 1}.
     resources = """'{"PixInsight": 1, "diskcache": 1, "fastest_storage": 1}'"""
     bind = f" --node-ip-address {node_ip_address}" if node_ip_address else ""
-    command = f"""ulimit -n 10000 && {ray_path} start --head{bind} --memory {_ray_memory_bytes()} --resources {resources}"""
+    command = f"""ulimit -n 10000 && RAY_num_workers_soft_limit={_workers_soft_limit()} {ray_path} start --head{bind} --memory {_ray_memory_bytes()} --resources {resources}"""
     print(f'### Starting Ray head node with command "{command}"')
     process = subprocess.Popen(
         command,
@@ -99,7 +119,7 @@ def start_ray_subordinate_node(head_node_address, node_ip_address: str | None = 
     # TODO: Put these resources in the UI.
     resources = """'{"PixInsight": 1}'"""
     bind = node_ip_address or get_ip()
-    command = f"""ulimit -n 10000 && {ray_path} start --address {head_node_address}:6379 --node-ip-address {bind} --memory {_ray_memory_bytes()} --resources {resources}"""
+    command = f"""ulimit -n 10000 && RAY_num_workers_soft_limit={_workers_soft_limit()} {ray_path} start --address {head_node_address}:6379 --node-ip-address {bind} --memory {_ray_memory_bytes()} --resources {resources}"""
     print(f'### Starting Ray subordinate node with command "{command}"')
     process = subprocess.Popen(
         command,
