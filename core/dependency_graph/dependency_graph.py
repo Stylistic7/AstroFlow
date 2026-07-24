@@ -357,8 +357,15 @@ def run_graph(
     if preflight:
         graph = _apply_preflight(graph)
 
-    from cache.ephemeral_cleanup import cleanup_ephemeral_artifact
-    root = GraphRuntime(graph, cleanup_fn=cleanup_ephemeral_artifact)
+    # No-GC: in-run ephemeral deletion is disabled. cleanup_fn=None makes
+    # _notify_ephemeral_registry a no-op (graph_runtime.py), so no ephemeral
+    # intermediate is deleted or cache-invalidated — they persist as @node cache
+    # hits (the 100GB cache is only ~3% full, not evicting). This removes the
+    # recompute churn: the old cleanup deleted + invalidated an intermediate a
+    # later same-call_hash producer still needed, forcing a re-run. Validated at
+    # 0 recompute over 10.5h. Reclaim orphans deliberately via
+    # scripts.sweep_orphans, never mid-run.
+    root = GraphRuntime(graph)
 
     # Constants; tune per cluster/workload. 2x cores (was 4x): each in-flight
     # slot is a fresh Python worker carrying the full scientific stack (~0.3-1 GB
