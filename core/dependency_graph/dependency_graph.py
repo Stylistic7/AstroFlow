@@ -357,15 +357,18 @@ def run_graph(
     if preflight:
         graph = _apply_preflight(graph)
 
-    # No-GC: in-run ephemeral deletion is disabled. cleanup_fn=None makes
-    # _notify_ephemeral_registry a no-op (graph_runtime.py), so no ephemeral
-    # intermediate is deleted or cache-invalidated — they persist as @node cache
-    # hits (the 100GB cache is only ~3% full, not evicting). This removes the
-    # recompute churn: the old cleanup deleted + invalidated an intermediate a
-    # later same-call_hash producer still needed, forcing a re-run. Validated at
-    # 0 recompute over 10.5h. Reclaim orphans deliberately via
-    # scripts.sweep_orphans, never mid-run.
-    root = GraphRuntime(graph)
+    # In-run ephemeral GC is ON. It was briefly disabled (no-GC) to isolate a
+    # recompute churn, but no-GC just moved the problem to disk (intermediates
+    # accumulate until the output volume fills). The churn's real cause was that
+    # dynamic subgraphs were never preflighted — a spliced child re-dispatched a
+    # RECLAIMED ephemeral bottom-up even when its downstream deliverable was
+    # already on disk. `GraphRuntime.node_completed` now preflights each child
+    # subgraph (predict_call_hashes + nodes_to_dispatch), so a satisfied
+    # deliverable prunes its whole upstream — the reclaimed ephemeral is SKIPPED,
+    # not recomputed. With that fixed, deletion is safe again: intermediates are
+    # reclaimed as consumers finish, disk stays bounded, and nothing re-runs.
+    from cache.ephemeral_cleanup import cleanup_ephemeral_artifact
+    root = GraphRuntime(graph, cleanup_fn=cleanup_ephemeral_artifact)
 
     # Constants; tune per cluster/workload. 2x cores (was 4x): each in-flight
     # slot is a fresh Python worker carrying the full scientific stack (~0.3-1 GB
