@@ -91,6 +91,20 @@ _DEFAULT_MIN_AVG_SCORE = 0.5
 _DEFAULT_MAX_ITERS = 15
 _DEFAULT_CONSENSUS_TAU = 0.5
 _DEFAULT_CONSENSUS_TOP_N = 30
+# Subset-attribution: a leftover frame is assigned to an already-established
+# camera when it shares at least this many of that camera's 30 consensus
+# (signature) pixels. Camera consensuses are disjoint and consensus pixels are
+# the most-reliable hot pixels, so a genuine frame hits many while a noise
+# frame hits ~0 — see the sweep in project_fingerprint_attribution_loss. 5 is
+# a wide safety margin (chance of 5 coincidental hits on 30 pixels out of a
+# 60 MP sensor is effectively zero).
+_DEFAULT_SUBSET_MIN_HITS = 5
+# Sentinel "consensus" for frames identified by header/locality alone (no
+# usable defect fingerprint — e.g. CCD frames, whose column/cluster defects
+# extract_defects can't see). Non-empty so `_camera_id_hash_from` yields a
+# real (header-derived) id; -1 is not a valid flat pixel index, so it never
+# collides with a real consensus.
+HEADER_ONLY_IDENTITY: tuple[int, ...] = (-1,)
 
 
 @beartype
@@ -336,4 +350,97 @@ def cluster_by_fingerprint(
             (len(frames) for frames, _ in out), reverse=True
         )[:10],
     )
+    return out
+
+
+@beartype
+def attribute_by_consensus(
+    leftover: dict[FrameHash, dict[int, float] | set[int] | None],
+    consensuses: Sequence[Sequence[int]],
+    *,
+    min_hits: int = _DEFAULT_SUBSET_MIN_HITS,
+) -> dict[FrameHash, tuple[int, ...]]:
+    """Recover low-defect frames by matching them to an ALREADY-established
+    camera consensus — the second pass after `cluster_by_fingerprint`.
+
+    A frame below `min_defect` never enters clustering (too few pixels to
+    anchor or connect), yet its few hot pixels are still that camera's real
+    hot pixels. Here we assign each such frame to the consensus it shares at
+    least `min_hits` pixels with, provided that match is unambiguous (strictly
+    more hits than any other consensus). This NEVER invents a camera — it only
+    attributes to consensuses discovered by the confident clustering pass, so
+    the `min_defect` guard against spurious NEW cameras is untouched. Camera
+    consensuses are disjoint (different silicon → different hot pixels), so a
+    genuine frame matches exactly one and a noise frame matches none.
+
+    Returns `{frame: consensus}` for the frames it could confidently place.
+    """
+    cons_sets = [(tuple(c), set(c)) for c in consensuses if c]
+    out: dict[FrameHash, tuple[int, ...]] = {}
+    if not cons_sets:
+        return out
+    for h, defs in leftover.items():
+        if not defs:
+            continue
+        pix = set(defs)
+        best_hits = second = 0
+        best: tuple[int, ...] | None = None
+        for cons_t, cons_s in cons_sets:
+            hits = len(pix & cons_s)
+            if hits > best_hits:
+                second, best_hits, best = best_hits, hits, cons_t
+            elif hits > second:
+                second = hits
+        if best is not None and best_hits >= min_hits and best_hits > second:
+            out[h] = best
+    return out
+
+
+@beartype
+def attribute_by_locality(
+    unattributed: Sequence[FrameHash],
+    *,
+    folder_of: dict[FrameHash, str | None],
+    header_of: dict[FrameHash, tuple],
+    attributed: dict[FrameHash, tuple[int, ...]],
+    header_consensuses: dict[tuple, Sequence[tuple[int, ...]]],
+) -> dict[FrameHash, tuple[int, ...]]:
+    """Weak, non-fingerprint fallback for frames with no usable defect signal
+    (e.g. CCD frames — `extract_defects` targets CMOS single-pixel hot pixels
+    and finds nothing in a CCD's column/cluster defects). Applied ONLY after
+    defect clustering + `attribute_by_consensus`, and only to frames still
+    unplaced. The cascade, most-precise first:
+
+      1. capture-folder proximity: if the frame's folder contains fingerprinted
+         frames of exactly one camera, borrow that consensus (a shared night =
+         the same camera; the folder disambiguates multi-body rigs);
+      2. single-body header: else if the frame's (INSTRUME, sensor-shape) maps
+         to exactly one real consensus library-wide, use it;
+      3. header-only identity: else if that header never fingerprinted at all
+         (a pure-CCD camera), tag with `HEADER_ONLY_IDENTITY` so same-header
+         frames still stack together (their camera_id_hash stays distinct per
+         INSTRUME+shape);
+      4. otherwise leave it unattributed (ambiguous: multiple bodies share the
+         header and there is no locality signal to choose between them).
+
+    Returns `{frame: consensus-or-sentinel}` for the frames it could place.
+    """
+    folder_cams: dict[str, Counter] = {}
+    for g, cons in attributed.items():
+        f = folder_of.get(g)
+        if f is not None:
+            folder_cams.setdefault(f, Counter())[cons] += 1
+
+    out: dict[FrameHash, tuple[int, ...]] = {}
+    for h in unattributed:
+        cams = folder_cams.get(folder_of.get(h))
+        if cams is not None and len(cams) == 1:
+            out[h] = next(iter(cams))
+            continue
+        uniq = set(header_consensuses.get(header_of.get(h), ()))
+        if len(uniq) == 1:
+            out[h] = next(iter(uniq))
+        elif len(uniq) == 0:
+            out[h] = HEADER_ONLY_IDENTITY
+        # else: multiple bodies share this header and no folder signal — skip.
     return out

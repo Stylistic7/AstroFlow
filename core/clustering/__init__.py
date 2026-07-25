@@ -12,4 +12,7 @@ from .fingerprint import (
     anchor_reassign,
     consensus_pixels_for_cluster,
     cluster_by_fingerprint,
+    attribute_by_consensus,
+    attribute_by_locality,
+    HEADER_ONLY_IDENTITY,
 )

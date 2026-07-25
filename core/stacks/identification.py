@@ -1,4 +1,5 @@
 import math
+import os
 import structlog
 import ray
 import numpy as np
@@ -10,6 +11,7 @@ import clustering
 from clustering.fingerprint import FingerprintMap
 from stacks.composite_stack import Stack, StacksDict
 from metadata.classes import DefectsDict, FrameHash, MetadataDict
+from metadata.image_types import is_light_frame
 from cache.context_ref import ContextRef
 from context import context
 from decorators import node
@@ -26,54 +28,123 @@ from decisions.decisions import (
 log = structlog.get_logger()
 
 
+def _header_key(m) -> tuple:
+    """The (INSTRUME, sensor-shape, pixel-size) pre-group key. Same header,
+    same pre-group; also the identity axis that separates camera models and
+    on-camera crops before the hot-pixel fingerprint separates same-model
+    bodies."""
+    h = m.header
+    return (
+        h.get("INSTRUME"), h.get("NAXIS1"), h.get("NAXIS2"),
+        h.get("XPIXSZ"), h.get("YPIXSZ"),
+    )
+
+
 def build_fingerprint_map(
     metadata: MetadataDict,
     defects: DefectsDict,
     fingerprint_min_anchor_size: int,
 ) -> FingerprintMap:
-    """Pure helper: cluster `metadata` by hot-pixel fingerprint and
-    return per-frame consensus tuples. Frames not in `defects` (no
-    defect_candidates extracted at ingestion) or whose cluster is below
-    `fingerprint_min_anchor_size` after global clustering are omitted
+    """Assign each light frame a camera identity (consensus tuple), in three
+    passes of decreasing confidence so we don't discard usable subs:
+
+    1. **Defect clustering** (`cluster_by_fingerprint`): frames with >=
+       `min_defect` hot pixels cluster by defect-set overlap; each confident
+       cluster (>= `fingerprint_min_anchor_size`) yields a canonical consensus.
+       This is the only pass that DISCOVERS cameras.
+    2. **Subset attribution** (`attribute_by_consensus`): a light with too few
+       hot pixels to cluster is assigned to a camera FOUND in pass 1 when its
+       pixels unambiguously match that consensus. Recovers short/clean subs
+       (empirically ~18% of lights were being dropped by pass 1's threshold
+       alone — see project_fingerprint_attribution_loss).
+    3. **Locality fallback** (`attribute_by_locality`): lights with no usable
+       defect signal at all (CCD frames — `extract_defects` can't see column
+       defects) are attributed by capture-folder proximity, single-body
+       header, or a header-only sentinel identity. Weak but recovers whole
+       cameras that hot-pixel fingerprinting cannot handle.
+
+    Passes 2 and 3 apply to LIGHTS only and never invent a new camera, so the
+    `min_defect` guard against spurious attribution of a genuinely new/marginal
+    camera is preserved. Frames still unplaced after all three are omitted
     (caller treats them as no-camera-identity)."""
     log.info(
         "Identifying camera fingerprints",
         num_frames=len(metadata), num_with_defects=len(defects),
     )
 
+    header_of = {h: _header_key(m) for h, m in metadata.items()}
+    folder_of = {
+        h: (os.path.dirname(str(m.filename)) if m.filename else None)
+        for h, m in metadata.items()
+    }
+
     by_pre_group: dict[tuple, list[FrameHash]] = {}
-    for h, m in metadata.items():
-        if h not in defects:
-            continue
-        key = (
-            m.header.get("INSTRUME"),
-            m.header.get("NAXIS1"),
-            m.header.get("NAXIS2"),
-            m.header.get("XPIXSZ"),
-            m.header.get("YPIXSZ"),
-        )
-        by_pre_group.setdefault(key, []).append(h)
+    for h in metadata:
+        if h in defects:
+            by_pre_group.setdefault(header_of[h], []).append(h)
 
     import gc
     fp = FingerprintMap()
-    for hashes in by_pre_group.values():
+    header_consensuses: dict[tuple, list[tuple[int, ...]]] = {}
+    leftover: list[FrameHash] = []
+    n_subset = 0
+    for key, hashes in by_pre_group.items():
         frame_sets = {h: defects[h] for h in hashes}
+        consensuses: list[tuple[int, ...]] = []
+        pre_leftover: list[FrameHash] = []
         for cluster_frames, consensus in clustering.cluster_by_fingerprint(
             frame_sets, min_anchor_size=fingerprint_min_anchor_size,
         ):
-            if not consensus:
-                continue
-            for h in cluster_frames:
-                fp[h] = consensus
+            if consensus:
+                consensuses.append(consensus)
+                for h in cluster_frames:
+                    fp[h] = consensus
+            else:
+                pre_leftover.extend(cluster_frames)
+        header_consensuses.setdefault(key, []).extend(consensuses)
+
+        # Pass 2: subset-attribution — leftover LIGHTS only.
+        light_leftover = [
+            h for h in pre_leftover if is_light_frame(metadata[h].header)
+        ]
+        recovered = clustering.attribute_by_consensus(
+            {h: frame_sets[h] for h in light_leftover}, consensuses,
+        )
+        fp.update(recovered)
+        n_subset += len(recovered)
+        leftover.extend(h for h in light_leftover if h not in recovered)
+
         # Each pre_group's clustering allocates ~1 GB of sparse matrices
         # (X, O) inside cluster_by_fingerprint. Force a collection between
         # pre_groups so peak resident memory tracks the largest single
         # pre_group, not the sum.
         del frame_sets
         gc.collect()
+
+    n_clustering = len(fp) - n_subset
+
+    # Pass 3: locality/header fallback for lights with no usable defect
+    # fingerprint — leftover low-defect lights AND lights whose defects were
+    # never extracted (zero-defect CCD frames, absent from `defects`).
+    no_defect_lights = [
+        h for h, m in metadata.items()
+        if h not in defects and is_light_frame(m.header)
+    ]
+    fallback = clustering.attribute_by_locality(
+        leftover + no_defect_lights,
+        folder_of=folder_of,
+        header_of=header_of,
+        attributed=dict(fp),
+        header_consensuses=header_consensuses,
+    )
+    fp.update(fallback)
+
     log.info(
         "Camera fingerprints identified",
         attributed=len(fp),
+        by_clustering=n_clustering,
+        by_subset=n_subset,
+        by_locality=len(fallback),
         total=len(metadata),
     )
     return fp

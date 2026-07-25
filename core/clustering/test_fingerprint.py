@@ -3,10 +3,13 @@ import numpy as np
 
 from clustering.fingerprint import (
     anchor_reassign,
+    attribute_by_consensus,
+    attribute_by_locality,
     build_overlap,
     cluster_by_fingerprint,
     consensus_pixels_for_cluster,
     initial_clusters,
+    HEADER_ONLY_IDENTITY,
 )
 
 
@@ -211,3 +214,118 @@ def test_cluster_by_fingerprint_passthrough_when_no_candidates():
     frames_returned, consensus = result[0]
     assert set(frames_returned) == {_h("bias0"), _h("bias1"), _h("bias2")}
     assert consensus == ()
+
+
+# ---- Pass 2: subset attribution -------------------------------------------
+
+_CONS_A = tuple(range(1000, 1030))   # camera A's 30 signature pixels
+_CONS_B = tuple(range(5000, 5030))   # camera B's 30 (disjoint from A)
+
+
+def test_attribute_by_consensus_recovers_low_defect_frame():
+    # A frame with too few defects to cluster, but 8 of them are camera A's
+    # signature pixels -> confidently A.
+    leftover = {
+        _h("short_sub"): set(_CONS_A[:8]) | {77, 88},   # 8 A-hits + noise
+        _h("noise"): {9000, 9001, 9002},                # 0 A/B hits
+    }
+    out = attribute_by_consensus(leftover, [_CONS_A, _CONS_B], min_hits=5)
+    assert out == {_h("short_sub"): _CONS_A}
+
+
+def test_attribute_by_consensus_below_min_hits_not_assigned():
+    # Only 4 signature hits, below the min_hits=5 floor -> left unattributed.
+    leftover = {_h("f"): set(_CONS_A[:4]) | {42}}
+    out = attribute_by_consensus(leftover, [_CONS_A], min_hits=5)
+    assert out == {}
+
+
+def test_attribute_by_consensus_ambiguous_not_assigned():
+    # Equal overlap with two cameras -> not unambiguous, so not assigned.
+    leftover = {_h("f"): set(_CONS_A[:6]) | set(_CONS_B[:6])}
+    out = attribute_by_consensus(leftover, [_CONS_A, _CONS_B], min_hits=5)
+    assert out == {}
+
+
+def test_attribute_by_consensus_ignores_empty_and_none():
+    out = attribute_by_consensus(
+        {_h("none"): None, _h("empty"): set()}, [_CONS_A], min_hits=5
+    )
+    assert out == {}
+
+
+def test_attribute_by_consensus_no_consensuses():
+    out = attribute_by_consensus({_h("f"): set(_CONS_A)}, [], min_hits=5)
+    assert out == {}
+
+
+# ---- Pass 3: locality / header fallback -----------------------------------
+
+_HK_A = ("ZWO ASI6200MM Pro", 9576, 6388, 3.76, 3.76)
+_HK_CCD = ("Voyager FLI CCD", 3072, 2048, 9.0, 9.0)
+
+
+def test_attribute_by_locality_folder_proximity():
+    # A defect-less light in a folder whose fingerprinted frames are all one
+    # camera -> borrows that camera.
+    out = attribute_by_locality(
+        [_h("x")],
+        folder_of={_h("a1"): "/n1", _h("a2"): "/n1", _h("x"): "/n1"},
+        header_of={_h("x"): _HK_A},
+        attributed={_h("a1"): _CONS_A, _h("a2"): _CONS_A},
+        header_consensuses={_HK_A: [_CONS_A]},
+    )
+    assert out == {_h("x"): _CONS_A}
+
+
+def test_attribute_by_locality_single_body_header():
+    # No fingerprinted frame in x's folder, but its header maps to exactly one
+    # camera library-wide -> attribute by header.
+    out = attribute_by_locality(
+        [_h("x")],
+        folder_of={_h("a1"): "/n1", _h("x"): "/n2"},
+        header_of={_h("x"): _HK_A},
+        attributed={_h("a1"): _CONS_A},
+        header_consensuses={_HK_A: [_CONS_A]},
+    )
+    assert out == {_h("x"): _CONS_A}
+
+
+def test_attribute_by_locality_pure_ccd_gets_header_sentinel():
+    # A CCD whose header never fingerprinted at all -> header-only sentinel so
+    # its frames still stack together.
+    out = attribute_by_locality(
+        [_h("ccd0"), _h("ccd1")],
+        folder_of={_h("ccd0"): "/fli", _h("ccd1"): "/fli"},
+        header_of={_h("ccd0"): _HK_CCD, _h("ccd1"): _HK_CCD},
+        attributed={},
+        header_consensuses={},
+    )
+    assert out == {_h("ccd0"): HEADER_ONLY_IDENTITY,
+                   _h("ccd1"): HEADER_ONLY_IDENTITY}
+
+
+def test_attribute_by_locality_ambiguous_multibody_skipped():
+    # Two bodies share the header and there is no folder signal -> refuse to
+    # guess.
+    out = attribute_by_locality(
+        [_h("x")],
+        folder_of={_h("x"): "/lonely"},
+        header_of={_h("x"): _HK_A},
+        attributed={},
+        header_consensuses={_HK_A: [_CONS_A, _CONS_B]},
+    )
+    assert out == {}
+
+
+def test_attribute_by_locality_folder_beats_ambiguous_header():
+    # Header is ambiguous (two bodies), but the folder pins it to one -> use
+    # the folder's camera.
+    out = attribute_by_locality(
+        [_h("x")],
+        folder_of={_h("a"): "/n3", _h("x"): "/n3"},
+        header_of={_h("x"): _HK_A},
+        attributed={_h("a"): _CONS_B},
+        header_consensuses={_HK_A: [_CONS_A, _CONS_B]},
+    )
+    assert out == {_h("x"): _CONS_B}

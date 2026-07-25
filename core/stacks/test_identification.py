@@ -191,13 +191,18 @@ def test_same_instrume_two_bodies_separated_by_fingerprint(test_context):
     assert len(hashes) == 2
 
 
-def test_frames_without_defect_candidates_are_excluded(test_context):
-    """A frame whose sidecar predates the defect_candidates extraction
-    arrives missing from the global DefectsDict — the fingerprint pass
-    can't attribute it, so identify_stacks excludes it. Real-world
-    trigger: legacy sidecars (e.g. Starbase zips) that weren't migrated.
+def test_frames_without_defect_candidates_recovered_by_locality(test_context):
+    """A frame missing from the global DefectsDict (no extractable hot-pixel
+    fingerprint — legacy un-migrated sidecars, or a CCD whose column defects
+    `extract_defects` can't see) has no clustering signal, but the locality
+    fallback (`build_fingerprint_map` pass 3) recovers it: its capture folder
+    holds fingerprinted frames of exactly one camera, so it borrows that
+    camera and joins the stack instead of being silently dropped. This is the
+    fix for ~18% of real lights being excluded — see
+    project_fingerprint_attribution_loss.
     """
-    # 5 normal frames + 1 frame with no fingerprint.
+    # 5 fingerprintable frames + 1 with its defect fingerprint stripped, all
+    # the same synthetic camera in the same folder.
     make_synthetic_frames(
         ra=100, dec=50, prefix="good", number=5,
         dither=0, dest_dir=context.input_dirs[0],
@@ -223,12 +228,13 @@ def test_frames_without_defect_candidates_are_excluded(test_context):
 
     run_graph(build_compute_graph())
     stacks = {h: ref.get() for h, ref in (context.stacks or {}).items()}
-    # One stack from the 5 "good" frames. The "bad" frame was excluded.
+    # One stack; the defect-less "bad" frame was recovered via folder
+    # proximity and joins the 5 "good" frames (same camera, same pointing).
     assert len(stacks) == 1
     stack = next(iter(stacks.values()))
-    all_files = [m.filename for m in stack.all_metadata().values()]
-    assert all("good" in str(f) for f in all_files)
-    assert not any("bad" in str(f) for f in all_files)
+    all_files = [str(m.filename) for m in stack.all_metadata().values()]
+    assert sum("good" in f for f in all_files) == 5
+    assert sum("bad" in f for f in all_files) == 1
 
 
 def test_prepare_stack_for_ui_emits_camera_id(test_context):
