@@ -277,6 +277,48 @@ def _is_satisfied(node, predicted: dict, graph) -> bool:
     return stamped == predicted[node]
 
 
+def _satisfied_map(graph, predicted: dict) -> "dict[Any, bool]":
+    """Memoized, predecessor-aware satisfaction for every node.
+
+    * A node WITH a `filename_fn` (a real on-disk producer) is satisfied by
+      the disk check — its expected output exists and its stamped CONTHASH
+      matches the predicted call_hash (`_is_satisfied`). Unchanged.
+
+    * A node with NO `filename_fn` writes no file, so there is nothing on disk
+      to check. It's a pure pass-through / no-output SENTINEL (e.g. a
+      subgraph's `run_pipeline_done` terminal, which only funnels the real
+      deliverables into a single completion handle). It is "satisfied" IFF it
+      has at least one dep AND every dep is (recursively) satisfied. Without
+      this, such a terminal was ALWAYS unsatisfied, so the reverse-walk from it
+      dragged the entire subtree into `to_run` and nothing could ever prune —
+      even when every deliverable underneath was already on disk.
+
+      The `has >=1 dep` guard is load-bearing: a no-output node with NO deps is
+      a source / dynamic-subgraph BUILDER (e.g. `scatter_compute_image_metadata`
+      / `run_pipeline`) whose real output preflight cannot see (it's produced at
+      runtime), so it must never be pruned — leaving it unsatisfied keeps it,
+      and every chain funnelling through it, running.
+    """
+    memo: dict = {}
+
+    def satisfied(n) -> bool:
+        if n in memo:
+            return memo[n]
+        memo[n] = False  # cycle guard (DAG expected; a cycle → "must run")
+        task = getattr(n, "task", n)
+        if getattr(task, "filename_fn", None) is not None:
+            res = _is_satisfied(n, predicted, graph)
+        else:
+            deps = graph.get(n, [])
+            res = bool(deps) and all(satisfied(d) for d in deps)
+        memo[n] = res
+        return res
+
+    for n in graph:
+        satisfied(n)
+    return memo
+
+
 def nodes_to_dispatch(graph, predicted: dict) -> set:
     """Return the subset of nodes whose work must actually run.
 
@@ -284,7 +326,8 @@ def nodes_to_dispatch(graph, predicted: dict) -> set:
       1. Identify "result-bearing" nodes — those with `_final=True` plus
          any leaves (no successors in `graph`). These are the things the
          caller will read once `run_graph` returns.
-      2. For each, check `_is_satisfied`.
+      2. For each, check satisfaction (`_satisfied_map`): a real producer via
+         its on-disk output, a no-output sentinel via its (recursive) deps.
       3. Walk backward from each UNSATISFIED result-bearer, adding every
          transitive predecessor to a `to_run` set.
       4. Return `to_run`. Nodes outside this set can be skipped (their
@@ -303,10 +346,8 @@ def nodes_to_dispatch(graph, predicted: dict) -> set:
         if getattr(getattr(n, "task", n), "_final", False) or not successors.get(n)
     ]
 
-    unsatisfied = [
-        n for n in result_bearing
-        if not _is_satisfied(n, predicted, graph)
-    ]
+    satisfied = _satisfied_map(graph, predicted)
+    unsatisfied = [n for n in result_bearing if not satisfied[n]]
 
     to_run: set = set()
     stack = list(unsatisfied)

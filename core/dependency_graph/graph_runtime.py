@@ -192,8 +192,28 @@ class GraphRuntime:
             logs = []
 
         if isinstance(result, Graph):
-            child = GraphRuntime(result, parent=self, parent_node=node)
-            self._children[node] = child
+            # Preflight the dynamic subgraph before splicing it in, exactly as
+            # run_graph does for the top-level graph. Without this, a subgraph
+            # whose deliverables are ALREADY on disk still re-dispatches its
+            # entire body bottom-up — and an ephemeral intermediate whose output
+            # was reclaimed then cache-MISSES and needlessly recomputes (the
+            # real "bxt_correct_only ran 134x/run" churn). Lazy import:
+            # `_apply_preflight` lives in dependency_graph.dependency_graph,
+            # which imports this module — importing at load time would cycle.
+            from dependency_graph.dependency_graph import _apply_preflight
+            pruned = _apply_preflight(result)
+            if pruned:
+                child = GraphRuntime(pruned, parent=self, parent_node=node)
+                self._children[node] = child
+            else:
+                # Fully satisfied — every deliverable is already on disk, so
+                # there is no work to spin up. An empty subgraph would trip the
+                # single-terminal assertion in GraphRuntime.__init__, so don't
+                # create a child: mark the builder node done directly. Builder
+                # results are consumed only by no-output completion sentinels
+                # (main_processing_graph_done / run_pipeline_done) that ignore
+                # the value, so `None` is the correct result here.
+                self._mark_done(node, None, logs, succeeded=True)
         else:
             # Skipped/NeverRun sentinels propagate through node_completed
             # but don't represent a real, file-producing success — gate

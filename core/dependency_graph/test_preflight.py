@@ -13,6 +13,7 @@ import pytest
 from dependency_graph.classes import Graph, Node
 from dependency_graph.preflight import (
     _PredictedRef,
+    _satisfied_map,
     predict_call_hashes,
     nodes_to_dispatch,
     expected_output_path,
@@ -263,3 +264,87 @@ class TestNodesToDispatch:
 
         to_run = nodes_to_dispatch(graph, predicted)
         assert to_run == {A}  # not skipped — hash mismatch
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# No-output-sentinel satisfaction (the subgraph-preflight fix, Part 2)
+# ──────────────────────────────────────────────────────────────────────────
+
+class TestNoOutputSentinelSatisfaction:
+    """A subgraph's single terminal is typically a no-output SENTINEL (no
+    `filename_fn`, e.g. `run_pipeline_done`) that funnels the real
+    deliverables into one completion handle. It must NOT force its whole
+    subtree to run when the deliverables underneath it are already on disk —
+    otherwise a subgraph can never be pruned."""
+
+    def _sink_and_sentinel(self, tmp_path, monkeypatch, on_disk: bool):
+        """Build A → F(final, has filename_fn) → S(no-output sentinel, 0
+        params, dep via graph edge — the `run_pipeline_done` shape). Stage F
+        on disk with a matching CONTHASH iff `on_disk`."""
+        a, f, s = _make_task("a", 0), _make_task("f", 1), _make_task("s", 0)
+        f._final = True
+        A, F, S = _node(a), _node(f), _node(s)
+        graph = Graph({S: [F], F: [A], A: []})
+        predicted = predict_call_hashes(graph)
+
+        target = tmp_path / "f.fits"
+        f.filename_fn = lambda *args, **kwargs: str(target)
+        import file_io.generic as gen
+        if on_disk:
+            target.write_bytes(b"x")
+            monkeypatch.setattr(gen, "get_content_hash", lambda p: predicted[F])
+        else:
+            def _raise(p):
+                raise FileNotFoundError
+            monkeypatch.setattr(gen, "get_content_hash", _raise)
+        return graph, predicted, A, F, S
+
+    def test_sentinel_satisfied_when_final_dep_on_disk(self, tmp_path, monkeypatch):
+        """F on disk with the right CONTHASH → the sentinel S is satisfied via
+        its dep, and `nodes_to_dispatch` prunes the WHOLE subtree."""
+        graph, predicted, A, F, S = self._sink_and_sentinel(
+            tmp_path, monkeypatch, on_disk=True,
+        )
+        sat = _satisfied_map(graph, predicted)
+        assert sat[F] is True
+        assert sat[S] is True          # satisfied THROUGH its satisfied dep
+
+        to_run = nodes_to_dispatch(graph, predicted)
+        assert to_run == set()         # sentinel didn't force the subtree
+
+    def test_sentinel_forces_subtree_when_final_missing(self, tmp_path, monkeypatch):
+        """F NOT on disk → the sentinel is unsatisfied and drags the whole
+        subtree (A, F, S) into `to_run` — the pre-fix behavior, still correct
+        when there's genuinely work to do."""
+        graph, predicted, A, F, S = self._sink_and_sentinel(
+            tmp_path, monkeypatch, on_disk=False,
+        )
+        sat = _satisfied_map(graph, predicted)
+        assert sat[F] is False
+        assert sat[S] is False
+
+        to_run = nodes_to_dispatch(graph, predicted)
+        assert to_run == {A, F, S}
+
+    def test_no_output_node_with_no_deps_is_never_satisfied(self):
+        """The load-bearing guard: a no-output node with NO deps is a
+        source / dynamic-subgraph BUILDER (e.g. `run_pipeline`) whose real
+        output preflight can't see. It must stay UNSATISFIED so it always
+        runs — never wrongly pruned as a 'trivially satisfied' sentinel."""
+        builder = _make_task("builder", 0)   # no filename_fn, no deps
+        BLD = _node(builder)
+        graph = Graph({BLD: []})
+        predicted = predict_call_hashes(graph)
+
+        sat = _satisfied_map(graph, predicted)
+        assert sat[BLD] is False
+
+        # And a sentinel sitting above it is dragged in too (the builder must
+        # run to produce its dynamic subgraph).
+        sentinel = _make_task("done", 0)
+        DONE = _node(sentinel)
+        graph2 = Graph({DONE: [BLD], BLD: []})
+        predicted2 = predict_call_hashes(graph2)
+        to_run = nodes_to_dispatch(graph2, predicted2)
+        assert BLD in to_run
+        assert DONE in to_run
