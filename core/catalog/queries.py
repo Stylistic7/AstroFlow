@@ -171,10 +171,47 @@ def viewable_from_master(master: "str | Path | None") -> "Path | None":
     return None
 
 
+def resolve_product(
+    product: Product, ancestors: Ancestors = (),
+) -> "tuple[Path | None, str]":
+    """The servable path for a product AND whether it's current — the version-
+    aware resolver behind graceful N/N-1 versioning. Returns `(path, status)`:
+
+      - `(path, "live")`        — the CURRENT trace's output is on disk;
+      - `(path, "out_of_date")` — the current isn't built yet, but a prior
+                                  version (from the version log) still is, so we
+                                  serve that last-good and the UI badges it;
+      - `(None, "absent")`      — nothing viewable (no current tap, or truly
+                                  gone / never built).
+
+    Fallback only kicks in when the current tap EXISTS in the trace but its file
+    isn't built yet (a recompute in flight) — never when the object has no tap
+    at all (e.g. removed from the cart), so a removed object never shows a stale
+    image. Reuses `viewable_from_master` for the serve logic (pyramid-vs-master).
+    """
+    master = predict_path(product, ancestors)
+    cur = viewable_from_master(master)
+    if cur is not None:
+        return cur, "live"
+    if master is None:
+        return None, "absent"  # no current tap in the trace — don't serve stale
+    # Current tap exists but its output isn't built yet → serve the newest OTHER
+    # logged version still on disk (the last-good).
+    from products import version_log
+    cur_hash = version_log.call_hash_of(master)
+    for entry in reversed(version_log.versions(version_log.key_for(product))):
+        if entry.get("call_hash") == cur_hash:
+            continue  # this is the not-yet-built current
+        prev = viewable_from_master(entry.get("path"))
+        if prev is not None:
+            return prev, "out_of_date"
+    return None, "absent"
+
+
 def viewable_path(product: Product, ancestors: Ancestors = ()) -> "Path | None":
-    """The servable path for a product — resolves its master via the trace, then
-    applies `viewable_from_master`."""
-    return viewable_from_master(predict_path(product, ancestors))
+    """The servable path for a product (path-only; last-good fallback included).
+    Use `resolve_product` when you also need the live/out-of-date status."""
+    return resolve_product(product, ancestors)[0]
 
 
 def exists(product: Product, ancestors: Ancestors = ()) -> bool:

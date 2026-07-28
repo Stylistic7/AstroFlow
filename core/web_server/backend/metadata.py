@@ -377,11 +377,29 @@ def pipeline_outputs(object_type: str, object_id: str):
             for f in columns:
                 p = paths_by_filter.get(str(f))
                 path = cat.viewable_from_master(p) if p else None
+                status = "live" if path is not None else "absent"
+                if path is None and p is not None:
+                    # Current output isn't built yet → serve the last-good (N-1)
+                    # with an out-of-date badge (graceful versioning). Same logic
+                    # as catalog.resolve_product; inlined here since we already
+                    # hold the current master `p`. See products.version_log.
+                    from products import version_log
+                    cur_hash = version_log.call_hash_of(p)
+                    for entry in reversed(version_log.versions(
+                            version_log.key(object_type, object_id, name,
+                                            display, f))):
+                        if entry.get("call_hash") == cur_hash:
+                            continue
+                        prev = cat.viewable_from_master(entry.get("path"))
+                        if prev is not None:
+                            path, status = prev, "out_of_date"
+                            break
                 exists = path is not None
                 outputs.append({
                     "filter": f,
                     "exists": exists,
                     "mtime": os.path.getmtime(str(path)) if exists else None,
+                    "status": status,
                 })
             taps.append({"display": display, "outputs": outputs})
         pipelines.append({"name": name, "taps": taps})

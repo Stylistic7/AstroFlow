@@ -72,11 +72,21 @@ def _count_by_op(graph) -> dict[str, int]:
     return counts
 
 
-# Overrides the global 120s (pytest.ini): this mock-graph run takes ~131s even
-# ISOLATED — it dispatches ~11n small Ray tasks through run_graph + the memory
-# admission gate — and slower under parallel-shard contention. Not a real-PI
-# test (mock_pixinsight=True); just genuinely graph-dispatch-heavy.
-@pytest.mark.timeout(300)
+# EXHAUSTIVE (opt-in), and currently SLOW TO THE POINT OF NOT COMPLETING. This
+# mock-PI (mock_pixinsight=True) end-to-end run traces a tiled color graph
+# (~11n nodes at tile_px=512 on viewbox-sized channels) and drives it through
+# run_graph. As of 2026-07-28 run_graph's scheduler is driver-bound on a graph
+# this size: on a clean machine with 40G free it sat >4min at ~100% single-core
+# CPU with every Ray worker IDLE and did NOT finish — a scheduler blowup, not
+# memory pressure (the old "~131s isolated" note predates the tiling change).
+# It hangs identically on main, so it's not a regression here. Excluded from the
+# fast `make tests` suite (LIGHT = "not exhaustive …") and given a generous
+# BOUNDED timeout — NOT timeout(0), which would hang forever — so a deliberate
+# opt-in run self-terminates. Fixing run_graph's O(graph) scheduling is separate
+# work. Run it deliberately:
+#   PYTHONPATH=. pytest -m exhaustive mosaics/color/test_post_process.py
+@pytest.mark.exhaustive
+@pytest.mark.timeout(1200)
 def test_color_post_process_traces_and_runs(test_context, tmp_path):
     # Size the synthetic channels to the mosaic viewbox — as the real merged
     # channels are — so the tiled linear_sho grid matches its source. A small

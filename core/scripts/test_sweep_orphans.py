@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from context import local_context as context
-from scripts import sweep_orphans
+from cache import orphan_sweep
 
 
 @pytest.fixture
@@ -48,7 +48,7 @@ def fake_trace(monkeypatch):
     def fake(item, *, finals_only=False):
         return list(bank.get(tuple(item), []))
 
-    monkeypatch.setattr(sweep_orphans, "paths_for_cart_item", fake)
+    monkeypatch.setattr(orphan_sweep, "paths_for_cart_item", fake)
     return bank
 
 
@@ -63,7 +63,7 @@ def test_walk_and_classify_returns_unreferenced_files_only(temp_output_dir):
     orphan_path = _make_file(temp_output_dir / "mosaic" / "orphan.xisf")
     live = {str(live_path)}
 
-    orphans, _ = sweep_orphans._walk_and_classify(temp_output_dir, live)
+    orphans, _ = orphan_sweep.walk_and_classify(temp_output_dir, live)
     paths = {p for p, _ in orphans}
 
     assert paths == {str(orphan_path)}
@@ -84,7 +84,7 @@ def test_live_set_includes_archive_paths_and_their_siblings(
 
     context.archive = [("mosaic", "abc", "P", [str(primary)])]
 
-    live = sweep_orphans._live_set()
+    live = orphan_sweep.live_set(context)
 
     assert str(primary) in live
     assert str(sidecar) in live
@@ -99,7 +99,7 @@ def test_live_set_traces_cart_items(temp_output_dir, fake_trace):
     fake_trace[item] = [str(live_path)]
     context.shopping_cart = [item]
 
-    live = sweep_orphans._live_set()
+    live = orphan_sweep.live_set(context)
 
     assert str(live_path) in live
 
@@ -113,8 +113,8 @@ def test_cart_item_with_empty_trace_contributes_nothing(temp_output_dir):
     # because entity isn't in context.
     context.shopping_cart = [item]
 
-    live = sweep_orphans._live_set()
-    orphans, _ = sweep_orphans._walk_and_classify(temp_output_dir, live)
+    live = orphan_sweep.live_set(context)
+    orphans, _ = orphan_sweep.walk_and_classify(temp_output_dir, live)
 
     assert {p for p, _ in orphans} == {str(orphan)}
 
@@ -132,8 +132,8 @@ def test_full_sweep_classifies_correctly(temp_output_dir, fake_trace):
     context.shopping_cart = [cart_item]
     context.archive = [("mosaic", "2", "P", [str(archive_path)])]
 
-    live = sweep_orphans._live_set()
-    orphans, _ = sweep_orphans._walk_and_classify(temp_output_dir, live)
+    live = orphan_sweep.live_set(context)
+    orphans, _ = orphan_sweep.walk_and_classify(temp_output_dir, live)
     orphan_paths = {p for p, _ in orphans}
 
     assert orphan_paths == {str(orphan_path)}
@@ -141,13 +141,13 @@ def test_full_sweep_classifies_correctly(temp_output_dir, fake_trace):
 
 def test_walk_and_classify_returns_sizes(temp_output_dir):
     p = _make_file(temp_output_dir / "x.bin", size=512)
-    orphans, _ = sweep_orphans._walk_and_classify(temp_output_dir, set())
+    orphans, _ = orphan_sweep.walk_and_classify(temp_output_dir, set())
     assert orphans == [(str(p), 512)]
 
 
 def test_walk_and_classify_with_no_output_dir_returns_empty():
     """If output_dir is None (pre-init), sweep is a no-op."""
-    orphans, by_dir = sweep_orphans._walk_and_classify(None, set())
+    orphans, by_dir = orphan_sweep.walk_and_classify(None, set())
     assert orphans == []
     assert by_dir == {}
 
@@ -158,7 +158,7 @@ def test_include_scopes_to_named_dirs(temp_output_dir, fake_trace):
     included = _make_file(temp_output_dir / "place_image" / "a.tiff")
     excluded = _make_file(temp_output_dir / "stack_files" / "b.xisf")
 
-    orphans, by_dir = sweep_orphans._walk_and_classify(
+    orphans, by_dir = orphan_sweep.walk_and_classify(
         temp_output_dir, set(), include={"place_image"},
     )
     paths = {p for p, _ in orphans}
@@ -349,8 +349,8 @@ def test_orion_mosaic_trace_matches_disk_and_archive_lifecycle(test_context) -> 
         )
 
     # --- Phase 3: sweep classifies correctly --------------------------
-    live = sweep_orphans._live_set()
-    orphans, _by_dir = sweep_orphans._walk_and_classify(
+    live = orphan_sweep.live_set(context)
+    orphans, _by_dir = orphan_sweep.walk_and_classify(
         Path(context.output_dir), live,
     )
     orphan_paths = {p for p, _ in orphans}

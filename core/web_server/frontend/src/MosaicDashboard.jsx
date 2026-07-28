@@ -18,7 +18,7 @@ import { buildUrl, buildApiUrl } from "./urls.js";
 
 
 function VersionThumbnail({
-    objectType, objectId, pipeline, display, filter, exists, mtime,
+    objectType, objectId, pipeline, display, filter, exists, mtime, status,
 }) {
     const navigate = useNavigate();
     const hierarchy = [{ type: objectType, id: objectId }];
@@ -69,6 +69,17 @@ function VersionThumbnail({
             }}>
                 {filter || '—'}
             </Box>
+            {status === 'out_of_date' && (
+                <Box sx={{
+                    position: 'absolute', top: 4, right: 4,
+                    backgroundColor: 'warning.main',
+                    color: 'warning.contrastText',
+                    fontSize: 10, fontWeight: 700, letterSpacing: 0.3,
+                    px: 0.5, py: 0.25, borderRadius: 0.5, lineHeight: 1.3,
+                }}>
+                    OUT OF DATE
+                </Box>
+            )}
         </Box>
     );
 }
@@ -119,7 +130,7 @@ function PipelineSection({ objectType, objectId, pipeline, filters }) {
                             display: 'flex', gap: 1, overflowX: 'auto', flex: 1,
                         }}>
                             {filters.map((f) => {
-                                const o = byFilter[f] || { filter: f, exists: false };
+                                const o = byFilter[f] || { filter: f, exists: false, status: 'absent' };
                                 return (
                                     <VersionThumbnail
                                         key={f}
@@ -130,6 +141,7 @@ function PipelineSection({ objectType, objectId, pipeline, filters }) {
                                         filter={f}
                                         exists={o.exists}
                                         mtime={o.mtime}
+                                        status={o.status}
                                     />
                                 );
                             })}

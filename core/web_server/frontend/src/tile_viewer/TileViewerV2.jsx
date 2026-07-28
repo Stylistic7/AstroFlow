@@ -773,6 +773,18 @@ export default function TileViewerV2({
                     touchAction: 'none',
                 }}
             />
+            {tileMeta?.status === 'out_of_date' && (
+                <Box sx={{
+                    position: 'absolute', top: 12, left: '50%',
+                    transform: 'translateX(-50%)', zIndex: 10,
+                    backgroundColor: 'warning.main', color: 'warning.contrastText',
+                    px: 1.5, py: 0.5, borderRadius: 1,
+                    fontSize: 13, fontWeight: 700, letterSpacing: 0.3,
+                    boxShadow: 3, pointerEvents: 'none', whiteSpace: 'nowrap',
+                }}>
+                    OUT OF DATE — a newer version is still rendering
+                </Box>
+            )}
             {gridActive && (
                 <Box
                     onClick={handleGridClick}

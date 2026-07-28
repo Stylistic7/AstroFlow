@@ -428,6 +428,22 @@ def _store_tap_snapshot(pipeline_fn, pipeline_name: str, entity, graph) -> None:
     ref = ContextRef.store(("tap_snapshots", str(key)), entries)
     context.or_equals("tap_snapshots", {key: ref})
 
+    # Record each display product's new output in its N/N-1 version log. We only
+    # reach here when the content-addressed snapshot changed (new source/content
+    # hash), but the per-op call_hash dedup inside `record` means an unchanged
+    # display tap (same call_hash as before) logs nothing — so a change that
+    # doesn't move a given tap's output leaves its history untouched. Only
+    # display taps participate (`display is not None`); non-display intermediates
+    # are never shown, so they carry no version history.
+    from products import version_log
+    for e in entries:
+        if e.get("display") is not None:
+            version_log.record(
+                version_log.key(e["object_type"], e["object_id"], pipeline_name,
+                                e["display"], e["filter"]),
+                e["path"],
+            )
+
 
 def _build_ephemeral_registry(traced_graphs):
     """Union the ephemeral_files contributions from every traced

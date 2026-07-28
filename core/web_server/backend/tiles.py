@@ -120,9 +120,12 @@ def tile_metadata_tap(
     object_type: str, object_id: str, pipeline: str, display: str, filter: str,
     backend_port: int = None,
 ):
-    path = _tile_pyramid_path_for_tap(
-        object_type, object_id, pipeline, display, filter, _request_ancestors())
-    return _tile_metadata_response(path, backend_port, display)
+    from catalog import resolve_product, Product
+    p, status = resolve_product(
+        Product(object_type, object_id, pipeline, display, filter),
+        ancestors=_request_ancestors())
+    path = str(p) if p is not None else None
+    return _tile_metadata_response(path, backend_port, display, status=status)
 
 
 def _per_channel_linear_stats(path):
@@ -182,7 +185,7 @@ def _per_channel_linear_stats(path):
     return stats
 
 
-def _tile_metadata_response(path, backend_port, display=None):
+def _tile_metadata_response(path, backend_port, display=None, status=None):
     if path is None:
         return abort(404)
     base = _get_vips_page(path, 0)
@@ -198,6 +201,10 @@ def _tile_metadata_response(path, backend_port, display=None):
         "bands": base.bands,
         "port": backend_port,
         "mtime": os.path.getmtime(path),
+        # "live" | "out_of_date" — graceful versioning. When "out_of_date" the
+        # `path` served is the last-good N-1 (the current version is still
+        # building); the viewer badges it. See catalog.resolve_product.
+        "status": status,
     }
     # `colorspace` disambiguates the two 3-band cases the band count alone can't:
     #   "linear-sho" → linear S/H/O, shader runs the live colour finish;

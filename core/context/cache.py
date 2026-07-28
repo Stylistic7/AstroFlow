@@ -68,7 +68,12 @@ def _create_durable_cache() -> diskcache.Cache:
 # to let it get evicted (or wiped).
 _DURABLE_TUPLE_NS = frozenset(
     {"stacks", "targets", "mosaics", "calibration_stacks", "large_object",
-     "decisions"}
+     "decisions",
+     # Per-display-product version history (graceful N/N-1 versioning). This
+     # records PAST output paths/call_hashes, which nothing can recompute once
+     # the old files are gone — an LFU eviction would silently lose the
+     # last-good fallback, so it must never evict. See products/version_log.py.
+     "product_versions"}
 )
 _DURABLE_STR_KEYS = frozenset(
     {
