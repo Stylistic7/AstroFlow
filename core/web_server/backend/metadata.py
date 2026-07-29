@@ -119,10 +119,18 @@ def _get_polygons(pipeline: str, *args) -> list[dict[str, Any]]:
             obj.stable_hash,
             pipeline,
         )
+        # Per-panel master paths, keyed by the stack's stable_hash. The stacking
+        # op is the one tapped `display="Master"` routing to a light `Stack`
+        # (calibration masters share the op but route to `CalibrationStack`, so
+        # object_type excludes them). Pipeline-agnostic — any stacker backend
+        # (WBPP / OSS / future) declares that tap — and keyed on the tap's
+        # routing entity, not op-node identity. (Was `op_name == "stack_files"
+        # and "stack" in e["identity"]`, which silently broke when the identity
+        # refactor stripped op-node identity keys → empty map → no green wedge.)
         master_path_by_stack: dict[str, str] = {
-            e["identity"]["stack"]: e["path"]
+            e["object_id"]: e["path"]
             for e in traced_paths_for(cart_item)
-            if e["op_name"] == "stack_files" and "stack" in e["identity"]
+            if e.get("display") == "Master" and e.get("object_type") == "Stack"
         }
         overrides = context.settings.decision_overrides
         from decisions.compute_graph import _is_quarantined
