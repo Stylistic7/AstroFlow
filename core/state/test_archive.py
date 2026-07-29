@@ -37,7 +37,7 @@ def fake_trace(monkeypatch):
     `{item: {"all": [...], "finals": [...]}}`."""
     bank: dict[tuple, dict[str, list[str]]] = {}
 
-    def fake(item, *, finals_only=False):
+    def fake(item, *, finals_only=False, strict=False):
         entry = bank.get(tuple(item), {})
         key = "finals" if finals_only else "all"
         return [p for p in entry.get(key, [])]
@@ -87,14 +87,36 @@ def test_remove_with_preserve_finals_archives_only_finals(fake_trace):
     assert list(arch[0][3]) == finals
 
 
-def test_remove_with_unresolvable_item_skips_archive_entry(fake_trace):
-    """If `paths_for_cart_item` returns [] (entity missing from
-    context — stale cart entry), don't create an empty archive entry."""
-    # No bank entry → trace returns [].
+def test_remove_with_empty_trace_skips_archive_entry(fake_trace):
+    """A SUCCESSFUL trace that yields no paths (e.g. nothing to preserve)
+    creates no empty archive entry — but the cart entry is still removed."""
+    # No bank entry → stub returns [] (a successful, empty trace).
     context.shopping_cart = [ITEM_A]
 
     archive.apply_remove_from_cart(ITEM_A, preserve="all")
 
+    assert list(context.archive or []) == []
+    assert list(context.shopping_cart or []) == []
+
+
+def test_remove_with_trace_failure_raises_and_preserves_state(monkeypatch):
+    """A trace FAILURE while archiving (preserve != 'none') raises
+    TraceResolutionError and leaves BOTH the cart and the archive untouched —
+    the pipeline is traced before any mutation, so we never remove an item and
+    then fail to preserve its outputs (which would orphan live files)."""
+    from dependency_graph.trace_paths import TraceResolutionError
+
+    def boom(item, *, finals_only=False, strict=False):
+        raise TraceResolutionError("entity absent from context")
+
+    monkeypatch.setattr(archive, "paths_for_cart_item", boom)
+    context.shopping_cart = [ITEM_A]
+    context.archive = []
+
+    with pytest.raises(TraceResolutionError):
+        archive.apply_remove_from_cart(ITEM_A, preserve="all")
+
+    assert list(context.shopping_cart or []) == [ITEM_A]  # untouched
     assert list(context.archive or []) == []
 
 

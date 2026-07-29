@@ -39,6 +39,21 @@ from typing import Any
 from context import local_context as context
 
 
+class TraceResolutionError(RuntimeError):
+    """A cart item could NOT be traced to its output paths — the entity is
+    absent from context, the pipeline is unregistered, or tracing raised.
+
+    Distinct from a *successful* trace that legitimately yields no paths (an
+    empty list). Callers that must establish a COMPLETE live set before a
+    destructive step — the orphan sweep, cart→archive — pass `strict=True` and
+    let this propagate rather than silently proceeding on a PARTIAL set. A
+    swallowed trace failure looks identical to "this item has no outputs", so
+    the GC would treat the item's real, on-disk files as orphans and delete
+    them. Fail-fast: never delete (or archive, or run) against a trace we
+    couldn't resolve.
+    """
+
+
 @dataclass(frozen=True)
 class _TracedOutput:
     """In-memory proxy for an upstream Node's result at trace time.
@@ -65,6 +80,7 @@ class _TracedOutput:
 
 def paths_for_cart_item(
     item: tuple[str, str, str], *, finals_only: bool = False,
+    strict: bool = False,
 ) -> list[Path]:
     """Trace `item`'s pipeline against the current context and return
     every `filename_fn`-resolvable output path.
@@ -77,11 +93,17 @@ def paths_for_cart_item(
     `@node(... final=True)` — used by archive transition with
     `preserve="finals"`.
 
+    With `strict=True` (the orphan sweep, cart→archive), a trace FAILURE —
+    entity absent, pipeline unregistered, or tracing raised — raises
+    `TraceResolutionError` instead of returning `[]`, so a caller building a
+    live set before a destructive step never mistakes an unresolved trace for
+    "no outputs". A successful-but-empty trace still returns `[]`.
+
     Reads the build-time snapshot (Ray-free, ~0.1 ms, via
     `traced_paths_for`); on a snapshot miss, `recompute=True` recomputes
     the trace inline.
     """
-    return [Path(e["path"]) for e in traced_paths_for(item)
+    return [Path(e["path"]) for e in traced_paths_for(item, strict=strict)
             if not finals_only or e["is_final"]]
 
 
@@ -89,6 +111,7 @@ def traced_paths_for(
     item: tuple[str, str, str],
     recompute: bool = True,
     ancestors: tuple[tuple[str, str], ...] = (),
+    strict: bool = False,
 ) -> list[dict]:
     """Return the raw trace result for `item`: one dict per
     filename_fn-resolvable node, with keys `path`, `op_name`,
@@ -140,15 +163,34 @@ def traced_paths_for(
     # in the current graph). The trace is a PURE function — recompute it inline,
     # in-process. No @node, no Ray dispatch, no second diskcache to keep
     # canonical, no metadata_ref (that only existed to key the old @node).
+    #
+    # `strict=True` (sweep / archive) must NOT let a trace FAILURE degrade to an
+    # empty result — that would drop the item from the live set and its on-disk
+    # outputs would be swept as orphans. Each failure mode raises
+    # TraceResolutionError instead. Non-strict callers (the viewer) keep the
+    # tolerant `[]` so a broken product shows as "nothing" rather than 500ing.
     fn, entity, config = _resolve_pipeline_call(item)
     if fn is None:
+        if strict:
+            raise TraceResolutionError(
+                f"cannot resolve pipeline/entity for cart item {item!r} — "
+                "entity absent from context or pipeline unregistered"
+            )
         return []
     from dependency_graph.tracing import trace
     try:
         graph = trace(fn, entity, config)
-    except Exception:
+    except Exception as e:
+        if strict:
+            raise TraceResolutionError(
+                f"tracing cart item {item!r} raised {type(e).__name__}: {e}"
+            ) from e
         return []
     if graph is None:
+        if strict:
+            raise TraceResolutionError(
+                f"tracing cart item {item!r} produced no graph"
+            )
         return []
     return _walk_and_resolve_filenames_tagged(graph)
 

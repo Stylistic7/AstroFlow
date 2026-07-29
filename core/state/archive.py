@@ -40,31 +40,42 @@ def apply_remove_from_cart(item: CartItem, preserve: str = "none") -> None:
     pipeline at archive time.
 
     Idempotent on the cart side: removing an item that isn't in
-    the cart is a no-op. If the entity is no longer in context (a
-    stale cart entry), no archive entry is created — the trace
-    returns `[]`.
+    the cart is a no-op. A successful trace that yields no paths to
+    preserve (e.g. `preserve="finals"` with no final ops) creates no
+    archive entry.
+
+    Fail-fast: for `preserve != "none"` the pipeline is traced FIRST,
+    `strict=True`, so a trace FAILURE (entity absent, pipeline
+    unregistered, trace raised) raises `TraceResolutionError` and leaves
+    the cart AND archive untouched. Order matters — tracing after the cart
+    removal could drop the item from the cart and then fail to preserve
+    its outputs, orphaning live files on the next sweep.
     """
     if preserve not in ("all", "finals", "none"):
         raise ValueError(
             f"preserve must be one of 'all'|'finals'|'none', got {preserve!r}"
         )
 
+    # Resolve what to preserve BEFORE mutating the cart. Raises on trace
+    # failure (nothing changed); `None` marks the preserve="none" case.
+    preserved: list[str] | None = None
+    if preserve != "none":
+        preserved = [
+            str(p) for p in paths_for_cart_item(
+                tuple(item), finals_only=(preserve == "finals"), strict=True,
+            )
+        ]
+
     cart = list(context.shopping_cart or [])
     if tuple(item) in cart:
         cart.remove(tuple(item))
         context.shopping_cart = cart
 
-    if preserve != "none":
-        paths = [
-            str(p) for p in paths_for_cart_item(
-                tuple(item), finals_only=(preserve == "finals"),
-            )
-        ]
-        if paths:
-            archive = list(context.archive or [])
-            archive = [a for a in archive if tuple(a[:3]) != tuple(item)]
-            archive.append((item[0], item[1], item[2], paths))
-            context.archive = archive
+    if preserved:
+        archive = list(context.archive or [])
+        archive = [a for a in archive if tuple(a[:3]) != tuple(item)]
+        archive.append((item[0], item[1], item[2], preserved))
+        context.archive = archive
 
 
 def apply_remove_from_archive(item: CartItem) -> None:

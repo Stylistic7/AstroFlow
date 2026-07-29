@@ -45,7 +45,7 @@ def fake_trace(monkeypatch):
     list. Caller mutates `bank[item] = [paths]`."""
     bank: dict[tuple, list[str]] = {}
 
-    def fake(item, *, finals_only=False):
+    def fake(item, *, finals_only=False, strict=False):
         return list(bank.get(tuple(item), []))
 
     monkeypatch.setattr(orphan_sweep, "paths_for_cart_item", fake)
@@ -104,19 +104,20 @@ def test_live_set_traces_cart_items(temp_output_dir, fake_trace):
     assert str(live_path) in live
 
 
-def test_cart_item_with_empty_trace_contributes_nothing(temp_output_dir):
-    """An item in the cart whose trace returns [] (entity missing
-    from context) contributes no paths."""
-    orphan = _make_file(temp_output_dir / "stack" / "stranded.xisf")
+def test_live_set_raises_on_unresolvable_cart_item(temp_output_dir):
+    """A cart item whose entity isn't in context can't be traced. Rather than
+    silently degrading to [] — which would classify its real on-disk outputs as
+    orphans and delete them — live_set raises TraceResolutionError so the sweep
+    refuses to run against an incomplete live set (fail-fast)."""
+    from dependency_graph.trace_paths import TraceResolutionError
+    _make_file(temp_output_dir / "stack" / "stranded.xisf")
     item = ("stack", "xyz", "P")
-    # No monkeypatch → real paths_for_cart_item runs; returns []
-    # because entity isn't in context.
+    # No monkeypatch → real paths_for_cart_item(strict=True) runs; the entity
+    # isn't in context, so it raises rather than returning [].
     context.shopping_cart = [item]
 
-    live = orphan_sweep.live_set(context)
-    orphans, _ = orphan_sweep.walk_and_classify(temp_output_dir, live)
-
-    assert {p for p, _ in orphans} == {str(orphan)}
+    with pytest.raises(TraceResolutionError):
+        orphan_sweep.live_set(context)
 
 
 def test_full_sweep_classifies_correctly(temp_output_dir, fake_trace):

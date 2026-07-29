@@ -115,10 +115,16 @@ def prune_superseded_versions() -> int:
 
 def live_set(ctx) -> set[str]:
     """Union of cart-traced + archive-preserved primaries (with siblings) and
-    the versioning-pinned previous versions."""
+    the versioning-pinned previous versions.
+
+    Traces each cart item `strict=True`: if ANY item can't be resolved to its
+    outputs (entity absent, pipeline unregistered, trace raised) this raises
+    `TraceResolutionError` and `sweep` aborts BEFORE deleting anything — a
+    partial live set would misclassify that item's live files as orphans. Fail
+    loud rather than delete against an incomplete picture."""
     primaries: set[str] = set()
     for item in (ctx.shopping_cart or []):
-        primaries.update(str(p) for p in paths_for_cart_item(tuple(item)))
+        primaries.update(str(p) for p in paths_for_cart_item(tuple(item), strict=True))
     for entry in (ctx.archive or []):
         if len(entry) >= 4:  # (object_type, object_id, pipeline, [paths])
             primaries.update(str(p) for p in entry[3])
