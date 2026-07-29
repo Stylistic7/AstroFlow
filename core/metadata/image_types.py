@@ -22,10 +22,16 @@ def is_master(header: dict) -> bool:
        float-typed FITS is essentially the calling card of a post-processed
        integration even when the user leaves IMAGETYP as a plain
        "Bias Frame" / "Dark Frame".
-    3. `PROGRAM` mentions a known stacking tool. PixInsight, Siril,
-       DeepSkyStacker, ASTAP, etc. all stamp their name into PROGRAM
-       when their FITS writer emits a processed frame; capture software
-       (NINA, SharpCap, ASIAir, INDI, ...) does not.
+    3. `PROGRAM` mentions a known stacking tool AND the frame is not an
+       explicit light. PixInsight/Siril/etc. stamp PROGRAM whenever their
+       FITS *writer* emits a frame — but that includes merely re-saving a
+       raw light sub during a culling / format-conversion pass. Remote-
+       imaging services (e.g. Starbase) deliver PixInsight-culled int16
+       light subs stamped `PROGRAM='PixInsight'` that are pixel-untouched
+       raw ADU, not integrations. A genuine integrated master is float32
+       and is therefore already caught by signal 2, so the PROGRAM signal
+       is scoped away from lights — where it can only misfire — while
+       still catching a bias/dark/flat master left with a plain IMAGETYP.
 
     These signals catch externally pre-stacked masters that slip past
     filename-based filtering (`find_image_files` excludes basenames
@@ -48,7 +54,7 @@ def is_master(header: dict) -> bool:
             pass
 
     program = header.get("PROGRAM")
-    if isinstance(program, str):
+    if isinstance(program, str) and not is_light_frame(header):
         prog_lower = program.lower()
         if any(tool in prog_lower for tool in _KNOWN_STACKING_TOOLS):
             return True
