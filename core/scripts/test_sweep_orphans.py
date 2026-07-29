@@ -120,6 +120,39 @@ def test_live_set_raises_on_unresolvable_cart_item(temp_output_dir):
         orphan_sweep.live_set(context)
 
 
+def test_sweep_refuses_when_live_set_empty(temp_output_dir):
+    """Defensive floor: with an empty cart AND empty archive the live set is
+    empty. sweep() must NOT treat every file under output_dir as an orphan and
+    wipe it — it returns skipped_empty_live and deletes nothing. This is the
+    guard that stops a pre-run sweep from nuking the output tree if the cart is
+    ever empty when a run fires."""
+    orphan = _make_file(temp_output_dir / "stack" / "would_be_wiped.xisf")
+    # autouse fixture already set cart=[] and archive=[]
+
+    report = orphan_sweep.sweep(context, delete=True)
+
+    assert report["skipped_empty_live"] is True
+    assert report["deleted"] == 0
+    assert orphan.exists()  # nothing deleted
+
+
+def test_sweep_deletes_orphans_when_cart_defines_live(temp_output_dir, fake_trace):
+    """With a non-empty live set, delete=True unlinks orphans while sparing the
+    cart-traced live file — the empty-live floor doesn't block real cleanup."""
+    live = _make_file(temp_output_dir / "stack" / "keep.xisf")
+    orphan = _make_file(temp_output_dir / "stack" / "drop.xisf")
+    item = ("stack", "xyz", "P")
+    fake_trace[item] = [str(live)]
+    context.shopping_cart = [item]
+
+    report = orphan_sweep.sweep(context, delete=True)
+
+    assert report["skipped_empty_live"] is False
+    assert live.exists()        # cart-traced → live, spared
+    assert not orphan.exists()  # unreferenced → deleted
+    assert report["deleted"] >= 1
+
+
 def test_full_sweep_classifies_correctly(temp_output_dir, fake_trace):
     """End-to-end: cart's trace returns one master, archive preserves
     another, a third file is neither — only the third shows up as an

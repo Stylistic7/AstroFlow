@@ -178,10 +178,23 @@ def sweep(ctx, delete: bool = False, include: "set[str] | None" = None) -> dict:
     """Compute orphans under `ctx.output_dir` and, when `delete`, unlink them.
 
     Returns a report `{orphans, by_dir, live_count, reclaimable_bytes,
-    deleted}`. Safe to run anytime: the version-log pin keeps a still-shown N-1
-    out of the orphan set. Intended to be called at pipeline-completion/idle
-    (nothing building) so the current trace is authoritative."""
+    deleted, skipped_empty_live}`. Safe to run anytime: the version-log pin
+    keeps a still-shown N-1 out of the orphan set, and `live_set` traces
+    strict so an unresolvable cart item raises (never silently drops from the
+    live set). Intended to be called at pipeline-completion/idle (nothing
+    building) so the current trace is authoritative.
+
+    Defensive floor: if the live set resolves EMPTY (empty cart + empty
+    archive, or every cart item legitimately traced to no outputs), refuse to
+    delete. Every file under `output_dir` would classify as an orphan, and
+    "nothing is live" is a misconfiguration signal, never license to wipe the
+    output tree. Callers get `skipped_empty_live=True` and zero deletions."""
     live = live_set(ctx)
+    if not live:
+        return {
+            "orphans": [], "by_dir": {}, "live_count": 0,
+            "reclaimable_bytes": 0, "deleted": 0, "skipped_empty_live": True,
+        }
     orphans, by_dir = walk_and_classify(ctx.output_dir, live, include)
     deleted = 0
     if delete:
@@ -197,4 +210,5 @@ def sweep(ctx, delete: bool = False, include: "set[str] | None" = None) -> dict:
         "live_count": len(live),
         "reclaimable_bytes": sum(sz for _, sz in orphans),
         "deleted": deleted,
+        "skipped_empty_live": False,
     }

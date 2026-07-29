@@ -78,6 +78,62 @@ def command_done() -> None:
     pass
 
 
+def _pre_run_reclaim(ctx) -> bool:
+    """Reclaim orphaned/superseded outputs BEFORE the graph writes, so a run
+    near a full disk has headroom to COMPLETE. The post-completion sweep alone
+    can't rescue a disk that fills mid-run — a full disk prevents the very
+    completion that triggers it — so the reclamation that keeps disk bounded for
+    unattended runs must happen up front.
+
+    Returns True if the run must HALT (abort BEFORE writing anything), else
+    False to proceed. Deletes only under hard guards:
+      * an ACTIVE cart must exist — otherwise "live" is undefined and a global
+        sweep would classify the whole output tree as orphan (`sweep` also
+        floors on an empty resolved live set);
+      * strict-traced — a cart item that can't be resolved raises
+        `TraceResolutionError` → HALT: never sweep, never run, against a live
+        set we couldn't fully establish. Emits a distinct `### RUN HALTED` line
+        for the watchdog to surface;
+      * any OTHER sweep error is non-fatal — logged, run proceeds (a disk-walk
+        hiccup must not block derivation).
+
+    Module-level (takes `ctx`) so it's unit-testable without the Ray actor."""
+    from cache.orphan_sweep import sweep
+    from dependency_graph.trace_paths import TraceResolutionError
+
+    if not ctx.shopping_cart:
+        return False  # no active run defines a live set; nothing to reclaim
+
+    try:
+        report = sweep(ctx, delete=True)
+    except TraceResolutionError as e:
+        print(
+            "### RUN HALTED (pre-run sweep): could not resolve the live set from "
+            f"the cart — refusing to sweep OR run against it. {e}",
+            flush=True,
+        )
+        return True
+    except Exception:
+        import traceback
+        print(
+            "### pre-run sweep failed (non-fatal, proceeding with run)\n"
+            f"{traceback.format_exc()}"
+        )
+        return False
+
+    if report.get("skipped_empty_live"):
+        print(
+            "### pre-run sweep SKIPPED: cart non-empty but live set resolved "
+            "empty — refusing to sweep against it"
+        )
+    elif report.get("deleted"):
+        print(
+            f"### pre-run sweep: reclaimed {report['deleted']} orphans, "
+            f"{report['reclaimable_bytes'] / 1e9:.1f} GB before run"
+        )
+    return False
+
+
 @ray.remote(
     resources={"diskcache": 0.001}, max_restarts=-1, max_task_retries=-1
 )
@@ -161,6 +217,10 @@ class StateActor:
 
         from dependency_graph.workflow_graph_adapter import store_node_status
         graph.node_status_fn = store_node_status
+
+        from context import local_context
+        if _pre_run_reclaim(local_context):
+            return state, [Action(type="announce", message="reload_data")]
 
         try:
             run_graph(
