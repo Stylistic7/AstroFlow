@@ -75,6 +75,7 @@ export default function Starmap() {
 
 		for (let [id, mosaic] of Object.entries(mosaics)) {
 			if (!mosaic.projected_footprints) continue;
+			if (!showQuarantined && isQuarantined("mosaic", id)) continue;
 
 			const state = mosaic.contains_exception ? 'exception' : (mosaic.is_complete ? 'ok' : 'incomplete');
 			markersPlugs.addMarker({
