@@ -187,3 +187,27 @@ def read_synced_sha(dest: Path) -> str | None:
     """The version recorded in a synced/frozen checkout, or None."""
     f = Path(dest) / SYNCED_SHA_FILE
     return f.read_text().strip() if f.exists() else None
+
+
+def deployed_code_version() -> str:
+    """The code version the running cluster is *executing* — the frozen
+    committed SHA (committed mode) or `wt:<hash>` (uncommitted), read from the
+    checkout the app runs from. This is the exact snapshot `_frozen_version`
+    advertises, so it's consistent across head and workers (workers follow the
+    head's version).
+
+    Folded into the pipeline trace / tap-snapshot cache keys so that editing
+    ANY op or helper a pipeline calls — not just the pipeline body — re-derives
+    the trace. `hash_source_code(pipeline_fn)` alone covers only the pipeline
+    function; without the code version, an op edit (e.g. `post_process_stack_oss`)
+    leaves the cached trace holding the op's OLD call_hash, silently defeating
+    the edit-invalidates-cache contract (see `trace_paths.pipeline_source_version`).
+
+    Returns "" if the frozen SHA can't be read (dev shells, tests, an
+    unconfigured base path). An empty version degrades the trace keys to the
+    previous pipeline-source-only behavior — safe, never worse than before."""
+    try:
+        from base_path import checkout_dir
+        return read_synced_sha(checkout_dir()) or ""
+    except Exception:
+        return ""

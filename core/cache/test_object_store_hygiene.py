@@ -113,7 +113,8 @@ def test_step3_with_preview(test_context):
     dev = settings.development_settings
     min_frames = settings.clustering_settings.min_frames_in_stack
     regroup = (build_regroup_graph, settings.clustering_settings, settings.decision_overrides)
-    preview = (build_preview_graph, dev, min_frames)
+    from state.code_version import deployed_code_version
+    preview = (build_preview_graph, dev, min_frames, deployed_code_version())
     run_graph(Graph({**chain(
         scatter_compute_image_metadata,
         regroup,

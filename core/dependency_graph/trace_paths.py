@@ -239,15 +239,38 @@ def _routes_to_item(entry: dict, object_type: str, object_id: str) -> bool:
     )
 
 
+def pipeline_source_version(fn) -> str:
+    """The cache-key version component for a pipeline's trace + tap snapshot:
+    the pipeline function's own source hash combined with the DEPLOYED CODE
+    VERSION (the frozen cluster SHA).
+
+    `hash_source_code(fn)` alone covers only the pipeline body — so editing an
+    op or helper the pipeline *calls* (e.g. `post_process_stack_oss`) would NOT
+    move this hash, and the cached trace/tap-snapshot would keep the op's old
+    call_hash (hence old output path), silently defeating the
+    edit-invalidates-cache contract. Folding in `deployed_code_version()` means
+    ANY code change re-derives the trace; an unrelated commit re-traces (cheap
+    ~25 s) but rebuilds nothing (all call_hashes unchanged → cache hits).
+
+    Both the writer (`compute_graph._store_tap_snapshot`, `run_pipeline`) and
+    the readers (`_snapshot_key`, `build_main_processing_graph`) MUST route
+    through this one function so their keys always agree. In dev/tests where no
+    frozen SHA exists, `deployed_code_version()` is "" and this reduces to the
+    previous pipeline-source-only hash — identical behavior."""
+    from hashing import hash_source_code, hash_string
+    from state.code_version import deployed_code_version
+    return hash_string(hash_source_code(fn) + deployed_code_version())
+
+
 def _snapshot_key(item: tuple[str, str, str]) -> "tuple | None":
     """The content-addressed `tap_snapshots` key for a cart item:
-    `(hash_source_code(pipeline_fn), entity.stable_hash, entity.content_hash,
-    pipeline)` — the SAME key `compute_graph._store_tap_snapshot` writes.
-    Resolves the live entity from the (local) context and hashes the pipeline
-    source. Returns None when the entity isn't in context or the pipeline isn't
+    `(pipeline_source_version(pipeline_fn), entity.stable_hash,
+    entity.content_hash, pipeline)` — the SAME key
+    `compute_graph._store_tap_snapshot` writes. Resolves the live entity from
+    the (local) context and versions the pipeline source (+ code version).
+    Returns None when the entity isn't in context or the pipeline isn't
     registered."""
     from pipelines.registry import get_pipeline
-    from hashing import hash_source_code
     from products.product import object_class
 
     object_type, object_id, pipeline = item
@@ -267,7 +290,7 @@ def _snapshot_key(item: tuple[str, str, str]) -> "tuple | None":
         fn = get_pipeline(pipeline, processes=cls)._function
     except KeyError:
         return None
-    return (hash_source_code(fn), entity.stable_hash, entity.content_hash, pipeline)
+    return (pipeline_source_version(fn), entity.stable_hash, entity.content_hash, pipeline)
 
 
 def _read_tap_snapshot(item: tuple[str, str, str]) -> "list[dict] | None":

@@ -53,6 +53,56 @@ def test_proxy_produces_same_call_hash_as_raw_string():
     assert h_via_proxy == h_via_string
 
 
+# --- trace/tap-snapshot cache key is versioned by the deployed code SHA ---
+
+
+def test_pipeline_source_version_changes_with_code_version(monkeypatch):
+    """The trace + tap-snapshot version component must move when the deployed
+    code version changes. That is the whole mechanism: editing an op bumps the
+    repo SHA on the next deploy, which moves this component, which makes the
+    cached `trace_pipeline` / `build_main_processing_graph` / tap snapshot MISS
+    and re-derive with the op's new call_hash. Without it the cached trace keeps
+    the op's old call_hash and nothing rebuilds."""
+    from dependency_graph.trace_paths import pipeline_source_version
+
+    def fn():
+        return 1
+
+    monkeypatch.setattr("state.code_version.deployed_code_version", lambda: "SHA_A")
+    va = pipeline_source_version(fn)
+    monkeypatch.setattr("state.code_version.deployed_code_version", lambda: "SHA_B")
+    vb = pipeline_source_version(fn)
+    assert va != vb, "a code-version change must move the trace/tap version key"
+
+
+def test_pipeline_source_version_empty_is_source_only(monkeypatch):
+    """Empty code version (dev shells, tests — no frozen checkout) degrades to a
+    pure pipeline-source hash, identical to the pre-change key. So the added
+    versioning never spuriously re-derives in environments with no deploy."""
+    from dependency_graph.trace_paths import pipeline_source_version
+    from hashing import hash_source_code, hash_string
+
+    def fn():
+        return 1
+
+    monkeypatch.setattr("state.code_version.deployed_code_version", lambda: "")
+    assert pipeline_source_version(fn) == hash_string(hash_source_code(fn) + "")
+
+
+def test_tap_snapshot_writer_and_reader_share_version_helper():
+    """The writer (`compute_graph._store_tap_snapshot`) and the reader
+    (`trace_paths._snapshot_key`) MUST compute the snapshot key through the SAME
+    `pipeline_source_version` helper — otherwise the dashboard's key never
+    matches the one the build wrote, and every tap silently misses. Guards the
+    writer/reader lockstep at the source level."""
+    import inspect
+    import compute_graph.compute_graph as cg
+    from dependency_graph import trace_paths as tp
+
+    assert "pipeline_source_version(" in inspect.getsource(cg._store_tap_snapshot)
+    assert "pipeline_source_version(" in inspect.getsource(tp._snapshot_key)
+
+
 # --- display/filter tagging of the walk (the output_index replacement) ---
 
 

@@ -11,6 +11,7 @@ from state.code_version import (
     SYNCED_SHA_FILE,
     build_snapshot_tar,
     build_working_tree_tar,
+    deployed_code_version,
     head_cluster_version,
     is_deployable_version,
     read_synced_sha,
@@ -114,6 +115,29 @@ def test_is_deployable_version_rules():
     assert not is_deployable_version("a" * 39)
     assert not is_deployable_version("")
     assert not is_deployable_version("dev")
+
+
+def test_deployed_code_version_reads_frozen_sha(tmp_path, monkeypatch):
+    """Reads the SHA the running app froze into its checkout — the exact code
+    version driving the trace/tap-snapshot cache keys."""
+    (tmp_path / SYNCED_SHA_FILE).write_text("a" * 40)
+    monkeypatch.setattr("base_path.checkout_dir", lambda: tmp_path)
+    assert deployed_code_version() == "a" * 40
+
+
+def test_deployed_code_version_empty_when_no_frozen_checkout(tmp_path, monkeypatch):
+    """No frozen SHA file (dev shells, tests) → "" so trace keys degrade to the
+    prior pipeline-source-only behavior rather than raising."""
+    monkeypatch.setattr("base_path.checkout_dir", lambda: tmp_path)  # empty dir
+    assert deployed_code_version() == ""
+
+
+def test_deployed_code_version_swallows_errors(monkeypatch):
+    """An unconfigured base path must not blow up a trace — degrade to ""."""
+    def boom():
+        raise RuntimeError("base path not configured")
+    monkeypatch.setattr("base_path.checkout_dir", boom)
+    assert deployed_code_version() == ""
 
 
 # ---- extraction / serving ---------------------------------------------------

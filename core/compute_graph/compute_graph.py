@@ -285,8 +285,11 @@ def preview_graph_done() -> None:
 def build_preview_graph(
     development_settings: DevelopmentSettings,
     min_frames_in_stack: int,
+    code_version: str,
     objects: Objects,
 ) -> Graph:
+    # `code_version` is a cache-key arg only (see build_main_processing_graph):
+    # any code change re-derives this cached preview graph.
     from decisions.settings import ProcessingConfig
     from cache.context_ref import ContextRef
 
@@ -392,8 +395,9 @@ def _store_tap_snapshot(pipeline_fn, pipeline_name: str, entity, graph) -> None:
     out by LRU. One atomic write (no two-phase `record_path` to drift). The web
     worker filters the full list to the queried routing entity on read."""
     from cache.context_ref import ContextRef
-    from dependency_graph.trace_paths import _walk_and_resolve_filenames_tagged
-    from hashing import hash_source_code
+    from dependency_graph.trace_paths import (
+        _walk_and_resolve_filenames_tagged, pipeline_source_version,
+    )
 
     # Compute the content-addressed key FIRST and skip the walk when a snapshot
     # for this exact (source, stable, content, pipeline) is already present AND
@@ -409,8 +413,12 @@ def _store_tap_snapshot(pipeline_fn, pipeline_name: str, entity, graph) -> None:
     # (the ancestor's) snapshot and filtering to the child via `_routes_to_item`
     # — the reader supplies the ancestor from the URL hierarchy. No separate
     # child key, no re-key, no closure to maintain.
+    #
+    # `pipeline_source_version` folds the deployed code SHA into the source
+    # component so an op edit re-keys the snapshot (the reader `_snapshot_key`
+    # uses the SAME helper, keeping writer/reader keys in lockstep).
     key = (
-        hash_source_code(pipeline_fn._function),
+        pipeline_source_version(pipeline_fn._function),
         entity.stable_hash, entity.content_hash, pipeline_name,
     )
     existing = (context.get("tap_snapshots") or {}).get(key)
@@ -478,14 +486,17 @@ def run_pipeline(entity, cfg, pipeline_name: str, type_tag: str) -> "Graph":
     """
     from pipelines.registry import get_pipeline
     from products.product import object_class
-    from hashing.hashing import hash_source_code
     from dependency_graph import Graph
 
     pipeline_fn = get_pipeline(pipeline_name, processes=object_class(type_tag))
 
     # Cached trace. The graph is freshly deserialized from diskcache
-    # on each cache hit so in-place mutation downstream is safe.
-    source_hash = hash_source_code(pipeline_fn._function)
+    # on each cache hit so in-place mutation downstream is safe. The version
+    # arg folds in the deployed code SHA so editing ANY op the pipeline calls
+    # (not just the pipeline body) re-derives the trace — otherwise the cached
+    # graph keeps the op's old call_hash and no rebuild is triggered.
+    from dependency_graph.trace_paths import pipeline_source_version
+    source_hash = pipeline_source_version(pipeline_fn._function)
     graph = ray.get(trace_pipeline.remote(
         pipeline_name, source_hash, entity, cfg,
     ))
@@ -656,8 +667,16 @@ def build_main_processing_graph(
     min_frames_in_stack: int,
     decision_overrides,
     shopping_cart: tuple,
+    code_version: str,
     objects: Objects,
 ) -> Graph:
+    # `code_version` (the deployed cluster SHA) is a cache-key arg only — the
+    # body never reads it. It forces this @node-cached composed graph to
+    # re-derive on ANY code change, not just an edit to this builder's own
+    # source. Without it, editing an op deep in a pipeline (e.g.
+    # `post_process_stack_oss`) leaves the cached graph holding the op's old
+    # call_hash, so preflight sees the old outputs as satisfied and nothing
+    # rebuilds. Mirrors `trace_pipeline`'s `pipeline_source_hash` arg.
     from decisions.settings import ProcessingConfig
     from frozendict import frozendict as fd
 
@@ -737,13 +756,19 @@ def build_compute_graph() -> Graph:
     dev = settings.development_settings
     min_frames = settings.clustering_settings.min_frames_in_stack
     overrides = settings.decision_overrides
+    # The deployed cluster SHA — a cache-key arg for the composed graph builders
+    # so ANY code change re-derives them (an op edit is otherwise invisible to
+    # these @node caches, whose own source is unchanged). "" in dev/tests →
+    # identical to the pre-change key.
+    from state.code_version import deployed_code_version
+    code_version = deployed_code_version()
 
     graph = {
         regroup: {scatter_compute_image_metadata},
-        (build_main_processing_graph, dev, min_frames, overrides, shopping_cart): {regroup},
+        (build_main_processing_graph, dev, min_frames, overrides, shopping_cart, code_version): {regroup},
     }
     if not dev.skip_preview_graph:
-        graph[(build_preview_graph, dev, min_frames)] = {regroup}
+        graph[(build_preview_graph, dev, min_frames, code_version)] = {regroup}
 
     return Graph(graph)
 
