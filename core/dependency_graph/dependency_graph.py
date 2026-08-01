@@ -149,13 +149,54 @@ class GraphCancelled(Exception):
     pass
 
 
-def _apply_preflight(graph: Graph) -> Graph:
+def _terminals(graph) -> list:
+    """The nodes nothing depends on — the SAME set `GraphRuntime.__init__`
+    checks for the single-terminal subgraph invariant."""
+    depended: set = set()
+    for deps in graph.values():
+        depended.update(deps)
+    return [n for n in graph if n not in depended]
+
+
+def _restore_single_terminal(norm, pruned: Graph) -> Graph:
+    """A dynamic subgraph funnels all its terminals into ONE no-output sentinel
+    (`run_pipeline_done`) so `GraphRuntime` sees a single terminal. Preflight's
+    reverse-walk seeds from unsatisfied `_final`/leaf nodes and adds only their
+    PREDECESSORS — but that funnel is a pure SUCCESSOR of the nodes it joins, so
+    it's never re-added. When a `final=True` master's output was reclaimed (so
+    the master is unsatisfied) while its downstream consumers + the funnel are
+    still on disk (satisfied), preflight keeps the master(s) but drops the
+    funnel — leaving `pruned` with multiple bare terminals, which trips
+    `GraphRuntime.__init__`'s single-terminal assertion.
+
+    Restore the invariant by re-attaching the original single funnel as a join
+    over the surviving terminals (same sentinel, same ignored `None` result the
+    parent already expects). No-op unless preflight actually left >1 terminal
+    AND the original graph had exactly one to restore."""
+    if not pruned:
+        return pruned
+    pruned_terminals = _terminals(pruned)
+    if len(pruned_terminals) <= 1:
+        return pruned
+    norm_terminals = _terminals(norm)
+    if len(norm_terminals) != 1 or norm_terminals[0] in pruned:
+        return pruned
+    pruned[norm_terminals[0]] = list(pruned_terminals)
+    return pruned
+
+
+def _apply_preflight(graph: Graph, is_subgraph: bool = False) -> Graph:
     """Predict every node's call_hash statically, check disk for
     `final=True` / terminal outputs, and return a filtered Graph that
     contains only the nodes that actually need to run. Falls out of
     content-addressing — see `dependency_graph/preflight.py` for the
     proof sketch. Errors are swallowed: preflight is an optimization,
     never load-bearing for correctness.
+
+    `is_subgraph=True` (called from `node_completed` for a dynamic subgraph)
+    restores the single-terminal invariant the reverse-walk can break — see
+    `_restore_single_terminal`. The top-level graph has no such invariant, so
+    it's off by default.
     """
     if not graph:
         return graph
@@ -174,11 +215,14 @@ def _apply_preflight(graph: Graph) -> Graph:
         return graph
     if len(to_run) == len(norm):
         return graph
-    return Graph(
+    pruned = Graph(
         {n: [d for d in norm[n] if d in to_run] for n in to_run},
         graph_update_fn=getattr(graph, "graph_update_fn", None),
         node_status_fn=getattr(graph, "node_status_fn", None),
     )
+    if is_subgraph:
+        pruned = _restore_single_terminal(norm, pruned)
+    return pruned
 
 
 def _declared_custom_resources(task) -> dict:

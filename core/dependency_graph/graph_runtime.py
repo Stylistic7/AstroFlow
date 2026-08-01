@@ -201,7 +201,12 @@ class GraphRuntime:
             # `_apply_preflight` lives in dependency_graph.dependency_graph,
             # which imports this module — importing at load time would cycle.
             from dependency_graph.dependency_graph import _apply_preflight
-            pruned = _apply_preflight(result)
+            # is_subgraph=True: restore the single-terminal invariant if the
+            # reverse-walk dropped this subgraph's funnel sentinel (a pure
+            # successor of an unsatisfied final master whose consumers are still
+            # on disk), else the __init__ assertion below trips with multiple
+            # bare terminals.
+            pruned = _apply_preflight(result, is_subgraph=True)
             if pruned:
                 child = GraphRuntime(pruned, parent=self, parent_node=node)
                 self._children[node] = child

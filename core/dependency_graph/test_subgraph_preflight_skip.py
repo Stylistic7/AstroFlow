@@ -96,3 +96,53 @@ def test_subgraph_preflight_skips_satisfied_ephemeral(test_context) -> None:
     assert len(final_files_2) == 1, (
         f"the final deliverable went missing on the second pass: {final_files_2}"
     )
+
+
+# ── single-terminal restoration (the "Subgraph has N terminals" crash) ──────
+#
+# When a `final=True` master's output is reclaimed (unsatisfied) but its
+# downstream consumers + the funnel sentinel are still on disk (satisfied),
+# preflight's reverse-walk keeps the master(s) and DROPS the funnel — leaving a
+# subgraph with multiple bare terminals that tripped GraphRuntime.__init__'s
+# single-terminal assertion. `_restore_single_terminal` re-attaches the funnel.
+
+from dependency_graph.classes import Graph
+from dependency_graph.dependency_graph import _restore_single_terminal, _terminals
+
+
+def test_restore_single_terminal_refunnels_dropped_sentinel():
+    # norm: sentinel S ─▶ merge M ─▶ {A1,A2,A3}. One terminal (S).
+    norm = Graph({"S": ["M"], "M": ["A1", "A2", "A3"],
+                  "A1": [], "A2": [], "A3": []})
+    # pruned: preflight dropped S and M (satisfied), kept the 3 unsatisfied
+    # masters — three bare terminals, which would trip the assertion.
+    pruned = Graph({"A1": [], "A2": [], "A3": []})
+    assert len(_terminals(pruned)) == 3
+
+    fixed = _restore_single_terminal(norm, pruned)
+
+    assert _terminals(fixed) == ["S"], "funnel must be restored as the sole terminal"
+    assert set(fixed["S"]) == {"A1", "A2", "A3"}, "funnel must join the surviving terminals"
+
+
+def test_restore_single_terminal_noop_when_already_single():
+    norm = Graph({"S": ["A1"], "A1": []})
+    pruned = Graph({"S": ["A1"], "A1": []})  # already one terminal
+    assert _restore_single_terminal(norm, pruned) is pruned
+
+
+def test_restore_single_terminal_noop_when_original_multiterminal():
+    # If the ORIGINAL subgraph itself had >1 terminal there's no single funnel
+    # to restore — leave pruned untouched rather than guess.
+    norm = Graph({"A1": [], "A2": []})   # two terminals, no funnel
+    pruned = Graph({"A1": [], "A2": []})
+    assert _restore_single_terminal(norm, pruned) is pruned
+
+
+def test_node_completed_preflights_subgraph_with_is_subgraph_true():
+    """The subgraph preflight in node_completed MUST pass is_subgraph=True, or
+    the single-terminal restoration never runs and the crash returns."""
+    import inspect
+    from dependency_graph import graph_runtime
+    src = inspect.getsource(graph_runtime.GraphRuntime.node_completed)
+    assert "_apply_preflight(result, is_subgraph=True)" in src
