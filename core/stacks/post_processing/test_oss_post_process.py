@@ -12,12 +12,15 @@ pedestal, with the full signal tail (faint nebulosity → saturated stars) intac
 The real-GraXpert test runs on the FULL frame as-is (no crop — a crop would strip
 the very background gradient GraXpert exists to model). It's ~9 s on a 26 MP frame.
 """
+import ast
+import inspect
 from pathlib import Path
 
 import numpy as np
 import pytest
 
 from graxpert_cli import GraXpertNotFoundError, graxpert_base_command
+from stacks.post_processing import oss as oss_module
 from stacks.post_processing.background_pedestal import _SKY_QUANTILE
 from stacks.post_processing.oss import corrected_normalized_pixels
 
@@ -62,6 +65,33 @@ def _assert_healthy_linear_master(data: np.ndarray) -> None:
     # ...and it stays sky-DOMINATED, as a real deep image is: the median sits just
     # above the sky floor, far below the highlights.
     assert p50 < 0.1, f"bulk not sky-dominated (p50={p50})"
+
+
+def test_post_process_stack_oss_delegates_plate_solving_to_decorator():
+    """The op body must NOT call `solve_field` — plate-solving (and content-hash
+    stamping) is owned by the `@node` decorator for EVERY image producer
+    (`plate_solve=True` by default, run via `compute_image_metadata`).
+
+    A manual solve in the body double-solves and, crucially, runs BEFORE the
+    decorator stamps CONTHASH. That ordering let a master's on-disk
+    content-hash fall back to a pixel hash (when the pre-stamp file state broke
+    `update_header`), so downstream call_hashes diverged from the trace and the
+    OSS color composites were swept as orphans and vanished after a run. Keep
+    the body a pure writer; this guards the regression at the source level so a
+    reintroduced solve fails fast (no external astrometry / Ray needed)."""
+    tree = ast.parse(inspect.getsource(oss_module))
+    body = next(
+        n for n in ast.walk(tree)
+        if isinstance(n, ast.FunctionDef) and n.name == "post_process_stack_oss"
+    )
+    solves = [
+        n for n in ast.walk(body)
+        if isinstance(n, ast.Attribute) and n.attr == "solve_field"
+    ]
+    assert not solves, (
+        "post_process_stack_oss calls solve_field in its body; plate-solving "
+        "must be delegated to the @node decorator (plate_solve=True default)."
+    )
 
 
 @pytest.mark.skipif(not _REAL_FRAME.exists(), reason="testdata frame missing")

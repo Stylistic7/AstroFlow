@@ -20,7 +20,6 @@ import structlog
 
 import astropy.io.fits as pyfits
 
-import plate_solving
 from decorators import node
 from file_io.generic import read_image
 from file_io.types import FitsFilePath, WithSidecar
@@ -85,7 +84,15 @@ def corrected_normalized_pixels(
 def post_process_stack_oss(
     stack: Stack, mock_pixinsight: bool, background_pedestal: float, master,
 ) -> WithSidecar[FitsFilePath]:
-    """GraXpert background-correct + plate-solve a stacked OSS master.
+    """GraXpert background-correct a stacked OSS master.
+
+    Like every image producer, this body is a *pure writer*: it writes the
+    corrected pixels and returns. The `@node` decorator owns the rest of the
+    image lifecycle — stamping the content-hash and plate-solving
+    (`plate_solve=True` by default, via `compute_image_metadata`). The body
+    must NOT call `solve_field` or stamp hashes itself: a manual solve runs
+    BEFORE the decorator stamps CONTHASH and double-solves the file, which is
+    exactly the pattern that let OSS color composites vanish after a run.
 
     `master` arrives as the upstream stacker's ImageMetadata; its content_hash
     flows into this op's call_hash via `filename_fn(*bound.args)`, so distinct
@@ -118,6 +125,5 @@ def post_process_stack_oss(
     header["DEC"] = stack.center[1]
     pyfits.PrimaryHDU(data=data, header=header).writeto(str(output_filename), overwrite=True)
 
-    plate_solving.solve_field(output_filename)
     log.info("OSS post-processing complete", output=str(output_filename))
     return WithSidecar(FitsFilePath(output_filename))
