@@ -242,3 +242,20 @@ def test_sxt_narrow_keys_on_sxt_settings_only():
     changed = replace(base, sxt=replace(base.sxt, overlap=0.4))
     assert pp._sxt_narrow(args, {}) != \
         pp._sxt_narrow(("m", "O", changed, "chan"), {})
+
+
+def test_stars_to_3band_normalizes_band_count():
+    """`_stars_to_3band` must yield a 3-band vips image for ANY input band count.
+    rc-astro's `--unscreen` star layer comes back single-band on some inputs; the
+    old hardcoded `new_from_memory(..., 3, "float")` raised "memory area too
+    small" (buffer exactly 1/3 the expected size) and failed the whole
+    Hubble/Foraxx palette. Mono → replicated neutral stars; RGB passes through;
+    wider (RGBA) trims to 3."""
+    for shape in [(8, 6), (8, 6, 1), (8, 6, 3), (8, 6, 4)]:
+        arr = np.ascontiguousarray(np.zeros(shape, dtype=np.float32))
+        assert pp._stars_to_3band(arr).bands == 3, f"shape {shape} did not normalise to 3-band"
+    # a mono layer must replicate to three EQUAL (neutral) bands
+    mono = np.ascontiguousarray(np.arange(48, dtype=np.float32).reshape(8, 6))
+    v = pp._stars_to_3band(mono)
+    avgs = [v.extract_band(i).avg() for i in range(3)]
+    assert avgs[0] == avgs[1] == avgs[2], f"mono replicate not neutral: {avgs}"
