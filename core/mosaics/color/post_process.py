@@ -242,10 +242,20 @@ def combine_broadband_rgb(
 def sxt_stars_rgb(
     mosaic: Mosaic, config: ProcessingConfig, rgb: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
-    """StarXTerminator the combined linear RGB; keep the UNSCREENED RGB stars.
-    One SXT pass over the RGB (not one per channel) makes the extracted stars
-    coherent across R/G/B, so the star image has natural colours instead of
-    per-channel primary-colour confetti."""
+    """StarXTerminator the combined linear RGB; keep the RGB stars (simple
+    subtraction). One SXT pass over the RGB (not one per channel) makes the
+    extracted stars coherent across R/G/B, so the star image has natural colours
+    instead of per-channel primary-colour confetti.
+
+    `unscreen=False` on purpose: rc-astro's `--unscreen` mode is for NONLINEAR
+    (stretched) data — it inverts a screen blend to make "screen-ready" stars.
+    Our input here is LINEAR (combine_broadband_rgb), where stars combine
+    additively, so simple subtraction is the correct extraction and gives the
+    best star colour (per RC-Astro's StarXTerminator usage notes). `--unscreen`
+    on linear data was ALSO collapsing the 3-channel stars to a single band
+    (its screen-inversion is luminance-oriented), which failed the whole palette
+    — `_stars_to_3band` remains a defensive guard, but simple subtraction should
+    keep the stars a true 3-band RGB."""
     out = sxt_stars_rgb.filename_fn(mosaic, config, rgb)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     if config.development_settings.mock_pixinsight:
@@ -253,7 +263,7 @@ def sxt_stars_rgb(
                          {"PIPELINE": "AstroFlow-OSS"})
     else:
         from rc_astro_cli import run_sxt
-        run_sxt(rgb.filename, stars_out=out, unscreen=True,
+        run_sxt(rgb.filename, stars_out=out, unscreen=False,
                 ml_version=config.sxt.ml_version, overlap=config.sxt.overlap)
     return WithSidecar(TiffFilePath(out))
 
