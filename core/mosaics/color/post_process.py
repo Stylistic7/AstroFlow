@@ -417,35 +417,33 @@ def combine_star_rgb(
     every channel gets the same MTF — star colour is preserved (no per-channel
     cast). Saved as the scRGB TIFF deliverable."""
     out = combine_star_rgb.filename_fn(mosaic, rgb_stars)
-    arr = read_image(Path(rgb_stars.filename)).astype(np.float32)  # (H, W, 3) linear, ideally
+    arr = read_image(Path(rgb_stars.filename)).astype(np.float32)  # (H, W, 3) linear
     stretched = np.ascontiguousarray(palettes.autostretch(arr), dtype=np.float32)
-    vimg = _stars_to_3band(stretched, str(rgb_stars.filename))
+    vimg = _require_rgb_stars(stretched, str(rgb_stars.filename))
     _save_color_vips(out, vimg, "Stars")
     return WithSidecar(TiffFilePath(out))
 
 
-def _stars_to_3band(stretched: np.ndarray, src: str = "") -> "pyvips.Image":
-    """A stretched star array → a 3-band linear vips image.
+def _require_rgb_stars(stretched: np.ndarray, src: str = "") -> "pyvips.Image":
+    """A stretched star array → a 3-band linear vips image, REQUIRING 3 channels.
 
-    The SXT'd RGB stars are normally 3-band, but rc-astro's `--unscreen` output
-    comes back SINGLE-band on some inputs. The old code assumed 3 bands
-    (`new_from_memory(..., 3, "float")`) and raised
-    `pyvips.error.Error: memory area too small` — the buffer was exactly 1/3 the
-    expected size — which failed the WHOLE Hubble/Foraxx palette (its only star
-    dependency). Honour the ACTUAL band count and normalise to 3 (mono →
-    replicated neutral stars; >3 → first three) so the palette always
-    composites. A mono star layer logs `### combine_star_rgb` so a persistent
-    colour→mono collapse in rc-astro is visible for a deeper fix."""
-    h, w = stretched.shape[:2]
+    The star layer is always extracted from the combined RGB
+    (`combine_broadband_rgb` → `sxt_stars_rgb`), so it must be 3-channel. A mono
+    (or otherwise non-RGB) star layer is never a valid state — it means the
+    upstream SXT extraction is broken (historically: `--unscreen` on LINEAR data,
+    whose screen-inversion is luminance-oriented, collapsing colour to a single
+    band). Fail loudly rather than silently degrade to grey stars, so the
+    regression surfaces instead of shipping wrong output."""
     bands = stretched.shape[2] if stretched.ndim == 3 else 1
-    vimg = pyvips.Image.new_from_memory(stretched.data, w, h, bands, "float")
-    if bands == 3:
-        return vimg
-    print(f"### combine_star_rgb: star layer has {bands} band(s), expected 3 "
-          f"— normalising to 3-band ({src})")
-    if bands == 1:
-        return vimg.bandjoin([vimg, vimg])   # mono → 3 neutral bands
-    return vimg.extract_band(0, n=3)         # >3 (e.g. RGBA) → first three
+    if bands != 3:
+        raise ValueError(
+            f"combine_star_rgb: star layer {src} has shape {stretched.shape} "
+            f"({bands} band(s)), expected 3-channel RGB. Stars are always "
+            f"extracted from the combined RGB — a non-RGB star layer means the "
+            f"upstream SXT star extraction (sxt_stars_rgb) is broken."
+        )
+    h, w = stretched.shape[:2]
+    return pyvips.Image.new_from_memory(stretched.data, w, h, 3, "float")
 
 
 def _palette_image(out, combine_vips, sii, ha, oiii, stars, name):
