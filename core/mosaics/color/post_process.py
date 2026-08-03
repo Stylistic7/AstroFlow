@@ -233,7 +233,13 @@ def combine_broadband_rgb(
     channels. XISF keeps rc-astro happy at gigapixel sizes."""
     out = combine_broadband_rgb.filename_fn(mosaic, r, g, b)
     os.makedirs(os.path.dirname(out), exist_ok=True)
-    rgb = np.stack([_mono(r), _mono(g), _mono(b)], axis=2).astype(np.float32)
+    mr, mg, mb = _mono(r), _mono(g), _mono(b)
+    rgb = np.stack([mr, mg, mb], axis=2).astype(np.float32)
+    # DIAG (mono-stars hunt): per-channel shapes + source files. A degenerate or
+    # duplicated R/G/B, or a non-2D channel, would explain a mono RGB downstream.
+    print(f"### combine_broadband_rgb DIAG rgb.shape={rgb.shape} "
+          f"R{mr.shape}={Path(r.filename).name} G{mg.shape}={Path(g.filename).name} "
+          f"B{mb.shape}={Path(b.filename).name} out={Path(out).name}", flush=True)
     write_tiff_image(Path(out), rgb, {"PIPELINE": "AstroFlow-OSS"})   # BigTIFF past 2GB; feeds sxt_stars_rgb, which inherits this format
     return WithSidecar(TiffFilePath(out))
 
@@ -258,6 +264,15 @@ def sxt_stars_rgb(
     keep the stars a true 3-band RGB."""
     out = sxt_stars_rgb.filename_fn(mosaic, config, rgb)
     os.makedirs(os.path.dirname(out), exist_ok=True)
+    # DIAG (mono-stars hunt): band count of the crop we hand rc-astro. If this is
+    # 1, the mono is UPSTREAM (combine_broadband_rgb / crop); if 3-in-1-out, it's
+    # rc-astro on this real data (which the synthetic repro couldn't reproduce).
+    def _bands(p):
+        try:
+            return pyvips.Image.new_from_file(str(p)).bands
+        except Exception as e:
+            return f"err:{e}"
+    in_bands = _bands(rgb.filename)
     if config.development_settings.mock_pixinsight:
         write_tiff_image(Path(out), read_image(Path(rgb.filename)).astype(np.float32),
                          {"PIPELINE": "AstroFlow-OSS"})
@@ -265,6 +280,8 @@ def sxt_stars_rgb(
         from rc_astro_cli import run_sxt
         run_sxt(rgb.filename, stars_out=out, unscreen=False,
                 ml_version=config.sxt.ml_version, overlap=config.sxt.overlap)
+    print(f"### sxt_stars_rgb DIAG in={Path(rgb.filename).name} in_bands={in_bands} "
+          f"-> out={Path(out).name} out_bands={_bands(out)}", flush=True)
     return WithSidecar(TiffFilePath(out))
 
 
