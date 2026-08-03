@@ -26,6 +26,7 @@ from file_io.tiff_file_io import write_tiff_image
 from metadata.classes import ImageMetadata
 from mosaics.color import post_process as pp
 from mosaics.types import Mosaic
+from targets.types import Target
 from units import ArcsecondsPerPixel, Degrees, Radians
 
 _DATE = datetime.datetime(2024, 2, 5, 16, 29, 43)
@@ -60,6 +61,18 @@ def _mosaic() -> Mosaic:
     )
 
 
+def _target(name: str, content_hash: str, footprint) -> Target:
+    """A live panel Target (with a footprint) for `context.targets` — panels-as-
+    tiles resolves `mosaic.targets` to project each panel's footprint bbox."""
+    return Target(
+        name=name, content_hash=content_hash, stable_hash=name,
+        oldest_date=_DATE, newest_date=_DATE,
+        center=(Degrees(100.0), Degrees(0.0)), image_scale=ArcsecondsPerPixel(8.0),
+        rotation_angle=Radians(0.0), footprint=footprint,
+        healpix_cells=healpix_cells_from_poly(footprint),
+        projected_footprints=frozendict(), stack_ids=(name,))
+
+
 def _count_by_op(graph) -> dict[str, int]:
     counts: dict[str, int] = {}
     seen: set[int] = set()
@@ -89,10 +102,14 @@ def _count_by_op(graph) -> dict[str, int]:
 @pytest.mark.timeout(1200)
 def test_color_post_process_traces_and_runs(test_context, tmp_path):
     # Size the synthetic channels to the mosaic viewbox — as the real merged
-    # channels are — so the tiled linear_sho grid matches its source. A small
-    # tile_px makes it fan out into MANY real tiles (crop_tile + nxt per tile +
-    # feather), exercising the full tiling path rather than a 1-tile shortcut.
+    # channels are — so the panel crops match their source. This is a single-panel
+    # mosaic, so each rc-astro op fans into exactly one (crop_panel -> op ->
+    # blend_panels); the multi-panel fan-out + incremental behaviour is proven in
+    # test_panels_integration.py.
     mosaic = _mosaic()
+    # Register the single panel so mosaic.targets resolves (panels-as-tiles
+    # projects each panel's footprint); its footprint == the mosaic footprint.
+    context.targets = {"a": _target("a", "target_a", _FOOTPRINT)}
     vb = mosaic.viewbox("Master")
     h, w = vb.num_pixels_y, vb.num_pixels_x
     channels = {}
@@ -110,24 +127,22 @@ def test_color_post_process_traces_and_runs(test_context, tmp_path):
 
     config = ProcessingConfig(
         development_settings=DevelopmentSettings(mock_pixinsight=True),
-        tiling=TilingSettings(tile_px=512),
+        tiling=TilingSettings(),
     )
     graph = trace(pp.color_post_process, mosaic, channels, config)
     assert graph is not None
 
     counts = _count_by_op(graph)
-    # Every rc-astro op (BXT, SXT, NXT) now runs via process_in_tiles: each
-    # op-invocation fans into `n` tiles (crop_tile -> op -> feather), so per-op
-    # node counts are `base x n`. tile_px=512 on the viewbox-sized channels -> n>1.
-    n = counts["bxt_correct"] // 6               # tiles per channel
-    assert n > 1                                  # actually tiled, not a 1-tile shortcut
-    assert counts.get("bxt_correct") == 6 * n     # 6 channels, each BXT tiled
-    assert counts.get("sxt_starless") == 3 * n    # H, O, S narrowband, each SXT tiled
-    assert counts.get("autostretch_channel") == 3  # narrowband only (H, O, S) — NOT tiled
+    # Every rc-astro op (BXT, SXT, NXT) runs via process_in_panels: each
+    # op-invocation fans into one (crop_panel -> op -> blend_panels) PER PANEL.
+    # This is a single-panel mosaic, so per-op node counts are the base counts.
+    assert counts.get("bxt_correct") == 6         # 6 channels, each BXT'd per panel
+    assert counts.get("sxt_starless") == 3        # H, O, S narrowband, each SXT'd per panel
+    assert counts.get("autostretch_channel") == 3  # narrowband only (H, O, S) — whole-image
     # Broadband stars: combine R+G+B into one linear RGB, then a SINGLE SXT pass
-    # (coherent stars) — not per-channel; the SXT is tiled.
+    # (coherent stars) — not per-channel; the SXT is per-panel.
     assert counts.get("combine_broadband_rgb") == 1
-    assert counts.get("sxt_stars_rgb") == 1 * n   # single RGB SXT, tiled
+    assert counts.get("sxt_stars_rgb") == 1       # single RGB SXT, per panel
     assert counts.get("sxt_stars") is None       # old per-channel path removed
     assert counts.get("combine_star_rgb") == 1
     assert counts.get("hubble_image") == 1
@@ -135,18 +150,18 @@ def test_color_post_process_traces_and_runs(test_context, tmp_path):
     assert counts.get("hubble_starless") == 1
     assert counts.get("foraxx_starless") == 1
     # The linear S/H/O viewer source: stack the 3 starless channels, then
-    # NoiseXTerminator via process_in_tiles (crop_tile + nxt per tile), feathered
-    # into the deliverable. `linear_sho` is now a traced helper, not a node.
+    # NoiseXTerminator via process_in_panels (crop_panel + nxt per panel), feathered
+    # into the deliverable. `linear_sho` is a traced helper, not a node.
     assert counts.get("linear_sho") is None
     assert counts.get("stack_sho_channels") == 1
     assert counts.get("blend_linear_sho") == 1        # the display="Linear SHO" deliverable (NXT's feather)
-    assert counts.get("nxt") == n                      # linear_sho NXT, tiled
-    # Intermediate feather blends: one per tiled rc-astro op-invocation —
+    assert counts.get("nxt") == 1                       # linear_sho NXT, per panel
+    # Intermediate feather blends: one per per-panel rc-astro op-invocation —
     # 6 bxt_correct + 3 sxt_starless + 1 sxt_stars_rgb = 10 (NXT uses blend_linear_sho).
-    assert counts.get("blend_tiles") == 10
-    # crop_tile: one per (tiled op-invocation x tile) = (6 bxt + 3 sxt_starless +
-    # 1 sxt_stars_rgb + 1 nxt) x n = 11n.
-    assert counts.get("crop_tile") == 11 * n
+    assert counts.get("blend_panels") == 10
+    # crop_panel: one per (op-invocation x panel) = (6 bxt + 3 sxt_starless +
+    # 1 sxt_stars_rgb + 1 nxt) x 1 panel = 11.
+    assert counts.get("crop_panel") == 11
 
     run_graph(graph)
 
@@ -210,38 +225,40 @@ def test_bxt_narrow_keys_on_bxt_settings_only():
     its downstream, while an unrelated ProcessingConfig field never does."""
     from dataclasses import replace
     base = ProcessingConfig()
-    args = ("m", "H", base, "chan")
+    m = SimpleNamespace(stable_hash="m")   # narrow routes on mosaic.stable_hash
+    args = (m, "H", base, "chan")
 
     # Unrelated field (background_pedestal): identical projection → no re-derive.
     unrelated = replace(base, background_pedestal=base.background_pedestal + 0.1)
     assert pp._bxt_correct_narrow(args, {}) == \
-        pp._bxt_correct_narrow(("m", "H", unrelated, "chan"), {})
+        pp._bxt_correct_narrow((m, "H", unrelated, "chan"), {})
 
     # A BXT knob: different projection → proper invalidation.
     sharper = replace(base, bxt=replace(base.bxt, sharpen_stars=0.5))
     assert pp._bxt_correct_narrow(args, {}) != \
-        pp._bxt_correct_narrow(("m", "H", sharper, "chan"), {})
+        pp._bxt_correct_narrow((m, "H", sharper, "chan"), {})
 
     # The mock flag flows into the key (mock path produces a different image).
     mocked = replace(base, development_settings=replace(
         base.development_settings, mock_pixinsight=True))
     assert pp._bxt_correct_narrow(args, {}) != \
-        pp._bxt_correct_narrow(("m", "H", mocked, "chan"), {})
+        pp._bxt_correct_narrow((m, "H", mocked, "chan"), {})
 
 
 def test_sxt_narrow_keys_on_sxt_settings_only():
     """sxt_* keys on (mock, config.sxt); a BXT-only change must NOT touch it."""
     from dataclasses import replace
     base = ProcessingConfig()
-    args = ("m", "O", base, "chan")
+    m = SimpleNamespace(stable_hash="m")   # narrow routes on mosaic.stable_hash
+    args = (m, "O", base, "chan")
 
     bxt_only = replace(base, bxt=replace(base.bxt, sharpen_stars=0.5))
     assert pp._sxt_narrow(args, {}) == \
-        pp._sxt_narrow(("m", "O", bxt_only, "chan"), {})
+        pp._sxt_narrow((m, "O", bxt_only, "chan"), {})
 
     changed = replace(base, sxt=replace(base.sxt, overlap=0.4))
     assert pp._sxt_narrow(args, {}) != \
-        pp._sxt_narrow(("m", "O", changed, "chan"), {})
+        pp._sxt_narrow((m, "O", changed, "chan"), {})
 
 
 def test_require_rgb_stars_demands_3_channels():

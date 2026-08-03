@@ -11,8 +11,27 @@ import threading
 import numpy as np
 import pytest
 
-from file_io.tiling import tile_grid, crop_source_region, feather_blend_to_bigtiff
+from file_io.tiling import crop_source_region, feather_blend_to_bigtiff
 from file_io.tiff_file_io import write_tiff_image, read_tiff_image
+
+
+def tile_grid(width, height, tile_px, overlap):
+    """Test scaffold: an overlapping grid, used only to generate rects to exercise
+    `crop_source_region` + `feather_blend_to_bigtiff`. Production no longer tiles by
+    arbitrary grid (that's `mosaics.panels` — panels ARE the tiling); this local
+    helper keeps the primitive tests without any arbitrary-tiling code shipping."""
+    step = max(1, round(tile_px * (1.0 - overlap)))
+
+    def starts(length):
+        if length <= tile_px:
+            return [0]
+        s = list(range(0, length - tile_px + 1, step))
+        if s[-1] != length - tile_px:
+            s.append(length - tile_px)
+        return s
+
+    tw, th = min(tile_px, width), min(tile_px, height)
+    return [(x, y, tw, th) for y in starts(height) for x in starts(width)]
 
 
 def _synth(h, w, bands=1):

@@ -64,7 +64,7 @@ _DEFAULT_MEMORY_UNKNOWN = 16 * _GB
 # The old value was 26 GB — one RGB copy of a 2.25-Gpx WHOLE mosaic — deliberately
 # inflated (2 × 26 > pool) to SERIALIZE BXT/SXT to one-at-a-time, after two
 # gigapixel children ran together and swap-thrashed the machine (live 2026-07-06).
-# Every rc-astro op now runs on a <=100 Mpx TILE (process_in_tiles): measured child
+# Every rc-astro op now runs on a <=100 Mpx PANEL (process_in_panels): measured child
 # RSS ~1.8 GB + ~0.5 GB worker ≈ 2.3 GB (live 2026-07-24), so 5 GB is the honest
 # reservation (~2× headroom). Serialization is no longer smuggled through an
 # inflated memory number — a `{"gpu_slots": 1}` request on each op, against the
@@ -76,13 +76,13 @@ _FIXED_MEMORY_BY_OP = {
     "bxt_correct_only": 5 * _GB,  # BXT Correct-Only on a panel before assembly (Croman two-pass)
     "sxt_starless":     5 * _GB,
     "sxt_stars_rgb":    5 * _GB,  # StarXTerminator on the combined 3-band RGB
-    "nxt":              5 * _GB,  # NoiseXTerminator on a tile — same rc-astro CLI path
-    # Other fixed-memory tile ops (process_in_tiles), NOT rc-astro: pyvips/numpy,
-    # each memory-BOUNDED to one ~100 Mpx tile. Fixed (not auto) so they keep worker
+    "nxt":              5 * _GB,  # NoiseXTerminator on a panel — same rc-astro CLI path
+    # Other fixed-memory panel ops (process_in_panels), NOT rc-astro: pyvips/numpy,
+    # each memory-BOUNDED to one <=100 Mpx panel. Fixed (not auto) so they keep worker
     # reuse — excluded from the max_calls=1 fresh-worker rule (see decorators.py).
-    "crop_tile":            4 * _GB,  # streaming crop of one tile out of the source
+    "crop_panel":           4 * _GB,  # streaming crop of one panel out of the merged source
     "stack_sho_channels":  12 * _GB,  # sequential per-channel XISF→BigTIFF (~8 GB each)
-    "blend_tiles":          6 * _GB,  # streaming pyvips feather (generic intermediate)
+    "blend_panels":         6 * _GB,  # streaming pyvips feather (generic intermediate)
     "blend_linear_sho":     6 * _GB,  # streaming pyvips feather (deliverable)
     # compute_image_metadata is auto_memory=True but its footprint is now
     # roughly constant (a header read + plate-solve), and it's dispatched ~30k

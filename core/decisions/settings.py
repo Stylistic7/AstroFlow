@@ -109,21 +109,16 @@ class NxtSettings:
 
 @dataclass(frozen=True)
 class TilingSettings:
-    """External-tiling knobs for memory-heavy external ops (rc-astro BXT/SXT/NXT).
+    """Feather/overlap knobs for the panels-as-tiles color tail (`mosaics.panels`).
 
-    Distinct from rc-astro's OWN `--overlap` (its internal GPU-tile blend): these
-    control HIGHER-level tiling that splits the whole image into large overlapping
-    tiles run as separate compute-graph nodes, to bound RAM and distribute the
-    work across the cluster (rc-astro loads the whole image, so a gigapixel master
-    OOM-kills it). `tile_px` is the square crop fed to the tool (fixed → per-tile
-    RAM is bounded regardless of image size); `overlap` is feathered away at
-    reassembly (see file_io/tiling.py). Narrowed into each rc-astro op's cache
-    key, so flipping/tuning re-derives only the color tail — and because the
-    output genuinely differs (tiled+feathered vs whole-image), that re-derive is
-    correct, not spurious."""
-    enabled: bool = True
-    tile_px: int = 10000                 # ~100 Mpx square; ~20-80 tiles on a 2.25 Gpx master
-    overlap: float = 0.5                 # OUR external overlap; feathered at reassembly
+    The mosaic's PANELS are the tiling unit — each memory-heavy external op
+    (rc-astro BXT/SXT/NXT) runs on ONE panel's padded bbox, bounding RAM (panels
+    are ≤100 Mpx) and distributing the work across the cluster. `overlap` is the
+    fraction each panel bbox is grown into its neighbours to give the tool edge
+    context; it's feathered away at reassembly (see file_io/tiling.py). `blend` is
+    the feather window. Narrowed into each op's cache key, so tuning re-derives
+    only the color tail. (Distinct from rc-astro's OWN internal `--overlap`.)"""
+    overlap: float = 0.5                 # panel-bbox expansion into neighbours; feathered at reassembly
     blend: str = "hann"                  # "hann" (raised-cosine) | "edt" (mosaics/merging/oss)
 
     def __hash__(self):

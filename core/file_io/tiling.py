@@ -10,12 +10,10 @@ per-tile work distribute across a Ray cluster.
 
 This module is deliberately tool- and domain-agnostic (only pyvips/numpy +
 `file_io`). The compute-graph wiring — per-tile `@node`s, a reassembly node, the
-`config.tiling` toggle — lives with the ops in `mosaics/color/post_process.py`.
-`process_in_tiles` (the traced graph-building helper) is defined there too,
-because it records domain `@node`s; the three primitives here are what it and
-the tile/blend node bodies call:
+tiling lives with the ops in `mosaics/panels.py` (`process_in_panels` — panels
+ARE the tiling); the two streaming primitives here are what its crop/blend node
+bodies call:
 
-  * `tile_grid`               — the overlapping grid (pure, trace-time).
   * `crop_source_region`      — stream ONE tile out of a big tiled BigTIFF.
   * `feather_blend_to_bigtiff`— stream N overlapping tiles back into one BigTIFF.
 
@@ -48,34 +46,6 @@ def tile_size_for(width: int, height: int, target: int = 512):
         return min(target, dim) // 16 * 16
     tw, th = clamp(width), clamp(height)
     return (tw, th) if tw >= 16 and th >= 16 else None
-
-
-def tile_grid(width: int, height: int, tile_px: int, overlap: float) -> list[TileRect]:
-    """Overlapping tile grid covering a `width`×`height` image.
-
-    Pure and trace-time (no image read): callers pass dimensions known from the
-    mosaic viewbox. `step = round(tile_px·(1-overlap))`; starts march by `step`
-    with the last start clamped so the final tile ends exactly at the edge (its
-    overlap with the previous tile just grows). A dimension ≤ `tile_px` yields a
-    single full-length tile on that axis. Because `tile_px` is fixed, only the
-    tile COUNT grows with image size — the per-tile working set never does.
-    """
-    if tile_px <= 0:
-        raise ValueError(f"tile_px must be positive; got {tile_px}")
-    if not 0.0 <= overlap < 1.0:
-        raise ValueError(f"overlap must be in [0, 1); got {overlap}")
-    step = max(1, round(tile_px * (1.0 - overlap)))
-
-    def starts(length: int) -> list[int]:
-        if length <= tile_px:
-            return [0]
-        s = list(range(0, length - tile_px + 1, step))
-        if s[-1] != length - tile_px:
-            s.append(length - tile_px)
-        return s
-
-    tw, th = min(tile_px, width), min(tile_px, height)
-    return [(x, y, tw, th) for y in starts(height) for x in starts(width)]
 
 
 def crop_source_region(source_path: Path | str, rect: TileRect) -> np.ndarray:
