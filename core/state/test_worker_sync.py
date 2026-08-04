@@ -8,30 +8,55 @@ import pytest
 import state.worker_sync as ws
 
 
-def test_sync_refuses_non_deployable_versions(monkeypatch):
-    # "dev"/"dirty"/"" must never trigger a download — they keep the cluster
-    # single-machine.
-    called = {"n": 0}
-    monkeypatch.setattr(ws.urllib.request, "urlopen",
-                        lambda *a, **k: called.__setitem__("n", called["n"] + 1))
+def test_head_current_version_reads_cluster_version_endpoint(monkeypatch):
+    # The version comes from the head's AUTHORITATIVE HTTP endpoint — never a
+    # zeroconf TXT (which a killed prior head leaves as a ghost with a stale SHA).
+    import json as _json
+    payload = _json.dumps({"cluster_version": "c" * 40}).encode()
+
+    class _R:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self): return payload
+
+    seen = {}
+
+    def fake_urlopen(url, timeout=0):
+        seen["url"] = url
+        return _R()
+
+    monkeypatch.setattr(ws.urllib.request, "urlopen", fake_urlopen)
+    assert ws.head_current_version("10.0.0.53") == "c" * 40
+    assert seen["url"] == f"http://10.0.0.53:{ws.HTTP_PORT}/api/cluster-version"
+
+
+def test_sync_to_head_skips_non_deployable(monkeypatch):
+    # "dev"/"dirty"/"" head -> None, and NEVER pulls a snapshot.
+    monkeypatch.setattr(ws, "pull_head_snapshot",
+                        lambda ip: pytest.fail("must not pull for a non-deployable head"))
     for v in ("dev", "dirty", "", "nothex" * 7):
-        assert ws.sync_to_version("10.0.0.53", v) is False
-    assert called["n"] == 0
+        monkeypatch.setattr(ws, "head_current_version", lambda ip, _v=v: _v)
+        assert ws.sync_to_head("10.0.0.53") is None
 
 
-def test_sync_is_noop_when_already_at_sha(monkeypatch):
+def test_sync_to_head_noop_when_already_at_head_sha(monkeypatch):
     sha = "a" * 40
+    monkeypatch.setattr(ws, "head_current_version", lambda ip: sha)
     monkeypatch.setattr(ws, "current_synced_sha", lambda: sha)
-    monkeypatch.setattr(ws.urllib.request, "urlopen",
-                        lambda *a, **k: pytest.fail("should not download"))
-    assert ws.sync_to_version("10.0.0.53", sha) is True
+    monkeypatch.setattr(ws, "pull_head_snapshot", lambda ip: pytest.fail("should not pull"))
+    assert ws.sync_to_head("10.0.0.53") == sha
 
 
-def test_sync_downloads_and_extracts_when_behind(monkeypatch, tmp_path):
-    sha = "b" * 40
+def test_sync_to_head_pulls_current_when_behind(monkeypatch):
+    monkeypatch.setattr(ws, "head_current_version", lambda ip: "b" * 40)
     monkeypatch.setattr(ws, "current_synced_sha", lambda: "a" * 40)
+    monkeypatch.setattr(ws, "pull_head_snapshot", lambda ip: "b" * 40)
+    assert ws.sync_to_head("10.0.0.53") == "b" * 40
 
+
+def test_pull_head_snapshot_uses_bare_url_and_trusts_header(monkeypatch, tmp_path):
     class _Resp:
+        headers = {"X-AstroFlow-SHA": "b" * 40}
         def __enter__(self): return self
         def __exit__(self, *a): return False
         def read(self): return b"TARBYTES"
@@ -48,10 +73,11 @@ def test_sync_downloads_and_extracts_when_behind(monkeypatch, tmp_path):
     monkeypatch.setattr(ws, "verify_and_extract",
                         lambda tar, s, dest: extracted.update(tar=tar, sha=s, dest=dest))
 
-    assert ws.sync_to_version("10.0.0.53", sha) is True
-    # Asks the head for that exact SHA (race-proof) over its 10 GbE IP + port.
-    assert seen["url"] == f"http://10.0.0.53:{ws.HTTP_PORT}/api/code-snapshot?sha={sha}"
-    assert extracted["tar"] == b"TARBYTES" and extracted["sha"] == sha
+    assert ws.pull_head_snapshot("10.0.0.53") == "b" * 40
+    # NO ?sha= — asks for CURRENT and records the SHA the head STAMPED in the
+    # header, so a stale/ghost advertised SHA can never make it request the wrong one.
+    assert seen["url"] == f"http://10.0.0.53:{ws.HTTP_PORT}/api/code-snapshot"
+    assert extracted["tar"] == b"TARBYTES" and extracted["sha"] == "b" * 40
 
 
 def test_mount_uses_explicit_ip_no_user_and_volumes_path(monkeypatch):

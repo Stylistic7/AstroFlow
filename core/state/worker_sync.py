@@ -13,6 +13,7 @@ takes), which creates the mountpoint and mounts as the user. The share is
 addressed by EXPLICIT IP so the directly-connected 10 GbE route is used rather
 than WiFi.
 """
+import json
 import os
 import subprocess
 import time
@@ -87,16 +88,40 @@ def current_synced_sha() -> str | None:
     return read_synced_sha(checkout_dir())
 
 
-def sync_to_version(head_ip: str, sha: str) -> bool:
-    """Ensure the checkout holds committed `sha`, fetching it from the head if
-    needed. Returns True when the checkout now holds `sha` (already did, or we
-    synced it); False for a non-deployable version (`dev`/`dirty`/`""`)."""
-    if not is_deployable_version(sha):
-        return False
-    if current_synced_sha() == sha:
-        return True
-    url = f"http://{head_ip}:{HTTP_PORT}/api/code-snapshot?sha={sha}"
+def head_current_version(head_ip: str) -> str:
+    """The SHA the head is running RIGHT NOW, read from its AUTHORITATIVE HTTP
+    endpoint. Zeroconf only tells us the head's IP — a killed prior head can leave
+    a GHOST zeroconf record advertising a stale SHA, so we never follow that TXT;
+    we ask the live head directly. Empty/'dev'/'wt:...' when the head isn't running
+    committed code."""
+    url = f"http://{head_ip}:{HTTP_PORT}/api/cluster-version"
+    with urllib.request.urlopen(url, timeout=30) as r:
+        return json.loads(r.read()).get("cluster_version", "")
+
+
+def pull_head_snapshot(head_ip: str) -> str:
+    """Fetch the head's CURRENT frozen snapshot — WITHOUT naming a SHA — and
+    extract it. The worker doesn't need to know the SHA in advance: the head
+    stamps the SHA it served in the `X-AstroFlow-SHA` header, and we verify the tar
+    against THAT and record it. So the (code, SHA) pair is always self-consistent,
+    even if the head redeploys mid-fetch. Returns the SHA now on disk."""
+    url = f"http://{head_ip}:{HTTP_PORT}/api/code-snapshot"
     with urllib.request.urlopen(url, timeout=300) as r:
         tar = r.read()
+        sha = r.headers.get("X-AstroFlow-SHA", "")
     verify_and_extract(tar, sha, checkout_dir())
-    return True
+    return sha
+
+
+def sync_to_head(head_ip: str) -> str | None:
+    """Ensure the checkout holds the head's CURRENT committed code. Reads the
+    version from the head's HTTP endpoint (not the ghost-prone zeroconf TXT) and
+    pulls the current snapshot if we're behind. Returns the SHA now on disk, or
+    None when the head's version is non-deployable (`dev`/`dirty`/`""` — nothing to
+    follow)."""
+    version = head_current_version(head_ip)
+    if not is_deployable_version(version):
+        return None
+    if current_synced_sha() == version:
+        return version
+    return pull_head_snapshot(head_ip)

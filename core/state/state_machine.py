@@ -28,7 +28,6 @@ from state.network_settings import (
 )
 from state.code_version import (
     head_cluster_version,
-    is_deployable_version,
     build_snapshot_tar,
     verify_and_extract,
     read_synced_sha,
@@ -369,7 +368,6 @@ def _update_astroflow_services(
         return state, []
 
     head_ip = head["ip"]
-    version = head.get("cluster_version", "")
     shares = head.get("mounted_volumes", [])
 
     # Head restarted at a NEW IP (e.g. its 10 GbE link-local re-rolled): the old
@@ -396,9 +394,11 @@ def _update_astroflow_services(
     if "ray_process" in state:
         return state, []
 
-    # Not joined → mount disks, sync code, join.
+    # Not joined → mount disks, sync code, join. The version is read from the
+    # head's HTTP endpoint inside _join_head (not the zeroconf TXT), so the action
+    # only needs the head's IP + shares.
     return state, [
-        Action(type="join_head", head_ip=head_ip, version=version, shares=shares)
+        Action(type="join_head", head_ip=head_ip, shares=shares)
     ]
 
 
@@ -410,11 +410,10 @@ def _join_head(state: State, action: Action) -> tuple[State, list[Action]]:
     isn't at that SHA, fetch it and restart INTO it; (4) once in sync, join.
     """
     head_ip = action["head_ip"]
-    version = action["version"]
     shares = action["shares"]
     from state.worker_sync import (
         mount_head_shares,
-        sync_to_version,
+        sync_to_head,
         current_synced_sha,
     )
 
@@ -426,27 +425,34 @@ def _join_head(state: State, action: Action) -> tuple[State, list[Action]]:
             print(f"### Failed to mount head shares: {e}; will retry")
             return state, []
 
-    if not is_deployable_version(version):
+    # Ask the head (over HTTP) what it's running NOW and sync to it — NOT the
+    # zeroconf-advertised version, which a hard-killed prior head leaves behind as
+    # a ghost with a stale SHA (that's the "Code sync failed: 404" the worker was
+    # stuck on). `sync_to_head` reads /api/cluster-version and pulls the current
+    # snapshot, trusting the SHA the head stamps in the response.
+    before = current_synced_sha()
+    try:
+        synced = sync_to_head(head_ip)
+    except Exception as e:
+        print(f"### Code sync failed: {e}; will retry")
+        return state, []
+    if synced is None:
         print(
-            f"### Head advertises non-deployable version {version!r}; "
-            "waiting to join (head is in dev mode or has uncommitted edits)."
+            "### Head advertises a non-deployable version; waiting to join "
+            "(head is in dev mode or has uncommitted edits)."
         )
         return state, []
 
-    if current_synced_sha() != version:
-        try:
-            ok = sync_to_version(head_ip, version)
-        except Exception as e:
-            print(f"### Code sync failed: {e}; will retry")
-            return state, []
-        # Restart only once the checkout is confirmed at `version` — the
-        # recorded SHA is the loop-breaker, so this can't restart-loop.
-        if ok and current_synced_sha() == version:
-            print(f"### Synced to {version[:12]}; restarting into the new code.")
+    if synced != before:
+        # We pulled new code; `sync_to_head` extracted + recorded the SHA, so
+        # confirm it landed before restarting — the recorded SHA is the
+        # loop-breaker, so this can't restart-loop.
+        if current_synced_sha() == synced:
+            print(f"### Synced to {synced[:12]}; restarting into the new code.")
             from state.restart import spawn_replacement
             spawn_replacement(live_core=str(checkout_dir()))
             return state, [Action(type="quit")]
-        return state, []  # not synced; retry on the next discovery tick
+        return state, []  # extract didn't land; retry on the next discovery tick
 
     return state, [
         Action(type="start_ray_subordinate_node", head_ip=head_ip)
