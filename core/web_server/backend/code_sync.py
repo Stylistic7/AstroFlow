@@ -8,6 +8,7 @@ GETs `/api/code-snapshot` and runs it. Serving reads only the frozen checkout �
 no git at request time — so head and workers are guaranteed byte-identical.
 Runs only on the head (workers don't start gunicorn).
 """
+import os
 from pathlib import Path
 
 from flask import Blueprint, Response, jsonify, request
@@ -20,6 +21,27 @@ code_sync_bp = Blueprint("code_sync", __name__)
 
 def _frozen_version() -> str:
     return read_synced_sha(checkout_dir()) or ""
+
+
+def _snapshot_tar(frozen: str) -> bytes:
+    """The frozen checkout, tarred+gzipped, CACHED to a file keyed by the SHA.
+
+    The checkout for a given SHA is immutable, so re-tarring on every worker
+    request is pure waste — and mid-rebuild the head is CPU-saturated, so a re-tar
+    took ~57 s and timed out the worker's sync. Compute once (any gunicorn worker),
+    write it atomically, then every worker serves the file (a shared, cross-process
+    cache). Stale SHAs' files are pruned so it can't grow unbounded."""
+    cache = Path(checkout_dir()).parent / f"snapshot-{frozen}.tar.gz"
+    if not cache.exists():
+        for old in cache.parent.glob("snapshot-*.tar.gz"):
+            try:
+                old.unlink()
+            except OSError:
+                pass
+        tmp = cache.with_name(f"{cache.name}.{os.getpid()}.tmp")
+        tmp.write_bytes(tar_directory(Path(checkout_dir())))
+        os.replace(tmp, cache)
+    return cache.read_bytes()
 
 
 @code_sync_bp.route("/api/cluster-version")
@@ -37,9 +59,8 @@ def code_snapshot():
     requested = request.args.get("sha")
     if requested is not None and requested != frozen:
         return jsonify({"error": f"head is at {frozen}, not {requested}"}), 404
-    tar = tar_directory(Path(checkout_dir()))
     return Response(
-        tar,
+        _snapshot_tar(frozen),
         mimetype="application/gzip",
         headers={
             "X-AstroFlow-SHA": frozen,

@@ -28,6 +28,7 @@ from state.network_settings import (
 )
 from state.code_version import (
     head_cluster_version,
+    is_deployable_version,
     build_snapshot_tar,
     verify_and_extract,
     read_synced_sha,
@@ -434,6 +435,14 @@ def _join_head(state: State, action: Action) -> tuple[State, list[Action]]:
     try:
         synced = sync_to_head(head_ip)
     except Exception as e:
+        # The head's web server is CPU-starved mid-rebuild, so the version/snapshot
+        # HTTP can time out. If we're ALREADY synced to a deployable SHA, don't let
+        # that block joining — Ray's gcs is a separate service that's likely still
+        # reachable, and its cluster-id is the real gate (a stale join is rejected
+        # and we retry). Only a worker that has NEVER synced keeps waiting.
+        if before and is_deployable_version(before):
+            print(f"### Head sync check failed ({e}); already at {before[:12]}, joining anyway.")
+            return state, [Action(type="start_ray_subordinate_node", head_ip=head_ip)]
         print(f"### Code sync failed: {e}; will retry")
         return state, []
     if synced is None:

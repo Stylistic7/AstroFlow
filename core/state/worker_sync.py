@@ -95,7 +95,9 @@ def head_current_version(head_ip: str) -> str:
     we ask the live head directly. Empty/'dev'/'wt:...' when the head isn't running
     committed code."""
     url = f"http://{head_ip}:{HTTP_PORT}/api/cluster-version"
-    with urllib.request.urlopen(url, timeout=30) as r:
+    # Generous timeout: mid-rebuild the head's web server is CPU-starved, so even
+    # this trivial read can spike from ~ms to tens of seconds.
+    with urllib.request.urlopen(url, timeout=90) as r:
         return json.loads(r.read()).get("cluster_version", "")
 
 

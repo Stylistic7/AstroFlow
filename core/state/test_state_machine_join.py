@@ -89,6 +89,30 @@ def test_join_head_retries_when_mount_fails(monkeypatch):
     assert "mounted_shares" not in state
 
 
+def test_join_head_joins_anyway_when_check_times_out_but_already_synced(monkeypatch, stub_mounts):
+    # The head's web server is starved (version check times out), but we're already
+    # synced to a deployable SHA → join anyway; Ray's cluster-id is the real gate.
+    monkeypatch.setattr(ws, "current_synced_sha", lambda: SHA)
+
+    def boom(ip):
+        raise TimeoutError("head web server starved")
+
+    monkeypatch.setattr(ws, "sync_to_head", boom)
+    monkeypatch.setattr(rs, "spawn_replacement",
+                        lambda **k: pytest.fail("must not restart on a transient check failure"))
+    state, actions = sm._join_head({}, _join())
+    assert [a["type"] for a in actions] == ["start_ray_subordinate_node"]
+
+
+def test_join_head_retries_when_check_fails_and_never_synced(monkeypatch, stub_mounts):
+    # A worker that has never synced can't join blind — keep retrying.
+    monkeypatch.setattr(ws, "current_synced_sha", lambda: None)
+    monkeypatch.setattr(ws, "sync_to_head",
+                        lambda ip: (_ for _ in ()).throw(TimeoutError("head unreachable")))
+    state, actions = sm._join_head({}, _join())
+    assert actions == []
+
+
 def _instances(ip="10.0.0.53", version=SHA, shares=("Astro",)):
     return {"h": {"ray_head": "yes", "ip": ip, "cluster_version": version,
                   "mounted_volumes": list(shares)}}
