@@ -1,12 +1,18 @@
 // MosaicDashboard.jsx — at-a-glance view of a mosaic. One section per
-// registered pipeline, one ROW per tap point within that pipeline,
-// thumbnails per filter inside each row.
+// registered pipeline, one ROW per tap point within that pipeline (in ORDER OF
+// COMPUTATION), showing ONLY the filters that actually route through that tap.
 //
-// Data source: `/api/pipeline_outputs/mosaic/<id>` returns one entry
-// per pipeline, with that pipeline's tap points (display labels) and
-// per-(tap, filter) on-disk existence. Tap points are discovered at
-// pipeline-trace time from `@makes_image(display=...)` annotations,
-// so user pipelines surface in this dashboard automatically.
+// A tap node isn't filter-specific — its real filter set is whatever the
+// pipeline×object trace produced for it — so each row renders its own
+// `tap.outputs` (no global filter grid, no phantom blanks). The images in a row
+// split the full viewport width, so a one-filter tap (e.g. a Hubble composite)
+// renders large and a many-filter tap (e.g. Linear H/S/O) renders as a strip.
+//
+// Data source: `/api/pipeline_outputs/mosaic/<id>` returns one entry per
+// pipeline, each with its tap points (display labels, in trace order) and, per
+// tap, the real (filter, on-disk-existence) outputs. Tap points are discovered
+// at pipeline-trace time from `@makes_image(display=...)` annotations, so user
+// pipelines surface in this dashboard automatically.
 import React, { useContext, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Box, Paper, Typography, Divider, Button } from "@mui/material";
@@ -29,9 +35,13 @@ function VersionThumbnail({
     const href = buildUrl({ hierarchy, view });
 
     const sx = {
-        width: 200,
-        height: 150,
-        flexShrink: 0,
+        // Fill an equal share of the row's width. With N siblings each `flex:1`,
+        // every image is 1/N of the viewport — so a one-filter row renders large
+        // and a many-filter row renders small, all filling the width edge-to-edge.
+        flex: '1 1 0',
+        minWidth: 0,
+        aspectRatio: '3 / 2',
+        maxHeight: '65vh',
         borderRadius: 1,
         border: '1px solid',
         borderColor: 'divider',
@@ -85,7 +95,7 @@ function VersionThumbnail({
 }
 
 
-function PipelineSection({ objectType, objectId, pipeline, filters }) {
+function PipelineSection({ objectType, objectId, pipeline }) {
     const [discardOpen, setDiscardOpen] = useState(false);
     return (
         <Box sx={{ mb: 4 }}>
@@ -111,44 +121,38 @@ function PipelineSection({ objectType, objectId, pipeline, filters }) {
                 open={discardOpen}
                 onClose={() => setDiscardOpen(false)}
             />
-            {pipeline.taps.map((tap) => {
-                // outputs[i] aligns with filters[i] (backend
-                // guarantees same order within a tap).
-                const byFilter = {};
-                for (let i = 0; i < filters.length; i++) {
-                    byFilter[filters[i]] = tap.outputs[i];
-                }
-                return (
-                    <Box key={tap.display} sx={{ mb: 2 }}>
-                        <Typography variant="body2" sx={{
-                            color: 'text.secondary',
-                            mb: 0.5,
-                        }}>
-                            {tap.display}
-                        </Typography>
-                        <Box sx={{
-                            display: 'flex', gap: 1, overflowX: 'auto', flex: 1,
-                        }}>
-                            {filters.map((f) => {
-                                const o = byFilter[f] || { filter: f, exists: false, status: 'absent' };
-                                return (
-                                    <VersionThumbnail
-                                        key={f}
-                                        objectType={objectType}
-                                        objectId={objectId}
-                                        pipeline={pipeline.name}
-                                        display={tap.display}
-                                        filter={f}
-                                        exists={o.exists}
-                                        mtime={o.mtime}
-                                        status={o.status}
-                                    />
-                                );
-                            })}
-                        </Box>
+            {pipeline.taps.map((tap) => (
+                <Box key={tap.display} sx={{ mb: 2 }}>
+                    <Typography variant="body2" sx={{
+                        color: 'text.secondary',
+                        mb: 0.5,
+                    }}>
+                        {tap.display}
+                    </Typography>
+                    {/* One row per tap, showing only the filters that route
+                        through it. The images share the full width (each
+                        flex:1), so a one-filter tap renders large and a
+                        many-filter tap renders as a strip. */}
+                    <Box sx={{
+                        display: 'flex', gap: 1, width: '100%',
+                        alignItems: 'flex-start',
+                    }}>
+                        {tap.outputs.map((o) => (
+                            <VersionThumbnail
+                                key={o.filter ?? '—'}
+                                objectType={objectType}
+                                objectId={objectId}
+                                pipeline={pipeline.name}
+                                display={tap.display}
+                                filter={o.filter}
+                                exists={o.exists}
+                                mtime={o.mtime}
+                                status={o.status}
+                            />
+                        ))}
                     </Box>
-                );
-            })}
+                </Box>
+            ))}
         </Box>
     );
 }
@@ -172,7 +176,6 @@ export default function MosaicDashboard() {
         return <Typography sx={{ p: 3 }}>Loading…</Typography>;
     }
 
-    const filters = data?.filters || [];
     const pipelines = data?.pipelines || [];
 
     return (
@@ -202,7 +205,6 @@ export default function MosaicDashboard() {
                         objectType="mosaic"
                         objectId={mosaic_id}
                         pipeline={p}
-                        filters={filters}
                     />
                 ))
             )}

@@ -111,7 +111,21 @@ def test_orion_mosaic_versions_endpoint(client, with_orion_mosaic):
         for t in p["taps"]:
             assert set(t.keys()) >= {"display", "outputs"}
             assert isinstance(t["outputs"], list)
-            assert len(t["outputs"]) == len(data["filters"])
+            # RAGGED: a tap carries ONLY the filters that route through it in the
+            # trace, not the global column union — so `outputs` is a NON-EMPTY,
+            # duplicate-free SUBSET of `data["filters"]` in the same canonical
+            # order, never padded with phantom blanks. (A composite tap like
+            # Hubble is thus a one-image row, not a blank-filled grid.)
+            tap_filters = [o["filter"] for o in t["outputs"]]
+            assert tap_filters, f"{p['name']}/{t['display']} has no outputs"
+            assert len(tap_filters) == len(set(tap_filters)), (
+                f"{p['name']}/{t['display']} duplicate filters {tap_filters}")
+            assert set(tap_filters) <= set(data["filters"]), (
+                f"{p['name']}/{t['display']} filters {tap_filters} ⊄ "
+                f"{data['filters']}")
+            assert tap_filters == [f for f in data["filters"] if f in set(tap_filters)], (
+                f"{p['name']}/{t['display']} filters {tap_filters} not in "
+                f"canonical order")
             for o in t["outputs"]:
                 assert set(o.keys()) >= {"filter", "exists", "mtime"}
                 if o["exists"]:

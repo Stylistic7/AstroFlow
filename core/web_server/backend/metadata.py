@@ -380,13 +380,24 @@ def pipeline_outputs(object_type: str, object_id: str):
     pipelines = []
     for name in applicable:
         taps = []
+        # `traces[name]` preserves the display order of the trace walk, which is
+        # topological (define-by-run) — so taps come out in ORDER OF COMPUTATION.
         for display, paths_by_filter in traces[name].items():
             outputs = []
+            # Only the filters that ACTUALLY route through THIS tap in the trace,
+            # not the global column union: a tap node isn't filter-specific, so its
+            # real filter set is whatever the pipeline×object trace produced for it
+            # (`paths_by_filter`). `columns` order is reused solely to canonicalize
+            # filter order within the row. A filter absent here (`p is None`) simply
+            # doesn't pass through this tap → no phantom blank cell. A filter that
+            # DOES pass through but isn't on disk yet is kept (shows "not yet built").
             for f in columns:
                 p = paths_by_filter.get(str(f))
-                path = cat.viewable_from_master(p) if p else None
+                if p is None:
+                    continue
+                path = cat.viewable_from_master(p)
                 status = "live" if path is not None else "absent"
-                if path is None and p is not None:
+                if path is None:
                     # Current output isn't built yet → serve the last-good (N-1)
                     # with an out-of-date badge (graceful versioning). Same logic
                     # as catalog.resolve_product; inlined here since we already
