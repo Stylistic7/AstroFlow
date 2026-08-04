@@ -116,6 +116,17 @@ def get_ip() -> str:
 
 def start_ray_subordinate_node(head_node_address, node_ip_address: str | None = None, timeout=60):
     ray_path = get_bin_dir() / "ray"
+    # Reap any local raylet BEFORE starting the one true node, so a join is
+    # idempotent: exactly one raylet per machine, always. A worker that restarts
+    # to follow the head's committed code does `spawn_replacement` + `quit`, and
+    # `quit` does NOT stop Ray — so the raylet the previous process started is
+    # orphaned, and `ray start` does not detect/replace it. Without this reap,
+    # every code-follow (or crash-restart on a head bounce → WrongClusterID)
+    # STACKS another raylet; observed 11 raylets on one 10-core worker, each
+    # advertising 10 CPU + 0.7×RAM, defeating CPU- and memory-gated scheduling
+    # ~11×. `stop --force` is a fast, unconditional local reap (no-op when none
+    # are running); only ever called on a worker joining, never on the head.
+    subprocess.run([ray_path, "stop", "--force"], capture_output=True, text=True)
     # TODO: Put these resources in the UI.
     resources = """'{"PixInsight": 1, "gpu_slots": 2}'"""
     bind = node_ip_address or get_ip()
