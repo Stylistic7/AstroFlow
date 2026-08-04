@@ -111,10 +111,13 @@ def panel_tiles(mosaic: Mosaic, viewbox, config: ProcessingConfig) -> list[tuple
     """`[(panel_id, padded_rect(x0,y0,w,h), scope_ids), ...]` — one tile per panel
     with a finite bbox.
 
-    Each panel's bbox is grown by `config.tiling.overlap` of its own size into its
-    neighbours (clamped to the canvas) so the crop carries the neighbour context
-    BXT/SXT need at panel edges; that overlap is feathered away at reassembly.
-    `scope_ids` = the panels whose (un-padded) bbox intersects this padded rect,
+    Each panel's bbox is grown by `config.tiling.overlap_px` (an ABSOLUTE margin,
+    px) on every side into its neighbours (clamped to the canvas) so the crop
+    carries the edge context BXT/SXT need; it's feathered away at reassembly. The
+    margin is absolute, not a fraction, because the tools' edge-support radius R is
+    absolute — the seam is invisible when the crop overlap O ≥ 2R (see
+    TilingSettings.overlap_px). `scope_ids` = the panels whose (un-padded) bbox
+    intersects this padded rect,
     unioned with `always` (panels that don't project) — the sorted set of panel
     ids whose change must re-run this tile. Pure integer geometry: trace-time,
     reads no pixels."""
@@ -122,13 +125,11 @@ def panel_tiles(mosaic: Mosaic, viewbox, config: ProcessingConfig) -> list[tuple
     geom = _panel_pixel_bboxes(mosaic, viewbox)
     always = tuple(pid for pid, box in geom if box is None)
     boxed = [(pid, box) for pid, box in geom if box is not None]
-    overlap = config.tiling.overlap
+    pad = config.tiling.overlap_px   # ABSOLUTE margin per side (px); see TilingSettings
     tiles = []
     for pid, (bx0, by0, bx1, by1) in boxed:
-        pad_x = round((bx1 - bx0) * overlap)
-        pad_y = round((by1 - by0) * overlap)
-        px0, py0 = max(0, bx0 - pad_x), max(0, by0 - pad_y)
-        px1, py1 = min(W, bx1 + pad_x), min(H, by1 + pad_y)
+        px0, py0 = max(0, bx0 - pad), max(0, by0 - pad)
+        px1, py1 = min(W, bx1 + pad), min(H, by1 + pad)
         if px1 <= px0 or py1 <= py0:
             continue   # panel projects entirely off-canvas → contributes no tile
         padded = (px0, py0, px1, py1)
@@ -191,7 +192,7 @@ def blend_panels(mosaic: Mosaic, config: ProcessingConfig, rects: tuple,
     os.makedirs(os.path.dirname(out), exist_ok=True)
     feather_blend_to_bigtiff(
         [tuple(r) for r in rects], [t.filename for t in tiles], out,
-        overlap=config.tiling.overlap, blend=config.tiling.blend,
+        taper_px=config.tiling.overlap_px, blend=config.tiling.blend,
         metadata={"PIPELINE": "AstroFlow-OSS"})
     return WithSidecar(TiffFilePath(out))
 

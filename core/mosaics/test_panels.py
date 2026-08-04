@@ -18,7 +18,7 @@ from types import SimpleNamespace
 import numpy as np
 from spherical_geometry.polygon import SingleSphericalPolygon
 
-from decisions.settings import ProcessingConfig
+from decisions.settings import ProcessingConfig, TilingSettings
 from geometry.projections import mercator
 from geometry.polygons import project_polygon
 from hashing.hashing import hash_call, hash_list
@@ -30,7 +30,11 @@ from mosaics.panels import (
     panel_tiles,
 )
 
-_CONFIG = ProcessingConfig()
+# Small absolute overlap so the tiny synthetic panels (~150 px bboxes in a ~900 px
+# viewbox) stay spatially distinct — the production default (512 px) would pad
+# every panel across the whole toy canvas. The geometry/collision/incremental
+# properties under test are scale-invariant; only the px value differs.
+_CONFIG = ProcessingConfig(tiling=TilingSettings(overlap_px=20))
 
 
 # --------------------------------------------------------------------------- #

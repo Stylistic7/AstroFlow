@@ -85,13 +85,19 @@ def feather_blend_to_bigtiff(
     tile_paths: list[Path | str],
     dest: Path | str,
     *,
-    overlap: float,
+    taper_px: int,
     blend: str = "hann",
     metadata: dict | None = None,
     tile: tuple[int, int] | None = None,
 ) -> None:
     """Reassemble `tile_paths` (placed at `rects`) into one BigTIFF at `dest`,
     feathered so tile seams are invisible — fully streaming.
+
+    `taper_px` is the ABSOLUTE raised-cosine ramp width (px) from each tile edge —
+    each tile's weight goes 0 at its outer edge → 1 by `taper_px` inward. Absolute
+    (not a fraction of the tile) so the ramp is the same physical width regardless
+    of tile size, which is what keeps the seam-free crossover inside the tools'
+    edge-support band on differently-sized panels (see TilingSettings.overlap_px).
 
     Builds the lazy pyvips expression `Σ(embed(tileᵢ·wᵢ)) / Σ(embed(wᵢ))` over
     the canvas implied by `rects`, then `tiffsave`. It is demand-driven: for each
@@ -116,9 +122,9 @@ def feather_blend_to_bigtiff(
     numer_terms: list[pyvips.Image] = []
     denom_terms: list[pyvips.Image] = []
     for (x0, y0, w, h), path in zip(rects, tile_paths):
-        wx = _cosine_ramp_1d(w, max(1, round(w * overlap)),
+        wx = _cosine_ramp_1d(w, max(1, min(taper_px, w)),
                              flat_lo=(x0 == 0), flat_hi=(x0 + w >= canvas_w))
-        wy = _cosine_ramp_1d(h, max(1, round(h * overlap)),
+        wy = _cosine_ramp_1d(h, max(1, min(taper_px, h)),
                              flat_lo=(y0 == 0), flat_hi=(y0 + h >= canvas_h))
         keepalive.extend((wx, wy))
         # Separable window as a lazy w×h image: row (w×1) tiled down, col (1×h)

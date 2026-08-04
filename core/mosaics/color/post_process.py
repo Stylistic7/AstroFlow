@@ -388,7 +388,7 @@ def blend_linear_sho(
     os.makedirs(os.path.dirname(out), exist_ok=True)
     feather_blend_to_bigtiff(
         [tuple(r) for r in rects], [t.filename for t in tiles], out,
-        overlap=config.tiling.overlap, blend=config.tiling.blend,
+        taper_px=config.tiling.overlap_px, blend=config.tiling.blend,
         metadata={"PIPELINE": "AstroFlow-OSS", "COLORSPC": "linear-sho"})
     return WithSidecar(TiffFilePath(out))
 

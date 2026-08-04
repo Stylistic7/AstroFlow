@@ -127,12 +127,12 @@ def test_panel_incremental_is_pixel_identical_and_selective(test_context, tmp_pa
     vb = mosaic.viewbox("Master")
     w, h = vb.num_pixels_x, vb.num_pixels_y
 
-    # overlap=0.0 → each panel's tile is exactly its bbox (no padding into
+    # overlap_px=0 → each panel's tile is exactly its bbox (no padding into
     # neighbours), so the disjoint panels have disjoint scopes — the cleanest
     # incremental case (B is provably untouched by an A change).
     config = ProcessingConfig(
         development_settings=DevelopmentSettings(mock_pixinsight=True),
-        tiling=TilingSettings(overlap=0.0))
+        tiling=TilingSettings(overlap_px=0))
 
     # ---- PREREQUISITE: the two panels are spatially disjoint -----------------
     tiles = panel_tiles(mosaic, vb, config)
@@ -212,7 +212,7 @@ def test_panel_incremental_is_pixel_identical_and_selective(test_context, tmp_pa
     feather_blend_to_bigtiff(
         [tuple(r) for _, r in ordered],
         [_crop_to(tmp_path, i, p_v2, r) for i, (_, r) in enumerate(ordered)],
-        ref_path, overlap=config.tiling.overlap, blend=config.tiling.blend,
+        ref_path, taper_px=config.tiling.overlap_px, blend=config.tiling.blend,
         metadata={"PIPELINE": "AstroFlow-OSS"})
     incr = np.asarray(read_image(b2_incr), dtype=np.float32)
     ref = np.asarray(read_image(ref_path), dtype=np.float32)

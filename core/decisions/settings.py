@@ -113,12 +113,21 @@ class TilingSettings:
 
     The mosaic's PANELS are the tiling unit — each memory-heavy external op
     (rc-astro BXT/SXT/NXT) runs on ONE panel's padded bbox, bounding RAM (panels
-    are ≤100 Mpx) and distributing the work across the cluster. `overlap` is the
-    fraction each panel bbox is grown into its neighbours to give the tool edge
-    context; it's feathered away at reassembly (see file_io/tiling.py). `blend` is
-    the feather window. Narrowed into each op's cache key, so tuning re-derives
-    only the color tail. (Distinct from rc-astro's OWN internal `--overlap`.)"""
-    overlap: float = 0.5                 # panel-bbox expansion into neighbours; feathered at reassembly
+    are ≤100 Mpx) and distributing the work across the cluster. `overlap_px` is the
+    ABSOLUTE margin (px) each panel bbox is grown into its neighbours — and the
+    feather ramp width — so the tool has edge context that's feathered away at
+    reassembly (see file_io/tiling.py).
+
+    Why ABSOLUTE, not a fraction: the seam is invisible iff the overlap O between
+    two adjacent crops is ≥ 2R, where R is the ops' edge-support radius (~256–512
+    px: SXT must see whole star halos; rc-astro tiles internally at 512 px). R does
+    NOT scale with panel size (a star halo is ~200 px whether the panel is 2k or
+    10k px), so the margin must not either — a fraction would over-pad big panels
+    and starve small ones. 512 gives O = acq + 1024 ≥ 2R on EVERY panel. Certify/
+    tune via the whole-vs-tiled seam test (file_io/test_tiling.py). `blend` is the
+    feather window. Narrowed into each op's cache key. (Distinct from rc-astro's
+    OWN internal `--overlap`.)"""
+    overlap_px: int = 512                # ABSOLUTE panel-bbox margin + feather ramp; see O≥2R above
     blend: str = "hann"                  # "hann" (raised-cosine) | "edt" (mosaics/merging/oss)
 
     def __hash__(self):

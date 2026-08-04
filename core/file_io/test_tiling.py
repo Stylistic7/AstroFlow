@@ -62,7 +62,10 @@ def _tile_and_blend(tmp_path, img, tile_px, overlap, per_tile_offset=False):
         paths.append(p)
 
     out = tmp_path / "out.tiff"
-    feather_blend_to_bigtiff(rects, paths, out, overlap=overlap, tile=(64, 64))
+    # feather ramp = the grid overlap expressed in px (matches the old fractional
+    # behaviour: taper ≈ tile_px·overlap).
+    feather_blend_to_bigtiff(rects, paths, out, taper_px=round(tile_px * overlap),
+                             tile=(64, 64))
     return rects, read_tiff_image(out)
 
 
@@ -116,6 +119,48 @@ def test_feather_hides_seams_better_than_hard_cut(tmp_path):
     assert feather_jump < 0.01, f"feather left a seam: {feather_jump}"
     assert hard_jump > 0.03, f"negative control had no step: {hard_jump}"
     assert feather_jump < hard_jump / 5
+
+
+def _blur_constant(a, r):
+    """Box blur, support radius `r`, mode='constant' (zero-pad) so a CROP edge gets
+    a strong darkening artifact — makes an under-overlapped seam unmistakable."""
+    from scipy.ndimage import uniform_filter
+    return uniform_filter(a.astype(np.float32), size=2 * r + 1, mode="constant", cval=0.0)
+
+
+def _tiled_blur_seam(tmp_path, m, R, H=200, W=400):
+    """Blur a synthetic image WHOLE vs. as two column-tiles overlapping by O=2m,
+    each blurred independently (its crop edge is a real edge artifact) then
+    feather-blended with an absolute taper=m. Returns max|tiled-whole| in the seam
+    band around x=W/2 (excluding the image's own outer edges, which both share)."""
+    yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
+    img = (0.5 + 0.4 * np.sin(xx / 11.0) * np.cos(yy / 7.0)).astype(np.float32)
+    whole = _blur_constant(img, R)
+    xc = W // 2
+    r0, r1 = (0, 0, xc + m, H), (xc - m, 0, W - (xc - m), H)
+    t0, t1 = _blur_constant(img[:, :xc + m], R), _blur_constant(img[:, xc - m:], R)
+    p0, p1 = tmp_path / f"t0_{m}.tiff", tmp_path / f"t1_{m}.tiff"
+    write_tiff_image(p0, t0, tile=(64, 64))
+    write_tiff_image(p1, t1, tile=(64, 64))
+    out = tmp_path / f"seam_{m}.tiff"
+    feather_blend_to_bigtiff([r0, r1], [p0, p1], out, taper_px=max(1, m), tile=(64, 64))
+    tiled = read_tiff_image(out)
+    lo, hi = xc - m - 2 * R, xc + m + 2 * R
+    return float(np.abs(tiled[:, lo:hi] - whole[:, lo:hi]).max())
+
+
+def test_overlap_vs_seam_law(tmp_path):
+    """The O ≥ 2R invisibility law, measured on a real edge-effect op (box blur,
+    support R): a generous crop overlap makes the tiled reassembly match a
+    whole-image blur (seam invisible); a too-small overlap leaves a clear seam.
+    This is how TilingSettings.overlap_px is certified against the tools' support
+    radius R — measured, not assumed."""
+    R = 24
+    seam_generous = _tiled_blur_seam(tmp_path, m=4 * R, R=R)      # O = 8R ≫ 2R → invisible
+    seam_tiny = _tiled_blur_seam(tmp_path, m=max(1, R // 4), R=R)  # O = R/2 ≪ 2R → visible
+    assert seam_generous < 0.02, f"generous overlap should be ~seam-free; got {seam_generous}"
+    assert seam_tiny > 6 * seam_generous, (
+        f"too-small overlap must leave a visible seam: tiny={seam_tiny} generous={seam_generous}")
 
 
 @pytest.mark.slow
