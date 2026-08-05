@@ -161,8 +161,11 @@ def scatter_spatial_groups(
     graph[process_calibration_stacks_for_ui] = {associate_cal_task}
     graph[store_ui_calibration_stacks] = {process_calibration_stacks_for_ui}
 
-    stack_tasks = set()
-    target_tasks = set()
+    # ORDERED lists, not sets: these deps feed value-consuming nodes
+    # (combine_dicts takes *ancestor_results), and dep order is part of the
+    # cache key — canonicalize_graph now raises on unordered value-deps.
+    stack_tasks = []
+    target_tasks = []
     for i, g in enumerate(spatial_groups):
         stack_task = (
             identify_stacks,
@@ -183,8 +186,8 @@ def scatter_spatial_groups(
         graph[target_task] = {stack_task}
         graph[customize_targets_task] = {target_task}
 
-        stack_tasks.add(stack_task)
-        target_tasks.add(customize_targets_task)
+        stack_tasks.append(stack_task)
+        target_tasks.append(customize_targets_task)
 
     gather_stacks_task = Node(combine_dicts, name="combine_stacks")
     graph[gather_stacks_task] = stack_tasks
@@ -194,7 +197,9 @@ def scatter_spatial_groups(
         decision_overrides,
         clustering_settings.min_frames_in_stack,
     )
-    graph[process_stacks_task] = {store_stacks, store_calibration_stacks}
+    # Ordered: process_stacks_for_ui consumes both results positionally
+    # (it unpacks by type, but the call HASH folds argument order).
+    graph[process_stacks_task] = [store_stacks, store_calibration_stacks]
     graph[store_ui_stacks] = {process_stacks_task}
 
     gather_targets_task = Node(combine_dicts, name="combine_targets")
@@ -259,7 +264,9 @@ def build_regroup_graph(
         {
             cluster_task: {},
             fingerprint_task: {},
-            scatter_task: {cluster_task, fingerprint_task},
+            # Ordered: scatter_spatial_groups consumes both results via
+            # *ancestor_results, so dep order is part of its call hash.
+            scatter_task: [cluster_task, fingerprint_task],
         }
     )
 

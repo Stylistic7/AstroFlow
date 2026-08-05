@@ -241,12 +241,52 @@ class CanonicalGraph(dict[Node, list[Node]]):
 
 # TODO: Maybe support nodes with one ancestor, like this {done: process},
 # instead of requiring {done: {process}}.
+_SIG_PARAMS_CACHE: dict[int, int] = {}
+
+
+def _consumes_dep_values(n: "Node") -> bool:
+    """True iff the runtime would pass dep RESULTS as positional args to this
+    node (mirrors GraphRuntime.make_fn_args): explicit `_dep_positions`, or
+    the legacy rule `len(sig.parameters) > len(literals)`."""
+    if getattr(n, "_dep_positions", None) is not None:
+        return True
+    fn = n.task._function
+    key = id(fn)
+    if key not in _SIG_PARAMS_CACHE:
+        import inspect
+        try:
+            _SIG_PARAMS_CACHE[key] = len(inspect.signature(fn).parameters)
+        except (ValueError, TypeError):
+            _SIG_PARAMS_CACHE[key] = 0
+    return _SIG_PARAMS_CACHE[key] > len(n.args)
+
+
 def canonicalize_graph(graph: Graph) -> CanonicalGraph:
     output = CanonicalGraph({})
     for node, dependents in graph.items():
-        output[canonicalize_node(node)] = [
-            canonicalize_node(x) for x in dependents
-        ]
+        cn = canonicalize_node(node)
+        # DETERMINISM GUARD: set iteration order varies per process, so
+        # unordered deps feeding a value-consuming node make its argument
+        # positions — and therefore its call hash and any content hash
+        # derived from its output — nondeterministic across boots. This
+        # exact flap made identify_camera_fingerprints recompute ~46s on
+        # every restart and re-keyed trace caches (2026-08-05). Dep order
+        # is part of the cache key: pass a list. (Sets remain fine for
+        # ordering-only deps and single-element sets.)
+        if (
+            isinstance(dependents, (set, frozenset))
+            and len(dependents) > 1
+            and _consumes_dep_values(cn)
+        ):
+            raise TypeError(
+                f"Unordered deps ({len(dependents)}-element set) feed the "
+                f"value-consuming node {cn.task._function.__name__!r}. Set "
+                "iteration order is nondeterministic per process, so the "
+                "node's argument order — and its call hash — would flap "
+                "between boots. Pass a list: dep order is part of the "
+                "cache key."
+            )
+        output[cn] = [canonicalize_node(x) for x in dependents]
     return output
 
 

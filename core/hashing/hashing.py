@@ -34,7 +34,25 @@ def hash_list(L: Any, debug: bool = False) -> str:
         for i, o in zip(L, L2):
             print(f"### L type {type(i)} L2 type {type(o)} {str(o)} ")
 
-    return xxhash.xxh64(str(L2)).hexdigest()
+    serialized = str(L2)
+    # DETERMINISM GUARD: an element whose repr is address-based
+    # ("<Foo object at 0x104...>") serializes differently every process, so
+    # any cache key built from it silently flaps — the op recomputes on
+    # every boot forever while looking perfectly healthy. Fail loudly and
+    # name the offender instead. (Sets/dicts are already canonicalized by
+    # make_hashable; this catches the objects it passes through verbatim.)
+    if " at 0x" in serialized:
+        offender = next(
+            (repr(o)[:120] for o in L2 if " at 0x" in str(o)), serialized[:120]
+        )
+        raise ValueError(
+            "Nondeterministic value in call-hash arguments: an element's "
+            f"repr is memory-address-based ({offender}). Give the type a "
+            "stable __repr__, a content_hash, or make it a dataclass — "
+            "address-based reprs make the cache key flap every process."
+        )
+
+    return xxhash.xxh64(serialized).hexdigest()
 
 
 @beartype
