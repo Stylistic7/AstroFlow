@@ -89,6 +89,58 @@ def read_xisf_total_exposure_time(filename: Path | str) -> Optional[float]:
         return None
 
 
+def read_xisf_number_of_images(filename: Path | str) -> Optional[int]:
+    """The number of frames ImageIntegration actually integrated into a master
+    XISF — i.e. how many survived its registration/rejection pass — or None.
+
+    This is the count PixInsight records in its serialized process instance,
+    under the XISF property `PixInsight:ProcessingHistory`. That property is
+    usually stored as an ATTACHMENT block (`location="attachment:OFFSET:SIZE"`)
+    referenced from the XML header, NOT inline — so a header-only read misses it.
+    We locate the attachment from the header, read just that block, and pull
+    `<parameter id="numberOfImages" value="N"/>`.
+
+    `numberOfImages × EXPTIME` is the TRUE integration time — unlike
+    `PCL:TotalExposureTime`, which is a PSF-weighted effective exposure (a
+    fractional multiple of EXPTIME) and badly understates narrowband stacks.
+
+    Returns None on missing-file / wrong-magic / no-property / parse-failure.
+    """
+    try:
+        f = open(filename, "rb")
+    except (FileNotFoundError, OSError):
+        return None
+    with f:
+        if f.read(8) != b"XISF0100":
+            return None
+        xml_len = struct.unpack("<I", f.read(4))[0]
+        f.read(4)  # reserved
+        xml = f.read(xml_len).decode("utf-8", errors="replace")
+        loc = re.search(
+            r'id="PixInsight:ProcessingHistory"[^>]*?location="attachment:(\d+):(\d+)"',
+            xml,
+        )
+        if loc:
+            f.seek(int(loc.group(1)))
+            blob = f.read(int(loc.group(2))).decode("utf-8", errors="replace")
+        else:
+            # rare inline variant: the history lives in the XML header itself
+            inline = re.search(
+                r'id="PixInsight:ProcessingHistory"[^>]*?>(.*?)</Property>', xml, re.S
+            )
+            blob = inline.group(1) if inline else xml
+    # A master's history holds one integration; if several appear (e.g. a linear
+    # defect reference plus the final), the LAST is the one that produced the
+    # master. `<table id="outputData" rows="N">` is the submitted count, not this.
+    nums = re.findall(r'id="numberOfImages"\s+value="(\d+)"', blob)
+    if not nums:
+        return None
+    try:
+        return int(nums[-1])
+    except ValueError:
+        return None
+
+
 def read_xisf_image_geometry(filename: Path) -> ImageGeometry:
     xisf = XISF(filename)
     image_meta = xisf.get_images_metadata()[0]

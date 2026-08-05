@@ -16,16 +16,40 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable
 
-from file_io.xisf_file_io import read_xisf_total_exposure_time
+from file_io.xisf_file_io import read_xisf_number_of_images
 
 
 _Reader = Callable[[Path, dict[str, Any]], "float | None"]
 
 
+def _safe_float(v: Any) -> float | None:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
 def _read_xisf(filename: Path, header: dict[str, Any]) -> float | None:
+    """PixInsight master: integrated-frame count × per-sub EXPTIME.
+
+    The count is `numberOfImages` from the XISF `PixInsight:ProcessingHistory`
+    (frames that survived registration/rejection); EXPTIME is the uniform
+    per-sub exposure from the header. We deliberately do NOT read
+    `PCL:TotalExposureTime`: that is a PSF-WEIGHTED effective exposure (a
+    fractional multiple of EXPTIME), which collapses toward ~0 for weak-star
+    narrowband stacks and made good, fully-integrated masters look "0%
+    integrated". Returns None when the count is unreadable or EXPTIME is
+    absent/0 (e.g. a bias master), so callers fall back to the prediction.
+    """
     if filename.suffix.lower() != ".xisf":
         return None
-    return read_xisf_total_exposure_time(filename)
+    n = read_xisf_number_of_images(filename)
+    if n is None:
+        return None
+    exptime = _safe_float(header.get("EXPTIME"))
+    if not exptime:
+        return None
+    return n * exptime
 
 
 # Registered in priority order — first match wins. Each reader is free
