@@ -8,9 +8,12 @@ RGB-star combination, and screen blend are numpy (`mosaics.color.palettes`).
 The framework is one-artifact-per-`@node`, so the "several outputs" are several
 ops: each named color image (`Hubble`, `Foraxx`, `Stars`) is its own `@node`
 with its own `display=` name and `filter=None` (a color composite has no single
-filter). The per-channel BXT/SXT/stretch steps are `display`-less intermediates
-wrapped in `ephemeral_intermediates()`. `mock_pixinsight` passes the heavy
-rc-astro ML calls straight through so the suite runs without rc-astro.
+filter). The per-channel steps are `display`-less intermediates; only the
+CHEAP ones (stage-0 wrap, stretches, band-joins) sit inside
+`ephemeral_intermediates()` scopes — the GPU stages (BXT/SXT/NXT tiles) are
+deliberately unscoped and persist, because ephemeral means cheap-to-recompute
+× big-on-disk and GPU minutes are not cheap. `mock_pixinsight` passes the
+heavy rc-astro ML calls straight through so the suite runs without rc-astro.
 """
 import json
 import os
@@ -381,9 +384,10 @@ def blend_linear_sho(
     """Feather the NXT'd tiles back into the single linear-SHO master — the
     source the WebGPU tile viewer finishes live. Fully streaming (see
     file_io/tiling.feather_blend_to_bigtiff): never materializes the canvas.
-    `final=True` keeps the ephemeral tiles alive until it runs and exempts this
-    deliverable from reclaim. display="Linear SHO" makes the tap run the live SHO
-    colour finish (see LINEAR_SHO_DISPLAY)."""
+    `final=True` exempts this deliverable from any ephemeral scope (the NXT
+    tiles themselves are GPU work — kept, never ephemeral). display="Linear
+    SHO" makes the tap run the live SHO colour finish (see
+    LINEAR_SHO_DISPLAY)."""
     out = blend_linear_sho.filename_fn(mosaic, config, rects, *tiles)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     feather_blend_to_bigtiff(
@@ -408,10 +412,12 @@ def linear_sho(
     `viewbox` supplies the trace-time canvas geometry (the panel grid is built
     before any node runs); it's the mosaic viewbox at the pipeline's quality
     (`mosaic.viewbox("Master")` / `"DownscaledMaster"`)."""
+    # The SHO band-join is cheap × big — ephemeral. The NXT tiles are GPU
+    # work — kept (outside the scope), so incremental runs cache-hit them.
     with ephemeral_intermediates():
         source = combine_panels(stack_sho_channels, mosaic, sii, ha, oiii)
-        result = process_in_panels(
-            nxt, mosaic, config, source, viewbox=viewbox, blend=blend_linear_sho)
+    result = process_in_panels(
+        nxt, mosaic, config, source, viewbox=viewbox, blend=blend_linear_sho)
     return result.merged
 
 
@@ -521,30 +527,38 @@ def color_post_process(mosaic: Mosaic, channels: dict, config, viewbox=None) -> 
         viewbox = mosaic.viewbox("Master")
     by_class = {normalize_filter(f): ch for f, ch in channels.items()}
 
+    # Ephemeral = cheap-to-recompute × big-on-disk. The GPU stages (BXT/SXT
+    # tiles + their blends) are deliberately OUTSIDE every scope: reclaiming
+    # them made each incremental run repay hours of GPU work re-deriving
+    # unchanged tiles (the 619-redo autopsy, 2026-08-05). They persist;
+    # superseded hashes are collected by the orphan sweep. Only the genuinely
+    # cheap intermediates (stage-0 wrap, stretches, band-joins) stay ephemeral.
     starless_nb: dict[str, object] = {}
     stretched_nb: dict[str, object] = {}
     bxt_bb: dict[str, object] = {}
-    with ephemeral_intermediates():
-        for cf, channel in by_class.items():
-            # Wrap the merged channel as the stage-0 PanelMosaic (merged image +
-            # per-panel base manifest); every rc-astro op then tiles by PANEL.
+    for cf, channel in by_class.items():
+        # Wrap the merged channel as the stage-0 PanelMosaic (merged image +
+        # per-panel base manifest); every rc-astro op then tiles by PANEL.
+        with ephemeral_intermediates():
             pm = base_panel_mosaic(mosaic, cf, channel)
-            if cf in _NARROWBAND:
-                corrected = process_in_panels(bxt_correct, mosaic, cf, config, pm, viewbox=viewbox)
-                starless = process_in_panels(sxt_starless, mosaic, cf, config, corrected, viewbox=viewbox)
-                starless_nb[cf] = starless  # PanelMosaic — linear source for the Linear SHO tap
+        if cf in _NARROWBAND:
+            corrected = process_in_panels(bxt_correct, mosaic, cf, config, pm, viewbox=viewbox)
+            starless = process_in_panels(sxt_starless, mosaic, cf, config, corrected, viewbox=viewbox)
+            starless_nb[cf] = starless  # PanelMosaic — linear source for the Linear SHO tap
+            with ephemeral_intermediates():
                 stretched_nb[cf] = autostretch_channel(mosaic, cf, starless.merged)
-            elif cf in _BROADBAND:
-                bxt_bb[cf] = process_in_panels(bxt_correct, mosaic, cf, config, pm, viewbox=viewbox)
+        elif cf in _BROADBAND:
+            bxt_bb[cf] = process_in_panels(bxt_correct, mosaic, cf, config, pm, viewbox=viewbox)
 
-        # Broadband stars: combine the linear BXT'd channels into one RGB, then
-        # SXT ONCE on that RGB so the extracted stars are coherent across R/G/B
-        # (no per-channel primary-colour confetti). `combine_panels` threads the
-        # R/G/B manifests into the RGB source so the SXT crops key per-panel.
-        rgb_star_lin = None
-        if _BROADBAND <= set(bxt_bb):
+    # Broadband stars: combine the linear BXT'd channels into one RGB, then
+    # SXT ONCE on that RGB so the extracted stars are coherent across R/G/B
+    # (no per-channel primary-colour confetti). `combine_panels` threads the
+    # R/G/B manifests into the RGB source so the SXT crops key per-panel.
+    rgb_star_lin = None
+    if _BROADBAND <= set(bxt_bb):
+        with ephemeral_intermediates():
             rgb_lin = combine_panels(combine_broadband_rgb, mosaic, bxt_bb["R"], bxt_bb["G"], bxt_bb["B"])
-            rgb_star_lin = process_in_panels(sxt_stars_rgb, mosaic, config, rgb_lin, viewbox=viewbox)
+        rgb_star_lin = process_in_panels(sxt_stars_rgb, mosaic, config, rgb_lin, viewbox=viewbox)
 
     out: dict[str, object] = {}
     rgb_stars = None

@@ -103,17 +103,29 @@ def for_mosaic(mosaic, config):
     out = {}
     for filter in mosaic.filters:
         viewbox = mosaic.viewbox("Master")
+        # Croman two-pass mosaic: BXT Correct-Only on each PANEL (re-solved)
+        # before placement — per-panel aberrations differ across the mosaic —
+        # then the sharpening BXT runs on the assembled mosaic
+        # (color_post_process). GPU work → deliberately OUTSIDE the ephemeral
+        # scope (ephemeral = cheap-to-recompute × big; GPU minutes are not
+        # cheap): kept on disk so incremental runs cache-hit, superseded
+        # hashes collected by the orphan sweep.
+        corrected = {
+            tid: bxt_correct_only(targets_by_id[tid], filter, config,
+                                  channels[(tid, filter)])
+            for strip in mosaic.strips
+            for tid in strip
+            if (tid, filter) in channels
+        }
+        # Placed panels are multi-GB but CPU-cheap re-derivations — reclaimed
+        # once the merge consumes them.
         with ephemeral_intermediates():
-            # Croman two-pass mosaic: BXT Correct-Only on each PANEL (re-solved)
-            # before placement — per-panel aberrations differ across the mosaic —
-            # then the sharpening BXT runs on the assembled mosaic (color_post_process).
             placed = [
                 place_image(mosaic, targets_by_id[tid], filter, viewbox, config,
-                            bxt_correct_only(targets_by_id[tid], filter, config,
-                                             channels[(tid, filter)]))
+                            corrected[tid])
                 for strip in mosaic.strips
                 for tid in strip
-                if (tid, filter) in channels
+                if tid in corrected
             ]
             if not placed:
                 continue

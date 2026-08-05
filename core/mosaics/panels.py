@@ -35,7 +35,6 @@ from pathlib import Path
 
 import numpy as np
 
-from astroflow.pipeline import ephemeral_intermediates
 from decisions.settings import ProcessingConfig
 from decorators import node
 from file_io.tiff_file_io import write_tiff_image
@@ -222,17 +221,21 @@ def process_in_panels(op, *op_args, viewbox, blend=blend_panels) -> PanelMosaic:
             f"got {type(source).__name__}")
 
     manifest = dict(source.manifest)   # carry non-tiled panels forward unchanged
+    # Ephemerality is the CALLER's decision, not this helper's: tiles inherit
+    # whatever `ephemeral_intermediates()` scope (or none) the call site
+    # composed. GPU-heavy stages are deliberately called OUTSIDE any scope —
+    # ephemeral means cheap-to-recompute × big-on-disk, and GPU minutes are
+    # not cheap — so their tiles persist and incremental runs cache-hit them.
     rects, handles = [], []
-    with ephemeral_intermediates():
-        for pid, rect, scope in panel_tiles(mosaic, viewbox, config):
-            scope_hashes = tuple(sorted(
-                source.manifest[j] for j in scope if j in source.manifest))
-            crop = crop_panel(mosaic, rect, source.merged, scope_hashes)
-            handles.append(op(*lead, crop))
-            rects.append(rect)
-            # The tile's new identity IS its op's output identity — folds op code,
-            # config (via the op's narrow), and the scoped source, drift-free.
-            manifest[pid] = Path(op.filename_fn(*lead, crop)).stem
+    for pid, rect, scope in panel_tiles(mosaic, viewbox, config):
+        scope_hashes = tuple(sorted(
+            source.manifest[j] for j in scope if j in source.manifest))
+        crop = crop_panel(mosaic, rect, source.merged, scope_hashes)
+        handles.append(op(*lead, crop))
+        rects.append(rect)
+        # The tile's new identity IS its op's output identity — folds op code,
+        # config (via the op's narrow), and the scoped source, drift-free.
+        manifest[pid] = Path(op.filename_fn(*lead, crop)).stem
     merged = blend(mosaic, config, tuple(rects), *handles)
     return PanelMosaic(merged=merged, manifest=manifest, mosaic=mosaic)
 

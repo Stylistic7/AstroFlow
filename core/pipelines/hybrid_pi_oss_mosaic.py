@@ -102,22 +102,31 @@ def for_mosaic(mosaic, config):
         # Placed-panel images are multi-GB each and only feed the final
         # OSS merge — wrap them in `ephemeral_intermediates()` so the
         # `place_image` outputs are reclaimed after the merge consumes them.
-        # `merge_images_oss` is `final=True`, so it's exempt from the scope:
-        # the whole body lives inside one block and the merge survives as the
-        # kept "Mosaic" deliverable. `merge_images_oss` is variadic — every
-        # panel blends in a single global pass (one feather, one least-squares
-        # flux solve), no row/strip decomposition.
+        # `merge_images_oss` is `final=True` (exempt from the scope) — the
+        # kept "Mosaic" deliverable. It is variadic — every panel blends in a
+        # single global pass (one feather, one least-squares flux solve), no
+        # row/strip decomposition.
+        # Croman two-pass mosaic: BXT Correct-Only on each PANEL (re-solved)
+        # before placement — per-panel aberrations differ across the mosaic —
+        # then the sharpening BXT runs on the assembled mosaic
+        # (color_post_process). GPU work → deliberately OUTSIDE the ephemeral
+        # scope (ephemeral = cheap-to-recompute × big; GPU minutes are not
+        # cheap): kept on disk so incremental runs cache-hit, superseded
+        # hashes collected by the orphan sweep.
+        corrected = {
+            tid: bxt_correct_only(targets_by_id[tid], filter, config,
+                                  channels[(tid, filter)])
+            for strip in mosaic.strips
+            for tid in strip
+            if (tid, filter) in channels
+        }
         with ephemeral_intermediates():
-            # Croman two-pass mosaic: BXT Correct-Only on each PANEL (re-solved)
-            # before placement — per-panel aberrations differ across the mosaic —
-            # then the sharpening BXT runs on the assembled mosaic (color_post_process).
             placed = [
                 place_image(mosaic, targets_by_id[tid], filter, viewbox, config,
-                            bxt_correct_only(targets_by_id[tid], filter, config,
-                                             channels[(tid, filter)]))
+                            corrected[tid])
                 for strip in mosaic.strips
                 for tid in strip
-                if (tid, filter) in channels
+                if tid in corrected
             ]
             if not placed:
                 continue
