@@ -146,6 +146,15 @@ class StateActor:
         self._drain_event = Event()
         self._runner = Thread(target=self._run_loop, daemon=True)
         self._runner.start()
+        # Wall-clock janitor: reclaims abnormal-termination debris (orphaned
+        # pyvips temps, PixInsight swaps, staging dirs) every tick, run or no
+        # run. Event-triggered cleanup (pre-run reclaim, completion sweep)
+        # misses exactly the case where processes die ungracefully mid-run —
+        # which is how the boot volume accumulated 310 GB of vips orphans in
+        # two days. Files-not-processes; safe against live work (lsof + age).
+        from cache.janitor import run_forever as _janitor_forever
+        self._janitor = Thread(target=_janitor_forever, daemon=True)
+        self._janitor.start()
 
     def enqueue(self, action: Action) -> int:
         with self._cv:
