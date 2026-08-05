@@ -79,43 +79,95 @@ log = structlog.get_logger()
 #     After stacking, the best preview is the post-processed (BXT, etc.) image.
 
 
-# TODO: Don't revisit the same failed images over and over, it just takes up
-# time at every startup.
-#
-# TODO: Add a task that checks that input and output directories exist. Many
-# tasks cannot run without them.
 @ray.remote(num_cpus=0.1)
 @beartype
 def scatter_compute_image_metadata(*filenames_in: list[Path]) -> Graph:
-    filenames_in = set(f for f in filenames_in if f is not None)
-    filenames: set[str] = set(filenames_in)
+    """Build the startup metadata subgraph — DELTA-ONLY.
 
-    # TODO: Don't do anything if the directory's modification time hasn't
-    # changed since the last time it was listed.
-    for dir in context.input_dirs:
-        # Include user-supplied external masters (`Calibration Masters/
-        # MasterDark*.fit` etc.) in the same sweep as raw subframes. Their
-        # ImageMetadata flowing into the diskcache is what makes the trace
-        # @node's cache key (which embeds metadata_ref.content_hash)
-        # invalidate when the user drops in a fresh master.
-        artifacts_for_dir = set(find_image_files(dir, include_masters=True))
-        log.info("Found image files in directory", directory=str(dir), count=len(artifacts_for_dir))
-        filenames.update(artifacts_for_dir)
+    Per input dir: a fresh scan (or, for a disconnected volume, the last
+    durable record — "that disk hasn't changed") yields a fingerprint +
+    listing. `compute_image_metadata` nodes are emitted ONLY for files that
+    are new or changed since the previous record; an unchanged library emits
+    ZERO per-file nodes. Downstream, pure per-dir pieces
+    (`build_dir_library`, fingerprint-keyed) and the pure union
+    (`build_library_dicts`) are diskcache hits when nothing changed, so
+    startup collapses to the scans plus a handful of cache lookups. The
+    impure remainder is `publish_library_refs`: two context puts and the
+    deferred persistence of the fresh scan records (deferred so a run that
+    dies mid-way re-deltas the same files next start instead of swallowing
+    them).
 
-    compute_tasks = {(compute_image_metadata, Path(f)) for f in filenames}
-    # `load_defects` runs after `load_metadata` so they share the same
-    # one-time cache scan ordering. Together they publish both
-    # `metadata_ref` and `defects_ref` into context before the regroup
-    # graph starts. `load_defects` is the single terminal node — its
-    # return value becomes the subgraph's `final_result`.
-    graph = Graph(
-        {
-            load_metadata: compute_tasks,
-            load_defects: {load_metadata},
-        }
+    CHANGED files (same path, different size/mtime) get their op cache entry
+    invalidated AND their sidecar dropped here — `compute_image_metadata`
+    keys on the filename literal and cold-starts from the sidecar
+    unconditionally, so without both resets an in-place change would serve
+    stale metadata forever.
+
+    Explicit `filenames_in` (tests only — no production caller passes any)
+    become ad-hoc compute nodes + one synthetic piece so they still reach
+    the union.
+    """
+    from metadata.library_scan import (
+        delta as scan_delta, load_record, scan_or_reuse,
     )
+    from file_io.sidecar import sidecar_path_for
+    from hashing import hash_call
 
-    return graph
+    graph_dict: dict = {}
+    pieces: list[tuple] = []
+    records_to_persist: list[tuple] = []
+
+    for dir in context.input_dirs:
+        old = load_record(dir)          # BEFORE scan (scan doesn't persist)
+        record, fresh = scan_or_reuse(dir)
+        added, changed, removed = (
+            scan_delta(old, record) if fresh else ([], [], [])
+        )
+        if fresh and (added or changed or removed or old is None):
+            records_to_persist.append(
+                (record.dir, record.fingerprint, record.listing)
+            )
+        log.info(
+            "library scan", dir=str(dir), files=len(record.listing),
+            fresh=fresh, added=len(added), changed=len(changed),
+            removed=len(removed),
+        )
+        root = Path(record.dir)
+        for rel in changed:
+            f = root / rel
+            # Both resets, or the recompute resurrects stale state.
+            compute_image_metadata.invalidate(f)
+            sidecar_path_for(f).unlink(missing_ok=True)
+        dir_nodes = {
+            (compute_image_metadata, root / rel) for rel in (*added, *changed)
+        }
+        piece = (
+            build_dir_library, record.dir, record.fingerprint, record.listing,
+        )
+        # Ordering-only deps: the piece reads SIDECARS (written by the
+        # compute nodes), not their return values — build_dir_library's
+        # exact-arity signature keeps dep results out of its args/cache key.
+        graph_dict[piece] = dir_nodes
+        pieces.append(piece)
+
+    extra = sorted({Path(f) for f in filenames_in if f is not None})
+    if extra:
+        listing = tuple(
+            (str(f), f.stat().st_size if f.exists() else 0, 0) for f in extra
+        )
+        piece = (
+            build_dir_library, "<explicit>",
+            hash_call("explicit_files", listing), listing,
+        )
+        graph_dict[piece] = {(compute_image_metadata, f) for f in extra}
+        pieces.append(piece)
+
+    quarantined = tuple(sorted(context.quarantined_files or ()))
+    union = (build_library_dicts, quarantined)
+    graph_dict[union] = set(pieces)
+    publisher = (publish_library_refs, tuple(records_to_persist))
+    graph_dict[publisher] = {union}
+    return Graph(graph_dict)
 
 
 class DuplicateFileException(Exception):
@@ -293,114 +345,158 @@ def _read_and_analyze_pixels(
 
 
 @ray.remote(num_cpus=0.1)
-@beartype
-@measure_performance
-def load_metadata() -> ContextRef[MetadataDict]:
-    """Build the canonical MetadataDict from cached compute_image_metadata
-    entries.
+@node(num_cpus=0.25)
+def build_dir_library(
+    dir: str, fingerprint: str, listing: tuple,
+) -> tuple:
+    """One dir's library piece: ({content_hash: ImageMetadata} ref,
+    {content_hash: defects} ref), built from the SIDECARS of the files in
+    `listing` — the canonical per-file store, written by
+    `compute_image_metadata` (whose delta nodes are ordering-deps of this
+    piece, so new files' sidecars exist by the time it runs).
 
-    Includes both raw subframes AND user-supplied external masters under
-    `input_dirs`. The master inclusion lets the trace @node's cache key
-    (which embeds `metadata_ref.content_hash`) invalidate when the user
-    drops a fresh master file in. Downstream consumers that only want
-    light frames already filter internally: `clustering/spatial.py` gates
-    spatial_groups on `is_light_frame and not is_master`, and
-    `identify_calibration_stacks` re-applies `not is_master` as a
-    second-line defense for masters with misleading headers.
+    Cached on (dir, fingerprint, listing): an unchanged dir is a diskcache
+    hit, and a DISCONNECTED dir's fingerprint literally cannot change — its
+    piece hits forever without touching the absent volume. That is the
+    whole "disconnected = unchanged" mechanism; no special-casing here.
 
-    The input_dirs gate prevents AstroFlow-produced masters in
-    `output_dir` from ever entering — only user-supplied files participate.
+    EXACT arity matters: with exactly three parameters the runtime passes
+    only the literals (dep results stay out of the args and the cache key)
+    — the compute nodes are ordering-only dependencies.
+
+    Includes user-supplied external masters (already in the listing via
+    `find_image_files(include_masters=True)`); their presence in the piece
+    is what lets the trace @node's cache key invalidate when the user drops
+    a fresh master in. Quarantine is NOT applied here (pieces stay
+    quarantine-independent; the union filters), so a quarantine change
+    never re-reads sidecars.
     """
-    quarantined_files = context.quarantined_files or set()
+    from metadata.sidecar_io import read_defect_candidates, read_image_metadata
 
-    # TODO: This won't support disconnected storage media.
-    input_dirs = [str(Path(d).resolve()) for d in (context.input_dirs or [])]
-
-    def is_input_file(filename) -> bool:
-        resolved = str(Path(filename).resolve())
-        return any(resolved.startswith(d) for d in input_dirs)
-
-    metadata = MetadataDict()
-    for key, value in context.get_matching(("compute_image_metadata",)).items():
+    root = Path(dir)
+    metadata: dict = {}
+    defects: dict = {}
+    for rel, _size, _mtime in listing:
+        # The tests-only "<explicit>" piece carries absolute paths.
+        f = Path(rel) if dir == "<explicit>" else root / rel
         try:
-            if not isinstance(value.content_hash, str):
-                continue
-            if value.content_hash in quarantined_files:
-                continue
-            if not is_input_file(value.filename):
-                continue
-            if not os.path.exists(value.filename):
-                continue
-            existing = metadata.get(value.content_hash)
-            if existing is None:
-                metadata[value.content_hash] = value
+            meta = read_image_metadata(f)
+            if meta is None or not isinstance(meta.content_hash, str):
+                continue  # never analyzed / marked broken → next delta retries
+            if meta.content_hash in metadata:
+                continue  # duplicate frame content — first wins
+            metadata[meta.content_hash] = meta
+            d = read_defect_candidates(f)
+            if d is not None:
+                defects[meta.content_hash] = d
         except Exception as e:
-            log.warning("Rejecting bad metadata key", key=key, error=str(e), value_type=type(value).__name__)
+            log.warning(
+                "library piece: skipping unreadable sidecar",
+                file=str(f), error=str(e),
+            )
+    log.info(
+        "library piece built", dir=dir,
+        entries=len(metadata), with_defects=len(defects),
+    )
+    return (ContextRef.store_large(metadata), ContextRef.store_large(defects))
 
-    ref = ContextRef.store_large(metadata)
-    # Publish the (small) ContextRef under a fixed key so other callers
-    # can grab it via one cheap RPC instead of re-running this whole
-    # scan. `load_metadata` itself is ~20-30 s on a populated cache
-    # (every entry gets an os.path.exists), and the trace's @node cache
-    # key needs metadata_ref.content_hash, so without this publish the
-    # web server pays the full scan cost on every request before it
-    # can even check whether the trace is cached.
-    context["metadata_ref"] = ref
-    return ref
+
+@node(num_cpus=0.25)
+def build_library_dicts(quarantined: tuple, *pieces: tuple) -> tuple:
+    """Union the per-dir pieces into the canonical (MetadataDict ref,
+    DefectsDict ref) pair, dropping quarantined content hashes.
+
+    Pure and cached on (quarantined, *piece refs): unchanged pieces + an
+    unchanged quarantine set = a diskcache hit returning the same refs —
+    the union costs nothing on an unchanged library. A quarantine change
+    re-runs only this cheap union, never the sidecar-reading pieces.
+
+    NO existence filtering here (the old `load_metadata` dropped any frame
+    failing `os.path.exists`, which made unplugging a disk mutate the
+    MetadataDict → stack content hashes moved → spurious re-derives).
+    Listing membership IS the filter now; frames on a disconnected volume
+    remain first-class members and only genuine file READS can fail,
+    locally, at the node that attempts them.
+    """
+    quarantined_set = set(quarantined)
+    metadata = MetadataDict()
+    defects = DefectsDict()
+    for piece in pieces:
+        meta_ref, defect_ref = piece
+        for content_hash, value in meta_ref.get().items():
+            if content_hash in quarantined_set or content_hash in metadata:
+                continue
+            metadata[content_hash] = value
+        for content_hash, d in defect_ref.get().items():
+            if content_hash in quarantined_set or content_hash in defects:
+                continue
+            defects[content_hash] = d
+    log.info(
+        "library dicts built", entries=len(metadata), defects=len(defects),
+    )
+    return (ContextRef.store_large(metadata), ContextRef.store_large(defects))
 
 
 @ray.remote(num_cpus=0.1)
 @beartype
 @measure_performance
-def load_defects(
-    metadata_ref: ContextRef[MetadataDict],
+def publish_library_refs(
+    records: tuple, pair: tuple,
 ) -> ContextRef[MetadataDict]:
-    """Build the canonical DefectsDict from cached sidecars and publish
-    it via `context["defects_ref"]`.
+    """The startup chain's single impure terminal: publish the refs and
+    persist the fresh scan records.
 
-    Reads only the `defect_candidates` sidecar section. Used by
-    `identify_camera_fingerprints` (the only op that needs per-frame
-    defects); every other op skips this fetch and stays small.
-
-    **Returns the upstream `metadata_ref` unchanged** so that this task
-    can sit as the chain-terminal of `scatter_compute_image_metadata`
-    without altering the value that downstream chain consumers receive
-    (`build_regroup_graph`, ad-hoc test fixtures, etc.). The
-    DefectsDict itself flows out of band via `context["defects_ref"]`.
-    Same input-dirs gate as `load_metadata`: only user-supplied
-    frames participate.
+    * `context["metadata_ref"]` / `context["defects_ref"]` — the fixed keys
+      every other consumer (web server, trace cache keys,
+      `identify_camera_fingerprints`) reads with one cheap RPC.
+    * Persist each fresh dir record — deliberately HERE, after the pieces
+      and union succeeded, so a run that dies earlier re-deltas the same
+      files next start instead of swallowing them.
+    * Returns `metadata_ref` — the subgraph's `final_result`, which
+      `build_regroup_graph` consumes (same contract as the old
+      `load_defects` terminal).
     """
-    from metadata.sidecar_io import read_defect_candidates
+    from metadata.library_scan import ScanRecord, store_record
 
-    quarantined_files = context.quarantined_files or set()
-    input_dirs = [str(Path(d).resolve()) for d in (context.input_dirs or [])]
+    metadata_ref, defects_ref = pair
+    context["metadata_ref"] = metadata_ref
+    context["defects_ref"] = defects_ref
+    for dir, fingerprint, listing in records:
+        store_record(ScanRecord(
+            dir=dir, fingerprint=fingerprint,
+            listing=tuple(tuple(e) for e in listing),
+        ))
+    return metadata_ref
 
-    def is_input_file(filename) -> bool:
-        resolved = str(Path(filename).resolve())
-        return any(resolved.startswith(d) for d in input_dirs)
 
-    defects = DefectsDict()
-    for key, value in context.get_matching(("compute_image_metadata",)).items():
-        try:
-            if not isinstance(value.content_hash, str):
-                continue
-            if value.content_hash in quarantined_files:
-                continue
-            if not is_input_file(value.filename):
-                continue
-            if not os.path.exists(value.filename):
-                continue
-            if value.content_hash in defects:
-                continue
-            d = read_defect_candidates(Path(value.filename))
-            if d is not None:
-                defects[value.content_hash] = d
-        except Exception as e:
-            log.warning(
-                "Rejecting bad defects key", key=key,
-                error=str(e), value_type=type(value).__name__,
-            )
+@ray.remote(num_cpus=0.1)
+@beartype
+@measure_performance
+def load_library_now() -> ContextRef[MetadataDict]:
+    """Tests/scripts convenience: the whole library chain in one Ray task —
+    scan, per-dir pieces, union, publish — using the graph ops' underlying
+    functions (`._function`), so the result is identical to a full
+    `scatter_compute_image_metadata` run. Unlike the graph path this builds
+    the pieces uncached (fixtures churn their libraries between calls, so a
+    fingerprint cache would just miss anyway). Replaces the old
+    `load_metadata.remote()` entry point."""
+    from metadata.library_scan import ScanRecord, scan_or_reuse, store_record
 
-    ref = ContextRef.store_large(defects)
-    context["defects_ref"] = ref
+    pieces = []
+    records = []
+    for dir in context.input_dirs:
+        record, fresh = scan_or_reuse(dir)
+        if fresh:
+            records.append(record)
+        pieces.append(build_dir_library._function(
+            record.dir, record.fingerprint, record.listing,
+        ))
+    quarantined = tuple(sorted(context.quarantined_files or ()))
+    metadata_ref, defects_ref = build_library_dicts._function(
+        quarantined, *pieces,
+    )
+    context["metadata_ref"] = metadata_ref
+    context["defects_ref"] = defects_ref
+    for record in records:
+        store_record(record)
     return metadata_ref

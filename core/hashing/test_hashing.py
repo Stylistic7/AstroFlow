@@ -9,7 +9,7 @@ from context import context
 from dependency_graph import run_graph
 from stacks.composite_stack import RunsDict
 from mosaics.orion_mosaic import add_orion_mosaic_images
-from metadata.image_metadata import load_metadata
+from metadata.image_metadata import load_library_now
 
 
 @pytest.mark.exhaustive
@@ -36,7 +36,7 @@ def test_hashes_and_metadata(test_context) -> None:
     assert hash(dict) == 1247087795776248668
 
     # --- Metadata hash ---
-    metadata = ray.get(load_metadata.remote())
+    metadata = ray.get(load_library_now.remote())
     assert metadata.content_hash == "f7d2afc361d2b308"
 
     # Adding more frames changes the metadata hash.
@@ -45,7 +45,7 @@ def test_hashes_and_metadata(test_context) -> None:
     )
     run_graph(build_compute_graph())
 
-    metadata = ray.get(load_metadata.remote())
+    metadata = ray.get(load_library_now.remote())
     assert metadata.content_hash != "f7d2afc361d2b308"
 
 

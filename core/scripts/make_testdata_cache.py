@@ -10,7 +10,7 @@ connect_to_ray_cluster()
 
 from context import get_cache
 from cache.context_ref import ContextRef
-from metadata.image_metadata import load_metadata
+from metadata.image_metadata import load_library_now
 from stacks.run import Run
 from stacks.composite_stack import Stack
 
@@ -74,7 +74,7 @@ if __name__ == "__main__":
     testdata_cache.clear()
     print(f"Opened testdata cache in dir {testdata_cache_dir.name}")
 
-    metadata = ray.get(load_metadata.remote()).get()
+    metadata = ray.get(load_library_now.remote()).get()
 
     copy_all_mosaic_data(metadata, cache, testdata_cache, "75a1da6463e118e6")
     copy_all_stack_data(metadata, cache, testdata_cache, "8768e9be7664d771")

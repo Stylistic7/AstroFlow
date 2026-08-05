@@ -226,12 +226,12 @@ def build_regroup_graph(
     decision_overrides,
     metadata_ref: ContextRef[MetadataDict],
 ) -> Graph:
-    # `scatter_compute_image_metadata` runs `load_metadata` then
-    # `load_defects` (which publishes `defects_ref` into context as a
-    # side effect and returns `metadata_ref` unchanged). By the time
-    # this builder fires, both refs are in context. `metadata_ref`
-    # flows in as our positional ancestor; `defects_ref` is read from
-    # context.
+    # `scatter_compute_image_metadata`'s subgraph terminates in
+    # `publish_library_refs`, which publishes BOTH `metadata_ref` and
+    # `defects_ref` into context and returns `metadata_ref` as the
+    # subgraph's final result. By the time this builder fires, both refs
+    # are in context. `metadata_ref` flows in as our positional ancestor;
+    # `defects_ref` is read from context.
     from stacks.identification import identify_camera_fingerprints
 
     defects_ref: ContextRef[DefectsDict] = context["defects_ref"]

@@ -73,7 +73,13 @@ _DURABLE_TUPLE_NS = frozenset(
      # records PAST output paths/call_hashes, which nothing can recompute once
      # the old files are gone — an LFU eviction would silently lose the
      # last-good fallback, so it must never evict. See products/version_log.py.
-     "product_versions"}
+     "product_versions",
+     # Per-input-dir library scan records (fingerprint + listing). While a
+     # volume is DISCONNECTED the record is the only knowledge of that disk's
+     # contents ("disconnected = unchanged" semantics) — nothing can recompute
+     # it until the disk returns, so it must never evict. Overwritten by a
+     # fresh scan whenever the dir is present. See metadata/library_scan.py.
+     "library_scan"}
 )
 _DURABLE_STR_KEYS = frozenset(
     {

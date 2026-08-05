@@ -9,7 +9,7 @@ from dependency_graph import run_graph, Graph
 from testing import make_synthetic_frames
 from metadata.image_metadata import (
     scatter_compute_image_metadata,
-    load_metadata,
+    load_library_now,
 )
 from metadata.classes import MetadataDict
 from file_io.sidecar import sidecar_path_for
@@ -20,7 +20,7 @@ def compute_graph_fragment():
 
 
 def get_filenames_in_cache():
-    metadata = ray.get(load_metadata.remote()).get()
+    metadata = ray.get(load_library_now.remote()).get()
     assert isinstance(metadata, MetadataDict)
     return [Path(i.filename).resolve() for i in metadata.values()]
 
@@ -32,7 +32,7 @@ def get_filenames_on_disk(input_dir: Path) -> list[Path]:
 
 
 def get_metadata():
-    metadata = ray.get(load_metadata.remote()).get()
+    metadata = ray.get(load_library_now.remote()).get()
     assert isinstance(metadata, MetadataDict)
     return list(metadata.values())
 
@@ -142,3 +142,39 @@ def test_deleted_files(test_context):
 
     filenames_in_cache = get_filenames_in_cache()
     assert len(filenames_in_cache) == 1
+
+
+# --- delta-only scatter: the instant-startup acceptance tests ----------------
+
+def _compute_nodes(graph: Graph) -> list:
+    from metadata.image_metadata import compute_image_metadata
+    return [
+        n for n in graph
+        if isinstance(n, tuple) and n and n[0] is compute_image_metadata
+    ]
+
+
+def test_unchanged_library_emits_zero_compute_nodes(test_context):
+    """THE design goal: when the input library has not changed, the scatter
+    adds no compute_image_metadata nodes to the graph at all."""
+    input_dir = context.input_dirs[0]
+    make_synthetic_frames(number=3, dest_dir=input_dir)
+
+    run_graph(compute_graph_fragment())          # first pass: full delta,
+                                                 # publisher persists records
+    g2 = ray.get(scatter_compute_image_metadata.remote())
+    assert _compute_nodes(g2) == [], (
+        "unchanged library must emit ZERO per-file compute nodes"
+    )
+
+
+def test_new_file_emits_exactly_one_compute_node(test_context):
+    input_dir = context.input_dirs[0]
+    make_synthetic_frames(number=3, dest_dir=input_dir)
+    run_graph(compute_graph_fragment())
+
+    make_synthetic_frames(number=1, dest_dir=os.path.join(input_dir, "night2"))
+    g2 = ray.get(scatter_compute_image_metadata.remote())
+    nodes = _compute_nodes(g2)
+    assert len(nodes) == 1, f"expected exactly the new file, got {nodes}"
+    assert "night2" in str(nodes[0][1])
