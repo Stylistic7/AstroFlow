@@ -312,6 +312,21 @@ def make_cached_decorator(
                         "are supported in trace context."
                     )
                 handle = record(wrapper, *args, _after=_after)
+                # Stamp the handle with its call hash — the pure-Merkle
+                # content_hash its runtime result will carry (the CONTHASH
+                # stamp IS the producer's call_hash). Computable inductively:
+                # child handles in `args` already carry theirs, and
+                # `_maybe_use_content_hash` resolves them. This makes a
+                # handle hashable ANYWHERE — including direct filename_fn
+                # calls at trace time (process_in_panels derives its panel
+                # manifest that way) — instead of leaking an address-based
+                # Node repr into the hash, which made panel manifests
+                # per-process nondeterministic and silently broke the
+                # eager-trace/lazy-trace bit-identity claim.
+                try:
+                    handle.content_hash = canonical_call_hash(*args)
+                except Exception:
+                    pass  # un-hashable literals surface at dispatch, not here
                 # `final=True` ops are deliverables — EXEMPT from ephemeral
                 # reclaim even inside an `ephemeral_intermediates()` block.
                 # This lets a pipeline wrap its whole body and still keep the

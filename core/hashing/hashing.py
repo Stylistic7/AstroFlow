@@ -42,17 +42,32 @@ def hash_list(L: Any, debug: bool = False) -> str:
     # name the offender instead. (Sets/dicts are already canonicalized by
     # make_hashable; this catches the objects it passes through verbatim.)
     if " at 0x" in serialized:
-        offender = next(
-            (repr(o)[:120] for o in L2 if " at 0x" in str(o)), serialized[:120]
-        )
         raise ValueError(
             "Nondeterministic value in call-hash arguments: an element's "
-            f"repr is memory-address-based ({offender}). Give the type a "
-            "stable __repr__, a content_hash, or make it a dataclass — "
-            "address-based reprs make the cache key flap every process."
+            f"repr is memory-address-based ({_locate_address_repr(L2)}). "
+            "Give the type a stable __repr__, a content_hash, or make it a "
+            "dataclass — address-based reprs make the cache key flap every "
+            "process."
         )
 
     return xxhash.xxh64(serialized).hexdigest()
+
+
+def _locate_address_repr(value: Any, path: str = "args") -> str:
+    """Walk nested containers to name the exact element whose REPR carries
+    a memory address, with its path and type — 'somewhere in this 4KB
+    blob' is not an actionable error."""
+    if isinstance(value, (list, tuple)):
+        for i, v in enumerate(value):
+            if " at 0x" in repr(v):
+                return _locate_address_repr(v, f"{path}[{i}]")
+        return f"{path}: {repr(value)[:120]}"
+    if isinstance(value, dict):
+        for k, v in value.items():
+            if " at 0x" in repr(v):
+                return _locate_address_repr(v, f"{path}[{k!r}]")
+        return f"{path}: {repr(value)[:120]}"
+    return f"{path} = {type(value).__module__}.{type(value).__qualname__}: {repr(value)[:120]}"
 
 
 @beartype
