@@ -6,12 +6,12 @@ from clustering import cluster_by_image_center
 from context import context
 from testing.test_frames import make_synthetic_frames
 from dependency_graph import Graph, ResultDict, chain, run_graph
-from metadata.image_metadata import scatter_compute_image_metadata, load_metadata
+from metadata.image_metadata import scatter_compute_image_metadata, load_library_now
 from metadata.classes import MetadataDict
 
 
 def compute_hash_for_filename() -> dict[str, str]:
-    metadata = ray.get(load_metadata.remote()).get()
+    metadata = ray.get(load_library_now.remote()).get()
     assert isinstance(metadata, MetadataDict)
     return {os.path.basename(i.filename): i.content_hash for i in metadata.values()}
 
@@ -284,7 +284,11 @@ def test_sadr_pano(test_context) -> None:
         (307.06666666666666, 41.44638888888888),
         (307.01666666666665, 38.36083333333333),
     ]
-    ids = ["Pane 0", "Pane 1", "Pane 2", "Pane 3", "Pane 4", "Pane 5"]
+    # .fits extensions: the library scan (find_image_files) defines the
+    # metadata universe now, and it only ingests real frame extensions —
+    # the old extensionless ids only worked because load_metadata read the
+    # PRE-SEEDED cache entries rather than scanning the directory.
+    ids = [f"Pane {i}.fits" for i in range(6)]
 
     make_synthetic_frames(centers=centers, ids=ids, dither=0, dest_dir=input_dir)
 
@@ -302,11 +306,11 @@ def test_sadr_pano(test_context) -> None:
     print(f"### hash_for_filename {hash_for_filename}")
 
     expected_groups = [
-        (hash_for_filename["Pane 0"],),
-        (hash_for_filename["Pane 1"],),
-        (hash_for_filename["Pane 2"],),
-        (hash_for_filename["Pane 3"],),
-        (hash_for_filename["Pane 4"],),
-        (hash_for_filename["Pane 5"],),
+        (hash_for_filename["Pane 0.fits"],),
+        (hash_for_filename["Pane 1.fits"],),
+        (hash_for_filename["Pane 2.fits"],),
+        (hash_for_filename["Pane 3.fits"],),
+        (hash_for_filename["Pane 4.fits"],),
+        (hash_for_filename["Pane 5.fits"],),
     ]
     assert sorted(groups) == sorted(expected_groups)
