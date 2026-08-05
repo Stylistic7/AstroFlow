@@ -3,7 +3,7 @@ JUNIT_SERIAL = serial.xml
 JUNIT_EXCLUSIVE = exclusive.xml
 JUNIT_MERGED = merged.xml
 
-.PHONY: install tests tests-full clean ray-clean ray-status start stop restart
+.PHONY: install tests tests-full clean ray-clean ray-status start stop restart sweep-pi-swap
 
 # Build/repair the project venv so it EXACTLY matches uv.lock — the
 # single source of truth every Mac in the cluster syncs to. `--frozen`
@@ -107,8 +107,30 @@ ray-status:
 # --- App lifecycle ---------------------------------------------------------
 # Start the live app (Ray head + gunicorn web server) in the FOREGROUND.
 # Run from core/. Ctrl-C stops it (main.py's atexit cleans up gunicorn + ray).
-start:
+start: sweep-pi-swap
 	uv run python main.py
+
+# Reclaim orphaned PixInsight swap files (~PI~*.swp) stranded by hard-killed PI
+# sessions — the inactivity watchdog, `make stop`, or crashes. PI only deletes
+# its swap on a GRACEFUL quit, and nothing else reclaims these: not an app
+# restart, not a PI relaunch, not even a reboot (they live in the Caches dir,
+# which macOS never clears). Left alone, these multi-GB gigapixel-mosaic swaps
+# accumulated to 79 GB and wedged the boot volume. Safe ONLY when no PI is
+# running — then every ~PI~*.swp is abandoned; if one is alive we skip the sweep
+# so an in-use swap is never deleted, and the next clean start reclaims it.
+sweep-pi-swap:
+	@if pgrep -f 'PixInsight.app' >/dev/null 2>&1; then \
+		echo "→ PixInsight running — skipping PI swap sweep"; \
+	else \
+		for d in "$$(getconf DARWIN_USER_CACHE_DIR)" "$$(getconf DARWIN_USER_TEMP_DIR)"; do \
+			[ -d "$$d" ] || continue; \
+			n=$$(find "$$d" -maxdepth 1 -name '~PI~*.swp' 2>/dev/null | wc -l | tr -d ' '); \
+			[ "$$n" -eq 0 ] && continue; \
+			sz=$$(find "$$d" -maxdepth 1 -name '~PI~*.swp' -exec du -ch {} + 2>/dev/null | tail -1 | cut -f1); \
+			find "$$d" -maxdepth 1 -name '~PI~*.swp' -delete 2>/dev/null; \
+			echo "→ swept $$n orphaned PI swap file(s) ($$sz) from $$d"; \
+		done; \
+	fi
 
 # Stop the live app: kill the DRIVER (main.py) first, then ray + gunicorn +
 # PixInsight. `make stop` used to leave `main.py` running (it only stopped
