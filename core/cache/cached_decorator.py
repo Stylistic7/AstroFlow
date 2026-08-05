@@ -360,6 +360,17 @@ def make_cached_decorator(
             return valid
         wrapper.is_cached = is_cached
 
+        def cached_value(*args, injected_context=None, **kwargs):
+            """(hit, value): a read-only probe of this call's cache entry —
+            never executes the body. `hit` follows the same validity rules as
+            a real lookup (including the stale-on-disk check), so a builder
+            can collect hit values and emit graph nodes ONLY for misses —
+            the pattern that keeps unchanged work out of the graph entirely."""
+            bound = _bind_args(func, args, kwargs, injected_context)
+            _, _, valid, cached = _key_and_lookup(bound)
+            return (valid, cached if valid else None)
+        wrapper.cached_value = cached_value
+
         def invalidate(*args, injected_context=None, **kwargs) -> bool:
             """Drop this call's cache entry. Returns True iff a key was deleted.
 

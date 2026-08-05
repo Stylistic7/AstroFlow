@@ -89,9 +89,15 @@ def prepare_stack_for_ui(
 
 
 @ray.remote(num_cpus=0.1)
-def gather_ui_stacks(*stack_dicts) -> dict:
-    """Combine per-stack UI dicts into a single {hash: dict} mapping."""
-    return {d["stable_hash"]: d for d in stack_dicts}
+def gather_ui_stacks(prior_ref, *stack_dicts) -> dict:
+    """Merge freshly-prepared per-stack UI dicts over the cache-hit base.
+
+    `prior_ref` is a ContextRef holding the {stable_hash: dict} entries whose
+    `prepare_stack_for_ui` results were already cached (collected by the
+    builder's probe), or None when nothing hit."""
+    base = dict(prior_ref.get()) if prior_ref is not None else {}
+    base.update({d["stable_hash"]: d for d in stack_dicts})
+    return base
 
 
 @node
@@ -99,22 +105,46 @@ def process_stacks_for_ui(
     decisions,
     min_frames: int,
     *ancestor_results,
-) -> Graph:
+) -> "Graph | dict":
+    """Build (or simply return) the ui_stacks mapping — DELTA-ONLY.
+
+    Probes each stack's `prepare_stack_for_ui` cache entry and emits graph
+    nodes ONLY for misses; hits are collected as values. When every stack
+    hits, this returns the assembled dict directly — no subgraph, no
+    per-stack dispatches, no gather. And because this builder is itself
+    @node-cached on (decisions, min_frames, stacks, cal_stacks), the next
+    identical startup short-circuits to ONE diskcache hit returning the
+    finished dict: the ~1,020-task fan-out that previously re-dispatched on
+    every startup (and helped wedge the web server's ContextActor reads)
+    never enters the graph at all.
+    """
     from cache.context_ref import ContextRef
 
     # Ancestor results arrive in non-deterministic set order; unpack by type.
     stacks = next(r for r in ancestor_results if isinstance(r, StacksDict))
     cal_stacks = next(r for r in ancestor_results if isinstance(r, CalibrationStacksDict))
 
+    hits: dict = {}
     per_stack_tasks = []
     for h, ref in stacks.items():
         stack = ref.get() if isinstance(ref, ContextRef) else ref
         stack_decisions = decisions_for_stack(decisions, stack.stable_hash)
-        per_stack_tasks.append(
-            (prepare_stack_for_ui, stack, cal_stacks, stack_decisions, min_frames)
-        )
+        args = (stack, cal_stacks, stack_decisions, min_frames)
+        hit, value = prepare_stack_for_ui.cached_value(*args)
+        if hit:
+            hits[value["stable_hash"]] = value
+        else:
+            per_stack_tasks.append((prepare_stack_for_ui, *args))
 
-    return Graph({gather_ui_stacks: per_stack_tasks})
+    log.info(
+        "ui stacks delta", total=len(stacks), cached=len(hits),
+        to_prepare=len(per_stack_tasks),
+    )
+    if not per_stack_tasks:
+        return hits  # complete — no subgraph needed
+
+    prior_ref = ContextRef.store_large(hits) if hits else None
+    return Graph({(gather_ui_stacks, prior_ref): per_stack_tasks})
 
 
 @node
