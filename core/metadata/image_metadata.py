@@ -164,7 +164,13 @@ def scatter_compute_image_metadata(*filenames_in: list[Path]) -> Graph:
 
     quarantined = tuple(sorted(context.quarantined_files or ()))
     union = (build_library_dicts, quarantined)
-    graph_dict[union] = set(pieces)
+    # ORDERED deps (a list, in deterministic input_dirs order) — a set here
+    # made the pieces' results swap argument positions between boots, which
+    # flapped the union's call hash AND its output refs' identity between two
+    # variants, re-keying everything downstream (identify_camera_fingerprints
+    # recomputed ~46s every boot; trace caches re-keyed). Dep order IS part
+    # of a value-consuming node's cache key — never pass it as a set.
+    graph_dict[union] = pieces
     publisher = (publish_library_refs, tuple(records_to_persist))
     graph_dict[publisher] = {union}
     return Graph(graph_dict)
@@ -418,18 +424,28 @@ def build_library_dicts(quarantined: tuple, *pieces: tuple) -> tuple:
     locally, at the node that attempts them.
     """
     quarantined_set = set(quarantined)
-    metadata = MetadataDict()
-    defects = DefectsDict()
+    raw_metadata: dict = {}
+    raw_defects: dict = {}
     for piece in pieces:
         meta_ref, defect_ref = piece
         for content_hash, value in meta_ref.get().items():
-            if content_hash in quarantined_set or content_hash in metadata:
+            if content_hash in quarantined_set or content_hash in raw_metadata:
                 continue
-            metadata[content_hash] = value
+            raw_metadata[content_hash] = value
         for content_hash, d in defect_ref.get().items():
-            if content_hash in quarantined_set or content_hash in defects:
+            if content_hash in quarantined_set or content_hash in raw_defects:
                 continue
-            defects[content_hash] = d
+            raw_defects[content_hash] = d
+    # CANONICAL insertion order: the dicts' pickled bytes (and therefore the
+    # stored refs' content hashes, and therefore every downstream cache key
+    # embedding them — fingerprints, traces) must not depend on piece
+    # iteration order. Sort by content hash so the value is byte-stable.
+    metadata = MetadataDict()
+    for content_hash in sorted(raw_metadata):
+        metadata[content_hash] = raw_metadata[content_hash]
+    defects = DefectsDict()
+    for content_hash in sorted(raw_defects):
+        defects[content_hash] = raw_defects[content_hash]
     log.info(
         "library dicts built", entries=len(metadata), defects=len(defects),
     )
