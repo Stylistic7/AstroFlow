@@ -147,11 +147,19 @@ def test_deleted_files(test_context):
 # --- delta-only scatter: the instant-startup acceptance tests ----------------
 
 def _compute_nodes(graph: Graph) -> list:
-    from metadata.image_metadata import compute_image_metadata
-    return [
-        n for n in graph
-        if isinstance(n, tuple) and n and n[0] is compute_image_metadata
-    ]
+    # Keys may be raw tuples or canonicalized Nodes depending on the Graph
+    # path — match both by the op name so neither test can pass vacuously.
+    def _is_compute(n):
+        if isinstance(n, tuple) and n:
+            fn = n[0]
+        else:
+            fn = getattr(getattr(n, "task", None), "_function", None)
+        return getattr(fn, "__name__", None) == "compute_image_metadata"
+
+    # Compute nodes appear as DEPENDENCY values of the per-dir pieces
+    # (ordering deps), not as top-level keys — walk both.
+    seen = list(graph) + [d for deps in graph.values() for d in deps]
+    return [n for n in seen if _is_compute(n)]
 
 
 def test_unchanged_library_emits_zero_compute_nodes(test_context):
@@ -173,7 +181,9 @@ def test_new_file_emits_exactly_one_compute_node(test_context):
     make_synthetic_frames(number=3, dest_dir=input_dir)
     run_graph(compute_graph_fragment())
 
-    make_synthetic_frames(number=1, dest_dir=os.path.join(input_dir, "night2"))
+    night2 = os.path.join(input_dir, "night2")
+    os.makedirs(night2)
+    make_synthetic_frames(number=1, dest_dir=night2)
     g2 = ray.get(scatter_compute_image_metadata.remote())
     nodes = _compute_nodes(g2)
     assert len(nodes) == 1, f"expected exactly the new file, got {nodes}"
