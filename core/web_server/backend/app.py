@@ -42,9 +42,6 @@ from web_server.backend.code_sync import code_sync_bp
 from web_server.backend.display_finishes import display_finishes_bp
 from web_server.backend.router import stateful_route
 
-import plotly.express as px
-import plotly.figure_factory as ff
-
 debug = False
 STREAM_PORT = 8001
 
@@ -58,40 +55,6 @@ def strtobool(val: str) -> bool:
     if val in {"n", "no", "f", "false", "off", "0"}:
         return False
     raise ValueError(f"invalid truth value {val!r}")
-
-
-def get_plot_html():
-    buffer = io.StringIO()
-
-    # df = px.data.iris()  # replace with your own data source
-    # fig = px.scatter(df, x="sepal_width", y="sepal_length", color="species")
-
-    x1 = np.random.randn(200) - 2
-    x2 = np.random.randn(200)
-    x3 = np.random.randn(200) + 2
-
-    hist_data = [x1, x2, x3]
-
-    group_labels = ["Group 1", "Group 2", "Group 3"]
-    colors = ["#A56CC1", "#A6ACEC", "#63F5EF"]
-
-    # Create distplot with curve_type set to 'normal'
-    fig = ff.create_distplot(
-        hist_data,
-        group_labels,
-        colors=colors,
-        curve_type="normal",
-        bin_size=0.2,
-        show_rug=False,
-    )
-
-    # Add title
-    fig.update_layout(title_text="Hist and Curve Plot")
-    # fig.show()
-
-    fig.write_html(buffer, full_html=False)
-
-    return buffer.getvalue()
 
 
 from base_path import get_base_path
@@ -209,21 +172,6 @@ def starmap():
 
 
 
-@app.route("/api/invalidated")
-def get_invalidated():
-    """Return the set of objects whose cached images are stale."""
-    invalidated = context.get("invalidated", {})
-    return jsonify([list(k) for k in invalidated.keys()])
-
-
-# This stub redirects requests to a worker on a specific port. That worker
-# will handle all SSE connections, and broadcast the announcer.announcements it receives
-# over a diskcache queue.
-@stateful_route(app.route("/stream"), fixed_port=STREAM_PORT)
-def stream():
-    pass
-
-
 @app.route("/api/shopping_cart")
 def get_shopping_cart():
     return list(context.shopping_cart or [])
@@ -330,21 +278,6 @@ def move_archive_to_cart(object_type, object_id, pipeline_name):
     return Response(status=204)
 
 
-def _make_json_serializable(D):
-    output = {}
-    for k, v in asdict(D).items():
-        if type(v) is np.ndarray:
-            output[k] = v.tolist()
-        elif type(v) is SingleSphericalPolygon:
-            output[k] = v.points.tolist()
-        elif type(v) is None:
-            continue
-        else:
-            output[k] = v
-
-    return output
-
-
 def _cached_json(data, max_age=10):
     """Return a JSON response with Cache-Control headers."""
     response = jsonify(data)
@@ -432,14 +365,6 @@ def stack_detail(stack_id):
 @app.route("/api/calibration_stacks")
 def calibration_stacks():
     return _cached_json(context.ui_calibration_stacks or {})
-
-
-@app.route("/get_plot")
-def plot():
-    mem = io.BytesIO()
-    mem.write(get_plot_html().encode())
-    mem.seek(0)
-    return flask.send_file(mem, mimetype="text/html")
 
 
 @app.route("/api/recent")

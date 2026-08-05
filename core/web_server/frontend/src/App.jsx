@@ -60,7 +60,7 @@ function App() {
 
   useEffect(() => {
     const loadObjectData = async () => {
-      const [s, c, t, m, cart, arch, cg] = await Promise.all([
+      const [s, c, t, m, cart, arch] = await Promise.all([
         fetch('/api/stacks').then(r => r.json()),
         fetch('/api/calibration_stacks').then(r => r.json()),
         fetch('/api/targets').then(r => r.json()),
@@ -76,7 +76,6 @@ function App() {
       setMosaics(m);
       setShoppingCart(cart);
       setArchive(arch);
-      setComputeGraph(cg);
 
       setDataIsAvailable(true);
     };

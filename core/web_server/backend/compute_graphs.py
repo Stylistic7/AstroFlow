@@ -1,4 +1,3 @@
-import ray
 from flask import Blueprint, Response, request
 import json
 import os
@@ -9,14 +8,6 @@ from context import local_context as context
 compute_graphs_bp = Blueprint("compute_graphs", __name__)
 
 _EMPTY_WORKFLOW_GRAPH = {"skeleton": [], "state": {}}
-
-
-@compute_graphs_bp.route("/api/compute_graph")
-def compute_graph():
-    # TODO: Don't convert to a workflow graph here, do it through a
-    # graph_update_fn.
-    # return to_workflow_graph(context.compute_graphs)
-    return {}
 
 
 @compute_graphs_bp.route("/api/compute_graph/status")

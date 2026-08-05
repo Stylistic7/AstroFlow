@@ -2,6 +2,7 @@ from flask import request, redirect
 from flask_cors import cross_origin
 import functools
 import inspect
+import os
 import xxhash
 
 BACKEND_PORTS = [8002, 8003, 8004, 8005]
@@ -47,8 +48,18 @@ def stateful_route(
             host_port = request.host.split(":")[-1]
 
             if host_port == ROUTER_PORT:
+                # The redirect host must be one the BROWSER can reach. Behind
+                # the CRA dev proxy (changeOrigin) `request.host` is
+                # "localhost:8000", so a remote browser would be redirected to
+                # its own loopback and tiles break. Prefer an explicitly
+                # advertised host, then the browser's forwarded host, then
+                # the raw Host header (correct in the local/no-proxy case).
+                host = (
+                    os.environ.get("ASTROFLOW_ADVERTISED_HOST")
+                    or request.headers.get("X-Forwarded-Host", request.host)
+                ).split(":")[0]
                 return redirect(
-                    f"http://{request.host.split(':')[0]}:{port}{request.path}",
+                    f"http://{host}:{port}{request.path}",
                     code=307,
                 )
 
