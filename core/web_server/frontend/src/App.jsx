@@ -60,14 +60,19 @@ function App() {
 
   useEffect(() => {
     const loadObjectData = async () => {
+      // Every fetch is individually guarded: one failing endpoint must
+      // degrade ONE panel, never blank the whole UI. (A leftover fetch of
+      // a removed endpoint once rejected this entire Promise.all and
+      // emptied the starmap + cart despite a fully healthy backend.)
+      const guarded = (url, fallback) =>
+        fetch(url).then(r => r.ok ? r.json() : fallback).catch(() => fallback);
       const [s, c, t, m, cart, arch] = await Promise.all([
-        fetch('/api/stacks').then(r => r.json()),
-        fetch('/api/calibration_stacks').then(r => r.json()),
-        fetch('/api/targets').then(r => r.json()),
-        fetch('/api/mosaics').then(r => r.json()),
-        fetch('/api/shopping_cart').then(r => r.json()),
-        fetch('/api/archive').then(r => r.json()).catch(() => []),
-        fetch('/api/compute_graph').then(r => r.json()),
+        guarded('/api/stacks', {}),
+        guarded('/api/calibration_stacks', {}),
+        guarded('/api/targets', {}),
+        guarded('/api/mosaics', {}),
+        guarded('/api/shopping_cart', []),
+        guarded('/api/archive', []),
       ]);
 
       setStacks(s);
