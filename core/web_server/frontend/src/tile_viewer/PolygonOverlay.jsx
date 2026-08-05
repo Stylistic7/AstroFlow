@@ -224,7 +224,10 @@ export default function PolygonOverlay({
                         const xs = poly.points.map((p) => p[0]);
                         const ys = poly.points.map((p) => p[1]);
                         const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
-                        const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+                        // Below the centroid — the middle slot belongs to the
+                        // panel-number block (TextOverlay), the clock sits above.
+                        const cy = (Math.min(...ys) + Math.max(...ys)) / 2
+                            + (Math.max(...ys) - Math.min(...ys)) * 0.24;
                         const fs = imageWidth / 55;
                         depthLabel = (
                             <text
@@ -271,12 +274,21 @@ export default function PolygonOverlay({
                         ? (stack.raw_integration_s ?? stack.integration)
                         : null;
                     if (typeof totalSeconds === 'number') {
-                        const offset = poly.has_decisions ? dotRadius * 2.5 : 0;
+                        // Vertical stack at the panel middle: clock ABOVE the
+                        // centroid, panel-number block (TextOverlay, DOM) at
+                        // the centroid, depth text below. Offsets are panel-
+                        // height fractions so the separation holds in image
+                        // space (the corner placement got lost where polygon
+                        // edges cluster; the centroid collided with the
+                        // panel numbers).
+                        const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+                        const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+                        const panelH = Math.max(...ys) - Math.min(...ys);
                         const wbppSeconds = wbppExposureByStack[poly.active_stack_hash];
                         clock = (
                             <ExposureClock
-                                cx={maxX - offset - clockRadius}
-                                cy={minY + clockRadius}
+                                cx={cx}
+                                cy={cy - panelH * 0.24}
                                 radius={clockRadius}
                                 hours={totalSeconds / 3600}
                                 wbppHours={wbppSeconds != null ? wbppSeconds / 3600 : null}
