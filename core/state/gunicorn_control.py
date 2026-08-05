@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import os
 import subprocess
 import sys
 import time
@@ -52,7 +53,16 @@ class GunicornManager:
                 command += ["--timeout", str(self.config.timeout)]
 
             print(f"### Starting gunicorn process with command: {command}")
-            self.processes.append(subprocess.Popen(command))
+            # Web workers get a SHORT cache-op timeout (the compute graph's
+            # default is 86400s = "block until done"): a gunicorn thread
+            # stuck behind the cache.db writer lock must error out in
+            # seconds — 4 wedged threads previously made every endpoint
+            # unresponsive for minutes with no recovery (gthread heartbeats
+            # from its accept loop, so --timeout never reaps it). With the
+            # hot web keys moved to the lock-free durable store this should
+            # rarely trigger; it is the backstop, not the mechanism.
+            env = os.environ | {"ASTROFLOW_CACHE_TIMEOUT_S": "15"}
+            self.processes.append(subprocess.Popen(command, env=env))
 
             time.sleep(0.5)
 

@@ -5,7 +5,12 @@ import diskcache  # type: ignore
 from pathlib import Path
 
 
-_CACHE_OP_TIMEOUT = 86400  # 1 day. Effectively "block until done."
+# "Block until done" for the compute graph (a big WBPP commit can hold the
+# SQLite lock long enough to starve readers, and silently-swallowed timeouts
+# corrupt content-addressed lookups). Web workers override via env — a
+# gunicorn thread must NEVER block for a day on the cache lock; it should
+# error fast and let the client retry (see state/gunicorn_control.py).
+_CACHE_OP_TIMEOUT = float(os.environ.get("ASTROFLOW_CACHE_TIMEOUT_S", 86400))
 
 
 def _create_cache() -> diskcache.Cache:
@@ -59,13 +64,23 @@ def _create_durable_cache() -> diskcache.Cache:
     )
 
 
-# Data that is NOT cheaply regenerable lives in the durable store: the
-# identity/clustering (stacks/targets/mosaics/calibration_stacks) AND the
-# user's curation (`decisions` — quarantines, calibration overrides,
-# subframe-quality choices). Everything else — @node memo results,
-# thumbnails, video, node_status, logs, ui_*, workflow_graphs — is
-# regenerable on demand and stays in the evictable LFU cache, so it's safe
-# to let it get evicted (or wiped).
+# Two reasons a key lives in the durable (non-evicting) store:
+#
+# 1. NOT cheaply regenerable: identity/clustering payloads
+#    (stacks/targets/mosaics/calibration_stacks) and the user's CURATION
+#    (decisions, shopping_cart, archive, observing_plan, device nicknames —
+#    an LFU cull of any of these silently loses user work).
+# 2. HOT WEB-READ PATH: the LFU policy turns every read into a SQLite
+#    BEGIN IMMEDIATE (the access-count bump is a write transaction), so a
+#    web read of an LFU key contends with the compute graph's writes on the
+#    same 1.25 GB cache.db — the mechanism behind multi-minute web-server
+#    wedges during rebuilds. `eviction_policy='none'` reads take diskcache's
+#    lock-free fast path. Fixed-key, bounded-size web state (ui_*,
+#    tap_snapshots) therefore lives here even though it IS regenerable.
+#
+# Everything else — @node memos, thumbnails, video, node_status, logs,
+# workflow_graphs — is regenerable, unbounded-keyed, and stays in the
+# evictable LFU cache.
 _DURABLE_TUPLE_NS = frozenset(
     {"stacks", "targets", "mosaics", "calibration_stacks", "large_object",
      "decisions",
@@ -79,7 +94,10 @@ _DURABLE_TUPLE_NS = frozenset(
      # contents ("disconnected = unchanged" semantics) — nothing can recompute
      # it until the disk returns, so it must never evict. Overwritten by a
      # fresh scan whenever the dir is present. See metadata/library_scan.py.
-     "library_scan"}
+     "library_scan",
+     # Tap-snapshot payloads (ContextRef targets for the str-keyed snapshot
+     # index below) — hot web-read path, see reason 2 above.
+     "tap_snapshots"}
 )
 _DURABLE_STR_KEYS = frozenset(
     {
@@ -90,8 +108,46 @@ _DURABLE_STR_KEYS = frozenset(
         "settings",
         "input_dirs",
         "output_dir",
+        # --- user curation (reason 1: an eviction loses user work) ---
+        "shopping_cart",
+        "archive",
+        "observing_plan",
+        "asiair_device_nicknames",
+        "asiair_known_labels",
+        # --- hot web-read state (reason 2: keep reads off the LFU lock) ---
+        "ui_stacks",
+        "ui_targets",
+        "ui_mosaics",
+        "ui_calibration_stacks",
+        "tap_snapshots",
     }
 )
+
+# Keys re-routed from the evictable store on 2026-08-05: copy any value still
+# sitting in the old store so curation isn't silently lost and the UI isn't
+# blank on first boot after the change. One direct get per key (cheap);
+# existing durable values always win. tap-snapshot PAYLOADS (tuple ns) are
+# deliberately not migrated — they self-heal per pipeline run via
+# _store_tap_snapshot's presence check.
+_MIGRATE_STR_KEYS = (
+    "shopping_cart", "archive", "observing_plan",
+    "asiair_device_nicknames", "asiair_known_labels",
+    "ui_stacks", "ui_targets", "ui_mosaics", "ui_calibration_stacks",
+    "tap_snapshots",
+)
+
+
+def _migrate_rerouted_keys(main: diskcache.Cache, durable: diskcache.Cache) -> None:
+    for key in _MIGRATE_STR_KEYS:
+        try:
+            if key in durable:
+                continue
+            value = main.get(key, None)
+            if value is not None:
+                durable[key] = value
+                print(f"### migrated {key!r} from evictable to durable store")
+        except Exception as e:  # migration must never block startup
+            print(f"### migration of {key!r} failed (non-fatal): {e}")
 
 
 def is_durable_key(key) -> bool:
@@ -121,6 +177,7 @@ def get_durable_cache() -> diskcache.Cache:
 
     if durable_cache is None:
         durable_cache = _create_durable_cache()
+        _migrate_rerouted_keys(get_cache(), durable_cache)
 
     return durable_cache
 
