@@ -344,7 +344,6 @@ def _read_and_analyze_pixels(
 
 
 
-@ray.remote(num_cpus=0.1)
 @node(num_cpus=0.25)
 def build_dir_library(
     dir: str, fingerprint: str, listing: tuple,
