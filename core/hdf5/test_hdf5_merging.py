@@ -58,9 +58,9 @@ def build_graph(output_h5_filename) -> Graph:
     return Graph(
         {
             (rmtree, temp_dir): {(merge_hdf5_files, output_h5_filename)},
-            (merge_hdf5_files, output_h5_filename): {
+            (merge_hdf5_files, output_h5_filename): [
                 (write_hdf5_file, i, temp_dir) for i in range(7)
-            },
+            ],
         }
     )
 

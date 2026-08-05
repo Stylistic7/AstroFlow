@@ -98,12 +98,12 @@ def increment_qux() -> int:
 
 @ray.remote
 def scatter() -> Graph:
-    return Graph({gather: {(process, i) for i in range(7)}})
+    return Graph({gather: [(process, i) for i in range(7)]})
 
 
 @ray.remote
 def scatter_huge(count: int) -> Graph:
-    return Graph({gather: {(process, i) for i in range(count)}})
+    return Graph({gather: [(process, i) for i in range(count)]})
 
 
 @ray.remote
@@ -113,7 +113,7 @@ def process(item: T) -> T:
 
 @ray.remote
 def scatter_raises_exception() -> Graph:
-    return Graph({gather: {(process_raises_exception, i) for i in range(11)}})
+    return Graph({gather: [(process_raises_exception, i) for i in range(11)]})
 
 
 @ray.remote
@@ -333,7 +333,7 @@ def test_pass_down_with_one_ancestor(test_context) -> None:
 
 
 def test_pass_down_with_two_ancestors(test_context) -> None:
-    graph, captured = _capturing_graph(Graph({gather: {(process, 11), (process, 13)}}))
+    graph, captured = _capturing_graph(Graph({gather: [(process, 11), (process, 13)]}))
     run_graph(graph)
     assert captured[gather] == 24
 
@@ -508,7 +508,7 @@ def test_duplicate_ancestors(test_context) -> None:
     C = (process, 3)
     D = gather_with_context
 
-    graph = Graph({D: {B, C}, B: {A1}, C: {A2}})
+    graph = Graph({D: [B, C], B: {A1}, C: {A2}})
 
     context.foo = 7
     context.processed = []
@@ -703,11 +703,11 @@ def test_cached_tasks_run_in_parallel(test_context) -> None:
     SLEEP = 3
 
     # Warm up workers so startup time doesn't mask the result.
-    warmup = Graph({gather: {(process, i) for i in range(N)}})
+    warmup = Graph({gather: [(process, i) for i in range(N)]})
     run_graph(warmup)
 
     graph = Graph(
-        {slow_gather: {(cached_slow_process, SLEEP, i) for i in range(N)}}
+        {slow_gather: [(cached_slow_process, SLEEP, i) for i in range(N)]}
     )
 
     start = time.time()
@@ -757,7 +757,7 @@ def test_cached_tasks_list_run_in_parallel(test_context) -> None:
 def test_set_deps_run_in_parallel(test_context) -> None:
     """Independent tasks listed with {} notation should run in parallel."""
     N = 10
-    graph, captured = _capturing_graph(Graph({gather: {(process, i) for i in range(N)}}))
+    graph, captured = _capturing_graph(Graph({gather: [(process, i) for i in range(N)]}))
     _, stats = run_graph(graph)
 
     assert captured[gather] == sum(range(N))
@@ -776,7 +776,7 @@ def test_list_deps_run_in_parallel(test_context) -> None:
 def test_set_deps_wall_time(test_context) -> None:
     """Wall time with {} should be ~1s for 10 x 1s tasks, not ~10s."""
     N = 10
-    graph, captured = _capturing_graph(Graph({gather: {(slow_process, i) for i in range(N)}}))
+    graph, captured = _capturing_graph(Graph({gather: [(slow_process, i) for i in range(N)]}))
 
     start = time.time()
     run_graph(graph)

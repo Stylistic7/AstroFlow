@@ -8,12 +8,10 @@ sys.path.append("../..")
 
 import ray
 import io
-import numpy as np
 import flask
 from flask import request, jsonify, Response
 from dataclasses import asdict
 import operator
-from spherical_geometry.polygon import SingleSphericalPolygon
 from dataclasses import replace
 from flask.json.provider import DefaultJSONProvider
 from pathlib import Path

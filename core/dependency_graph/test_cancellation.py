@@ -58,7 +58,7 @@ def test_drain_lets_inflight_finish_and_skips_waiting(test_context):
     graph: dict = {leaf_a: set(), leaf_b: set()}
     for i in range(10):
         child = Node(never_runs, counter, f"c{i}", name=f"child_{i}")
-        graph[child] = {leaf_a, leaf_b}
+        graph[child] = [leaf_a, leaf_b]
 
     drain = threading.Event()
 

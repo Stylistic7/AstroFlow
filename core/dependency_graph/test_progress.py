@@ -29,10 +29,10 @@ def scatter(task, runtime, number):
     # never catches the "some done, some still running" window the
     # mid-progress assertion needs.
     return Graph({
-        gather: {
+        gather: [
             (task, runtime * (i + 1) / number, i)
             for i in range(number)
-        }
+        ]
     })
 
 

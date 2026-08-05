@@ -141,7 +141,13 @@ def _predict_one(node, predicted: dict, graph) -> str:
     task = getattr(node, "task", node)
     fn_hash = getattr(task, "_fn_hash", None)
     if fn_hash is None:
-        return f"unpredictable:{getattr(node, 'name', repr(node))}"
+        # id() in DECIMAL, never repr(): a default repr embeds " at 0x…",
+        # which the hash-layer determinism guard rightly rejects when this
+        # marker flows into a downstream node's predicted hash. The marker
+        # only needs to be unique per object within ONE prediction pass
+        # (unpredictable deps must never match a cached hash) — id() gives
+        # that without the address-pattern substring.
+        return f"unpredictable:{getattr(node, 'name', None) or id(node)}"
     cache_key_narrow = getattr(task, "_cache_key_narrow", None)
 
     fn_args = _predicted_fn_args(node, predicted, graph)
