@@ -17,7 +17,23 @@ files_bp = Blueprint("files", __name__)
 
 @files_bp.route("/api/list_dir")
 def list_dir():
+    """Browse for input frames. Restricted to the configured data roots
+    (plus the user's home as the browse ENTRY point for picking new input
+    dirs) — previously this walked any path on the machine, unauthenticated
+    on a 0.0.0.0 bind."""
     path = request.args.get("path", default=os.path.expanduser("~"))
+    resolved = os.path.realpath(path)
+    allowed_roots = [
+        os.path.realpath(str(d))
+        for d in [
+            *(context.input_dirs or []), context.output_dir,
+            os.path.expanduser("~"), "/Volumes",
+        ]
+        if d
+    ]
+    if not any(resolved == root or resolved.startswith(root + os.sep)
+               for root in allowed_roots):
+        return jsonify({"error": "path outside allowed roots"}), 403
     try:
         entries = os.scandir(path)
         files = []
@@ -290,14 +306,28 @@ def trash_unsolved():
     return jsonify({"trashed": trashed})
 
 
-@files_bp.route("/api/open_image/<path:filename>")
+@files_bp.route("/api/open_image/<path:filename>", methods=["POST"])
 def open_image(filename):
+    """Launch PixInsight on a file. POST-only: as a GET, any web page the
+    user visited could trigger a cross-origin process launch with an
+    arbitrary path (CORS blocks reading responses, not sending requests).
+    The path must also live under a configured data root — this endpoint
+    is an opener for AstroFlow's own files, not a general launcher."""
     filename = "/" + filename
-    print(f"### opening filename {filename}")
+    resolved = os.path.realpath(filename)
+    roots = [
+        os.path.realpath(str(d))
+        for d in [*(context.input_dirs or []), context.output_dir]
+        if d
+    ]
+    if not any(resolved.startswith(root + os.sep) or resolved == root
+               for root in roots):
+        return jsonify({"error": "path outside AstroFlow data roots"}), 403
+    print(f"### opening filename {resolved}")
     subprocess.Popen(
         [
             "/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight",
-            str(filename),
+            resolved,
         ]
     )
 

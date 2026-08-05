@@ -218,7 +218,9 @@ export function NodeStatusDialog({ open, onClose, nodeId, nodeLabel }) {
 
   const openImage = useCallback(() => {
     if (!openImageUrl) return;
-    window.location.href = openImageUrl;
+    // POST: the backend rejects GET so a hostile page can't cross-origin
+    // trigger a PixInsight launch by navigation.
+    fetch(openImageUrl, { method: "POST" }).catch(console.error);
   }, [openImageUrl]);
 
   const openResultPath = useCallback(async () => {
