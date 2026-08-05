@@ -156,6 +156,43 @@ def test_live_wbpp_staging_survives_via_fresh_child_mtime(tmp_path):
     assert d.exists()
 
 
+# --- real-environment dir resolution ------------------------------------------
+#
+# Regression: os.confstr can NEVER resolve the Darwin per-user dirs (CPython
+# exposes no _CS_DARWIN_USER_* names), so a confstr-based helper silently
+# returned None and the janitor scanned NOTHING — masked by the delete-nothing
+# failure posture, caught only by a production canary. These tests use the
+# REAL default dirs, no injected `dirs=`.
+
+def test_default_dirs_resolve_on_darwin():
+    import sys
+    if sys.platform != "darwin":
+        return
+    from cache.janitor import _cache_and_temp_dirs, _temp_dirs
+    assert _temp_dirs(), "per-user temp dir must resolve"
+    assert _cache_and_temp_dirs(), "per-user cache dir must resolve"
+    for d in _temp_dirs() + _cache_and_temp_dirs():
+        assert d.is_dir()
+
+
+def test_default_specs_see_a_planted_file():
+    import sys
+    if sys.platform != "darwin":
+        return
+    from cache.janitor import SPECS
+    vips = next(s for s in SPECS if s.name == "vips_temp")
+    (d,) = vips.dirs()
+    p = d / "vips-0-janitor-unittest.v"
+    p.write_bytes(b"x")
+    try:
+        stamp = time.time() - OLD
+        os.utime(p, (stamp, stamp))
+        reap(specs=(vips,))
+        assert not p.exists(), "spec must find and reap debris in the REAL dir"
+    finally:
+        p.unlink(missing_ok=True)
+
+
 # --- resilience ----------------------------------------------------------------
 
 def test_broken_spec_never_breaks_the_tick(tmp_path):

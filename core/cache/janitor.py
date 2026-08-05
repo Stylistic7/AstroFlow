@@ -26,9 +26,11 @@ boot volume; workers get their own janitor when the worker runtime grows one
 """
 from __future__ import annotations
 
+import functools
 import os
 import shutil
 import subprocess
+import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -44,25 +46,59 @@ log = structlog.get_logger()
 DEFAULT_INTERVAL_S = 600.0
 
 
-def _darwin_dir(confstr_name: str) -> Path | None:
-    """One of the per-user Darwin dirs (Caches `C/` or Temp `T/`)."""
+@functools.lru_cache(maxsize=None)
+def _getconf_dir(name: str) -> Path | None:
+    """Resolve a Darwin per-user dir via the `getconf` CLI.
+
+    CPython does NOT expose the `_CS_DARWIN_USER_*` confstr names
+    (`os.confstr_names` has no DARWIN entries — they're Apple extensions,
+    not POSIX), so `os.confstr` can never resolve these. Caught in
+    production by a planted canary the janitor failed to reap: the helper
+    returned None, dirs() returned [], and the fail-safe posture silently
+    scanned nothing.
+    """
     try:
-        value = os.confstr(confstr_name)
-    except (ValueError, OSError):
+        out = subprocess.run(
+            ["getconf", name], capture_output=True, text=True, timeout=10
+        )
+    except Exception:
         return None
-    return Path(value) if value else None
+    value = out.stdout.strip()
+    return Path(value) if out.returncode == 0 and value else None
+
+
+@functools.lru_cache(maxsize=None)
+def _user_temp_dir() -> Path | None:
+    d = _getconf_dir("DARWIN_USER_TEMP_DIR")
+    if d is not None and d.is_dir():
+        return d
+    # Fallback: TMPDIR/tempfile points at the same per-user T/ dir when the
+    # process inherited a normal user environment.
+    t = Path(tempfile.gettempdir())
+    return t if t.is_dir() else None
+
+
+@functools.lru_cache(maxsize=None)
+def _user_cache_dir() -> Path | None:
+    d = _getconf_dir("DARWIN_USER_CACHE_DIR")
+    if d is not None and d.is_dir():
+        return d
+    # Fallback: the Darwin per-user layout is <confdir>/{T,C,0} — the cache
+    # dir is the temp dir's sibling `C`.
+    t = _user_temp_dir()
+    if t is not None:
+        sib = t.parent / "C"
+        if sib.is_dir():
+            return sib
+    return None
 
 
 def _temp_dirs() -> list[Path]:
-    return [d for d in [_darwin_dir("CS_DARWIN_USER_TEMP_DIR")] if d]
+    return [d for d in [_user_temp_dir()] if d]
 
 
 def _cache_and_temp_dirs() -> list[Path]:
-    dirs = [
-        _darwin_dir("CS_DARWIN_USER_CACHE_DIR"),
-        _darwin_dir("CS_DARWIN_USER_TEMP_DIR"),
-    ]
-    return [d for d in dirs if d]
+    return [d for d in [_user_cache_dir(), _user_temp_dir()] if d]
 
 
 def _process_running(pattern: str) -> bool:
