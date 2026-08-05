@@ -18,6 +18,23 @@ import { useEffect, useMemo, useRef } from 'react';
 const TYPE_COLORS = { stack: '#0000ff', target: '#0000ff', mosaic: '#ff0000' };
 const OUTPUT_COLOR = '#00cc00';
 
+// Depth-uniformity overlay: fill each master's footprint by how far its
+// measured background noise sits below the channel's deepest (lowest-σ)
+// panel — green = at the floor, amber → red = further behind — and label
+// it with the extra integration to close the gap.
+const AT_FLOOR_COLOR = '#12b886';
+function depthFill(frac) {   // frac 0 (just behind) → 1 (far behind)
+    const t = Math.max(0, Math.min(1, frac));
+    const r = Math.round(245 + (224 - 245) * t);
+    const g = Math.round(159 + (49 - 159) * t);
+    const b = Math.round(11 + (49 - 11) * t);
+    return `rgb(${r},${g},${b})`;
+}
+function fmtHours(sec) {
+    if (sec < 3600) return `${Math.round(sec / 60)}m`;
+    return `${(sec / 3600).toFixed(sec < 36000 ? 1 : 0)}h`;
+}
+
 
 /** SVG arc-path for a pie wedge from `start` to `end` radians,
  *  centered at (cx, cy), radius `r`. */
@@ -85,6 +102,7 @@ export default function PolygonOverlay({
     isQuarantined,
     imageWidth,
     show,
+    showDepth = false,
 }) {
     const svgRef = useRef(null);
 
@@ -99,8 +117,11 @@ export default function PolygonOverlay({
     // flips on. Without this, the SVG would render with a default
     // viewBox (polygons at 1:1 source-pixel size = huge) until the
     // next viewport change happened to fire.
+    // The depth layer is independent of the outline toggle: either being on
+    // keeps the overlay mounted and viewBox-synced.
+    const active = show || showDepth;
     useEffect(() => {
-        if (!viewport || !show || !polygons) return;
+        if (!viewport || !active || !polygons) return;
         const apply = (s) => {
             const el = svgRef.current;
             if (!el || !s.scale || !s.screenW || !s.screenH) return;
@@ -113,7 +134,7 @@ export default function PolygonOverlay({
         const unsub = viewport.subscribe(apply);
         apply(viewport.get());
         return unsub;
-    }, [viewport, show, polygons]);
+    }, [viewport, active, polygons]);
 
     // Per-stack WBPP-effective exposure (for the green wedge).
     const wbppExposureByStack = useMemo(() => {
@@ -127,7 +148,39 @@ export default function PolygonOverlay({
         return out;
     }, [polygons]);
 
-    if (!show || !polygons || !imageWidth) return null;
+    // Depth-uniformity plan for the channel currently in view. The metadata
+    // fetch is per-filter, so every output polygon here shares one channel —
+    // σ (finalNoiseEstimate) is directly comparable. Target floor = the
+    // deepest (lowest-σ) panel; each panel's gap becomes
+    //   Δt = t · ((σ / σ*)² − 1)   (background-limited: σ ∝ 1/√t).
+    // Guard against a lone fluke-deep panel: if the best is >1.3× deeper than
+    // the next, target the ~90th-percentile panel instead so the plan isn't
+    // chasing one lucky night.
+    const depthPlan = useMemo(() => {
+        if (!polygons) return null;
+        const outs = polygons.filter(
+            (p) => p.polygon_type === 'output'
+                && typeof p.noise_estimate === 'number' && p.noise_estimate > 0);
+        if (outs.length < 2) return null;
+        const sig = outs.map((p) => p.noise_estimate).sort((a, b) => a - b);
+        let floor = sig[0];
+        if (sig.length >= 5 && sig[1] / sig[0] > 1.3) {
+            floor = sig[Math.floor(0.1 * (sig.length - 1))];
+        }
+        const byHash = {};
+        let maxDt = 0;
+        for (const p of outs) {
+            const t = p.wbpp_exposure_s;
+            const behind = p.noise_estimate > floor;
+            const dt = (behind && typeof t === 'number' && t > 0)
+                ? t * ((p.noise_estimate / floor) ** 2 - 1) : 0;
+            byHash[p.stable_hash] = { dt, done: !behind };
+            if (dt > maxDt) maxDt = dt;
+        }
+        return { byHash, maxDt, floor };
+    }, [polygons]);
+
+    if (!active || !polygons || !imageWidth) return null;
 
     // Stroke widths defined in image-pixel units (the SVG viewBox).
     // `non-scaling-stroke` would keep them constant in screen pixels;
@@ -159,9 +212,40 @@ export default function PolygonOverlay({
                 const opacity = poly.polygon_type === 'output' ? 0.6 : 1.0;
                 const pointsStr = poly.points.map((p) => `${p[0]},${p[1]}`).join(' ');
 
-                // Decision dot + exposure clock only on input polygons.
+                // Depth-uniformity fill + "+Nh to match" label on the master
+                // footprint (output polygons only, when the toggle is on).
+                let fill = 'none', fillOpacity = 0, depthLabel = null;
+                if (showDepth && poly.polygon_type === 'output' && depthPlan) {
+                    const dp = depthPlan.byHash[poly.stable_hash];
+                    if (dp) {
+                        fill = dp.done ? AT_FLOOR_COLOR
+                            : depthFill(depthPlan.maxDt ? dp.dt / depthPlan.maxDt : 0);
+                        fillOpacity = 0.4;
+                        const xs = poly.points.map((p) => p[0]);
+                        const ys = poly.points.map((p) => p[1]);
+                        const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+                        const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+                        const fs = imageWidth / 55;
+                        depthLabel = (
+                            <text
+                                x={cx} y={cy}
+                                textAnchor="middle" dominantBaseline="central"
+                                fontFamily="sans-serif" fontWeight={700}
+                                fontSize={fs} fill="#ffffff"
+                                stroke="#000000" strokeWidth={fs * 0.09}
+                                strokeLinejoin="round"
+                                style={{ paintOrder: 'stroke' }}
+                            >
+                                {dp.done ? '✓' : `+${fmtHours(dp.dt)}`}
+                            </text>
+                        );
+                    }
+                }
+
+                // Decision dot + exposure clock only on input polygons, and
+                // only when outlines are on (depth-only mode shows just fills).
                 let dot = null, clock = null;
-                if (poly.polygon_type === 'input') {
+                if (poly.polygon_type === 'input' && show) {
                     const xs = poly.points.map((p) => p[0]);
                     const ys = poly.points.map((p) => p[1]);
                     const maxX = Math.max(...xs);
@@ -205,13 +289,15 @@ export default function PolygonOverlay({
                     <g key={idx}>
                         <polygon
                             points={pointsStr}
-                            fill="none"
+                            fill={fill}
+                            fillOpacity={fillOpacity}
                             stroke={color}
-                            strokeOpacity={opacity}
+                            strokeOpacity={show ? opacity : 0}
                             strokeWidth={strokeWidth}
                         />
                         {dot}
                         {clock}
+                        {depthLabel}
                     </g>
                 );
             })}

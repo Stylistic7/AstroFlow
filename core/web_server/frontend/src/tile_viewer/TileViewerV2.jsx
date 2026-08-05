@@ -180,6 +180,7 @@ export default function TileViewerV2({
     display: displayProp,
     showPolygons: showPolygonsProp,
     showPanelNumbers: showPanelNumbersProp,
+    showDepth: showDepthProp,
     hdrEnabled: hdrEnabledProp,
     peakBrightness: peakBrightnessProp,
     stretchMode: stretchModeProp,
@@ -217,6 +218,7 @@ export default function TileViewerV2({
     const [localPeakBrightness, setLocalPeakBrightness] = useState(2.0);
     const [localShowPolygons, setLocalShowPolygons] = useState(true);
     const [localShowPanelNumbers, setLocalShowPanelNumbers] = useState(false);
+    const [localShowDepth, setLocalShowDepth] = useState(false);
     const [localStretchMode, setLocalStretchMode] = useState('stf');
     // GHS stretch knobs (only used when stretchMode === 'ghs'). `bg` is the
     // display level the sky maps to; `intensity` scales the auto-fit lift.
@@ -287,6 +289,7 @@ export default function TileViewerV2({
     const peakBrightness = peakBrightnessProp ?? localPeakBrightness;
     const showPolygons = showPolygonsProp ?? localShowPolygons;
     const showPanelNumbers = showPanelNumbersProp ?? localShowPanelNumbers;
+    const showDepth = showDepthProp ?? localShowDepth;
     const stretchMode = stretchModeProp ?? localStretchMode;
     // hdrEnabled gates brightness: when off, force peak=1.0 (SDR).
     const effectivePeak = (hdrEnabledProp === false) ? 1.0 : peakBrightness;
@@ -827,6 +830,7 @@ export default function TileViewerV2({
                 isQuarantined={isQuarantined}
                 imageWidth={tileMeta?.width}
                 show={showPolygons}
+                showDepth={showDepth}
             />
             <TextOverlay
                 viewport={viewport}
@@ -1077,6 +1081,17 @@ export default function TileViewerV2({
                             />
                         }
                         label={<Typography variant="caption">Show panel numbers + coords</Typography>}
+                        sx={{ mt: -1, ml: -1 }}
+                    />
+                    <FormControlLabel
+                        control={
+                            <Switch
+                                size="small"
+                                checked={localShowDepth}
+                                onChange={(_, v) => setLocalShowDepth(v)}
+                            />
+                        }
+                        label={<Typography variant="caption">Depth: hours to uniform</Typography>}
                         sx={{ mt: -1, ml: -1 }}
                     />
                     <FormControlLabel

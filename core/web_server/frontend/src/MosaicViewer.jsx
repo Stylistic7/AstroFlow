@@ -22,6 +22,7 @@ import FullscreenIcon from "@mui/icons-material/Fullscreen";
 import ShareIcon from "@mui/icons-material/Share";
 import PinIcon from "@mui/icons-material/Pin";
 import LaunchIcon from "@mui/icons-material/Launch";
+import MoreTimeIcon from "@mui/icons-material/MoreTime";
 
 import AstroFlowContext from "./AstroFlowContext.jsx";
 import { AstroFlowImage } from "./AstroFlowImage.jsx";
@@ -44,6 +45,7 @@ export default function MosaicViewer() {
 	const [tabIndex, setTabIndex] = useState(0);
 	const [showOutline, setShowOutline] = useState(true);
 	const [showPanelNumbers, setShowPanelNumbers] = useState(false);
+	const [showDepth, setShowDepth] = useState(false);
 	const [telescopiusOpen, setTelescopiusOpen] = useState(false);
 	const hdrCapable = useHdrCapability();
 	const [hdrEnabled, setHdrEnabled] = useState(false);
@@ -130,6 +132,12 @@ export default function MosaicViewer() {
 					icon={<PinIcon />}
 					checked={showPanelNumbers}
 					handleChange={() => setShowPanelNumbers((v) => !v)}
+				/>
+				<ToggleIconButton
+					name="depth: hours to uniform"
+					icon={<MoreTimeIcon />}
+					checked={showDepth}
+					handleChange={() => setShowDepth((v) => !v)}
 				/>
 				{!isColor && (<>
 					<HdrControls
@@ -218,6 +226,7 @@ export default function MosaicViewer() {
 						filter={filter}
 						showPolygons={showOutline}
 						showPanelNumbers={showPanelNumbers}
+						showDepth={showDepth}
 						pipeline={pipeline}
 						display={display}
 						showQualitySelector={false}
