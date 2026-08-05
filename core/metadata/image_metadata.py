@@ -204,6 +204,13 @@ def compute_image_metadata(
         filename, header, geometry,
     )
     master_integration_s = read_master_integration_seconds(filename, header)
+    # MRS noise floor of the master, written inline by ImageIntegration as
+    # `NOISE00` (== finalNoiseEstimate). None on subframes / FastIntegration.
+    _noise00 = header.get("NOISE00")
+    try:
+        noise_estimate = float(_noise00) if _noise00 is not None else None
+    except (TypeError, ValueError):
+        noise_estimate = None
 
     result = ImageMetadata(
         content_hash=content_hash,
@@ -217,6 +224,7 @@ def compute_image_metadata(
         plate_solution=plate_solution,
         master_integration_s=master_integration_s,
         statistics=statistics,
+        noise_estimate=noise_estimate,
     )
 
     write_image_metadata(result)

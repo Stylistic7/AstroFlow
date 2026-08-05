@@ -233,6 +233,15 @@ def _get_polygons(pipeline: str, *args) -> list[dict[str, Any]]:
                             "polygon_type": "output",
                             "stable_hash": active_stack.stable_hash,
                             "wbpp_exposure_s": wbpp_exposure_s,
+                            # MRS background noise floor of this master (FITS
+                            # NOISE00). Drives the mosaic uniformity overlay:
+                            # the depth target is the deepest (lowest-σ) panel
+                            # of the channel currently in view, and each
+                            # panel's gap to it becomes a "+Nh to match" hint.
+                            # None → panel drawn without a depth tint.
+                            "noise_estimate": (
+                                meta.noise_estimate if meta is not None else None
+                            ),
                             "target_id": t,
                             "points": list(output_poly.exterior.coords),
                         })

@@ -133,6 +133,15 @@ class ImageMetadata:
     # `__setstate__`) and on files where the pixel read failed.
     statistics: ImageStatistics | None = None
 
+    # MRS background noise floor of a stacked master, read inline from the
+    # FITS `NOISE00` keyword ImageIntegration writes (bit-identical to
+    # PixInsight's `finalNoiseEstimate`). The absolute, signal-agnostic
+    # depth measure driving the mosaic uniformity overlay. None for raw
+    # subframes and stackers that don't record it (e.g. WBPP
+    # FastIntegration). MUST stay the last field so `__setstate__`'s
+    # trailing-slot padding fills it as None on older sidecars.
+    noise_estimate: float | None = None
+
     def __setstate__(self, state: list) -> None:
         # Backward- AND forward-compatible unpickling for slotted dataclasses.
         #

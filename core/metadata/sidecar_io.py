@@ -101,6 +101,8 @@ def image_metadata_to_obj(meta: ImageMetadata) -> dict[str, Any]:
     }
     if meta.master_integration_s is not None:
         obj["master_integration_s"] = meta.master_integration_s
+    if meta.noise_estimate is not None:
+        obj["noise_estimate"] = meta.noise_estimate
     if meta.statistics is not None:
         obj["statistics"] = _statistics_to_obj(meta.statistics)
     return obj
@@ -138,6 +140,7 @@ def image_metadata_from_obj(
         plate_solution=plate_solution,
         master_integration_s=obj.get("master_integration_s"),
         statistics=_statistics_from_obj(obj.get("statistics")),
+        noise_estimate=obj.get("noise_estimate"),
     )
 
 
