@@ -29,6 +29,15 @@ _SCRIPT_FILENAME = (
 
 _DEFAULT_PARAMETERS = {
     "outputDirectory": "",
+    # Force full ImageIntegration on every group. WBPP's default
+    # `autoIntegrationMode` silently switches any light group of >=150 frames
+    # to FastIntegration (BPP-FrameGroup.js:319), which is faster but stores
+    # NONE of the per-frame weights or the `finalNoiseEstimate` (MRS) suite we
+    # rely on for effective-integration / depth. Disabling it makes every
+    # master carry the full noise + weight metadata, uniformly, at the cost of
+    # slower/heavier integration on the largest stacks. Nothing else gates on
+    # this flag (audited across the WBPP source).
+    "autoIntegrationMode": "false",
 }
 
 
