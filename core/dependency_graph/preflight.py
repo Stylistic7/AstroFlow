@@ -170,7 +170,45 @@ def _predict_one(node, predicted: dict, graph) -> str:
             _dump_unreconstructable_node(node, fn_args, graph, exc)
             raise
 
-    return hash_call(fn_hash, *fn_args, **kwargs)
+    result = hash_call(fn_hash, *fn_args, **kwargs)
+    _log_calhash_components(node, fn_hash, fn_args, kwargs, result)
+    return result
+
+
+def _log_calhash_components(node, fn_hash, fn_args, kwargs, composite) -> None:
+    """TEMPORARY probe (2026-08-06): calibration-stack call hashes flap
+    between graph passes (same product built to 3 hashes in 13 min, one
+    recurring from 07-29), while the STORED entity hashes deterministically
+    across processes. So the instability enters per-pass — either entity
+    reconstruction (clustering tie-breaks) or the narrowed config. Log each
+    stack_files prediction's per-component hash so diffing two passes names
+    the moving component. Grep `### calhash_probe`; remove once the source
+    is fixed."""
+    if _op_name(node) != "stack_files":
+        return
+    try:
+        parts = []
+        for i, a in enumerate(fn_args):
+            try:
+                digest = hash_call("component", a)[:8]
+            except Exception as e:
+                digest = f"ERR:{type(e).__name__}"
+            tag = type(a).__name__
+            sh = getattr(a, "stable_hash", None)
+            ident = f":{str(sh)[:8]}" if sh else ""
+            parts.append(f"[{i}]{tag}{ident}={digest}")
+        if kwargs:
+            try:
+                parts.append(f"[kw]={hash_call('component', kwargs)[:8]}")
+            except Exception as e:
+                parts.append(f"[kw]=ERR:{type(e).__name__}")
+        print(
+            f"### calhash_probe predicted={composite[:8]} fn={fn_hash[:8]} "
+            + " ".join(parts),
+            flush=True,
+        )
+    except Exception:
+        pass  # a diagnostic must never break prediction
 
 
 def _op_name(n: Any) -> str:
