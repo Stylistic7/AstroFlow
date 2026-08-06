@@ -106,7 +106,13 @@ def _predicted_fn_args(node, predicted: dict, graph) -> list[Any]:
     dep's predicted call_hash AND its primary entity (so polymorphic
     narrow hooks can read stable_hash through it)."""
     from dependency_graph.classes import reconstruct_call_args
-    literals = list(node.args)
+    # `getattr`, not `.args`: a bare 0-arg @node sentinel used directly as a
+    # graph key (e.g. build_preview_graph's `preview_graph_done`) is a plain
+    # function — it HAS `_fn_hash` (so it doesn't take the unpredictable
+    # fallback) but no `.args`. Raising here aborted the whole subgraph's
+    # preflight ("### preflight skipped due to AttributeError"), silently
+    # disabling reclaimed-ephemeral satisfaction for that subgraph.
+    literals = list(getattr(node, "args", ()))
     positions = getattr(node, "_dep_positions", None)
     if positions is None:
         fn_args: list[Any] = list(literals)

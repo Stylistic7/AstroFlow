@@ -136,6 +136,28 @@ class TestPredictCallHashes:
         assert set(predicted) == {R, SRC}
         assert predicted[SRC].startswith("unpredictable")
 
+    def test_bare_node_wrapper_key_predicts_without_raising(self):
+        """A bare 0-arg @node sentinel used directly as a graph KEY
+        (`build_preview_graph` does `graph[preview_graph_done] = tasks`) is a
+        plain function that HAS `_fn_hash` — so it skips the unpredictable
+        fallback — but has no `.args`. That raised
+        `AttributeError: 'function' object has no attribute 'args'` inside
+        `_predicted_fn_args`, aborting preflight for the WHOLE subgraph
+        ("### preflight skipped …") and silently disabling reclaimed-ephemeral
+        satisfaction there. It must predict as `hash_call(fn_hash)` — its real
+        runtime call_hash for a 0-arg op — with its deps treated as
+        ordering-only."""
+        def preview_graph_done():
+            pass
+        preview_graph_done._fn_hash = "fnhash_sentinel"
+        preview_graph_done._function = preview_graph_done
+
+        dep = _node(_make_task("dep", n_params=0))
+        graph = Graph({preview_graph_done: [dep], dep: []})
+
+        predicted = predict_call_hashes(graph)          # must not raise
+        assert predicted[preview_graph_done] == hash_call("fnhash_sentinel")
+
 
 # ──────────────────────────────────────────────────────────────────────────
 # Reverse-walk: nodes_to_dispatch
