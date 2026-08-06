@@ -193,7 +193,26 @@ def _(wrapped: WithSidecar, metadata_in: dict[str, Any]) -> dict[str, Any]:
         json.dump(sidecar, f, indent=2)
 
 
+# Full-pixel hashing is the CONTHASH fallback of last resort — on a gigapixel
+# output it means a multi-GB decode (libvips scratch, ~all cores). Every
+# legitimate producer stamps CONTHASH at write time, so a big file landing here
+# is always a bug worth a stack trace: observed 2026-08-06 grinding the
+# StateActor at 855% CPU for 25 min on a 17 GB blend_panels output whose stamp
+# was VALID — caller unknown, hence this tripwire.
+_BIG_HASH_TRIPWIRE_BYTES = 1_000_000_000
+
+
 def hash_of_image_data(filename: Path | str) -> str:
+    try:
+        if Path(filename).stat().st_size > _BIG_HASH_TRIPWIRE_BYTES:
+            print(
+                f"### hash_of_image_data TRIPWIRE: full-pixel hash of "
+                f"{filename} — caller stack:\n"
+                + "".join(traceback.format_stack()[:-1]),
+                flush=True,
+            )
+    except OSError:
+        pass
     try:
         h = xxhash.xxh64()
         h.update(read_image(filename))
