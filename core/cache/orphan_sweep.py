@@ -10,6 +10,12 @@ The live set is the union of:
     still-shown N-1 (graceful N/N-1 versioning). Once the newest lands, N-1 is
     collectible; the per-build prune deletes it proactively, this just prevents
     the race.
+  * every output of the IMPLICIT preview pipeline: `build_preview_graph`
+    dispatches `Subframe` over every mosaic ("every mosaic is implicitly in
+    the cart"), so its products — placed panels, merged channels, stored
+    previews — are live even though no explicit cart entry names them.
+    Without these the sweep deletes the whole subframe preview layer and
+    every run deterministically rebuilds it.
   * plus each primary's `.json` sidecar and `<stem>_tiles.tiff` pyramid.
 
 Anything under `output_dir` not in the live set is an orphan.
@@ -113,11 +119,21 @@ def prune_superseded_versions() -> int:
     return deleted, freed
 
 
-def live_set(ctx) -> set[str]:
-    """Union of cart-traced + archive-preserved primaries (with siblings) and
-    the versioning-pinned previous versions.
+def _implicit_preview_items(ctx) -> list[tuple[str, str, str]]:
+    """The cart items `build_preview_graph` implies but never writes into
+    `ctx.shopping_cart`: every mosaic runs the `Subframe` pipeline ("every
+    mosaic is implicitly in the cart"). The live set must trace these too, or
+    the sweep deletes the whole subframe preview layer every time it runs."""
+    return [("mosaic", mosaic_id, "Subframe")
+            for mosaic_id in (getattr(ctx, "mosaics", None) or {})]
 
-    Traces each cart item `strict=True`: if ANY item can't be resolved to its
+
+def live_set(ctx) -> set[str]:
+    """Union of cart-traced + implicit-preview + archive-preserved primaries
+    (with siblings) and the versioning-pinned previous versions.
+
+    Traces each item — explicit cart entries AND the implicit Subframe
+    preview per mosaic — `strict=True`: if ANY item can't be resolved to its
     outputs (entity absent, pipeline unregistered, trace raised) this raises
     `TraceResolutionError` and `sweep` aborts BEFORE deleting anything — a
     partial live set would misclassify that item's live files as orphans. Fail
@@ -125,6 +141,8 @@ def live_set(ctx) -> set[str]:
     primaries: set[str] = set()
     for item in (ctx.shopping_cart or []):
         primaries.update(str(p) for p in paths_for_cart_item(tuple(item), strict=True))
+    for item in _implicit_preview_items(ctx):
+        primaries.update(str(p) for p in paths_for_cart_item(item, strict=True))
     for entry in (ctx.archive or []):
         if len(entry) >= 4:  # (object_type, object_id, pipeline, [paths])
             primaries.update(str(p) for p in entry[3])
