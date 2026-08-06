@@ -228,25 +228,28 @@ def get_content_hash(filename: Path) -> str:
     return get_content_hash(classify_by_extension(filename))
 
 
+# NOTE: never `header.get(KEY, hash_of_image_data(f))` — dict.get evaluates
+# its default EAGERLY, so that form full-pixel-decodes the file even when the
+# stamp is present and the result is discarded. On gigapixel tail outputs
+# that was minutes of vips decode per preflight satisfaction check, serialized
+# on the StateActor (caught 2026-08-06 by the big-hash tripwire below).
+
 @get_content_hash.register
 def _(filename: FitsFilePath) -> str:
-    return read_header(filename).get(
-        _CONTENT_HASH_KEY, hash_of_image_data(filename)
-    )
+    stamped = read_header(filename).get(_CONTENT_HASH_KEY)
+    return stamped if stamped is not None else hash_of_image_data(filename)
 
 
 @get_content_hash.register
 def _(filename: XisfFilePath) -> str:
-    return read_header(filename).get(
-        _CONTENT_HASH_KEY, hash_of_image_data(filename)
-    )
+    stamped = read_header(filename).get(_CONTENT_HASH_KEY)
+    return stamped if stamped is not None else hash_of_image_data(filename)
 
 
 @get_content_hash.register
 def _(filename: TiffFilePath) -> str:
-    return read_header(filename).get(
-        _CONTENT_HASH_KEY, hash_of_image_data(filename)
-    )
+    stamped = read_header(filename).get(_CONTENT_HASH_KEY)
+    return stamped if stamped is not None else hash_of_image_data(filename)
 
 
 @get_content_hash.register
