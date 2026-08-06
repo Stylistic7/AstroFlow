@@ -80,6 +80,17 @@ def _merge_target_channel_impl(
         mock=config.development_settings.mock_pixinsight,
     )
 
+    # HDRComposition refits its inputs and rescales the result anchored near
+    # zero, silently discarding the linear background-pedestal convention
+    # every other master honors (post_process_stack applies it; the n=1
+    # branch above copies it through). Uncorrected, an n>=2 channel sits
+    # ~30x darker than its n=1 siblings and renders black in the mosaic
+    # under the shared display stretch. Re-establish the baseline.
+    from stacks.post_processing.background_pedestal import (
+        apply_background_pedestal_to_xisf,
+    )
+    apply_background_pedestal_to_xisf(Path(output_filename))
+
     return WithSidecar(XisfFilePath(output_filename))
 
 
