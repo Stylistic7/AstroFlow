@@ -220,6 +220,12 @@ def _apply_preflight(graph: Graph, is_subgraph: bool = False) -> Graph:
         graph_update_fn=getattr(graph, "graph_update_fn", None),
         node_status_fn=getattr(graph, "node_status_fn", None),
     )
+    # Carry the N-1 supersession map through pruning (same Node objects, so
+    # surviving keys still match). Pruned-away satisfied taps already
+    # superseded their N-1 the run they landed.
+    incoming_versions = getattr(graph, "version_supersede", None)
+    if incoming_versions:
+        pruned.version_supersede = incoming_versions
     if is_subgraph:
         pruned = _restore_single_terminal(norm, pruned)
     return pruned

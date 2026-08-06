@@ -129,6 +129,18 @@ class GraphRuntime:
         else:
             self._ephemeral_files = parent._root._ephemeral_files
 
+        # Deterministic N-1 supersession map ({node: (version_log_key,
+        # expected_path)}), attached by `run_pipeline` to its returned
+        # sub-graph. Root holds the union across all sub-graphs; `_mark_done`
+        # consults it so a display tap's previous version is deleted at the
+        # MOMENT its new output lands (`version_log.supersede`).
+        incoming_versions = getattr(graph, "version_supersede", None) or {}
+        if parent is None:
+            self._version_supersede: dict = dict(incoming_versions)
+        else:
+            self._version_supersede = parent._root._version_supersede
+            self._version_supersede.update(incoming_versions)
+
         # If this Graph carries its own pre-traced registry (built at
         # eager-trace time inside a graph-builder @node), union it into
         # the shared one.
@@ -318,6 +330,20 @@ class GraphRuntime:
                 self._ready.add(dependent)
 
         self._notify_ephemeral_registry(node, result, succeeded)
+
+        # Graceful N/N-1: this node may be the writer of a display tap whose
+        # new version just landed — delete the superseded version's files NOW
+        # (the only deletion moment where supersession is a local fact).
+        # Best-effort: a versioning hiccup must never fail the run.
+        if succeeded:
+            supersede_entry = self._root._version_supersede.get(node)
+            if supersede_entry is not None:
+                try:
+                    from products import version_log
+                    version_log.supersede(*supersede_entry)
+                except Exception as e:
+                    print(f"### version supersede failed (non-fatal) for "
+                          f"{node.name}: {type(e).__name__}: {e}")
 
         # Opportunistically compute the output filename for the workflow UI.
         if hasattr(node.task, "filename_fn"):

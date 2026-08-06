@@ -390,6 +390,28 @@ def _eager_trace_pipeline(
     return graph
 
 
+def _version_supersede_map(pipeline_name: str, graph) -> dict:
+    """`{node: (version_log_key, expected_path)}` for every display-tap node in
+    `graph`. Attached to the sub-graph `run_pipeline` returns; the graph
+    runtime consults it at node completion to delete the superseded (N-1)
+    version's files THE MOMENT the new output lands — the deterministic,
+    write-anchored half of graceful N/N-1 versioning (`version_log.supersede`).
+    Pure walk (resolve_output_paths + extract_pipeline_taps), ~ms."""
+    from dependency_graph.trace_paths import resolve_output_paths
+    from products import version_log
+    paths = resolve_output_paths(graph)
+    return {
+        node: (
+            version_log.key(object_type, object_id, pipeline_name,
+                            display, filter_value),
+            paths[node],
+        )
+        for node, (object_type, object_id, display, filter_value)
+        in extract_pipeline_taps(graph)
+        if display is not None and node in paths
+    }
+
+
 def _store_tap_snapshot(pipeline_fn, pipeline_name: str, entity, graph) -> None:
     """Persist a cart entry's complete display-tap list so the Ray-free web
     server can read it without tracing.
@@ -521,6 +543,12 @@ def run_pipeline(entity, cfg, pipeline_name: str, type_tag: str) -> "Graph":
     # walk entirely when the content-addressed snapshot already exists — so a
     # restart with an unchanged cart just confirms presence and moves on.
     _store_tap_snapshot(pipeline_fn, pipeline_name, entity, graph)
+
+    # Deterministic N-1 supersession: the runtime deletes a display tap's
+    # previous version at the completion of the node that writes the new one
+    # (`version_log.supersede`). Attached every run — including unchanged
+    # rebuilds, where the same-hash entry makes supersede a no-op.
+    graph.version_supersede = _version_supersede_map(pipeline_name, graph)
 
     # GraphRuntime asserts a sub-graph has exactly one terminal. Funnel
     # every current terminal into a sentinel so the child sub-runtime

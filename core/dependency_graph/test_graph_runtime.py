@@ -328,3 +328,66 @@ class TestEmptyGraph:
         rt = GraphRuntime(Graph({}))
         assert not rt.is_active()
         assert rt.get_ready() == []
+
+
+class TestVersionSupersede:
+    """The graceful-N/N-1 completion hook: a display-tap node landing its new
+    output triggers `version_log.supersede` for exactly that node, only on
+    real success — the deterministic replacement for the deleted global
+    prune/auto-sweep."""
+
+    def _capture(self, monkeypatch):
+        import products.version_log as vl
+        calls = []
+        monkeypatch.setattr(vl, "supersede",
+                            lambda k, p: calls.append((k, p)) or 0)
+        return calls
+
+    def test_supersede_fires_on_success(self, monkeypatch):
+        calls = self._capture(monkeypatch)
+        A, B = _node(a_task), _node(b_task)
+        g = Graph({B: [A]})
+        g.version_supersede = {B: (("product_versions", "x"), "/out/b.tiff")}
+        rt = GraphRuntime(g)
+
+        rt.node_completed(A, "ra")
+        assert calls == []                      # unmapped node: no supersede
+        rt.node_completed(B, "rb")
+        assert calls == [(("product_versions", "x"), "/out/b.tiff")]
+
+    def test_supersede_skipped_on_failure_and_sentinels(self, monkeypatch):
+        from dependency_graph.graph_runtime import Skipped
+        calls = self._capture(monkeypatch)
+        A, B = _node(a_task), _node(b_task)
+        g = Graph({B: [A]})
+        g.version_supersede = {
+            A: (("product_versions", "a"), "/out/a.tiff"),
+            B: (("product_versions", "b"), "/out/b.tiff"),
+        }
+        rt = GraphRuntime(g)
+
+        rt.node_failed(A, RuntimeError("boom"))
+        rt.node_completed(B, Skipped)
+        assert calls == []
+
+    def test_child_subgraph_map_merges_into_root(self, monkeypatch):
+        """run_pipeline attaches the map to its RETURNED sub-graph; the child
+        runtime must surface it to the root so completion of a child node
+        supersedes."""
+        calls = self._capture(monkeypatch)
+        parent_node = _node(a_task)
+        rt = GraphRuntime(Graph({parent_node: []}))
+
+        C, done = _node(c_task), _node(gather_task)
+        sub = Graph({done: [C]})
+        sub.version_supersede = {C: (("product_versions", "c"), "/out/c.tiff")}
+        monkeypatch.setattr(
+            "dependency_graph.dependency_graph._apply_preflight",
+            lambda g, is_subgraph=False: g,
+        )
+        rt.start(parent_node)
+        rt.node_completed(parent_node, sub)    # splices child runtime
+
+        child = rt._children[parent_node]
+        child.node_completed(C, "rc")
+        assert calls == [(("product_versions", "c"), "/out/c.tiff")]

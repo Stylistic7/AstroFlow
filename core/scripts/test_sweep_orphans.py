@@ -124,8 +124,8 @@ def test_sweep_refuses_when_live_set_empty(temp_output_dir):
     """Defensive floor: with an empty cart AND empty archive the live set is
     empty. sweep() must NOT treat every file under output_dir as an orphan and
     wipe it — it returns skipped_empty_live and deletes nothing. This is the
-    guard that stops the completion-time auto-sweep from nuking the output
-    tree when nothing pins a live set."""
+    guard that stops a careless manual sweep from nuking the output tree when
+    nothing pins a live set."""
     orphan = _make_file(temp_output_dir / "stack" / "would_be_wiped.xisf")
     # autouse fixture already set cart=[] and archive=[]
 

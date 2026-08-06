@@ -199,7 +199,8 @@ GraphUpdateFn = Callable[..., Any]
 
 
 class Graph(dict[TaskDescriptor, Iterable[TaskDescriptor]]):
-    __slots__ = ("graph_update_fn", "node_status_fn", "ephemeral_files")
+    __slots__ = ("graph_update_fn", "node_status_fn", "ephemeral_files",
+                 "version_supersede")
     graph_update_fn: GraphUpdateFn | None
     node_status_fn: NodeStatusFn | None
     # Optional `EphemeralFiles` registry built at eager-trace time in a
@@ -207,6 +208,11 @@ class Graph(dict[TaskDescriptor, Iterable[TaskDescriptor]]):
     # GraphRuntime.__init__ folds it into the root runtime's shared
     # registry when this Graph becomes a child runtime.
     ephemeral_files: "Any | None"
+    # Optional `{node: (version_log_key, expected_path)}` map attached by
+    # `run_pipeline` to its returned sub-graph. The runtime consults it at
+    # node completion to delete the superseded display-product version the
+    # moment the new output lands (graceful N/N-1, `version_log.supersede`).
+    version_supersede: "dict | None"
 
     def __init__(
         self,
@@ -214,12 +220,14 @@ class Graph(dict[TaskDescriptor, Iterable[TaskDescriptor]]):
         graph_update_fn: GraphUpdateFn | None = None,
         node_status_fn: NodeStatusFn | None = None,
         ephemeral_files: "Any | None" = None,
+        version_supersede: "dict | None" = None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.graph_update_fn = graph_update_fn
         self.node_status_fn = node_status_fn
         self.ephemeral_files = ephemeral_files
+        self.version_supersede = version_supersede
 
 
 class CanonicalGraph(dict[Node, list[Node]]):

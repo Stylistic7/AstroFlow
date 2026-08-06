@@ -202,57 +202,14 @@ class StateActor:
             return state, [Action(type="run_entire_graph")]
 
         self._infra_retries = 0  # a clean run resets the retry budget
-        self._cleanup_orphans_on_completion()
+        # No completion-time cleanup: display-product N-1s are deleted
+        # deterministically at node completion (`version_log.supersede`),
+        # ephemerals by the in-run GC, foreign debris by the janitor. The
+        # global sweep (`scripts.sweep_orphans`) is a MANUAL tool only — the
+        # auto-run variant deleted in-flight tail intermediates whenever the
+        # live-set trace resolved partially (the place_image re-churn), so a
+        # global delete no longer runs unattended.
         return state, [Action(type="announce", message="reload_data")]
-
-    def _cleanup_orphans_on_completion(self) -> None:
-        """Automatic disk cleanup at pipeline-completion — replaces ever running
-        `sweep_orphans` by hand.
-
-        (1) Cheap + synchronous: prune superseded display-product versions —
-            delete each product's N-1 now that N is built (no os.walk), so disk
-            stays ~1× as runs complete instead of accumulating N-1's.
-        (2) Heavier global reconciliation for the long tail (crash/partial/
-            foreign leftovers, removed-cart-item trees, non-display intermediates)
-            in a background daemon thread, one at a time, so it never blocks the
-            action loop.
-        Both best-effort — a cleanup failure must never break derivation."""
-        try:
-            from cache.orphan_sweep import prune_superseded_versions
-            files, freed = prune_superseded_versions()
-            if files:
-                print(f"### version prune: reclaimed {files} superseded files, "
-                      f"{freed / 1e9:.2f} GB")
-        except Exception:
-            import traceback
-            print(f"### version prune failed (non-fatal)\n{traceback.format_exc()}")
-        self._start_background_sweep()
-
-    def _start_background_sweep(self) -> None:
-        """Fire-and-forget the global orphan reconciliation, at most one at a
-        time. Versioning-aware (spares any still-shown N-1) and idempotent."""
-        if getattr(self, "_sweep_running", False):
-            return
-        self._sweep_running = True
-
-        def _run() -> None:
-            try:
-                from cache.orphan_sweep import sweep
-                from context import local_context
-                report = sweep(local_context, delete=True)
-                if report["deleted"]:
-                    print(
-                        f"### auto-sweep: reclaimed {report['deleted']} orphans, "
-                        f"{report['reclaimable_bytes'] / 1e9:.1f} GB"
-                    )
-            except Exception:
-                import traceback
-                print(f"### auto-sweep failed (non-fatal)\n{traceback.format_exc()}")
-            finally:
-                self._sweep_running = False
-
-        import threading
-        threading.Thread(target=_run, name="orphan-sweep", daemon=True).start()
 
     # TODO: Complete this. The goal is to iterate over the graph's dry run result,
     # deleting all of the cached results, and then running the Graph again. This

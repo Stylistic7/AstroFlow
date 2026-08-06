@@ -57,3 +57,74 @@ def test_trimmed_append_dedups_unchanged_rebuild():
     same = vl._trimmed_append(log, _entry("b"))  # unchanged rebuild
     assert same is log  # exact no-op, list untouched
     assert [e["call_hash"] for e in same] == ["a", "b"]
+
+
+# ── supersede: the deterministic write-anchored N-1 deletion ──────────────
+
+def _fake_log(monkeypatch, entries):
+    """Route versions()/set_versions() to an in-memory dict (no context)."""
+    store = {"log": list(entries)}
+    monkeypatch.setattr(vl, "versions", lambda k: list(store["log"]))
+    monkeypatch.setattr(
+        vl, "set_versions", lambda k, es: store.__setitem__("log", list(es)))
+    return store
+
+
+def _touch(p):
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_bytes(b"x")
+    return p
+
+
+def test_supersede_deletes_other_versions_and_trims(tmp_path, monkeypatch):
+    """When the new version lands, every OTHER logged version loses its
+    primary + sidecar + pyramid, and the log becomes just the landed entry."""
+    old = _touch(tmp_path / "op" / "aaaa1111.tiff")
+    old_sidecar = _touch(tmp_path / "op" / "aaaa1111.tiff.json")
+    old_pyr = _touch(tmp_path / "op" / "aaaa1111_tiles.tiff")
+    landed = _touch(tmp_path / "op" / "bbbb2222.tiff")
+
+    store = _fake_log(monkeypatch, [
+        {"path": str(old), "call_hash": "aaaa1111", "ts": 0.0},
+        {"path": str(landed), "call_hash": "bbbb2222", "ts": 1.0},
+    ])
+    k = vl.key("mosaic", "m1", "P", "Stars", "RGB")
+
+    removed = vl.supersede(k, landed)
+
+    assert removed == 3
+    assert not old.exists() and not old_sidecar.exists() and not old_pyr.exists()
+    assert landed.exists()
+    assert [e["call_hash"] for e in store["log"]] == ["bbbb2222"]
+
+
+def test_supersede_refuses_when_landed_file_missing(tmp_path, monkeypatch):
+    """A completion that produced no file must never delete the last-good the
+    UI is showing — supersede no-ops entirely."""
+    old = _touch(tmp_path / "op" / "aaaa1111.tiff")
+    store = _fake_log(monkeypatch, [
+        {"path": str(old), "call_hash": "aaaa1111", "ts": 0.0},
+    ])
+    k = vl.key("mosaic", "m1", "P", "Stars", "RGB")
+
+    removed = vl.supersede(k, tmp_path / "op" / "bbbb2222.tiff")
+
+    assert removed == 0
+    assert old.exists()
+    assert [e["call_hash"] for e in store["log"]] == ["aaaa1111"]
+
+
+def test_supersede_unchanged_rebuild_is_a_noop_delete(tmp_path, monkeypatch):
+    """Landing the SAME call_hash again (cache-hit completion) deletes
+    nothing — the landed entry is skipped by hash."""
+    landed = _touch(tmp_path / "op" / "cccc3333.tiff")
+    store = _fake_log(monkeypatch, [
+        {"path": str(landed), "call_hash": "cccc3333", "ts": 0.0},
+    ])
+    k = vl.key("mosaic", "m1", "P", "Stars", "RGB")
+
+    removed = vl.supersede(k, landed)
+
+    assert removed == 0
+    assert landed.exists()
+    assert [e["call_hash"] for e in store["log"]] == ["cccc3333"]

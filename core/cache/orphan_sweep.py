@@ -5,11 +5,10 @@ The live set is the union of:
     current context (`trace_paths.paths_for_cart_item`) — deterministic from the
     trace, no file reads, sub-second per item;
   * every path preserved in `context.archive`;
-  * **each display product's last-good (N-1) version, but ONLY while its newest
-    version isn't built yet** — so a sweep mid-recompute can never delete a
-    still-shown N-1 (graceful N/N-1 versioning). Once the newest lands, N-1 is
-    collectible; the per-build prune deletes it proactively, this just prevents
-    the race.
+  * **every path any product_versions log references, unconditionally** — a
+    log holds the current version plus, mid-rebuild, the last-good the UI is
+    still showing. Deleting superseded versions is `version_log.supersede`'s
+    job at node completion, never the sweep's.
   * every output of the IMPLICIT preview pipeline: `build_preview_graph`
     dispatches `Subframe` over every mosaic ("every mosaic is implicitly in
     the cart"), so its products — placed panels, merged channels, stored
@@ -20,16 +19,19 @@ The live set is the union of:
 
 Anything under `output_dir` not in the live set is an orphan.
 
-This is the extracted, callable core: `sweep(ctx, delete=...)`. The app invokes
-it automatically at pipeline-completion (`state_machine`); `scripts/sweep_orphans.py`
-is a thin CLI over it. `ctx` supplies `shopping_cart` / `archive` / `output_dir`
-(pass `local_context` from the CLI, the app's `context` from the app) — the
-version-log pin reads the durable cache directly, so it needs no Ray.
+This is the extracted, callable core: `sweep(ctx, delete=...)` —
+`scripts/sweep_orphans.py` is a thin CLI over it, and that CLI is the ONLY
+caller. The app never runs a global delete unattended: the auto-run variant
+deleted in-flight tail intermediates whenever the live-set trace resolved
+PARTIALLY (`resolve_output_paths` skips unresolvable subtrees silently), which
+re-churned the color tail every pass. `ctx` supplies `shopping_cart` /
+`archive` / `output_dir` (pass `local_context`) — the version-log pin reads
+the durable cache directly, so it needs no Ray.
 
 Only a *global* disk-vs-trace scan can find orphans that nothing references —
 crash/partial/failed-write leftovers, removed-cart-item trees, non-display
-persistent intermediates, foreign cruft — so this reconciliation can't be
-eliminated, only automated.
+persistent intermediates, foreign cruft — run this by hand when the long tail
+is worth reclaiming, ideally while the app is idle.
 """
 from __future__ import annotations
 
@@ -48,75 +50,25 @@ def _siblings_of(primary: str) -> list[Path]:
     return [sidecar_path_for(p), pyramid_path_for(p)]
 
 
-def _pinned_previous_versions() -> set[str]:
-    """Each product's previous (last-good) version files, pinned ONLY while its
-    newest recorded version isn't on disk yet. Reads the durable
-    `product_versions` logs directly (Ray-free); see products/version_log.py."""
+def _pinned_versions() -> set[str]:
+    """EVERY file any product_versions log references, pinned unconditionally.
+
+    Each log holds at most the current version plus (while a rebuild is in
+    flight) the last-good the UI is still showing — deletion of superseded
+    versions is `version_log.supersede`'s job at node completion, never the
+    sweep's. Unconditional pinning makes the manual sweep safe to run at ANY
+    time, including mid-rebuild: it can never take the last-good out from
+    under the badge. Reads the durable logs directly (Ray-free)."""
     from context.cache import get_durable_cache
-    from catalog.queries import viewable_from_master
     dc = get_durable_cache()
     out: set[str] = set()
     for k in list(dc):
         if not (isinstance(k, tuple) and k and k[0] == "product_versions"):
             continue
-        log = dc.get(k) or []
-        if len(log) < 2:
-            continue
-        # log[-1] is the newest recorded (the current) version; while its file
-        # isn't viewable yet, spare every older entry (the last-good the UI is
-        # still showing). Once it's built, none of these are pinned → collectible.
-        if viewable_from_master(log[-1].get("path")) is None:
-            for e in log[:-1]:
-                out.add(e["path"])
-                out.update(str(s) for s in _siblings_of(e["path"]))
+        for e in dc.get(k) or []:
+            out.add(e["path"])
+            out.update(str(s) for s in _siblings_of(e["path"]))
     return out
-
-
-def prune_superseded_versions() -> int:
-    """Cheap continuous cleanup (NO os.walk): for each display product whose
-    CURRENT (newest logged) version is built, delete its older logged versions'
-    files (+ siblings) and trim the log to just the current. Iterates the durable
-    `product_versions` logs only — so it's fast enough to run on every build
-    completion, keeping disk ~1× throughout a long run instead of accumulating
-    N-1's until the end. The heavier global `sweep` (long-tail orphans) can then
-    run less often.
-
-    Safe by construction: a non-current entry is deleted ONLY once the current's
-    file is confirmed viewable, so a still-shown N-1 is never touched. Returns
-    `(files_unlinked, bytes_freed)` and logs one line per pruned product.
-    Head-local (reads/writes the durable cache directly); intended to run from
-    the head-pinned StateActor."""
-    from context.cache import get_durable_cache
-    from catalog.queries import viewable_from_master
-    from products import version_log
-    dc = get_durable_cache()
-    deleted = 0
-    freed = 0
-    for k in list(dc):
-        if not (isinstance(k, tuple) and k and k[0] == "product_versions"):
-            continue
-        log = dc.get(k) or []
-        if len(log) < 2:
-            continue
-        current = log[-1]
-        if viewable_from_master(current.get("path")) is None:
-            continue  # current not built yet → keep the last-good
-        n0, f0 = deleted, freed
-        for e in log[:-1]:
-            for p in (e["path"], *(str(s) for s in _siblings_of(e["path"]))):
-                try:
-                    sz = os.path.getsize(p)
-                    os.unlink(p)
-                    deleted += 1
-                    freed += sz
-                except OSError:
-                    pass  # already gone — fine
-        dc.set(k, [current])  # keep only the current version
-        if deleted > n0:
-            print(f"### version prune {version_log.describe(k)}: dropped "
-                  f"{deleted - n0} file(s) ({(freed - f0) / 1e6:.0f} MB) — N-1 "
-                  f"{log[-2]['call_hash'][:8]} superseded by {current['call_hash'][:8]}")
-    return deleted, freed
 
 
 def _implicit_preview_items(ctx) -> list[tuple[str, str, str]]:
@@ -151,7 +103,7 @@ def live_set(ctx) -> set[str]:
     for p in primaries:
         live.add(p)
         live.update(str(s) for s in _siblings_of(p))
-    live |= _pinned_previous_versions()
+    live |= _pinned_versions()
     return live
 
 
@@ -196,11 +148,12 @@ def sweep(ctx, delete: bool = False, include: "set[str] | None" = None) -> dict:
     """Compute orphans under `ctx.output_dir` and, when `delete`, unlink them.
 
     Returns a report `{orphans, by_dir, live_count, reclaimable_bytes,
-    deleted, skipped_empty_live}`. Safe to run anytime: the version-log pin
-    keeps a still-shown N-1 out of the orphan set, and `live_set` traces
-    strict so an unresolvable cart item raises (never silently drops from the
-    live set). Intended to be called at pipeline-completion/idle (nothing
-    building) so the current trace is authoritative.
+    deleted, skipped_empty_live}`. The version-log pin keeps every logged
+    version out of the orphan set, and `live_set` traces strict so an
+    unresolvable cart item raises (never silently drops from the live set).
+    MANUAL-ONLY, best run while the app is idle: a partially-resolvable trace
+    (mid-rebuild) silently thins the live set, which is exactly why the
+    auto-run variant was removed.
 
     Defensive floor: if the live set resolves EMPTY (empty cart + empty
     archive, or every cart item legitimately traced to no outputs), refuse to

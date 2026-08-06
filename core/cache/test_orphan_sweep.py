@@ -9,7 +9,7 @@ Two properties keep an unattended sweep from ever deleting live data:
   * fail-loud floors: an unresolvable trace raises (never a silent partial
     live set), and an EMPTY resolved live set refuses to delete anything.
 
-`paths_for_cart_item` and `_pinned_previous_versions` are monkeypatched —
+`paths_for_cart_item` and `_pinned_versions` are monkeypatched —
 tests must never trace real pipelines nor read the real durable cache."""
 import types
 
@@ -31,7 +31,7 @@ def _ctx(tmp_path, cart=(), mosaics=()):
 
 
 def _no_pins(monkeypatch):
-    monkeypatch.setattr(orphan_sweep, "_pinned_previous_versions", lambda: set())
+    monkeypatch.setattr(orphan_sweep, "_pinned_versions", lambda: set())
 
 
 def test_implicit_subframe_outputs_survive_sweep(tmp_path, monkeypatch):

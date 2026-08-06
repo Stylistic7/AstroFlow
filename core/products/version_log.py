@@ -11,10 +11,19 @@ nothing.
 This is the ONE thing here that cannot be recomputed on demand: once the old
 output files are swept, their call_hashes are unrecoverable. So the log lives in
 the never-evict durable store — `"product_versions"` is registered in
-`context.cache._DURABLE_TUPLE_NS`. Three readers consume it: the resolver
-(`catalog.queries.resolve_product`, last-good fallback), the per-build prune
-(delete N-1 once N lands), and the sweep (`scripts.sweep_orphans`, spare N-1
-while N is building). Writes go through the actor-backed `context` (like
+`context.cache._DURABLE_TUPLE_NS`.
+
+Lifecycle (deterministic, write-site-anchored — no global reconciler):
+  * `record` appends the newly PREDICTED output at trace/snapshot time; from
+    that moment the UI serves the prior (N-1) file with an out-of-date badge.
+  * `supersede` fires from the graph runtime AT THE MOMENT the new version
+    lands on disk (node completion): it deletes every other logged version's
+    files and trims the log to the landed one. Steady state = exactly ONE
+    version per product on disk; the transient 2× lasts only while a rebuild
+    is in flight.
+Readers: the resolver (`catalog.queries.resolve_product`, last-good fallback)
+and the manual sweep (`scripts.sweep_orphans`, which pins every logged path).
+Writes go through the actor-backed `context` (like
 `asiair.guide_event_stream._push_to_buffer`) so the Flask workers see them.
 
 Leaf module: depends only on `context` + stdlib, so every reader/writer can
@@ -91,6 +100,51 @@ def record(k: tuple, path) -> None:
         prev = log[-1]["call_hash"][:8] if log else "none"
         print(f"### version_log {describe(k)}: NEW {entry['call_hash'][:8]} "
               f"(prev {prev}) → serving last-good until rebuilt")
+
+
+def _files_of(path) -> list:
+    """A version's on-disk footprint: primary + `.json` sidecar + display
+    pyramid. Lazy imports keep this module a leaf."""
+    from file_io.sidecar import sidecar_path_for
+    from previews.create_tile_pyramid import pyramid_path_for
+    p = Path(str(path))
+    return [p, sidecar_path_for(p), pyramid_path_for(p)]
+
+
+def supersede(k: tuple, landed_path) -> int:
+    """The new version just LANDED on disk — delete every other logged
+    version's files (primary + sidecar + pyramid) and trim the log to the
+    landed entry. This is the ONLY thing that deletes a display product's
+    previous version, and it runs at the one moment supersession is a local
+    fact rather than an inference: node completion, head-side, single-writer.
+
+    Guards: no file at `landed_path` → delete nothing (a completion that
+    produced no file must never orphan the last-good the UI is showing); an
+    entry with the landed call_hash is kept, so an unchanged rebuild is a
+    no-op. Returns the number of files unlinked; never raises past OSError
+    swallowing (a failed unlink is retried implicitly next supersede).
+    """
+    import os
+    landed = str(landed_path)
+    if not os.path.exists(landed):
+        return 0
+    landed_hash = call_hash_of(landed)
+    removed = 0
+    for e in versions(k):
+        if e.get("call_hash") == landed_hash:
+            continue
+        for p in _files_of(e.get("path", "")):
+            try:
+                os.unlink(p)
+                removed += 1
+            except OSError:
+                pass  # already gone / never built — fine
+    set_versions(k, [{"path": landed, "call_hash": landed_hash,
+                      "ts": time.time()}])
+    if removed:
+        print(f"### version supersede {describe(k)}: {landed_hash[:8]} landed, "
+              f"removed {removed} stale file(s)")
+    return removed
 
 
 def versions(k: tuple) -> list:
