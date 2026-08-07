@@ -54,12 +54,14 @@ def workflow_group(fn):
 
         @workflow_group
         def _build_cal_masters(stack, config):
-            cal_masters = []
-            for cs in calibration_stacks_for(stack, config):
-                cal_masters.append(stack_files(
-                    downscale_stack(8, cs), config, *cal_masters,
-                ))
-            return cal_masters
+            steps, top_ids = calibration_plan(stack, config)
+            masters = {}
+            for cs, dep_ids in steps:
+                masters[str(cs.stable_hash)] = stack_files(
+                    downscale_stack(8, cs), config,
+                    *(masters[i] for i in dep_ids),
+                )
+            return [masters[i] for i in top_ids]
 
     Groups can nest — a helper decorated with `@workflow_group`
     that's called inside another `@workflow_group`-decorated

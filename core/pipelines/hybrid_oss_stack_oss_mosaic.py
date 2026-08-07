@@ -23,7 +23,7 @@ from mosaics.color.post_process import bxt_correct_only, color_post_process
 from mosaics.merging.oss import merge_images_oss
 from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
-from stacks.calibration_selection import calibration_stacks_for
+from stacks.calibration_selection import calibration_plan
 from stacks.composite_stack import Stack
 from stacks.post_processing.oss import post_process_stack_oss
 from stacks.stacking.oss import stack_files_oss
@@ -44,8 +44,9 @@ def _post_processed_master(stack, config):
     enter the master's call_hash, so the cached artifact is identical
     whether or not the ordering edge is present.
     """
+    steps, _top_ids = calibration_plan(stack, config)
     cal_masters = []
-    for cs in calibration_stacks_for(stack, config):
+    for cs, _dep_ids in steps:
         cal_masters.append(stack_files_oss(cs, config, _after=tuple(cal_masters)))
     master = stack_files_oss(stack, config, _after=tuple(cal_masters))
     # OSS post-processing (GraXpert background correction + solve) — NOT PI's

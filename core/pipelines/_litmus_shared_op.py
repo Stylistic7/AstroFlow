@@ -11,7 +11,7 @@ registered in every process, including Ray workers running the
 dispatcher.
 """
 from astroflow.pipeline import pipeline
-from stacks.calibration_selection import calibrate, calibration_stacks_for
+from stacks.calibration_selection import calibrate, calibration_plan
 from stacks.composite_stack import Stack
 from stacks.downscale import downscale_stack
 from stacks.post_processing.pixinsight import post_process_stack
@@ -31,9 +31,11 @@ def shared_op_test_downscaled(stack, config):
     # the upstream master differs (downscaled vs full-res). The
     # framework must distinguish the two calls via call_hash and
     # write to distinct files.
-    cal_masters = []
-    for cs in calibration_stacks_for(stack, config):
-        cal_masters.append(stack_files(downscale_stack(8, cs), config, *cal_masters))
+    steps, top_ids = calibration_plan(stack, config)
+    masters = {}
+    for cs, dep_ids in steps:
+        masters[str(cs.stable_hash)] = stack_files(
+            downscale_stack(8, cs), config, *(masters[i] for i in dep_ids))
     s = downscale_stack(8, stack)
-    master = stack_files(s, config, *cal_masters)
+    master = stack_files(s, config, *(masters[i] for i in top_ids))
     return post_process_stack(s, config, master)

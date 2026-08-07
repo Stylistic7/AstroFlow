@@ -22,7 +22,7 @@ from mosaics.post_process_channel import post_process_mosaic_color_channel
 from mosaics.merging.pixinsight import merge_images
 from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
-from stacks.calibration_selection import calibration_stacks_for
+from stacks.calibration_selection import calibration_plan
 from stacks.composite_stack import Stack
 from stacks.downscale import downscale_stack
 from stacks.post_processing.pixinsight import post_process_stack
@@ -38,12 +38,14 @@ def _post_processed_master(stack, config):
     each cal stack inside the loop so it's easy to swap for a
     different per-stack transformation (denoise, crop, etc.).
     Shared across the stack / target / mosaic entry points."""
-    cal_masters = []
-    for cs in calibration_stacks_for(stack, config):
-        cs_downscaled = downscale_stack(8, cs)
-        cal_masters.append(stack_files(cs_downscaled, config, *cal_masters))
+    steps, top_ids = calibration_plan(stack, config)
+    masters = {}
+    for cs, dep_ids in steps:
+        masters[str(cs.stable_hash)] = stack_files(
+            downscale_stack(8, cs), config, *(masters[i] for i in dep_ids))
     s_downscaled = downscale_stack(8, stack)
-    master = stack_files(s_downscaled, config, *cal_masters)
+    master = stack_files(
+        s_downscaled, config, *(masters[i] for i in top_ids))
     return post_process_stack(s_downscaled, config, master)
 
 
