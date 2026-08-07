@@ -120,6 +120,14 @@ _DURABLE_STR_KEYS = frozenset(
         "ui_mosaics",
         "ui_calibration_stacks",
         "tap_snapshots",
+        # --- machine configuration (reason 1 again: the 2026-08-06 wipe
+        # silently reverted cluster_interface to auto-detect → head bound the
+        # WiFi NIC (10.0.0.x) → the MBP could not join → split-brain with two
+        # clusters double-processing the shared volumes. Network settings are
+        # user CONFIGURATION, never derived state — they must survive
+        # eviction and wipes. ---
+        "network_settings",
+        "role_chosen",
     }
 )
 
@@ -134,6 +142,7 @@ _MIGRATE_STR_KEYS = (
     "asiair_device_nicknames", "asiair_known_labels",
     "ui_stacks", "ui_targets", "ui_mosaics", "ui_calibration_stacks",
     "tap_snapshots",
+    "network_settings", "role_chosen",
 )
 
 
