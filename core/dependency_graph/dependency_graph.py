@@ -555,6 +555,31 @@ def run_graph(
                         pressure_by_node=pressure_by_node,
                     )
                     if node_id is None:  # fits nowhere now — hold for a later pass
+                        # FAIL FAST on an UNSATISFIABLE demand: a declared
+                        # custom resource with zero capacity on every live
+                        # node can never fit — retaining it hot-spins this
+                        # loop at 100% CPU forever (the 2026-08-06 finding:
+                        # gpu_slots ops livelocked every exhaustive
+                        # full-pipeline test for weeks because the test
+                        # cluster never advertised the resource; the hang
+                        # read as "tests got slow"). "Fits nowhere NOW" is
+                        # retryable; "fits nowhere EVER" is a config error
+                        # and must be loud.
+                        impossible = [
+                            r for r in need_custom
+                            if all(
+                                cap.get(r, 0.0) <= 0.0
+                                for cap in capacity_by_node.values()
+                            )
+                        ]
+                        if impossible:
+                            raise RuntimeError(
+                                f"unsatisfiable resource demand: node "
+                                f"{getattr(node, 'name', node)!r} declares "
+                                f"{impossible} but no live Ray node advertises "
+                                f"any capacity for it/them (capacities: "
+                                f"{ {n: c for n, c in capacity_by_node.items()} })"
+                            )
                         retained.append((rt, node))
                         continue
                 rt.start(node)

@@ -90,7 +90,14 @@ def enable_test_mode(ray_temp_dir: str | None = None) -> None:
         num_cpus=num_cpus,
         object_store_memory=object_store_memory,
         include_dashboard=False,  # tests don't need it; trims per-cluster overhead
-        resources={"diskcache": 1, "fastest_storage": 1, "PixInsight": 1},
+        # Must advertise EVERY custom resource production ops declare —
+        # a declared-but-absent resource livelocked run_graph's admission
+        # loop for weeks (gpu_slots landed in prod late July; every
+        # exhaustive full-pipeline test hung at 100% CPU forever, read as
+        # "tests got slow"). run_graph now also fails fast on
+        # unsatisfiable resources, so drift here raises instead of hangs.
+        resources={"diskcache": 1, "fastest_storage": 1, "PixInsight": 1,
+                   "gpu_slots": 2},
         ignore_reinit_error=False,
         _temp_dir=ray_temp_dir,
         runtime_env={
