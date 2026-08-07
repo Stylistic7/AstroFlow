@@ -148,9 +148,18 @@ def supersede(k: tuple, landed_path) -> int:
 
 
 def versions(k: tuple) -> list:
-    """The recorded versions, oldest-first (`[{path, call_hash, ts}, ...]`)."""
-    from context import context
-    log = context.get(k)
+    """The recorded versions, oldest-first (`[{path, call_hash, ts}, ...]`).
+
+    Reads the DURABLE FILE directly, not the actor-backed context: every
+    reader (resolve_product in the Ray-free gunicorn workers, supersede in
+    the StateActor, the manual sweep) runs on the head, where the durable
+    diskcache lives. Reading via `context` silently returned nothing in the
+    web workers — no Ray actor there — so the out-of-date fallback NEVER
+    functioned in the UI ("absent" where last-good should have served).
+    Writes stay actor-routed (`record`/`set_versions`): run_pipeline tasks
+    execute on any node and must land the write on the head."""
+    from context.cache import get_durable_cache
+    log = get_durable_cache().get(k)
     return log if isinstance(log, list) else []
 
 
