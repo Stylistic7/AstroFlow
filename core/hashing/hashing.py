@@ -115,9 +115,15 @@ _source_hash_cache: dict[int, str] = {}
 
 @beartype
 def hash_source_code(func: Callable) -> str:
+    """Structural (AST-normalized) source hash — comments, whitespace,
+    docstrings, quote style, constant formatting, and decorator kwargs do
+    NOT move an op's fn_hash; semantic body changes do. See
+    hashing/structural_hash.py for the normalization contract. Landed with
+    the 2026-08-06 full cache wipe (moving every hash = a wipe event)."""
     key = id(func)
     if key not in _source_hash_cache:
-        _source_hash_cache[key] = xxhash.xxh64(inspect.getsource(func)).hexdigest()
+        from hashing.structural_hash import structural_source_hash
+        _source_hash_cache[key] = structural_source_hash(func)
     return _source_hash_cache[key]
 
 
