@@ -56,7 +56,16 @@ class VisualNode:
 
     @property
     def op_name(self) -> str:
-        return self.canonical.task._function.__name__
+        """Friendly graph label: the op's decorator-declared
+        `display_name=` when present, else the function name. The
+        structural source hash strips decorator lists, so declaring or
+        editing a display_name never re-keys the op."""
+        task = self.canonical.task
+        return (
+            getattr(task, "_display_name", None)
+            or getattr(getattr(task, "_function", None), "_display_name", None)
+            or task._function.__name__
+        )
 
 
 VisualGraph = dict[VisualNode, list[VisualNode]]

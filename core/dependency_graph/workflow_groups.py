@@ -36,7 +36,7 @@ _GROUP_STACK: contextvars.ContextVar[tuple] = contextvars.ContextVar(
 )
 
 
-def workflow_group(fn):
+def workflow_group(fn=None, *, display_name: str | None = None):
     """Decorator: mark a plain Python helper as a lexical
     workflow-graph group. Every `record()` call made during one
     invocation of the wrapped function (including via nested
@@ -73,10 +73,17 @@ def workflow_group(fn):
     structure produce the same ids; the viewer's expanded/
     collapsed state stays stable across reruns.
     """
+    # Dual-form: `@workflow_group` or `@workflow_group(display_name="...")`.
+    # `display_name` replaces the function name as the group's viewer label
+    # (and in the deterministic group_id — renaming resets that group's
+    # expanded/collapsed state, nothing else; groups are pure UI).
+    if fn is None:
+        return functools.partial(workflow_group, display_name=display_name)
+
     # Local import to avoid a tracing → workflow_groups → tracing
     # round-trip at module load time.
     from dependency_graph.tracing import _TRACE
-    name = fn.__name__
+    name = display_name or fn.__name__
 
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):

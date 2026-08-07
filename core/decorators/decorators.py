@@ -201,6 +201,10 @@ class _Node:
         ray_opts = dict(all_kwargs)
         final = ray_opts.pop("final", False)
         display = ray_opts.pop("display", None)
+        # Friendly graph label for the workflow UI ("Blend panels" instead of
+        # `_blend_many_impl`). Pure presentation: the structural source hash
+        # strips decorator lists, so declaring/editing this never re-keys.
+        display_name = ray_opts.pop("display_name", None)
         # Declarative tap filter for deliverables that have NO `filter` signature
         # param and no per-filter input entity — i.e. colour composites, which
         # combine every channel into one image. Their tap would otherwise route
@@ -322,6 +326,8 @@ class _Node:
         # ---- 4. Attach public-API attributes on the final wrapper -----
         wrapper._fn_hash = fn_hash
         wrapper._cache_key_narrow = cache_key_narrow
+        if display_name is not None:
+            wrapper._display_name = display_name
 
         if is_artifact_producer:
             wrapper.filename_fn = filename_fn
