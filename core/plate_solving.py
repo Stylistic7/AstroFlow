@@ -235,20 +235,22 @@ def solve_field(
 
     # Synthetic noise frames opt out of solving via the DONTSOLV header.
     from file_io.generic import read_header
-    import metadata.image_types as image_types
     header = read_header(filename)
     if header.get("DONTSOLV"):
         print(f"### Skipping solve for {filename} (DONTSOLV set)")
         return None
 
-    # A master that won't solve is dropped from every mosaic it belongs
-    # to (catastrophic), and there are few of them — so for masters spend
-    # generously (10 min) AND cap the source list: a deep stack yields
-    # tens of thousands of detections, and the brightest ~1000 are plenty
-    # to solve while avoiding the blind quad-match blow-up that otherwise
-    # times out. Subframes are left at solve-field's defaults (a single
-    # one failing is negligible).
-    is_master = image_types.is_master(header)
+    # EVERY solve caps the source list and gets a generous CPU budget.
+    # This used to be master-only (gated on is_master header divination),
+    # leaving every framework-PRODUCED deep image — BXT'd channel masters,
+    # blends — at solve-field's uncapped defaults. On a dense field that is
+    # the blind quad-match blow-up: the stuck Cygnus SII panel extracted
+    # 38,004 sources and hit "CPU time limit reached!" deterministically in
+    # TWO universes (it was the real cause of the pre-wipe "S never builds"
+    # mystery), while --objs 1000 solved the same image in 177 s at
+    # log-odds 342. The brightest ~1000 sources are ample for ANY solve
+    # (it needs dozens) and make subframes faster too — so one arg set for
+    # everything, no image-class guessing.
     arguments = [
         "solve-field",
         "--overwrite",
@@ -266,9 +268,11 @@ def solve_field(
         "--tweak-order",
         "2",
         "--crpix-center",
+        "--cpulimit",
+        "600",
+        "--objs",
+        "1000",
     ]
-    if is_master:
-        arguments += ["--cpulimit", "600", "--objs", "1000"]
 
     result = _solve_field(filename, arguments, debug)
 
