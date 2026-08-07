@@ -187,30 +187,6 @@ class ProcessingConfig:
     def __hash__(self):
         return hash_dataclass(self)
 
-    def __getattr__(self, name):
-        # MIGRATION SHIM (2026-07-08) — DELETE on the next full cache wipe: once
-        # no pre-bxt/sxt ProcessingConfig remains pickled in the diskcache,
-        # nothing reaches this and the whole method can be removed. See the
-        # project_cache_wipe_todos memory.
-        #
-        # ProcessingConfig instances pickled before `bxt`/`sxt` were added live
-        # on in the persistent diskcache (as dict/set keys, so they get
-        # re-hashed on unpickle). Their restored __dict__ lacks these fields, so
-        # hash_dataclass's `getattr(x, f.name)` would AttributeError and block
-        # graph builds. Supply the defaults: a pre-bxt config IS semantically a
-        # default-bxt/sxt config, so it hashes identically to a fresh one — no
-        # cache wipe needed. __getattr__ only fires for attributes missing from
-        # __dict__, so freshly-built instances are unaffected.
-        if name == "bxt":
-            return BxtSettings()
-        if name == "sxt":
-            return SxtSettings()
-        if name == "nxt":
-            return NxtSettings()
-        if name == "tiling":
-            return TilingSettings()
-        raise AttributeError(name)
-
 
 @dataclass(frozen=True)
 class Settings:
