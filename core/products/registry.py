@@ -255,7 +255,7 @@ def makes_image_wrap(
         if result is None:
             return result
         call_hash = canonical_call_hash(*args, **kwargs)
-        _stamp_header(result, call_hash, image_type)
+        _stamp_header(result, call_hash, image_type, args)
         if makes_tiff:
             _generate_presentations(func, result, args, kwargs)
         return result
@@ -263,19 +263,39 @@ def makes_image_wrap(
     return wrapped
 
 
-def _stamp_header(result: Any, call_hash: str, image_type: str | None) -> None:
+def _primary_stable_hash(args: tuple) -> "str | None":
+    """The producer's primary identity: the first call arg carrying a
+    `stable_hash`. Same convention as trace_paths/preflight entity
+    extraction — the identity axis of every product file."""
+    for a in args:
+        sh = getattr(a, "stable_hash", None)
+        if sh is not None:
+            return str(sh)
+    return None
+
+
+def _stamp_header(
+    result: Any, call_hash: str, image_type: str | None,
+    args: tuple = (),
+) -> None:
     """Stamp the result file's native header in a single write:
 
-      * `content_hash` (CONTHASH) = `call_hash` — always.
+      * `content_hash` (CONTHASH) = `call_hash` — always. Provenance axis +
+        write-completion witness (stamped only after the body finished).
+      * `STBLHASH` = the primary arg's stable_hash — when resolvable AND the
+        body didn't already write one (the stackers/mergers stamp their own,
+        sometimes composed differently — never clobber). Identity axis:
+        without it, identity-addressed consumers (master matching, catalog,
+        version log, migrations) go trace-dependent for the file.
       * `IMAGETYP` = `image_type` — only when the op declares one AND the
         body didn't already set IMAGETYP. The "don't clobber" rule lets the
         shared stacker keep its calibration types ("Master Dark" etc.) while
         every other producer defaults to a light frame, so `is_light_frame`
         is uniformly correct for produced images.
 
-    One write, not two: `update_xisf_header` rewrites the whole file, so
-    folding both keys into a single `update_header` avoids a redundant
-    full-file rewrite. Skips non-file results silently; swallows write
+    One write, not three: `update_xisf_header` rewrites the whole file, so
+    folding the keys into a single `update_header` avoids redundant
+    full-file rewrites. Skips non-file results silently; swallows write
     errors (the next `get_content_hash` falls back to `hash_of_image_data`)."""
     target = result
     if isinstance(target, WithSidecar):
@@ -284,9 +304,13 @@ def _stamp_header(result: Any, call_hash: str, image_type: str | None) -> None:
         return
     try:
         from file_io.generic import read_header, update_header, _CONTENT_HASH_KEY
+        header = read_header(target)
         updates: dict[str, Any] = {_CONTENT_HASH_KEY: call_hash}
-        if image_type is not None and not read_header(target).get("IMAGETYP"):
+        if image_type is not None and not header.get("IMAGETYP"):
             updates["IMAGETYP"] = image_type
+        stable = _primary_stable_hash(args)
+        if stable is not None and not header.get("STBLHASH"):
+            updates["STBLHASH"] = stable
         update_header(target, updates)
     except (OSError, ValueError):
         pass
