@@ -261,16 +261,13 @@ def test_sxt_narrow_keys_on_sxt_settings_only():
         pp._sxt_narrow((m, "O", changed, "chan"), {})
 
 
-def test_require_rgb_stars_demands_3_channels():
+def test_require_rgb_bands_demands_3_channels():
     """The star layer is ALWAYS extracted from the combined RGB, so
-    `_require_rgb_stars` must accept a 3-channel array and FAIL LOUDLY on
-    anything else (mono / (H,W,1) / RGBA). A mono star layer is a defect (broken
-    SXT extraction), never something to silently normalise to grey stars."""
-    # 3-channel passes → a 3-band vips image
-    ok = np.ascontiguousarray(np.zeros((8, 6, 3), dtype=np.float32))
-    assert pp._require_rgb_stars(ok).bands == 3
-    # everything non-RGB raises with a clear message
-    for shape in [(8, 6), (8, 6, 1), (8, 6, 4)]:
-        arr = np.ascontiguousarray(np.zeros(shape, dtype=np.float32))
+    `_require_rgb_bands` must accept 3 bands and FAIL LOUDLY on anything else
+    (mono / 1-band / RGBA). A mono star layer is a defect (broken SXT
+    extraction), never something to silently normalise to grey stars. The
+    check is header-only now — the streaming body never loads pixels."""
+    pp._require_rgb_bands(3)  # must not raise
+    for bands in (1, 2, 4):
         with pytest.raises(ValueError, match="expected 3-channel RGB"):
-            pp._require_rgb_stars(arr)
+            pp._require_rgb_bands(bands)

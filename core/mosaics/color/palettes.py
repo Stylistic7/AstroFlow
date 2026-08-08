@@ -56,6 +56,65 @@ def autostretch(
     return _mtf(y, _solve_midtones(med_norm, target_background))
 
 
+def _hist_median_vips(im: "pyvips.Image") -> float:
+    """LINKED median of a float image in [0,1] via a streaming 16-bit
+    histogram: quantize to ushort, per-band hist_find, sum the bands
+    (one distribution over all samples — the linked-stretch invariant),
+    take the bin holding the middle sample. Constant memory; one pass.
+    Quantization bounds the error at 1/65535 — invisible through a
+    display stretch, and deterministic (same input → same bin)."""
+    im = (im == im).ifthenelse(im, 0.0)          # NaN → 0 (numpy drops them)
+    # No explicit clamp: vips_cast clips to the target range, so negatives
+    # land in bin 0 and >1 in bin 65535 — same buckets a clamp would give,
+    # minus two full-image ifthenelse stages.
+    q = (im * 65535.0).rint().cast("ushort")
+    h = q.hist_find()                            # 65536 x 1, uint, per-band
+    counts = np.ndarray(
+        buffer=h.write_to_memory(), dtype=np.uint32,
+        shape=[h.height, h.width, h.bands],
+    ).astype(np.int64).sum(axis=(0, 2)).ravel()  # sum bands → one distribution
+    total = int(counts.sum())
+    if total == 0:
+        return 0.0
+    mid = np.searchsorted(np.cumsum(counts), (total + 1) // 2)
+    return float(mid) / 65535.0
+
+
+def autostretch_vips(open_image, *, target_background: float = 0.15,
+                     shadows_clip: float = -2.8) -> "pyvips.Image":
+    """Streaming port of `autostretch` — identical math, constant memory.
+
+    `open_image` is a zero-arg callable returning a FRESH pyvips image of the
+    source (sequential-access images cannot be re-streamed, and the stats need
+    two passes before the apply pass): pass
+    `lambda: pyvips.Image.new_from_file(path, access="sequential")` for files.
+
+    Three streaming passes: (1) 16-bit histogram → linked median; (2) histogram
+    of |x − med| → MAD; (3) lazy shadows-clip + MTF arithmetic, evaluated by
+    whatever sink consumes the returned image. Peak RSS is vips buffer-sized —
+    the full-array numpy version held 2-3 gigapixel copies (~27 GB each) and
+    was silently SIGKILLed on the 64 GiB head (live 2026-08-08)."""
+    med = _hist_median_vips(open_image())
+    mad = _hist_median_vips((open_image() - med).abs())
+    sigma = 1.4826 * mad if mad > 0 else 1e-6
+
+    c0 = float(np.clip(med + shadows_clip * sigma, 0.0, 1.0))
+    denom = max(1.0 - c0, 1e-6)
+    med_norm = float(np.clip((med - c0) / denom, 1e-6, 1.0 - 1e-6))
+    m = _solve_midtones(med_norm, target_background)
+
+    x = open_image()
+    x = (x == x).ifthenelse(x, 0.0)
+    y = (x - c0) / denom
+    y = (y < 0.0).ifthenelse(0.0, (y > 1.0).ifthenelse(1.0, y))
+    if m == 0.5:
+        return y.cast("float")
+    # MTF(m, y) = (m−1)·y / ((2m−1)·y − m). On y ∈ [0,1] with m ∈ (1e-4,
+    # 1−1e-4) the pole sits outside [0,1], so plain arithmetic matches the
+    # numpy endpoints exactly (MTF(0)=0, MTF(1)=1) without special cases.
+    return (((m - 1.0) * y) / ((2.0 * m - 1.0) * y - m)).cast("float")
+
+
 def hubble(sii: np.ndarray, ha: np.ndarray, oiii: np.ndarray) -> np.ndarray:
     """Classic Hubble (SHO) palette: R=SII, G=Hα, B=OIII. Inputs stretched [0,1]."""
     return np.clip(np.dstack([sii, ha, oiii]), 0.0, 1.0).astype(np.float32)

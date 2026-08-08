@@ -90,6 +90,28 @@ def _to_np(im: pyvips.Image) -> np.ndarray:
                       shape=[im.height, im.width, im.bands])
 
 
+def test_autostretch_vips_matches_numpy():
+    """The streaming (two-pass histogram) autostretch must match the numpy
+    reference. Median/MAD are quantized to 1/65535 by the 16-bit histogram,
+    which perturbs the MTF parameters by ~1.5e-5; the resulting pixel delta
+    is bounded well under 2e-3 — invisible for a starting display stretch,
+    and deterministic. Exercises the exact code path `combine_star_rgb`
+    runs on gigapixel mosaics (where the numpy version held 2-3 full
+    copies and got the worker SIGKILLed)."""
+    from mosaics.color.palettes import autostretch, autostretch_vips
+
+    rng = np.random.default_rng(7)
+    # Star-layer-like: mostly near-black with sparse bright values.
+    arr = (rng.random((64, 64, 3)).astype(np.float32) ** 6)
+
+    np_out = autostretch(arr)
+    vips_out = _to_np(autostretch_vips(lambda: _to_vips(arr)))
+
+    assert vips_out.shape == np_out.shape
+    assert np.all(np.isfinite(vips_out))
+    assert float(np.abs(vips_out - np_out).max()) < 2e-3
+
+
 def test_vips_ports_match_numpy():
     rng = np.random.default_rng(3)
     s, h, o = (rng.random((48, 48)).astype(np.float32) for _ in range(3))

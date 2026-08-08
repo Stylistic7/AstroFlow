@@ -728,6 +728,10 @@ def run_graph(
         # If we're draining, the in-flight set has finished naturally —
         # surface GraphCancelled so the caller can restart.
         if _draining():
+            # Report the frontier on the drain exit too — a cancelled pass is
+            # exactly the one whose leftover work needs naming. (Crash exits
+            # like WorkerCrashedError still skip it; the retry pass reports.)
+            _report_pass_end(root)
             raise GraphCancelled("Graph run drained")
 
     assert not root.is_active()

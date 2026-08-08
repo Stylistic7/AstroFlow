@@ -430,15 +430,23 @@ def combine_star_rgb(
     every channel gets the same MTF — star colour is preserved (no per-channel
     cast). Saved as the scRGB TIFF deliverable."""
     out = combine_star_rgb.filename_fn(mosaic, rgb_stars)
-    arr = read_image(Path(rgb_stars.filename)).astype(np.float32)  # (H, W, 3) linear
-    stretched = np.ascontiguousarray(palettes.autostretch(arr), dtype=np.float32)
-    vimg = _require_rgb_stars(stretched, str(rgb_stars.filename))
-    _save_color_vips(out, vimg, "Stars")
+    src = str(rgb_stars.filename)
+    # Streaming: header-only band check, then the two-pass histogram
+    # autostretch (palettes.autostretch_vips) with a lazy MTF apply that the
+    # writer sink evaluates stripe-by-stripe. The previous body read the full
+    # gigapixel RGB into numpy (~27 GB) plus a stretched copy — silently
+    # SIGKILLed on the 64 GiB head whenever anything else was co-scheduled.
+    probe = pyvips.Image.new_from_file(src)
+    _require_rgb_bands(probe.bands, src)
+    stretched = palettes.autostretch_vips(
+        lambda: pyvips.Image.new_from_file(src, access="sequential")
+    )
+    _save_color_vips(out, stretched, "Stars")
     return WithSidecar(TiffFilePath(out))
 
 
-def _require_rgb_stars(stretched: np.ndarray, src: str = "") -> "pyvips.Image":
-    """A stretched star array → a 3-band linear vips image, REQUIRING 3 channels.
+def _require_rgb_bands(bands: int, src: str = "") -> None:
+    """REQUIRE a 3-channel star layer (header-only check — no pixel read).
 
     The star layer is always extracted from the combined RGB
     (`combine_broadband_rgb` → `sxt_stars_rgb`), so it must be 3-channel. A mono
@@ -447,16 +455,13 @@ def _require_rgb_stars(stretched: np.ndarray, src: str = "") -> "pyvips.Image":
     whose screen-inversion is luminance-oriented, collapsing colour to a single
     band). Fail loudly rather than silently degrade to grey stars, so the
     regression surfaces instead of shipping wrong output."""
-    bands = stretched.shape[2] if stretched.ndim == 3 else 1
     if bands != 3:
         raise ValueError(
-            f"combine_star_rgb: star layer {src} has shape {stretched.shape} "
-            f"({bands} band(s)), expected 3-channel RGB. Stars are always "
-            f"extracted from the combined RGB — a non-RGB star layer means the "
-            f"upstream SXT star extraction (sxt_stars_rgb) is broken."
+            f"combine_star_rgb: star layer {src} has {bands} band(s), "
+            f"expected 3-channel RGB. Stars are always extracted from the "
+            f"combined RGB — a non-RGB star layer means the upstream SXT "
+            f"star extraction (sxt_stars_rgb) is broken."
         )
-    h, w = stretched.shape[:2]
-    return pyvips.Image.new_from_memory(stretched.data, w, h, 3, "float")
 
 
 def _palette_image(out, combine_vips, sii, ha, oiii, stars, name):
