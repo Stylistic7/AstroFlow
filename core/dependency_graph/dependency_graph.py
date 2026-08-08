@@ -215,8 +215,54 @@ def _apply_preflight(graph: Graph, is_subgraph: bool = False) -> Graph:
         return graph
     if len(to_run) == len(norm):
         return graph
+    # SATISFIED-BOUNDARY HYDRATION. The reverse walk stops at satisfied deps
+    # (they're a floor — see nodes_to_dispatch), so a to_run consumer can have
+    # a dep outside to_run. Its edge can't just be dropped: `make_fn_args`
+    # binds dep results positionally via `_dep_positions`, so a missing edge
+    # mis-binds every arg after it. And it can't be dispatched as-is: running
+    # it would demand ITS deps' values, un-flooring the walk (that closure
+    # requirement is exactly what re-ran 533 reclaimed-ephemeral placements
+    # per pass, live 2026-08-08). Instead each satisfied boundary dep is
+    # REPLACED, in position, by a `compute_image_metadata(path)` node: the
+    # sidecar written at the dep's completion reconstructs its ImageMetadata
+    # result without touching pixels, and the node's own cache makes later
+    # passes instant. Membership is proof of satisfaction: the walk examined
+    # every dep of every to_run node and left it out ONLY when satisfied.
+    #
+    # A satisfied dep with NO filename_fn (a no-output sentinel) has no value
+    # to hydrate — those edges are ordering-only by construction (data-bearing
+    # no-output ops bottom out in never-satisfied source nodes, so they can't
+    # BE satisfied) and are safely dropped, matching the old edge-drop.
+    from dependency_graph.classes import Node
+    from dependency_graph.preflight import expected_output_path
+    from metadata.image_metadata import compute_image_metadata
+
+    hydration: dict = {}
+
+    def _hydration_node(dep):
+        if dep not in hydration:
+            path = expected_output_path(dep, predicted, norm)
+            hydration[dep] = (
+                Node(compute_image_metadata, path) if path is not None else None
+            )
+        return hydration[dep]
+
+    pruned_map: dict = {}
+    for n in to_run:
+        deps = []
+        for d in norm[n]:
+            if d in to_run:
+                deps.append(d)
+            else:
+                sub = _hydration_node(d)
+                if sub is not None:
+                    deps.append(sub)
+        pruned_map[n] = deps
+    for sub in hydration.values():
+        if sub is not None:
+            pruned_map[sub] = []
     pruned = Graph(
-        {n: [d for d in norm[n] if d in to_run] for n in to_run},
+        pruned_map,
         graph_update_fn=getattr(graph, "graph_update_fn", None),
         node_status_fn=getattr(graph, "node_status_fn", None),
     )

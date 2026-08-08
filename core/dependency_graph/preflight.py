@@ -407,6 +407,15 @@ def nodes_to_dispatch(graph, predicted: dict) -> set:
             continue
         to_run.add(n)
         for dep in graph.get(n, ()):
+            # A SATISFIED dep is a hard floor: its output is on disk with the
+            # right CONTHASH, so the consumer reads it directly and nothing
+            # beneath it needs to run. Descending past it re-ran every
+            # RECLAIMED ephemeral under an already-built merge whenever an
+            # unsatisfied terminal sat anywhere above (live 2026-08-08: 533
+            # place_image re-runs per pass, ~6 CPU-h, once all six channel
+            # merges were satisfied but the color composites weren't yet).
+            if satisfied[dep]:
+                continue
             if dep not in to_run:
                 stack.append(dep)
 

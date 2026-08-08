@@ -287,6 +287,86 @@ class TestNodesToDispatch:
         to_run = nodes_to_dispatch(graph, predicted)
         assert to_run == {A}  # not skipped — hash mismatch
 
+    def test_satisfied_intermediate_is_a_floor(self, tmp_path, monkeypatch):
+        """EPH → MERGE(satisfied, final) → TERMINAL(unsatisfied, final): the
+        walk from TERMINAL must STOP at the satisfied MERGE and never drag
+        the reclaimed EPH back into `to_run`.
+
+        This is the exact production shape of the 2026-08-08 infinite-churn
+        regression: ephemeral `place_image` outputs (reclaimed after their
+        merge consumed them) were re-run 533×/pass because the color-composite
+        terminals above the satisfied channel merges were still absent, and
+        the reverse walk descended straight through the merges."""
+        eph = _make_task("eph", 0)
+        merge = _make_task("merge", 1)
+        terminal = _make_task("terminal", 1)
+        merge._final = True
+        terminal._final = True
+        EPH, MERGE, TERMINAL = _node(eph), _node(merge), _node(terminal)
+        graph = Graph({TERMINAL: [MERGE], MERGE: [EPH], EPH: []})
+        predicted = predict_call_hashes(graph)
+
+        # EPH's output was RECLAIMED (ephemeral scope) — path doesn't exist.
+        eph.filename_fn = lambda *a, **k: str(tmp_path / "eph_reclaimed.fits")
+        # MERGE is on disk with the right CONTHASH — satisfied.
+        merge_out = tmp_path / "merge.fits"
+        merge_out.write_bytes(b"x")
+        merge.filename_fn = lambda *a, **k: str(merge_out)
+        # TERMINAL is absent — unsatisfied result-bearer.
+        terminal.filename_fn = lambda *a, **k: str(tmp_path / "missing.fits")
+
+        import file_io.generic as gen
+        def fake_get_content_hash(p):
+            if Path(p).name == "merge.fits":
+                return predicted[MERGE]
+            raise FileNotFoundError
+        monkeypatch.setattr(gen, "get_content_hash", fake_get_content_hash)
+
+        to_run = nodes_to_dispatch(graph, predicted)
+        assert TERMINAL in to_run
+        assert MERGE not in to_run   # satisfied → skipped
+        assert EPH not in to_run     # floor holds: reclaimed ephemeral stays out
+
+    def test_satisfied_boundary_dep_is_hydrated(self, tmp_path, monkeypatch):
+        """_apply_preflight must not leave TERMINAL with a dangling dep slot
+        when the walk floors at satisfied MERGE: the merge's edge is replaced,
+        in position, by a `compute_image_metadata(<merge path>)` node so
+        `make_fn_args` still binds an ImageMetadata into that arg."""
+        from dependency_graph.dependency_graph import _apply_preflight
+        from metadata.image_metadata import compute_image_metadata
+
+        eph = _make_task("eph2", 0)
+        merge = _make_task("merge2", 1)
+        terminal = _make_task("terminal2", 1)
+        merge._final = True
+        terminal._final = True
+        EPH, MERGE, TERMINAL = _node(eph), _node(merge), _node(terminal)
+        graph = Graph({TERMINAL: [MERGE], MERGE: [EPH], EPH: []})
+        predicted = predict_call_hashes(graph)
+
+        eph.filename_fn = lambda *a, **k: str(tmp_path / "eph2_reclaimed.fits")
+        merge_out = tmp_path / "merge2.fits"
+        merge_out.write_bytes(b"x")
+        merge.filename_fn = lambda *a, **k: str(merge_out)
+        terminal.filename_fn = lambda *a, **k: str(tmp_path / "missing2.fits")
+
+        import file_io.generic as gen
+        def fake_get_content_hash(p):
+            if Path(p).name == "merge2.fits":
+                return predicted[MERGE]
+            raise FileNotFoundError
+        monkeypatch.setattr(gen, "get_content_hash", fake_get_content_hash)
+
+        pruned = _apply_preflight(graph)
+
+        assert TERMINAL in pruned
+        assert MERGE not in pruned
+        assert EPH not in pruned
+        (sub,) = pruned[TERMINAL]   # exactly one dep — the hydration node
+        assert sub.task is compute_image_metadata
+        assert Path(sub.args[0]) == merge_out
+        assert pruned[sub] == []    # hydration node is a leaf
+
 
 # ──────────────────────────────────────────────────────────────────────────
 # No-output-sentinel satisfaction (the subgraph-preflight fix, Part 2)

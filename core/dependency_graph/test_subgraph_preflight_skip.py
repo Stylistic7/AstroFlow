@@ -98,6 +98,51 @@ def test_subgraph_preflight_skips_satisfied_ephemeral(test_context) -> None:
     )
 
 
+def test_tunnel_composite_does_not_redo_reclaimed_ephemeral(test_context) -> None:
+    """The 2026-08-08 infinite-churn shape, end to end.
+
+    Run 1 builds the plain pipeline: source → ephemeral intermediate →
+    final. In-run GC auto-reclaims the intermediate once `final` lands.
+
+    Run 2 runs the pipeline WITH A COMPOSITE ADDED above the final — an
+    unsatisfied result-bearer above a satisfied intermediate above a
+    reclaimed ephemeral (production: absent color composites above
+    satisfied channel merges above reclaimed placements). The reverse
+    walk must floor at the satisfied `final`; its edge into `composite`
+    is hydrated from the sidecar via `compute_image_metadata`. The
+    ephemeral body must NOT run again, and the composite must build."""
+    from dependency_graph._preflight_skip_fixtures import (
+        build_top_level_graph_with_composite,
+    )
+
+    context.output_dir = Path(context.output_dir).resolve()
+    out_dir = Path(context.output_dir)
+    seed, config = 11, "cfg-tunnel"
+
+    # ---- RUN 1: plain pipeline; ephemeral auto-reclaimed ---------------
+    run_graph(build_top_level_graph(seed, config))
+    runs_after_1 = _count_ephemeral_executions(out_dir)
+    assert runs_after_1 == 1
+    assert list((out_dir / "_ss_final").glob("*.fits")), "final must be on disk"
+    assert not list((out_dir / "_ss_intermediate").glob("*.fits")), (
+        "ephemeral must be reclaimed after run 1"
+    )
+
+    # ---- RUN 2: composite added — the tunnel ---------------------------
+    run_graph(build_top_level_graph_with_composite(seed, config))
+
+    runs_after_2 = _count_ephemeral_executions(out_dir)
+    assert runs_after_2 == runs_after_1, (
+        f"reclaimed ephemeral re-ran under the tunnel: executions went "
+        f"{runs_after_1} -> {runs_after_2}. The walk must floor at the "
+        f"satisfied final and hydrate its result instead of descending."
+    )
+    composite_files = list((out_dir / "_ss_composite").glob("*.fits"))
+    assert len(composite_files) == 1, (
+        f"composite deliverable missing after run 2: {composite_files}"
+    )
+
+
 # ── single-terminal restoration (the "Subgraph has N terminals" crash) ──────
 #
 # When a `final=True` master's output is reclaimed (unsatisfied) but its

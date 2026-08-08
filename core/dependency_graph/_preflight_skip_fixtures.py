@@ -91,6 +91,18 @@ def _ss_final(config: str, intermediate) -> FitsFilePath:
     return FitsFilePath(out)
 
 
+@node(final=True, display="Composite", plate_solve=False)
+def _ss_composite(config: str, final) -> FitsFilePath:
+    # Downstream-of-final deliverable — the "color composite" analogue. Its
+    # absence while `final` is satisfied creates the TUNNEL shape: an
+    # unsatisfied result-bearer above a satisfied intermediate above a
+    # reclaimed ephemeral.
+    out = _ss_composite.filename_fn(config, final)
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    _write_small_fits(out, len(final.content_hash))
+    return FitsFilePath(out)
+
+
 @ray.remote(num_cpus=0.1)
 def _ss_pipeline_done() -> None:
     """No-output terminal sentinel — the `run_pipeline_done` analogue. Funnels
@@ -113,6 +125,20 @@ def build_subgraph(seed, config):
     return final
 
 
+@graph_builder
+def build_subgraph_with_composite(seed, config):
+    """The same pipeline with a composite ADDED above the final — run 2 of the
+    tunnel test. Shared prefix ops keep identical call_hashes, so `final` is
+    already satisfied on disk while `composite` is absent."""
+    source = _ss_source(seed)
+    with ephemeral_intermediates():
+        intermediate = _ss_intermediate(config, source)
+    final = _ss_final(config, intermediate)
+    composite = _ss_composite(config, final)
+    record(_ss_pipeline_done, _after=(composite,))
+    return composite
+
+
 def build_top_level_graph(seed, config):
     """Top-level graph wired the way production's `build_main_processing_graph`
     is: a subgraph-returning builder node PLUS a pre-built `ephemeral_files`
@@ -129,3 +155,15 @@ def build_top_level_graph(seed, config):
     if traced is not None:
         registry.register_from_graph(traced)
     return Graph({(build_subgraph, seed, config): []}, ephemeral_files=registry)
+
+
+def build_top_level_graph_with_composite(seed, config):
+    """`build_top_level_graph` for the composite variant (tunnel run 2)."""
+    traced = trace(build_subgraph_with_composite._function, seed, config)
+    registry = EphemeralFiles()
+    if traced is not None:
+        registry.register_from_graph(traced)
+    return Graph(
+        {(build_subgraph_with_composite, seed, config): []},
+        ephemeral_files=registry,
+    )
