@@ -738,11 +738,60 @@ def run_graph(
     _fire_graph_updates(root)
 
     _report_disk_bloat(root)
+    _report_pass_end(root)
 
     return root.final_result, RunStats(
         num_nodes_run=num_nodes_run,
         trace=trace_list,
     )
+
+
+def _report_pass_end(rt: "GraphRuntime") -> None:
+    """Name the frontier a pass ends on. One compact line per
+    (op, blocker) group for every node that never ran this pass:
+    `blocked_on=READY` means every dep completed yet the node was never
+    dispatched (a dispatch/spawn bug — the smoking gun); otherwise the
+    first never-run dep is the blocker. Passes that keep ending "N tasks
+    short" without building their terminals (live 2026-08-08: the color
+    composites never entering any pass) are undiagnosable without this —
+    the UI's NO_STATE_RUNTIME can't distinguish queued from forgotten.
+    Observability only; never raises."""
+    try:
+        from collections import Counter
+        from cache.types import NeverRun
+        from dependency_graph.preflight import _op_name
+
+        def op_of(n):
+            try:
+                return _op_name(n)
+            except Exception:
+                return type(n).__name__
+
+        groups: Counter = Counter()
+        sample: dict = {}
+        for node in rt._graph:
+            if not (rt.results.get(node, NeverRun) == NeverRun):
+                continue
+            blocker = None
+            for d in rt._graph.get(node, []) or []:
+                if rt.results.get(d, NeverRun) == NeverRun:
+                    blocker = d
+                    break
+            key = (op_of(node), op_of(blocker) if blocker is not None else "READY")
+            groups[key] += 1
+            sample.setdefault(key, node)
+        if not groups:
+            print("### pass_end: every node in the graph ran")
+            return
+        total = sum(groups.values())
+        print(f"### pass_end: {total} node(s) never ran; frontier by (op, blocker):")
+        for (op, blk), cnt in groups.most_common(20):
+            print(
+                f"### pass_end never_ran op={op} n={cnt} blocked_on={blk} "
+                f"sample={str(sample[(op, blk)])[:100]}"
+            )
+    except Exception as e:
+        print(f"### pass_end report failed: {type(e).__name__}: {e}")
 
 
 _DISK_BLOAT_THRESHOLD_BYTES = 500 * 1024 * 1024  # 500 MB
