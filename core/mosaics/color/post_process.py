@@ -69,6 +69,34 @@ def _write_mono_tiff(path: str, data: np.ndarray, filter: str) -> None:
                      compression=FAST_COMPRESSION)
 
 
+def _open_mono_vips(meta: ImageMetadata) -> pyvips.Image:
+    """Open a channel as a LAZY vips image. TIFFs stream (`new_from_file` —
+    tiles/strips decode on demand); any other format (the legacy XISF/FITS
+    boundary, which libvips can't read) falls back to one full numpy read
+    wrapped in a vips buffer. In the current topology every mosaic-scale
+    channel is a TIFF, so the fallback only fires for legacy inputs."""
+    p = str(meta.filename)
+    if p.lower().endswith((".tif", ".tiff")):
+        return pyvips.Image.new_from_file(p, unlimited=True)
+    arr = np.ascontiguousarray(_mono(meta), dtype=np.float32)
+    return pyvips.Image.new_from_memory(          # pyvips refs `arr`'s buffer
+        arr.data, arr.shape[1], arr.shape[0], 1, "float",
+    )
+
+
+def _save_mono_vips(path: str, img: pyvips.Image, filter: str) -> None:
+    """Streaming sink twin of `_write_mono_tiff`: same tags, same codec, but
+    the writer pulls the lazy vips pipeline stripe-by-stripe instead of being
+    handed a full numpy array."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    img = img.copy()
+    img.set_type(pyvips.GValue.gstr_type, "image-description",
+                 json.dumps({"FILTER": filter, "PIPELINE": "AstroFlow-OSS"}))
+    _atomic_tiffsave(img, Path(path),
+                     tile=tile_size_for(img.width, img.height),
+                     compression=FAST_COMPRESSION)
+
+
 def _write_mono_xisf(path: str, data: np.ndarray, filter: str) -> None:
     """Mock-path writer for the rc-astro (BXT/SXT) nodes, whose real outputs are
     XISF — so the mock must emit XISF too (the extension drives the reader).
@@ -241,8 +269,16 @@ def combine_broadband_rgb(
     channels. XISF keeps rc-astro happy at gigapixel sizes."""
     out = combine_broadband_rgb.filename_fn(mosaic, r, g, b)
     os.makedirs(os.path.dirname(out), exist_ok=True)
-    rgb = np.stack([_mono(r), _mono(g), _mono(b)], axis=2).astype(np.float32)
-    write_tiff_image(Path(out), rgb, {"PIPELINE": "AstroFlow-OSS"})   # BigTIFF past 2GB; feeds sxt_stars_rgb, which inherits this format
+    # Streaming bandjoin (the stack_sho_channels pattern): three lazy mono
+    # opens, joined and pulled through the tiled writer stripe-by-stripe.
+    # The previous np.stack held 3 full gigapixel monos PLUS the 3-band
+    # stack (~54 GB peak) — the worst full-array op in the fleet.
+    monos = [_open_mono_vips(m) for m in (r, g, b)]
+    rgb = monos[0].bandjoin([monos[1], monos[2]]).copy()
+    rgb.set_type(pyvips.GValue.gstr_type, "image-description",
+                 json.dumps({"PIPELINE": "AstroFlow-OSS"}))
+    _atomic_tiffsave(rgb, Path(out),
+                     tile=tile_size_for(rgb.width, rgb.height))
     return WithSidecar(TiffFilePath(out))
 
 
@@ -287,14 +323,15 @@ def autostretch_channel(
     """STF-equivalent autostretch — palettes need non-linear input for their
     dynamic weights to be meaningful.
 
-    The bridge op: reads the XISF BXT/SXT output (full-array numpy — libvips has
-    no xisfload, so this is the one non-streaming step; memory-reserved in
-    `profiling.memory_estimate`) and emits BigTIFF, so the palettes downstream
-    stream via pyvips `tiffload`. When BXT/SXT are eventually tiled to emit TIFF,
-    this can move to a streaming pyvips implementation (`palettes.autostretch`
-    has a proven vips port; see the tiled-BXT note in `rc_astro_cli`)."""
+    Streaming since 2026-08-08: the input is the merged starless TIFF (the
+    old "XISF blocks streaming" rationale went stale when the tail moved to
+    per-panel TIFFs), so the two-pass histogram autostretch
+    (`palettes.autostretch_vips`) applies directly — constant memory instead
+    of ~2 full gigapixel copies. Non-TIFF legacy inputs fall back to a full
+    read inside `_open_mono_vips`."""
     out = autostretch_channel.filename_fn(mosaic, filter, channel)
-    _write_mono_tiff(out, palettes.autostretch(_mono(channel)), filter)
+    stretched = palettes.autostretch_vips(lambda: _open_mono_vips(channel))
+    _save_mono_vips(out, stretched, filter)
     return WithSidecar(TiffFilePath(out))
 
 
@@ -328,23 +365,18 @@ def stack_sho_channels(
 ) -> WithSidecar[TiffFilePath]:
     """Stack the three LINEAR starless narrowband channels (S→R, H→G, O→B) into
     one 3-band linear BigTIFF — the pyvips-streamable source the NXT tiles crop
-    from. Bounded memory: each channel is read once (XISF → numpy, ~8 GB) into a
-    temp mono BigTIFF, then the three are lazily band-joined and streamed to the
-    tiled output (the 3-band ~25 GB array is never held — that stack was the
-    memory the old whole-image path carried alongside NXT's child)."""
+    from. Fully streaming since 2026-08-08: the inputs are the merged starless
+    TIFFs, so the per-channel numpy round-trip (a temp mono BigTIFF per band,
+    ~8 GB resident each) is gone — three lazy opens, one bandjoin, one tiled
+    write. Legacy non-TIFF inputs fall back inside `_open_mono_vips`."""
     out = stack_sho_channels.filename_fn(mosaic, sii, ha, oiii)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     meta = {"PIPELINE": "AstroFlow-OSS", "COLORSPC": "linear-sho"}
-    with tempfile.TemporaryDirectory(prefix="sho_stack_") as td:
-        monos = []
-        for m, band in ((sii, "S"), (ha, "H"), (oiii, "O")):
-            p = os.path.join(td, f"{band}.tiff")
-            write_tiff_image(Path(p), _mono(m), {"FILTER": band})   # strip; bandjoin reads whole
-            monos.append(pyvips.Image.new_from_file(p, unlimited=True))
-        stacked = monos[0].bandjoin([monos[1], monos[2]]).copy()
-        stacked.set_type(pyvips.GValue.gstr_type, "image-description", json.dumps(meta))
-        _atomic_tiffsave(stacked, Path(out),
-                         tile=tile_size_for(stacked.width, stacked.height))
+    monos = [_open_mono_vips(m) for m in (sii, ha, oiii)]
+    stacked = monos[0].bandjoin([monos[1], monos[2]]).copy()
+    stacked.set_type(pyvips.GValue.gstr_type, "image-description", json.dumps(meta))
+    _atomic_tiffsave(stacked, Path(out),
+                     tile=tile_size_for(stacked.width, stacked.height))
     return WithSidecar(TiffFilePath(out))
 
 

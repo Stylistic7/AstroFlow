@@ -73,30 +73,39 @@ def default_make_tile_pyramid(source_path: Path, dest_path: Path) -> None:
     tone-mapping operator and would be visible as adaptation
     artifacts under a box-averaged shrink.
     """
-    arr = read_image(source_path)
-    # Float32 keeps the shader's input as the source's actual linear
-    # values; float16 would lose precision for very-bright pixels in
-    # high-dynamic-range HDR-display use.
-    if arr.ndim == 2:
-        arr = np.ascontiguousarray(arr, dtype=np.float32)
-        bands = 1
+    # TIFF sources STREAM: pyvips decodes tiles/strips on demand, so the
+    # pyramid build never holds the full image (a gigapixel composite paid
+    # ~9-18 GB through the numpy path below; streamed it pays vips buffers).
+    # Every display=True deliverable is a TIFF, so this is the common case.
+    # Float32 keeps the shader's input as the source's actual linear values.
+    if source_path.suffix.lower() in (".tif", ".tiff"):
+        image = pyvips.Image.new_from_file(
+            str(source_path), unlimited=True,
+        ).cast("float")
+        arr = None  # no buffer to pin
     else:
-        # Multi-channel — preserve the channel axis as TIFF bands.
-        arr = np.ascontiguousarray(arr, dtype=np.float32)
-        bands = arr.shape[2]
+        # FITS/XISF: libvips can't read these — full numpy read, then wrap.
+        arr = read_image(source_path)
+        if arr.ndim == 2:
+            arr = np.ascontiguousarray(arr, dtype=np.float32)
+            bands = 1
+        else:
+            # Multi-channel — preserve the channel axis as TIFF bands.
+            arr = np.ascontiguousarray(arr, dtype=np.float32)
+            bands = arr.shape[2]
 
-    height, width = arr.shape[:2]
-    # Hand pyvips the numpy buffer directly (zero-copy). `arr.tobytes()`
-    # would materialize a SECOND full copy of the array before pyvips even
-    # starts, doubling peak memory to ~2x the source — enough to OOM the
-    # build on multi-GB masters (a 9 GB FITS peaked at ~18 GB). That OOM is
-    # caught by the caller and swallowed, silently leaving a master with no
-    # display pyramid (→ 404 in the viewer). pyvips references this buffer
-    # and pins it alive on the returned image, so `arr` must outlive
-    # `image`; both are locals here and `tiffsave` completes before return.
-    image = pyvips.Image.new_from_memory(
-        arr.data, width, height, bands, "float",
-    )
+        height, width = arr.shape[:2]
+        # Hand pyvips the numpy buffer directly (zero-copy). `arr.tobytes()`
+        # would materialize a SECOND full copy of the array before pyvips even
+        # starts, doubling peak memory to ~2x the source — enough to OOM the
+        # build on multi-GB masters (a 9 GB FITS peaked at ~18 GB). That OOM is
+        # caught by the caller and swallowed, silently leaving a master with no
+        # display pyramid (→ 404 in the viewer). pyvips references this buffer
+        # and pins it alive on the returned image, so `arr` must outlive
+        # `image`; both are locals here and `tiffsave` completes before return.
+        image = pyvips.Image.new_from_memory(
+            arr.data, width, height, bands, "float",
+        )
 
     tmp = dest_path.with_suffix(dest_path.suffix + ".tmp")
     image.tiffsave(
