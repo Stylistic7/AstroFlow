@@ -177,6 +177,15 @@ def fully_resolve(filename_fn: FilenameFn, op_name: str):
     """
     def inner(*args, **kwargs):
         filename = filename_fn(*args, **kwargs)
+        # Selection-style fns (`filename_fn=get_best_light_frame`) return the
+        # op body's own value — WithSidecar(path). The filename_fn contract
+        # is the PATH: unwrap, or the os.fspath below raises and every
+        # caller that resolves this op's output (the lazy-thumbnail
+        # endpoint's file-backed probe, resolve_output_paths) silently
+        # treats the op as pathless.
+        from file_io.types import WithSidecar as _WS
+        if isinstance(filename, _WS):
+            filename = filename.path
         assert isinstance(filename, ContentHashable)
         output_dir = context.output_dir
         assert output_dir is not None, (

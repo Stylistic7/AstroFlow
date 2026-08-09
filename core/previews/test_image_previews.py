@@ -1,6 +1,7 @@
 import pytest
 import ray
 import datetime
+from pathlib import Path
 
 from compute_graph import build_compute_graph
 from context import context
@@ -104,7 +105,13 @@ def test_stack_dependency_graph(test_context) -> None:
         # `.thumbnail_fn` attribute is gone (it was @create_thumbnail's;
         # producers now use @makes_image).
         file = ray.get(stack_thumbnail.remote(stack))
-        assert isinstance(file, WithSidecar)
+        # `filename_fn=` makes selection ops artifact producers, so results
+        # arrive METADATA-WRAPPED (ImageMetadata pointing at the selected
+        # raw frame) — the selection contract is the path, not the wrapper
+        # type. Accept the raw WithSidecar too (a cold direct call).
+        selected = getattr(file, "filename", None) or getattr(file, "path", None)
+        assert selected is not None, f"no path on {type(file).__name__}"
+        assert Path(str(selected)).exists()
         ops = {p.__name__ for p in producers_for(type(stack))}
         assert "stack_thumbnail" in ops, (
             f"stack_thumbnail must register for "

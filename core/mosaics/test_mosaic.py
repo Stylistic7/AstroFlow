@@ -201,28 +201,38 @@ def test_orion_mosaic_hybrid_oss(test_context) -> None:
 
     # The variadic OSS merge is one call per filter — 1 single merge node
     # for the 4-panel single-filter Orion corpus (not 3 like PI Master's
-    # pairwise chain). `merge_images_oss` is now the deliverable
-    # (display="Mosaic", final=True) — exempt from the surrounding
-    # `ephemeral_intermediates()`, so its primary `.fits` AND its kept-atom
-    # `.tiff` pyramid both persist. There is no separate store/copy op.
-    assert_files("merge_images_oss/*.fits", 1, {"FILTER": "H"})
-    assert_files("merge_images_oss/*.tiff", 1)
+    # pairwise chain). `merge_images_oss` is the deliverable
+    # (display="Mosaic", final=True); its primary is a BigTIFF (the
+    # prefer-OSS-formats decision — no FITS anywhere in the OSS merge path)
+    # plus one `_tiles.tiff` display pyramid. No separate store/copy op.
+    assert_files("merge_images_oss/*.fits", 0)
+    assert_files("merge_images_oss/*_tiles.tiff", 1)
+    merge_primaries = [
+        p for p in Path(context.output_dir).rglob("merge_images_oss/*.tiff")
+        if not p.name.endswith("_tiles.tiff")
+    ]
+    assert len(merge_primaries) == 1, (
+        f"expected exactly 1 merge primary BigTIFF, got {merge_primaries}")
+    merge_header = read_header(merge_primaries[0])
+    assert merge_header.get("FILTER") == "H", merge_header.get("FILTER")
 
     # No vestigial store op, and the PI XISF terminal isn't invoked here.
     assert_files("store_mosaic_color_channel_oss/*.fits", 0)
     assert_files("post_process_mosaic_color_channel/*.xisf", 0)
 
-    # 8 placed panels survive: 4 OSS-Master panels (full mosaic viewbox) + 4
-    # Subframe-preview panels (downscaled viewbox). Both are PRE-EXISTING and
-    # confirmed byte-for-byte identical on clean HEAD — not a regression:
-    #   * the 4 Subframe panels are placed by `pipelines/subframe.py`, which has
-    #     no `ephemeral_intermediates()` scope, so they're kept by design;
-    #   * the 4 OSS-Master panels ARE inside an ephemeral scope, but the
-    #     ephemeral registry can't predict `place_image`'s cleanup filename at
-    #     trace time (`register_from_graph` skips producers with an
-    #     unpredictable path), so they aren't reclaimed — a known gap, surfaced
-    #     only once the timeout stopped masking this assertion.
-    assert_files("place_image/*.tiff", 8)
+    # 4 placed panels persist — the Subframe-preview placements (downscaled
+    # viewbox; that pipeline has no scope). The 4 OSS-Master placements live
+    # inside the `{place_image → merge_images_oss}` scope (merge_scope,
+    # delete_intermediates=True) and were deleted when the merge concluded —
+    # the merge itself persists above, PRESENTED by its builder
+    # (builder ≡ terminal), which is why the Mosaic tap still routes.
+    assert_files("place_image/*.tiff", 4)
+
+    # Panel CROPS are scope-local ({crop, op} subgraphs built with
+    # delete_intermediates=True): every crop was deleted the moment its
+    # panel's subgraph concluded. The empty directory is the E2E proof the
+    # colour tail ran under scope GC without leaking its views.
+    assert_files("crop_panel/*.tiff", 0)
 
     ui_mosaics = context.ui_mosaics
     assert len(ui_mosaics) == 1

@@ -32,8 +32,19 @@ and `exclusive` (state-isolation) groups are run separately as plain
 subprocess destabilized Ray's cluster init, whereas plain `-n 0` is rock-solid.
 
 Usage:  uv run python scripts/run_parallel_tests.py [N]
-        N (or $ASTROFLOW_TEST_SHARDS) = parallel shard count (default 6).
-        $INCLUDE_SLOW=1 to also run tests marked `slow`.
+        uv run python scripts/run_parallel_tests.py exhaustive [N]
+        N (or $ASTROFLOW_TEST_SHARDS) = parallel shard count
+        (default 6; exhaustive default 4 — those tests peak at GBs each).
+        $INCLUDE_SLOW=1 to also run tests marked `slow` (light mode only).
+
+EXHAUSTIVE MODE: "exhaustive" only ever meant SLOW, not serial-only — these
+are the top-of-the-pyramid full-pipeline tests, and they use the same private
+per-process Ray clusters as everything else, so they parallelize the same
+way. Sharding is per-TEST (not per-file) because the tier's wall clock is
+dominated by a couple of ~15-minute mosaic tests that live in the SAME file;
+round-robin scatters them across shards, so the tier costs roughly its
+slowest test, not the sum. PixInsight-real tests stay safe under concurrency
+via PI's own lockfile serialization (and most tests mock PI anyway).
 """
 import concurrent.futures
 import os
@@ -49,7 +60,21 @@ VENV_RAY = CORE.parent / ".venv" / "bin" / "ray"
 # Mirror pytest.ini's addopts --ignore list, plus vendored/thirdparty dirs.
 IGNORE_PARTS = {"GraXpert", "ray_infra", "pix", "p2p", ".venv", "node_modules"}
 
-N = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get("ASTROFLOW_TEST_SHARDS", "6"))
+_args = sys.argv[1:]
+# Modes: "exhaustive" = the slow tier alone; "all" = light AND exhaustive in
+# ONE worker pool (exhaustive submitted first — longest jobs lead, light
+# file-shards backfill as workers free up); default = light only.
+MODE = ("all" if "all" in _args
+        else "exhaustive" if "exhaustive" in _args
+        else "light")
+_nums = [a for a in _args if a.isdigit()]
+# Pool width 8 for the slow modes: measured at 4 the box sat ~75% idle /
+# 86% memory free — the big mosaic tests use only 2-4 cores each. Each
+# shard's private cluster is sized to 1/pool-width
+# (ASTROFLOW_TEST_CONCURRENCY), so widths beyond ~8 start thinning the
+# heavyweight tests' own internal parallelism instead.
+_default_n = "6" if MODE == "light" else "8"
+N = int(_nums[0]) if _nums else int(os.environ.get("ASTROFLOW_TEST_SHARDS", _default_n))
 _slow = "" if os.environ.get("INCLUDE_SLOW") == "1" else " and not slow"
 # This runner handles ONLY the parallel correctness phase. The groups that must
 # run alone — `serial` (wall-time/benchmark assertions) and `exclusive` (state
@@ -81,6 +106,27 @@ def find_test_files() -> list[str]:
     return sorted(files, key=lambda f: (CORE / f).stat().st_size, reverse=True)
 
 
+def collect_exhaustive_ids() -> list[str]:
+    """Every exhaustive test id (`file::test`), for per-TEST sharding.
+
+    Sorted by containing-file size (largest first): the heavyweight mosaic
+    tests share a file, so consecutive ids round-robin onto DIFFERENT shards
+    — the property that keeps the tier's wall clock near its slowest test."""
+    r = subprocess.run(
+        [sys.executable, "-m", "pytest", "--collect-only", "-q",
+         "-m", "exhaustive"],
+        cwd=CORE, env=BASE_ENV, capture_output=True, text=True)
+    ids = [ln.strip() for ln in r.stdout.splitlines()
+           if "::" in ln and not ln.startswith("=")]
+    ids = [i for i in ids if not (IGNORE_PARTS & set(Path(i.split("::")[0]).parts))]
+    def _size(tid: str) -> int:
+        try:
+            return (CORE / tid.split("::")[0]).stat().st_size
+        except OSError:
+            return 0
+    return sorted(set(ids), key=_size, reverse=True)
+
+
 def ray_stop() -> None:
     if VENV_RAY.exists():
         subprocess.run([str(VENV_RAY), "stop", "--force"],
@@ -97,7 +143,13 @@ def pytest_run(paths, marker, junit, concurrency, label):
     """
     env = {**BASE_ENV,
            "ASTROFLOW_TEST_CONCURRENCY": str(concurrency),
-           "ASTROFLOW_SKIP_RAY_CLEAN": "1"}
+           "ASTROFLOW_SKIP_RAY_CLEAN": "1",
+           # The conftest memory gate reads GLOBAL memory, which under
+           # sharding measures the sibling shards — 50% is permanently
+           # exceeded while N clusters work. 85% keeps it as a real
+           # brake against runaway pressure without gating on siblings.
+           "ASTROFLOW_TEST_MAX_MEMORY_PERCENT": os.environ.get(
+               "ASTROFLOW_TEST_MAX_MEMORY_PERCENT", "85")}
     cmd = [sys.executable, "-m", "pytest", "-n", "0", "-m", marker,
            f"--junitxml={junit}", "-q", *paths]
     r = subprocess.run(cmd, cwd=CORE, env=env, capture_output=True, text=True)
@@ -122,31 +174,49 @@ def _summary_line(out: str) -> str:
 
 
 def main() -> int:
-    files = find_test_files()
-    shards = [files[i::N] for i in range(N)]
-    shards = [s for s in shards if s]
-    print(f"parallel correctness: {len(files)} files across {len(shards)} "
-          f"process-per-file shards (each pytest -n 0).\n", flush=True)
+    # Build the job list: (paths, marker, junit, label). Every job is one
+    # `pytest -n 0` subprocess with its own private Ray cluster.
+    jobs: list[tuple] = []
+    if MODE in ("exhaustive", "all"):
+        ids = collect_exhaustive_ids()
+        eshards = [s for s in (ids[i::N] for i in range(N)) if s]
+        jobs += [(s, "exhaustive", f"exhshard{i}.xml", f"exhshard{i}")
+                 for i, s in enumerate(eshards)]
+    if MODE in ("light", "all"):
+        files = find_test_files()
+        lshards = [s for s in (files[i::N] for i in range(N)) if s]
+        jobs += [(s, LIGHT, f"shard{i}.xml", f"shard{i}")
+                 for i, s in enumerate(lshards)]
+    print(f"mode={MODE}: {len(jobs)} shard jobs, pool width {N} "
+          f"(each pytest -n 0, private Ray cluster).\n", flush=True)
 
     ray_stop()  # clean slate
     t0 = time.monotonic()
     results = []
 
-    # Parallel correctness only. Shards skip conftest's machine-wide ray-clean
-    # (concurrent shards would kill each other's clusters); the ray_stop above is
-    # their clean start. The serial + exclusive groups run separately as plain
-    # `pytest -n 0` (see `make tests`) — routing them through this runner's
-    # spawned subprocess flaked Ray's cluster init.
-    with concurrent.futures.ThreadPoolExecutor(max_workers=len(shards)) as ex:
+    # Shards skip conftest's machine-wide ray-clean (concurrent shards would
+    # kill each other's clusters); the ray_stop above is their clean start.
+    # The serial + exclusive groups run separately as plain `pytest -n 0`
+    # (see `make tests` / `make tests-all`) — routing them through this
+    # runner's spawned subprocess flaked Ray's cluster init.
+    #
+    # max_workers=N throttles CONCURRENCY; jobs may exceed N (all-mode =
+    # exhaustive shards + light shards). Submission order is the schedule:
+    # exhaustive jobs were appended first, so the longest work starts
+    # immediately and light shards backfill as workers free up. Cluster
+    # sizing (ASTROFLOW_TEST_CONCURRENCY) uses N — the concurrent count —
+    # not the total job count.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=N) as ex:
         futs = [
-            ex.submit(pytest_run, s, LIGHT, f"shard{i}.xml", len(shards), f"shard{i}")
-            for i, s in enumerate(shards)
+            ex.submit(pytest_run, paths, marker, junit, N, label)
+            for paths, marker, junit, label in jobs
         ]
         for f in concurrent.futures.as_completed(futs):
             label, ok, summary, output = f.result()
             results.append((label, ok, summary, output))
             print(f"  [{'PASS' if ok else 'FAIL'}] {label:9} {summary}", flush=True)
-    print(f"  --- {len(shards)} shards wall time: {time.monotonic() - t0:.0f}s ---", flush=True)
+    print(f"  --- {len(jobs)} shard jobs wall time: "
+          f"{time.monotonic() - t0:.0f}s ---", flush=True)
 
     ray_stop()
     elapsed = time.monotonic() - t0

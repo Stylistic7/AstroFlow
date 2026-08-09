@@ -74,13 +74,19 @@ def _target(name: str, content_hash: str, footprint) -> Target:
 
 
 def _count_by_op(graph) -> dict[str, int]:
+    """Count nodes by op name, honoring PRESENTATION: a `{crop → op}`
+    subgraph builder counts as its terminal op (`present_terminal` stamps
+    `_op_name`), so the counts below read as processing-stage counts —
+    the same numbers whether a stage is inline or scope-local. Interior
+    nodes (the crops) are invisible by design."""
     counts: dict[str, int] = {}
     seen: set[int] = set()
     for k, deps in graph.items():
         for n in [k, *deps]:
             if isinstance(n, Node) and id(n) not in seen:
                 seen.add(id(n))
-                name = getattr(n.task, "__name__", str(n.task))
+                name = (getattr(n, "_op_name", None)
+                        or getattr(n.task, "__name__", str(n.task)))
                 counts[name] = counts.get(name, 0) + 1
     return counts
 
@@ -159,9 +165,12 @@ def test_color_post_process_traces_and_runs(test_context, tmp_path):
     # Intermediate feather blends: one per per-panel rc-astro op-invocation —
     # 6 bxt_correct + 3 sxt_starless + 1 sxt_stars_rgb = 10 (NXT uses blend_linear_sho).
     assert counts.get("blend_panels") == 10
-    # crop_panel: one per (op-invocation x panel) = (6 bxt + 3 sxt_starless +
-    # 1 sxt_stars_rgb + 1 nxt) x 1 panel = 11.
-    assert counts.get("crop_panel") == 11
+    # crop_panel is INTERIOR to the per-panel `{crop → op}` subgraphs
+    # (delete_intermediates=True) — it no longer appears in the outer trace
+    # at all. The 11 per-panel stages above (6 bxt + 3 sxt_starless +
+    # 1 sxt_stars_rgb + 1 nxt) are presented builders, counted by their
+    # terminal op names.
+    assert counts.get("crop_panel") is None
 
     run_graph(graph)
 

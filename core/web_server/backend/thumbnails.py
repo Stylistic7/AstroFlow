@@ -179,9 +179,16 @@ def get_thumbnail(entity, *extra_args):
     for producer in file_backed:
         try:
             path = os.fspath(producer.filename_fn(*args))
-        except Exception:
+        except Exception as e:
+            # Expected for producers whose arity matches but whose narrow
+            # needs more context (e.g. stack_files(stack) without config);
+            # logged because a SILENT skip here cost a long debug session.
+            print(f"### thumbnail candidate skipped ({producer.__name__}): "
+                  f"filename_fn raised {type(e).__name__}: {e}")
             continue
         if not os.path.exists(path):
+            print(f"### thumbnail candidate skipped ({producer.__name__}): "
+                  f"not on disk: {path}")
             continue
         try:
             size = os.path.getsize(path)

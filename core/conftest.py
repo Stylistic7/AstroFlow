@@ -130,14 +130,29 @@ _MAX_MEMORY_PERCENT = int(os.environ.get("ASTROFLOW_TEST_MAX_MEMORY_PERCENT", "5
 
 @pytest.fixture(autouse=True)
 def ensure_memory():
-    """Wait until system memory pressure drops below threshold before starting a test."""
+    """Best-effort memory backpressure before each test — BOUNDED.
+
+    The gate reads GLOBAL memory, so under N-way sharding it measures the
+    SIBLING shards, not this test: the box legitimately runs above the
+    threshold whenever other shards are working, and an unbounded wait
+    deadlocks the suite (observed 2026-08-09: exhaustive tests have no
+    timeout → 0%-CPU forever-sleep; light tests burned their whole 120s
+    timeout inside the gate). Wait up to 60s for pressure to ease, then
+    proceed — each shard's private cluster is already sized to 1/N of the
+    box, so proceeding is safe; a genuine OOM surfaces in the test itself.
+    The shard runner raises the threshold via
+    ASTROFLOW_TEST_MAX_MEMORY_PERCENT for the same reason."""
     import time
     mem = psutil.virtual_memory()
     if mem.percent > _MAX_MEMORY_PERCENT:
-        print(f"\n  Memory gate: {mem.percent:.0f}% used (threshold {_MAX_MEMORY_PERCENT}%), waiting...")
-        while psutil.virtual_memory().percent > _MAX_MEMORY_PERCENT:
+        print(f"\n  Memory gate: {mem.percent:.0f}% used "
+              f"(threshold {_MAX_MEMORY_PERCENT}%), waiting up to 60s...")
+        deadline = time.monotonic() + 60
+        while (psutil.virtual_memory().percent > _MAX_MEMORY_PERCENT
+               and time.monotonic() < deadline):
             time.sleep(1)
-        print(f"  Memory gate: released at {psutil.virtual_memory().percent:.0f}%")
+        print(f"  Memory gate: proceeding at "
+              f"{psutil.virtual_memory().percent:.0f}%")
 
 
 @pytest.fixture(autouse=True)

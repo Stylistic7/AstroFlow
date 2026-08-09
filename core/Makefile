@@ -34,6 +34,30 @@ tests:
 	[ $$rc -eq 0 ] && echo "✅ all phases green — report: $(JUNIT_MERGED)" || echo "❌ a phase failed — report: $(JUNIT_MERGED)"; \
 	exit $$rc
 
+# The top-of-the-pyramid full-pipeline tests, parallelized per-TEST across
+# private Ray clusters (same isolation model as `tests`). "Exhaustive" means
+# slow, not serial-only. ~15-20 min wall (the slowest single test), not the
+# serial sum (~2h).
+tests-exhaustive:
+	@rm -f exhshard*.xml; \
+	uv run python scripts/run_parallel_tests.py exhaustive
+
+# EVERYTHING at once: serial + exclusive alone first (~30s — wall-time and
+# state-isolation assertions can't share the box), then light file-shards AND
+# exhaustive per-test shards in ONE 8-wide pool (exhaustive first, light
+# backfills). One command, one verdict, ~15-20 min.
+tests-all:
+	@rm -f $(JUNIT_SERIAL) $(JUNIT_EXCLUSIVE) $(JUNIT_MERGED) shard*.xml exhshard*.xml; rc=0; \
+	echo "→ serial (timing/benchmark) tests — plain -n 0"; \
+	PYTHONPATH=. uv run pytest -n 0 -m "not exhaustive and serial and not slow" --junitxml=$(JUNIT_SERIAL) || rc=1; \
+	echo "→ exclusive tests — plain -n 0"; \
+	PYTHONPATH=. uv run pytest -n 0 -m "not exhaustive and exclusive and not slow" --junitxml=$(JUNIT_EXCLUSIVE) || rc=1; \
+	echo "→ light + exhaustive — one 8-wide shard pool"; \
+	uv run python scripts/run_parallel_tests.py all 8 || rc=1; \
+	python merge_junitxml.py $(JUNIT_SERIAL) $(JUNIT_EXCLUSIVE) shard*.xml exhshard*.xml > $(JUNIT_MERGED) 2>/dev/null || true; \
+	[ $$rc -eq 0 ] && echo "✅ all phases green — report: $(JUNIT_MERGED)" || echo "❌ a phase failed — report: $(JUNIT_MERGED)"; \
+	exit $$rc
+
 # Same, but also include tests marked `slow` (threaded to the runner via INCLUDE_SLOW).
 tests-full:
 	@rm -f $(JUNIT_SERIAL) $(JUNIT_EXCLUSIVE) $(JUNIT_MERGED) shard*.xml; rc=0; \

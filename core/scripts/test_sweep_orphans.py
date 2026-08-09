@@ -254,26 +254,24 @@ def _master_pipeline_op_dirs() -> tuple[str, ...]:
 
 def _gather_disk_primaries(output_dir: Path) -> set[str]:
     """All on-disk primary outputs (xisf + tiff), excluding sidecars
-    and tile-pyramid siblings of xisf primaries.
+    and tile pyramids.
 
-    Tile pyramids and primary tiffs share the `.tiff` extension; the
-    disambiguation rule: a `.tiff` whose stem matches a `.xisf` in
-    the same directory is a pyramid (the pyramid sits next to its
-    primary). Standalone `.tiff` files (no co-located .xisf) are
-    primaries (PlacedImage/place_image)."""
+    Pyramids are `<stem>_tiles.tiff` siblings (previews.create_tile_pyramid
+    .pyramid_path_for) — the rename made them self-identifying, so the old
+    stem-matches-an-xisf heuristic is gone. It silently broke when primaries
+    became TIFFs (prefer-OSS-formats): pyramids of tiff primaries matched
+    nothing and were miscounted as primaries."""
     primaries: set[str] = set()
     for d in _master_pipeline_op_dirs():
         full_dir = output_dir / d
         if not full_dir.exists():
             continue
-        xisf_stems = {p.stem for p in full_dir.glob("*.xisf")}
         for p in full_dir.iterdir():
-            if p.suffix == ".xisf":
+            if p.name.endswith("_tiles.tiff"):
+                continue  # display pyramid — co-representation, not a primary
+            if p.suffix in (".xisf", ".tiff", ".fits"):
                 primaries.add(str(p))
-            elif p.suffix == ".tiff" and p.stem not in xisf_stems:
-                primaries.add(str(p))
-            # .json sidecars and pyramid .tiffs (stem matches an
-            # .xisf) are intentionally excluded.
+            # .json/.context sidecars are intentionally excluded.
     return primaries
 
 
@@ -385,7 +383,10 @@ def test_orion_mosaic_trace_matches_disk_and_archive_lifecycle(test_context) -> 
     # until a pass runs WITHOUT it. Re-run here to refresh the census; the
     # archived finals stay live through the archive entry, and the
     # intermediates — untouched by this pass — become orphans.
-    run_graph(build_compute_graph())
+    # `store_census=True`: opt-in for the AUTHORITATIVE full-graph run
+    # (production: the StateActor pass) — which is exactly what this
+    # simulates; without it live_set correctly refuses to sweep.
+    run_graph(build_compute_graph(), store_census=True)
 
     live = orphan_sweep.live_set(context)
     orphans, _by_dir = orphan_sweep.walk_and_classify(
