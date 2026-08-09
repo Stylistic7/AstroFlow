@@ -34,9 +34,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
+import ray
 
 from decisions.settings import ProcessingConfig
 from decorators import node
+from dependency_graph.classes import Graph
+from dependency_graph.tracing import record
 from file_io.tiff_file_io import write_tiff_image
 from file_io.tiling import crop_source_region, feather_blend_to_bigtiff
 from file_io.types import TiffFilePath, WithSidecar
@@ -200,6 +203,48 @@ def blend_panels(mosaic: Mosaic, config: ProcessingConfig, rects: tuple,
 # The user-facing helpers                                                     #
 # --------------------------------------------------------------------------- #
 
+class _CropRef:
+    """A stand-in for a crop handle carrying only its identity.
+
+    `process_in_panels` derives each tile's manifest entry from the op's own
+    output identity (`op.filename_fn(*lead, crop)`), which needs the crop's
+    `content_hash`. The crop node now lives inside a per-panel subgraph, so
+    the outer trace never sees its handle — but the crop's identity is pure
+    arithmetic (`crop_panel.filename_fn(...)`), and cache keys resolve any
+    object with a `content_hash` (`hashing._maybe_use_content_hash`). Same
+    value the handle produced; no node required."""
+    __slots__ = ("content_hash",)
+
+    def __init__(self, content_hash: str) -> None:
+        self.content_hash = content_hash
+
+
+@ray.remote(num_cpus=0.1)
+def _panel_stage(op_ref, mosaic, rect, scope_hashes, lead, source_merged,
+                 dry_run=False):
+    """One panel: crop its padded bbox out of the merged source, run `op` on
+    that tile, and hand the tile back. Returned as a dynamic subgraph with
+    `delete_intermediates=True`, so the CROP — a view of `source_merged` that
+    exists only because rc-astro needs a file path — is deleted when this
+    subgraph concludes, while the op's output (GPU minutes) escapes and
+    persists.
+
+    `op_ref` is `(module, name)` rather than the op wrapper itself: a wrapper
+    in a Node's args would be hashed by its address-based repr, which the
+    determinism guard rejects (and rightly — it would flap every process)."""
+    del dry_run
+    import importlib
+    from dependency_graph.tracing import trace
+
+    op = getattr(importlib.import_module(op_ref[0]), op_ref[1])
+
+    def _body():
+        crop = crop_panel(mosaic, rect, source_merged, scope_hashes)
+        return op(*lead, crop)
+
+    return Graph(trace(_body), delete_intermediates=True)
+
+
 def process_in_panels(op, *op_args, viewbox, blend=blend_panels) -> PanelMosaic:
     """Run `op` over each panel of a merged mosaic, then feather the results back.
 
@@ -221,21 +266,37 @@ def process_in_panels(op, *op_args, viewbox, blend=blend_panels) -> PanelMosaic:
             f"got {type(source).__name__}")
 
     manifest = dict(source.manifest)   # carry non-tiled panels forward unchanged
-    # Ephemerality is the CALLER's decision, not this helper's: tiles inherit
-    # whatever `ephemeral_intermediates()` scope (or none) the call site
-    # composed. GPU-heavy stages are deliberately called OUTSIDE any scope —
-    # ephemeral means cheap-to-recompute × big-on-disk, and GPU minutes are
-    # not cheap — so their tiles persist and incremental runs cache-hit them.
+    # Each panel becomes a two-node DYNAMIC SUBGRAPH — `crop_panel` then `op`,
+    # with `op` as the terminal — declared `delete_intermediates=True`. That is
+    # the canonical shape for this mechanism: a cheap op feeding an expensive
+    # one. The crop (a view of the merged raster, materialized only because
+    # rc-astro needs a file path) is deleted when its panel's subgraph
+    # concludes; the op's output — GPU minutes — escapes and persists, so
+    # incremental runs still cache-hit it. Before this, 24 panels x several
+    # stages left 235 GB of crops on disk forever.
+    op_ref = (op._function.__module__, op._function.__name__)
     rects, handles = [], []
     for pid, rect, scope in panel_tiles(mosaic, viewbox, config):
         scope_hashes = tuple(sorted(
             source.manifest[j] for j in scope if j in source.manifest))
-        crop = crop_panel(mosaic, rect, source.merged, scope_hashes)
-        handles.append(op(*lead, crop))
-        rects.append(rect)
+        # Identities are pure `filename_fn` arithmetic — no node in THIS trace.
+        # The crop's stem is its call hash, which is exactly the content_hash
+        # its result will carry, so the op's identity is unchanged from when
+        # the crop handle sat here.
+        crop_id = Path(crop_panel.filename_fn(
+            mosaic, rect, source.merged, scope_hashes)).stem
         # The tile's new identity IS its op's output identity — folds op code,
         # config (via the op's narrow), and the scoped source, drift-free.
-        manifest[pid] = Path(op.filename_fn(*lead, crop)).stem
+        tile_id = Path(op.filename_fn(*lead, _CropRef(crop_id))).stem
+        handle = record(_panel_stage, op_ref, mosaic, rect, scope_hashes,
+                        lead, source.merged)
+        # Stamp the subgraph handle with the identity of what it RESOLVES to
+        # (the op's output), so `blend`'s key — and every downstream key — is
+        # bit-identical to the pre-subgraph version.
+        handle.content_hash = tile_id
+        handles.append(handle)
+        rects.append(rect)
+        manifest[pid] = tile_id
     merged = blend(mosaic, config, tuple(rects), *handles)
     return PanelMosaic(merged=merged, manifest=manifest, mosaic=mosaic)
 

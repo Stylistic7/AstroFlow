@@ -184,8 +184,13 @@ def test_panel_incremental_is_pixel_identical_and_selective(test_context, tmp_pa
     b1_files = _blend_files(out_dir) - before1
     assert len(b1_files) == 1, f"expected 1 blend output, got {b1_files}"
 
-    crop_dir = out_dir / "crop_panel"
-    crop_mtimes_1 = {str(p): p.stat().st_mtime_ns for p in crop_dir.rglob("*.tiff")}
+    # The TILE is the incrementality signal, not the crop: crops are
+    # scope-local now (each {crop, op} pair is a subgraph built with
+    # `delete_intermediates=True`, so the crop is deleted the moment its op
+    # completes). The tile is what escapes that subgraph and persists.
+    tile_dir = out_dir / "identity_tile"
+    tile_mtimes_1 = {str(p): p.stat().st_mtime_ns for p in tile_dir.rglob("*.tiff")}
+    assert len(tile_mtimes_1) == 2, f"expected 2 tiles after run 1, got {tile_mtimes_1}"
 
     # ---- CHANGE ONE PANEL'S DATA (A) ---------------------------------------
     context.targets = {"A": _target("A", "A_v2", fp_a), "B": context.targets["B"]}
@@ -219,11 +224,32 @@ def test_panel_incremental_is_pixel_identical_and_selective(test_context, tmp_pa
         f"STALE PANEL: incremental blend differs from full recompute in {n_diff} "
         f"pixels — a changed panel left a v1 tile in the v2 result")
 
-    # ---- ASSERTION 2: INCREMENTALITY — B's crop file untouched -------------
-    pb = str(paths_v1["B"])
-    assert Path(pb).exists(), f"B crop {pb} vanished"
-    assert Path(pb).stat().st_mtime_ns == crop_mtimes_1[pb], \
-        f"B crop {pb} was re-executed (mtime changed) — no incremental hit"
-    # A's crop is a NEW path (re-keyed + re-run).
-    assert Path(str(paths_v2["A"])).exists(), "A's new crop was not produced"
-    assert str(paths_v2["A"]) not in crop_mtimes_1, "A's crop path did not change"
+    # ---- ASSERTION 2: INCREMENTALITY — only panel A re-ran -----------------
+    # `identity_tile` drops one marker per EXECUTION, so re-runs are directly
+    # countable: A and B in run 1, then A alone in run 2.
+    execs = len(list((out_dir / "_identity_exec").glob("*.marker")))
+    assert execs == 3, (
+        f"expected 3 identity_tile executions (A+B in run 1, A only in run 2), "
+        f"got {execs} — run 2 re-processed a panel whose data didn't change")
+
+    tiles_after = {str(p): p.stat().st_mtime_ns
+                   for p in tile_dir.rglob("*.tiff")}
+    # Tiles PERSIST (only crops are scope-local), so run 1's two tiles must
+    # both still be byte-untouched: B's because it wasn't re-processed, A's
+    # because its v1 output is merely superseded, never rewritten in place.
+    # If B had been re-run, its path would be rewritten and its mtime would
+    # move — so "both untouched" is exactly the no-redundant-work claim.
+    survived = [p for p, mt in tile_mtimes_1.items()
+                if tiles_after.get(p) == mt]
+    assert len(survived) == 2, (
+        f"a run-1 tile was rewritten in run 2 — panel B was re-processed "
+        f"needlessly; untouched={survived}")
+    new_tiles = set(tiles_after) - set(tile_mtimes_1)
+    assert len(new_tiles) == 1, (
+        f"expected exactly one NEW tile (A's, re-keyed), got {new_tiles}")
+
+    # The crop KEYS still move correctly even though the files are transient —
+    # pure `filename_fn` arithmetic, asserted above (paths_v1 vs paths_v2).
+    assert not (out_dir / "crop_panel").exists() or not list(
+        (out_dir / "crop_panel").rglob("*.tiff")
+    ), "scope-local crops should have been deleted when their subgraphs concluded"
