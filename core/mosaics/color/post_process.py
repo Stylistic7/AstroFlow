@@ -8,12 +8,12 @@ RGB-star combination, and screen blend are numpy (`mosaics.color.palettes`).
 The framework is one-artifact-per-`@node`, so the "several outputs" are several
 ops: each named color image (`Hubble`, `Foraxx`, `Stars`) is its own `@node`
 with its own `display=` name and `filter=None` (a color composite has no single
-filter). The per-channel steps are `display`-less intermediates; only the
-CHEAP ones (stage-0 wrap, stretches, band-joins) sit inside
-`ephemeral_intermediates()` scopes — the GPU stages (BXT/SXT/NXT tiles) are
-deliberately unscoped and persist, because ephemeral means cheap-to-recompute
-× big-on-disk and GPU minutes are not cheap. `mock_pixinsight` passes the
-heavy rc-astro ML calls straight through so the suite runs without rc-astro.
+filter). The per-channel steps are `display`-less intermediates that PERSIST —
+every image is worth keeping unless a subgraph explicitly declares otherwise
+via `Graph(..., delete_intermediates=True)`, which today is only the panel
+crops (a crop is a view of another image, materialized for a CLI boundary).
+`mock_pixinsight` passes the heavy rc-astro ML calls straight through so the
+suite runs without rc-astro.
 """
 import json
 import os
@@ -24,7 +24,6 @@ import numpy as np
 import pyvips
 import structlog
 
-from astroflow.pipeline import ephemeral_intermediates
 from decisions.settings import ProcessingConfig
 from decorators import node
 from dependency_graph.tracing import workflow_group
@@ -446,8 +445,7 @@ def linear_sho(
     (`mosaic.viewbox("Master")` / `"DownscaledMaster"`)."""
     # The SHO band-join is cheap × big — ephemeral. The NXT tiles are GPU
     # work — kept (outside the scope), so incremental runs cache-hit them.
-    with ephemeral_intermediates():
-        source = combine_panels(stack_sho_channels, mosaic, sii, ha, oiii)
+    source = combine_panels(stack_sho_channels, mosaic, sii, ha, oiii)
     result = process_in_panels(
         nxt, mosaic, config, source, viewbox=viewbox, blend=blend_linear_sho)
     return result.merged
@@ -576,14 +574,12 @@ def color_post_process(mosaic: Mosaic, channels: dict, config, viewbox=None) -> 
     for cf, channel in by_class.items():
         # Wrap the merged channel as the stage-0 PanelMosaic (merged image +
         # per-panel base manifest); every rc-astro op then tiles by PANEL.
-        with ephemeral_intermediates():
-            pm = base_panel_mosaic(mosaic, cf, channel)
+        pm = base_panel_mosaic(mosaic, cf, channel)
         if cf in _NARROWBAND:
             corrected = process_in_panels(bxt_correct, mosaic, cf, config, pm, viewbox=viewbox)
             starless = process_in_panels(sxt_starless, mosaic, cf, config, corrected, viewbox=viewbox)
             starless_nb[cf] = starless  # PanelMosaic — linear source for the Linear SHO tap
-            with ephemeral_intermediates():
-                stretched_nb[cf] = autostretch_channel(mosaic, cf, starless.merged)
+            stretched_nb[cf] = autostretch_channel(mosaic, cf, starless.merged)
         elif cf in _BROADBAND:
             bxt_bb[cf] = process_in_panels(bxt_correct, mosaic, cf, config, pm, viewbox=viewbox)
 
@@ -593,8 +589,7 @@ def color_post_process(mosaic: Mosaic, channels: dict, config, viewbox=None) -> 
     # R/G/B manifests into the RGB source so the SXT crops key per-panel.
     rgb_star_lin = None
     if _BROADBAND <= set(bxt_bb):
-        with ephemeral_intermediates():
-            rgb_lin = combine_panels(combine_broadband_rgb, mosaic, bxt_bb["R"], bxt_bb["G"], bxt_bb["B"])
+        rgb_lin = combine_panels(combine_broadband_rgb, mosaic, bxt_bb["R"], bxt_bb["G"], bxt_bb["B"])
         rgb_star_lin = process_in_panels(sxt_stars_rgb, mosaic, config, rgb_lin, viewbox=viewbox)
 
     out: dict[str, object] = {}

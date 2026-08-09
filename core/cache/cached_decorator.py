@@ -301,10 +301,8 @@ def make_cached_decorator(
             # trace, calling a @node op as plain Python emits a `Node`
             # handle into the active Graph instead of erroring.
             from dependency_graph.tracing import _TRACE, record
-            from cache.ephemeral_scope import _EPHEMERAL_SCOPE
             if _TRACE.get() is not None:
                 _after = kwargs.pop("_after", ())
-                ephemeral = bool(kwargs.pop("_ephemeral", _EPHEMERAL_SCOPE.get()))
                 if kwargs:
                     raise NotImplementedError(
                         f"{func.__name__} called with kwargs inside a "
@@ -327,12 +325,6 @@ def make_cached_decorator(
                     handle.content_hash = canonical_call_hash(*args)
                 except Exception:
                     pass  # un-hashable literals surface at dispatch, not here
-                # `final=True` ops are deliverables — EXEMPT from ephemeral
-                # reclaim even inside an `ephemeral_intermediates()` block.
-                # This lets a pipeline wrap its whole body and still keep the
-                # final image(s). Everything else inside the block is ephemeral.
-                if ephemeral and not getattr(wrapper, "_final", False):
-                    handle._ephemeral = True
                 return handle
             raise RuntimeError(
                 f"{func.__name__} is a remote task. Use `.remote(...)`."

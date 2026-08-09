@@ -324,21 +324,13 @@ def build_preview_graph(
     # `node_status_fn` / `graph_update_fn` fires inside its own
     # sub-runtime.
     #
-    # Eagerly trace each Subframe pipeline here on the head-side @node
-    # worker so the global ephemeral_files registry sees every consumer
-    # before any Subframe sub-Graph dispatches. The trace is cheap
-    # Python — no @node bodies run — and `run_pipeline` re-traces lazily
-    # on the cluster with bit-identical Node identities.
-    traced: list = []
     for mosaic_ref in objects.mosaics.values():
         mosaic = mosaic_ref.get()
         task = (run_pipeline, mosaic, config, "Subframe", "mosaic")
         graph[task] = set()
         tasks.append(task)
-        traced.append(_eager_trace_pipeline("Subframe", "mosaic", mosaic, config))
 
     graph[preview_graph_done] = tasks
-    graph.ephemeral_files = _build_ephemeral_registry(traced)
     return graph
 
 
@@ -360,17 +352,18 @@ def _eager_trace_pipeline(
 
     Same code path as the lazy trace inside `run_pipeline` — calls
     `pipeline_fn(entity, cfg)` from the registry and walks tap points.
-    Used by `build_main_processing_graph` / `build_preview_graph` to
-    pre-populate the global ephemeral_files registry before any
-    consumer of an ephemeral file can dispatch. `run_pipeline` still
-    re-traces lazily at runtime; the two traces are bit-identical
-    (deterministic, same args, same context), and structural Node
-    identity means the eager-trace's consumers match the lazy-trace's
-    consumers exactly in the registry.
 
-    Returns None if the pipeline body bails (e.g. MASTER-mode mosaic
-    with missing panels) — callers should skip registry population
-    for that entry.
+    The graph builders no longer call this. It existed to pre-populate the
+    global ephemeral-file registry before any consumer could dispatch, which
+    made "eager and lazy traces are bit-identical" a load-bearing platform
+    invariant — and that invariant was a recurring source of bugs. Scope-local
+    deletion needs no census (a subgraph reclaims only what it produced), so
+    the eager pass is gone and every cart pipeline is traced ONCE, lazily, in
+    `run_pipeline` (which stores the tap snapshot itself).
+
+    Still used by structural tests that want a pipeline's traced graph and its
+    tap snapshot without running anything. Returns None if the pipeline body
+    bails (e.g. MASTER-mode mosaic with missing panels).
     """
     from pipelines.registry import get_pipeline
     from products.product import object_class
@@ -471,18 +464,6 @@ def _store_tap_snapshot(pipeline_fn, pipeline_name: str, entity, graph) -> None:
     # path). The prediction-time `record()` that lived here wrote predicted
     # paths into the log — the ledger entries that diverged from what the
     # runtime actually built, pinning phantoms and orphaning real files.
-
-
-def _build_ephemeral_registry(traced_graphs):
-    """Union the ephemeral_files contributions from every traced
-    pipeline graph into a single registry. Returns the registry; the
-    caller attaches it to the Graph it returns from a builder @node."""
-    from dependency_graph.ephemeral_registry import EphemeralFiles
-    registry = EphemeralFiles()
-    for g in traced_graphs:
-        if g is not None:
-            registry.register_from_graph(g)
-    return registry
 
 
 @ray.remote(num_cpus=0.1)
@@ -787,16 +768,6 @@ def build_main_processing_graph(
     registered = registered_pipelines()
     graph = Graph({})
     pipeline_tasks = []
-    # Eagerly trace each cart entry here on the head-side @node worker.
-    # Same call as the lazy run_pipeline does on the cluster; the two
-    # traces are bit-identical (deterministic + same context), and
-    # structural Node identity means consumer matching against the
-    # registry works across the trace/dispatch boundary. The eager
-    # pass exists purely to populate the global ephemeral_files
-    # registry BEFORE any pipeline's children dispatch — within-cart
-    # consumers of a shared ephemeral file see each other in the
-    # registry's pending set, so cleanup waits for ALL of them.
-    traced: list = []
     for entry in shopping_cart:
         # Cart entries: `(type, id, pipeline_name)`. Each entry
         # becomes a `run_pipeline` Ray task that traces the
@@ -817,10 +788,8 @@ def build_main_processing_graph(
         task = (run_pipeline, entity, cfg, pipeline_name, type)
         graph[task] = set()
         pipeline_tasks.append(task)
-        traced.append(_eager_trace_pipeline(pipeline_name, type, entity, cfg))
 
     graph[main_processing_graph_done] = pipeline_tasks
-    graph.ephemeral_files = _build_ephemeral_registry(traced)
     return graph
 
 

@@ -16,7 +16,7 @@ full-resolution run.
 
 Three entry points, matching the PI Downscaled pipeline.
 """
-from astroflow.pipeline import ephemeral_intermediates, pipeline
+from astroflow.pipeline import pipeline
 from dependency_graph.tracing import workflow_group
 from mosaics.color.post_process import bxt_correct_only, color_post_process
 from mosaics.merging.oss import merge_images_oss
@@ -117,17 +117,16 @@ def for_mosaic(mosaic, config):
             for tid in strip
             if (tid, filter) in channels
         }
-        with ephemeral_intermediates():
-            placed = [
-                place_image(mosaic, targets_by_id[tid], filter, viewbox, config,
-                            corrected[tid])
-                for strip in mosaic.strips
-                for tid in strip
-                if tid in corrected
-            ]
-            if not placed:
-                continue
-            out[filter] = merge_images_oss(mosaic, filter, *placed)
+        placed = [
+            place_image(mosaic, targets_by_id[tid], filter, viewbox, config,
+                        corrected[tid])
+            for strip in mosaic.strips
+            for tid in strip
+            if tid in corrected
+        ]
+        if not placed:
+            continue
+        out[filter] = merge_images_oss(mosaic, filter, *placed)
 
     # Continue into color post-processing — same pipeline-agnostic workflow
     # group as the other hybrids, so all three produce identical

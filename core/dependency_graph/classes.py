@@ -199,19 +199,29 @@ GraphUpdateFn = Callable[..., Any]
 
 
 class Graph(dict[TaskDescriptor, Iterable[TaskDescriptor]]):
-    __slots__ = ("graph_update_fn", "node_status_fn", "ephemeral_files",
+    __slots__ = ("graph_update_fn", "node_status_fn", "delete_intermediates",
                  "version_supersede")
     graph_update_fn: GraphUpdateFn | None
     node_status_fn: NodeStatusFn | None
-    # Optional `EphemeralFiles` registry built at eager-trace time in a
-    # graph-builder @node (build_main_processing_graph / build_preview_graph).
-    # GraphRuntime.__init__ folds it into the root runtime's shared
-    # registry when this Graph becomes a child runtime.
-    ephemeral_files: "Any | None"
-    # Optional `{node: (version_log_key, expected_path)}` map attached by
-    # `run_pipeline` to its returned sub-graph. The runtime consults it at
-    # node completion to delete the superseded display-product version the
-    # moment the new output lands (graceful N/N-1, `version_log.supersede`).
+    # The graph's AUTHOR declares that this graph computes cheap intermediates
+    # not worth persisting — e.g. `process_in_panels`, whose `crop_panel` tiles
+    # are views of another image, materialized only because a CLI boundary
+    # needs a file path. Every `@makes_image` node in the graph is then subject
+    # to deletion EXCEPT its single terminal, when this graph runs as a dynamic
+    # subgraph and concludes successfully (`GraphRuntime._delete_intermediates`
+    # deletes the file atom and invalidates the cache entry).
+    #
+    # The subgraph IS the scope: a builder traces into a fresh Graph, so
+    # membership needs no registry, and the single-terminal invariant the
+    # runtime already asserts makes the escape set free. Nothing global, no
+    # refcounts, no cross-pipeline census — an intermediate another pipeline
+    # wants is simply re-derived, which is cheap by construction (that's what
+    # qualifies it as an intermediate).
+    delete_intermediates: bool
+    # Optional `{node: version_log_key}` map attached by `run_pipeline` to its
+    # returned sub-graph. The runtime consults it at node completion to record
+    # the landed version and delete the superseded one (graceful N/N-1,
+    # `version_log.supersede`) — keyed on product identity, never a path.
     version_supersede: "dict | None"
 
     def __init__(
@@ -219,14 +229,14 @@ class Graph(dict[TaskDescriptor, Iterable[TaskDescriptor]]):
         *args,
         graph_update_fn: GraphUpdateFn | None = None,
         node_status_fn: NodeStatusFn | None = None,
-        ephemeral_files: "Any | None" = None,
+        delete_intermediates: bool = False,
         version_supersede: "dict | None" = None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.graph_update_fn = graph_update_fn
         self.node_status_fn = node_status_fn
-        self.ephemeral_files = ephemeral_files
+        self.delete_intermediates = delete_intermediates
         self.version_supersede = version_supersede
 
 

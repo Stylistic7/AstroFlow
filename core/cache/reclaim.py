@@ -36,7 +36,7 @@ from file_io.types import WithSidecar
 log = structlog.get_logger()
 
 
-def cleanup_ephemeral_artifact(node, result: Any, fn_args: list) -> None:
+def reclaim_artifact(node, result: Any, fn_args: list) -> None:
     """Reclaim disk + invalidate cache for one ephemeral node's output.
 
     `fn_args` is the bound positional-argument list passed to the

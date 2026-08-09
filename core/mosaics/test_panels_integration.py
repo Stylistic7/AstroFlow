@@ -174,37 +174,34 @@ def test_panel_incremental_is_pixel_identical_and_selective(test_context, tmp_pa
 
     paths_v1 = crop_paths()
 
-    # ---- Neutralize ephemeral reclaim so cross-run crop HITS are observable --
-    import cache.ephemeral_cleanup as ec
-    orig_cleanup = ec.cleanup_ephemeral_artifact
-    ec.cleanup_ephemeral_artifact = lambda *a, **k: None
-    try:
-        # RUN 1 (v1) ----------------------------------------------------------
-        before1 = _blend_files(out_dir)
-        run_graph(trace(_panel_pipeline, mosaic, config, src1, vb))
-        b1_files = _blend_files(out_dir) - before1
-        assert len(b1_files) == 1, f"expected 1 blend output, got {b1_files}"
+    # Crops persist here: this pipeline builds them in the caller's graph, not
+    # inside a `delete_intermediates=True` subgraph, so cross-run crop HITS
+    # are directly observable.
 
-        crop_dir = out_dir / "crop_panel"
-        crop_mtimes_1 = {str(p): p.stat().st_mtime_ns for p in crop_dir.rglob("*.tiff")}
+    # RUN 1 (v1) --------------------------------------------------------------
+    before1 = _blend_files(out_dir)
+    run_graph(trace(_panel_pipeline, mosaic, config, src1, vb))
+    b1_files = _blend_files(out_dir) - before1
+    assert len(b1_files) == 1, f"expected 1 blend output, got {b1_files}"
 
-        # ---- CHANGE ONE PANEL'S DATA (A) -----------------------------------
-        context.targets = {"A": _target("A", "A_v2", fp_a), "B": context.targets["B"]}
-        paths_v2 = crop_paths()
-        # KEY-level incrementality: A's crop key MOVED, B's did NOT.
-        assert paths_v2["A"] != paths_v1["A"], "A's crop key did not move on re-stack"
-        assert paths_v2["B"] == paths_v1["B"], "B's crop key moved (disjoint panel churned)"
+    crop_dir = out_dir / "crop_panel"
+    crop_mtimes_1 = {str(p): p.stat().st_mtime_ns for p in crop_dir.rglob("*.tiff")}
 
-        time.sleep(0.05)
+    # ---- CHANGE ONE PANEL'S DATA (A) ---------------------------------------
+    context.targets = {"A": _target("A", "A_v2", fp_a), "B": context.targets["B"]}
+    paths_v2 = crop_paths()
+    # KEY-level incrementality: A's crop key MOVED, B's did NOT.
+    assert paths_v2["A"] != paths_v1["A"], "A's crop key did not move on re-stack"
+    assert paths_v2["B"] == paths_v1["B"], "B's crop key moved (disjoint panel churned)"
 
-        # RUN 2 (v2) — incremental -------------------------------------------
-        before2 = _blend_files(out_dir)
-        run_graph(trace(_panel_pipeline, mosaic, config, src2, vb))
-        b2_files = _blend_files(out_dir) - before2
-        assert len(b2_files) == 1, f"expected 1 new blend output, got {b2_files}"
-        b2_incr = b2_files.pop()
-    finally:
-        ec.cleanup_ephemeral_artifact = orig_cleanup
+    time.sleep(0.05)
+
+    # RUN 2 (v2) — incremental ------------------------------------------------
+    before2 = _blend_files(out_dir)
+    run_graph(trace(_panel_pipeline, mosaic, config, src2, vb))
+    b2_files = _blend_files(out_dir) - before2
+    assert len(b2_files) == 1, f"expected 1 new blend output, got {b2_files}"
+    b2_incr = b2_files.pop()
 
     # ---- ASSERTION 1: PIXEL IDENTITY vs an honest full recompute -----------
     ref_path = tmp_path / "reference_v2.tiff"

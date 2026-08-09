@@ -22,7 +22,7 @@ from dependency_graph.trace_paths import traced_paths_for
 def _atom_paths(primary: Path) -> list[Path]:
     """The full on-disk atom for one produced file: primary, its `.json`
     sidecar, the display tile-pyramid `_tiles.tiff`, and the pyramid's
-    `.context` map. Mirrors `cache/ephemeral_cleanup.cleanup_ephemeral_artifact`."""
+    `.context` map. Mirrors `cache/ephemeral_cleanup.reclaim_artifact`."""
     from previews.create_tile_pyramid import pyramid_path_for
     tiff = pyramid_path_for(primary)
     return [primary, sidecar_path_for(primary), tiff, tiff.with_suffix(".context")]

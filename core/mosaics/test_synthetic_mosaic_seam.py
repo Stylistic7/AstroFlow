@@ -161,16 +161,14 @@ def test_diagnose_corner_glow(test_context, monkeypatch):
     thumbnail + a corner/center brightness ratio per stage. The stage
     where the ratio first jumps introduced the gradient (MGC in
     post_process_stack vs PhotometricMosaic's gradient extrapolation)."""
-    from contextlib import nullcontext
     import numpy as np
-    import pipelines.pixinsight_master as pim
     from compute_graph.compute_graph import build_compute_graph
     from context import context
     from dependency_graph import run_graph
     from file_io.generic import read_image
     from previews.operations import autostretch, array_to_png
 
-    monkeypatch.setattr(pim, "ephemeral_intermediates", lambda: nullcontext())
+    # (Every stage's output persists by default now — nothing to disable.)
     _force_real_pixinsight()
     add_synthetic_mosaic_images()
     run_graph(build_compute_graph())

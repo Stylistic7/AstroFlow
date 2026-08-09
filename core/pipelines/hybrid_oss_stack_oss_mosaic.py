@@ -17,7 +17,7 @@ ordering-only `_after` dependencies: each cal master is built first (bias
 before the dark/flat that consumes it), and the light master runs only
 once they are all on disk.
 """
-from astroflow.pipeline import ephemeral_intermediates, pipeline
+from astroflow.pipeline import pipeline
 from dependency_graph.tracing import workflow_group
 from mosaics.color.post_process import bxt_correct_only, color_post_process
 from mosaics.merging.oss import merge_images_oss
@@ -120,17 +120,16 @@ def for_mosaic(mosaic, config):
         }
         # Placed panels are multi-GB but CPU-cheap re-derivations — reclaimed
         # once the merge consumes them.
-        with ephemeral_intermediates():
-            placed = [
-                place_image(mosaic, targets_by_id[tid], filter, viewbox, config,
-                            corrected[tid])
-                for strip in mosaic.strips
-                for tid in strip
-                if tid in corrected
-            ]
-            if not placed:
-                continue
-            out[filter] = merge_images_oss(mosaic, filter, *placed)
+        placed = [
+            place_image(mosaic, targets_by_id[tid], filter, viewbox, config,
+                        corrected[tid])
+            for strip in mosaic.strips
+            for tid in strip
+            if tid in corrected
+        ]
+        if not placed:
+            continue
+        out[filter] = merge_images_oss(mosaic, filter, *placed)
 
     color = color_post_process(mosaic, out, config, mosaic.viewbox("Master"))
     return {**out, **color}

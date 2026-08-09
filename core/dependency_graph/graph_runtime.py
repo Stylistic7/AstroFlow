@@ -26,7 +26,6 @@ from dependency_graph.classes import (
     canonicalize_graph,
     canonicalize_node,
 )
-from dependency_graph.ephemeral_registry import EphemeralFiles
 
 
 def _landed_path(result) -> "str | None":
@@ -49,13 +48,48 @@ from cache.types import NeverRun
 from dependency_graph.classes import Skipped
 
 
+def _terminal_cache_hit(graph: Graph) -> "tuple[bool, Any]":
+    """`(hit, value)` for a subgraph's single terminal — a read-only cache
+    probe that never executes anything.
+
+    The terminal's positional args are reconstructed the way the runtime
+    would bind them (`reconstruct_call_args` + `_dep_positions`), except the
+    dep slots hold the traced dep HANDLES instead of results. That yields the
+    same cache key: a key resolves any object carrying `content_hash` through
+    `_maybe_use_content_hash`, and a handle is stamped at trace time with
+    exactly the `content_hash` its result will have (the
+    `content_hash := producer.call_hash` convention).
+
+    Never raises: a failed probe just means "expand the subgraph", which is
+    always correct and only slower.
+    """
+    try:
+        from dependency_graph.classes import reconstruct_call_args
+
+        depended = {d for deps in graph.values() for d in deps}
+        terminals = [n for n in graph if n not in depended]
+        if len(terminals) != 1:
+            return (False, None)
+        terminal = canonicalize_node(terminals[0])
+        cached_value = getattr(terminal.task, "cached_value", None)
+        if cached_value is None:
+            return (False, None)   # not a cached op (sentinel, raw remote)
+        positions = getattr(terminals[0], "_dep_positions", None)
+        deps = list(graph.get(terminals[0], []) or [])
+        if positions is not None:
+            deps = deps[: len(positions)]
+        args = reconstruct_call_args(list(terminal.args), deps, positions)
+        return cached_value(*args)
+    except Exception:
+        return (False, None)
+
+
 class GraphRuntime:
     def __init__(
         self,
         graph: Graph,
         parent: GraphRuntime | None = None,
         parent_node: Node | None = None,
-        cleanup_fn: Callable[[Node, Any, list], None] | None = None,
     ) -> None:
         canonical = canonicalize_graph(graph)
 
@@ -119,6 +153,13 @@ class GraphRuntime:
         self.filenames: dict[Node, Any] = {}
         self.final_result: Any = None
 
+        # Declared by the Graph's author: everything here except the single
+        # terminal is a cheap intermediate, reclaimed when this subgraph
+        # concludes (see `Graph.delete_intermediates` and `_delete_intermediates`).
+        # `canonicalize_graph` returns a plain dict, so the flag is lifted
+        # off the original Graph here rather than read back later.
+        self.delete_intermediates: bool = bool(getattr(graph, "delete_intermediates", False))
+
         # Callbacks inherited from Graph
         self.graph_update_fn: GraphUpdateFn | None = graph.graph_update_fn
         self.node_status_fn: NodeStatusFn | None = (
@@ -126,58 +167,17 @@ class GraphRuntime:
             or (parent.node_status_fn if parent else None)
         )
 
-        # Ephemeral output cleanup. Nodes flagged `_ephemeral` (by the
-        # trace-mode wrapper in `cache/cached_decorator.py` when the call
-        # was inside an `ephemeral_intermediates()` scope) get their
-        # on-disk output reclaimed once every dependent across every
-        # pipeline has completed. The bookkeeping lives in a single
-        # `EphemeralFiles` registry shared across the entire run via the
-        # parent chain — see `dependency_graph/ephemeral_registry.py`.
-        # `cleanup_fn` is the actual delete-the-file callable —
-        # `cleanup_ephemeral_artifact` in `cache/ephemeral_cleanup.py`
-        # in production, mockable for tests.
-        self.cleanup_fn: Callable[[Node, Any, list], None] | None = (
-            cleanup_fn
-            if cleanup_fn is not None
-            else (parent.cleanup_fn if parent else None)
-        )
-        # Root holds the live registry; children share it via parent.
-        if parent is None:
-            self._ephemeral_files: EphemeralFiles = EphemeralFiles()
-        else:
-            self._ephemeral_files = parent._root._ephemeral_files
-
-        # Deterministic N-1 supersession map ({node: (version_log_key,
-        # expected_path)}), attached by `run_pipeline` to its returned
-        # sub-graph. Root holds the union across all sub-graphs; `_mark_done`
-        # consults it so a display tap's previous version is deleted at the
-        # MOMENT its new output lands (`version_log.supersede`).
+        # Deterministic N-1 supersession map ({node: version_log_key}),
+        # attached by `run_pipeline` to its returned sub-graph. Root holds the
+        # union across all sub-graphs; `_mark_done` consults it so a display
+        # tap's previous version is deleted at the MOMENT its new output lands
+        # (`version_log.supersede`, called with the node's RUNTIME result).
         incoming_versions = getattr(graph, "version_supersede", None) or {}
         if parent is None:
             self._version_supersede: dict = dict(incoming_versions)
         else:
             self._version_supersede = parent._root._version_supersede
             self._version_supersede.update(incoming_versions)
-
-        # If this Graph carries its own pre-traced registry (built at
-        # eager-trace time inside a graph-builder @node), union it into
-        # the shared one.
-        incoming = getattr(graph, "ephemeral_files", None)
-        if incoming is not None:
-            self._ephemeral_files.merge(incoming)
-        # Also register from this runtime's own graph — but skip the
-        # work entirely when no cleanup_fn is wired up (snapshot
-        # runtimes used by the workflow-graph adapter, structure-only
-        # test fixtures, dry-run paths). Without a cleanup_fn nothing
-        # consults the registry, so populating it is pure waste.
-        # For production this is redundant with eager-trace
-        # contributions (structural Node identity → idempotent set
-        # union). For tests and stand-alone use without an eager-trace
-        # pass, it's the only source of bookkeeping.
-        if self.cleanup_fn is not None:
-            self._ephemeral_files.register_from_graph(
-                self._graph, fallback_to_node_key=True,
-            )
 
     @property
     def graph(self) -> dict[Node, list[Node]]:
@@ -186,8 +186,8 @@ class GraphRuntime:
 
     @property
     def _root(self) -> "GraphRuntime":
-        """Walk up the parent chain to the root runtime — the one that
-        owns the shared `EphemeralFiles` registry."""
+        """Walk up the parent chain to the root runtime — the one that owns
+        the run-wide state (supersession map, landed-path census)."""
         rt = self
         while rt.parent is not None:
             rt = rt.parent
@@ -222,6 +222,19 @@ class GraphRuntime:
             logs = []
 
         if isinstance(result, Graph):
+            # SKIP THE WHOLE SUBGRAPH when its terminal is already a cache hit.
+            # Only decidable here, at runtime: the Graph exists, so its terminal
+            # and that terminal's dep handles are in hand. This matters
+            # specifically for `delete_intermediates` graphs — their
+            # intermediates were deleted after the last run, so expanding would
+            # re-derive every one of them just to hand the terminal a cache hit
+            # and delete them again. Skipping hands the consumer the terminal's
+            # cached value and never dispatches anything.
+            if getattr(result, "delete_intermediates", False):
+                hit, value = _terminal_cache_hit(result)
+                if hit:
+                    self._mark_done(node, value, logs, succeeded=True)
+                    return
             # Preflight the dynamic subgraph before splicing it in, exactly as
             # run_graph does for the top-level graph. Without this, a subgraph
             # whose deliverables are ALREADY on disk still re-dispatches its
@@ -318,45 +331,6 @@ class GraphRuntime:
         dep_values = [self.results[d] for d in deps]
         return reconstruct_call_args(literals, dep_values, positions)
 
-    def _notify_ephemeral_registry(
-        self, node: Node, result: Any, succeeded: bool,
-    ) -> None:
-        """Two notifications fire here in succession:
-
-        1. If `node` is itself an ephemeral producer, register the
-           cleanup data (filename, result, fn_args) so the registry can
-           fire `cleanup_fn` once every consumer is also done.
-        2. `node` may be a consumer of someone else's ephemeral
-           producer — discard from the registry's pending sets, fire
-           cleanup for any filename whose set just emptied.
-
-        Gated on `succeeded`: a failed producer wrote no file (skip
-        producer registration); a failed consumer still needs the
-        upstream file for the next manual re-run (skip consumer
-        decrement). Failures leave intermediates around for one extra
-        run, intentionally.
-
-        The producer-side key is the result's master path (extracted
-        from `ImageMetadata.filename` / `WithSidecar.path`) when one
-        exists — matches the eager trace's `expected_output_path` so
-        cross-pipeline consumer sets unify. When the result has no
-        extractable path (test stubs, ops without `filename_fn`), we
-        fall back to `f"node:{node.name}"`, mirroring the same fallback
-        in `EphemeralFiles.register_from_graph`.
-        """
-        if self.cleanup_fn is None or not succeeded:
-            return
-        registry = self._root._ephemeral_files
-        if getattr(node, "_ephemeral", False):
-            from cache.ephemeral_cleanup import _master_path
-            master = _master_path(result)
-            key = str(master) if master is not None else f"node:{node.name}"
-            registry.producer_done(
-                key, node, result,
-                self.make_fn_args(node), self.cleanup_fn,
-            )
-        registry.consumer_done(node, self.cleanup_fn)
-
     def _mark_done(
         self, node: Node, result: Any, logs: list[Any],
         succeeded: bool = True,
@@ -375,7 +349,6 @@ class GraphRuntime:
             ):
                 self._ready.add(dependent)
 
-        self._notify_ephemeral_registry(node, result, succeeded)
 
         # Graceful N/N-1, rebased on RUNTIME truth (Phase 1b): the landed
         # path comes from the node's ACTUAL result, never a prediction.
@@ -441,10 +414,58 @@ class GraphRuntime:
                     node, child.final_result, child.logs,
                     succeeded=parent_succeeded,
                 )
+                # SCOPE-LOCAL cleanup: the one moment a dynamic subgraph
+                # concludes, so the one place a self-cleaning scope reclaims
+                # its interior. Declared by the graph's author via
+                # `Graph(..., delete_intermediates=True)` — they know whether it holds
+                # cheap intermediates (crops) or real products. Success only:
+                # a failed scope keeps its files so a retry resumes from
+                # real data instead of re-deriving the whole scope.
+                if parent_succeeded and child.delete_intermediates:
+                    child._delete_intermediates()
                 # Move out of _children so we stop scheduling against
                 # it, but keep it in _completed_children so the
                 # workflow-graph UI can still render the subgraph.
                 self._completed_children[node] = self._children.pop(node)
+
+    def _delete_intermediates(self) -> None:
+        """Delete this subgraph's intermediate images — every `@makes_image`
+        node EXCEPT the single terminal — and invalidate their cache entries.
+
+        Runs only for a graph whose author set `delete_intermediates=True`,
+        and only after the subgraph concluded successfully.
+
+        Each file is found from that node's own RUNTIME result, never a
+        predicted path, so this can only ever delete something this subgraph
+        actually produced. The terminal is what escapes and is exactly what
+        consumers hold, so it always survives. Nodes that produce no image
+        (orchestration, sentinels) have nothing to delete and are skipped by
+        `reclaim_artifact` itself.
+
+        Sharing is deliberately untracked: an intermediate another pipeline
+        wants is re-derived. Never raises — reclaim is a side effect, never
+        load-bearing.
+        """
+        from cache.reclaim import reclaim_artifact
+        from dependency_graph.dependency_graph import _terminals
+
+        keep = set(_terminals(self._graph))
+        deleted = 0
+        for node in self._graph:
+            if node in keep:
+                continue
+            result = self.results.get(node)
+            if result is None:
+                continue
+            try:
+                reclaim_artifact(node, result, self.make_fn_args(node))
+                deleted += 1
+            except Exception as e:
+                print(f"### delete_intermediates failed (non-fatal) for "
+                      f"{node.name}: {type(e).__name__}: {e}")
+        if deleted:
+            print(f"### deleted {deleted} intermediate(s) from a concluded "
+                  f"subgraph")
 
     def is_active(self) -> bool:
         """True if there is still work to do at this level or any child."""

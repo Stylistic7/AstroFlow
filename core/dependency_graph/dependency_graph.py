@@ -461,18 +461,13 @@ def run_graph(
     if preflight:
         graph = _apply_preflight(graph)
 
-    # In-run ephemeral GC is ON. It was briefly disabled (no-GC) to isolate a
-    # recompute churn, but no-GC just moved the problem to disk (intermediates
-    # accumulate until the output volume fills). The churn's real cause was that
-    # dynamic subgraphs were never preflighted — a spliced child re-dispatched a
-    # RECLAIMED ephemeral bottom-up even when its downstream deliverable was
-    # already on disk. `GraphRuntime.node_completed` now preflights each child
-    # subgraph (predict_call_hashes + nodes_to_dispatch), so a satisfied
-    # deliverable prunes its whole upstream — the reclaimed ephemeral is SKIPPED,
-    # not recomputed. With that fixed, deletion is safe again: intermediates are
-    # reclaimed as consumers finish, disk stays bounded, and nothing re-runs.
-    from cache.ephemeral_cleanup import cleanup_ephemeral_artifact
-    root = GraphRuntime(graph, cleanup_fn=cleanup_ephemeral_artifact)
+    # Every image persists by default (the 2026-08-08 pure-world decision).
+    # The one exception is opt-in and local: a dynamic subgraph whose author
+    # built it with `Graph(..., delete_intermediates=True)` deletes its own
+    # non-terminal images when it concludes — see `Graph.delete_intermediates`
+    # and `GraphRuntime._delete_intermediates`. No global registry, no
+    # refcounts, nothing to wire up here.
+    root = GraphRuntime(graph)
 
     # Constants; tune per cluster/workload. 2x cores (was 4x): each in-flight
     # slot is a fresh Python worker carrying the full scientific stack (~0.3-1 GB
@@ -861,7 +856,7 @@ def _report_disk_bloat(rt: "GraphRuntime") -> None:
     """
     try:
         import structlog
-        from cache.ephemeral_cleanup import _master_path
+        from cache.reclaim import _master_path
 
         total_bytes = 0
         n_files = 0
