@@ -27,6 +27,24 @@ from dependency_graph.classes import (
     canonicalize_node,
 )
 from dependency_graph.ephemeral_registry import EphemeralFiles
+
+
+def _landed_path(result) -> "str | None":
+    """The primary on-disk path of a node result, from the RESULT itself.
+
+    Producer results are ImageMetadata (`.filename`) after the metadata
+    wrap; raw file-path results (WithSidecar/TiffFilePath) stringify to
+    their path. Non-file results (dicts, graphs, None) return None."""
+    import os
+    fname = getattr(result, "filename", None)
+    if fname:
+        return str(fname)
+    path = getattr(result, "path", None)
+    if path is not None:
+        return str(path)
+    if isinstance(result, (str, os.PathLike)) and str(result):
+        return os.fspath(result)
+    return None
 from cache.types import NeverRun
 from dependency_graph.classes import Skipped
 
@@ -249,6 +267,18 @@ class GraphRuntime:
         """Get results from this node's dependencies."""
         return [self.results[dep] for dep in self._graph.get(node, [])]
 
+    @property
+    def landed_paths(self) -> set:
+        """RUNTIME census: the primary path of every successful completion
+        (hits and misses alike) this run, collected at `_mark_done` and
+        shared root-wide. Stored durably at full-run completion as the
+        orphan sweep's live-set — the single ledger of what the runtime
+        actually touched, replacing trace predictions (Phase 1b)."""
+        root = self._root
+        if not hasattr(root, "_landed_paths"):
+            root._landed_paths = set()
+        return root._landed_paths
+
     def make_fn_args(self, node: Node) -> list[Any]:
         """Build the argument list for a node's remote function.
 
@@ -331,19 +361,26 @@ class GraphRuntime:
 
         self._notify_ephemeral_registry(node, result, succeeded)
 
-        # Graceful N/N-1: this node may be the writer of a display tap whose
-        # new version just landed — delete the superseded version's files NOW
-        # (the only deletion moment where supersession is a local fact).
-        # Best-effort: a versioning hiccup must never fail the run.
+        # Graceful N/N-1, rebased on RUNTIME truth (Phase 1b): the landed
+        # path comes from the node's ACTUAL result, never a prediction.
+        # `supersede` records the landed entry as the product's current
+        # version and deletes every other logged version's files — the only
+        # deletion moment where supersession is a local fact. Best-effort:
+        # a versioning hiccup must never fail the run. Every landed path
+        # also feeds the run's census (`landed_paths`) — the runtime ledger
+        # the orphan sweep's live-set is built from.
         if succeeded:
-            supersede_entry = self._root._version_supersede.get(node)
-            if supersede_entry is not None:
-                try:
-                    from products import version_log
-                    version_log.supersede(*supersede_entry)
-                except Exception as e:
-                    print(f"### version supersede failed (non-fatal) for "
-                          f"{node.name}: {type(e).__name__}: {e}")
+            landed = _landed_path(result)
+            if landed is not None:
+                self._root.landed_paths.add(landed)
+                key = self._root._version_supersede.get(node)
+                if key is not None:
+                    try:
+                        from products import version_log
+                        version_log.supersede(key, landed)
+                    except Exception as e:
+                        print(f"### version supersede failed (non-fatal) for "
+                              f"{node.name}: {type(e).__name__}: {e}")
 
         # Opportunistically compute the output filename for the workflow UI.
         if hasattr(node.task, "filename_fn"):

@@ -343,17 +343,22 @@ class TestVersionSupersede:
                             lambda k, p: calls.append((k, p)) or 0)
         return calls
 
-    def test_supersede_fires_on_success(self, monkeypatch):
+    def test_supersede_fires_on_success_with_runtime_path(self, monkeypatch):
+        """Phase 1b: the map carries the product KEY only; the landed path
+        comes from the node's ACTUAL result (never a prediction)."""
+        from types import SimpleNamespace
         calls = self._capture(monkeypatch)
         A, B = _node(a_task), _node(b_task)
         g = Graph({B: [A]})
-        g.version_supersede = {B: (("product_versions", "x"), "/out/b.tiff")}
+        g.version_supersede = {B: ("product_versions", "x")}
         rt = GraphRuntime(g)
 
         rt.node_completed(A, "ra")
         assert calls == []                      # unmapped node: no supersede
-        rt.node_completed(B, "rb")
-        assert calls == [(("product_versions", "x"), "/out/b.tiff")]
+        rt.node_completed(B, SimpleNamespace(filename="/out/RUNTIME_b.tiff"))
+        assert calls == [(("product_versions", "x"), "/out/RUNTIME_b.tiff")]
+        # Both landings feed the runtime census ("ra" is a str-path result).
+        assert rt.landed_paths == {"ra", "/out/RUNTIME_b.tiff"}
 
     def test_supersede_skipped_on_failure_and_sentinels(self, monkeypatch):
         from dependency_graph.graph_runtime import Skipped
@@ -361,14 +366,15 @@ class TestVersionSupersede:
         A, B = _node(a_task), _node(b_task)
         g = Graph({B: [A]})
         g.version_supersede = {
-            A: (("product_versions", "a"), "/out/a.tiff"),
-            B: (("product_versions", "b"), "/out/b.tiff"),
+            A: ("product_versions", "a"),
+            B: ("product_versions", "b"),
         }
         rt = GraphRuntime(g)
 
         rt.node_failed(A, RuntimeError("boom"))
-        rt.node_completed(B, Skipped)
+        rt.node_completed(B, Skipped)   # sentinel: no filename/path → no call
         assert calls == []
+        assert rt.landed_paths == set()
 
     def test_child_subgraph_map_merges_into_root(self, monkeypatch):
         """run_pipeline attaches the map to its RETURNED sub-graph; the child
@@ -380,7 +386,7 @@ class TestVersionSupersede:
 
         C, done = _node(c_task), _node(gather_task)
         sub = Graph({done: [C]})
-        sub.version_supersede = {C: (("product_versions", "c"), "/out/c.tiff")}
+        sub.version_supersede = {C: ("product_versions", "c")}
         monkeypatch.setattr(
             "dependency_graph.dependency_graph._apply_preflight",
             lambda g, is_subgraph=False: g,
@@ -388,6 +394,9 @@ class TestVersionSupersede:
         rt.start(parent_node)
         rt.node_completed(parent_node, sub)    # splices child runtime
 
+        from types import SimpleNamespace
         child = rt._children[parent_node]
-        child.node_completed(C, "rc")
-        assert calls == [(("product_versions", "c"), "/out/c.tiff")]
+        child.node_completed(C, SimpleNamespace(filename="/out/RUNTIME_c.tiff"))
+        assert calls == [(("product_versions", "c"), "/out/RUNTIME_c.tiff")]
+        # Child landings surface into the ROOT census.
+        assert "/out/RUNTIME_c.tiff" in rt.landed_paths

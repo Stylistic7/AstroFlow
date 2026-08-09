@@ -1,16 +1,18 @@
-"""Unit tests for `cache.orphan_sweep.sweep` — the global orphan
-reconciliation (now completion/idle-only; the pre-run gate is gone).
+"""Unit tests for `cache.orphan_sweep.sweep` in the Phase 1b world.
 
-Two properties keep an unattended sweep from ever deleting live data:
-  * the live set includes the IMPLICIT preview items (`build_preview_graph`
-    dispatches `Subframe` over every mosaic without a cart entry) — the
-    regression that had the sweep deleting the whole subframe preview layer
-    on every run, which the next run then deterministically rebuilt;
-  * fail-loud floors: an unresolvable trace raises (never a silent partial
-    live set), and an EMPTY resolved live set refuses to delete anything.
+Liveness is the RUNTIME CENSUS — the durable record of every path the last
+COMPLETE pass actually landed — never a trace prediction (predictions were
+proven to diverge from runtime landings; a trace-based live set pinned
+phantoms and condemned the runtime's real files).
 
-`paths_for_cart_item` and `_pinned_versions` are monkeypatched —
-tests must never trace real pipelines nor read the real durable cache."""
+Floors that keep a sweep from ever deleting live data:
+  * no complete census → `live_set` raises; sweep aborts before deleting;
+  * an EMPTY live set refuses to delete anything (misconfiguration signal);
+  * version-log pins and census siblings (sidecar + pyramid) always live.
+
+`get_durable_cache` and `_pinned_versions` are monkeypatched — tests never
+read the real durable cache.
+"""
 import types
 
 import pytest
@@ -19,14 +21,23 @@ import cache.orphan_sweep as orphan_sweep
 from dependency_graph.trace_paths import TraceResolutionError
 
 
-def _ctx(tmp_path, cart=(), mosaics=()):
+def _ctx(tmp_path, archive=()):
     out = tmp_path / "Processed"
     out.mkdir(exist_ok=True)
     return types.SimpleNamespace(
-        shopping_cart=list(cart),
-        archive=[],
+        shopping_cart=[],
+        archive=list(archive),
         output_dir=str(out),
-        mosaics={m: object() for m in mosaics},
+    )
+
+
+def _fake_census(monkeypatch, census):
+    import context.cache as cc
+    monkeypatch.setattr(
+        cc, "get_durable_cache",
+        lambda: types.SimpleNamespace(get=lambda k, default=None:
+                                      census if k == "runtime_live_census"
+                                      else default),
     )
 
 
@@ -34,89 +45,81 @@ def _no_pins(monkeypatch):
     monkeypatch.setattr(orphan_sweep, "_pinned_versions", lambda: set())
 
 
-def test_implicit_subframe_outputs_survive_sweep(tmp_path, monkeypatch):
-    """A Subframe store output — produced by the implicit per-mosaic preview
-    pipeline, named by NO cart entry — must classify live and survive a
-    delete sweep, while a genuinely unreferenced file in the same dir goes."""
-    ctx = _ctx(tmp_path, cart=[("stack", "S1", "PixInsight Master")],
-               mosaics=["M1"])
-    out = tmp_path / "Processed"
-    sub = out / "store_mosaic_color_channel_subframe"
-    sub.mkdir()
-    preview = sub / "abc123.tiff"
-    preview.write_bytes(b"live")
-    orphan = sub / "dead00.tiff"
-    orphan.write_bytes(b"orphan")
-    stack_master = out / "s1.xisf"
-    stack_master.write_bytes(b"live")
-
-    def fake_paths(item, strict=False, **kwargs):
-        assert strict, "live set must always trace strict"
-        if item == ("mosaic", "M1", "Subframe"):
-            return [preview]
-        if item == ("stack", "S1", "PixInsight Master"):
-            return [stack_master]
-        raise AssertionError(f"unexpected item {item!r}")
-
-    monkeypatch.setattr(orphan_sweep, "paths_for_cart_item", fake_paths)
+def test_live_set_refuses_without_complete_census(tmp_path, monkeypatch):
+    """No census, or an incomplete one → refuse loudly. Sweeping against
+    anything but a complete runtime ledger is forbidden."""
     _no_pins(monkeypatch)
+    ctx = _ctx(tmp_path)
+
+    _fake_census(monkeypatch, None)
+    with pytest.raises(TraceResolutionError):
+        orphan_sweep.live_set(ctx)
+
+    _fake_census(monkeypatch, {"paths": ["/x.tiff"], "complete": False})
+    with pytest.raises(TraceResolutionError):
+        orphan_sweep.live_set(ctx)
+
+
+def test_live_set_from_census_archive_and_siblings(tmp_path, monkeypatch):
+    """The live set = census paths + archive paths, each expanded with its
+    sidecar + pyramid siblings, plus version-log pins."""
+    _fake_census(monkeypatch, {
+        "paths": [str(tmp_path / "Processed" / "op" / "aaaa.tiff")],
+        "complete": True,
+    })
+    monkeypatch.setattr(
+        orphan_sweep, "_pinned_versions",
+        lambda: {str(tmp_path / "pinned.tiff")},
+    )
+    ctx = _ctx(tmp_path, archive=[
+        ("mosaic", "M1", "P", [str(tmp_path / "Processed" / "kept.tiff")]),
+    ])
+
+    live = orphan_sweep.live_set(ctx)
+    assert str(tmp_path / "Processed" / "op" / "aaaa.tiff") in live
+    assert str(tmp_path / "Processed" / "op" / "aaaa.tiff.json") in live
+    assert str(tmp_path / "Processed" / "op" / "aaaa_tiles.tiff") in live
+    assert str(tmp_path / "Processed" / "kept.tiff") in live
+    assert str(tmp_path / "pinned.tiff") in live
+
+
+def test_sweep_deletes_orphans_sparing_census(tmp_path, monkeypatch):
+    """Only files absent from the census (and pins/archive/siblings) are
+    orphans; delete=True removes exactly those."""
+    _no_pins(monkeypatch)
+    out = tmp_path / "Processed"
+    op = out / "op"
+    op.mkdir(parents=True)
+    live_file = op / "live00.tiff"
+    live_file.write_bytes(b"live")
+    live_pyramid = op / "live00_tiles.tiff"
+    live_pyramid.write_bytes(b"pyramid")
+    dead = op / "dead00.tiff"
+    dead.write_bytes(b"orphan")
+
+    _fake_census(monkeypatch, {"paths": [str(live_file)], "complete": True})
+    ctx = _ctx(tmp_path)
 
     report = orphan_sweep.sweep(ctx, delete=True)
-
-    assert preview.exists(), "implicit Subframe product was swept"
-    assert stack_master.exists()
-    assert not orphan.exists()
+    assert live_file.exists()
+    assert live_pyramid.exists()          # sibling of a census path
+    assert not dead.exists()
     assert report["deleted"] == 1
 
 
-def test_implicit_items_enumerate_every_mosaic(tmp_path):
-    ctx = _ctx(tmp_path, mosaics=["M1", "M2"])
-    assert sorted(orphan_sweep._implicit_preview_items(ctx)) == [
-        ("mosaic", "M1", "Subframe"),
-        ("mosaic", "M2", "Subframe"),
-    ]
-
-
-def test_ctx_without_mosaics_yields_no_implicit_items(tmp_path):
-    """A minimal ctx (CLI callers, tests) must not crash the live set."""
-    ctx = types.SimpleNamespace(shopping_cart=[], archive=[], output_dir=None)
-    assert orphan_sweep._implicit_preview_items(ctx) == []
-
-
-def test_trace_failure_propagates_and_nothing_is_deleted(tmp_path, monkeypatch):
-    """An unresolvable trace — here on an IMPLICIT preview item — must raise
-    out of `sweep` before any walk/delete: a partial live set would classify
-    that item's real outputs as orphans."""
-    ctx = _ctx(tmp_path, mosaics=["M1"])
-    victim = tmp_path / "Processed" / "keep.tiff"
-    victim.write_bytes(b"x")
-
-    def boom(item, strict=False, **kwargs):
-        raise TraceResolutionError("entity absent from context")
-
-    monkeypatch.setattr(orphan_sweep, "paths_for_cart_item", boom)
-    _no_pins(monkeypatch)
-
-    with pytest.raises(TraceResolutionError):
-        orphan_sweep.sweep(ctx, delete=True)
-    assert victim.exists()
-
-
 def test_empty_live_set_refuses_to_delete(tmp_path, monkeypatch):
-    """Empty cart + no mosaics resolves an empty live set: every file would
-    classify as an orphan, so `sweep` must floor — zero deletions."""
-    ctx = _ctx(tmp_path)
-    victim = tmp_path / "Processed" / "keep.tiff"
-    victim.write_bytes(b"x")
-
-    monkeypatch.setattr(
-        orphan_sweep, "paths_for_cart_item",
-        lambda *a, **k: pytest.fail("nothing to trace"),
-    )
+    """A complete-but-empty census must never license wiping the output
+    tree — the defensive floor survives the Phase 1b rebase."""
     _no_pins(monkeypatch)
+    out = tmp_path / "Processed"
+    op = out / "op"
+    op.mkdir(parents=True)
+    (op / "something.tiff").write_bytes(b"data")
+
+    _fake_census(monkeypatch, {"paths": [], "complete": True})
+    ctx = _ctx(tmp_path)
 
     report = orphan_sweep.sweep(ctx, delete=True)
-
-    assert report["skipped_empty_live"] is True
+    assert (op / "something.tiff").exists()
+    assert report.get("skipped_empty_live") is True
     assert report["deleted"] == 0
-    assert victim.exists()

@@ -750,11 +750,40 @@ def run_graph(
 
     _report_disk_bloat(root)
     _report_pass_end(root)
+    _store_runtime_census(root)
 
     return root.final_result, RunStats(
         num_nodes_run=num_nodes_run,
         trace=trace_list,
     )
+
+
+def _store_runtime_census(rt: "GraphRuntime") -> None:
+    """Persist the run's landed-path census durably — the orphan sweep's
+    live-set (Phase 1b: runtime truth replaces trace predictions).
+
+    Stored ONLY when the pass ran everything it was given (no never-run
+    nodes): a partial census would classify unreached-but-live files as
+    orphans, so the sweep refuses to operate on one. Never raises."""
+    try:
+        from cache.types import NeverRun
+        incomplete = any(
+            rt.results.get(n, NeverRun) == NeverRun for n in rt._graph
+        )
+        paths = sorted(rt.landed_paths)
+        if incomplete:
+            print(f"### runtime census NOT stored (pass incomplete); "
+                  f"{len(paths)} landed paths this pass")
+            return
+        from context import context
+        import time as _time
+        context["runtime_live_census"] = {
+            "paths": paths, "ts": _time.time(), "complete": True,
+        }
+        print(f"### runtime census stored: {len(paths)} live paths")
+    except Exception as e:
+        print(f"### runtime census store failed (non-fatal): "
+              f"{type(e).__name__}: {e}")
 
 
 def _report_pass_end(rt: "GraphRuntime") -> None:

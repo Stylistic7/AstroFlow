@@ -391,24 +391,25 @@ def _eager_trace_pipeline(
 
 
 def _version_supersede_map(pipeline_name: str, graph) -> dict:
-    """`{node: (version_log_key, expected_path)}` for every display-tap node in
-    `graph`. Attached to the sub-graph `run_pipeline` returns; the graph
-    runtime consults it at node completion to delete the superseded (N-1)
-    version's files THE MOMENT the new output lands — the deterministic,
-    write-anchored half of graceful N/N-1 versioning (`version_log.supersede`).
-    Pure walk (resolve_output_paths + extract_pipeline_taps), ~ms."""
-    from dependency_graph.trace_paths import resolve_output_paths
+    """`{node: version_log_key}` for every display-tap node in `graph`.
+    Attached to the sub-graph `run_pipeline` returns; the runtime consults
+    it at node completion to record the landed version and delete the
+    superseded (N-1) files.
+
+    Phase 1b (2026-08-08): the map carries the product IDENTITY only —
+    (object, pipeline, display, filter), which is hash-generation-free.
+    The landed PATH comes from the node's ACTUAL runtime result at
+    `_mark_done`, never from `resolve_output_paths`: the predicted path
+    diverged from runtime landings, so supersede's landed-file guard made
+    the whole mechanism silently refuse for a week while duplicate
+    generations piled up on disk."""
     from products import version_log
-    paths = resolve_output_paths(graph)
     return {
-        node: (
-            version_log.key(object_type, object_id, pipeline_name,
-                            display, filter_value),
-            paths[node],
-        )
+        node: version_log.key(object_type, object_id, pipeline_name,
+                              display, filter_value)
         for node, (object_type, object_id, display, filter_value)
         in extract_pipeline_taps(graph)
-        if display is not None and node in paths
+        if display is not None
     }
 
 
@@ -465,21 +466,11 @@ def _store_tap_snapshot(pipeline_fn, pipeline_name: str, entity, graph) -> None:
     ref = ContextRef.store(("tap_snapshots", str(key)), entries)
     context.or_equals("tap_snapshots", {key: ref})
 
-    # Record each display product's new output in its N/N-1 version log. We only
-    # reach here when the content-addressed snapshot changed (new source/content
-    # hash), but the per-op call_hash dedup inside `record` means an unchanged
-    # display tap (same call_hash as before) logs nothing — so a change that
-    # doesn't move a given tap's output leaves its history untouched. Only
-    # display taps participate (`display is not None`); non-display intermediates
-    # are never shown, so they carry no version history.
-    from products import version_log
-    for e in entries:
-        if e.get("display") is not None:
-            version_log.record(
-                version_log.key(e["object_type"], e["object_id"], pipeline_name,
-                                e["display"], e["filter"]),
-                e["path"],
-            )
+    # Phase 1b: the version log is written ONLY at runtime landings
+    # (`_mark_done` → `version_log.supersede` with the node's actual result
+    # path). The prediction-time `record()` that lived here wrote predicted
+    # paths into the log — the ledger entries that diverged from what the
+    # runtime actually built, pinning phantoms and orphaning real files.
 
 
 def _build_ephemeral_registry(traced_graphs):

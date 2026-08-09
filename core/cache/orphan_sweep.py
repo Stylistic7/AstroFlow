@@ -1,20 +1,14 @@
 """Global orphan reconciliation for `context.output_dir` — the catch-all GC.
 
-The live set is the union of:
-  * every path produced by re-tracing each cart item's pipeline against the
-    current context (`trace_paths.paths_for_cart_item`) — deterministic from the
-    trace, no file reads, sub-second per item;
+The live set (Phase 1b — RUNTIME truth, no trace predictions) is the union of:
+  * the **runtime census**: every path the last COMPLETE pass actually landed
+    (hits and misses alike), collected at `_mark_done` and stored durably at
+    run completion. This replaced trace-based prediction after predictions
+    were proven to diverge from runtime landings (phantoms pinned, real
+    files condemned). No complete census → the sweep refuses to run.
   * every path preserved in `context.archive`;
-  * **every path any product_versions log references, unconditionally** — a
-    log holds the current version plus, mid-rebuild, the last-good the UI is
-    still showing. Deleting superseded versions is `version_log.supersede`'s
-    job at node completion, never the sweep's.
-  * every output of the IMPLICIT preview pipeline: `build_preview_graph`
-    dispatches `Subframe` over every mosaic ("every mosaic is implicitly in
-    the cart"), so its products — placed panels, merged channels, stored
-    previews — are live even though no explicit cart entry names them.
-    Without these the sweep deletes the whole subframe preview layer and
-    every run deterministically rebuilds it.
+  * **every path any product_versions log references, unconditionally** — the
+    log is now written only at landings, so its entries are real files.
   * plus each primary's `.json` sidecar and `<stem>_tiles.tiff` pyramid.
 
 Anything under `output_dir` not in the live set is an orphan.
@@ -38,7 +32,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from dependency_graph.trace_paths import paths_for_cart_item
+from dependency_graph.trace_paths import TraceResolutionError
 from file_io.sidecar import sidecar_path_for
 
 
@@ -71,30 +65,25 @@ def _pinned_versions() -> set[str]:
     return out
 
 
-def _implicit_preview_items(ctx) -> list[tuple[str, str, str]]:
-    """The cart items `build_preview_graph` implies but never writes into
-    `ctx.shopping_cart`: every mosaic runs the `Subframe` pipeline ("every
-    mosaic is implicitly in the cart"). The live set must trace these too, or
-    the sweep deletes the whole subframe preview layer every time it runs."""
-    return [("mosaic", mosaic_id, "Subframe")
-            for mosaic_id in (getattr(ctx, "mosaics", None) or {})]
-
-
 def live_set(ctx) -> set[str]:
-    """Union of cart-traced + implicit-preview + archive-preserved primaries
-    (with siblings) and the versioning-pinned previous versions.
-
-    Traces each item — explicit cart entries AND the implicit Subframe
-    preview per mosaic — `strict=True`: if ANY item can't be resolved to its
-    outputs (entity absent, pipeline unregistered, trace raised) this raises
-    `TraceResolutionError` and `sweep` aborts BEFORE deleting anything — a
-    partial live set would misclassify that item's live files as orphans. Fail
-    loud rather than delete against an incomplete picture."""
-    primaries: set[str] = set()
-    for item in (ctx.shopping_cart or []):
-        primaries.update(str(p) for p in paths_for_cart_item(tuple(item), strict=True))
-    for item in _implicit_preview_items(ctx):
-        primaries.update(str(p) for p in paths_for_cart_item(item, strict=True))
+    """Union of the runtime census + archive-preserved primaries (with
+    siblings) and the versioning-pinned entries. Raises
+    `TraceResolutionError` when no COMPLETE census exists — fail loud
+    rather than delete against an incomplete picture."""
+    # Phase 1b: liveness = the RUNTIME CENSUS — every path the last COMPLETE
+    # pass actually landed (hits and misses alike), stored at run completion.
+    # Trace predictions are gone from this set: they proved to diverge from
+    # runtime landings (phantom paths pinned, real files condemned), which
+    # made the old trace-based live-set the most dangerous code in the
+    # system. No census, or an incomplete one → refuse to sweep at all.
+    from context.cache import get_durable_cache
+    census = get_durable_cache().get("runtime_live_census")
+    if not (isinstance(census, dict) and census.get("complete")):
+        raise TraceResolutionError(
+            "no complete runtime census available — run a full pass to "
+            "completion first; sweeping against predictions is forbidden"
+        )
+    primaries: set[str] = set(census.get("paths", []))
     for entry in (ctx.archive or []):
         if len(entry) >= 4:  # (object_type, object_id, pipeline, [paths])
             primaries.update(str(p) for p in entry[3])
