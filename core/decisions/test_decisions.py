@@ -167,6 +167,63 @@ def test_rotation_outlier_detection_and_exclusion(test_context):
     )
 
 
+def test_decisions_for_objects_scopes_to_closure():
+    """The cache key of an image may depend only on decisions pertaining to
+    that object or a contained object. `decisions_for_objects` enforces the
+    mosaic/target side of that rule: keys owned by closure ids stay, keys
+    owned by anything else are dropped — so a decision on an unrelated
+    object can never move this pipeline's config hash."""
+    from types import SimpleNamespace
+    from decisions.decisions import (
+        BinaryChoice, DecisionKey, DecisionOverride, ObjectType,
+        decisions_for_objects,
+    )
+
+    mos_key = DecisionKey.quarantine(ObjectType.MOSAIC, "mosaic_aaaa")
+    run_key = DecisionKey.rotation_outlier("stack_bbbb", "run_1")
+    unrelated = DecisionKey.quarantine(ObjectType.STACK, "stack_zzzz")
+    o = DecisionOverride(choice=BinaryChoice.EXCLUDE)
+    overrides = frozendict({mos_key: o, run_key: o, unrelated: o})
+
+    scoped = decisions_for_objects(overrides, {"mosaic_aaaa", "stack_bbbb"})
+    assert mos_key in scoped          # object-level key, owned by closure
+    assert run_key in scoped          # run-level key, owning stack in closure
+    assert unrelated not in scoped    # unrelated ownership NEVER enters
+
+    # Empty overrides: scoped == global — the invariant that made deploying
+    # this fix hash-neutral while no decisions exist.
+    assert decisions_for_objects(frozendict(), {"x"}) == frozendict()
+
+    # Shared-calibration inclusion: a decision parented on a cal-stack id is
+    # consumed by calibration_plan/resolve_calibration inside ANY pipeline
+    # that might select that master — config_for unions cal-stack ids into
+    # every closure, so the key must survive the filter when they are.
+    cal_key = DecisionKey.quarantine(ObjectType.STACK, "cal_dddd")
+    overrides2 = frozendict({cal_key: o, unrelated: o})
+    scoped2 = decisions_for_objects(
+        overrides2, {"mosaic_aaaa"} | {"cal_dddd"},  # closure | cal_stack_ids
+    )
+    assert cal_key in scoped2
+    assert unrelated not in scoped2
+
+
+def test_decision_closure_ids_walks_mosaic_containment():
+    """The closure of a mosaic = itself + its targets + their stacks,
+    resolved from the build's own objects dicts via plain id tuples."""
+    from types import SimpleNamespace
+    from compute_graph.compute_graph import _decision_closure_ids
+
+    t1 = SimpleNamespace(stable_hash="t1", stack_ids=("s1", "s2"))
+    mosaic = SimpleNamespace(stable_hash="m1", target_ids=("t1",))
+    ids = _decision_closure_ids(mosaic, "m1", {"target": {"t1": t1}})
+    assert ids == frozenset({"m1", "t1", "s1", "s2"})
+
+    # A target entity contributes its own stacks.
+    tgt = SimpleNamespace(stable_hash="t9", stack_ids=("s9",))
+    ids = _decision_closure_ids(tgt, "t9", {"target": {}})
+    assert ids == frozenset({"t9", "s9"})
+
+
 def test_subframe_quality_decision_and_filtering(test_context):
     """Default keeps ALL subframes (no decision spam); a per-Stack
     override dials a specific Stack down even though the default would

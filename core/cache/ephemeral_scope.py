@@ -30,12 +30,10 @@ _EPHEMERAL_SCOPE: ContextVar[bool] = ContextVar(
 
 @contextmanager
 def ephemeral_intermediates():
-    """Mark every `@node` call inside this block as `_ephemeral=True`.
-
-    See module docstring for full semantics.
-    """
-    token = _EPHEMERAL_SCOPE.set(True)
-    try:
-        yield
-    finally:
-        _EPHEMERAL_SCOPE.reset(token)
+    """NO-OP since 2026-08-08: the ephemeral-GC decision (see
+    project_gc_preflight_removal_decision) — every image persists; the
+    entire reclaim machinery is being deleted. This stays as an inert
+    context manager so pipeline bodies don't change (op hashes hold).
+    Phase 2 replaces it with scope-local dynamic-subgraph semantics
+    (skip-if-terminals-cached; self-clean on conclusion)."""
+    yield

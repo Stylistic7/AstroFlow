@@ -31,7 +31,7 @@ from decisions.compute_graph import (
     scatter_customize_targets,
 )
 from decisions.settings import ClusteringSettings, DevelopmentSettings
-from decisions.decisions import decisions_for_stack
+from decisions.decisions import decisions_for_objects
 from compute_graph.objects import Objects
 
 log = structlog.get_logger()
@@ -696,6 +696,36 @@ def trace_pipeline(
         return None
 
 
+def _decision_closure_ids(entity, entity_id: str, objects_by_type) -> frozenset:
+    """The containment closure of a cart entity, as stable-hash ids: the
+    entity itself, plus (for a mosaic) its targets and their stacks, plus
+    (for a target) its stacks. Pure id-tuple walking — `Mosaic.target_ids`
+    and `Target.stack_ids` are plain hash tuples, resolved against the
+    build's own `objects` dicts (never live context). Used to scope the
+    decisions baked into a pipeline's ProcessingConfig."""
+    from cache.context_ref import ContextRef
+
+    def _unwrap(v):
+        return v.get() if isinstance(v, ContextRef) else v
+
+    ids = {entity_id}
+    sh = getattr(entity, "stable_hash", None)
+    if sh:
+        ids.add(sh)
+    target_ids = tuple(getattr(entity, "target_ids", ()) or ())
+    targets_dict = objects_by_type.get("target", {})
+    targets = [entity] if hasattr(entity, "stack_ids") else []
+    for tid in target_ids:
+        ids.add(tid)
+        ref = targets_dict.get(tid)
+        if ref is not None:
+            targets.append(_unwrap(ref))
+    for t in targets:
+        for sid in tuple(getattr(t, "stack_ids", ()) or ()):
+            ids.add(sid)
+    return frozenset(ids)
+
+
 @node
 def build_main_processing_graph(
     development_settings: DevelopmentSettings,
@@ -729,10 +759,31 @@ def build_main_processing_graph(
     from products.product import object_class
     objects_by_type = {"stack": stacks, "target": targets, "mosaic": mosaics}
 
-    def config_for(stack_id=None):
-        decisions = (
-            decisions_for_stack(decision_overrides, stack_id) if stack_id
-            else fd(decision_overrides)
+    # Calibration stacks are SHARED infrastructure: `calibration_plan` runs
+    # `resolve_calibration` on cal stacks themselves (a flat resolving its
+    # dark), so decisions parented on a cal-stack id are consumed inside any
+    # pipeline that might select that master. They join every closure —
+    # a cal decision legitimately invalidates all potential consumers.
+    cal_stack_ids = frozenset(objects.calibration_stacks.keys())
+
+    def config_for(entry_type, entity, entity_id):
+        # Scope the baked decisions to the entity's CONTAINMENT CLOSURE plus
+        # the shared cal-stack ids — the cache key of an image may depend
+        # only on decisions pertaining to that object, a contained object,
+        # or shared calibration. One uniform filter for all entry types
+        # (a stack's closure is itself; run-level keys carry the stack as
+        # parent, matching the old decisions_for_stack semantics exactly).
+        # Baking the GLOBAL dict here (the old mosaic/target behaviour)
+        # meant any decision write anywhere re-keyed every mosaic's tail —
+        # and the old stack filter had the dual gap: cal-parented decisions
+        # were invisible to the ops that consume them.
+        closure = (
+            frozenset({entity_id})
+            if entry_type == "stack"
+            else _decision_closure_ids(entity, entity_id, objects_by_type)
+        )
+        decisions = decisions_for_objects(
+            decision_overrides, closure | cal_stack_ids,
         )
         return ProcessingConfig(
             calibration_stacks=cal_stacks_ref,
@@ -771,7 +822,7 @@ def build_main_processing_graph(
             log.warning("Unknown pipeline in cart", entry=entry)
             continue
         entity = objects_by_type[type][id].get()
-        cfg = config_for(id if type == "stack" else None)
+        cfg = config_for(type, entity, id)
         task = (run_pipeline, entity, cfg, pipeline_name, type)
         graph[task] = set()
         pipeline_tasks.append(task)

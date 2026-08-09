@@ -210,3 +210,26 @@ def decisions_for_stack(
         k: v for k, v in decision_overrides.items()
         if k.matches_stack(stack_id)
     })
+
+
+def decisions_for_objects(
+    decision_overrides: frozendict, object_ids,
+) -> frozendict:
+    """Filter decision overrides to those OWNED by any id in `object_ids` —
+    the containment closure of a pipeline's entity (the object itself plus
+    every contained object: a mosaic's targets, their stacks).
+
+    `parent_stack_id` is the owning object's id for every DecisionKey shape
+    (== subject_id for object-level keys, == the owning stack for run-level
+    keys), so ownership is a single-field membership test.
+
+    The mosaic/target analogue of `decisions_for_stack`, and the same
+    invariant: a decision on an UNRELATED object must never move this
+    pipeline's cache keys. Before this existed, mosaic pipelines baked the
+    global overrides dict — one quarantine click on any object re-keyed
+    every mosaic's full-config consumers (place_image and downstream)."""
+    ids = frozenset(object_ids)
+    return frozendict({
+        k: v for k, v in decision_overrides.items()
+        if k.parent_stack_id in ids
+    })

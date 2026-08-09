@@ -198,6 +198,13 @@ def _apply_preflight(graph: Graph, is_subgraph: bool = False) -> Graph:
     `_restore_single_terminal`. The top-level graph has no such invariant, so
     it's off by default.
     """
+    # DISABLED 2026-08-08 (the GC/preflight removal decision): dispatch the
+    # full graph; the cached.remote layer is the single skip mechanism — a
+    # satisfied node is a fast cache hit, not a prediction. This also retires
+    # the prediction layer as a witness: every "hash flap" artifact this week
+    # (version-log prediction entries, probe expectations, snapshots) lived on
+    # the prediction side while the runtime's artifacts stayed consistent.
+    return graph
     if not graph:
         return graph
     try:
