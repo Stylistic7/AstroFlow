@@ -279,6 +279,22 @@ class GraphRuntime:
             root._landed_paths = set()
         return root._landed_paths
 
+    @property
+    def census_sound(self) -> bool:
+        """False once ANY node in ANY runtime (this one or a child) failed
+        or was Skipped this run.
+
+        A census is a DELETION authority: files not in it are orphans. A
+        failed or skipped node contributes no landed path, yet its output
+        may well exist on disk from an earlier run and still be live — so
+        one failure anywhere makes the census unsafe to store. Set at the
+        `_mark_done` chokepoint, which every runtime funnels through, so
+        child-subgraph failures count too (the root graph alone can't see
+        them: a child's failure surfaces as a FAILED parent node, never as
+        a never-run one)."""
+        root = self._root
+        return getattr(root, "_census_sound", True)
+
     def make_fn_args(self, node: Node) -> list[Any]:
         """Build the argument list for a node's remote function.
 
@@ -369,6 +385,10 @@ class GraphRuntime:
         # a versioning hiccup must never fail the run. Every landed path
         # also feeds the run's census (`landed_paths`) — the runtime ledger
         # the orphan sweep's live-set is built from.
+        if not succeeded:
+            # Failure or Skipped sentinel: the census can no longer claim to
+            # be a complete picture of what's live (see `census_sound`).
+            self._root._census_sound = False
         if succeeded:
             landed = _landed_path(result)
             if landed is not None:

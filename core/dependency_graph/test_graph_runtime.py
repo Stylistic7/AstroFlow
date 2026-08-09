@@ -375,6 +375,10 @@ class TestVersionSupersede:
         rt.node_completed(B, Skipped)   # sentinel: no filename/path → no call
         assert calls == []
         assert rt.landed_paths == set()
+        # A failure or skip makes the census an incomplete picture of what's
+        # live — storing it would condemn real files as orphans.
+        assert rt.census_sound is False
+
 
     def test_child_subgraph_map_merges_into_root(self, monkeypatch):
         """run_pipeline attaches the map to its RETURNED sub-graph; the child
@@ -400,3 +404,36 @@ class TestVersionSupersede:
         assert calls == [(("product_versions", "c"), "/out/RUNTIME_c.tiff")]
         # Child landings surface into the ROOT census.
         assert "/out/RUNTIME_c.tiff" in rt.landed_paths
+
+
+class TestRuntimeCensus:
+    """The census is a DELETION authority (the orphan sweep's live-set), so
+    it may only be stored from a complete, failure-free pass."""
+
+    def test_census_collects_landings_and_starts_sound(self):
+        from types import SimpleNamespace
+        A = _node(a_task)
+        rt = GraphRuntime(Graph({A: []}))
+        assert rt.census_sound is True
+        rt.node_completed(A, SimpleNamespace(filename="/out/a.tiff"))
+        assert rt.landed_paths == {"/out/a.tiff"}
+        assert rt.census_sound is True
+
+    def test_child_failure_unsounds_the_root_census(self, monkeypatch):
+        """A child-subgraph failure surfaces as a FAILED parent node, never
+        a never-run one — so only the `_mark_done` chokepoint can see it.
+        Without this, a census stored after a failed subgraph would condemn
+        that subgraph's still-live outputs as orphans."""
+        parent_node = _node(a_task)
+        rt = GraphRuntime(Graph({parent_node: []}))
+        C, done = _node(c_task), _node(gather_task)
+        monkeypatch.setattr(
+            "dependency_graph.dependency_graph._apply_preflight",
+            lambda g, is_subgraph=False: g,
+        )
+        rt.start(parent_node)
+        rt.node_completed(parent_node, Graph({done: [C]}))
+
+        child = rt._children[parent_node]
+        child.node_failed(C, RuntimeError("boom"))
+        assert rt.census_sound is False   # root sees the child's failure

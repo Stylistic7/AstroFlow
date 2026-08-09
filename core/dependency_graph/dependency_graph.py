@@ -452,6 +452,7 @@ def run_graph(
     drain_event: "threading.Event | None" = None,
     preflight: bool = True,
     node_sort_key: "Callable[[Node, list], Any] | None" = None,
+    store_census: bool = False,
 ) -> tuple[Any, "RunStats"]:
     num_nodes_run: int = 0
     last_status_time: float = 0
@@ -750,7 +751,8 @@ def run_graph(
 
     _report_disk_bloat(root)
     _report_pass_end(root)
-    _store_runtime_census(root)
+    if store_census:
+        _store_runtime_census(root)
 
     return root.final_result, RunStats(
         num_nodes_run=num_nodes_run,
@@ -762,18 +764,25 @@ def _store_runtime_census(rt: "GraphRuntime") -> None:
     """Persist the run's landed-path census durably — the orphan sweep's
     live-set (Phase 1b: runtime truth replaces trace predictions).
 
-    Stored ONLY when the pass ran everything it was given (no never-run
-    nodes): a partial census would classify unreached-but-live files as
-    orphans, so the sweep refuses to operate on one. Never raises."""
+    Called ONLY for the authoritative full-graph run (`store_census=True`);
+    a partial graph — e.g. the regroup run's handful of nodes — would
+    otherwise overwrite the real census and make nearly everything on disk
+    look unreferenced.
+
+    Stored ONLY when the pass is a COMPLETE picture: no never-run node in
+    the root graph AND no failure or skip anywhere, including inside child
+    subgraphs (`census_sound`). Anything less would classify live files as
+    orphans. Never raises."""
     try:
         from cache.types import NeverRun
-        incomplete = any(
+        never_ran = any(
             rt.results.get(n, NeverRun) == NeverRun for n in rt._graph
         )
         paths = sorted(rt.landed_paths)
-        if incomplete:
-            print(f"### runtime census NOT stored (pass incomplete); "
-                  f"{len(paths)} landed paths this pass")
+        if never_ran or not rt.census_sound:
+            why = "never-run nodes" if never_ran else "a failure or skip"
+            print(f"### runtime census NOT stored ({why} this pass); "
+                  f"{len(paths)} landed paths seen")
             return
         from context import context
         import time as _time
