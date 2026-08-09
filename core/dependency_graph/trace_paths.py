@@ -473,6 +473,17 @@ def resolve_output_paths(graph) -> dict:
             node_hash[n] = Path(path).stem
             paths[n] = str(path)
         else:
+            # A PRESENTED subgraph builder (builder ≡ terminal,
+            # `present_terminal`): its stamped path IS its terminal's, so
+            # the workflow UI's on-disk checks and downstream filename_fn
+            # args fold the deliverable's identity. Must win over dep
+            # inheritance below, which would leak the SOURCE input's hash
+            # into every downstream key.
+            presented = getattr(n, "_presents_path", None)
+            if presented is not None:
+                node_hash[n] = Path(presented).stem
+                paths[n] = str(presented)
+                continue
             # Pass-through propagation for helpers without filename_fn.
             deps = list(graph.get(n, []) or [])
             inherited = next(
@@ -530,7 +541,10 @@ def _walk_and_resolve_filenames_tagged(graph) -> list[dict]:
             "path": path,
             "op_name": _op_name_for_node(n),
             "identity": _identity_for_node(n),
-            "is_final": bool(getattr(n.task, "_final", False)),
+            # Node-level attr first: a presented builder carries its
+            # TERMINAL's finality (see `present_terminal`).
+            "is_final": bool(getattr(n, "_final", False)
+                             or getattr(n.task, "_final", False)),
             "display": display,
             "filter": filter_value,
             "object_type": tap_object_type,
@@ -540,6 +554,12 @@ def _walk_and_resolve_filenames_tagged(graph) -> list[dict]:
 
 
 def _op_name_for_node(n) -> str:
+    # A presented builder answers with its TERMINAL's op name, so
+    # `traced_path_for(item, "merge_images_oss", ...)`-style lookups
+    # (archive, sweep) keep working across the subgraph boundary.
+    presented = getattr(n, "_op_name", None)
+    if presented:
+        return presented
     fn = getattr(n.task, "_function", n.task)
     return getattr(fn, "__name__", "") or getattr(n.task, "__name__", "")
 

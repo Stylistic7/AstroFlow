@@ -139,6 +139,50 @@ def trace(
     return g
 
 
+class IdentityRef:
+    """A stand-in carrying only a `content_hash` — lets trace-time
+    `filename_fn` arithmetic use a subgraph-interior node's identity without
+    holding its handle (cache keys resolve any object with a `content_hash`
+    via `_maybe_use_content_hash`). Same value the real handle would
+    contribute; no node recorded."""
+    __slots__ = ("content_hash",)
+
+    def __init__(self, content_hash: str) -> None:
+        self.content_hash = content_hash
+
+
+def present_terminal(handle, terminal_op, *, path) -> Any:
+    """Builder ≡ terminal: stamp a subgraph-builder handle with its
+    terminal's identity and presentation, so every trace-time reader (tap
+    extraction → UI snapshot + version-supersede map; output-path
+    resolution → workflow UI, archive/sweep lookups) sees the deliverable
+    exactly as if the terminal were inline in the outer graph.
+
+    The runtime half of this identity already exists — a concluded child's
+    terminal result IS the builder node's result — so this only closes the
+    trace-time half. `path` is the terminal's expected output
+    (`terminal_op.filename_fn(...)` arithmetic, with `IdentityRef` standing
+    in for interior handles); `display`/`final` are lifted off the terminal
+    op itself so they can't drift from its decorator.
+
+    DISCIPLINE (one level only): `display=`/`final=True` ops may live in
+    the parent graph, or be the terminal of a subgraph ONE level down —
+    never deeper. A presented builder must not itself contain presented
+    builders bearing display taps.
+    """
+    from pathlib import Path as _P
+    handle.content_hash = _P(path).stem
+    handle._presents_path = str(path)
+    fn = getattr(terminal_op, "_function", terminal_op)
+    handle._op_name = fn.__name__
+    display = getattr(fn, "_display", None) or getattr(terminal_op, "_display", None)
+    if display is not None:
+        handle._display = display
+    if getattr(fn, "_final", False) or getattr(terminal_op, "_final", False):
+        handle._final = True
+    return handle
+
+
 def set_workflow_key(*key_parts: Any) -> None:
     """Inside a `@graph_builder` (or `@pipeline`) body, attach the
     standard workflow-progress callbacks to the active trace's `Graph`,

@@ -39,7 +39,7 @@ import ray
 from decisions.settings import ProcessingConfig
 from decorators import node
 from dependency_graph.classes import Graph
-from dependency_graph.tracing import record
+from dependency_graph.tracing import IdentityRef, present_terminal, record
 from file_io.tiff_file_io import write_tiff_image
 from file_io.tiling import crop_source_region, feather_blend_to_bigtiff
 from file_io.types import TiffFilePath, WithSidecar
@@ -203,22 +203,6 @@ def blend_panels(mosaic: Mosaic, config: ProcessingConfig, rects: tuple,
 # The user-facing helpers                                                     #
 # --------------------------------------------------------------------------- #
 
-class _CropRef:
-    """A stand-in for a crop handle carrying only its identity.
-
-    `process_in_panels` derives each tile's manifest entry from the op's own
-    output identity (`op.filename_fn(*lead, crop)`), which needs the crop's
-    `content_hash`. The crop node now lives inside a per-panel subgraph, so
-    the outer trace never sees its handle — but the crop's identity is pure
-    arithmetic (`crop_panel.filename_fn(...)`), and cache keys resolve any
-    object with a `content_hash` (`hashing._maybe_use_content_hash`). Same
-    value the handle produced; no node required."""
-    __slots__ = ("content_hash",)
-
-    def __init__(self, content_hash: str) -> None:
-        self.content_hash = content_hash
-
-
 @ray.remote(num_cpus=0.1)
 def _panel_stage(op_ref, mosaic, rect, scope_hashes, lead, source_merged,
                  dry_run=False):
@@ -287,16 +271,18 @@ def process_in_panels(op, *op_args, viewbox, blend=blend_panels) -> PanelMosaic:
             mosaic, rect, source.merged, scope_hashes)).stem
         # The tile's new identity IS its op's output identity — folds op code,
         # config (via the op's narrow), and the scoped source, drift-free.
-        tile_id = Path(op.filename_fn(*lead, _CropRef(crop_id))).stem
+        tile_path = op.filename_fn(*lead, IdentityRef(crop_id))
         handle = record(_panel_stage, op_ref, mosaic, rect, scope_hashes,
                         lead, source.merged)
-        # Stamp the subgraph handle with the identity of what it RESOLVES to
-        # (the op's output), so `blend`'s key — and every downstream key — is
-        # bit-identical to the pre-subgraph version.
-        handle.content_hash = tile_id
+        # Builder ≡ terminal: the handle presents the op's output — identity
+        # (so `blend`'s key and every downstream key are bit-identical to the
+        # pre-subgraph version), expected path (so the workflow UI's on-disk
+        # checks see the tile, not an opaque stub), and op name. The GPU ops
+        # carry no display=, so nothing UI-facing is stamped here.
+        present_terminal(handle, op, path=tile_path)
         handles.append(handle)
         rects.append(rect)
-        manifest[pid] = tile_id
+        manifest[pid] = Path(tile_path).stem
     merged = blend(mosaic, config, tuple(rects), *handles)
     return PanelMosaic(merged=merged, manifest=manifest, mosaic=mosaic)
 

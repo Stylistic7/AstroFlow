@@ -587,7 +587,14 @@ def extract_pipeline_taps(graph):
             continue
         task = n.task
         fn = getattr(task, "_function", task)
-        base_display = getattr(fn, "_display", None) or getattr(task, "_display", None)
+        # NODE-level attr first: a presented subgraph builder carries its
+        # terminal's `display` (`present_terminal` — builder ≡ terminal),
+        # so a deliverable that lives one level down still registers its
+        # tap here — and therefore in the snapshot the UI reads and the
+        # version-supersede map built from these yields.
+        base_display = (getattr(n, "_display", None)
+                        or getattr(fn, "_display", None)
+                        or getattr(task, "_display", None))
         if base_display is None:
             continue
         # Ephemeral nodes (inside an `ephemeral_intermediates()` scope and not

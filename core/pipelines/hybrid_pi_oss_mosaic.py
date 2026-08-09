@@ -25,10 +25,14 @@ Three entry points, matching the PI Master pipeline:
 * `for_target(target, config)` → per-filter channel masters.
 * `for_mosaic(mosaic, config)` → per-filter mosaic outputs (headline).
 """
-from astroflow.pipeline import pipeline
-from dependency_graph.tracing import workflow_group
+from pathlib import Path
+
+from astroflow.pipeline import pipeline, record
+from dependency_graph.tracing import (
+    IdentityRef, present_terminal, workflow_group,
+)
+from mosaics.merging.oss import merge_images_oss, merge_scope
 from mosaics.color.post_process import bxt_correct_only, color_post_process
-from mosaics.merging.oss import merge_images_oss
 from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
 from stacks.calibration_selection import calibrate
@@ -99,20 +103,13 @@ def for_mosaic(mosaic, config):
     for filter in mosaic.filters:
         viewbox = mosaic.viewbox("Master")
 
-        # Placed-panel images are multi-GB each and only feed the final
-        # OSS merge — wrap them in `ephemeral_intermediates()` so the
-        # `place_image` outputs are reclaimed after the merge consumes them.
-        # `merge_images_oss` is `final=True` (exempt from the scope) — the
-        # kept "Mosaic" deliverable. It is variadic — every panel blends in a
-        # single global pass (one feather, one least-squares flux solve), no
-        # row/strip decomposition.
         # Croman two-pass mosaic: BXT Correct-Only on each PANEL (re-solved)
         # before placement — per-panel aberrations differ across the mosaic —
         # then the sharpening BXT runs on the assembled mosaic
-        # (color_post_process). GPU work → deliberately OUTSIDE the ephemeral
-        # scope (ephemeral = cheap-to-recompute × big; GPU minutes are not
-        # cheap): kept on disk so incremental runs cache-hit, superseded
-        # hashes collected by the orphan sweep.
+        # (color_post_process). GPU work → deliberately OUTSIDE the scope
+        # below (cheap-to-recompute × big is what qualifies for deletion;
+        # GPU minutes are not cheap): kept on disk so incremental runs
+        # cache-hit.
         corrected = {
             tid: bxt_correct_only(targets_by_id[tid], filter, config,
                                   channels[(tid, filter)])
@@ -120,16 +117,36 @@ def for_mosaic(mosaic, config):
             for tid in strip
             if (tid, filter) in channels
         }
-        placed = [
-            place_image(mosaic, targets_by_id[tid], filter, viewbox, config,
-                        corrected[tid])
+        entries = [
+            (targets_by_id[tid], corrected[tid])
             for strip in mosaic.strips
             for tid in strip
             if tid in corrected
         ]
-        if not placed:
+        if not entries:
             continue
-        out[filter] = merge_images_oss(mosaic, filter, *placed)
+        # The placements — multi-GB views whose ONLY consumer is the merge —
+        # live inside a `{N× place_image → merge_images_oss}` subgraph with
+        # delete_intermediates=True: deleted at scope conclusion, while the
+        # variadic merge (one feather, one least-squares flux solve — no
+        # row/strip decomposition) is the terminal and persists. The builder
+        # PRESENTS the merge (builder ≡ terminal): identity + display +
+        # expected path stamped from pure filename_fn arithmetic, so the
+        # "Mosaic" tap, its version chain, and downstream keys are
+        # bit-identical to the inline version.
+        placed_refs = [
+            IdentityRef(Path(place_image.filename_fn(
+                mosaic, target, filter, viewbox, config, channel)).stem)
+            for target, channel in entries
+        ]
+        merge_path = merge_images_oss.filename_fn(
+            mosaic, filter, *placed_refs)
+        handle = record(
+            merge_scope, mosaic, filter, viewbox, config,
+            tuple(target for target, _ in entries),
+            *[channel for _, channel in entries])
+        out[filter] = present_terminal(
+            handle, merge_images_oss, path=merge_path)
 
     # Continue into color post-processing — the same pipeline-agnostic
     # workflow group the OSS-stack hybrid uses, so both pipelines produce

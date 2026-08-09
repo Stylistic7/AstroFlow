@@ -13,6 +13,7 @@ panel-by-panel, and N-1 stacked feather seams accumulate. The math
 below sees every panel at once and is order-independent.
 """
 import numpy as np
+import ray
 import structlog
 from pathlib import Path
 
@@ -242,6 +243,35 @@ def merge_images_oss(
     log.info("OSS merge complete", output=str(output_filename),
              panel_count=new_count, n_inputs=len(inputs))
     return WithSidecar(output_filename)
+
+
+@ray.remote(num_cpus=0.1)
+def merge_scope(mosaic, filter, viewbox, config, targets, *corrected,
+                dry_run=False):
+    """One filter's `{N× place_image → merge_images_oss}` as a dynamic
+    subgraph with `delete_intermediates=True`: the placements — multi-GB
+    views whose only consumer is this merge — are deleted when the scope
+    concludes; the merge (the "Mosaic" deliverable) is the terminal and
+    persists. The caller presents this builder AS the merge via
+    `present_terminal`, so the tap snapshot, version-supersede map, and
+    path resolution see the deliverable exactly as if it were inline.
+
+    `targets` is a tuple aligned with `*corrected` (the BXT'd channels —
+    GPU outputs, deliberately OUTSIDE the scope so they persist and
+    cache-hit on incremental runs)."""
+    del dry_run
+    from dependency_graph.classes import Graph
+    from dependency_graph.tracing import trace
+    from mosaics.placement.astroflow import place_image
+
+    def _body():
+        placed = [
+            place_image(mosaic, target, filter, viewbox, config, channel)
+            for target, channel in zip(targets, corrected)
+        ]
+        return merge_images_oss(mosaic, filter, *placed)
+
+    return Graph(trace(_body), delete_intermediates=True)
 
 
 @node(
