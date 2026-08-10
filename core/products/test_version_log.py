@@ -128,3 +128,15 @@ def test_supersede_unchanged_rebuild_is_a_noop_delete(tmp_path, monkeypatch):
     assert removed == 0
     assert landed.exists()
     assert [e["call_hash"] for e in store["log"]] == ["cccc3333"]
+
+
+def test_key_normalizes_object_type_case():
+    """Writers use class names ("Mosaic", via extract_pipeline_taps); legacy
+    URL routes pass lowercase ("mosaic"). Both must hit the same durable
+    entries — the mismatch silently disabled the dashboard-side N-1
+    fallback (2026-08-10)."""
+    from products import version_log
+    assert version_log.key("mosaic", "i", "p", "d", "H") == \
+        version_log.key("Mosaic", "i", "p", "d", "H")
+    assert version_log.key("stack", "i", "p", "d", None) == \
+        version_log.key("Stack", "i", "p", "d", None)

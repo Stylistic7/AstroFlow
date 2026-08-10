@@ -46,7 +46,16 @@ def key(object_type: str, object_id: str, pipeline: str, display: str,
     `filter` is normalized to `str(filter)` so the write side (raw trace
     `filter`, possibly `None`) and every read side (the tile URL string, the
     dashboard's `str(filter)` columns, a `Product.filter`) all resolve to the
-    SAME key — including the filterless case (`None` → `"None"`)."""
+    SAME key — including the filterless case (`None` → `"None"`).
+
+    `object_type` is normalized to the CLASS-NAME case ("Mosaic") the write
+    side uses (extract_pipeline_taps emits `type(entity).__name__` verbatim):
+    legacy routes pass URL-lowercase ("mosaic"), and the mismatch silently
+    disabled the endpoint-side N-1 fallback — every reader missed every
+    stored entry (2026-08-10, the "not yet built" dashboard). First-letter
+    upper maps both spellings onto the form already durably stored, so no
+    migration."""
+    object_type = str(object_type)[:1].upper() + str(object_type)[1:]
     return (_NS, object_type, object_id, pipeline, display, str(filter))
 
 
