@@ -1,4 +1,5 @@
 import { useState, useContext } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Box,
   MenuItem,
@@ -112,6 +113,7 @@ function RemoveArchiveItemDialog({ item, open, onClose, onConfirm }) {
 export default function ShoppingCartPanel() {
   const { shoppingCart, archive, stacks, targets, mosaics } =
     useContext(AstroFlowContext);
+  const navigate = useNavigate();
   const [removeCartTarget, setRemoveCartTarget] = useState(null);
   const [removeArchiveTarget, setRemoveArchiveTarget] = useState(null);
 
@@ -181,100 +183,104 @@ export default function ShoppingCartPanel() {
         tooltipTitle="Shopping cart"
         ariaLabel="Shopping cart"
       >
-        <MenuItem disabled sx={{ opacity: "1 !important" }}>
-          <Typography variant="caption" sx={{ fontWeight: 600 }}>
-            LIVE CART
-          </Typography>
-        </MenuItem>
-        {cartItems.length === 0 ? (
-          <MenuItem disabled>
-            <Typography variant="body2" color="text.secondary">
-              (empty)
-            </Typography>
-          </MenuItem>
-        ) : (
-          cartItems.map((it) => (
-            <MenuItem
-              key={`cart:${it.type}:${it.id}:${it.pipeline}`}
-              sx={{ display: "flex", flexDirection: "column", alignItems: "flex-start", py: 1 }}
-              disableRipple
-            >
-              <Box sx={{ display: "flex", alignItems: "center", width: "100%", justifyContent: "space-between" }}>
-                <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                  {it.name}
-                </Typography>
-                <Tooltip title="Remove…">
-                  <IconButton
-                    size="small"
-                    onClick={(e) => { e.stopPropagation(); setRemoveCartTarget(it); }}
-                  >
-                    <Delete fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-              </Box>
-              <Box sx={{ display: "flex", gap: 0.5, mt: 0.5, flexWrap: "wrap" }}>
-                <Chip size="small" label={it.type} variant="outlined" />
-                <Chip size="small" label={it.pipeline} variant="outlined" color="info" />
-              </Box>
+        {({ close }) => (
+          <>
+            <MenuItem disabled sx={{ opacity: "1 !important" }}>
+              <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                LIVE CART
+              </Typography>
             </MenuItem>
-          ))
-        )}
-
-        <Divider sx={{ my: 0.5 }} />
-
-        <MenuItem disabled sx={{ opacity: "1 !important" }}>
-          <Typography variant="caption" sx={{ fontWeight: 600 }}>
-            ARCHIVE
-          </Typography>
-        </MenuItem>
-        {archItems.length === 0 ? (
-          <MenuItem disabled>
-            <Typography variant="body2" color="text.secondary">
-              (empty)
-            </Typography>
-          </MenuItem>
-        ) : (
-          archItems.map((it) => (
-            <MenuItem
-              key={`arch:${it.type}:${it.id}:${it.pipeline}`}
-              sx={{ display: "flex", flexDirection: "column", alignItems: "flex-start", py: 1 }}
-              disableRipple
-            >
-              <Box sx={{ display: "flex", alignItems: "center", width: "100%", justifyContent: "space-between" }}>
-                <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                  {it.name}
+            {cartItems.length === 0 ? (
+              <MenuItem disabled>
+                <Typography variant="body2" color="text.secondary">
+                  (empty)
                 </Typography>
-                <Box>
-                  <Tooltip title="Move back to live cart">
-                    <IconButton
-                      size="small"
-                      onClick={(e) => { e.stopPropagation(); moveArchiveToCart(it); }}
-                    >
-                      <Unarchive fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                  <Tooltip title="Remove from archive">
-                    <IconButton
-                      size="small"
-                      onClick={(e) => { e.stopPropagation(); setRemoveArchiveTarget(it); }}
-                    >
-                      <Delete fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                </Box>
-              </Box>
-              <Box sx={{ display: "flex", gap: 0.5, mt: 0.5, flexWrap: "wrap" }}>
-                <Chip size="small" label={it.type} variant="outlined" />
-                <Chip size="small" label={it.pipeline} variant="outlined" color="info" />
-                <Chip
-                  size="small"
-                  icon={<Archive sx={{ fontSize: 14 }} />}
-                  label={`${it.pathCount} path${it.pathCount === 1 ? "" : "s"}`}
-                  variant="outlined"
-                />
-              </Box>
+              </MenuItem>
+            ) : (
+              cartItems.map((it) => (
+                <MenuItem
+                  key={`cart:${it.type}:${it.id}:${it.pipeline}`}
+                  sx={{ display: "flex", flexDirection: "column", alignItems: "flex-start", py: 1 }}
+                  onClick={() => { close(); navigate(`/${it.type}/${it.id}`); }}
+                >
+                  <Box sx={{ display: "flex", alignItems: "center", width: "100%", justifyContent: "space-between" }}>
+                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                      {it.name}
+                    </Typography>
+                    <Tooltip title="Remove…">
+                      <IconButton
+                        size="small"
+                        onClick={(e) => { e.stopPropagation(); setRemoveCartTarget(it); }}
+                      >
+                        <Delete fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
+                  <Box sx={{ display: "flex", gap: 0.5, mt: 0.5, flexWrap: "wrap" }}>
+                    <Chip size="small" label={it.type} variant="outlined" />
+                    <Chip size="small" label={it.pipeline} variant="outlined" color="info" />
+                  </Box>
+                </MenuItem>
+              ))
+            )}
+
+            <Divider sx={{ my: 0.5 }} />
+
+            <MenuItem disabled sx={{ opacity: "1 !important" }}>
+              <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                ARCHIVE
+              </Typography>
             </MenuItem>
-          ))
+            {archItems.length === 0 ? (
+              <MenuItem disabled>
+                <Typography variant="body2" color="text.secondary">
+                  (empty)
+                </Typography>
+              </MenuItem>
+            ) : (
+              archItems.map((it) => (
+                <MenuItem
+                  key={`arch:${it.type}:${it.id}:${it.pipeline}`}
+                  sx={{ display: "flex", flexDirection: "column", alignItems: "flex-start", py: 1 }}
+                  onClick={() => { close(); navigate(`/${it.type}/${it.id}`); }}
+                >
+                  <Box sx={{ display: "flex", alignItems: "center", width: "100%", justifyContent: "space-between" }}>
+                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                      {it.name}
+                    </Typography>
+                    <Box>
+                      <Tooltip title="Move back to live cart">
+                        <IconButton
+                          size="small"
+                          onClick={(e) => { e.stopPropagation(); moveArchiveToCart(it); }}
+                        >
+                          <Unarchive fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Remove from archive">
+                        <IconButton
+                          size="small"
+                          onClick={(e) => { e.stopPropagation(); setRemoveArchiveTarget(it); }}
+                        >
+                          <Delete fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </Box>
+                  </Box>
+                  <Box sx={{ display: "flex", gap: 0.5, mt: 0.5, flexWrap: "wrap" }}>
+                    <Chip size="small" label={it.type} variant="outlined" />
+                    <Chip size="small" label={it.pipeline} variant="outlined" color="info" />
+                    <Chip
+                      size="small"
+                      icon={<Archive sx={{ fontSize: 14 }} />}
+                      label={`${it.pathCount} path${it.pathCount === 1 ? "" : "s"}`}
+                      variant="outlined"
+                    />
+                  </Box>
+                </MenuItem>
+              ))
+            )}
+          </>
         )}
       </DropdownChip>
 

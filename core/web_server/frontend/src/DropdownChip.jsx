@@ -128,7 +128,12 @@ const DropdownChip = ({
           paper: { sx: { minWidth: 240, maxWidth: 480 } },
         }}
       >
-        {children}
+        {/* children-as-function receives {close} so an item that NAVIGATES
+            can dismiss the menu first (a plain-node menu otherwise stays
+            open, floating over the new page). Plain children unchanged. */}
+        {typeof children === "function"
+          ? children({ close: () => setAnchorEl(null) })
+          : children}
       </Menu>
     </>
   );
