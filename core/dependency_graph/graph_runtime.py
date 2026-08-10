@@ -361,6 +361,11 @@ class GraphRuntime:
         if not succeeded:
             # Failure or Skipped sentinel: the census can no longer claim to
             # be a complete picture of what's live (see `census_sound`).
+            # Name every offender — passes were failing census soundness for
+            # DAYS with no way to see which node was responsible.
+            print(f"### census poisoned by {node.name} "
+                  f"({node.task._function.__name__}): "
+                  f"result={type(result).__name__}")
             self._root._census_sound = False
         if succeeded:
             landed = _landed_path(result)
