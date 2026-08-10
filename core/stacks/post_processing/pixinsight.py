@@ -91,9 +91,16 @@ def post_process_stack(
         img = WriteAstrometricSolution(img, master.plate_solution.header)
         return SpectrophotometricFluxCalibration(img)
 
-    if normalize_filter(stack.filter) == "S":
-        # SII has no MARS reference data at all, so MGC can't run on it;
-        # use the classic data-driven GradientCorrection directly.
+    if normalize_filter(stack.filter) not in ("H", "O", "R", "G", "B", "L"):
+        # Filters SPFC/MGC can't serve take the classic data-driven
+        # GradientCorrection directly:
+        #   * SII — no MARS reference data at all;
+        #   * 'none'/unknown — filterless captures (e.g. the 2023-08-06
+        #     6200MM night, no filter token in the filenames):
+        #     SpectrophotometricFluxCalibration REJECTS FILTER='none'
+        #     outright, and that ValueError silently poisoned census
+        #     soundness on every pass until the offender diagnostic
+        #     named it (2026-08-10).
         image = Image.open(master.filename, filter=stack.filter)
         image = WriteAstrometricSolution(image, master.plate_solution.header)
         GradientCorrection(image).save_to(output_filename, mock=mock_pixinsight)

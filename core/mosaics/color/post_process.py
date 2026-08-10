@@ -468,17 +468,17 @@ def combine_star_rgb(
     # SIGKILLed on the 64 GiB head whenever anything else was co-scheduled.
     probe = pyvips.Image.new_from_file(src)
     _require_rgb_bands(probe.bands, src)
-    # DEFAULT (random) access, NOT sequential: the input is a TILED BigTIFF
-    # (blend_panels/feather output), and the tiled tiffsave sink pulls
-    # 256-row tile blocks through the pipeline while a sequential reader
-    # buffers only ~50MB (~86 rows at this width) — libvips kills the read
-    # deterministically ("no space for data buffer at scanline …"; this
-    # single failure blocked the star trio AND census soundness for two
-    # days). Random access on a tiled source is tile-addressable and
-    # memory-bounded via the vips tile cache — still streaming, never a
-    # full materialization.
+    # unlimited=True: libvips caps a single TIFF strip decode at ~50MB (the
+    # anti-bomb default), and this gigapixel source's strips exceed it — the
+    # read dies deterministically at open ("cumulated memory allocation …
+    # beyond the 52428800 byte limit"; "no space for data buffer at
+    # scanline …"). Same lift the tile-pyramid builder documents
+    # (previews/create_tile_pyramid.py). This ONE failure blocked the star
+    # trio AND census soundness on every pass for two days. Default
+    # (random) access; the vips cache keeps memory bounded — still
+    # streaming, never a full materialization.
     stretched = palettes.autostretch_vips(
-        lambda: pyvips.Image.new_from_file(src)
+        lambda: pyvips.Image.new_from_file(src, unlimited=True)
     )
     _save_color_vips(out, stretched, "Stars")
     return WithSidecar(TiffFilePath(out))
