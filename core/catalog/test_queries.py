@@ -253,3 +253,22 @@ def test_products_for_reads_snapshot_only(classes, monkeypatch):
     monkeypatch.setattr(q, "tap_outputs_for", fake_tap)
     list(q.products_for("stack", "s1"))
     assert seen["recompute"] is False
+
+
+def test_object_class_accepts_both_url_grammar_cases():
+    """The tap URL grammar carries PascalCase CLASS names ("Mosaic" —
+    extract_pipeline_taps does no lowercase translation by design); cart
+    items use lowercase. object_class is the single string→class home and
+    must accept both: a PascalCase miss here made every /tap/* resolve
+    "absent" for mosaics, disabling the graceful N/N-1 fallback exactly
+    when it mattered (mid-regeneration "not yet built" pages, 2026-08-10)."""
+    from products.product import object_class
+    from mosaics.types import Mosaic
+    from stacks.composite_stack import Stack
+    from targets.types import Target
+
+    for spelling in ("Mosaic", "mosaic"):
+        assert object_class(spelling) is Mosaic, spelling
+    assert object_class("Stack") is Stack
+    assert object_class("Target") is Target
+    assert object_class("nebula") is None

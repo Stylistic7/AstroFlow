@@ -30,7 +30,16 @@ def object_class(object_type: str) -> "type | None":
     from stacks.composite_stack import Stack
     from targets.types import Target
     from mosaics.types import Mosaic
-    return {"stack": Stack, "target": Target, "mosaic": Mosaic}.get(object_type)
+    # Case-insensitive: the tap URL grammar carries the entity's runtime
+    # CLASS name as-is ("Mosaic" — extract_pipeline_taps does no lowercase
+    # translation by design), while cart items and legacy routes use
+    # lowercase. This map is the single home for the string→class decision,
+    # so it accepts both — a PascalCase lookup returning None here made
+    # every /tap/* resolve "absent" for mosaics, which disabled the entire
+    # graceful N/N-1 fallback during regenerations ("not yet built" pages,
+    # 2026-08-10).
+    return {"stack": Stack, "target": Target, "mosaic": Mosaic}.get(
+        str(object_type).lower())
 
 
 @dataclass(frozen=True)

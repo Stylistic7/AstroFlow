@@ -282,7 +282,9 @@ def _snapshot_key(item: tuple[str, str, str]) -> "tuple | None":
     cls = object_class(object_type)
     if cls is None:
         return None
-    entity_ref = type_to_dict[object_type].get(object_id)
+    # Lowercase: the tap URL grammar sends PascalCase class names; the
+    # context dicts key lowercase (see products.object_class).
+    entity_ref = type_to_dict[str(object_type).lower()].get(object_id)
     if entity_ref is None:
         return None
     entity = entity_ref.get() if hasattr(entity_ref, "get") else entity_ref
@@ -413,7 +415,9 @@ def _resolve_pipeline_call(
     if cls is None:
         return None, None, None
 
-    entity_ref = type_to_dict[object_type].get(object_id)
+    # Lowercase: the tap URL grammar sends PascalCase class names; the
+    # context dicts key lowercase (see products.object_class).
+    entity_ref = type_to_dict[str(object_type).lower()].get(object_id)
     if entity_ref is None:
         return None, None, None
     entity = entity_ref.get() if hasattr(entity_ref, "get") else entity_ref
