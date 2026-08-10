@@ -133,6 +133,29 @@ def ray_stop() -> None:
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
 
 
+def purge_stale_test_tmpdirs(max_age_h: int = 24) -> None:
+    """Reap tmpdirs leaked by KILLED shards. A shard that dies to kill -9
+    never runs its TemporaryDirectory teardown, and each exhaustive test's
+    synthetic universe is GBs — 651 leaked dirs filled the BOOT volume to
+    11GB free on 2026-08-09. Runs at suite start: anything under the user
+    temp root matching tmp* and older than `max_age_h` cannot belong to a
+    live shard (suite wall clock is ~35 min)."""
+    import tempfile
+    root = Path(tempfile.gettempdir())
+    cutoff = time.time() - max_age_h * 3600
+    n = 0
+    for d in root.glob("tmp*"):
+        try:
+            if d.is_dir() and d.stat().st_mtime < cutoff:
+                import shutil
+                shutil.rmtree(d, ignore_errors=True)
+                n += 1
+        except OSError:
+            continue
+    if n:
+        print(f"reaped {n} stale test tmpdir(s) from {root}", flush=True)
+
+
 def pytest_run(paths, marker, junit, concurrency, label):
     """Run one shard as a single-process (`-n 0`) pytest. Returns
     (label, ok, summary, output).
@@ -191,6 +214,7 @@ def main() -> int:
           f"(each pytest -n 0, private Ray cluster).\n", flush=True)
 
     ray_stop()  # clean slate
+    purge_stale_test_tmpdirs()
     t0 = time.monotonic()
     results = []
 

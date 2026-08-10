@@ -251,7 +251,7 @@ def solve_field(
     # log-odds 342. The brightest ~1000 sources are ample for ANY solve
     # (it needs dozens) and make subframes faster too — so one arg set for
     # everything, no image-class guessing.
-    arguments = [
+    base = [
         "solve-field",
         "--overwrite",
         "--no-plots",
@@ -263,8 +263,6 @@ def solve_field(
         "180",
         "--scale-units",
         "degwidth",
-        "--downsample",
-        "2",
         "--tweak-order",
         "2",
         "--crpix-center",
@@ -273,11 +271,27 @@ def solve_field(
         "--objs",
         "1000",
     ]
-
-    result = _solve_field(filename, arguments, debug)
+    # RETRY LADDER, universal (no image-class guessing). Rung 1 is the
+    # standard extraction. Rung 2 exists for nebula-dominated narrowband
+    # fields (WR134/Veil OIII + SII, 2026-08-09): at --downsample 2 the
+    # extractor fills its 1000-source budget with FILAMENT KNOTS, the quads
+    # match nothing, and a perfectly solvable frame burns the full CPU
+    # budget — 26 of 27 "unsolvable" archive subs were this. --downsample 4
+    # smooths the small-scale nebulosity away; real stars survive and the
+    # same frame solves blind. Tombstone only after BOTH rungs fail.
+    result = None
+    for downsample in ("2", "4"):
+        result = _solve_field(
+            filename, base + ["--downsample", downsample], debug,
+        )
+        if result is not None:
+            if downsample != "2":
+                print(f"### plate-solve rescued by --downsample {downsample}: "
+                      f"{filename}")
+            break
 
     if result is None:
-        print(f"Could not plate-solve file {filename}")
+        print(f"Could not plate-solve file {filename} (all retry rungs)")
         set_section(
             filename, "plate_solution", {"schema": _PLATESOLUTION_SCHEMA, "data": None}
         )
