@@ -39,6 +39,41 @@ def _is_mounted(mp: Path) -> bool:
     return os.path.ismount(mp)
 
 
+def _mount_is_alive(mp: Path, timeout_s: float = 5.0) -> bool:
+    """True iff `mp` answers a real read within `timeout_s`.
+
+    `os.path.ismount` only checks the mount TABLE. After a head reboot, a
+    worker can hold a ZOMBIE SMB mountpoint from the dead session: still in
+    the table, but every I/O errors or hangs — so the old
+    ismount-then-continue path skipped remounting and the worker joined Ray
+    with dead disks (WBPP then failed instantly on missing inputs,
+    2026-08-10). Probe with a listdir in a worker thread because a dead SMB
+    mount often HANGS rather than erroring — a plain listdir here could
+    wedge the whole join loop."""
+    import threading
+    result: list[bool] = []
+
+    def _probe():
+        try:
+            os.listdir(mp)
+            result.append(True)
+        except OSError:
+            result.append(False)
+
+    t = threading.Thread(target=_probe, daemon=True)
+    t.start()
+    t.join(timeout_s)
+    return bool(result and result[0])
+
+
+def _force_unmount(mp: Path) -> None:
+    """Best-effort eviction of a dead mountpoint so a fresh mount can land
+    at the CANONICAL path (macOS would otherwise mount at `<share>-1` and
+    every task would read the stale/empty original)."""
+    subprocess.run(["diskutil", "unmount", "force", str(mp)],
+                   capture_output=True, text=True)
+
+
 def mount_head_shares(head_ip: str, shares: list[str]) -> None:
     """Mount each `//head_ip/<share>` at `/Volumes/<share>` with NO explicit
     user in the URL — macOS then authenticates the current login session (same
@@ -50,7 +85,12 @@ def mount_head_shares(head_ip: str, shares: list[str]) -> None:
     for share in shares:
         mp = _mountpoint(share)
         if _is_mounted(mp):
-            continue
+            if _mount_is_alive(mp):
+                continue
+            # Zombie from a dead head session (post-reboot): evict and
+            # fall through to a fresh mount at the canonical path.
+            print(f"### {mp} is mounted but DEAD; force-unmounting to remount")
+            _force_unmount(mp)
         url = f"smb://{head_ip}/{share}"
         result = subprocess.run(
             ["osascript", "-e", f'mount volume "{url}"'],
