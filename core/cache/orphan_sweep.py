@@ -99,12 +99,20 @@ def live_set(ctx) -> set[str]:
 def walk_and_classify(
     output_dir: "str | Path | None", live: set[str],
     include: "set[str] | None" = None,
+    spare_newer_than: "float | None" = None,
 ) -> "tuple[list[tuple[str, int]], dict[str, list[int]]]":
     """Single walk of `output_dir`: classify each file live/orphan and bucket by
     parent dir (rel to `output_dir`). Returns `(orphans, by_dir)` where
     `by_dir[rel] = [live_count, live_bytes, orph_count, orph_bytes]`. When
     `include` is non-empty, dirs not in it are skipped (not classified, not
-    swept)."""
+    swept).
+
+    `spare_newer_than` (the census timestamp): a file with mtime at or after
+    it POSTDATES the deletion authority's knowledge — e.g. a merge that
+    landed in the pass AFTER the census was stored — and counts as live.
+    A future census will judge it; condemning it now would delete brand-new
+    deliverables (the exact hazard observed with the R channel regenerating
+    minutes after the first census, 2026-08-11)."""
     orphans: list[tuple[str, int]] = []
     by_dir: dict[str, list[int]] = {}
     if output_dir is None:
@@ -123,7 +131,13 @@ def walk_and_classify(
                 sz = os.path.getsize(full)
             except OSError:
                 continue
-            if full in live:
+            is_live = full in live
+            if not is_live and spare_newer_than is not None:
+                try:
+                    is_live = os.path.getmtime(full) >= spare_newer_than
+                except OSError:
+                    is_live = True   # vanished/unreadable → never condemn
+            if is_live:
                 bucket[0] += 1
                 bucket[1] += sz
             else:
@@ -155,7 +169,13 @@ def sweep(ctx, delete: bool = False, include: "set[str] | None" = None) -> dict:
             "orphans": [], "by_dir": {}, "live_count": 0,
             "reclaimable_bytes": 0, "deleted": 0, "skipped_empty_live": True,
         }
-    orphans, by_dir = walk_and_classify(ctx.output_dir, live, include)
+    # Spare anything newer than the census: it postdates the deletion
+    # authority's knowledge (see walk_and_classify).
+    from context.cache import get_durable_cache
+    census = get_durable_cache().get("runtime_live_census") or {}
+    census_ts = census.get("ts")
+    orphans, by_dir = walk_and_classify(
+        ctx.output_dir, live, include, spare_newer_than=census_ts)
     deleted = 0
     if delete:
         for path, _ in orphans:

@@ -123,3 +123,39 @@ def test_empty_live_set_refuses_to_delete(tmp_path, monkeypatch):
     assert (op / "something.tiff").exists()
     assert report.get("skipped_empty_live") is True
     assert report["deleted"] == 0
+
+
+def test_files_newer_than_census_are_spared(tmp_path, monkeypatch):
+    """A file that LANDED AFTER the census postdates the deletion
+    authority's knowledge (the R merge regenerated minutes after the first
+    census, 2026-08-11) — it must classify LIVE even though the census has
+    never heard of it. Pre-census orphans still die."""
+    import os
+    import time
+    _no_pins(monkeypatch)
+    out = tmp_path / "Processed"
+    op = out / "op"
+    op.mkdir(parents=True)
+
+    past = time.time() - 3600
+    old_orphan = op / "old_orphan.tiff"
+    old_orphan.write_bytes(b"pre-census garbage")
+    os.utime(old_orphan, (past, past))
+
+    anchor = op / "anchor.tiff"
+    anchor.write_bytes(b"census anchor")
+    os.utime(anchor, (past, past))
+
+    fresh = op / "fresh_landing.tiff"
+    fresh.write_bytes(b"landed after the census")
+
+    # Census taken 60s ago: knows only the anchor; ts guards the fresh file.
+    _fake_census(monkeypatch, {
+        "paths": [str(anchor)], "complete": True, "ts": time.time() - 60,
+    })
+
+    orphan_sweep.sweep(_ctx(tmp_path), delete=True)
+
+    assert not old_orphan.exists(), "pre-census orphan must be deleted"
+    assert fresh.exists(), "post-census landing must be SPARED"
+    assert anchor.exists()
