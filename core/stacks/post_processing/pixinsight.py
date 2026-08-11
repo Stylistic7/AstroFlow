@@ -95,8 +95,8 @@ def post_process_stack(
         # Filters SPFC/MGC can't serve take the classic data-driven
         # GradientCorrection directly:
         #   * SII — no MARS reference data at all;
-        #   * 'none'/unknown — filterless captures (e.g. the 2023-08-06
-        #     6200MM night, no filter token in the filenames):
+        #   * 'none'/unknown — filterless captures (e.g. six M31 frames
+        #     from 2026-01-16 whose headers carry no FILTER card):
         #     SpectrophotometricFluxCalibration REJECTS FILTER='none'
         #     outright, and that ValueError silently poisoned census
         #     soundness on every pass until the offender diagnostic
