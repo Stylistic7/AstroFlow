@@ -134,5 +134,96 @@ def test_target_tail_traces_with_target_taps(tmp_path, monkeypatch):
     assert routed == {("Target", t.stable_hash)}, (
         f"taps must route to the TARGET, got {routed}")
     displays = {display for _, (_, _, display, _) in taps}
-    assert {"Mosaic", "Hubble", "Foraxx", "Stars", "Linear SHO"} <= displays, (
+    assert {"Mosaic", "Hubble", "Foraxx", "Stars", "Linear SHO",
+            "RGB", "HaRGB"} <= displays, (
         f"colour deliverables missing from taps: {displays}")
+    # No Lum channel → neither of the L-bearing variants may appear.
+    assert not ({"LRGB", "HaLRGB"} & displays), displays
+
+
+def test_lrgb_target_traces_rgb_and_lrgb(tmp_path, monkeypatch):
+    """A broadband LRGB target (real-world filter aliases) produces the RGB
+    and LRGB deliverables and none of the narrowband palettes."""
+    import targets.target_channel as tc
+    filters = ["Red", "Green", "Blue", "Lum"]
+    monkeypatch.setattr(tc, "filters_for_target", lambda t: list(filters))
+
+    t = _target()
+    channels = {}
+    for i, f in enumerate(filters):
+        p = tmp_path / f"chan_{f}.tiff"
+        from file_io.tiff_file_io import write_tiff_image
+        write_tiff_image(p, np.zeros((8, 8), np.float32), {"FILTER": f})
+        channels[(t.id, f)] = ImageMetadata(
+            content_hash=f"chan_{f}", stable_hash=f"chan_{f}", filename=p,
+            header={"FILTER": f}, width_pixels=8, height_pixels=8,
+            channels=1, dtype=np.dtype("float32"),
+        )
+
+    config = ProcessingConfig(
+        development_settings=DevelopmentSettings(mock_pixinsight=True),
+        tiling=TilingSettings(),
+    )
+
+    def _tail(target, channels, config):
+        from mosaics.color.post_process import color_post_process
+        from pipelines.hybrid_pi_oss_mosaic import _merged_channels
+        merged = _merged_channels(target, {target.id: target}, channels, config)
+        color = color_post_process(target, merged, config,
+                                   target.viewbox("Master"))
+        return {**merged, **color}
+
+    graph = trace(_tail, t, channels, config)
+
+    from compute_graph.compute_graph import extract_pipeline_taps
+    displays = {d for _, (_, _, d, _) in extract_pipeline_taps(graph)}
+    assert {"Mosaic", "Stars", "RGB", "LRGB"} <= displays, (
+        f"broadband deliverables missing: {displays}")
+    assert not ({"Hubble", "Foraxx", "Linear SHO"} & displays), (
+        f"narrowband palettes must not appear for LRGB: {displays}")
+    # No Hα channel → neither Hα-blend tap may appear.
+    assert not ({"HaRGB", "HaLRGB"} & displays), displays
+
+
+def test_galaxy_target_traces_ha_blend_taps(tmp_path, monkeypatch):
+    """The galaxy-with-Hα case (LRGB + Ha): BOTH Hα looks appear as separate
+    taps — HaRGB (Hα in chrominance: starless Hα added to linear R) and
+    HaLRGB (Hα in lightness: L lightened by starless Hα, colour from the
+    plain RGB) — alongside the plain RGB/LRGB for comparison."""
+    import targets.target_channel as tc
+    filters = ["Red", "Green", "Blue", "Lum", "Ha"]
+    monkeypatch.setattr(tc, "filters_for_target", lambda t: list(filters))
+
+    t = _target()
+    channels = {}
+    for i, f in enumerate(filters):
+        p = tmp_path / f"chan_{f}.tiff"
+        from file_io.tiff_file_io import write_tiff_image
+        write_tiff_image(p, np.zeros((8, 8), np.float32), {"FILTER": f})
+        channels[(t.id, f)] = ImageMetadata(
+            content_hash=f"chan_{f}", stable_hash=f"chan_{f}", filename=p,
+            header={"FILTER": f}, width_pixels=8, height_pixels=8,
+            channels=1, dtype=np.dtype("float32"),
+        )
+
+    config = ProcessingConfig(
+        development_settings=DevelopmentSettings(mock_pixinsight=True),
+        tiling=TilingSettings(),
+    )
+
+    def _tail(target, channels, config):
+        from mosaics.color.post_process import color_post_process
+        from pipelines.hybrid_pi_oss_mosaic import _merged_channels
+        merged = _merged_channels(target, {target.id: target}, channels, config)
+        color = color_post_process(target, merged, config,
+                                   target.viewbox("Master"))
+        return {**merged, **color}
+
+    graph = trace(_tail, t, channels, config)
+
+    from compute_graph.compute_graph import extract_pipeline_taps
+    displays = {d for _, (_, _, d, _) in extract_pipeline_taps(graph)}
+    assert {"RGB", "LRGB", "HaRGB", "HaLRGB", "Stars", "Mosaic"} <= displays, (
+        f"Hα-blend deliverables missing: {displays}")
+    assert not ({"Hubble", "Foraxx", "Linear SHO"} & displays), (
+        f"full-SHO palettes need S and O, not just Ha: {displays}")

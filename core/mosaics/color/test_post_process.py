@@ -228,6 +228,52 @@ def test_palette_glue_with_and_without_stars(tmp_path):
     assert img2.shape == (128, 128, 3) and np.all(np.isfinite(img2))
 
 
+def test_lrgb_combination_math():
+    """`lrgb_vips` invariants: replacing L* with the RGB's OWN lightness is a
+    no-op (chroma_boost=1); a brighter L raises every pixel's lightness while
+    preserving chrominance (a*/b* unchanged)."""
+    import pyvips
+    from mosaics.color import palettes as pal
+
+    rng = np.random.default_rng(3)
+    a = (rng.random((16, 16, 3)) * 0.8 + 0.1).astype(np.float32)
+    rgb = pyvips.Image.new_from_memory(
+        np.ascontiguousarray(a).data, 16, 16, 3, "float")
+    lab = rgb.copy(interpretation="scrgb").colourspace("lab")
+
+    def to_np(im):
+        return np.ndarray(buffer=im.write_to_memory(), dtype=np.float32,
+                          shape=[im.height, im.width, im.bands])
+
+    # The RGB's own lightness, inverted through the same companding: grey
+    # with (L*, 0, 0) back to scRGB — any band is the matching lum input.
+    own_lum = (lab[0].bandjoin([lab[0] * 0.0, lab[0] * 0.0])
+               .copy(interpretation="lab").colourspace("scrgb")[0])
+    out = to_np(pal.lrgb_vips(rgb, own_lum, chroma_boost=1.0))
+    assert np.allclose(out, a, atol=2e-3), \
+        "lum == the RGB's own lightness must be a no-op"
+
+    # A brighter L: lightness strictly rises. (Chroma is NOT asserted here —
+    # raising L with fixed a*/b* pushes pixels out of the scRGB gamut, and
+    # the clip legitimately alters their chroma.)
+    brighter = to_np(pal.lrgb_vips(rgb, (own_lum * 0.5 + 0.5), chroma_boost=1.0))
+    out_lab = to_np(pyvips.Image.new_from_memory(
+        np.ascontiguousarray(brighter).data, 16, 16, 3, "float")
+        .copy(interpretation="scrgb").colourspace("lab"))
+    in_lab = to_np(lab)
+    assert (out_lab[:, :, 0] > in_lab[:, :, 0] - 1e-3).all(), \
+        "brighter L must not lower lightness"
+
+    # chroma_boost scales a*/b* exactly (measured 1.2000 on this fixture).
+    boosted = to_np(pal.lrgb_vips(rgb, own_lum, chroma_boost=1.2))
+    boost_lab = to_np(pyvips.Image.new_from_memory(
+        np.ascontiguousarray(boosted).data, 16, 16, 3, "float")
+        .copy(interpretation="scrgb").colourspace("lab"))
+    ratio = (np.abs(boost_lab[:, :, 1:]).mean()
+             / np.abs(in_lab[:, :, 1:]).mean())
+    assert abs(ratio - 1.2) < 0.02, f"chroma boost ratio {ratio} != 1.2"
+
+
 def test_bxt_narrow_keys_on_bxt_settings_only():
     """bxt_correct's cache key changes iff (mock, config.bxt) changes — the
     _StackKey guarantee applied to the color tail: tuning BXT re-derives BXT and

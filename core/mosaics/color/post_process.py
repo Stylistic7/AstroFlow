@@ -571,6 +571,104 @@ def foraxx_starless(
     return WithSidecar(TiffFilePath(out))
 
 
+@node(display="RGB", filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-channel color
+def rgb_image(
+    mosaic: Mosaic, rgb: ImageMetadata,
+) -> WithSidecar[TiffFilePath]:
+    """The broadband colour photo: LINKED autostretch of the linear BXT'd
+    R/G/B combine, stars in place (the star branch extracts a copy, never
+    subtracts here). Linked = `_hist_median_vips` pools the 3-band histogram
+    into one distribution, so a single MTF applies to all bands and the
+    stretch cannot shift hue; the channels are SPFC-calibrated per stack
+    upstream, so the linear combine is already colour-calibrated."""
+    out = rgb_image.filename_fn(mosaic, rgb)
+    stretched = palettes.autostretch_vips(lambda: _open_gig_vips(rgb.filename))
+    _save_color_vips(out, stretched, "RGB")
+    return WithSidecar(TiffFilePath(out))
+
+
+@node(display="LRGB", filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-channel color
+def lrgb_image(
+    mosaic: Mosaic, rgb: ImageMetadata, lum: ImageMetadata,
+) -> WithSidecar[TiffFilePath]:
+    """PixInsight-style LRGBCombination: the stretched RGB's CIE lightness
+    replaced by the stretched (BXT'd) luminance master in Lab space — detail
+    and SNR ride the deep L, colour comes from RGB. Math in
+    `palettes.lrgb_vips`; inputs are the `rgb_image` deliverable and the
+    autostretched L channel (both nonlinear, as Lab requires)."""
+    out = lrgb_image.filename_fn(mosaic, rgb, lum)
+    combined = palettes.lrgb_vips(
+        _open_gig_vips(rgb.filename), _load_mono_vips(lum))
+    _save_color_vips(out, combined, "LRGB")
+    return WithSidecar(TiffFilePath(out))
+
+
+# Hα-blend tuning. Deliberately CONSTANTS, not ProcessingConfig fields:
+# adding a config field moves the hash of every config-folding op in the
+# system (a cache-wipe event), while editing a constant re-keys exactly the
+# blend op that owns it plus its downstream — the right invalidation radius
+# for an artistic knob.
+_HA_CHROMA_STRENGTH = 0.4    # k in R′ = R + k·Ha_starless
+_HA_LIGHTNESS_WEIGHT = 0.5   # w in L′ = max(L, w·Ha_starless)
+
+
+@node(auto_memory=True, plate_solve=False)  # streaming linear add
+def blend_ha_chroma(
+    mosaic: Mosaic, red: ImageMetadata, ha: ImageMetadata,
+) -> WithSidecar[TiffFilePath]:
+    """R′ = R + k·Ha_starless, LINEAR: inject the Hα line flux the ~100nm R
+    band dilutes ~30:1 back into the red channel, pre-stretch. STARLESS Hα is
+    the trick — the layer contains no stars, so nothing reddens the stellar
+    continuum and no explicit continuum subtraction is needed; HII regions
+    come out cherry pink while stars stay white."""
+    out = blend_ha_chroma.filename_fn(mosaic, red, ha)
+    img = _open_mono_vips(red) + _HA_CHROMA_STRENGTH * _open_mono_vips(ha)
+    _save_mono_vips(out, img, "R")
+    return WithSidecar(TiffFilePath(out))
+
+
+@node(auto_memory=True, plate_solve=False)  # streaming lighten blend
+def blend_ha_lightness(
+    mosaic: Mosaic, lum: ImageMetadata, ha: ImageMetadata,
+) -> WithSidecar[TiffFilePath]:
+    """L′ = max(L, w·Ha_starless), LINEAR lighten: HII structure pops in the
+    detail channel while the colour stays whatever the chrominance source
+    says (the HaLRGB tap pairs this with the PLAIN stretched RGB)."""
+    out = blend_ha_lightness.filename_fn(mosaic, lum, ha)
+    l = _open_mono_vips(lum)
+    h = _HA_LIGHTNESS_WEIGHT * _open_mono_vips(ha)
+    _save_mono_vips(out, (l > h).ifthenelse(l, h), "L")
+    return WithSidecar(TiffFilePath(out))
+
+
+@node(display="HaRGB", filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-channel color
+def hargb_image(
+    mosaic: Mosaic, rgb: ImageMetadata,
+) -> WithSidecar[TiffFilePath]:
+    """The HaRGB colour photo (Hα in CHROMINANCE): linked stretch of the
+    combine whose R channel carries the starless-Hα line flux
+    (`blend_ha_chroma`). Same stretch discipline as `rgb_image`."""
+    out = hargb_image.filename_fn(mosaic, rgb)
+    stretched = palettes.autostretch_vips(lambda: _open_gig_vips(rgb.filename))
+    _save_color_vips(out, stretched, "HaRGB")
+    return WithSidecar(TiffFilePath(out))
+
+
+@node(display="HaLRGB", filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-channel color
+def halrgb_image(
+    mosaic: Mosaic, rgb: ImageMetadata, lum: ImageMetadata,
+) -> WithSidecar[TiffFilePath]:
+    """The Hα-detail LRGB (Hα in LIGHTNESS): colour from the PLAIN stretched
+    RGB, lightness from the Hα-lightened L (`blend_ha_lightness`) — HII
+    regions sharp and deep, hue untouched. The chrominance-side Hα look is
+    the separate HaRGB tap; comparing the two side by side is the point."""
+    out = halrgb_image.filename_fn(mosaic, rgb, lum)
+    combined = palettes.lrgb_vips(
+        _open_gig_vips(rgb.filename), _load_mono_vips(lum))
+    _save_color_vips(out, combined, "HaLRGB")
+    return WithSidecar(TiffFilePath(out))
+
+
 @workflow_group
 def color_post_process(mosaic: Mosaic, channels: dict, config, viewbox=None) -> dict:
     """Turn merged per-filter mosaic channels into named color images.
@@ -597,6 +695,7 @@ def color_post_process(mosaic: Mosaic, channels: dict, config, viewbox=None) -> 
     starless_nb: dict[str, object] = {}
     stretched_nb: dict[str, object] = {}
     bxt_bb: dict[str, object] = {}
+    bxt_l = None
     for cf, channel in by_class.items():
         # Wrap the merged channel as the stage-0 PanelMosaic (merged image +
         # per-panel base manifest); every rc-astro op then tiles by PANEL.
@@ -608,12 +707,18 @@ def color_post_process(mosaic: Mosaic, channels: dict, config, viewbox=None) -> 
             stretched_nb[cf] = autostretch_channel(mosaic, cf, starless.merged)
         elif cf in _BROADBAND:
             bxt_bb[cf] = process_in_panels(bxt_correct, mosaic, cf, config, pm, viewbox=viewbox)
+        elif cf == "L" and _BROADBAND <= set(by_class):
+            # Luminance: BXT'd like the broadband, stretched later as the
+            # LRGB lightness. Never enters the RGB combine; skipped entirely
+            # unless full R/G/B exists to give it chrominance.
+            bxt_l = process_in_panels(bxt_correct, mosaic, cf, config, pm, viewbox=viewbox)
 
     # Broadband stars: combine the linear BXT'd channels into one RGB, then
     # SXT ONCE on that RGB so the extracted stars are coherent across R/G/B
     # (no per-channel primary-colour confetti). `combine_panels` threads the
     # R/G/B manifests into the RGB source so the SXT crops key per-panel.
     rgb_star_lin = None
+    rgb_lin = None
     if _BROADBAND <= set(bxt_bb):
         rgb_lin = combine_panels(combine_broadband_rgb, mosaic, bxt_bb["R"], bxt_bb["G"], bxt_bb["B"])
         rgb_star_lin = process_in_panels(sxt_stars_rgb, mosaic, config, rgb_lin, viewbox=viewbox)
@@ -623,6 +728,31 @@ def color_post_process(mosaic: Mosaic, channels: dict, config, viewbox=None) -> 
     if rgb_star_lin is not None:
         rgb_stars = combine_star_rgb(mosaic, rgb_star_lin.merged)
         out["Stars"] = rgb_stars
+    if rgb_lin is not None:
+        # The broadband colour photo: the same linear RGB the star branch
+        # reads, linked-stretched whole. With a luminance channel, also the
+        # LRGB variant (lightness replaced by the stretched L in Lab).
+        out["RGB"] = rgb_image(mosaic, rgb_lin.merged)
+        if bxt_l is not None:
+            out["LRGB"] = lrgb_image(
+                mosaic, out["RGB"],
+                autostretch_channel(mosaic, "L", bxt_l.merged))
+        # Hα blends — two SEPARATE looks from the starless Hα the narrowband
+        # branch already computed: chrominance (Hα → R, pre-combine) and
+        # lightness (Hα → L, colour from the plain RGB).
+        ha_starless = starless_nb.get("H")
+        if ha_starless is not None:
+            r_ha = blend_ha_chroma(
+                mosaic, bxt_bb["R"].merged, ha_starless.merged)
+            hargb_lin = combine_broadband_rgb(
+                mosaic, r_ha, bxt_bb["G"].merged, bxt_bb["B"].merged)
+            out["HaRGB"] = hargb_image(mosaic, hargb_lin)
+            if bxt_l is not None:
+                l_ha = blend_ha_lightness(
+                    mosaic, bxt_l.merged, ha_starless.merged)
+                out["HaLRGB"] = halrgb_image(
+                    mosaic, out["RGB"],
+                    autostretch_channel(mosaic, "L", l_ha))
     if _NARROWBAND <= set(starless_nb):
         # The linear S/H/O viewer source: stacked + NXT-denoised, finished live
         # in the WebGPU shader with the standard Hubble/SCNR palette.

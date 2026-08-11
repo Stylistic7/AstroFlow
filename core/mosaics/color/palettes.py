@@ -196,3 +196,34 @@ def combine_star_rgb_vips(r: pyvips.Image, g: pyvips.Image, b: pyvips.Image) -> 
 def screen_vips(base: pyvips.Image, overlay: pyvips.Image) -> pyvips.Image:
     """Vips port of `screen`: 1 − (1−base)·(1−overlay)."""
     return 1.0 - (1.0 - _clip01(base)) * (1.0 - _clip01(overlay))
+
+
+def lrgb_vips(rgb: pyvips.Image, lum: pyvips.Image, *,
+              chroma_boost: float = 1.2) -> pyvips.Image:
+    """PixInsight-style LRGBCombination, streaming: replace the stretched
+    RGB's CIE lightness with the stretched luminance master, keeping the
+    RGB's chrominance (a*, b*) — detail and SNR ride the deep L, colour
+    comes from RGB.
+
+    Both inputs STRETCHED [0,1]: Lab is a perceptual space, so combining
+    linear data here is invalid (PI's own guidance for LRGBCombination).
+    The trip runs scRGB → Lab → scRGB, which vips keeps float end to end —
+    the sRGB route quantizes to uchar (measured: 0.96/255 max error vs
+    1e-6 for scRGB). The luminance maps to L* through the same companding
+    as the RGB (a grey (l,l,l) pixel's Lab lightness), so lum == the RGB's
+    own lightness is an exact no-op. `chroma_boost` scales a*/b* — the
+    desaturation compensation PI exposes as its saturation MTF: a deep L
+    laid over dim RGB reads washed out at 1.0.
+    """
+    rgb = (rgb == rgb).ifthenelse(rgb, 0.0)              # NaN → 0
+    lum = (lum == lum).ifthenelse(lum, 0.0)
+    lab = _clip01(rgb).copy(interpretation="scrgb").colourspace("lab")
+    # mono → 3-band grey via linear() (single consumer — bandjoin of the
+    # same lazy source would re-stream a sequential-access image).
+    grey = _clip01(lum).linear([1.0, 1.0, 1.0], [0.0, 0.0, 0.0])
+    lightness = grey.copy(interpretation="scrgb").colourspace("lab")[0]
+    out = (lightness
+           .bandjoin([lab[1] * chroma_boost, lab[2] * chroma_boost])
+           .copy(interpretation="lab")
+           .colourspace("scrgb"))
+    return _clip01(out).cast("float")
