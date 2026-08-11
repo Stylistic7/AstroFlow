@@ -110,11 +110,24 @@ def _write_mono_xisf(path: str, data: np.ndarray, filter: str) -> None:
     )
 
 
+def _open_gig_vips(path) -> pyvips.Image:
+    """THE house open for gigascale sources in the colour path. TIFFs get
+    `unlimited=True`: libvips caps a single TIFF strip decode at ~50MB (the
+    anti-bomb default) and our wide gigapixel TIFFs exceed it — without the
+    lift the read dies mid-stream ("cumulated memory allocation … beyond the
+    52428800 byte limit"), which killed combine_star_rgb for three days and
+    then the 75a1 star screens the moment they first ran (2026-08-10). The
+    kwarg is TIFF-loader-only, so FITS sources skip it."""
+    p = str(path)
+    tiff = p.lower().endswith((".tif", ".tiff"))
+    return pyvips.Image.new_from_file(p, **({"unlimited": True} if tiff else {}))
+
+
 def _load_mono_vips(meta: ImageMetadata) -> pyvips.Image:
     """Load a mono channel (an autostretch FITS output) as a 1-band float vips
     image. Lazy: vips pulls pixels only as the `tiffsave` sink demands them, so
     the palette never materializes a whole 9 GB channel."""
-    img = pyvips.Image.new_from_file(str(meta.filename))
+    img = _open_gig_vips(meta.filename)
     return img[0] if img.bands > 1 else img
 
 
@@ -506,7 +519,7 @@ def _require_rgb_bands(bands: int, src: str = "") -> None:
 def _palette_image(out, combine_vips, sii, ha, oiii, stars, name):
     rgb = combine_vips(_load_mono_vips(sii), _load_mono_vips(ha), _load_mono_vips(oiii))
     if stars is not None:  # screen the RGB stars back over the starless palette
-        rgb = palettes.screen_vips(rgb, pyvips.Image.new_from_file(str(stars.filename)))
+        rgb = palettes.screen_vips(rgb, _open_gig_vips(stars.filename))
     _save_color_vips(out, rgb, name)
 
 
