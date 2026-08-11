@@ -135,10 +135,13 @@ def _load_mono_vips(meta: ImageMetadata) -> pyvips.Image:
     return img[0] if img.bands > 1 else img
 
 
-def _save_color_vips(path: str, img: pyvips.Image, name: str) -> None:
+def _save_color_vips(path: str, img: pyvips.Image, name: str,
+                     bands: "tuple | None" = None) -> None:
     """Stream a float RGB vips image to a tiled BigTIFF deliverable (atomic
     tmp+rename), tagging the palette name / pipeline in the TIFF description
-    (the same JSON `read_tiff_header` expects)."""
+    (the same JSON `read_tiff_header` expects). `bands` (scene formats only)
+    records which REAL filters occupy the S,H,O band slots — zero-filled
+    absences are indistinguishable from data without it."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     # Force scRGB: the bandjoined float palette otherwise inherits a `b-w`
     # (grayscale) interpretation, so tiffsave writes a MINISBLACK photometric and
@@ -146,8 +149,11 @@ def _save_color_vips(path: str, img: pyvips.Image, name: str) -> None:
     # the 3 real colour channels as luminance → grey. scRGB is the correct
     # float-RGB interpretation and matches the pre-regression deliverables.
     img = img.copy(interpretation="scrgb")
+    desc = {"PALETTE": name, "PIPELINE": "AstroFlow-OSS"}
+    if bands is not None:
+        desc["BANDS"] = list(bands)
     img.set_type(pyvips.GValue.gstr_type, "image-description",
-                 json.dumps({"PALETTE": name, "PIPELINE": "AstroFlow-OSS"}))
+                 json.dumps(desc))
     tmp = f"{path}.{os.getpid()}.tmp.tiff"
     # deflate, NOT zstd: these named colour images are the user-facing
     # deliverables, opened directly in PixInsight and other tools — and PI can't
@@ -271,7 +277,11 @@ def _sxt_rgb_narrow(args, kwargs):
     return (mosaic.stable_hash, (mock, config.sxt), rgb), kwargs   # stable_hash: no cross-panel churn
 
 
-@node(auto_memory=True, plate_solve=False)  # pure bandjoin, no PixInsight
+# display="Linear RGB" makes the ALREADY-MATERIALIZED linear combine a served
+# scene tap (live-finish source format 3). Decorator kwargs are STRIPPED from
+# the structural op hash, so stamping the display re-keys NOTHING — every
+# cached combine keeps its key and gains a tap.
+@node(display="Linear RGB", filter="RGB", auto_memory=True, plate_solve=False)  # pure bandjoin, no PixInsight
 def combine_broadband_rgb(
     mosaic: Mosaic, r: ImageMetadata, g: ImageMetadata, b: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
@@ -603,6 +613,84 @@ def lrgb_image(
     return WithSidecar(TiffFilePath(out))
 
 
+# ---- linear scene formats: the ≤3-band basis the live WebGPU finishes
+# ---- sample. Formats 1/2 are always 3 bands in canonical S,H,O order with
+# ---- absent bands ZERO-FILLED (uniform texture shape, zeros deflate to
+# ---- nothing) and the REAL band list in the TIFF description; format 3 is
+# ---- the display-stamped combine above; starless RGB is NOT baked (the
+# ---- shader derives it exactly as combine − stars); nobody wants
+# ---- narrowband-stars-only, so it does not exist.
+
+_NB_ORDER = ("S", "H", "O")
+
+
+def _nb_threeband(channels: dict) -> pyvips.Image:
+    """Bandjoin `{filter: ImageMetadata}` into canonical 3-band S,H,O with
+    zero-filled absences. Each band is its own lazy open (single consumer)."""
+    first = next(iter(channels.values()))
+    bands = [
+        _open_mono_vips(channels[f]) if f in channels
+        else _open_mono_vips(first) * 0.0
+        for f in _NB_ORDER
+    ]
+    return bands[0].bandjoin(bands[1:])
+
+
+@node(display="Linear Narrowband", filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-band linear
+def linear_narrowband(
+    mosaic: Mosaic, filters: tuple, *channels: ImageMetadata,
+) -> WithSidecar[TiffFilePath]:
+    """Scene format 1: the WITH-STARS narrowband combination, linear —
+    BXT'd but never SXT'd, so compact HII knots that star removal would
+    eat survive intact. This is the raw-Hα source the galaxy finishes
+    sample (live continuum subtraction: Hα − q·R), and the native-star
+    source for narrowband-only images. `filters` lists the real bands in
+    S,H,O order; missing bands are zero-filled."""
+    out = linear_narrowband.filename_fn(mosaic, filters, *channels)
+    img = _nb_threeband(dict(zip(filters, channels)))
+    _save_color_vips(out, img, "Linear Narrowband", bands=filters)
+    return WithSidecar(TiffFilePath(out))
+
+
+@node(display="Linear Narrowband Starless", filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-band linear
+def linear_narrowband_starless(
+    mosaic: Mosaic, filters: tuple, *channels: ImageMetadata,
+) -> WithSidecar[TiffFilePath]:
+    """Scene format 2 for PARTIAL narrowband sets (an Hα-only galaxy, an
+    HOO dual-band OSC): the starless combination, zero-filled to S,H,O.
+    Full-SHO images don't get this — "Linear SHO" (NXT-denoised) already
+    serves that role."""
+    out = linear_narrowband_starless.filename_fn(mosaic, filters, *channels)
+    img = _nb_threeband(dict(zip(filters, channels)))
+    _save_color_vips(out, img, "Linear Narrowband Starless", bands=filters)
+    return WithSidecar(TiffFilePath(out))
+
+
+@node(display="Linear RGB Stars", filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-band linear
+def linear_rgb_stars(
+    mosaic: Mosaic, stars: ImageMetadata,
+) -> WithSidecar[TiffFilePath]:
+    """Scene format 5: the LINEAR coherent RGB stars (the SXT extraction,
+    pre-stretch — the stretched version is the "Stars" deliverable). A
+    star image is overwhelmingly zeros, so the deflate tap costs almost
+    nothing on disk; live finishes use it for star intensity/reduction
+    (`starless + s·stars`) and to derive starless RGB as combine − stars."""
+    out = linear_rgb_stars.filename_fn(mosaic, stars)
+    _save_color_vips(out, _open_gig_vips(stars.filename), "Linear RGB Stars")
+    return WithSidecar(TiffFilePath(out))
+
+
+@node(display="Linear L", filter="L", final=True, auto_memory=True, plate_solve=False)  # mono linear
+def linear_lum(
+    mosaic: Mosaic, lum: ImageMetadata,
+) -> WithSidecar[TiffFilePath]:
+    """Scene format 6: the BXT'd luminance master as a served mono tap —
+    the lightness source for live LRGB/HaLRGB finishing."""
+    out = linear_lum.filename_fn(mosaic, lum)
+    _save_mono_vips(out, _open_mono_vips(lum), "L")
+    return WithSidecar(TiffFilePath(out))
+
+
 # Hα-blend tuning. Deliberately CONSTANTS, not ProcessingConfig fields:
 # adding a config field moves the hash of every config-folding op in the
 # system (a cache-wipe event), while editing a constant re-keys exactly the
@@ -610,6 +698,26 @@ def lrgb_image(
 # for an artistic knob.
 _HA_CHROMA_STRENGTH = 0.4    # k in R′ = R + k·Ha_starless
 _HA_LIGHTNESS_WEIGHT = 0.5   # w in L′ = max(L, w·Ha_starless)
+
+
+@node(auto_memory=True, plate_solve=False)  # pure bandjoin, no PixInsight
+def combine_ha_rgb(
+    mosaic: Mosaic, r: ImageMetadata, g: ImageMetadata, b: ImageMetadata,
+) -> WithSidecar[TiffFilePath]:
+    """The Hα-boosted linear combine feeding `hargb_image` — the same
+    streaming bandjoin as `combine_broadband_rgb`, as its OWN display-less
+    op: the plain combine is the served "Linear RGB" scene format, and
+    tapping this interior variant too would put a second, misleading
+    "Linear RGB" row on every dashboard."""
+    out = combine_ha_rgb.filename_fn(mosaic, r, g, b)
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    monos = [_open_mono_vips(m) for m in (r, g, b)]
+    rgb = monos[0].bandjoin([monos[1], monos[2]]).copy()
+    rgb.set_type(pyvips.GValue.gstr_type, "image-description",
+                 json.dumps({"PIPELINE": "AstroFlow-OSS"}))
+    _atomic_tiffsave(rgb, Path(out),
+                     tile=tile_size_for(rgb.width, rgb.height))
+    return WithSidecar(TiffFilePath(out))
 
 
 @node(auto_memory=True, plate_solve=False)  # streaming linear add
@@ -693,6 +801,7 @@ def color_post_process(mosaic: Mosaic, channels: dict, config, viewbox=None) -> 
     # superseded hashes are collected by the orphan sweep. Only the genuinely
     # cheap intermediates (stage-0 wrap, stretches, band-joins) stay ephemeral.
     starless_nb: dict[str, object] = {}
+    corrected_nb: dict[str, object] = {}
     stretched_nb: dict[str, object] = {}
     bxt_bb: dict[str, object] = {}
     bxt_l = None
@@ -703,6 +812,7 @@ def color_post_process(mosaic: Mosaic, channels: dict, config, viewbox=None) -> 
         if cf in _NARROWBAND:
             corrected = process_in_panels(bxt_correct, mosaic, cf, config, pm, viewbox=viewbox)
             starless = process_in_panels(sxt_starless, mosaic, cf, config, corrected, viewbox=viewbox)
+            corrected_nb[cf] = corrected  # with stars — scene format 1
             starless_nb[cf] = starless  # PanelMosaic — linear source for the Linear SHO tap
             stretched_nb[cf] = autostretch_channel(mosaic, cf, starless.merged)
         elif cf in _BROADBAND:
@@ -744,7 +854,7 @@ def color_post_process(mosaic: Mosaic, channels: dict, config, viewbox=None) -> 
         if ha_starless is not None:
             r_ha = blend_ha_chroma(
                 mosaic, bxt_bb["R"].merged, ha_starless.merged)
-            hargb_lin = combine_broadband_rgb(
+            hargb_lin = combine_ha_rgb(
                 mosaic, r_ha, bxt_bb["G"].merged, bxt_bb["B"].merged)
             out["HaRGB"] = hargb_image(mosaic, hargb_lin)
             if bxt_l is not None:
@@ -767,4 +877,22 @@ def color_post_process(mosaic: Mosaic, channels: dict, config, viewbox=None) -> 
         if rgb_stars is not None:
             out["Hubble"] = hubble_image(mosaic, s, h, o, rgb_stars)
             out["Foraxx"] = foraxx_image(mosaic, s, h, o, rgb_stars)
+
+    # Linear scene formats — the ≤3-band basis the live WebGPU finishes
+    # sample ("Linear RGB" is the display-stamped combine, already in the
+    # graph above; starless RGB is derived in-shader as combine − stars).
+    nb_present = tuple(f for f in _NB_ORDER if f in corrected_nb)
+    if nb_present:
+        out["Linear Narrowband"] = linear_narrowband(
+            mosaic, nb_present, *[corrected_nb[f].merged for f in nb_present])
+        if not (_NARROWBAND <= set(starless_nb)):
+            # Partial sets only — full SHO's starless role is the
+            # NXT-denoised "Linear SHO" tap.
+            out["Linear Narrowband Starless"] = linear_narrowband_starless(
+                mosaic, nb_present,
+                *[starless_nb[f].merged for f in nb_present])
+    if rgb_star_lin is not None:
+        out["Linear RGB Stars"] = linear_rgb_stars(mosaic, rgb_star_lin.merged)
+    if bxt_l is not None:
+        out["Linear L"] = linear_lum(mosaic, bxt_l.merged)
     return out

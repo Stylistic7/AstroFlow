@@ -137,8 +137,12 @@ def test_target_tail_traces_with_target_taps(tmp_path, monkeypatch):
     assert {"Mosaic", "Hubble", "Foraxx", "Stars", "Linear SHO",
             "RGB", "HaRGB"} <= displays, (
         f"colour deliverables missing from taps: {displays}")
-    # No Lum channel → neither of the L-bearing variants may appear.
-    assert not ({"LRGB", "HaLRGB"} & displays), displays
+    # Scene formats: raw narrowband + the RGB pair always; the partial-set
+    # starless variant must NOT appear (full SHO → "Linear SHO" serves it),
+    # and no Lum channel → no L-bearing taps.
+    assert {"Linear Narrowband", "Linear RGB", "Linear RGB Stars"} <= displays, displays
+    assert not ({"LRGB", "HaLRGB", "Linear Narrowband Starless",
+                 "Linear L"} & displays), displays
 
 
 def test_lrgb_target_traces_rgb_and_lrgb(tmp_path, monkeypatch):
@@ -181,8 +185,10 @@ def test_lrgb_target_traces_rgb_and_lrgb(tmp_path, monkeypatch):
         f"broadband deliverables missing: {displays}")
     assert not ({"Hubble", "Foraxx", "Linear SHO"} & displays), (
         f"narrowband palettes must not appear for LRGB: {displays}")
-    # No Hα channel → neither Hα-blend tap may appear.
-    assert not ({"HaRGB", "HaLRGB"} & displays), displays
+    # No Hα channel → neither Hα-blend tap nor any narrowband scene format.
+    assert not ({"HaRGB", "HaLRGB", "Linear Narrowband",
+                 "Linear Narrowband Starless"} & displays), displays
+    assert {"Linear RGB", "Linear RGB Stars", "Linear L"} <= displays, displays
 
 
 def test_galaxy_target_traces_ha_blend_taps(tmp_path, monkeypatch):
@@ -227,3 +233,7 @@ def test_galaxy_target_traces_ha_blend_taps(tmp_path, monkeypatch):
         f"Hα-blend deliverables missing: {displays}")
     assert not ({"Hubble", "Foraxx", "Linear SHO"} & displays), (
         f"full-SHO palettes need S and O, not just Ha: {displays}")
+    # Scene formats for the galaxy case: raw Hα (with stars — HII knots
+    # intact), the PARTIAL starless variant, the RGB pair, and L.
+    assert {"Linear Narrowband", "Linear Narrowband Starless",
+            "Linear RGB", "Linear RGB Stars", "Linear L"} <= displays, displays
