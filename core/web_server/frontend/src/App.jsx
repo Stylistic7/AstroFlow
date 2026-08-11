@@ -289,10 +289,12 @@ function App() {
                     <TargetPanel />
                   </AppLayout>
                 } />
+                {/* A target's view route renders the same tap viewer mosaics
+                    use — the colour tail gives targets the same deliverables. */}
                 <Route path="/target/:target_id/:pipeline/:display/:filter" element={
                   dataIsAvailable &&
                   <AppLayout>
-                    <TargetPanel />
+                    <MosaicViewer />
                   </AppLayout>
                 } />
                 <Route path="/mosaic/:mosaic_id" element={

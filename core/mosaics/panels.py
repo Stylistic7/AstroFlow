@@ -46,7 +46,11 @@ from file_io.types import TiffFilePath, WithSidecar
 from hashing import hash_list, hash_source_code
 from metadata.classes import ImageMetadata
 from mosaics.trimming import project_to_viewbox
-from mosaics.types import Mosaic
+# MosaicLike bound as `Mosaic`: widens beartype to accept a Target acting as
+# its own single-panel mosaic WITHOUT touching the `mosaic: Mosaic`
+# annotations — those serialize into the op code hash, so editing them would
+# re-key every op in this module (see mosaics/types.py).
+from mosaics.types import MosaicLike as Mosaic
 
 
 @dataclass(frozen=True)

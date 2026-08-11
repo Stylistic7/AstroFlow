@@ -1,5 +1,6 @@
 import React, { useContext } from "react";
 import { useParams } from "react-router-dom";
+import { Box } from "@mui/material";
 
 import StackThumbnail from "./StackThumbnail.jsx";
 import DecisionBadge from "./DecisionBadge.jsx";
@@ -8,11 +9,13 @@ import SuggestionBadge from "./suggestions/SuggestionBadge.jsx";
 import QuarantineToggle from "./QuarantineToggle.jsx";
 import ShoppingCartMenu from "./ShoppingCartMenu.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
+import { PipelineSection } from './MosaicDashboard.jsx';
+import { useVersionsMatrix } from './useVersions.js';
 import { buildUrl, inheritView } from './urls.js';
 
 
 export default function TargetPanel() {
-	const { stacks, targets, isQuarantined } = useContext(AstroFlowContext);
+	const { stacks, targets, isQuarantined, computeGraphStatus } = useContext(AstroFlowContext);
 
 	const params = useParams();
 
@@ -25,6 +28,14 @@ export default function TargetPanel() {
 	const view = (params.pipeline && params.display && params.filter)
 		? { pipeline: params.pipeline, display: params.display, filter: params.filter }
 		: null;
+
+	// Pipeline output sections — same per-pipeline tap matrix the mosaic
+	// dashboard shows. Empty (no sections) for a target no pipeline has
+	// produced taps for.
+	const pipelineOutputs = useVersionsMatrix(
+		"target", params.target_id, computeGraphStatus);
+	const pipelines = (pipelineOutputs?.pipelines || [])
+		.filter((p) => (p.taps || []).length > 0);
 
 	// When a view is picked, drilldown URLs propagate it (stack defaults
 	// for display via inheritView); without a view, links degrade to the
@@ -65,6 +76,18 @@ export default function TargetPanel() {
 						</StackThumbnail>
 					))}
 			</div>
+			{pipelines.length > 0 && (
+				<Box sx={{ mx: "2em", mt: "1.5em" }}>
+					{pipelines.map((p) => (
+						<PipelineSection
+							key={p.name}
+							objectType="target"
+							objectId={params.target_id}
+							pipeline={p}
+						/>
+					))}
+				</Box>
+			)}
 		</div>
 	);
 }

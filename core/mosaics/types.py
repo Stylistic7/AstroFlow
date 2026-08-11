@@ -5,7 +5,7 @@ from shapely import box  # type: ignore
 
 from geometry.projection import Projection
 from hashing import hash_dataclass, hash_list_int
-from targets.types import TargetHash
+from targets.types import Target, TargetHash
 from attributes import AstrometricAttributes, ChronologyAttributes
 from cache.content_hashed import ContentHashed
 from cache.context_ref import ContextRef
@@ -107,6 +107,15 @@ class Mosaic(
         )
 
     # TODO: Add a valid() method, and assert on it.
+
+
+# A Target IS a single-panel mosaic (Target.viewbox/.targets/.strips satisfy
+# the panel contract), so the entire colour tail accepts either. Tail modules
+# import this UNDER THE NAME `Mosaic`: the op code hash serializes annotations
+# as the bare name `Name(id='Mosaic')`, so rebinding the name widens beartype's
+# runtime check without moving a single op key — editing the annotations
+# themselves would re-key every mosaic op and force a full recompute.
+MosaicLike: TypeAlias = Mosaic | Target
 
 
 class MosaicsDict(dict[MosaicHash, ContextRef["Mosaic"]]):

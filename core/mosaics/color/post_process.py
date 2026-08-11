@@ -38,7 +38,11 @@ from mosaics.color import palettes
 from mosaics.panels import (
     PanelMosaic, base_panel_mosaic, blend_panels, combine_panels, process_in_panels,
 )
-from mosaics.types import Mosaic
+# MosaicLike bound as `Mosaic`: widens beartype to accept a Target acting as
+# its own single-panel mosaic WITHOUT touching the `mosaic: Mosaic`
+# annotations — those serialize into the op code hash, so editing them would
+# re-key every op in this module (see mosaics/types.py).
+from mosaics.types import MosaicLike as Mosaic
 from pix.tasks.filters import normalize_filter
 from targets.types import Target
 

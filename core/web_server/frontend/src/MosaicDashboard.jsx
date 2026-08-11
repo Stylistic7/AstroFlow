@@ -95,7 +95,10 @@ function VersionThumbnail({
 }
 
 
-function PipelineSection({ objectType, objectId, pipeline }) {
+// Exported: TargetPanel renders the same per-pipeline tap sections — the
+// component is object-type-agnostic (every URL/API it touches is keyed by
+// (objectType, objectId)).
+export function PipelineSection({ objectType, objectId, pipeline }) {
     const [discardOpen, setDiscardOpen] = useState(false);
     return (
         <Box sx={{ mb: 4 }}>

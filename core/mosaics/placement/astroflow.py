@@ -22,7 +22,11 @@ from file_io.generic import read_image
 from mosaics.placement.panel_io import write_placed_panel
 from file_io.types import TiffFilePath, WithSidecar
 from context import context
-from mosaics.types import Mosaic, Viewbox
+# MosaicLike bound as `Mosaic`: widens beartype to accept a Target acting as
+# its own single-panel mosaic WITHOUT touching the `mosaic: Mosaic`
+# annotations — those serialize into the op code hash, so editing them would
+# re-key every op in this module (see mosaics/types.py).
+from mosaics.types import MosaicLike as Mosaic, Viewbox
 from decorators import node
 from decisions.settings import ProcessingConfig
 from metadata.classes import ImageMetadata

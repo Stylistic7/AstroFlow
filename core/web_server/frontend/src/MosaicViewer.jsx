@@ -38,7 +38,14 @@ import { buildUrl, buildApiUrl } from "./urls.js";
 
 
 export default function MosaicViewer() {
-    const { mosaic_id, pipeline, display, filter } = useParams();
+    // Serves BOTH /mosaic/:mosaic_id/... and /target/:target_id/... view
+    // routes — a target's colour tail produces the same taps a mosaic's
+    // does, and every API here is keyed by (objectType, objectId). The
+    // mosaic-only chrome (outline, panel numbers, depth, Telescopius,
+    // open-in-PixInsight) is hidden on target pages.
+    const { mosaic_id, target_id, pipeline, display, filter } = useParams();
+    const objectType = target_id ? "target" : "mosaic";
+    const objectId = target_id ?? mosaic_id;
     const navigate = useNavigate();
     const { stacks, targets, mosaics, computeGraphStatus } = useContext(AstroFlowContext);
 
@@ -57,8 +64,9 @@ export default function MosaicViewer() {
 	const [isColor, setIsColor] = useState(false);
 
     const mosaic = mosaics?.[mosaic_id];
+    const entity = target_id ? targets?.[target_id] : mosaic;
 
-    const versionsData = useVersionsMatrix("mosaic", mosaic_id, computeGraphStatus);
+    const versionsData = useVersionsMatrix(objectType, objectId, computeGraphStatus);
 
     // The URL might land on a (pipeline, display) combo this mosaic
     // doesn't actually have — typically because the user switched
@@ -77,10 +85,10 @@ export default function MosaicViewer() {
         const replacement = validDisplays[0];
         if (!replacement) return;
         navigate(buildUrl({
-            hierarchy: [{ type: 'mosaic', id: mosaic_id }],
+            hierarchy: [{ type: objectType, id: objectId }],
             view: { pipeline, display: replacement, filter },
         }), { replace: true });
-    }, [pipeline, display, filter, mosaic_id, versionsData, navigate]);
+    }, [pipeline, display, filter, objectType, objectId, versionsData, navigate]);
 
     const openInPixInsight = () => {
         // open_mosaic_master's hierarchy is just <mosaic_id> (not
@@ -91,7 +99,7 @@ export default function MosaicViewer() {
             .catch(console.error);
     };
 
-    if (!mosaic) {
+    if (!entity) {
         return <Typography sx={{ p: 3 }}>Loading…</Typography>;
     }
 
@@ -108,37 +116,39 @@ export default function MosaicViewer() {
 				minHeight: 0,
 			}}
 		>
-			<TelescopiusDialog
+			{mosaic && <TelescopiusDialog
 				open={telescopiusOpen}
 				onClose={() => setTelescopiusOpen(false)}
 				stacks={stacks}
 				targets={targets}
 				mosaic={mosaic}
-			/>
+			/>}
 
 			{/* Implementation / quality / filter switching is now handled
 			    by the pill crumbs in AstroFlowBreadcrumbs. */}
 
 			{/* Control bar */}
 			<Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 2, py: 1 }}>
-				<ToggleIconButton
-					name="outline"
-					icon={<FullscreenIcon />}
-					checked={showOutline}
-					handleChange={() => setShowOutline((v) => !v)}
-				/>
-				<ToggleIconButton
-					name="panel numbers"
-					icon={<PinIcon />}
-					checked={showPanelNumbers}
-					handleChange={() => setShowPanelNumbers((v) => !v)}
-				/>
-				<ToggleIconButton
-					name="depth: hours to uniform"
-					icon={<MoreTimeIcon />}
-					checked={showDepth}
-					handleChange={() => setShowDepth((v) => !v)}
-				/>
+				{mosaic && <>
+					<ToggleIconButton
+						name="outline"
+						icon={<FullscreenIcon />}
+						checked={showOutline}
+						handleChange={() => setShowOutline((v) => !v)}
+					/>
+					<ToggleIconButton
+						name="panel numbers"
+						icon={<PinIcon />}
+						checked={showPanelNumbers}
+						handleChange={() => setShowPanelNumbers((v) => !v)}
+					/>
+					<ToggleIconButton
+						name="depth: hours to uniform"
+						icon={<MoreTimeIcon />}
+						checked={showDepth}
+						handleChange={() => setShowDepth((v) => !v)}
+					/>
+				</>}
 				{!isColor && (<>
 					<HdrControls
 						hdrCapable={hdrCapable}
@@ -163,29 +173,31 @@ export default function MosaicViewer() {
 						</Select>
 					</Tooltip>
 				</>)}
-				<Tooltip title="Export to Telescopius">
-					<IconButton
-						size="small"
-						onClick={() => setTelescopiusOpen(true)}
-						sx={{ color: 'text.secondary' }}
-					>
-						<ShareIcon fontSize="small" />
-					</IconButton>
-				</Tooltip>
-				<Tooltip title="Open in PixInsight">
-					<span>
+				{mosaic && <>
+					<Tooltip title="Export to Telescopius">
 						<IconButton
 							size="small"
-							onClick={openInPixInsight}
+							onClick={() => setTelescopiusOpen(true)}
 							sx={{ color: 'text.secondary' }}
 						>
-							<LaunchIcon fontSize="small" />
+							<ShareIcon fontSize="small" />
 						</IconButton>
-					</span>
-				</Tooltip>
+					</Tooltip>
+					<Tooltip title="Open in PixInsight">
+						<span>
+							<IconButton
+								size="small"
+								onClick={openInPixInsight}
+								sx={{ color: 'text.secondary' }}
+							>
+								<LaunchIcon fontSize="small" />
+							</IconButton>
+						</span>
+					</Tooltip>
+				</>}
 				<ConcernsBadge
-					objectType="mosaic"
-					objectId={mosaic_id}
+					objectType={objectType}
+					objectId={objectId}
 					pipeline={pipeline}
 					display={display}
 					filter={filter}
@@ -221,12 +233,12 @@ export default function MosaicViewer() {
 					}}
 				>
 					<AstroFlowImage
-						objectType="mosaic"
-						objectId={mosaic_id}
+						objectType={objectType}
+						objectId={objectId}
 						filter={filter}
-						showPolygons={showOutline}
-						showPanelNumbers={showPanelNumbers}
-						showDepth={showDepth}
+						showPolygons={mosaic ? showOutline : false}
+						showPanelNumbers={mosaic ? showPanelNumbers : false}
+						showDepth={mosaic ? showDepth : false}
 						pipeline={pipeline}
 						display={display}
 						showQualitySelector={false}
@@ -250,7 +262,7 @@ export default function MosaicViewer() {
 					<WorkflowGraph
 						theme={darkTheme}
 						url={
-							`/api/workflow_graph/mosaic/${mosaic_id}`
+							`/api/workflow_graph/${objectType}/${objectId}`
 							+ `/${encodeURIComponent(pipeline)}`
 							+ (filter ? `/${encodeURIComponent(filter)}` : "")
 						}

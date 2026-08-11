@@ -28,7 +28,11 @@ from metadata.classes import ImageMetadata
 from mosaics.merging.pixinsight import (
     MergedImage, _panel_count, _set_panel_count,
 )
-from mosaics.types import Mosaic
+# MosaicLike bound as `Mosaic`: widens beartype to accept a Target acting as
+# its own single-panel mosaic WITHOUT touching the `mosaic: Mosaic`
+# annotations — those serialize into the op code hash, so editing them would
+# re-key every op in this module (see mosaics/types.py).
+from mosaics.types import MosaicLike as Mosaic
 
 log = structlog.get_logger()
 
@@ -263,6 +267,15 @@ def merge_scope(mosaic, filter, viewbox, config, targets, *corrected,
     from dependency_graph.classes import Graph
     from dependency_graph.tracing import trace
     from mosaics.placement.astroflow import place_image
+
+    # RUNTIME FOLD CONFESSION: print each resolved input's content hash and
+    # the resulting merge identity. The R-channel anomaly (2026-08-11 —
+    # landed 423e2666 vs predicted 01b99d25 with every data/code check
+    # equal) could not be reconstructed from snapshots; this line makes the
+    # next divergence name its own input instead.
+    print("### merge_scope fold %s/%s: %s" % (
+        getattr(mosaic, "stable_hash", "?")[:12], filter,
+        " ".join(str(getattr(c, "content_hash", "?"))[:16] for c in corrected)))
 
     def _body():
         placed = [

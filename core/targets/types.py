@@ -64,6 +64,29 @@ class Target(
         from targets.target_channel import channel_stacks_for
         return channel_stacks_for(self, filter)
 
+    # A Target IS a single-panel mosaic. These two members let the entire
+    # mosaic colour tail (place → merge → color_post_process, incl. the
+    # panels-as-tiles machinery) run on a Target unchanged: `viewbox` frames
+    # the target's own footprint, and `targets` makes panel enumeration
+    # yield exactly one panel — itself.
+
+    def viewbox(self, mode):
+        """Pixel-space viewbox over this target's own footprint (same
+        contract as `Mosaic.viewbox`)."""
+        from mosaics.viewbox import compute_viewbox
+        return compute_viewbox(mode, self)
+
+    @property
+    def targets(self) -> tuple:
+        """Panel list of the single-panel mosaic this target is."""
+        return (self,)
+
+    @property
+    def strips(self) -> tuple:
+        """Strip layout of the single-panel mosaic this target is: one
+        strip, one panel (same contract as `Mosaic.strips`)."""
+        return ((self.id,),)
+
     def __str__(self) -> str:
         return (
             f"Target(name={self.name}, stable_hash={self.stable_hash}, "

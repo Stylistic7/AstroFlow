@@ -73,9 +73,23 @@ def for_stack(stack, config):
 
 @pipeline("Hybrid: PI Master + OSS Mosaic", processes=Target)
 def for_target(target, config):
-    """Per-filter channel masters. Identical to PI Master at the
-    target level — the OSS swap is only relevant for the mosaic step."""
-    return _channels_for_target(target, config)
+    """Per-filter channel masters PLUS the full colour tail — a Target IS a
+    single-panel mosaic (`Target.viewbox`/`.targets`/`.strips`), so it runs
+    the exact machinery `for_mosaic` uses: each channel is placed
+    (reprojected into the target's own Mercator viewbox — the tail's tile
+    geometry assumes viewbox space, and a native-projection master can
+    differ by tens of percent at high declination) and single-input-merged
+    through the same self-cleaning `{place → merge}` scope, then
+    `color_post_process` produces the same Hubble/Foraxx/Linear SHO/Stars
+    deliverables mosaics get. Taps route to the TARGET (the ops receive it
+    in the mosaic slot), so they appear on the target's viewer page."""
+    channels = {
+        (target.id, filter): sink
+        for filter, sink in _channels_for_target(target, config).items()
+    }
+    merged = _merged_channels(target, {target.id: target}, channels, config)
+    color = color_post_process(target, merged, config, target.viewbox("Master"))
+    return {**merged, **color}
 
 
 @pipeline("Hybrid: PI Master + OSS Mosaic", processes=Mosaic)
@@ -99,17 +113,42 @@ def for_mosaic(mosaic, config):
         for filter, sink in _channels_for_target(target, config).items():
             channels[(target.id, filter)] = sink
 
+    out = _merged_channels(mosaic, targets_by_id, channels, config)
+
+    # Continue into color post-processing — the same pipeline-agnostic
+    # workflow group the OSS-stack hybrid uses, so both pipelines produce
+    # identical "Hubble"/"Foraxx"/"Stars" deliverables from the merged
+    # per-filter channels.
+    color = color_post_process(mosaic, out, config, mosaic.viewbox("Master"))
+    return {**out, **color}
+
+
+def _merged_channels(mosaic, targets_by_id, channels, config) -> dict:
+    """Per-filter `{filter: merged-channel handle}` for any mosaic-like
+    entity — a real `Mosaic` or a `Target` acting as its own single-panel
+    mosaic (`Target.targets == (self,)`).
+
+    Croman two-pass: BXT Correct-Only on each PANEL (re-solved) before
+    placement — per-panel aberrations differ across the mosaic — then the
+    sharpening BXT runs on the assembled canvas (color_post_process). GPU
+    work stays OUTSIDE the scope below (cheap-to-recompute × big is what
+    qualifies for deletion; GPU minutes are not cheap).
+
+    The placements — multi-GB views whose ONLY consumer is the merge — live
+    inside a `{N× place_image → merge_images_oss}` subgraph with
+    delete_intermediates=True: deleted at scope conclusion, while the
+    variadic merge (one feather, one least-squares flux solve; N=1 for a
+    single-panel target) is the terminal and persists. The builder PRESENTS
+    the merge (builder ≡ terminal): identity + display + expected path
+    stamped from pure filename_fn arithmetic, so the "Mosaic" tap, its
+    version chain, and downstream keys are bit-identical to the inline
+    version."""
     out = {}
     for filter in mosaic.filters:
         viewbox = mosaic.viewbox("Master")
-
-        # Croman two-pass mosaic: BXT Correct-Only on each PANEL (re-solved)
-        # before placement — per-panel aberrations differ across the mosaic —
-        # then the sharpening BXT runs on the assembled mosaic
-        # (color_post_process). GPU work → deliberately OUTSIDE the scope
-        # below (cheap-to-recompute × big is what qualifies for deletion;
-        # GPU minutes are not cheap): kept on disk so incremental runs
-        # cache-hit.
+        # STRIPS order, verbatim from the original inline block: the merge
+        # key folds the variadic placement ORDER, so changing iteration
+        # would re-key every existing mosaic channel.
         corrected = {
             tid: bxt_correct_only(targets_by_id[tid], filter, config,
                                   channels[(tid, filter)])
@@ -125,15 +164,6 @@ def for_mosaic(mosaic, config):
         ]
         if not entries:
             continue
-        # The placements — multi-GB views whose ONLY consumer is the merge —
-        # live inside a `{N× place_image → merge_images_oss}` subgraph with
-        # delete_intermediates=True: deleted at scope conclusion, while the
-        # variadic merge (one feather, one least-squares flux solve — no
-        # row/strip decomposition) is the terminal and persists. The builder
-        # PRESENTS the merge (builder ≡ terminal): identity + display +
-        # expected path stamped from pure filename_fn arithmetic, so the
-        # "Mosaic" tap, its version chain, and downstream keys are
-        # bit-identical to the inline version.
         placed_refs = [
             IdentityRef(Path(place_image.filename_fn(
                 mosaic, target, filter, viewbox, config, channel)).stem)
@@ -147,10 +177,4 @@ def for_mosaic(mosaic, config):
             *[channel for _, channel in entries])
         out[filter] = present_terminal(
             handle, merge_images_oss, path=merge_path)
-
-    # Continue into color post-processing — the same pipeline-agnostic
-    # workflow group the OSS-stack hybrid uses, so both pipelines produce
-    # identical "Hubble"/"Foraxx"/"Stars" deliverables from the merged
-    # per-filter channels.
-    color = color_post_process(mosaic, out, config, mosaic.viewbox("Master"))
-    return {**out, **color}
+    return out
