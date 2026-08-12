@@ -137,7 +137,35 @@ def tile_metadata_tap(
     return _tile_metadata_response(path, backend_port, display, status=status)
 
 
+# Stats memo: computing them pulls a ~16 Mpx page (~190 MB) and runs per-band
+# medians/percentiles — seconds of work that used to rerun on EVERY
+# tile_metadata request (the viewer re-polls on each compute-status change,
+# so an active pass hammered it into timeouts, 2026-08-12). Keyed on
+# (path, mtime) so a rebuilt pyramid recomputes; the lock is single-flight —
+# stacked gunicorn threads wait for the first computation instead of each
+# pulling their own 190 MB.
+_stats_cache: dict = {}
+_stats_lock = threading.Lock()
+
+
 def _per_channel_linear_stats(path):
+    p = os.fspath(path)
+    try:
+        mtime = os.path.getmtime(p)
+    except OSError:
+        mtime = 0
+    key = (p, mtime)
+    with _stats_lock:
+        cached = _stats_cache.get(key)
+        if cached is None:
+            cached = _per_channel_linear_stats_uncached(p)
+            _stats_cache[key] = cached
+            if len(_stats_cache) > 64:            # a handful of taps in play
+                _stats_cache.pop(next(iter(_stats_cache)))
+    return cached
+
+
+def _per_channel_linear_stats_uncached(path):
     """Per-band (background median, bright-signal anchor) for the shader's
     (c-m)/(p-m) normalise.
 

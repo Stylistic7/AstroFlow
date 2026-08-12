@@ -38,6 +38,7 @@ import {
     buildCellFinishParams,
 } from './generic_grid.js';
 import { stfSeed } from './finish_seed.js';
+import { useVersionsMatrix } from '../useVersions.js';
 import PolygonOverlay from './PolygonOverlay.jsx';
 import TextOverlay from './TextOverlay.jsx';
 import { computeAutoStretchParams } from '../auto_stretch.js';
@@ -82,7 +83,8 @@ function pointInPolygon(x, y, points) {
  * level renders at world coords scaled by `2^(maxZoom - z)`.
  */
 function computeVisibleTiles({ viewport, meta, view, objectType, imageHash,
-                              sourceViews = null, ancestors = '' }) {
+                              primaryView = null, sourceViews = null,
+                              ancestors = '' }) {
     const { tx, ty, scale, screenW, screenH } = viewport;
     const { maxZoom, width: imageW, height: imageH, port, mtime } = meta;
 
@@ -127,7 +129,7 @@ function computeVisibleTiles({ viewport, meta, view, objectType, imageHash,
             const rel = buildApiUrl(
                 '/tap/tile',
                 [{ type: objectType, id: imageHash }],
-                view,
+                primaryView ?? view,
                 `/${z}/${tx_}/${ty_}.f32`,
                 { ancestors },
             );
@@ -150,7 +152,9 @@ function computeVisibleTiles({ viewport, meta, view, objectType, imageHash,
                     return new URL(r, `${origin}:${port}`).href;
                 });
             }
-            const srcSig = sourceViews?.map((sv) => sv.display).join('|') ?? '';
+            const srcSig = [(primaryView ?? view)?.display,
+                            ...(sourceViews ?? []).map((sv) => sv.display)]
+                .filter(Boolean).join('|');
             wanted.push({
                 key: `${z}/${tx_}/${ty_}${srcSig ? `#${srcSig}` : ''}`,
                 url: url.href,
@@ -192,6 +196,16 @@ export default function TileViewerV2({
     const routeParams = useParams();
     const objectType = objectTypeProp ?? routeParams.objectType;
     const imageHash = imageHashProp ?? routeParams.imageHash;
+
+    const navigate = useNavigate();
+    const params = useParams();
+    // Cart-item ANCESTOR chain (root→leaf, minus this leaf) for tap resolution:
+    // a child stack has no snapshot of its own, so tile/metadata reads must name
+    // its target/mosaic so the backend can filter their snapshot down to it. ''
+    // for a cart item viewed directly (a mosaic). A stable string → safe in deps.
+    const ancestors = ancestorsFromParams(params, objectType, imageHash);
+    const { mosaics, stacks, targets, showQuarantined, isQuarantined, computeGraphStatus }
+        = useContext(AstroFlowContext);
     const filter = filterProp ?? routeParams.filter;
     const pipeline = pipelineProp ?? routeParams.pipeline;
     const display = displayProp ?? routeParams.display;
@@ -277,6 +291,10 @@ export default function TileViewerV2({
     // its sliders + 3×3 grid axes FROM its extracted params. See
     // project_scene_display_seam.
     const [finishes, setFinishes] = useState([]);
+    // Which taps this object actually has built — the finish picker's
+    // real gate (a finish needs ALL its inputs, from any page).
+    const objectOutputs = useVersionsMatrix(
+        objectType, imageHash, computeGraphStatus, ancestors);
     const [finishName, setFinishName] = useState('ghs');
     // Current values of the selected data-driven finish's params, keyed by name
     // (seeded from each param's default when the finish is picked).
@@ -305,12 +323,29 @@ export default function TileViewerV2({
         onColorDetected?.(isColor);
     }, [isColor, onColorDetected]);
 
-    // Data-driven finishes applicable to THIS tap: inputs[0] is the primary
-    // (viewed) tap by convention — "Linear SHO" finishes on a narrowband tap,
-    // the multi-source RGB/LRGB/Ha finishes on their "Linear RGB" primary.
-    const applicableFinishes = finishes.filter((f) =>
-        (f.inputs?.[0] ?? 'Linear SHO')
-            === (isNarrowband ? 'Linear SHO' : view?.display));
+    // Which finishes can run on THIS OBJECT: every declared input tap must be
+    // built. NOT "does this finish's primary match the page" — a finish reads
+    // all its taps itself, so the page you entered from is a geometry anchor
+    // and a URL, not a constraint. (The old primary-match rule hid Hubble on
+    // the Linear RGB page while offering LRGB to an image with no Linear L.)
+    // Registrations that differ only in primary (Hubble on Linear SHO vs on
+    // Linear Narrowband Starless) collapse to whichever one's inputs exist.
+    const availableTaps = new Map();
+    for (const p of (objectOutputs?.pipelines || [])) {
+        if (view && p.name !== view.pipeline) continue;
+        for (const t of (p.taps || [])) {
+            const built = (t.outputs || []).find((o) => o.exists);
+            if (built && !availableTaps.has(t.display)) {
+                availableTaps.set(t.display, built.filter ?? 'RGB');
+            }
+        }
+    }
+    const applicableFinishes = [];
+    for (const f of finishes) {
+        if (!(f.inputs || []).every((d) => availableTaps.has(d))) continue;
+        if (applicableFinishes.some((g) => g.name === f.name)) continue;
+        applicableFinishes.push(f);
+    }
 
     // The picked data-driven finish (null = the built-in per-channel GHS,
     // narrowband taps only). gridAxes/paramOrder are extracted from its
@@ -330,25 +365,23 @@ export default function TileViewerV2({
         }
     }, [isLinearScene, finishName, applicableFinishes.length]);
 
-    // Extra source taps a multi-input finish samples (inputs[1..], same
-    // pipeline; "Linear L" is the one mono tap in the scene-format family).
+    // A finish reads its OWN taps: inputs[0] is the primary texture (src0) and
+    // inputs[1..] the extra bindings — regardless of which tap's page we're
+    // on. Every linear scene format shares the object's viewbox geometry, so
+    // the viewed tap's tile metadata still drives z/x/y and the URL keeps
+    // naming the tap you entered from (stable deep links).
+    const viewFor = (display) => ({
+        pipeline: view.pipeline, display,
+        filter: availableTaps.get(display) ?? 'RGB',
+    });
+    const primaryView = genericMode && view && activeFinish.inputs?.length
+        ? viewFor(activeFinish.inputs[0])
+        : view;
     const sourceViews = genericMode && view && (activeFinish.inputs?.length ?? 1) > 1
-        ? activeFinish.inputs.slice(1).map((d) => ({
-            pipeline: view.pipeline, display: d,
-            filter: d === 'Linear L' ? 'L' : 'RGB',
-        }))
+        ? activeFinish.inputs.slice(1).map(viewFor)
         : null;
 
 
-    const navigate = useNavigate();
-    const params = useParams();
-    // Cart-item ANCESTOR chain (root→leaf, minus this leaf) for tap resolution:
-    // a child stack has no snapshot of its own, so tile/metadata reads must name
-    // its target/mosaic so the backend can filter their snapshot down to it. ''
-    // for a cart item viewed directly (a mosaic). A stable string → safe in deps.
-    const ancestors = ancestorsFromParams(params, objectType, imageHash);
-    const { mosaics, stacks, targets, showQuarantined, isQuarantined, computeGraphStatus }
-        = useContext(AstroFlowContext);
 
     // Filter polygons through the quarantine state same way the Pixi
     // viewer does.
@@ -630,7 +663,7 @@ export default function TileViewerV2({
             });
             const wanted = computeVisibleTiles({
                 viewport: s, meta: tileMeta, view, objectType, imageHash,
-                sourceViews, ancestors,
+                primaryView, sourceViews, ancestors,
             });
             renderer.setTileUrls(wanted);
         };
@@ -638,7 +671,7 @@ export default function TileViewerV2({
         apply(viewport.get());
         return unsub;
     }, [renderer.isReady, tileMeta, view?.pipeline, view?.display, view?.filter,
-        viewport, objectType, imageHash, ancestors,
+        viewport, objectType, imageHash, ancestors, primaryView?.display,
         sourceViews?.map((sv) => sv.display).join('|') ?? '']);
 
     // ── 3×3 taste-grid handlers ─────────────────────────────────────────
