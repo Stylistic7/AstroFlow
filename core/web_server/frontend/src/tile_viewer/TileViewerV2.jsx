@@ -299,6 +299,9 @@ export default function TileViewerV2({
     // Current values of the selected data-driven finish's params, keyed by name
     // (seeded from each param's default when the finish is picked).
     const [genericValues, setGenericValues] = useState({});
+    // Stats of the finish's PRIMARY tap when it isn't the viewed one —
+    // the seeds must describe the pixels the finish actually reads.
+    const [primaryStats, setPrimaryStats] = useState(null);
 
     // Resolve each control to "parent prop if provided, else local state".
     const peakBrightness = peakBrightnessProp ?? localPeakBrightness;
@@ -353,6 +356,10 @@ export default function TileViewerV2({
     const activeFinish = finishName === 'ghs'
         ? null
         : (applicableFinishes.find((f) => f.name === finishName) ?? null);
+    // A picked finish renders from its OWN input taps, but only on pages
+    // in the viewbox-geometry family (the linear scene formats + Linear
+    // SHO) — a stack/Channel tap is native-projection, so its tile grid
+    // wouldn't line up with the taps the finish samples.
     const genericMode = (isNarrowband || isLinearScene) && !!activeFinish;
     const gridAxes = genericMode ? axesFromParams(activeFinish.params) : null;
     const paramOrder = genericMode ? activeFinish.params.map((p) => p.name) : null;
@@ -443,11 +450,26 @@ export default function TileViewerV2({
     // actually has (black/white/midtones), so a non-stretch finish is untouched.
     // Backend ships only generic stats — no finish logic. Re-runs on finish
     // switch or tap change.
+    // Fetch the primary tap's stats when the finish reads a different tap
+    // than the page shows (same geometry family, so only stats differ).
+    useEffect(() => {
+        setPrimaryStats(null);
+        if (!primaryView || !view || primaryView.display === view.display) return;
+        const url = buildApiUrl('/tap/tile_metadata',
+            [{ type: objectType, id: imageHash }], primaryView, '', { ancestors });
+        let cancelled = false;
+        fetch(url).then((r) => (r.ok ? r.json() : null)).then((m) => {
+            if (!cancelled) setPrimaryStats(m?.channelStats ?? null);
+        }).catch(() => {});
+        return () => { cancelled = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [primaryView?.display, view?.display, objectType, imageHash, ancestors]);
+
     useEffect(() => {
         if (!activeFinish) return;
         const init = {};
         for (const p of activeFinish.params) init[p.name] = p.default;
-        const seed = stfSeed(tileMeta?.channelStats);
+        const seed = stfSeed(primaryStats ?? tileMeta?.channelStats);
         if (seed) {
             for (const p of activeFinish.params) {
                 if (p.name in seed) init[p.name] = Math.min(p.hi, Math.max(p.lo, seed[p.name]));
@@ -455,7 +477,7 @@ export default function TileViewerV2({
         }
         setGenericValues(init);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [finishName, tileMeta?.channelStats]);
+    }, [finishName, tileMeta?.channelStats, primaryStats]);
 
     // Hit-test polygons at the tapped world position. Precedence
     // matches the Pixi viewer: stack > target > mosaic.
@@ -555,6 +577,34 @@ export default function TileViewerV2({
         // Linear narrowband S/H/O: the shader runs the whole per-pixel
         // colour finish. The stretch reuses e1/e5 (e1=0 shadow, e5=midtone);
         // normalise anchors come from the metadata's per-channel stats.
+        // A data-driven finish owns ALL of its scaling and reads its own
+        // taps, so it needs only the peak multiplier + its DisplayParams —
+        // and it must run for ANY page it's active on, not just narrowband
+        // ones. (This branch used to live inside the isNarrowband guard, so
+        // on a linear-scene page the finish's params never reached the
+        // uniform and the canvas rendered black — 2026-08-12.)
+        if (genericMode) {
+            const med = tileMeta?.channelMedians || [0, 0, 0];
+            const sig = tileMeta?.channelSigma || [0, 0, 0];
+            const p99 = tileMeta?.channelP99 || [1, 1, 1];
+            const gbase = {
+                max: 1.0, stretchMode: 0,
+                peakBrightness: 1.0, finishMode: false, isColor: false,
+                anchors: { m: med, p: p99 }, sigmas: sig, shadowClip: nbShadowClip,
+                trims: [nbTrimS, nbTrimH, nbTrimO],
+            };
+            if (gridActive && gridCenter && gridMoves) {
+                renderer.setGrid(buildCellFinishParams(
+                    gridAxes, paramOrder, gridCenter, gbase, gridMoves));
+            } else {
+                renderer.setGlobals({
+                    ...gbase,
+                    finishParams: activeFinish.params.map(
+                        (p) => genericValues[p.name] ?? p.default),
+                });
+            }
+            return;
+        }
         if (isNarrowband) {
             const med = tileMeta?.channelMedians || [0, 0, 0];
             const sig = tileMeta?.channelSigma || [0, 0, 0];
@@ -562,24 +612,6 @@ export default function TileViewerV2({
             // Data-driven finish: feed the SAME normalise context (median −
             // shadowClip·σ anchors) to the compiled displayFinish; its params
             // come from genericValues (single view) or the grid (per cell).
-            if (genericMode) {
-                const gbase = {
-                    peakBrightness: 1.0, finishMode: false, isColor: false,
-                    anchors: { m: med, p: p99 }, sigmas: sig, shadowClip: nbShadowClip,
-                    trims: [nbTrimS, nbTrimH, nbTrimO],
-                };
-                if (gridActive && gridCenter && gridMoves) {
-                    renderer.setGrid(buildCellFinishParams(
-                        gridAxes, paramOrder, gridCenter, gbase, gridMoves));
-                } else {
-                    renderer.setGlobals({
-                        ...gbase,
-                        finishParams: activeFinish.params.map(
-                            (p) => genericValues[p.name] ?? p.default),
-                    });
-                }
-                return;
-            }
             const paletteMode = palette === 'foraxx' ? 1 : 0;
             // Per-channel SP = where the background median lands in the shader's
             // normalised domain (lo = m − shadowClip·σ, hi = p99). GHS pivots there
