@@ -165,6 +165,7 @@ export default function MosaicDashboard() {
     const { mosaic_id } = useParams();
     const { mosaics, computeGraphStatus } = useContext(AstroFlowContext);
     const [data, setData] = useState(null);
+    const navigate = useNavigate();
 
     const mosaic = mosaics?.[mosaic_id];
 
@@ -181,6 +182,25 @@ export default function MosaicDashboard() {
 
     const pipelines = data?.pipelines || [];
 
+    // The live-finish entry point: the first built linear scene format, by
+    // preference. Clicking the hero preview below opens ITS viewer page,
+    // where the WebGPU finish pipeline (Hubble/Foraxx/RGB/… with sliders)
+    // runs on exactly these pixels.
+    let liveView = null;
+    for (const p of pipelines) {
+        for (const disp of ["Linear SHO", "Linear RGB",
+                            "Linear Narrowband Starless"]) {
+            const tap = (p.taps || []).find((t) => t.display === disp
+                && (t.outputs || []).some((o) => o.exists));
+            if (tap) {
+                liveView = { pipeline: p.name, display: disp,
+                             filter: tap.outputs.find((o) => o.exists).filter };
+                break;
+            }
+        }
+        if (liveView) break;
+    }
+
     return (
         <Paper elevation={2} sx={{
             borderRadius: 0,
@@ -196,6 +216,45 @@ export default function MosaicDashboard() {
             <Typography variant="h5" sx={{ mb: 3 }}>
                 {mosaic.name || `Mosaic ${mosaic_id.slice(0, 8)}`}
             </Typography>
+
+            {/* Hero: the canonical server-rendered preview, clickable into
+                the LIVE finish pipeline (the viewer on the first built
+                linear scene format, where every look runs in WebGPU with
+                its knobs as sliders). */}
+            {liveView && (
+                <Box
+                    onClick={() => navigate(buildUrl({
+                        hierarchy: [{ type: 'mosaic', id: mosaic_id }],
+                        view: liveView,
+                    }))}
+                    sx={{
+                        cursor: 'pointer', mb: 4, position: 'relative',
+                        alignSelf: 'flex-start', borderRadius: 1,
+                        overflow: 'hidden', border: '1px solid',
+                        borderColor: 'divider', maxWidth: '100%',
+                        '&:hover .liveBadge': { backgroundColor: 'primary.main' },
+                    }}
+                >
+                    <img
+                        src={`/thumbnail/preview/mosaic/${mosaic_id}`}
+                        alt="canonical preview"
+                        onError={(e) => {
+                            e.currentTarget.parentElement.style.display = 'none';
+                        }}
+                        style={{ display: 'block', maxHeight: '55vh',
+                                 maxWidth: '100%' }}
+                    />
+                    <Box className="liveBadge" sx={{
+                        position: 'absolute', bottom: 0, left: 0, right: 0,
+                        backgroundColor: 'rgba(0,0,0,0.65)', color: 'white',
+                        px: 1.5, py: 0.75, fontSize: 14,
+                        transition: 'background-color 120ms',
+                    }}>
+                        Open in the live finish pipeline — Hubble, Foraxx,
+                        RGB &amp; friends with real-time sliders →
+                    </Box>
+                </Box>
+            )}
 
             {pipelines.length === 0 ? (
                 <Typography sx={{ color: 'text.secondary' }}>
