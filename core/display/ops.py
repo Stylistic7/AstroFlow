@@ -239,3 +239,139 @@ SATURATION = DisplayOp(
     wgsl=("let luma = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));\n"
           "    c = clamp(mix(vec3<f32>(luma), c, saturation), vec3<f32>(0.0), vec3<f32>(1.0));"),
 )
+
+
+# ── LINKED MTF stretch (one curve, all channels — hue-preserving) ─────────────
+# Param names match finish_seed.stfSeed's LINKED keys (blackpoint/whitepoint/
+# midtones), so the image-adaptive seeding works with zero new frontend logic.
+
+def _mtf_np(x: np.ndarray, m: float) -> np.ndarray:
+    den = (2.0 * m - 1.0) * x - m
+    return np.where(np.abs(den) < 1e-12, 0.0,
+                    np.clip((m - 1.0) * x / den, 0.0, 1.0))
+
+
+def _linked_mtf_np(rgb: np.ndarray, v: dict) -> np.ndarray:
+    bp, wp, m = v["blackpoint"], v["whitepoint"], v["midtones"]
+    x = np.clip((rgb - bp) / max(wp - bp, 1e-6), 0.0, 1.0)
+    return _mtf_np(x, m)
+
+
+_MTF_WGSL_HELPER = (
+    "fn mtf(x: f32, m: f32) -> f32 {\n"
+    "    let den = (2.0 * m - 1.0) * x - m;\n"
+    "    if (abs(den) < 1e-12) { return 0.0; }\n"
+    "    return clamp((m - 1.0) * x / den, 0.0, 1.0);\n"
+    "}"
+)
+
+LINKED_MTF = DisplayOp(
+    name="linked_mtf",
+    params=[
+        #     name          default  lo     hi    step   label     scale
+        Param("blackpoint", 0.002,   0.0,   0.1,  0.03,  "black",  scale="log"),
+        Param("whitepoint", 0.5,     0.02,  1.0,  0.03,  "white",  scale="log"),
+        Param("midtones",   0.15,    0.01,  0.95, 0.015, "mid",    scale="log"),
+    ],
+    numpy_fn=_linked_mtf_np,
+    wgsl_helpers=_MTF_WGSL_HELPER,
+    wgsl=(
+        "let xr = clamp((c - vec3<f32>(blackpoint)) / max(whitepoint - blackpoint, 1e-6),"
+        " vec3<f32>(0.0), vec3<f32>(1.0));\n"
+        "    c = vec3<f32>(mtf(xr.r, midtones), mtf(xr.g, midtones), mtf(xr.b, midtones));"
+    ),
+)
+
+
+# ── LRGB lightness replacement in CIE Lab (consumes the `aux` side channel) ───
+# The live twin of palettes.lrgb_vips: the STRETCHED colour's L* is replaced by
+# the (separately stretched) luminance carried in `aux`, chrominance scaled by
+# `chroma`. sRGB/Rec709 primaries, D65 — the same trip vips runs. MUST follow
+# LINKED_MTF in a finish (it reuses that op's `mtf` helper — emitting a second
+# copy would be a duplicate WGSL fn).
+
+_M_FWD = np.array([[0.4124564, 0.3575761, 0.1804375],
+                   [0.2126729, 0.7151522, 0.0721750],
+                   [0.0193339, 0.1191920, 0.9503041]], dtype=np.float64)
+_M_INV = np.array([[3.2404542, -1.5371385, -0.4985314],
+                   [-0.9692660, 1.8760108, 0.0415560],
+                   [0.0556434, -0.2040259, 1.0572252]], dtype=np.float64)
+_WHITE = np.array([0.95047, 1.0, 1.08883], dtype=np.float64)
+_LAB_D = 6.0 / 29.0
+
+
+def _labf_np(t: np.ndarray) -> np.ndarray:
+    return np.where(t > _LAB_D ** 3, np.cbrt(t), t / (3 * _LAB_D ** 2) + 4.0 / 29.0)
+
+
+def _labf_inv_np(t: np.ndarray) -> np.ndarray:
+    return np.where(t > _LAB_D, t ** 3, 3 * _LAB_D ** 2 * (t - 4.0 / 29.0))
+
+
+def _lrgb_lab_np(rgb: np.ndarray, v: dict) -> np.ndarray:
+    aux = v.get("__aux")
+    if aux is None:
+        return rgb
+    la = _mtf_np(np.clip((aux - v["lum_black"])
+                         / max(v["lum_white"] - v["lum_black"], 1e-6), 0.0, 1.0),
+                 v["lum_mid"])
+    xyz = rgb.astype(np.float64) @ _M_FWD.T / _WHITE
+    f = _labf_np(xyz)
+    lab_a = 500.0 * (f[..., 0] - f[..., 1]) * v["chroma"]
+    lab_b = 200.0 * (f[..., 1] - f[..., 2]) * v["chroma"]
+    fy = _labf_np(la.astype(np.float64))            # grey (l,l,l): Y == l exactly
+    fx = fy + lab_a / 500.0
+    fz = fy - lab_b / 200.0
+    xyz2 = np.stack([_labf_inv_np(fx), _labf_inv_np(fy), _labf_inv_np(fz)],
+                    axis=-1) * _WHITE
+    return np.clip(xyz2 @ _M_INV.T, 0.0, 1.0).astype(np.float32)
+
+
+_LAB_WGSL_HELPERS = """
+fn labF(t: f32) -> f32 {
+    let d = 6.0 / 29.0;
+    if (t > d * d * d) { return pow(t, 1.0 / 3.0); }
+    return t / (3.0 * d * d) + 4.0 / 29.0;
+}
+fn labFinv(t: f32) -> f32 {
+    let d = 6.0 / 29.0;
+    if (t > d) { return t * t * t; }
+    return 3.0 * d * d * (t - 4.0 / 29.0);
+}
+fn scrgbXyz(c: vec3<f32>) -> vec3<f32> {
+    return vec3<f32>(
+        dot(c, vec3<f32>(0.4124564, 0.3575761, 0.1804375)) / 0.95047,
+        dot(c, vec3<f32>(0.2126729, 0.7151522, 0.0721750)),
+        dot(c, vec3<f32>(0.0193339, 0.1191920, 0.9503041)) / 1.08883);
+}
+fn xyzScrgb(x: vec3<f32>) -> vec3<f32> {
+    let xs = x * vec3<f32>(0.95047, 1.0, 1.08883);
+    return vec3<f32>(
+        dot(xs, vec3<f32>(3.2404542, -1.5371385, -0.4985314)),
+        dot(xs, vec3<f32>(-0.9692660, 1.8760108, 0.0415560)),
+        dot(xs, vec3<f32>(0.0556434, -0.2040259, 1.0572252)));
+}
+"""
+
+LRGB_LAB = DisplayOp(
+    name="lrgb_lab",
+    params=[
+        #     name         default  lo     hi    step   label      scale
+        Param("lum_black", 0.002,   0.0,   0.1,  0.03,  "L black", scale="log"),
+        Param("lum_white", 0.5,     0.02,  1.0,  0.03,  "L white", scale="log"),
+        Param("lum_mid",   0.15,    0.01,  0.95, 0.015, "L mid",   scale="log"),
+        Param("chroma",    1.2,     0.0,   3.0,  0.1,   "chroma"),
+    ],
+    numpy_fn=_lrgb_lab_np,
+    wgsl_helpers=_LAB_WGSL_HELPERS,
+    wgsl=(
+        "let la = mtf(clamp((aux - lum_black) / max(lum_white - lum_black, 1e-6),"
+        " 0.0, 1.0), lum_mid);\n"
+        "    let fxyz = vec3<f32>(labF(scrgbXyz(c).x), labF(scrgbXyz(c).y), labF(scrgbXyz(c).z));\n"
+        "    let labA = 500.0 * (fxyz.x - fxyz.y) * chroma;\n"
+        "    let labB = 200.0 * (fxyz.y - fxyz.z) * chroma;\n"
+        "    let fy = labF(la);\n"
+        "    c = clamp(xyzScrgb(vec3<f32>(labFinv(fy + labA / 500.0), labFinv(fy),"
+        " labFinv(fy - labB / 200.0))), vec3<f32>(0.0), vec3<f32>(1.0));"
+    ),
+)

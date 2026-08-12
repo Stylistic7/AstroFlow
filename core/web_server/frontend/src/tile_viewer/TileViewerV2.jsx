@@ -82,7 +82,8 @@ function pointInPolygon(x, y, points) {
  * level renders at world coords scaled by `2^(maxZoom - z)`.
  */
 function computeVisibleTiles({ viewport, meta, view, objectType, imageHash,
-                              starsView, starsMeta, ancestors = '' }) {
+                              starsView, starsMeta, sourceViews = null,
+                              ancestors = '' }) {
     const { tx, ty, scale, screenW, screenH } = viewport;
     const { maxZoom, width: imageW, height: imageH, port, mtime } = meta;
 
@@ -151,10 +152,29 @@ function computeVisibleTiles({ viewport, meta, view, objectType, imageHash,
                 if (starsMeta.mtime) surl.searchParams.set('v', starsMeta.mtime);
                 starsUrl = surl.href;
             }
+            // Extra source-tap tiles for a multi-input data-driven finish
+            // (same z/x/y — the scene formats share the tap's geometry).
+            // The key folds the source signature so switching finishes
+            // refetches instead of reusing tiles bound to other sources.
+            let sourceUrls = null;
+            if (sourceViews && sourceViews.length) {
+                sourceUrls = sourceViews.map((sv) => {
+                    const r = buildApiUrl(
+                        '/tap/tile',
+                        [{ type: objectType, id: imageHash }],
+                        sv,
+                        `/${z}/${tx_}/${ty_}.f32`,
+                        { ancestors },
+                    );
+                    return new URL(r, `${origin}:${port}`).href;
+                });
+            }
+            const srcSig = sourceViews?.map((sv) => sv.display).join('|') ?? '';
             wanted.push({
-                key: `${z}/${tx_}/${ty_}${starsUrl ? 's' : ''}`,
+                key: `${z}/${tx_}/${ty_}${starsUrl ? 's' : ''}${srcSig ? `#${srcSig}` : ''}`,
                 url: url.href,
                 starsUrl,
+                sourceUrls,
                 worldRect: {
                     x: tx_ * sourceTileWorld,
                     y: ty_ * sourceTileWorld,
@@ -302,21 +322,45 @@ export default function TileViewerV2({
     // narrowband finish has its own control panel below.
     const isColor = (tileMeta?.bands ?? 1) >= 3;
     const isNarrowband = tileMeta?.colorspace === 'linear-sho';
-    const isBakedColor = isColor && !isNarrowband;
+    const isLinearScene = tileMeta?.colorspace === 'linear-scene';
+    const isBakedColor = isColor && !isNarrowband && !isLinearScene;
     useEffect(() => {
         onColorDetected?.(isColor);
     }, [isColor, onColorDetected]);
 
-    // The picked data-driven finish (null = the built-in per-channel GHS). It
-    // consumes Linear SHO (its input contract), so genericMode also gates on
-    // isNarrowband. gridAxes/paramOrder are extracted from its params — the grid
-    // axes and the DisplayParams packing order both come from the Python def.
+    // Data-driven finishes applicable to THIS tap: inputs[0] is the primary
+    // (viewed) tap by convention — "Linear SHO" finishes on a narrowband tap,
+    // the multi-source RGB/LRGB/Ha finishes on their "Linear RGB" primary.
+    const applicableFinishes = finishes.filter((f) =>
+        (f.inputs?.[0] ?? 'Linear SHO')
+            === (isNarrowband ? 'Linear SHO' : view?.display));
+
+    // The picked data-driven finish (null = the built-in per-channel GHS,
+    // narrowband taps only). gridAxes/paramOrder are extracted from its
+    // params — grid axes and DisplayParams packing both come from Python.
     const activeFinish = finishName === 'ghs'
         ? null
-        : (finishes.find((f) => f.name === finishName) ?? null);
-    const genericMode = isNarrowband && !!activeFinish;
+        : (applicableFinishes.find((f) => f.name === finishName) ?? null);
+    const genericMode = (isNarrowband || isLinearScene) && !!activeFinish;
     const gridAxes = genericMode ? axesFromParams(activeFinish.params) : null;
     const paramOrder = genericMode ? activeFinish.params.map((p) => p.name) : null;
+
+    // A linear-scene tap has no built-in fallback — auto-pick the first
+    // applicable finish when 'ghs' (the narrowband built-in) is selected.
+    useEffect(() => {
+        if (isLinearScene && finishName === 'ghs' && applicableFinishes.length) {
+            setFinishName(applicableFinishes[0].name);
+        }
+    }, [isLinearScene, finishName, applicableFinishes.length]);
+
+    // Extra source taps a multi-input finish samples (inputs[1..], same
+    // pipeline; "Linear L" is the one mono tap in the scene-format family).
+    const sourceViews = genericMode && view && (activeFinish.inputs?.length ?? 1) > 1
+        ? activeFinish.inputs.slice(1).map((d) => ({
+            pipeline: view.pipeline, display: d,
+            filter: d === 'Linear L' ? 'L' : 'RGB',
+        }))
+        : null;
 
     // Is the sibling Stars tap real, and does it share this tap's geometry
     // (so z/x/y tile coords line up)? Gates the Add-stars toggle + fetches.
@@ -511,7 +555,8 @@ export default function TileViewerV2({
     // built from its served WGSL; otherwise it falls back to the built-in one.
     useEffect(() => {
         if (!renderer.isReady) return;
-        renderer.setFinishShader(genericMode ? activeFinish.wgsl : null);
+        renderer.setFinishShader(genericMode ? activeFinish.wgsl : null,
+                                 activeFinish?.inputs?.length ?? 1);
     }, [renderer.isReady, genericMode, activeFinish?.wgsl]);
 
     // Push shader uniforms when statistics + brightness + mode change.
@@ -631,7 +676,7 @@ export default function TileViewerV2({
             });
             const wanted = computeVisibleTiles({
                 viewport: s, meta: tileMeta, view, objectType, imageHash,
-                starsView, starsMeta, ancestors,
+                starsView, starsMeta, sourceViews, ancestors,
             });
             renderer.setTileUrls(wanted);
         };
@@ -639,7 +684,8 @@ export default function TileViewerV2({
         apply(viewport.get());
         return unsub;
     }, [renderer.isReady, tileMeta, view?.pipeline, view?.display, view?.filter,
-        viewport, objectType, imageHash, starsAvailable, starsMeta, ancestors]);
+        viewport, objectType, imageHash, starsAvailable, starsMeta, ancestors,
+        sourceViews?.map((sv) => sv.display).join('|') ?? '']);
 
     // ── 3×3 taste-grid handlers ─────────────────────────────────────────
     // Next deterministic PRNG stream. The seed counter lives in a ref so a
@@ -837,10 +883,12 @@ export default function TileViewerV2({
                 polygons={polygons}
                 show={showPanelNumbers}
             />
-            {/* Live SHO colour finish — shown for the Linear SHO tap in
-                both embedded (MosaicViewer) and standalone modes, since the
-                finish is intrinsic to this tap, not the parent toolbar. */}
-            {isNarrowband && (
+            {/* Live colour finish — shown for the Linear SHO tap AND every
+                linear-scene format tap (Linear RGB & friends drive the
+                multi-source RGB/LRGB/Ha finishes), in both embedded
+                (MosaicViewer) and standalone modes, since the finish is
+                intrinsic to this tap, not the parent toolbar. */}
+            {(isNarrowband || (isLinearScene && applicableFinishes.length > 0)) && (
                 <Box sx={{
                     // Above the 3×3 grid overlay (zIndex 4) so this panel's
                     // controls (Spread, Keep, Cancel, sliders) receive clicks
@@ -863,8 +911,10 @@ export default function TileViewerV2({
                         onChange={(e) => { if (gridActive) exitGrid(false); setFinishName(e.target.value); }}
                         sx={{ ...selectSx, mb: 1 }}
                     >
-                        <MenuItem value="ghs">Narrowband GHS (per-channel)</MenuItem>
-                        {finishes.map((f) => (
+                        {isNarrowband && (
+                            <MenuItem value="ghs">Narrowband GHS (per-channel)</MenuItem>
+                        )}
+                        {applicableFinishes.map((f) => (
                             <MenuItem key={f.name} value={f.name}>{f.name}</MenuItem>
                         ))}
                     </Select>

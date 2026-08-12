@@ -44,6 +44,15 @@ _TILE_SIZE = 256
 # LINEAR_SHO_DISPLAY). A 3-band tile under any other display is a baked deliverable.
 LINEAR_FINISH_DISPLAYS = frozenset({"Linear SHO"})
 
+# The linear SCENE FORMATS — the ≤3-band basis the multi-source live finishes
+# sample (see display/finishes.py RGB_LIVE etc.). Marked "linear-scene" so the
+# viewer offers data-driven finishes instead of baked pass-through; they get
+# the same channelStats seeding as linear-sho.
+LINEAR_SCENE_DISPLAYS = frozenset({
+    "Linear RGB", "Linear RGB Stars", "Linear Narrowband",
+    "Linear Narrowband Starless", "Linear L",
+})
+
 
 tiles_bp = Blueprint("tiles", __name__)
 
@@ -206,11 +215,18 @@ def _tile_metadata_response(path, backend_port, display=None, status=None):
         # building); the viewer badges it. See catalog.resolve_product.
         "status": status,
     }
-    # `colorspace` disambiguates the two 3-band cases the band count alone can't:
-    #   "linear-sho" → linear S/H/O, shader runs the live colour finish;
-    #   "display"    → baked RGB deliverable, shader passes it through.
+    # `colorspace` disambiguates the cases the band count alone can't:
+    #   "linear-sho"   → linear S/H/O, shader runs the live colour finish;
+    #   "linear-scene" → a linear scene format (any band count) feeding the
+    #                    multi-source live finishes;
+    #   "display"      → baked RGB deliverable, shader passes it through.
     if display in LINEAR_FINISH_DISPLAYS and base.bands >= 3:
         meta["colorspace"] = "linear-sho"
+    elif display in LINEAR_SCENE_DISPLAYS:
+        meta["colorspace"] = "linear-scene"
+    else:
+        meta["colorspace"] = "display"
+    if meta["colorspace"] != "display":
         stats = _per_channel_linear_stats(path)
         # Rich generic per-channel stats — frontend finishes seed from these.
         meta["channelStats"] = stats
@@ -218,8 +234,6 @@ def _tile_metadata_response(path, backend_port, display=None, status=None):
         meta["channelMedians"] = [s["median"] for s in stats]
         meta["channelSigma"] = [s["sigma"] for s in stats]
         meta["channelP99"] = [s["high"] for s in stats]
-    else:
-        meta["colorspace"] = "display"
     return jsonify(meta)
 
 

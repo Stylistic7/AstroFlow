@@ -60,25 +60,47 @@ class DisplayOp:
 
 @dataclass
 class DisplayFinish:
-    """A named composition of ops with a declared TAP-NAME input contract."""
+    """A named composition of ops with a declared TAP-NAME input contract.
+
+    MULTI-SOURCE finishes (len(inputs) > 1) add a COMPOSE stage: `compose` is a
+    WGSL statement block that runs before the op chain with `src0..srcN`
+    (vec4 samples of each input tap, in `inputs` order) in scope. Its contract:
+    declare `var c: vec3<f32>` (the chain input), and optionally write `aux`
+    (an f32 local, pre-declared 0.0) — the side channel a later op consumes
+    (the luminance for an LRGB lab op, say). All op snippets share ONE function
+    body, so `aux` is just a local — no new plumbing. `compose_params` are the
+    compose stage's own knobs; `compose_np(sources, v)` is its numpy twin
+    (returns the chain rgb; stashes aux as `v["__aux"]`)."""
     name: str
     inputs: list[str]            # tap names it consumes (the F1↔F2 interface)
     ops: list[DisplayOp] = field(default_factory=list)
+    compose: str = ""
+    compose_params: list[Param] = field(default_factory=list)
+    compose_np: "Callable[[list, dict], np.ndarray] | None" = None
 
     def params(self) -> list[Param]:
         """Every knob across the pipeline, in order — THE grid axes / sliders.
-        Extracted, never hand-maintained."""
-        return [p for op in self.ops for p in op.params]
+        Extracted, never hand-maintained. Compose knobs come first (they run
+        first)."""
+        return list(self.compose_params) + [p for op in self.ops for p in op.params]
 
     def defaults(self) -> dict:
         return {p.name: p.default for p in self.params()}
 
-    def bake(self, rgb: np.ndarray, values: dict | None = None) -> np.ndarray:
-        """Exact numpy evaluation — the archival deliverable. `values` overrides
-        defaults per param."""
+    def bake(self, sources: "list[np.ndarray] | np.ndarray",
+             values: dict | None = None) -> np.ndarray:
+        """Exact numpy evaluation — the archival deliverable. `sources` is one
+        array per input tap (a bare array means single-source); `values`
+        overrides defaults per param."""
+        if isinstance(sources, np.ndarray):
+            sources = [sources]
         v = self.defaults()
         if values:
             v.update(values)
+        if self.compose_np is not None:
+            rgb = self.compose_np(sources, v)
+        else:
+            rgb = sources[0]
         for op in self.ops:
             rgb = op.numpy_fn(rgb, v)
         return rgb
@@ -89,20 +111,25 @@ class DisplayFinish:
           * `struct DisplayParams` — one f32 field per param, IN param order, so
             the frontend packs its uniform buffer by index with no name lookup.
           * the ops' `wgsl_helpers` (mtf, etc.).
-          * `fn displayFinish(cIn, P)` — aliases each param to a bare `let` so the
-            op snippets read plain names (nice authoring) while the values come
-            from the bound uniform. Same names the numpy backend keys on, one
-            definition, so bake and shader can't drift."""
+          * `fn displayFinish(src0.., P)` — one vec4 arg per input tap; aliases
+            each param to a bare `let` so the op snippets read plain names while
+            the values come from the bound uniform. Same names the numpy backend
+            keys on, one definition, so bake and shader can't drift. The
+            frontend generates the matching fs_main from `spec.inputs`."""
         ps = self.params()
         struct = "\n".join(f"    {p.name}: f32," for p in ps)
         aliases = "\n".join(f"    let {p.name} = P.{p.name};" for p in ps)
         helpers = "\n".join(op.wgsl_helpers for op in self.ops if op.wgsl_helpers)
+        args = ", ".join(f"src{i}: vec4<f32>" for i in range(len(self.inputs)))
+        compose = self.compose or "var c: vec3<f32> = src0.rgb;"
         body = "\n    ".join(op.wgsl for op in self.ops)
         return (
             f"struct DisplayParams {{\n{struct}\n}}\n\n"
             f"{helpers}\n\n"
-            f"fn displayFinish(cIn: vec3<f32>, P: DisplayParams) -> vec3<f32> {{\n"
-            f"    var c = cIn;\n{aliases}\n    {body}\n    return c;\n}}"
+            f"fn displayFinish({args}, P: DisplayParams) -> vec3<f32> {{\n"
+            f"{aliases}\n"
+            f"    var aux: f32 = 0.0;\n"
+            f"    {compose}\n    {body}\n    return c;\n}}"
         )
 
     def spec(self) -> dict:

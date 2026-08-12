@@ -57,12 +57,22 @@ const FINISH_PARAMS_BYTES = 256;
 
 // Per-tile bind-group layout: tile texture + TileRect uniform + stars
 // texture (RGB stars for the narrowband finish; a shared black dummy for
-// tiles without stars). r32float/rgba32float are `unfilterable-float` by
-// default; linear filtering requires the `float32-filterable` feature.
+// tiles without stars) + THREE extra source slots (bindings 3-5) for
+// multi-input data-driven finishes (LRGB/HaRGB/… sample up to 4 taps).
+// The slots are ALWAYS in the layout, dummy-bound when unused — a pipeline
+// layout may carry bindings a shader never declares, so the built-in
+// shader and single-input finishes are unaffected, and no bind group ever
+// needs rebuilding when the finish changes. r32float/rgba32float are
+// `unfilterable-float` by default; linear filtering requires the
+// `float32-filterable` feature.
+export const MAX_EXTRA_SOURCES = 3;
 const TILE_LAYOUT_ENTRIES = [
     { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float' } },
     { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
     { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float' } },
+    { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float' } },
+    { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float' } },
+    { binding: 5, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float' } },
 ];
 
 
@@ -519,7 +529,7 @@ export function useTileRenderer({ canvasRef }) {
      * Pass null/'' to fall back to the built-in GHS/mono/color pipeline. The
      * compiled pipeline is cached on the source string (recompiles only when
      * the selected finish's WGSL actually changes). */
-    function setFinishShader(finishWgsl) {
+    function setFinishShader(finishWgsl, numInputs = 1) {
         const s = stateRef.current;
         if (!s) return;
         if (!finishWgsl) {
@@ -527,8 +537,12 @@ export function useTileRenderer({ canvasRef }) {
             redraw();
             return;
         }
-        if (finishWgsl !== s.genericShaderSrc) {
-            const code = buildFinishShader(finishWgsl);
+        // The compiled pipeline depends on BOTH the served chunk and the
+        // input-tap count (the generated fs_main declares one source
+        // texture + one displayFinish arg per input).
+        const srcKey = `${numInputs} ${finishWgsl}`;
+        if (srcKey !== s.genericShaderSrc) {
+            const code = buildFinishShader(finishWgsl, numInputs);
             const module = s.device.createShaderModule({ code });
             s.genericPipeline = s.device.createRenderPipeline({
                 layout: s.pipelineLayout,
@@ -536,7 +550,7 @@ export function useTileRenderer({ canvasRef }) {
                 fragment: { module, entryPoint: 'fs_main', targets: [{ format: s.format }] },
                 primitive: { topology: 'triangle-strip' },
             });
-            s.genericShaderSrc = finishWgsl;
+            s.genericShaderSrc = srcKey;
         }
         s.useGeneric = true;
         redraw();
@@ -685,6 +699,7 @@ export function useTileRenderer({ canvasRef }) {
                 tile.texture.destroy();
                 tile.rectBuffer.destroy();
                 if (tile.starsTexture) tile.starsTexture.destroy();
+                for (const t of tile.sourceTextures ?? []) if (t) t.destroy();
                 tiles.delete(key);
             }
         }
@@ -725,15 +740,21 @@ export function useTileRenderer({ canvasRef }) {
             return texture;
         };
 
-        // Fetch missing tiles (nebula + optional sibling RGB-stars tile,
-        // fetched eagerly so the Add-stars toggle is instant).
+        // Fetch missing tiles (nebula + optional sibling RGB-stars tile +
+        // any extra finish-source tiles, fetched eagerly so toggles are
+        // instant). `tw.sourceUrls` (≤ MAX_EXTRA_SOURCES) are the
+        // multi-input finish's extra taps in inputs[1..] order; a failed /
+        // absent source fetch binds the black dummy (graceful degrade).
         for (const tw of wanted) {
             if (tiles.has(tw.key) || pending.has(tw.key)) continue;
             pending.add(tw.key);
+            const sourceUrls = (tw.sourceUrls ?? []).slice(0, MAX_EXTRA_SOURCES);
             Promise.all([
                 fetchLinearTile(tw.url),
                 tw.starsUrl ? fetchLinearTile(tw.starsUrl) : Promise.resolve(null),
-            ]).then(([data, starsData]) => {
+                ...sourceUrls.map((u) =>
+                    u ? fetchLinearTile(u).catch(() => null) : Promise.resolve(null)),
+            ]).then(([data, starsData, ...sourceData]) => {
                 pending.delete(tw.key);
                 if (data === null) return;
                 if (!stateRef.current) return;
@@ -747,6 +768,8 @@ export function useTileRenderer({ canvasRef }) {
                 if (starsData && starsData.bands >= 3) {
                     starsTexture = uploadTile(starsData);
                 }
+                const sourceTextures = sourceData.map(
+                    (d) => (d ? uploadTile(d) : null));
 
                 // Per-tile rect uniform: worldX, worldY, tileW, tileH
                 // (16 bytes, fits in std140 vec4-aligned uniform).
@@ -768,10 +791,14 @@ export function useTileRenderer({ canvasRef }) {
                         { binding: 0, resource: texture.createView() },
                         { binding: 1, resource: { buffer: rectBuffer } },
                         { binding: 2, resource: (starsTexture ?? s.dummyStarsTexture).createView() },
+                        ...Array.from({ length: MAX_EXTRA_SOURCES }, (_, i) => ({
+                            binding: 3 + i,
+                            resource: (sourceTextures[i] ?? s.dummyStarsTexture).createView(),
+                        })),
                     ],
                 });
 
-                tiles.set(tw.key, { texture, bindGroup, rectBuffer, starsTexture, worldRect: tw.worldRect });
+                tiles.set(tw.key, { texture, bindGroup, rectBuffer, starsTexture, sourceTextures, worldRect: tw.worldRect });
                 // Only redraw if this tile is still on-screen; an
                 // arrival from a stale pan can land for an offscreen
                 // tile that's now in the LRU cache rather than the
@@ -799,6 +826,7 @@ export function useTileRenderer({ canvasRef }) {
             tile.texture.destroy();
             tile.rectBuffer.destroy();
             if (tile.starsTexture) tile.starsTexture.destroy();
+            for (const t of tile.sourceTextures ?? []) if (t) t.destroy();
         }
         s.tiles.clear();
         s.visible = new Set();

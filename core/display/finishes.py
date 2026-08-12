@@ -139,9 +139,83 @@ PERCHANNEL_GHS = DisplayFinish(
 )
 
 
+# ── live broadband finishes over the linear scene formats ────────────────────
+# Every knob that was a baked constant is a uniform here: star intensity `s`
+# (src0 is the WITH-STARS combine, so starless+s·stars ≡ src0 + (s−1)·src1 —
+# s=1 the plain photo, s=0 starless, s<1 star reduction), Hα→R strength `k`
+# with live continuum subtraction `q` (src2 is the RAW narrowband — H rides
+# band .g of the zero-filled S,H,O layout — so SXT never touched the HII
+# detail), and the LRGB lightness replacement via the `aux` side channel.
+
+from display.ops import LINKED_MTF, LRGB_LAB
+
+_STAR_S = Param("star_s", 1.0, 0.0, 2.0, 0.1, "stars")
+_HA_K = Param("ha_k", 0.4, 0.0, 2.0, 0.1, "Hα→R")
+_HA_Q = Param("ha_q", 0.0, 0.0, 1.0, 0.05, "continuum")
+
+
+def _star_np(sources, v):
+    return sources[0][..., :3] + (v["star_s"] - 1.0) * sources[1][..., :3]
+
+
+def _lrgb_np(sources, v):
+    v["__aux"] = sources[2][..., 0]
+    return _star_np(sources, v)
+
+
+def _hargb_np(sources, v):
+    c = _star_np(sources, v)
+    ha = sources[2][..., 1]                      # H = band .g of S,H,O
+    c[..., 0] += v["ha_k"] * np.maximum(ha - v["ha_q"] * c[..., 0], 0.0)
+    return c
+
+
+def _halrgb_np(sources, v):
+    v["__aux"] = sources[3][..., 0]
+    return _hargb_np(sources, v)
+
+
+_STAR_WGSL = "var c: vec3<f32> = src0.rgb + (star_s - 1.0) * src1.rgb;"
+_HA_WGSL = (_STAR_WGSL
+            + "\n    c.r = c.r + ha_k * max(src2.g - ha_q * c.r, 0.0);")
+
+RGB_LIVE = DisplayFinish(
+    name="RGB (live)",
+    inputs=["Linear RGB", "Linear RGB Stars"],
+    compose=_STAR_WGSL, compose_params=[_STAR_S], compose_np=_star_np,
+    ops=[LINKED_MTF],
+)
+
+LRGB_LIVE = DisplayFinish(
+    name="LRGB (live)",
+    inputs=["Linear RGB", "Linear RGB Stars", "Linear L"],
+    compose=_STAR_WGSL + "\n    aux = src2.r;",
+    compose_params=[_STAR_S], compose_np=_lrgb_np,
+    ops=[LINKED_MTF, LRGB_LAB],
+)
+
+HARGB_LIVE = DisplayFinish(
+    name="HaRGB (live)",
+    inputs=["Linear RGB", "Linear RGB Stars", "Linear Narrowband"],
+    compose=_HA_WGSL, compose_params=[_STAR_S, _HA_K, _HA_Q],
+    compose_np=_hargb_np,
+    ops=[LINKED_MTF],
+)
+
+HALRGB_LIVE = DisplayFinish(
+    name="HaLRGB (live)",
+    inputs=["Linear RGB", "Linear RGB Stars", "Linear Narrowband", "Linear L"],
+    compose=_HA_WGSL + "\n    aux = src3.r;",
+    compose_params=[_STAR_S, _HA_K, _HA_Q], compose_np=_halrgb_np,
+    ops=[LINKED_MTF, LRGB_LAB],
+)
+
+
 # The registry the backend endpoint / frontend picker read from. Only the
 # simplest finish is registered while investigating crushed blacks on raw linear
 # data. SIMPLE_STRETCH / PERCHANNEL_GHS (code kept above) assumed the now-removed
 # global normalise, so they'd each need their OWN normalise op before they render
 # correctly on raw linear again — re-add them here once they do.
-FINISHES = {f.name: f for f in [BLACK_WHITE_POINT]}
+FINISHES = {f.name: f for f in [
+    BLACK_WHITE_POINT, RGB_LIVE, LRGB_LIVE, HARGB_LIVE, HALRGB_LIVE,
+]}

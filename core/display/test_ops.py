@@ -104,3 +104,90 @@ class TestSaturation:
         out = _saturation_np(_rgb(), {"saturation": 0.0})
         assert np.allclose(out[..., 0], out[..., 1], atol=1e-5)
         assert np.allclose(out[..., 1], out[..., 2], atol=1e-5)
+
+
+class TestLiveBroadbandFinishes:
+    """The multi-source compose finishes (RGB/LRGB/HaRGB/HaLRGB live) — numpy
+    twins of the compose + chain, plus the WGSL emission contract."""
+
+    def _sources(self, seed=1, n=32):
+        rng = np.random.default_rng(seed)
+        combine = (rng.random((n, n, 3)) * 0.05).astype(np.float32)
+        stars = np.zeros_like(combine)
+        stars[::7, ::7] = 0.4                       # sparse point sources
+        nb = (rng.random((n, n, 3)) * 0.04).astype(np.float32)
+        lum = (rng.random((n, n, 1)) * 0.06).astype(np.float32)
+        return combine, stars, nb, lum
+
+    def test_star_intensity_algebra(self):
+        """s=1 → the plain combine; s=0 → exactly the starless (combine −
+        stars); the chain (linked MTF) is monotone so ordering survives."""
+        from display.finishes import RGB_LIVE
+        combine, stars, _, _ = self._sources()
+        plain = RGB_LIVE.bake([combine, stars], {"star_s": 1.0})
+        starless = RGB_LIVE.bake([combine, stars], {"star_s": 0.0})
+        from display.ops import _linked_mtf_np
+        v = RGB_LIVE.defaults()
+        assert np.allclose(plain, _linked_mtf_np(combine, v), atol=1e-6)
+        assert np.allclose(starless, _linked_mtf_np(combine - stars, v), atol=1e-6)
+
+    def test_ha_k_zero_matches_rgb_and_k_raises_red_only(self):
+        from display.finishes import HARGB_LIVE, RGB_LIVE
+        combine, stars, nb, _ = self._sources()
+        k0 = HARGB_LIVE.bake([combine, stars, nb], {"ha_k": 0.0})
+        rgb = RGB_LIVE.bake([combine, stars])
+        assert np.allclose(k0, rgb, atol=1e-6)
+        k1 = HARGB_LIVE.bake([combine, stars, nb], {"ha_k": 1.0, "ha_q": 0.0})
+        assert (k1[..., 0] >= k0[..., 0] - 1e-6).all(), "Hα must only raise R"
+        assert np.allclose(k1[..., 1:], k0[..., 1:], atol=1e-6), "G/B untouched"
+
+    def test_continuum_subtraction_clamps_at_zero(self):
+        """q=1 with Hα ≤ R everywhere → the max(…, 0) clamp makes k a no-op."""
+        from display.finishes import HARGB_LIVE
+        combine, stars, _, _ = self._sources()
+        nb = np.zeros_like(combine)
+        nb[..., 1] = (combine[..., 0] * 0.5)         # Hα = half the R continuum
+        out = HARGB_LIVE.bake([combine, stars, nb], {"ha_k": 1.0, "ha_q": 2.0})
+        base = HARGB_LIVE.bake([combine, stars, nb], {"ha_k": 0.0})
+        assert np.allclose(out, base, atol=1e-6)
+
+    def test_lrgb_lab_own_lightness_is_identity(self):
+        """The Lab invariant (mirror of the palettes.lrgb_vips test): identity
+        lum stretch + aux == the composed RGB's own luminance Y + chroma=1
+        reproduces the stretched RGB (grey (y,y,y) has exactly L*(Y=y))."""
+        from display.finishes import LRGB_LIVE
+        from display.ops import _linked_mtf_np
+        combine, stars, _, _ = self._sources()
+        v = LRGB_LIVE.defaults()
+        stretched = _linked_mtf_np(combine, v)
+        y = stretched @ np.array([0.2126729, 0.7151522, 0.0721750])
+        # aux must land at y AFTER the aux stretch: identity stretch + pre-
+        # inverting the CHAIN stretch on aux is fiddly, so drive aux through
+        # the same linked MTF by construction: pick raw aux == raw combine's
+        # channels' equivalent is impossible per-pixel — instead feed aux
+        # POST-stretch by setting the lum stretch to identity and aux = y at
+        # compose time via a pre-stretched source array.
+        lum = y[..., None].astype(np.float32)
+        out = LRGB_LIVE.bake(
+            [stretched, np.zeros_like(stretched), lum],
+            {"star_s": 1.0, "blackpoint": 0.0, "whitepoint": 1.0,
+             "midtones": 0.5, "lum_black": 0.0, "lum_white": 1.0,
+             "lum_mid": 0.5, "chroma": 1.0})
+        assert np.allclose(out, np.clip(stretched, 0, 1), atol=2e-3), (
+            np.abs(out - stretched).max())
+
+    def test_wgsl_emission_contract(self):
+        """Multi-source finishes emit displayFinish(src0..srcN, P), the compose
+        text, the aux local, and one DisplayParams field per param — the exact
+        shapes the frontend's generated fs_main splices against."""
+        from display.finishes import HALRGB_LIVE, BLACK_WHITE_POINT
+        w = HALRGB_LIVE.to_wgsl()
+        assert "fn displayFinish(src0: vec4<f32>, src1: vec4<f32>, "
+        assert "src3: vec4<f32>, P: DisplayParams)" in w
+        assert "var aux: f32 = 0.0;" in w and "aux = src3.r;" in w
+        for p in ("star_s", "ha_k", "ha_q", "blackpoint", "lum_mid", "chroma"):
+            assert f"{p}: f32," in w, f"param {p} missing from DisplayParams"
+        # Single-input finishes keep working under the same contract.
+        w1 = BLACK_WHITE_POINT.to_wgsl()
+        assert "fn displayFinish(src0: vec4<f32>, P: DisplayParams)" in w1
+        assert "var c: vec3<f32> = src0.rgb;" in w1
