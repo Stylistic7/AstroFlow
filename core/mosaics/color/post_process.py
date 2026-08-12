@@ -1,17 +1,19 @@
-"""OSS mosaic color post-processing: @node ops + the `color_post_process`
-workflow_group that `for_mosaic` calls.
+"""OSS colour post-processing: @node ops + the `color_post_process`
+workflow_group that `for_mosaic`/`for_target` call.
 
-PixInsight-free. BXT/SXT run via the rc-astro CLI on LINEAR data; a per-channel
-autostretch then makes the dynamic palette weights meaningful; the palettes,
-RGB-star combination, and screen blend are numpy (`mosaics.color.palettes`).
+PixInsight-free. BXT/SXT run via the rc-astro CLI on LINEAR data. The group's
+colour OUTPUT is the linear scene formats only — the orthogonal ≤3-band basis
+(Linear SHO / Narrowband / Narrowband Starless / RGB / RGB Stars / L) that
+the viewer's live WGSL finishes assemble into Hubble, Foraxx, LRGB, and every
+other look on demand (finishes/stock.py). No palette is baked to disk
+(2026-08-12) — a palette is a per-pixel function of the formats, and baking
+one cost ~40-50 GB per look per mosaic.
 
-The framework is one-artifact-per-`@node`, so the "several outputs" are several
-ops: each named color image (`Hubble`, `Foraxx`, `Stars`) is its own `@node`
-with its own `display=` name and `filter=None` (a color composite has no single
-filter). The per-channel steps are `display`-less intermediates that PERSIST —
-every image is worth keeping unless a subgraph explicitly declares otherwise
-via `Graph(..., delete_intermediates=True)`, which today is only the panel
-crops (a crop is a view of another image, materialized for a CLI boundary).
+The framework is one-artifact-per-`@node`. The per-channel steps are
+`display`-less intermediates that PERSIST — every image is worth keeping
+unless a subgraph explicitly declares otherwise via
+`Graph(..., delete_intermediates=True)`, which today is only the panel crops
+(a crop is a view of another image, materialized for a CLI boundary).
 `mock_pixinsight` passes the heavy rc-astro ML calls straight through so the
 suite runs without rc-astro.
 """
@@ -34,7 +36,6 @@ from file_io.tiling import feather_blend_to_bigtiff, tile_size_for
 from file_io.types import TiffFilePath, WithSidecar, XisfFilePath
 from file_io.xisf_file_io import write_xisf_image
 from metadata.classes import ImageMetadata
-from mosaics.color import palettes
 from mosaics.panels import (
     PanelMosaic, base_panel_mosaic, blend_panels, combine_panels, process_in_panels,
 )
@@ -329,7 +330,8 @@ def sxt_stars_rgb(
     the source's identity and every tiled source sharing a mosaic/rect collided
     onto one crop. Panels-as-tiles (`mosaics.panels`) keys each crop on its panel's
     manifest hash, so the RGB-star crop can never collide with a nebula crop;
-    `combine_star_rgb` still fail-fasts (`_require_rgb_stars`) if it's ever mono."""
+    downstream consumers (the Linear RGB Stars tap) would surface it as grey
+    stars if it ever regressed to mono."""
     out = sxt_stars_rgb.filename_fn(mosaic, config, rgb)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     if config.development_settings.mock_pixinsight:
@@ -339,25 +341,6 @@ def sxt_stars_rgb(
         from rc_astro_cli import run_sxt
         run_sxt(rgb.filename, stars_out=out, unscreen=False,
                 ml_version=config.sxt.ml_version, overlap=config.sxt.overlap)
-    return WithSidecar(TiffFilePath(out))
-
-
-@node(auto_memory=True, plate_solve=False)  # nonlinear stretch of an already-solved channel
-def autostretch_channel(
-    mosaic: Mosaic, filter: str, channel: ImageMetadata,
-) -> WithSidecar[TiffFilePath]:
-    """STF-equivalent autostretch — palettes need non-linear input for their
-    dynamic weights to be meaningful.
-
-    Streaming since 2026-08-08: the input is the merged starless TIFF (the
-    old "XISF blocks streaming" rationale went stale when the tail moved to
-    per-panel TIFFs), so the two-pass histogram autostretch
-    (`palettes.autostretch_vips`) applies directly — constant memory instead
-    of ~2 full gigapixel copies. Non-TIFF legacy inputs fall back to a full
-    read inside `_open_mono_vips`."""
-    out = autostretch_channel.filename_fn(mosaic, filter, channel)
-    stretched = palettes.autostretch_vips(lambda: _open_mono_vips(channel))
-    _save_mono_vips(out, stretched, filter)
     return WithSidecar(TiffFilePath(out))
 
 
@@ -478,141 +461,6 @@ def linear_sho(
     return result.merged
 
 
-@node(display="Stars", filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-channel color
-def combine_star_rgb(
-    mosaic: Mosaic, rgb_stars: ImageMetadata,
-) -> WithSidecar[TiffFilePath]:
-    """The RGB-stars deliverable: a LINKED autostretch of the coherent SXT'd RGB
-    stars. `palettes.autostretch` takes one median/MAD over all three bands, so
-    every channel gets the same MTF — star colour is preserved (no per-channel
-    cast). Saved as the scRGB TIFF deliverable."""
-    out = combine_star_rgb.filename_fn(mosaic, rgb_stars)
-    src = str(rgb_stars.filename)
-    # Streaming: header-only band check, then the two-pass histogram
-    # autostretch (palettes.autostretch_vips) with a lazy MTF apply that the
-    # writer sink evaluates stripe-by-stripe. The previous body read the full
-    # gigapixel RGB into numpy (~27 GB) plus a stretched copy — silently
-    # SIGKILLed on the 64 GiB head whenever anything else was co-scheduled.
-    probe = pyvips.Image.new_from_file(src)
-    _require_rgb_bands(probe.bands, src)
-    # unlimited=True: libvips caps a single TIFF strip decode at ~50MB (the
-    # anti-bomb default), and this gigapixel source's strips exceed it — the
-    # read dies deterministically at open ("cumulated memory allocation …
-    # beyond the 52428800 byte limit"; "no space for data buffer at
-    # scanline …"). Same lift the tile-pyramid builder documents
-    # (previews/create_tile_pyramid.py). This ONE failure blocked the star
-    # trio AND census soundness on every pass for two days. Default
-    # (random) access; the vips cache keeps memory bounded — still
-    # streaming, never a full materialization.
-    stretched = palettes.autostretch_vips(
-        lambda: pyvips.Image.new_from_file(src, unlimited=True)
-    )
-    _save_color_vips(out, stretched, "Stars")
-    return WithSidecar(TiffFilePath(out))
-
-
-def _require_rgb_bands(bands: int, src: str = "") -> None:
-    """REQUIRE a 3-channel star layer (header-only check — no pixel read).
-
-    The star layer is always extracted from the combined RGB
-    (`combine_broadband_rgb` → `sxt_stars_rgb`), so it must be 3-channel. A mono
-    (or otherwise non-RGB) star layer is never a valid state — it means the
-    upstream SXT extraction is broken (historically: `--unscreen` on LINEAR data,
-    whose screen-inversion is luminance-oriented, collapsing colour to a single
-    band). Fail loudly rather than silently degrade to grey stars, so the
-    regression surfaces instead of shipping wrong output."""
-    if bands != 3:
-        raise ValueError(
-            f"combine_star_rgb: star layer {src} has {bands} band(s), "
-            f"expected 3-channel RGB. Stars are always extracted from the "
-            f"combined RGB — a non-RGB star layer means the upstream SXT "
-            f"star extraction (sxt_stars_rgb) is broken."
-        )
-
-
-def _palette_image(out, combine_vips, sii, ha, oiii, stars, name):
-    rgb = combine_vips(_load_mono_vips(sii), _load_mono_vips(ha), _load_mono_vips(oiii))
-    if stars is not None:  # screen the RGB stars back over the starless palette
-        rgb = palettes.screen_vips(rgb, _open_gig_vips(stars.filename))
-    _save_color_vips(out, rgb, name)
-
-
-@node(display="Hubble", filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-channel color
-def hubble_image(
-    mosaic: Mosaic, sii: ImageMetadata, ha: ImageMetadata, oiii: ImageMetadata, stars,
-) -> WithSidecar[TiffFilePath]:
-    """Hubble (SHO) palette of the stretched starless narrowband, RGB stars
-    screened in. `stars` is the `combine_star_rgb` output, or None (no broadband)."""
-    out = hubble_image.filename_fn(mosaic, sii, ha, oiii, stars)
-    _palette_image(out, palettes.hubble_vips, sii, ha, oiii, stars, "Hubble")
-    return WithSidecar(TiffFilePath(out))
-
-
-@node(display="Foraxx", filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-channel color
-def foraxx_image(
-    mosaic: Mosaic, sii: ImageMetadata, ha: ImageMetadata, oiii: ImageMetadata, stars,
-) -> WithSidecar[TiffFilePath]:
-    """Foraxx dynamic palette of the stretched starless narrowband, RGB stars
-    screened in."""
-    out = foraxx_image.filename_fn(mosaic, sii, ha, oiii, stars)
-    _palette_image(out, palettes.foraxx_vips, sii, ha, oiii, stars, "Foraxx")
-    return WithSidecar(TiffFilePath(out))
-
-
-@node(display="Hubble Starless", filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-channel color
-def hubble_starless(
-    mosaic: Mosaic, sii: ImageMetadata, ha: ImageMetadata, oiii: ImageMetadata,
-) -> WithSidecar[TiffFilePath]:
-    """Hubble (SHO) palette of the stretched starless narrowband, NO stars
-    screened in — the pure starless palette (the `Hubble` tap adds RGB stars)."""
-    out = hubble_starless.filename_fn(mosaic, sii, ha, oiii)
-    _palette_image(out, palettes.hubble_vips, sii, ha, oiii, None, "Hubble Starless")
-    return WithSidecar(TiffFilePath(out))
-
-
-@node(display="Foraxx Starless", filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-channel color
-def foraxx_starless(
-    mosaic: Mosaic, sii: ImageMetadata, ha: ImageMetadata, oiii: ImageMetadata,
-) -> WithSidecar[TiffFilePath]:
-    """Foraxx palette of the stretched starless narrowband, NO stars screened in
-    — the pure starless palette (the `Foraxx` tap adds RGB stars)."""
-    out = foraxx_starless.filename_fn(mosaic, sii, ha, oiii)
-    _palette_image(out, palettes.foraxx_vips, sii, ha, oiii, None, "Foraxx Starless")
-    return WithSidecar(TiffFilePath(out))
-
-
-@node(display="RGB", filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-channel color
-def rgb_image(
-    mosaic: Mosaic, rgb: ImageMetadata,
-) -> WithSidecar[TiffFilePath]:
-    """The broadband colour photo: LINKED autostretch of the linear BXT'd
-    R/G/B combine, stars in place (the star branch extracts a copy, never
-    subtracts here). Linked = `_hist_median_vips` pools the 3-band histogram
-    into one distribution, so a single MTF applies to all bands and the
-    stretch cannot shift hue; the channels are SPFC-calibrated per stack
-    upstream, so the linear combine is already colour-calibrated."""
-    out = rgb_image.filename_fn(mosaic, rgb)
-    stretched = palettes.autostretch_vips(lambda: _open_gig_vips(rgb.filename))
-    _save_color_vips(out, stretched, "RGB")
-    return WithSidecar(TiffFilePath(out))
-
-
-@node(display="LRGB", filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-channel color
-def lrgb_image(
-    mosaic: Mosaic, rgb: ImageMetadata, lum: ImageMetadata,
-) -> WithSidecar[TiffFilePath]:
-    """PixInsight-style LRGBCombination: the stretched RGB's CIE lightness
-    replaced by the stretched (BXT'd) luminance master in Lab space — detail
-    and SNR ride the deep L, colour comes from RGB. Math in
-    `palettes.lrgb_vips`; inputs are the `rgb_image` deliverable and the
-    autostretched L channel (both nonlinear, as Lab requires)."""
-    out = lrgb_image.filename_fn(mosaic, rgb, lum)
-    combined = palettes.lrgb_vips(
-        _open_gig_vips(rgb.filename), _load_mono_vips(lum))
-    _save_color_vips(out, combined, "LRGB")
-    return WithSidecar(TiffFilePath(out))
-
-
 # ---- linear scene formats: the ≤3-band basis the live WebGPU finishes
 # ---- sample. Formats 1/2 are always 3 bands in canonical S,H,O order with
 # ---- absent bands ZERO-FILLED (uniform texture shape, zeros deflate to
@@ -691,104 +539,29 @@ def linear_lum(
     return WithSidecar(TiffFilePath(out))
 
 
-# Hα-blend tuning. Deliberately CONSTANTS, not ProcessingConfig fields:
-# adding a config field moves the hash of every config-folding op in the
-# system (a cache-wipe event), while editing a constant re-keys exactly the
-# blend op that owns it plus its downstream — the right invalidation radius
-# for an artistic knob.
-_HA_CHROMA_STRENGTH = 0.4    # k in R′ = R + k·Ha_starless
-_HA_LIGHTNESS_WEIGHT = 0.5   # w in L′ = max(L, w·Ha_starless)
-
-
-@node(auto_memory=True, plate_solve=False)  # pure bandjoin, no PixInsight
-def combine_ha_rgb(
-    mosaic: Mosaic, r: ImageMetadata, g: ImageMetadata, b: ImageMetadata,
-) -> WithSidecar[TiffFilePath]:
-    """The Hα-boosted linear combine feeding `hargb_image` — the same
-    streaming bandjoin as `combine_broadband_rgb`, as its OWN display-less
-    op: the plain combine is the served "Linear RGB" scene format, and
-    tapping this interior variant too would put a second, misleading
-    "Linear RGB" row on every dashboard."""
-    out = combine_ha_rgb.filename_fn(mosaic, r, g, b)
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    monos = [_open_mono_vips(m) for m in (r, g, b)]
-    rgb = monos[0].bandjoin([monos[1], monos[2]]).copy()
-    rgb.set_type(pyvips.GValue.gstr_type, "image-description",
-                 json.dumps({"PIPELINE": "AstroFlow-OSS"}))
-    _atomic_tiffsave(rgb, Path(out),
-                     tile=tile_size_for(rgb.width, rgb.height))
-    return WithSidecar(TiffFilePath(out))
-
-
-@node(auto_memory=True, plate_solve=False)  # streaming linear add
-def blend_ha_chroma(
-    mosaic: Mosaic, red: ImageMetadata, ha: ImageMetadata,
-) -> WithSidecar[TiffFilePath]:
-    """R′ = R + k·Ha_starless, LINEAR: inject the Hα line flux the ~100nm R
-    band dilutes ~30:1 back into the red channel, pre-stretch. STARLESS Hα is
-    the trick — the layer contains no stars, so nothing reddens the stellar
-    continuum and no explicit continuum subtraction is needed; HII regions
-    come out cherry pink while stars stay white."""
-    out = blend_ha_chroma.filename_fn(mosaic, red, ha)
-    img = _open_mono_vips(red) + _HA_CHROMA_STRENGTH * _open_mono_vips(ha)
-    _save_mono_vips(out, img, "R")
-    return WithSidecar(TiffFilePath(out))
-
-
-@node(auto_memory=True, plate_solve=False)  # streaming lighten blend
-def blend_ha_lightness(
-    mosaic: Mosaic, lum: ImageMetadata, ha: ImageMetadata,
-) -> WithSidecar[TiffFilePath]:
-    """L′ = max(L, w·Ha_starless), LINEAR lighten: HII structure pops in the
-    detail channel while the colour stays whatever the chrominance source
-    says (the HaLRGB tap pairs this with the PLAIN stretched RGB)."""
-    out = blend_ha_lightness.filename_fn(mosaic, lum, ha)
-    l = _open_mono_vips(lum)
-    h = _HA_LIGHTNESS_WEIGHT * _open_mono_vips(ha)
-    _save_mono_vips(out, (l > h).ifthenelse(l, h), "L")
-    return WithSidecar(TiffFilePath(out))
-
-
-@node(display="HaRGB", filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-channel color
-def hargb_image(
-    mosaic: Mosaic, rgb: ImageMetadata,
-) -> WithSidecar[TiffFilePath]:
-    """The HaRGB colour photo (Hα in CHROMINANCE): linked stretch of the
-    combine whose R channel carries the starless-Hα line flux
-    (`blend_ha_chroma`). Same stretch discipline as `rgb_image`."""
-    out = hargb_image.filename_fn(mosaic, rgb)
-    stretched = palettes.autostretch_vips(lambda: _open_gig_vips(rgb.filename))
-    _save_color_vips(out, stretched, "HaRGB")
-    return WithSidecar(TiffFilePath(out))
-
-
-@node(display="HaLRGB", filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-channel color
-def halrgb_image(
-    mosaic: Mosaic, rgb: ImageMetadata, lum: ImageMetadata,
-) -> WithSidecar[TiffFilePath]:
-    """The Hα-detail LRGB (Hα in LIGHTNESS): colour from the PLAIN stretched
-    RGB, lightness from the Hα-lightened L (`blend_ha_lightness`) — HII
-    regions sharp and deep, hue untouched. The chrominance-side Hα look is
-    the separate HaRGB tap; comparing the two side by side is the point."""
-    out = halrgb_image.filename_fn(mosaic, rgb, lum)
-    combined = palettes.lrgb_vips(
-        _open_gig_vips(rgb.filename), _load_mono_vips(lum))
-    _save_color_vips(out, combined, "HaLRGB")
-    return WithSidecar(TiffFilePath(out))
-
-
 @workflow_group
 def color_post_process(mosaic: Mosaic, channels: dict, config, viewbox=None) -> dict:
-    """Turn merged per-filter mosaic channels into named color images.
+    """Turn merged per-filter channels into the LINEAR SCENE FORMATS — the
+    orthogonal ≤3-band basis every colour look is assembled from, LIVE, in
+    the viewer's WGSL finishes (finishes/stock.py + ~/AstroFlow/finishes/).
 
-    `channels` is `{filter: merged-channel handle}` from `for_mosaic`. BXT every
-    channel; SXT the narrowband to starless and the broadband to unscreened
-    stars; autostretch; then build the Hubble + Foraxx palettes (screening the
-    combined RGB stars in). Returns `{name: handle}` for the color deliverables.
+    No palette is baked here (2026-08-12): a Hubble or LRGB image is a
+    per-pixel function of these formats, and materializing it burned
+    ~40-50 GB per look per mosaic re-storing data the formats already hold.
+    This group's colour output is exactly: Linear SHO (NXT'd starless
+    narrowband), Linear Narrowband (raw, with stars — HII detail SXT never
+    touched), Linear Narrowband Starless (partial sets), Linear RGB (the
+    with-stars combine, display-stamped on `combine_broadband_rgb`),
+    Linear RGB Stars, and Linear L.
 
-    `viewbox` gives the trace-time canvas dims for the tiled ops (`linear_sho`);
-    each pipeline passes its quality-specific viewbox. Defaults to the Master
-    viewbox for callers (e.g. tests) that don't tile at another quality.
+    `channels` is `{filter: merged-channel handle}` from `for_mosaic`. BXT
+    every channel; SXT the narrowband to starless and the broadband to
+    coherent RGB stars; band-join the formats.
+
+    `viewbox` gives the trace-time canvas dims for the tiled ops
+    (`linear_sho`); each pipeline passes its quality-specific viewbox.
+    Defaults to the Master viewbox for callers (e.g. tests) that don't tile
+    at another quality.
     """
     if viewbox is None:
         viewbox = mosaic.viewbox("Master")
@@ -802,7 +575,6 @@ def color_post_process(mosaic: Mosaic, channels: dict, config, viewbox=None) -> 
     # cheap intermediates (stage-0 wrap, stretches, band-joins) stay ephemeral.
     starless_nb: dict[str, object] = {}
     corrected_nb: dict[str, object] = {}
-    stretched_nb: dict[str, object] = {}
     bxt_bb: dict[str, object] = {}
     bxt_l = None
     for cf, channel in by_class.items():
@@ -814,7 +586,6 @@ def color_post_process(mosaic: Mosaic, channels: dict, config, viewbox=None) -> 
             starless = process_in_panels(sxt_starless, mosaic, cf, config, corrected, viewbox=viewbox)
             corrected_nb[cf] = corrected  # with stars — scene format 1
             starless_nb[cf] = starless  # PanelMosaic — linear source for the Linear SHO tap
-            stretched_nb[cf] = autostretch_channel(mosaic, cf, starless.merged)
         elif cf in _BROADBAND:
             bxt_bb[cf] = process_in_panels(bxt_correct, mosaic, cf, config, pm, viewbox=viewbox)
         elif cf == "L" and _BROADBAND <= set(by_class):
@@ -834,49 +605,11 @@ def color_post_process(mosaic: Mosaic, channels: dict, config, viewbox=None) -> 
         rgb_star_lin = process_in_panels(sxt_stars_rgb, mosaic, config, rgb_lin, viewbox=viewbox)
 
     out: dict[str, object] = {}
-    rgb_stars = None
-    if rgb_star_lin is not None:
-        rgb_stars = combine_star_rgb(mosaic, rgb_star_lin.merged)
-        out["Stars"] = rgb_stars
-    if rgb_lin is not None:
-        # The broadband colour photo: the same linear RGB the star branch
-        # reads, linked-stretched whole. With a luminance channel, also the
-        # LRGB variant (lightness replaced by the stretched L in Lab).
-        out["RGB"] = rgb_image(mosaic, rgb_lin.merged)
-        if bxt_l is not None:
-            out["LRGB"] = lrgb_image(
-                mosaic, out["RGB"],
-                autostretch_channel(mosaic, "L", bxt_l.merged))
-        # Hα blends — two SEPARATE looks from the starless Hα the narrowband
-        # branch already computed: chrominance (Hα → R, pre-combine) and
-        # lightness (Hα → L, colour from the plain RGB).
-        ha_starless = starless_nb.get("H")
-        if ha_starless is not None:
-            r_ha = blend_ha_chroma(
-                mosaic, bxt_bb["R"].merged, ha_starless.merged)
-            hargb_lin = combine_ha_rgb(
-                mosaic, r_ha, bxt_bb["G"].merged, bxt_bb["B"].merged)
-            out["HaRGB"] = hargb_image(mosaic, hargb_lin)
-            if bxt_l is not None:
-                l_ha = blend_ha_lightness(
-                    mosaic, bxt_l.merged, ha_starless.merged)
-                out["HaLRGB"] = halrgb_image(
-                    mosaic, out["RGB"],
-                    autostretch_channel(mosaic, "L", l_ha))
     if _NARROWBAND <= set(starless_nb):
-        # The linear S/H/O viewer source: stacked + NXT-denoised, finished live
-        # in the WebGPU shader with the standard Hubble/SCNR palette.
+        # The linear S/H/O viewer source: stacked + NXT-denoised, finished
+        # live in the WebGPU shader (Hubble/Foraxx and friends).
         out["Linear SHO"] = linear_sho(
             mosaic, starless_nb["S"], starless_nb["H"], starless_nb["O"], config, viewbox)
-    if _NARROWBAND <= set(stretched_nb):
-        s, h, o = stretched_nb["S"], stretched_nb["H"], stretched_nb["O"]
-        # Always emit the pure starless palettes; add the with-stars variants
-        # only when broadband RGB stars exist to screen in.
-        out["Hubble Starless"] = hubble_starless(mosaic, s, h, o)
-        out["Foraxx Starless"] = foraxx_starless(mosaic, s, h, o)
-        if rgb_stars is not None:
-            out["Hubble"] = hubble_image(mosaic, s, h, o, rgb_stars)
-            out["Foraxx"] = foraxx_image(mosaic, s, h, o, rgb_stars)
 
     # Linear scene formats — the ≤3-band basis the live WebGPU finishes
     # sample ("Linear RGB" is the display-stamped combine, already in the

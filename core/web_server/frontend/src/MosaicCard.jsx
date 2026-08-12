@@ -40,8 +40,19 @@ export default function MosaicCard({ mosaic_id }) {
             margin: "1em",
             position: "relative",
           }}>
+          {/* Canonical colour preview (server-rendered Hubble/RGB from the
+              linear scene formats); onError falls back to the classic
+              per-filter thumbnail (covers never-built images and the deploy
+              window before the backend restart). */}
           <img
-            src={`/thumbnail/mosaic/${mosaic_id}/${get_filters()[0]}`}
+            src={`/thumbnail/preview/mosaic/${mosaic_id}`}
+            onError={(e) => {
+              if (!e.currentTarget.dataset.fellBack) {
+                e.currentTarget.dataset.fellBack = "1";
+                e.currentTarget.src =
+                  `/thumbnail/mosaic/${mosaic_id}/${get_filters()[0]}`;
+              }
+            }}
             style={{
               height: "100%",
               maxWidth: "100%",

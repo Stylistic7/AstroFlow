@@ -225,6 +225,22 @@ def get_thumbnail(entity, *extra_args):
     return abort(404)
 
 
+@thumbnails_bp.route("/thumbnail/preview/<object_type>/<object_id>")
+def canonical_preview(object_type: str, object_id: str):
+    """The canonical colour preview: autostretched Hubble (+RGB stars when
+    present), RGB fallback for broadband-only images — rendered server-side
+    by the SAME traced finish the viewer runs live, over a low pyramid level
+    of the linear scene formats. 404 when no scene format is servable yet
+    (the card's onError falls back to the classic thumbnail)."""
+    import flask
+    from finishes.preview import render_canonical_preview
+    png = render_canonical_preview(object_type, object_id)
+    if png is None:
+        return flask.abort(404)
+    return flask.Response(png, mimetype="image/png",
+                          direct_passthrough=True)
+
+
 @thumbnails_bp.route("/thumbnail/stack/<stack_id>")
 def stack_thumbnail(stack_id: str):
     stack = context.stacks[stack_id].get()

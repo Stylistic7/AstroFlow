@@ -27,6 +27,18 @@ export default function TargetCard({ target_id }) {
         onClick={event => navigate(`/target/${target_id}`)}
       >
         <CardContent>
+          {/* Canonical colour preview (server-rendered Hubble/RGB from the
+              linear scene formats); hides itself when the target has no
+              servable formats yet — the per-stack grid below always shows. */}
+          <img
+            src={`/thumbnail/preview/target/${target.stable_hash}`}
+            onError={(e) => { e.currentTarget.style.display = "none"; }}
+            style={{
+              width: "100%",
+              display: "block",
+              marginBottom: "0.5em",
+            }}
+          />
           <div style={{
             display: "grid",
             gridTemplateColumns: `repeat(${num_columns}, 1fr)`,

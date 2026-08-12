@@ -82,8 +82,7 @@ function pointInPolygon(x, y, points) {
  * level renders at world coords scaled by `2^(maxZoom - z)`.
  */
 function computeVisibleTiles({ viewport, meta, view, objectType, imageHash,
-                              starsView, starsMeta, sourceViews = null,
-                              ancestors = '' }) {
+                              sourceViews = null, ancestors = '' }) {
     const { tx, ty, scale, screenW, screenH } = viewport;
     const { maxZoom, width: imageW, height: imageH, port, mtime } = meta;
 
@@ -134,24 +133,6 @@ function computeVisibleTiles({ viewport, meta, view, objectType, imageHash,
             );
             const url = new URL(rel, `${origin}:${port}`);
             if (mtime) url.searchParams.set('v', mtime);
-            // Sibling RGB-stars tile (same z/x/y — the Stars pyramid shares
-            // the mosaic geometry). Present only for the narrowband finish;
-            // the 's' key suffix keeps stars/no-stars tiles distinct so the
-            // Stars tap becoming available refetches rather than reusing a
-            // stale starless bind group.
-            let starsUrl;
-            if (starsView && starsMeta) {
-                const srel = buildApiUrl(
-                    '/tap/tile',
-                    [{ type: objectType, id: imageHash }],
-                    starsView,
-                    `/${z}/${tx_}/${ty_}.f32`,
-                    { ancestors },
-                );
-                const surl = new URL(srel, `${origin}:${starsMeta.port ?? port}`);
-                if (starsMeta.mtime) surl.searchParams.set('v', starsMeta.mtime);
-                starsUrl = surl.href;
-            }
             // Extra source-tap tiles for a multi-input data-driven finish
             // (same z/x/y — the scene formats share the tap's geometry).
             // The key folds the source signature so switching finishes
@@ -171,9 +152,8 @@ function computeVisibleTiles({ viewport, meta, view, objectType, imageHash,
             }
             const srcSig = sourceViews?.map((sv) => sv.display).join('|') ?? '';
             wanted.push({
-                key: `${z}/${tx_}/${ty_}${starsUrl ? 's' : ''}${srcSig ? `#${srcSig}` : ''}`,
+                key: `${z}/${tx_}/${ty_}${srcSig ? `#${srcSig}` : ''}`,
                 url: url.href,
-                starsUrl,
                 sourceUrls,
                 worldRect: {
                     x: tx_ * sourceTileWorld,
@@ -289,9 +269,6 @@ export default function TileViewerV2({
     // neighbour cells wander from the centre (data-driven finishes only). 1 = the
     // finish's own steps; the live "Spread" slider scales it.
     const [gridSpread, setGridSpread] = useState(1.0);
-    const [nbAddStars, setNbAddStars] = useState(false);
-    // Metadata of the sibling "Stars" tap (for availability + port/mtime).
-    const [starsMeta, setStarsMeta] = useState(null);
 
     // Data-driven display finishes served from /api/display/finishes — each a
     // Python DisplayFinish's spec { name, inputs, params, wgsl }. The narrowband
@@ -362,14 +339,6 @@ export default function TileViewerV2({
         }))
         : null;
 
-    // Is the sibling Stars tap real, and does it share this tap's geometry
-    // (so z/x/y tile coords line up)? Gates the Add-stars toggle + fetches.
-    const starsAvailable = isNarrowband && !!view && starsMeta
-        && starsMeta.width === tileMeta?.width
-        && starsMeta.maxZoom === tileMeta?.maxZoom;
-    const starsView = starsAvailable
-        ? { pipeline: view.pipeline, display: 'Stars', filter: 'RGB' }
-        : null;
 
     const navigate = useNavigate();
     const params = useParams();
@@ -454,21 +423,6 @@ export default function TileViewerV2({
         setGenericValues(init);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [finishName, tileMeta?.channelStats]);
-
-    // Narrowband finish only: probe the sibling "Stars" tap's tile metadata
-    // (existence + geometry + port/mtime) so the finish can screen the RGB
-    // stars in. Null when there's no broadband stars deliverable.
-    useEffect(() => {
-        setStarsMeta(null);
-        if (!isNarrowband || !view) return;
-        const starsV = { pipeline: view.pipeline, display: 'Stars', filter: 'RGB' };
-        const url = buildApiUrl(
-            '/tap/tile_metadata',
-            [{ type: objectType, id: imageHash }],
-            starsV, '', { ancestors },
-        );
-        fetch(url).then((r) => r.ok ? r.json() : null).then(setStarsMeta);
-    }, [isNarrowband, objectType, imageHash, view?.pipeline, ancestors]);
 
     // Hit-test polygons at the tapped world position. Precedence
     // matches the Pixi viewer: stack > target > mosaic.
@@ -605,7 +559,7 @@ export default function TileViewerV2({
             const base = {
                 max: 1.0, peakBrightness: 1.0, stretchMode: 0,
                 isColor: false, finishMode: true, paletteMode,
-                addStars: nbAddStars && starsAvailable,
+                addStars: false,
                 anchors: { m: med, p: p99 }, sigmas: sig, shadowClip: nbShadowClip,
                 trims: [nbTrimS, nbTrimH, nbTrimO],
                 LP: nbLP, HP: nbHP, BP: nbBP, WP: nbWP, ghsSP,
@@ -644,8 +598,8 @@ export default function TileViewerV2({
         });
     }, [renderer.isReady, isNarrowband, isBakedColor, metadata?.statistics,
         effectivePeak, stretchMode, palette, nbD, nbB, nbLP, nbHP, nbBP, nbWP,
-        nbSaturation, nbScnr, nbShadowClip, nbTrimS, nbTrimH, nbTrimO, nbAddStars,
-        starsAvailable, tileMeta?.channelMedians, tileMeta?.channelSigma,
+        nbSaturation, nbScnr, nbShadowClip, nbTrimS, nbTrimH, nbTrimO,
+        tileMeta?.channelMedians, tileMeta?.channelSigma,
         tileMeta?.channelP99, gridActive, gridCenter, gridMoves,
         genericMode, genericValues, finishName]);
 
@@ -676,7 +630,7 @@ export default function TileViewerV2({
             });
             const wanted = computeVisibleTiles({
                 viewport: s, meta: tileMeta, view, objectType, imageHash,
-                starsView, starsMeta, sourceViews, ancestors,
+                sourceViews, ancestors,
             });
             renderer.setTileUrls(wanted);
         };
@@ -684,7 +638,7 @@ export default function TileViewerV2({
         apply(viewport.get());
         return unsub;
     }, [renderer.isReady, tileMeta, view?.pipeline, view?.display, view?.filter,
-        viewport, objectType, imageHash, starsAvailable, starsMeta, ancestors,
+        viewport, objectType, imageHash, ancestors,
         sourceViews?.map((sv) => sv.display).join('|') ?? '']);
 
     // ── 3×3 taste-grid handlers ─────────────────────────────────────────
@@ -1073,24 +1027,6 @@ export default function TileViewerV2({
                     ))}
                     </>)}
                     </>)}
-                    {!genericMode && (
-                        <FormControlLabel
-                            control={
-                                <Switch
-                                    size="small"
-                                    checked={nbAddStars && starsAvailable}
-                                    disabled={!starsAvailable}
-                                    onChange={(_, v) => setNbAddStars(v)}
-                                />
-                            }
-                            label={
-                                <Typography variant="caption">
-                                    Add stars{starsAvailable ? '' : ' (none)'}
-                                </Typography>
-                            }
-                            sx={{ mt: -0.5, ml: -1 }}
-                        />
-                    )}
                 </Box>
             )}
             {!embedded && (

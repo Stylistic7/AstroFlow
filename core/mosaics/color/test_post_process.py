@@ -1,10 +1,10 @@
-"""Integration test for OSS mosaic color post-processing.
+"""Integration test for OSS colour post-processing.
 
-Traces `color_post_process` on synthetic per-filter channels and runs it through
-the executor (mock path — no rc-astro), asserting the named color deliverables
-(Hubble, Foraxx, Stars) are produced as valid 3-channel images, and that the
-workflow_group wires the expected per-channel ops. Plus direct glue tests of the
-palette/screen file I/O (with and without a stars layer).
+Traces `color_post_process` on synthetic per-filter channels and runs it
+through the executor (mock path — no rc-astro), asserting the LINEAR SCENE
+FORMATS are produced as valid images (no palette is baked — every look is
+assembled live in WGSL from these formats, finishes/stock.py) and that the
+workflow_group wires the expected per-channel ops.
 """
 import datetime
 from pathlib import Path
@@ -144,17 +144,22 @@ def test_color_post_process_traces_and_runs(test_context, tmp_path):
     # This is a single-panel mosaic, so per-op node counts are the base counts.
     assert counts.get("bxt_correct") == 6         # 6 channels, each BXT'd per panel
     assert counts.get("sxt_starless") == 3        # H, O, S narrowband, each SXT'd per panel
-    assert counts.get("autostretch_channel") == 3  # narrowband only (H, O, S) — whole-image
+    assert counts.get("autostretch_channel") is None  # stretch is LIVE now (WGSL)
     # Broadband stars: combine R+G+B into one linear RGB, then a SINGLE SXT pass
     # (coherent stars) — not per-channel; the SXT is per-panel.
     assert counts.get("combine_broadband_rgb") == 1
     assert counts.get("sxt_stars_rgb") == 1       # single RGB SXT, per panel
     assert counts.get("sxt_stars") is None       # old per-channel path removed
-    assert counts.get("combine_star_rgb") == 1
-    assert counts.get("hubble_image") == 1
-    assert counts.get("foraxx_image") == 1
-    assert counts.get("hubble_starless") == 1
-    assert counts.get("foraxx_starless") == 1
+    # NO baked palettes (2026-08-12): every look is assembled live in WGSL
+    # from the linear scene formats. The formats themselves:
+    for gone in ("combine_star_rgb", "hubble_image", "foraxx_image",
+                 "hubble_starless", "foraxx_starless", "rgb_image",
+                 "lrgb_image", "hargb_image", "halrgb_image"):
+        assert counts.get(gone) is None, f"baked palette op {gone} resurfaced"
+    assert counts.get("linear_narrowband") == 1   # raw with-stars S/H/O
+    assert counts.get("linear_narrowband_starless") is None  # full SHO set
+    assert counts.get("linear_rgb_stars") == 1
+    assert counts.get("linear_lum") is None       # no L channel in this fixture
     # The linear S/H/O viewer source: stack the 3 starless channels, then
     # NoiseXTerminator via process_in_panels (crop_panel + nxt per panel), feathered
     # into the deliverable. `linear_sho` is a traced helper, not a node.
@@ -175,9 +180,8 @@ def test_color_post_process_traces_and_runs(test_context, tmp_path):
     run_graph(graph)
 
     out = Path(context.output_dir)
-    for op, name in (("hubble_image", "Hubble"),
-                     ("foraxx_image", "Foraxx"),
-                     ("combine_star_rgb", "Stars")):
+    for op, name in (("linear_narrowband", "Linear Narrowband"),
+                     ("linear_rgb_stars", "Linear RGB Stars")):
         files = list(out.rglob(f"{op}/*.tif")) + list(out.rglob(f"{op}/*.tiff"))
         assert files, f"no {name} output produced under {op}/"
         img = read_image(files[0])
@@ -201,77 +205,6 @@ def test_color_post_process_traces_and_runs(test_context, tmp_path):
         raw = read_image(channels[f].filename).astype(np.float32)
         assert np.allclose(lin[:, :, band], raw, atol=1e-5), \
             f"Linear SHO band {f} differs from the linear channel (was it stretched?)"
-
-
-def test_palette_glue_with_and_without_stars(tmp_path):
-    metas = {}
-    for i, f in enumerate(("S", "H", "O")):
-        p = tmp_path / f"{f}.tiff"
-        _write_channel(p, i + 10, 128, 128)
-        metas[f] = SimpleNamespace(filename=p)
-
-    # With stars (a black stars layer screens to a no-op, but exercises the path)
-    stars_path = tmp_path / "stars.tif"
-    write_tiff_image(stars_path, np.zeros((128, 128, 3), np.float32), {})
-    stars = SimpleNamespace(filename=stars_path)
-    out1 = tmp_path / "hubble.tif"
-    pp._palette_image(str(out1), pp.palettes.hubble_vips,
-                      metas["S"], metas["H"], metas["O"], stars, "Hubble")
-    img = read_image(out1)
-    assert img.shape == (128, 128, 3) and img.min() >= 0 and img.max() <= 1
-
-    # Without stars (None) + the Foraxx formula
-    out2 = tmp_path / "foraxx.tif"
-    pp._palette_image(str(out2), pp.palettes.foraxx_vips,
-                      metas["S"], metas["H"], metas["O"], None, "Foraxx")
-    img2 = read_image(out2)
-    assert img2.shape == (128, 128, 3) and np.all(np.isfinite(img2))
-
-
-def test_lrgb_combination_math():
-    """`lrgb_vips` invariants: replacing L* with the RGB's OWN lightness is a
-    no-op (chroma_boost=1); a brighter L raises every pixel's lightness while
-    preserving chrominance (a*/b* unchanged)."""
-    import pyvips
-    from mosaics.color import palettes as pal
-
-    rng = np.random.default_rng(3)
-    a = (rng.random((16, 16, 3)) * 0.8 + 0.1).astype(np.float32)
-    rgb = pyvips.Image.new_from_memory(
-        np.ascontiguousarray(a).data, 16, 16, 3, "float")
-    lab = rgb.copy(interpretation="scrgb").colourspace("lab")
-
-    def to_np(im):
-        return np.ndarray(buffer=im.write_to_memory(), dtype=np.float32,
-                          shape=[im.height, im.width, im.bands])
-
-    # The RGB's own lightness, inverted through the same companding: grey
-    # with (L*, 0, 0) back to scRGB — any band is the matching lum input.
-    own_lum = (lab[0].bandjoin([lab[0] * 0.0, lab[0] * 0.0])
-               .copy(interpretation="lab").colourspace("scrgb")[0])
-    out = to_np(pal.lrgb_vips(rgb, own_lum, chroma_boost=1.0))
-    assert np.allclose(out, a, atol=2e-3), \
-        "lum == the RGB's own lightness must be a no-op"
-
-    # A brighter L: lightness strictly rises. (Chroma is NOT asserted here —
-    # raising L with fixed a*/b* pushes pixels out of the scRGB gamut, and
-    # the clip legitimately alters their chroma.)
-    brighter = to_np(pal.lrgb_vips(rgb, (own_lum * 0.5 + 0.5), chroma_boost=1.0))
-    out_lab = to_np(pyvips.Image.new_from_memory(
-        np.ascontiguousarray(brighter).data, 16, 16, 3, "float")
-        .copy(interpretation="scrgb").colourspace("lab"))
-    in_lab = to_np(lab)
-    assert (out_lab[:, :, 0] > in_lab[:, :, 0] - 1e-3).all(), \
-        "brighter L must not lower lightness"
-
-    # chroma_boost scales a*/b* exactly (measured 1.2000 on this fixture).
-    boosted = to_np(pal.lrgb_vips(rgb, own_lum, chroma_boost=1.2))
-    boost_lab = to_np(pyvips.Image.new_from_memory(
-        np.ascontiguousarray(boosted).data, 16, 16, 3, "float")
-        .copy(interpretation="scrgb").colourspace("lab"))
-    ratio = (np.abs(boost_lab[:, :, 1:]).mean()
-             / np.abs(in_lab[:, :, 1:]).mean())
-    assert abs(ratio - 1.2) < 0.02, f"chroma boost ratio {ratio} != 1.2"
 
 
 def test_bxt_narrow_keys_on_bxt_settings_only():
@@ -315,14 +248,3 @@ def test_sxt_narrow_keys_on_sxt_settings_only():
     assert pp._sxt_narrow(args, {}) != \
         pp._sxt_narrow((m, "O", changed, "chan"), {})
 
-
-def test_require_rgb_bands_demands_3_channels():
-    """The star layer is ALWAYS extracted from the combined RGB, so
-    `_require_rgb_bands` must accept 3 bands and FAIL LOUDLY on anything else
-    (mono / 1-band / RGBA). A mono star layer is a defect (broken SXT
-    extraction), never something to silently normalise to grey stars. The
-    check is header-only now — the streaming body never loads pixels."""
-    pp._require_rgb_bands(3)  # must not raise
-    for bands in (1, 2, 4):
-        with pytest.raises(ValueError, match="expected 3-channel RGB"):
-            pp._require_rgb_bands(bands)

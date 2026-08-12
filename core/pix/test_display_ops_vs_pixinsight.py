@@ -27,21 +27,12 @@ from pix.image import Image
 from pix.tasks.process import make_process_task
 from pix.tasks.js import Enum
 from file_io.xisf_file_io import write_xisf_image, read_xisf_image
-from display.ops import _scnr_np
-from display.finishes import _stretch_np
+from finishes.stdlib import _mtf_np
 from mosaics.color import palettes
 
 FIXTURE = Path(__file__).resolve().parent.parent / "testdata" / "color" / "sho_crop_768.tiff"
 
 # ── PixInsight process tasks (test-only) ─────────────────────────────────────
-# SCNR, Average Neutral protection, removing green (the SHO green→gold move).
-PI_SCNR = make_process_task("SCNR", {
-    "amount": 1.0,
-    "protectionMethod": Enum("SCNR.prototype.AverageNeutral"),
-    "colorToRemove": Enum("SCNR.prototype.Green"),
-    "preserveLightness": False,
-})
-
 # HistogramTransformation applies the midtones-transfer function. H is a 5-row
 # matrix (R, G, B, RGB/K, Alpha); each row = [shadows, midtones, highlights,
 # lowRange, highRange], identity [0, 0.5, 1, 0, 1] (see PixInsight_Edits/
@@ -82,21 +73,11 @@ def _run_pi(task, rgb, tmp_path, **kwargs):
 
 
 @pytest.mark.slow
-class TestSCNRvsPixInsight:
-    @pytest.mark.parametrize("amount", [0.5, 1.0])
-    def test_average_neutral_matches(self, display_rgb, tmp_path, amount):
-        pi = _run_pi(PI_SCNR, display_rgb, tmp_path, amount=amount)
-        mine = _scnr_np(display_rgb, {"scnr": amount})
-        # SCNR is a closed form; expect a tight match (XISF float round-trip only).
-        np.testing.assert_allclose(mine, pi, atol=2e-3)
-
-
-@pytest.mark.slow
 class TestMTFvsPixInsight:
     @pytest.mark.parametrize("midtones", [0.15, 0.25, 0.5])
     def test_histogram_transformation_matches(self, display_rgb, tmp_path, midtones):
         pi = _run_pi(_pi_mtf(midtones), display_rgb, tmp_path)
-        # _stretch_np with bp=0, wp=1 is exactly MTF(midpoint).
-        mine = _stretch_np(display_rgb, {"blackpoint": 0.0, "whitepoint": 1.0,
-                                         "midpoint": midtones})
+        # The finishes stdlib MTF is exactly PixInsight's
+        # HistogramTransformation midtones curve.
+        mine = _mtf_np(display_rgb, midtones)
         np.testing.assert_allclose(mine, pi, atol=2e-3)
