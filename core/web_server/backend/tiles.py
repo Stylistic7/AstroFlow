@@ -148,6 +148,35 @@ _stats_cache: dict = {}
 _stats_lock = threading.Lock()
 
 
+
+_STATS_MAX_PX = 16_000_000
+# Window sampling for a master with NO usable pyramid level. Reading a
+# 3x3 grid of small windows off a TILED TIFF is a handful of tile reads;
+# `subsample`/`resize` would DECODE THE WHOLE IMAGE first — measured at
+# 123 s + ~100 s of medians for a 48207x46699 (27 GB) master, which is
+# what made tile_metadata take 822 s and left the viewer black
+# (no metadata -> no geometry -> no tiles). A scattered grid keeps the
+# sample representative of sky AND signal, which a single centre crop
+# would not be.
+_STATS_WINDOW = 1024
+_STATS_GRID = 3
+
+
+def _stats_sample(img) -> "np.ndarray | None":
+    """`(N, bands)` float32 sample of `img`, or None when no cheap sample
+    exists — i.e. the resolved file is a huge master with NO pyramid page
+    small enough to read. Those masters are strip-based, so even a 1024²
+    crop decodes full-width strips: measured 70 s for a 3×3 grid, 250 s for
+    the whole image, on a 48207×46699 master. Nothing in a web request may
+    cost that. Callers omit `channelStats` instead; the finish then seeds
+    from its param defaults until the pyramid is backfilled."""
+    if img.width * img.height <= _STATS_MAX_PX:
+        a = np.frombuffer(img.write_to_memory(), dtype=np.float32).reshape(
+            img.height, img.width, img.bands)
+        return a.reshape(-1, img.bands)
+    return None
+
+
 def _per_channel_linear_stats(path):
     p = os.fspath(path)
     try:
@@ -182,15 +211,16 @@ def _per_channel_linear_stats_uncached(path):
     page = levels - 1
     for p_idx in range(levels):
         img0 = _get_vips_page(path, p_idx)
-        if img0.width * img0.height <= 16_000_000:
+        if img0.width * img0.height <= _STATS_MAX_PX:
             page = p_idx
             break
     img = _get_vips_page(path, page)
-    shrink = max(1, int((img.width * img.height / 16_000_000) ** 0.5))
-    if shrink > 1:
-        img = img.subsample(shrink, shrink)
-    arr = np.frombuffer(img.write_to_memory(), dtype=np.float32).reshape(
-        img.height, img.width, img.bands)
+    arr = _stats_sample(img)
+    if arr is None:
+        print(f"### no pyramid page for stats: {path} "
+              f"({img.width}x{img.height}) — serving without channelStats",
+              flush=True)
+        return []
     # GENERIC per-channel statistics (median, robust σ/MAD, min/max, percentiles).
     # Finish-agnostic: the frontend's display finishes compute their own starting
     # values from these (e.g. the STF/MTF seed = median − 2.8σ, p99, midtones-to-
@@ -199,7 +229,7 @@ def _per_channel_linear_stats_uncached(path):
     # per-channel.
     stats = []
     for b in range(min(3, img.bands)):
-        c = arr[..., b]
+        c = arr[:, b]
         c = c[np.isfinite(c) & (c > 0.0)]
         if c.size == 0:
             stats.append({"median": 0.0, "mad": 0.0, "sigma": 1.0, "min": 0.0,

@@ -97,6 +97,15 @@ def main() -> int:
                     help="Parallel worker threads for normal-sized sources "
                          "(default: CPU count). The work is CPU-bound on a fast "
                          "local disk, so ~one worker per core saturates it.")
+    ap.add_argument("--tiff-ops", default=None,
+                    help="Comma-separated op directory names whose .tiff "
+                         "MASTERS should also be backfilled (e.g. "
+                         "combine_broadband_rgb). Opt-in by design: the output "
+                         "tree is full of huge ephemeral .tiff intermediates "
+                         "that must never be pyramided, but a display-tapped "
+                         "TIFF master needs one — without it the viewer's "
+                         "stats/tile paths fall back to decoding the full "
+                         "master (measured 250 s on a 48207x46699 file).")
     ap.add_argument("--big-workers", type=int, default=1,
                     help="Max simultaneous >2GB masters (default 1). Each can "
                          "transiently use ~4x its size during autostretch, so "
@@ -117,6 +126,14 @@ def main() -> int:
     sources = [
         p for p in root.rglob("*") if p.suffix.lower() in _SOURCE_SUFFIXES
     ]
+    for op in filter(None, (args.tiff_ops or "").split(",")):
+        d = root / op.strip()
+        if not d.is_dir():
+            print(f"--tiff-ops: no such op directory: {d}")
+            continue
+        sources += [p for p in d.glob("*.tiff")
+                    if not p.name.endswith("_tiles.tiff")
+                    and ".tmp." not in p.name]     # half-written leftovers
     # Small-first: the pool pulls tasks in submission order, so putting the
     # thousands of small files first keeps all workers saturated through the
     # bulk; the few `--big-workers`-gated giant masters run as a tail instead
