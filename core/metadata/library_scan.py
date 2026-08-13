@@ -159,10 +159,14 @@ def delta(
 ) -> tuple[list[str], list[str], list[str]]:
     """(added, changed, removed) relpaths between two records of one dir.
 
-    `changed` = same relpath, different (size, mtime_ns) — these need BOTH a
-    diskcache eviction (compute_image_metadata keys on the filename literal,
-    which doesn't move) AND a sidecar reset (the op's cold-start path
-    reconstructs from the sidecar unconditionally)."""
+    `changed` = same relpath, different (size, mtime_ns). INFORMATIONAL
+    ONLY since 2026-08-13: the scatter no longer acts on it. Acting on it
+    meant deleting the frame's sidecar and evicting its cache entry, and an
+    interrupted pass then left the frame with neither — invisible to the
+    sidecar-sourced library. Filesystem metadata is not trustworthy enough
+    to justify destroying the only copy of a solve: a network mount, a copy
+    tool, or a clock can all perturb size/mtime without a pixel changing.
+    Re-solving after a genuine edit is an explicit user action."""
     old_by_path = {rel: (sz, mt) for rel, sz, mt in (old.listing if old else ())}
     new_by_path = {rel: (sz, mt) for rel, sz, mt in new.listing}
     added = [rel for rel in new_by_path if rel not in old_by_path]

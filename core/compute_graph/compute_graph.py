@@ -1,3 +1,4 @@
+import os
 import ray
 import structlog
 from typing import Any
@@ -47,11 +48,46 @@ def store_calibration_stacks(
     return calibration_stacks
 
 
+
+# INVENTORY-COLLAPSE GUARD. Identification is derived from the library, and
+# the library is derived from sidecars — a break anywhere upstream shows up
+# here as a much smaller object set, which then silently skips cart items
+# ("Cart entry refers to missing object") and empties viewer pages. On
+# 2026-08-13 the published inventory fell from ~2000 stacks / 416 targets /
+# 19 mosaics to 228 / 56 / 3 and NOTHING said so; it surfaced days later,
+# by accident, while answering an unrelated question. A collapse is always
+# either a real data loss or an upstream bug — never routine — so refuse the
+# publish and make the operator look.
+_COLLAPSE_FRACTION = 0.5      # publishing < half of last time is a collapse
+_COLLAPSE_FLOOR = 20          # small libraries legitimately fluctuate
+
+
+def _guard_collapse(kind: str, previous, count: int) -> None:
+    prev = len(previous or ())
+    if prev < _COLLAPSE_FLOOR or count >= prev * _COLLAPSE_FRACTION:
+        return
+    msg = (
+        f"{kind}: refusing to publish {count} when the last pass published "
+        f"{prev} — an inventory collapse means the library upstream is "
+        f"broken (missing sidecars, an unreadable volume, a poisoned "
+        f"identification cache). Investigate before continuing; set "
+        f"ASTROFLOW_ALLOW_INVENTORY_COLLAPSE=1 if the drop is intended."
+    )
+    if os.environ.get("ASTROFLOW_ALLOW_INVENTORY_COLLAPSE") == "1":
+        log.warning("inventory collapse ALLOWED by env override",
+                    kind=kind, count=count, previous=prev)
+        return
+    log.error("inventory collapse refused", kind=kind, count=count,
+              previous=prev)
+    raise RuntimeError(msg)
+
+
 @ray.remote(num_cpus=0.1)
 @beartype
 def store_stacks(stacks: dict[str, Any]) -> dict[str, Any]:
     assert None not in stacks.values()
     # stacks values are already ContextRefs (from gather_enriched_stacks)
+    _guard_collapse("stacks", context.stacks, len(stacks))
     result = StacksDict(stacks)
     context.stacks = result
     log.info("Stored stacks", count=len(stacks))
@@ -76,6 +112,7 @@ def store_targets(targets: dict[str, Any]) -> dict[str, Any]:
             f"that breaks identify_mosaics — investigate ContextRef.store / "
             f"diskcache write path."
         )
+    _guard_collapse("targets", context.targets, len(targets))
     result = TargetsDict(targets)
     context.targets = result
     log.info("Stored targets", count=len(targets))
@@ -87,6 +124,7 @@ def store_targets(targets: dict[str, Any]) -> dict[str, Any]:
 def store_mosaics(mosaics: MosaicsDict) -> MosaicsDict:
     assert None not in mosaics.values()
     # mosaics values are already ContextRefs (from identify_mosaics)
+    _guard_collapse("mosaics", context.mosaics, len(mosaics))
     context.mosaics = mosaics
     log.info("Stored mosaics", count=len(mosaics))
     return mosaics

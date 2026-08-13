@@ -95,8 +95,10 @@ def scatter_compute_image_metadata(*filenames_in: list[Path]) -> Graph:
     Per input dir: a fresh scan (or, for a disconnected volume, the last
     durable record — "that disk hasn't changed") yields a fingerprint +
     listing. `compute_image_metadata` nodes are emitted ONLY for files that
-    are new or changed since the previous record; an unchanged library emits
-    ZERO per-file nodes. Downstream, pure per-dir pieces
+    are NEW since the previous record, or whose SIDECAR IS MISSING; an
+    unchanged, fully-sidecar'd library emits ZERO per-file nodes. Files
+    whose size/mtime moved are deliberately NOT recomputed and NEVER have
+    their sidecar deleted — see the write-once note below. Downstream, pure per-dir pieces
     (`build_dir_library`, fingerprint-keyed) and the pure union
     (`build_library_dicts`) are diskcache hits when nothing changed, so
     startup collapses to the scans plus a handful of cache lookups. The
@@ -141,23 +143,23 @@ def scatter_compute_image_metadata(*filenames_in: list[Path]) -> Graph:
             removed=len(removed),
         )
         root = Path(record.dir)
-        for rel in changed:
-            f = root / rel
-            # Both resets, or the recompute resurrects stale state.
-            compute_image_metadata.invalidate(f)
-            sidecar_path_for(f).unlink(missing_ok=True)
-        # ALSO recompute any listed file whose SIDECAR IS MISSING. The
-        # delta above compares listing-to-listing, but the piece below is
-        # built from SIDECARS — two different sources that can diverge:
-        # lose the sidecars (a wipe) or interrupt a pass after the listing
-        # record is persisted but before its compute nodes have written
-        # theirs, and the next scan reports added=0/changed=0 forever while
-        # the piece stays permanently short. That happened: 25,576 of
-        # 32,666 files had no sidecar, so the published MetadataDict held
-        # 7,027 frames, identification saw 5,943 lights, and the inventory
-        # silently collapsed to 228 stacks / 56 targets / 3 mosaics —
-        # skipping most of the shopping cart (2026-08-13). One stat() per
-        # listed file per graph build makes the system self-healing.
+        # SIDECARS ARE WRITE-ONCE AND NEVER DELETED (2026-08-13 decision).
+        # A frame's pixels do not change after capture, and AstroFlow is
+        # never permitted to modify a raw file — so a sidecar, once
+        # written, stays valid forever. The previous design also acted on
+        # a `changed` delta (same path, different size/mtime): it deleted
+        # the sidecar AND evicted the op cache, and if that pass didn't
+        # finish, the frame was left with neither and became INVISIBLE to
+        # the sidecar-sourced library. That is how 25,576 of 32,666 frames
+        # silently vanished and the inventory collapsed from ~416 targets
+        # to 56, skipping most of the shopping cart. Re-solving after a
+        # genuine pixel edit is a deliberate user action (future UI), not
+        # something inferred from filesystem metadata that a network mount,
+        # a clock, or a copy tool can perturb.
+        #
+        # The ONE thing we do infer: a listed file with NO sidecar needs
+        # computing. One stat() per file per graph build, and the library
+        # heals itself instead of staying permanently short.
         missing_sidecar = [
             rel for rel in _listing_rels(record.listing)
             if not sidecar_path_for(root / rel).exists()
@@ -169,7 +171,7 @@ def scatter_compute_image_metadata(*filenames_in: list[Path]) -> Graph:
             )
         dir_nodes = {
             (compute_image_metadata, root / rel)
-            for rel in (*added, *changed, *missing_sidecar)
+            for rel in (*added, *missing_sidecar)
         }
         piece = (
             build_dir_library, record.dir, record.fingerprint, record.listing,
@@ -279,9 +281,25 @@ def compute_image_metadata(
         # DONTSOLV synthetic frames legitimately return None; everything
         # else must solve.
         if plate_solution is None and not header.get("DONTSOLV"):
-            raise plate_solving.PlateSolveFailedException(
-                f"Failed to plate-solve: {filename}"
-            )
+            if plate_solve is not None:
+                # PRODUCED-IMAGE path (a master, plate_solve=True): a
+                # deliverable that won't solve is a real failure — the
+                # mosaic can't place it. Fail the op.
+                raise plate_solving.PlateSolveFailedException(
+                    f"Failed to plate-solve: {filename}"
+                )
+            # RAW-FRAME path (identification): record the frame as
+            # UNSOLVED and carry on, so it still gets a sidecar and stays
+            # VISIBLE to the library. Raising here meant the sidecar was
+            # never written, which under the sidecar-sourced library made
+            # the frame cease to exist — a solve failure silently became
+            # data loss, with no count anywhere. It also made the frame
+            # eligible for recompute on EVERY pass (no sidecar => "needs
+            # computing"), so a permanently-unsolvable frame burned a
+            # solver slot forever. Unsolved frames are excluded from
+            # spatial clustering by identify_stacks on their own merits.
+            log.warning("frame did not plate-solve; recording as unsolved",
+                        filename=str(filename))
     else:
         plate_solution = None
 

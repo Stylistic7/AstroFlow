@@ -188,3 +188,33 @@ def test_new_file_emits_exactly_one_compute_node(test_context):
     nodes = _compute_nodes(g2)
     assert len(nodes) == 1, f"expected exactly the new file, got {nodes}"
     assert "night2" in str(nodes[0][1])
+
+
+def test_a_touched_file_never_loses_its_sidecar(test_context):
+    """SIDECARS ARE WRITE-ONCE. A frame whose size/mtime moved must keep its
+    sidecar and its cache entry — the scatter must not touch either.
+
+    The removed design deleted both for every "changed" file and relied on
+    the same pass to rebuild them; an interrupted pass then left the frame
+    with neither, and under the sidecar-sourced library the frame ceased to
+    exist. That silently erased 25,576 of 32,666 frames and collapsed the
+    inventory from ~416 targets to 56 (2026-08-13). Filesystem metadata is
+    not evidence that pixels changed — a network mount, a copy tool or a
+    clock can all move it — so re-solving is now an explicit user action.
+    """
+    from file_io.sidecar import sidecar_path_for
+
+    input_dir = context.input_dirs[0]
+    made = make_synthetic_frames(number=2, dest_dir=input_dir)
+    run_graph(compute_graph_fragment())          # sidecars written
+
+    frame = Path(made[0])
+    sidecar = sidecar_path_for(frame)
+    assert sidecar.exists(), "precondition: the frame has a sidecar"
+    before = sidecar.read_bytes()
+
+    os.utime(frame, (0, 0))                      # look "changed"
+    ray.get(scatter_compute_image_metadata.remote())
+
+    assert sidecar.exists(), "the scatter DELETED a sidecar — never do this"
+    assert sidecar.read_bytes() == before, "the sidecar was rewritten"
