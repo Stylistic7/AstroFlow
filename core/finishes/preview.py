@@ -98,7 +98,26 @@ def render_canonical_preview(object_type: str, object_id: str,
     from context.cache import get_durable_cache
     from finishes.registry import get_finish
 
-    pipeline = default_pipeline_for(object_type, object_id)
+    # WHICH PIPELINE: the scene formats live in whichever pipeline built
+    # them, which is NOT necessarily the object's default. The Heart target
+    # is processed by both "PixInsight Master" (no colour tail) and the
+    # hybrid; preference picks PI Master, whose Linear* taps don't exist, so
+    # the preview 404'd on an object whose colour was sitting right there.
+    # Try the default first, then every other pipeline for this class, and
+    # take the first that actually resolves a scene format.
+    from catalog.queries import pipelines_for
+    default = default_pipeline_for(object_type, object_id)
+    candidates = [default] + [p for p in pipelines_for(object_type, object_id)
+                              if p != default]
+    pipeline = None
+    for cand in candidates:
+        if any(_resolve(object_type, object_id, cand, d, ancestors)
+               for d in ("Linear SHO", "Linear RGB",
+                         "Linear Narrowband Starless")):
+            pipeline = cand
+            break
+    if pipeline is None:
+        return None
 
     sho_path = _resolve(object_type, object_id, pipeline, "Linear SHO",
                         ancestors)
