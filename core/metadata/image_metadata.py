@@ -19,6 +19,14 @@ from decisions.settings import DevelopmentSettings
 
 log = structlog.get_logger()
 
+
+def _listing_rels(listing) -> list:
+    """The relative paths in a library listing (entries are
+    `(rel, size, mtime)` tuples; tolerate a bare-string listing)."""
+    return [e[0] if isinstance(e, (tuple, list)) else e for e in listing]
+
+
+
 # TODO: I need to associate dark and flat frames *before* computing thumbnails.
 
 # Stack levels of refinement:
@@ -138,8 +146,30 @@ def scatter_compute_image_metadata(*filenames_in: list[Path]) -> Graph:
             # Both resets, or the recompute resurrects stale state.
             compute_image_metadata.invalidate(f)
             sidecar_path_for(f).unlink(missing_ok=True)
+        # ALSO recompute any listed file whose SIDECAR IS MISSING. The
+        # delta above compares listing-to-listing, but the piece below is
+        # built from SIDECARS — two different sources that can diverge:
+        # lose the sidecars (a wipe) or interrupt a pass after the listing
+        # record is persisted but before its compute nodes have written
+        # theirs, and the next scan reports added=0/changed=0 forever while
+        # the piece stays permanently short. That happened: 25,576 of
+        # 32,666 files had no sidecar, so the published MetadataDict held
+        # 7,027 frames, identification saw 5,943 lights, and the inventory
+        # silently collapsed to 228 stacks / 56 targets / 3 mosaics —
+        # skipping most of the shopping cart (2026-08-13). One stat() per
+        # listed file per graph build makes the system self-healing.
+        missing_sidecar = [
+            rel for rel in _listing_rels(record.listing)
+            if not sidecar_path_for(root / rel).exists()
+        ]
+        if missing_sidecar:
+            log.warning(
+                "library sidecars missing — recomputing", dir=str(dir),
+                missing=len(missing_sidecar), listed=len(record.listing),
+            )
         dir_nodes = {
-            (compute_image_metadata, root / rel) for rel in (*added, *changed)
+            (compute_image_metadata, root / rel)
+            for rel in (*added, *changed, *missing_sidecar)
         }
         piece = (
             build_dir_library, record.dir, record.fingerprint, record.listing,

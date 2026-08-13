@@ -82,7 +82,8 @@ class TestWgslStructure:
 
     def test_specs_serve_the_contract(self):
         for s in finish_specs():
-            assert set(s) == {"name", "inputs", "params", "wgsl"}
+            assert set(s) == {"name", "inputs", "optional", "params", "wgsl"}
+            assert set(s["optional"]) <= set(s["inputs"])
             for p in s["params"]:
                 assert {"name", "default", "lo", "hi", "step", "label",
                         "scale"} <= set(p)
