@@ -142,6 +142,7 @@ function computeVisibleTiles({ viewport, meta, view, objectType, imageHash,
             let sourceUrls = null;
             if (sourceViews && sourceViews.length) {
                 sourceUrls = sourceViews.map((sv) => {
+                    if (!sv) return null;      // unbuilt tap → black dummy
                     const r = buildApiUrl(
                         '/tap/tile',
                         [{ type: objectType, id: imageHash }],
@@ -153,7 +154,7 @@ function computeVisibleTiles({ viewport, meta, view, objectType, imageHash,
                 });
             }
             const srcSig = [(primaryView ?? view)?.display,
-                            ...(sourceViews ?? []).map((sv) => sv.display)]
+                            ...(sourceViews ?? []).map((sv) => sv?.display ?? '-')]
                 .filter(Boolean).join('|');
             wanted.push({
                 key: `${z}/${tx_}/${ty_}${srcSig ? `#${srcSig}` : ''}`,
@@ -343,9 +344,16 @@ export default function TileViewerV2({
             }
         }
     }
+    // Only the REQUIRED inputs must be built: a finish may declare inputs
+    // as `optional` (the star layer — screened, or scaled by a term that is
+    // zero at its default), and those bind black, which is a no-op in the
+    // math. Otherwise a look vanishes from the picker just because one
+    // still-computing tap hasn't landed.
     const applicableFinishes = [];
     for (const f of finishes) {
-        if (!(f.inputs || []).every((d) => availableTaps.has(d))) continue;
+        const optional = new Set(f.optional || []);
+        const required = (f.inputs || []).filter((d) => !optional.has(d));
+        if (!required.every((d) => availableTaps.has(d))) continue;
         if (applicableFinishes.some((g) => g.name === f.name)) continue;
         applicableFinishes.push(f);
     }
@@ -385,7 +393,8 @@ export default function TileViewerV2({
         ? viewFor(activeFinish.inputs[0])
         : view;
     const sourceViews = genericMode && view && (activeFinish.inputs?.length ?? 1) > 1
-        ? activeFinish.inputs.slice(1).map(viewFor)
+        ? activeFinish.inputs.slice(1).map(
+            (d) => (availableTaps.has(d) ? viewFor(d) : null))
         : null;
 
 

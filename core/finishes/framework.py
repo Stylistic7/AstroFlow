@@ -73,12 +73,19 @@ class Finish:
     wgsl: str
     fn: object              # the original author function
     finish_hash: str
+    # Inputs that may be absent — the viewer binds black and the finish
+    # degrades (no stars) instead of vanishing from the picker.
+    optional: tuple = ()
     graph: object = field(repr=False, default=None)   # root Node (tests/interp)
 
     def spec(self) -> dict:
         return {
             "name": self.name,
             "inputs": list(self.inputs),
+            # Inputs that may legitimately be missing: the viewer binds a
+            # black texture and the finish degrades (no stars), instead of
+            # the whole look disappearing from the picker.
+            "optional": list(self.optional),
             "params": [p.spec() for p in self.params],
             "wgsl": self.wgsl,
         }
@@ -169,7 +176,8 @@ def _trace(fn, name: str, inputs: tuple) -> "tuple[str, list, object]":
     return wgsl, filled, root
 
 
-def finish(name: str, inputs: tuple, alt_primaries: tuple = ()):
+def finish(name: str, inputs: tuple, alt_primaries: tuple = (),
+           optional: tuple = ()):
     """Register a display finish. `inputs` are tap display names, one per
     positional argument; `inputs[0]` is the tap whose viewer page offers
     this finish. `alt_primaries` registers copies with `inputs[0]` swapped
@@ -180,8 +188,16 @@ def finish(name: str, inputs: tuple, alt_primaries: tuple = ()):
         h = xxhash.xxh64(
             structural_source_hash(fn) + "|" + name + "|" + ",".join(inputs)
         ).hexdigest()
-        f = Finish(name=name, inputs=tuple(inputs), params=params,
-                   wgsl=wgsl, fn=fn, finish_hash=h, graph=root)
+        bad = set(optional) - set(inputs)
+        if bad:
+            raise FinishDefinitionError(
+                f"{name}: optional inputs {sorted(bad)} aren't declared inputs")
+        if inputs and inputs[0] in optional:
+            raise FinishDefinitionError(
+                f"{name}: the PRIMARY input can't be optional (it supplies the"
+                f" tile geometry)")
+        f = Finish(name=name, inputs=tuple(inputs), optional=tuple(optional),
+                   params=params, wgsl=wgsl, fn=fn, finish_hash=h, graph=root)
         from finishes.registry import register_finish
         register_finish(f)
         for alt in alt_primaries:
@@ -194,5 +210,5 @@ def replace_primary(f: Finish, primary: str) -> Finish:
     """A copy of `f` served with a different primary tap — the WGSL is
     positional (src0..), so only the inputs list changes."""
     return Finish(name=f.name, inputs=(primary,) + f.inputs[1:],
-                  params=f.params, wgsl=f.wgsl, fn=f.fn,
+                  optional=f.optional, params=f.params, wgsl=f.wgsl, fn=f.fn,
                   finish_hash=f.finish_hash, graph=f.graph)

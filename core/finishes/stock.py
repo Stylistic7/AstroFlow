@@ -30,7 +30,8 @@ def _stars_layer(stars, star_s, star_mid):
 
 
 @finish(name="Hubble", inputs=("Linear SHO", "Linear RGB Stars"),
-        alt_primaries=("Linear Narrowband Starless",))
+        alt_primaries=("Linear Narrowband Starless",),
+        optional=("Linear RGB Stars",))
 def hubble(nb, stars,
            blackS=Param(0.004, 0.0, 0.05, step=0.03, label="black S", scale="log"),
            whiteS=Param(0.03, 0.005, 0.3, step=0.03, label="white S", scale="log"),
@@ -56,7 +57,8 @@ def hubble(nb, stars,
 
 
 @finish(name="Foraxx", inputs=("Linear SHO", "Linear RGB Stars"),
-        alt_primaries=("Linear Narrowband Starless",))
+        alt_primaries=("Linear Narrowband Starless",),
+        optional=("Linear RGB Stars",))
 def foraxx(nb, stars,
            blackS=Param(0.004, 0.0, 0.05, step=0.03, label="black S", scale="log"),
            whiteS=Param(0.03, 0.005, 0.3, step=0.03, label="white S", scale="log"),
@@ -85,7 +87,8 @@ def foraxx(nb, stars,
     return screen(vec3(r, g, o), _stars_layer(stars, star_s, star_mid))
 
 
-@finish(name="RGB", inputs=("Linear RGB", "Linear RGB Stars"))
+@finish(name="RGB", inputs=("Linear RGB", "Linear RGB Stars"),
+        optional=("Linear RGB Stars",))
 def rgb(combine, stars,
         star_s=Param(1.0, 0.0, 2.0, step=0.1, label="stars"),
         blackpoint=Param(0.002, 0.0, 0.1, step=0.03, label="black", scale="log"),
@@ -98,7 +101,8 @@ def rgb(combine, stars,
     return _stretch(c, blackpoint, whitepoint, midtones)
 
 
-@finish(name="LRGB", inputs=("Linear RGB", "Linear RGB Stars", "Linear L"))
+@finish(name="LRGB", inputs=("Linear RGB", "Linear RGB Stars", "Linear L"),
+        optional=("Linear RGB Stars",))
 def lrgb(combine, stars, lum,
          star_s=Param(1.0, 0.0, 2.0, step=0.1, label="stars"),
          blackpoint=Param(0.002, 0.0, 0.1, step=0.03, label="black", scale="log"),
@@ -116,7 +120,8 @@ def lrgb(combine, stars, lum,
 
 @finish(name="HaLRGB",
         inputs=("Linear RGB", "Linear RGB Stars", "Linear Narrowband",
-                "Linear L"))
+                "Linear L"),
+        optional=("Linear RGB Stars",))
 def halrgb(combine, stars, nb, lum,
            star_s=Param(1.0, 0.0, 2.0, step=0.1, label="stars"),
            ha_k=Param(0.4, 0.0, 2.0, step=0.1, label="Hα→R"),
