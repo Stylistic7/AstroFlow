@@ -207,11 +207,18 @@ export function useTileRenderer({ canvasRef }) {
                         : e,
                 ),
             });
+            // EVERY texture entry gets the filterable sample type, not just
+            // the tile + stars pair: `tileSampler` is a FILTERING sampler when
+            // the feature is on, and sampling an `unfilterable-float` binding
+            // with it is a VALIDATION ERROR — the pipeline is created invalid
+            // and every draw silently no-ops (black canvas, console-only
+            // error). That black-screened every multi-input finish, since
+            // they sample the extra source bindings 3-5 (2026-08-12).
             const tileLayout = device.createBindGroupLayout({
                 entries: wantsFilterable
-                    ? TILE_LAYOUT_ENTRIES.map((e) => (e.binding === 0 || e.binding === 2)
+                    ? TILE_LAYOUT_ENTRIES.map((e) => (e.texture
                         ? { ...e, texture: { sampleType: 'float' } }
-                        : e)
+                        : e))
                     : TILE_LAYOUT_ENTRIES,
             });
 
@@ -544,11 +551,27 @@ export function useTileRenderer({ canvasRef }) {
         if (srcKey !== s.genericShaderSrc) {
             const code = buildFinishShader(finishWgsl, numInputs);
             const module = s.device.createShaderModule({ code });
+            // WebGPU reports shader/layout problems ASYNCHRONOUSLY: without a
+            // scope the pipeline comes back "valid" and simply draws nothing,
+            // which reads as a black canvas with no clue anywhere in the UI.
+            // Capture and report — a user-authored finish that emits bad WGSL
+            // must say why.
+            s.device.pushErrorScope('validation');
             s.genericPipeline = s.device.createRenderPipeline({
                 layout: s.pipelineLayout,
                 vertex: { module, entryPoint: 'vs_main' },
                 fragment: { module, entryPoint: 'fs_main', targets: [{ format: s.format }] },
                 primitive: { topology: 'triangle-strip' },
+            });
+            s.device.popErrorScope().then((err) => {
+                if (err) console.error('### finish shader rejected:', err.message);
+            });
+            module.getCompilationInfo?.().then((info) => {
+                for (const m of info.messages || []) {
+                    if (m.type === 'error') {
+                        console.error(`### finish WGSL ${m.lineNum}:${m.linePos} ${m.message}`);
+                    }
+                }
             });
             s.genericShaderSrc = srcKey;
         }
