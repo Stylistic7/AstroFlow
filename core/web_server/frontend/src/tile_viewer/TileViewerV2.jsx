@@ -713,7 +713,7 @@ export default function TileViewerV2({
         return unsub;
     }, [renderer.isReady, tileMeta, view?.pipeline, view?.display, view?.filter,
         viewport, objectType, imageHash, ancestors, primaryView?.display,
-        sourceViews?.map((sv) => sv.display).join('|') ?? '']);
+        sourceViews?.map((sv) => sv?.display ?? '-').join('|') ?? '']);
 
     // ── 3×3 taste-grid handlers ─────────────────────────────────────────
     // Next deterministic PRNG stream. The seed counter lives in a ref so a
