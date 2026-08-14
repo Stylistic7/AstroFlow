@@ -212,15 +212,19 @@ class DuplicateFileException(Exception):
     pass
 
 
-# num_cpus=1 because a plate solve PEGS A FULL CORE in a solver subprocess.
-# Declaring 0.25 lied to the scheduler in two directions at once: the head
-# packed 30 concurrent solves onto 24 cores (load 34, thrashing, and web
-# requests starved to multi-minute latencies), while Ray — believing those
-# tasks cost 7.5 CPU total — saw the head as mostly idle and never spilled
-# work to the worker node, which sat at 10% of dispatches despite owning 29%
-# of the cluster's cores. An honest declaration fixes both ends. Decorator
-# kwargs are stripped from the op hash, so changing this re-keys nothing.
-@node(num_cpus=1, auto_memory=True)
+# num_cpus stays DELIBERATELY below a solve's real core usage. Measured
+# 2026-08-13: raising it to 1 (on the theory that a solve pegs a core, so the
+# declaration should say so) cut head throughput 55.5 -> 45.2 sidecars/min.
+# Concurrency here is meant to be governed by MAX_IN_FLIGHT (= 2 x cluster
+# CPU) and the 1 GiB `memory` reservation, NOT by CPU: at 0.25 the cluster
+# sits at ~7.5/34 CPU and 68 GiB/89.6 GiB memory, so the dispatcher's own cap
+# binds. num_cpus=1 made CPU binding for the first time and capped the head at
+# 24 concurrent, and the lost oversubscription had been usefully hiding the
+# I/O latency of pulling 120 MB frames off the volumes. This op is also on the
+# light-task path (estimate < _GATE_MIN_BYTES), so it dispatches unpinned and
+# SPREAD — worker share is a scheduling non-issue; the worker simply completes
+# fewer per minute because its frames cross the network.
+@node(num_cpus=0.25, auto_memory=True)
 def compute_image_metadata(
     filename: os.PathLike,
     plate_solve: bool | None = None,
