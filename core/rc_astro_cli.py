@@ -100,14 +100,8 @@ def _move(produced: Path, dest: Path) -> None:
     """
     if not produced.exists():
         raise FileNotFoundError(f"rc-astro produced no file at {produced}")
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    staging = dest.with_name(f"{dest.name}.tmp.{os.getpid()}.{uuid.uuid4().hex}")
-    try:
-        shutil.copy2(str(produced), str(staging))  # full copy onto dest's filesystem
-        os.replace(str(staging), str(dest))        # atomic same-fs publish
-    finally:
-        staging.unlink(missing_ok=True)            # clean up if copy/replace failed
-    produced.unlink(missing_ok=True)               # drop the source temp (as shutil.move did)
+    from file_io.publish import publish_atomically
+    publish_atomically(produced, dest, consume=True)
 
 
 def _locate(td: Path, base: str) -> Path:

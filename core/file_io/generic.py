@@ -4,7 +4,6 @@ import xxhash
 from typing import Any
 from functools import singledispatch
 import json
-import shutil
 import traceback
 
 from file_io.sidecar import sidecar_path_for
@@ -144,12 +143,18 @@ def _(wrapped: WithSidecar) -> ImageGeometry:
 
 
 def copy_image(input: Path, output: Path) -> Path:
+    # Atomic: the destination is a final content-addressed path, and an
+    # incremental copy into it can be observed truncated (see file_io/publish).
+    # Sidecar first, payload last — the payload is what gates visibility.
+    from file_io.publish import publish_atomically, publish_pair_atomically
     Path(output).parent.mkdir(parents=True, exist_ok=True)
     if isinstance(input, WithSidecar):
-        shutil.copy(input.path, output.path)
-        shutil.copy(sidecar_path_for(input.path), sidecar_path_for(output.path))
+        publish_pair_atomically(
+            input.path, output.path,
+            sidecar_path_for(input.path), sidecar_path_for(output.path),
+        )
     else:
-        shutil.copy(input, output)
+        publish_atomically(input, output)
 
     return output
 

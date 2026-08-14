@@ -8,7 +8,6 @@ underestimates SNR over saturated cores compared to true HDR
 composition (see PIXINSIGHT path for that case).
 """
 import os
-import shutil
 from pathlib import Path
 
 import astropy.io.fits as pyfits
@@ -58,7 +57,8 @@ def merge_target_channel_oss(
     master_paths = [m.filename for m in masters]
 
     if len(master_paths) == 1:
-        shutil.copy(master_paths[0], output_filename)
+        from file_io.publish import publish_atomically
+        publish_atomically(master_paths[0], output_filename)
         return WithSidecar(FitsFilePath(output_filename))
 
     stack_master_pairs = sorted(

@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import os
 import re
-import shutil
 import tempfile
 import uuid
 from dataclasses import dataclass, field
@@ -311,7 +310,8 @@ class Recipe:
                             f"Cannot convert {src.suffix} to XISF in mock mode"
                         )
                 else:
-                    shutil.copy2(src, dest)
+                    from file_io.publish import publish_atomically
+                    publish_atomically(src, dest)
         else:
             save_all = {
                 image: self._output_path_in_tmp(image)
@@ -440,5 +440,8 @@ class Recipe:
                 f"Output for view '{image.view_id}' not found in recipe "
                 f"temp dir. Was the recipe materialized?"
             )
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dest)
+        # PixInsight's temp dir is a DIFFERENT filesystem from `dest`, so a bare
+        # copy2 writes incrementally into the final content-addressed path and a
+        # reader (or the cache) can observe a truncated file. Stage-then-replace.
+        from file_io.publish import publish_atomically
+        publish_atomically(src, dest)

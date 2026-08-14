@@ -1,5 +1,4 @@
 import os
-import shutil
 import ray
 import structlog
 from beartype import beartype
@@ -83,7 +82,8 @@ def _merge_images_pi_impl(
         inputs = tuple(rehydrated)
 
         if len(inputs) == 1:
-            shutil.copy(inputs[0].filename, output_filename)
+            from file_io.publish import publish_atomically
+            publish_atomically(inputs[0].filename, output_filename)
             return WithSidecar(output_filename)
 
         # Pairwise tree: take pairs, merge each pair → next level.

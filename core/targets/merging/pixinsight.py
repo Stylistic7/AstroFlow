@@ -5,7 +5,6 @@ HDRComposition. n=1 short-circuits to a copy of the single stack's
 master — no PixInsight invocation needed.
 """
 import os
-import shutil
 from pathlib import Path
 
 from beartype import beartype
@@ -61,7 +60,8 @@ def _merge_target_channel_impl(
         # is honored (FITS keywords, incl. STBLHASH/FILTER, are preserved).
         src = Path(master_paths[0])
         if src.suffix.lower() == ".xisf":
-            shutil.copy(src, output_filename)
+            from file_io.publish import publish_atomically
+            publish_atomically(src, Path(output_filename))
         else:
             from file_io.conversion import convert_fits_to_xisf
             convert_fits_to_xisf(src, Path(output_filename))
