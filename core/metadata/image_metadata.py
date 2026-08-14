@@ -212,7 +212,15 @@ class DuplicateFileException(Exception):
     pass
 
 
-@node(num_cpus=0.25, auto_memory=True)
+# num_cpus=1 because a plate solve PEGS A FULL CORE in a solver subprocess.
+# Declaring 0.25 lied to the scheduler in two directions at once: the head
+# packed 30 concurrent solves onto 24 cores (load 34, thrashing, and web
+# requests starved to multi-minute latencies), while Ray — believing those
+# tasks cost 7.5 CPU total — saw the head as mostly idle and never spilled
+# work to the worker node, which sat at 10% of dispatches despite owning 29%
+# of the cluster's cores. An honest declaration fixes both ends. Decorator
+# kwargs are stripped from the op hash, so changing this re-keys nothing.
+@node(num_cpus=1, auto_memory=True)
 def compute_image_metadata(
     filename: os.PathLike,
     plate_solve: bool | None = None,
