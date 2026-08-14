@@ -264,9 +264,10 @@ def makes_image_wrap(
         if result is None:
             return result
         call_hash = canonical_call_hash(*args, **kwargs)
-        _stamp_header(result, call_hash, image_type, args)
         if makes_tiff:
-            _generate_presentations(func, result, args, kwargs)
+            _publish_with_presentations(result, call_hash, image_type, args)
+        else:
+            _stamp_header(result, call_hash, image_type, args)
         return result
 
     return wrapped
@@ -329,6 +330,70 @@ def _stamp_header(
 # Presentation generation (tile pyramid)
 # ---------------------------------------------------------------------
 
+def _result_path(result) -> "Path | None":
+    """The on-disk path a producer's result refers to, or None if it isn't
+    file-backed. Same unwrapping `_stamp_header` and `_make_tile_pyramid` do."""
+    if isinstance(result, np.ndarray):
+        return None
+    if isinstance(result, WithSidecar):
+        result = result.path
+    if isinstance(result, tempfile._TemporaryFileWrapper):
+        return Path(result.name)
+    try:
+        return Path(os.fspath(result))
+    except TypeError:
+        return None
+
+
+def _publish_with_presentations(
+    result, call_hash: str, image_type, args: tuple,
+) -> None:
+    """Stamp and build the display pyramid while the payload is UNPUBLISHED,
+    then land the pyramid FIRST and the payload LAST.
+
+    Why: the body publishes the payload at its final content-addressed path,
+    but the pyramid is a separate ~15-minute pass afterwards. For that whole
+    window the product was RESOLVABLE BUT UNTILEABLE — and on a rebuild the
+    new payload had already destroyed the working previous one. On 2026-08-14
+    a γ Cyg `Linear RGB` master sat in exactly that state and served 36,150
+    broken tiles.
+
+    Renaming the payload aside first shrinks that window from ~15 minutes to
+    the microseconds between the body's own `os.replace` and this one, and
+    establishes the invariant **payload present => pyramid present**. During a
+    rebuild the PREVIOUS `_tiles.tiff` stays in place and keeps serving (the
+    tile route resolves through the pyramid), so viewers see the old image
+    until the new pair is complete instead of a black page.
+
+    The staging name PRESERVES THE SUFFIX: header reads, `update_header` and
+    `needs_display_pyramid` all dispatch on extension, so `.tiff` must stay
+    `.tiff` while parked.
+    """
+    source = _result_path(result)
+    if source is None or not source.exists():
+        # Not file-backed, or the body wrote somewhere other than the path we
+        # can see. Don't silently skip the pyramid — fall back to the old
+        # in-place order so behaviour is unchanged for these producers.
+        _stamp_header(result, call_hash, image_type, args)
+        _generate_presentations(None, result, args, {})
+        return
+
+    from previews.create_tile_pyramid import pyramid_path_for
+    staging = source.with_name(
+        f".{source.stem}.staging.{os.getpid()}{source.suffix}")
+    os.replace(source, staging)          # unpublish — atomic, instant
+    try:
+        _stamp_header(staging, call_hash, image_type, args)
+        # `_make_tile_pyramid` swallows+logs build failures by design (the
+        # pyramid is optional; failing must not discard the expensive master).
+        _make_tile_pyramid(staging, dest=pyramid_path_for(source))
+    finally:
+        # ALWAYS republish, even if stamping or the pyramid raised. Otherwise
+        # the payload is stranded under its dot-name and the product vanishes
+        # entirely — strictly worse than a missing pyramid.
+        os.replace(staging, source)      # payload lands LAST
+
+
 def _generate_presentations(
     func: Callable, result, args: tuple, kwargs: dict,
 ) -> None:
@@ -345,7 +410,7 @@ def _generate_presentations(
     _make_tile_pyramid(result)
 
 
-def _make_tile_pyramid(result) -> "Path | None":
+def _make_tile_pyramid(result, dest: "Path | None" = None) -> "Path | None":
     """Build the display tile pyramid — a separate `<stem>_tiles.tiff`
     sibling — for `result`.
 
@@ -369,7 +434,11 @@ def _make_tile_pyramid(result) -> "Path | None":
     # display artifact and serve directly — no separate pyramid.
     if not needs_display_pyramid(source):
         return source
-    tile_path = pyramid_path_for(source)
+    # `dest` lets the caller build from a PARKED payload (a `.staging.` name)
+    # while still landing the pyramid at the FINAL product's sibling path —
+    # see `_publish_with_presentations`. `default_make_tile_pyramid` writes
+    # `<dest>.tmp` then `os.replace`s, so the pyramid itself lands atomically.
+    tile_path = Path(dest) if dest is not None else pyramid_path_for(source)
     try:
         default_make_tile_pyramid(source, tile_path)
     except Exception as e:
