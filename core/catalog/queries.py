@@ -17,7 +17,7 @@ from typing import Iterator
 from context import local_context as context
 from dependency_graph.trace_paths import tap_outputs_for, tap_path_for
 from pipelines.registry import registered_pipelines
-from previews.create_tile_pyramid import pyramid_path_for
+from previews.create_tile_pyramid import needs_display_pyramid, pyramid_path_for
 from products.product import Product, object_class
 
 # A child's cart-item ancestor chain (root→leaf `(object_type, object_id)`),
@@ -166,7 +166,18 @@ def viewable_from_master(master: "str | Path | None") -> "Path | None":
     tiff = pyramid_path_for(master)
     if tiff.exists():
         return tiff
-    if str(master).endswith((".tiff", ".tif")) and os.path.exists(master):
+    # Fall back to the master ONLY when it is its own display artifact — an
+    # already-display-ready uint8 tiff (the Subframe previews), which the tile
+    # route's `uchar` branch rescales /255. A float master must NEVER be
+    # served: it is one page, so the tile route's `page = maxZoom - z` goes
+    # negative and pyvips (which warns "value -8 out of range for property
+    # 'page'" instead of raising) silently serves FULL RESOLUTION at every
+    # zoom; and it is written strip-based, so random tile access decodes
+    # ~74 MB strips. That fallback is how a 19 GB `Linear RGB` master with a
+    # half-built pyramid served 36,150 broken tiles on 2026-08-14, and how
+    # `channelStats` once took 822 s. No pyramid yet => not viewable yet.
+    if (str(master).endswith((".tiff", ".tif")) and os.path.exists(master)
+            and not needs_display_pyramid(master)):
         return master
     return None
 

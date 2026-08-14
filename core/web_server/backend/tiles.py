@@ -30,6 +30,7 @@ import brotli
 import numpy as np
 import pyvips
 from flask import Blueprint, request, send_file, abort, jsonify, Response
+from werkzeug.exceptions import HTTPException
 
 from previews.create_tile_pyramid import context_map_path_for
 from web_server.backend.router import stateful_route
@@ -37,6 +38,31 @@ from web_server.backend._route import tap_route, parse_ancestors
 
 
 _TILE_SIZE = 256
+
+# Tile errors are RATE-LIMITED per (object, error-type). A stuck viewer can
+# generate thousands per minute, and an unbounded print buries the pipeline's
+# `### node_exec` telemetry — during the 2026-08-14 triage the log looked idle
+# for 30k lines because a single tab's 404s had crowded everything out. One
+# line per key per interval, with the suppressed count folded into the next.
+_TILE_ERR_INTERVAL_S = 60.0
+_tile_err_last: dict[tuple, float] = {}
+_tile_err_suppressed: dict[tuple, int] = {}
+_tile_err_lock = threading.Lock()
+
+
+def _log_tile_error(object_type: str, object_id: str, exc: Exception) -> None:
+    import time
+    key = (object_type, object_id, type(exc).__name__)
+    now = time.monotonic()
+    with _tile_err_lock:
+        last = _tile_err_last.get(key, 0.0)
+        if now - last < _TILE_ERR_INTERVAL_S:
+            _tile_err_suppressed[key] = _tile_err_suppressed.get(key, 0) + 1
+            return
+        _tile_err_last[key] = now
+        dropped = _tile_err_suppressed.pop(key, 0)
+    extra = f" ({dropped} more suppressed in the last {_TILE_ERR_INTERVAL_S:.0f}s)" if dropped else ""
+    print(f"Error serving tile for {object_type, object_id}: {exc}{extra}")
 
 # Display names whose 3-band tiles are LINEAR narrowband S/H/O (not baked RGB):
 # the client must run the live colour finish in the shader rather than passing
@@ -390,8 +416,17 @@ def _serve_tile_response(path, object_type, object_id, x, y, z):
         resp.headers["X-Tile-Height"] = str(h)
         resp.headers["X-Tile-Bands"] = str(send_bands)
         return resp
+    except HTTPException:
+        # An `abort(404)` raised INSIDE this try (the out-of-bounds tile check
+        # below) is a NotFound, which `except Exception` used to swallow and
+        # re-report as 500. A 500 reads as "server error, retry" — one viewer
+        # holding stale tile_metadata across a rebuild then looped at ~3,220
+        # req/min (36,150 errors on 2026-08-14), burying every `### node_exec`
+        # line in the log. Let the real status through so the client can treat
+        # it as "gone" and re-fetch metadata instead of hammering.
+        raise
     except Exception as e:
-        print(f"Error serving tile for {object_type, object_id}: {e}")
+        _log_tile_error(object_type, object_id, e)
         return abort(500)
 
 

@@ -100,14 +100,28 @@ class TestTilePyramidPathForTap:
         )
         assert result == str(tiff)
 
+    @staticmethod
+    def _write_tiff(path, fmt):
+        """A REAL tiff — the resolver reads its geometry to decide whether it
+        needs a pyramid, so a placeholder byte-string would read as unreadable
+        (and correctly refuse to serve)."""
+        import numpy as np
+        import pyvips
+        rng = np.random.default_rng(0)
+        if fmt == "uchar":
+            a = (rng.random((16, 16, 3)) * 255).astype("uint8")
+        else:
+            a = (rng.random((16, 16, 3)) * 0.1).astype("float32")
+        pyvips.Image.new_from_memory(a.tobytes(), 16, 16, 3, fmt).tiffsave(str(path))
+        return path
+
     def test_falls_back_to_master_tiff_when_no_tiles_sibling(
         self, tmp_path, monkeypatch,
     ):
         """Already-display-ready uint8 tiffs (Subframe previews) have no
         separate `_tiles.tiff` — they serve themselves, so the resolver
         falls back to the master tiff when no pyramid sibling exists."""
-        master = tmp_path / "subframe_uint8.tiff"
-        master.write_bytes(b"fake uint8 subframe tiff")
+        master = self._write_tiff(tmp_path / "subframe_uint8.tiff", "uchar")
         # No `_tiles.tiff` sibling built for it.
 
         self._patch_tap_path(monkeypatch, str(master))
@@ -116,6 +130,21 @@ class TestTilePyramidPathForTap:
             "Subframe", "Mosaic", "mosaic", "id", "H",
         )
         assert result == str(master)
+
+    def test_float_master_with_no_tiles_sibling_is_refused(
+        self, tmp_path, monkeypatch,
+    ):
+        """The 2026-08-14 regression. A float master is one page and
+        strip-based; tiling it yields full resolution at every zoom level, so
+        the resolver must report "not built yet" instead of falling back."""
+        master = self._write_tiff(tmp_path / "linear_rgb.tiff", "float")
+
+        self._patch_tap_path(monkeypatch, str(master))
+        from web_server.backend.tiles import _tile_pyramid_path_for_tap
+        result = _tile_pyramid_path_for_tap(
+            "Linear RGB", "Mosaic", "mosaic", "id", "RGB",
+        )
+        assert result is None
 
 
 class TestTapPathForExistenceGate:

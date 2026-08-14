@@ -98,12 +98,27 @@ def test_viewable_prefers_pyramid_even_when_master_reclaimed(monkeypatch):
     assert q.exists(_prod()) is True
 
 
-def test_viewable_falls_back_to_master_tiff(monkeypatch):
+def test_viewable_falls_back_to_display_ready_master_tiff(monkeypatch):
+    """A uint8 Subframe preview IS its own display artifact — no pyramid
+    needed, serves directly."""
     monkeypatch.setattr(q, "predict_path", lambda p, ancestors=(): _FakePath("/o/m.tiff"))
     monkeypatch.setattr(q, "pyramid_path_for",
                         lambda m: _FakePath("/o/m_tiles.tiff", exists=False))
+    monkeypatch.setattr(q, "needs_display_pyramid", lambda m: False)
     monkeypatch.setattr(q.os.path, "exists", lambda p: True)
     assert str(q.viewable_path(_prod())) == "/o/m.tiff"
+
+
+def test_viewable_refuses_a_float_master_with_no_pyramid(monkeypatch):
+    """The 2026-08-14 regression: a float master is ONE page and strip-based,
+    so serving it as tiles yields full-res at every zoom. Not viewable until
+    its pyramid exists."""
+    monkeypatch.setattr(q, "predict_path", lambda p, ancestors=(): _FakePath("/o/m.tiff"))
+    monkeypatch.setattr(q, "pyramid_path_for",
+                        lambda m: _FakePath("/o/m_tiles.tiff", exists=False))
+    monkeypatch.setattr(q, "needs_display_pyramid", lambda m: True)
+    monkeypatch.setattr(q.os.path, "exists", lambda p: True)
+    assert q.viewable_path(_prod()) is None
 
 
 def test_viewable_none_when_xisf_master_and_no_pyramid(monkeypatch):
@@ -236,6 +251,7 @@ def test_viewable_from_master_no_retrace(monkeypatch):
     assert str(q.viewable_from_master("/o/m.xisf")).endswith("_tiles.tiff")
     monkeypatch.setattr(q, "pyramid_path_for",
                         lambda m: _FakePath("none", exists=False))
+    monkeypatch.setattr(q, "needs_display_pyramid", lambda m: False)
     monkeypatch.setattr(q.os.path, "exists", lambda p: True)
     assert str(q.viewable_from_master("/o/m.tiff")) == "/o/m.tiff"
     assert q.viewable_from_master(None) is None
