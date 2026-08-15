@@ -129,6 +129,24 @@ export default function ShoppingCartPanel() {
   const cartItems = cart.map(([type, id, pipeline]) => ({
     type, id, pipeline, name: getName(type, id),
   }));
+
+  // One row per OBJECT, not per (object, pipeline) pair. Running the same
+  // target through two pipelines is the A/B workflow, so it should read as
+  // "Heart Nebula, two pipelines" rather than as two unrelated rows that
+  // happen to share a name. Insertion order is preserved so the list doesn't
+  // reshuffle when a pipeline is added to an object already in the cart.
+  const cartGroups = [];
+  const groupByKey = new Map();
+  for (const it of cartItems) {
+    const key = `${it.type}:${it.id}`;
+    let group = groupByKey.get(key);
+    if (!group) {
+      group = { type: it.type, id: it.id, name: it.name, pipelines: [] };
+      groupByKey.set(key, group);
+      cartGroups.push(group);
+    }
+    group.pipelines.push(it.pipeline);
+  }
   const archItems = arch.map(([type, id, pipeline, paths]) => ({
     type, id, pipeline, name: getName(type, id),
     pathCount: (paths || []).length,
@@ -197,31 +215,68 @@ export default function ShoppingCartPanel() {
                 </Typography>
               </MenuItem>
             ) : (
-              cartItems.map((it) => (
-                <MenuItem
-                  key={`cart:${it.type}:${it.id}:${it.pipeline}`}
-                  sx={{ display: "flex", flexDirection: "column", alignItems: "flex-start", py: 1 }}
-                  onClick={() => { close(); navigate(`/${it.type}/${it.id}`); }}
-                >
-                  <Box sx={{ display: "flex", alignItems: "center", width: "100%", justifyContent: "space-between" }}>
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                      {it.name}
-                    </Typography>
-                    <Tooltip title="Remove…">
-                      <IconButton
-                        size="small"
-                        onClick={(e) => { e.stopPropagation(); setRemoveCartTarget(it); }}
-                      >
-                        <Delete fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                  </Box>
-                  <Box sx={{ display: "flex", gap: 0.5, mt: 0.5, flexWrap: "wrap" }}>
-                    <Chip size="small" label={it.type} variant="outlined" />
-                    <Chip size="small" label={it.pipeline} variant="outlined" color="info" />
-                  </Box>
-                </MenuItem>
-              ))
+              cartGroups.map((g) => {
+                // The cart's unit of removal is (object, pipeline), so with
+                // several pipelines the delete belongs on each CHIP — a single
+                // row-level trash would be ambiguous about which build it
+                // drops. With one pipeline the familiar row-level trash stays,
+                // so the common case is unchanged and there is never more than
+                // one delete affordance for the same thing.
+                const multi = g.pipelines.length > 1;
+                const itemFor = (pipeline) => ({
+                  type: g.type, id: g.id, name: g.name, pipeline,
+                });
+                return (
+                  <MenuItem
+                    key={`cart:${g.type}:${g.id}`}
+                    sx={{ display: "flex", flexDirection: "column", alignItems: "flex-start", py: 1 }}
+                    onClick={() => { close(); navigate(`/${g.type}/${g.id}`); }}
+                  >
+                    <Box sx={{ display: "flex", alignItems: "center", width: "100%", justifyContent: "space-between" }}>
+                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                        {g.name}
+                      </Typography>
+                      {!multi && (
+                        <Tooltip title="Remove…">
+                          <IconButton
+                            size="small"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setRemoveCartTarget(itemFor(g.pipelines[0]));
+                            }}
+                          >
+                            <Delete fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                    </Box>
+                    <Box sx={{ display: "flex", gap: 0.5, mt: 0.5, flexWrap: "wrap" }}>
+                      <Chip size="small" label={g.type} variant="outlined" />
+                      {g.pipelines.map((pipeline) => (
+                        <Chip
+                          key={pipeline}
+                          size="small"
+                          label={pipeline}
+                          variant="outlined"
+                          color="info"
+                          {...(multi ? {
+                            onDelete: (e) => {
+                              e.stopPropagation();
+                              setRemoveCartTarget(itemFor(pipeline));
+                            },
+                            deleteIcon: (
+                              <Delete
+                                titleAccess={`Remove ${pipeline}`}
+                                onMouseDown={(e) => e.stopPropagation()}
+                              />
+                            ),
+                          } : {})}
+                        />
+                      ))}
+                    </Box>
+                  </MenuItem>
+                );
+              })
             )}
 
             <Divider sx={{ my: 0.5 }} />
