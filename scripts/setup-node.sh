@@ -58,12 +58,31 @@ log "Building $VENV_DIR from uv.lock (frozen — no re-resolution)"
 export HDF5_DIR="$(brew --prefix hdf5)"
 uv sync --frozen
 
+log "Installing GraXpert in its own tool environment"
+# NOT in .venv, on purpose — graxpert pins numpy<=2.2.6 against our 2.4.6, and
+# `uv pip install graxpert` silently downgrades the venv's numpy, splitting the
+# cluster's pickle format. `uv tool install` gives it a private interpreter; we
+# only ever run it as a subprocess (core/graxpert_cli.py). Same command as
+# `make install-graxpert` — keep the two in step.
+uv tool install 'graxpert>=3.2.0a2' --with onnxruntime
+
 log "Smoke test: import the packages most likely to fail on a fresh Mac"
 "$VENV_DIR/bin/python" -c "
 import pyvips, h5py, astropy, astroalign, astroscrappy, photutils
 import cv2, ray, diskcache, spherical_geometry, numpy
 print('✓ all critical imports OK')
 print('  numpy', numpy.__version__, '| spherical-geometry', spherical_geometry.__version__)
+assert numpy.__version__ == '2.4.6', 'numpy drifted from the cluster pin'
+"
+
+log "Smoke test: GraXpert resolves without relying on PATH"
+# Empty PATH on purpose: Ray workers inherit the raylet's environment, which
+# need not carry the login shell's ~/.local/bin, so this proves the fallback in
+# graxpert_base_command() finds the tool the way a worker will.
+env -i HOME="$HOME" PATH= "$VENV_DIR/bin/python" -c "
+import sys; sys.path.insert(0, '$REPO_ROOT/core')
+import graxpert_cli
+print('✓ GraXpert at', graxpert_cli.graxpert_base_command()[0])
 "
 
 cat <<EOF

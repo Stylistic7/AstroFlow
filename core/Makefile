@@ -12,7 +12,39 @@ JUNIT_MERGED = merged.xml
 # pyproject.toml + uv.lock live at the repo root (one level up).
 install:
 	cd .. && uv sync --frozen
+	$(MAKE) install-graxpert
 	@echo "✅ venv synced to uv.lock. Run the app with: uv run python main.py"
+
+# GraXpert goes in its OWN environment, deliberately — not pyproject.toml, not
+# `uv pip install` into the venv. graxpert 3.2.0a2 requires numpy<=2.2.6 while
+# this project pins numpy==2.4.6 (see pyproject.toml: every node must share one
+# numpy or pickled ndarrays don't cross the cluster or the on-disk cache).
+#   * adding it to pyproject → `uv lock` calls it unsatisfiable and refuses.
+#   * `uv pip install` into the venv → SILENTLY downgrades numpy to 2.2.6,
+#     which is the dangerous one: it "works" until a node re-syncs the lock and
+#     the cluster is running two numpys.
+# `uv tool install` sidesteps the conflict entirely by giving GraXpert its own
+# interpreter and numpy. We only ever invoke it as a subprocess
+# (graxpert_cli.py), so its numpy never has to agree with ours. The version is
+# spelled as a pre-release floor because GraXpert has only ever shipped
+# pre-releases and uv won't resolve one unless the requirement names it.
+#
+# `--with onnxruntime` is required, not an extra: the bare graxpert wheel omits
+# it and GraXpert aborts at startup ("ONNX Runtime ... misconfigured"). AI is
+# its only headless interpolation method — the others need interactively placed
+# sample points and crash in CLI mode.
+#
+# Run on EVERY node: post_process_stack_graxpert declares no custom Ray
+# resource, so the scheduler will place it on any worker, and one without
+# GraXpert fails the task with GraXpertNotFoundError.
+.PHONY: install-graxpert
+install-graxpert:
+	uv tool install 'graxpert>=3.2.0a2' --with onnxruntime
+	@cd .. && .venv/bin/python -c "import numpy; assert numpy.__version__ == '2.4.6', \
+		f'numpy is {numpy.__version__}, not the cluster pin 2.4.6 — did GraXpert land in the venv?'"
+	@cd .. && PATH= .venv/bin/python -c "import sys; sys.path.insert(0, 'core'); \
+		import graxpert_cli; print('✅ GraXpert resolves to', graxpert_cli.graxpert_base_command()[0])"
+	@echo "   (the AI model downloads on first run)"
 
 # Two-phase strategy that works around Ray + parallel-pytest instability:
 #   SERIAL phase — `serial` (timing/benchmark) + `exclusive` (state-isolation)
