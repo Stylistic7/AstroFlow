@@ -162,6 +162,72 @@ def test_base_manifest_is_filter_specific():
         assert mh[pid] != mo[pid]
 
 
+def test_panel_sources_separate_two_pipelines_on_one_target():
+    """Two pipelines processing the SAME panels must not share a colour tail.
+
+    Regression guard for the GraXpert-vs-MGC A/B (2026-08-15): the base manifest
+    keyed on `target.content_hash`, which describes the INPUT SUBS and so is
+    identical no matter which pipeline processed them. Every scene format
+    collided onto one cached product and the two pipelines rendered
+    pixel-identical images. `panel_sources` carries the PRE-MERGE product
+    identity, which differs, so the tails separate."""
+    m = _overlapping_mosaic()
+    mgc = {pid: f"mgc_{pid}_stem" for pid in ("A", "B", "C")}
+    gxp = {pid: f"gxp_{pid}_stem" for pid in ("A", "B", "C")}
+
+    a = base_panel_mosaic(m, "O", merged=None, panel_sources=mgc).manifest
+    b = base_panel_mosaic(m, "O", merged=None, panel_sources=gxp).manifest
+
+    for pid in ("A", "B", "C"):
+        assert a[pid] != b[pid], f"panel {pid} collides across pipelines"
+
+
+def test_panel_source_change_is_panel_local():
+    """Changing ONE panel's source moves ONLY that panel's manifest entry.
+
+    This is the property that rules out the tempting one-line fix — folding the
+    MERGED channel's whole-image hash into the manifest would also separate the
+    pipelines, but every panel would churn whenever any panel moved, costing the
+    O(change) re-run guarantee this module exists to provide."""
+    m = _overlapping_mosaic()
+    before_src = {pid: f"stem_{pid}" for pid in ("A", "B", "C")}
+    after_src = dict(before_src, A="stem_A_v2")   # only panel A re-derived
+
+    before = base_panel_mosaic(m, "H", merged=None,
+                               panel_sources=before_src).manifest
+    after = base_panel_mosaic(m, "H", merged=None,
+                              panel_sources=after_src).manifest
+
+    assert before["A"] != after["A"]
+    assert before["B"] == after["B"]
+    assert before["C"] == after["C"]
+
+
+def test_panel_sources_are_still_filter_specific():
+    """The filter must stay in the hash even with sources supplied, or the H and
+    O crops of one panel collide (the all-filters bug the base manifest closed)."""
+    m = _overlapping_mosaic()
+    src = {pid: f"stem_{pid}" for pid in ("A", "B", "C")}
+    h = base_panel_mosaic(m, "H", merged=None, panel_sources=src).manifest
+    o = base_panel_mosaic(m, "O", merged=None, panel_sources=src).manifest
+    for pid in ("A", "B", "C"):
+        assert h[pid] != o[pid]
+
+
+def test_missing_panel_source_falls_back_to_content_hash():
+    """A panel absent from `panel_sources` keeps the pre-2026-08-15 value, so
+    callers that never build panels (manifest-algebra unit tests) still work."""
+    m = _overlapping_mosaic()
+    partial = {"A": "stem_A"}
+    got = base_panel_mosaic(m, "H", merged=None,
+                            panel_sources=partial).manifest
+    plain = base_panel_mosaic(m, "H", merged=None).manifest
+
+    assert got["A"] != plain["A"]      # supplied -> derived from the stem
+    assert got["B"] == plain["B"]      # absent   -> content_hash fallback
+    assert got["C"] == plain["C"]
+
+
 def test_no_collisions_across_panels_and_stages():
     m = _overlapping_mosaic()
     vb = _viewbox_for(m.targets)

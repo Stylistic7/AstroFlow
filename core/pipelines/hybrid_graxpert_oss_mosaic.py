@@ -42,7 +42,9 @@ from dependency_graph.tracing import (
     IdentityRef, present_terminal, workflow_group,
 )
 from mosaics.merging.oss import merge_images_oss, merge_scope
-from mosaics.color.post_process import bxt_correct_only, color_post_process
+from mosaics.color.post_process import (
+    bxt_correct_only, color_post_process, panel_source_manifest,
+)
 from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
 from stacks.calibration_selection import calibrate
@@ -92,7 +94,14 @@ def for_target(target, config):
         for filter, sink in _channels_for_target(target, config).items()
     }
     merged = _merged_channels(target, {target.id: target}, channels, config)
-    color = color_post_process(target, merged, config, target.viewbox("Master"))
+    # Per-panel pre-merge identity — this is what keeps THIS pipeline's colour
+    # tail distinct from the MGC pipeline's on the same target (see panels.py).
+    panel_sources = {
+        f: panel_source_manifest({target.id: target}, f, config, channels)
+        for f in merged
+    }
+    color = color_post_process(target, merged, config,
+                               target.viewbox("Master"), panel_sources)
     return {**merged, **color}
 
 
@@ -105,7 +114,12 @@ def for_mosaic(mosaic, config):
         for filter, sink in _channels_for_target(target, config).items():
             channels[(target.id, filter)] = sink
     out = _merged_channels(mosaic, targets_by_id, channels, config)
-    color = color_post_process(mosaic, out, config, mosaic.viewbox("Master"))
+    panel_sources = {
+        f: panel_source_manifest(targets_by_id, f, config, channels)
+        for f in out
+    }
+    color = color_post_process(mosaic, out, config,
+                               mosaic.viewbox("Master"), panel_sources)
     return {**out, **color}
 
 

@@ -32,7 +32,9 @@ from dependency_graph.tracing import (
     IdentityRef, present_terminal, workflow_group,
 )
 from mosaics.merging.oss import merge_images_oss, merge_scope
-from mosaics.color.post_process import bxt_correct_only, color_post_process
+from mosaics.color.post_process import (
+    bxt_correct_only, color_post_process, panel_source_manifest,
+)
 from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
 from stacks.calibration_selection import calibrate
@@ -88,7 +90,14 @@ def for_target(target, config):
         for filter, sink in _channels_for_target(target, config).items()
     }
     merged = _merged_channels(target, {target.id: target}, channels, config)
-    color = color_post_process(target, merged, config, target.viewbox("Master"))
+    # Per-panel pre-merge identity, so this pipeline's colour tail is distinct
+    # from any other pipeline processing the SAME target (see panels.py).
+    panel_sources = {
+        f: panel_source_manifest({target.id: target}, f, config, channels)
+        for f in merged
+    }
+    color = color_post_process(target, merged, config,
+                               target.viewbox("Master"), panel_sources)
     return {**merged, **color}
 
 
@@ -119,7 +128,12 @@ def for_mosaic(mosaic, config):
     # workflow group the OSS-stack hybrid uses, so both pipelines produce
     # identical "Hubble"/"Foraxx"/"Stars" deliverables from the merged
     # per-filter channels.
-    color = color_post_process(mosaic, out, config, mosaic.viewbox("Master"))
+    panel_sources = {
+        f: panel_source_manifest(targets_by_id, f, config, channels)
+        for f in out
+    }
+    color = color_post_process(mosaic, out, config,
+                               mosaic.viewbox("Master"), panel_sources)
     return {**out, **color}
 
 

@@ -18,7 +18,9 @@ Three entry points, matching the PI Downscaled pipeline.
 """
 from astroflow.pipeline import pipeline
 from dependency_graph.tracing import workflow_group
-from mosaics.color.post_process import bxt_correct_only, color_post_process
+from mosaics.color.post_process import (
+    bxt_correct_only, color_post_process, panel_source_manifest,
+)
 from mosaics.merging.oss import merge_images_oss
 from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
@@ -131,5 +133,10 @@ def for_mosaic(mosaic, config):
     # Continue into color post-processing — same pipeline-agnostic workflow
     # group as the other hybrids, so all three produce identical
     # "Hubble"/"Foraxx"/"Stars" deliverables.
-    color = color_post_process(mosaic, out, config, mosaic.viewbox("DownscaledMaster"))
+    panel_sources = {
+        f: panel_source_manifest(targets_by_id, f, config, channels)
+        for f in out
+    }
+    color = color_post_process(mosaic, out, config,
+                               mosaic.viewbox("DownscaledMaster"), panel_sources)
     return {**out, **color}

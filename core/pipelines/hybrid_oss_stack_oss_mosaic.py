@@ -19,7 +19,9 @@ once they are all on disk.
 """
 from astroflow.pipeline import pipeline
 from dependency_graph.tracing import workflow_group
-from mosaics.color.post_process import bxt_correct_only, color_post_process
+from mosaics.color.post_process import (
+    bxt_correct_only, color_post_process, panel_source_manifest,
+)
 from mosaics.merging.oss import merge_images_oss
 from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
@@ -131,5 +133,10 @@ def for_mosaic(mosaic, config):
             continue
         out[filter] = merge_images_oss(mosaic, filter, *placed)
 
-    color = color_post_process(mosaic, out, config, mosaic.viewbox("Master"))
+    panel_sources = {
+        f: panel_source_manifest(targets_by_id, f, config, channels)
+        for f in out
+    }
+    color = color_post_process(mosaic, out, config,
+                               mosaic.viewbox("Master"), panel_sources)
     return {**out, **color}

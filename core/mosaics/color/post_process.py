@@ -539,8 +539,32 @@ def linear_lum(
     return WithSidecar(TiffFilePath(out))
 
 
+def panel_source_manifest(targets_by_id: dict, filter: str, config,
+                          channels: dict) -> dict:
+    """`{panel_id: pre-merge identity}` for `color_post_process(panel_sources=)`.
+
+    The identity is `bxt_correct_only`'s output stem for that panel — the same
+    `op.filename_fn(...).stem` trick `place_image` refs use, so it is the real
+    product identity rather than a re-derivation that could drift from it.
+
+    This is what makes two pipelines processing ONE target produce distinct
+    colour tails: `channels[(tid, filter)]` is the per-filter merged channel,
+    which already differs between pipelines, so the stem does too. Keyed per
+    panel, so it keeps the O(change) re-run property (see mosaics/panels.py).
+
+    `channels` is the `{(target_id, filter): channel}` map the pipelines build;
+    entries for other filters and unknown targets are ignored."""
+    return {
+        tid: Path(bxt_correct_only.filename_fn(
+            targets_by_id[tid], filter, config, channel)).stem
+        for (tid, f), channel in channels.items()
+        if f == filter and tid in targets_by_id
+    }
+
+
 @workflow_group
-def color_post_process(mosaic: Mosaic, channels: dict, config, viewbox=None) -> dict:
+def color_post_process(mosaic: Mosaic, channels: dict, config, viewbox=None,
+                       panel_sources: dict | None = None) -> dict:
     """Turn merged per-filter channels into the LINEAR SCENE FORMATS — the
     orthogonal ≤3-band basis every colour look is assembled from, LIVE, in
     the viewer's WGSL finishes (finishes/stock.py + ~/AstroFlow/finishes/).
@@ -566,6 +590,11 @@ def color_post_process(mosaic: Mosaic, channels: dict, config, viewbox=None) -> 
     if viewbox is None:
         viewbox = mosaic.viewbox("Master")
     by_class = {normalize_filter(f): ch for f, ch in channels.items()}
+    # Normalized the same way as `channels`, so the lookup below can't miss on
+    # a filter-name spelling ("Ha" vs "H") and silently fall back to the
+    # colliding content_hash manifest.
+    panels_by_class = {normalize_filter(f): p
+                       for f, p in (panel_sources or {}).items()}
 
     # Ephemeral = cheap-to-recompute × big-on-disk. The GPU stages (BXT/SXT
     # tiles + their blends) are deliberately OUTSIDE every scope: reclaiming
@@ -580,7 +609,7 @@ def color_post_process(mosaic: Mosaic, channels: dict, config, viewbox=None) -> 
     for cf, channel in by_class.items():
         # Wrap the merged channel as the stage-0 PanelMosaic (merged image +
         # per-panel base manifest); every rc-astro op then tiles by PANEL.
-        pm = base_panel_mosaic(mosaic, cf, channel)
+        pm = base_panel_mosaic(mosaic, cf, channel, panels_by_class.get(cf))
         if cf in _NARROWBAND:
             corrected = process_in_panels(bxt_correct, mosaic, cf, config, pm, viewbox=viewbox)
             starless = process_in_panels(sxt_starless, mosaic, cf, config, corrected, viewbox=viewbox)

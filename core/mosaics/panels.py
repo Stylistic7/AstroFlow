@@ -65,16 +65,41 @@ class PanelMosaic:
     mosaic: Mosaic = field(compare=False)
 
 
-def base_panel_mosaic(mosaic: Mosaic, filter: str, merged) -> PanelMosaic:
+def base_panel_mosaic(mosaic: Mosaic, filter: str, merged,
+                      panel_sources: dict | None = None) -> PanelMosaic:
     """Wrap a freshly-merged per-filter channel as the stage-0 `PanelMosaic`.
 
-    Base manifest = `hash(target.content_hash, filter)` per panel: DATA-sensitive
-    (a panel's re-stack moves its `content_hash`) and FILTER-specific (so the H
-    and O channels never collide, which raw `target.content_hash` — being
-    all-filters — would allow). Deliberately does NOT fold in the pre-merge op
-    code (`bxt_correct_only`/`place_image`/`merge_images_oss`); a change to those
-    needs an eviction like any callee edit, exactly as the old tiling required."""
-    manifest = {t.id: hash_list([t.content_hash, filter]) for t in mosaic.targets}
+    Base manifest = `hash(panel_source, filter)` per panel, where `panel_source`
+    is that panel's PRE-MERGE product identity (`bxt_correct_only`'s output stem,
+    built by `panel_source_manifest`). FILTER-specific so the H and O channels
+    never collide, which raw `target.content_hash` — being all-filters — would
+    allow.
+
+    WHY the pre-merge identity and not `target.content_hash` (2026-08-15): the
+    content hash describes the target's INPUT SUBS, so two pipelines processing
+    the same target produce byte-identical manifests and the whole colour tail
+    collides onto one cached product. That is exactly what happened to the
+    GraXpert-vs-MGC A/B on the Heart nebula: divergence propagated correctly
+    through Post-Processed → Channel → Mosaic (18 taps differed), then every
+    scene format — Linear SHO/RGB/Narrowband/RGB Stars — resolved to ONE file,
+    so the two pipelines rendered pixel-identical images. The pre-merge stem
+    folds in whatever produced those pixels, so pipelines separate.
+
+    It stays PER-PANEL, which is the property that matters: each entry depends
+    only on its own panel, so a panel re-stack still moves only its own tile
+    plus the feather ring. Folding in the MERGED channel's whole-image hash
+    would also separate the pipelines, but every panel would churn whenever any
+    panel moved — the exact anti-pattern this module exists to avoid (see the
+    module docstring and `crop_panel`).
+
+    `panel_sources` is `{panel_id: identity}`; a panel absent from it falls back
+    to `target.content_hash` (the pre-2026-08-15 value) so callers that never
+    build panels — unit tests exercising manifest algebra — still work. Every
+    production pipeline passes it; a pipeline that forgets will silently share
+    the tail with any other pipeline on the same target."""
+    sources = panel_sources or {}
+    manifest = {t.id: hash_list([sources.get(t.id, t.content_hash), filter])
+                for t in mosaic.targets}
     return PanelMosaic(merged=merged, manifest=manifest, mosaic=mosaic)
 
 
