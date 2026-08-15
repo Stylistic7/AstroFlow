@@ -57,19 +57,32 @@ def run_background_extraction(
     input_fits: Path | str,
     output_fits: Path | str,
     *,
+    smoothing: float | None = None,
+    correction: str | None = None,
+    ai_version: str | None = None,
     gpu: bool | None = None,
     preferences_file: Path | str | None = None,
     timeout: float | None = 1800.0,
 ) -> None:
     """Background-extract ``input_fits`` with GraXpert, writing ``output_fits``.
 
-    The GraXpert 3.2 CLI is just ``-cmd``, ``-output``, ``-gpu``, and an optional
-    ``-preferences_file`` (a JSON carrying smoothing / correction / background
-    grid — the older ``-smoothing`` / ``-correction`` flags were removed). We use
-    GraXpert's defaults unless a ``preferences_file`` is supplied.
+    Verified against GraXpert 3.2.0a2's ``background-extraction -h``: the flags
+    are ``-correction {Subtraction,Division}``, ``-smoothing`` (0-1),
+    ``-ai_version``, ``-gpu``, ``-bg``, and ``-preferences_file``. (An earlier
+    docstring here claimed ``-smoothing``/``-correction`` had been removed in
+    favour of the preferences file — they are still present, and the
+    preferences file is only needed for the non-AI interpolation methods, which
+    additionally require background sample points and therefore cannot run
+    headless.)
+
+    ``ai_version`` is worth PINNING rather than defaulting to "latest": on the
+    2026-08-14 Heart Nebula sweep, model 1.0.1 left a 0.27% background bowl
+    where 1.0.0 left 0.61%.
 
     ``-output`` takes a path that GraXpert resolves to a ``.fits`` file; we pass
     the stem and verify the result lands at ``output_fits`` (renaming if needed).
+    NOTE the stem must not contain a dot — GraXpert treats the trailing segment
+    as an extension and replaces it (``/tmp/out0.25`` becomes ``/tmp/out0.fits``).
     Raises on a non-zero exit or a missing output, surfacing GraXpert's stdout.
     """
     input_fits = Path(input_fits)
@@ -83,6 +96,12 @@ def run_background_extraction(
         "-cmd", "background-extraction",
         "-output", str(out_stem),
     ]
+    if smoothing is not None:
+        cmd += ["-smoothing", str(smoothing)]
+    if correction is not None:
+        cmd += ["-correction", correction]
+    if ai_version is not None:
+        cmd += ["-ai_version", ai_version]
     if gpu is not None:  # otherwise let GraXpert auto-detect the provider
         cmd += ["-gpu", "true" if gpu else "false"]
     if preferences_file is not None:
