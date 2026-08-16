@@ -342,7 +342,7 @@ def pipeline_outputs(object_type: str, object_id: str):
     pyramid-or-master, matching what the tile server serves.
     """
     from catalog import queries as cat
-    from dependency_graph.trace_paths import tap_outputs_for
+    from dependency_graph.trace_paths import _snapshot_key, tap_outputs_for
 
     entity = _resolve_entity(object_type, object_id)
     if entity is None:
@@ -368,16 +368,37 @@ def pipeline_outputs(object_type: str, object_id: str):
             keyed.add((anc.stable_hash, anc.content_hash))
 
     snapshots = context.get("tap_snapshots") or {}
-    applicable = sorted({
+    # Candidates: any snapshot recorded against this entity (or an ancestor).
+    candidates = sorted({
         pipeline for (_src, stable, content, pipeline) in snapshots
         if (stable, content) in keyed
     })
+    # ...narrowed to the ones we can actually READ. The snapshot key is
+    # `(pipeline_source_version, stable, content, pipeline)`, and the match
+    # above only compares TWO of those four — so it also matches snapshots
+    # written by an OLDER version of the pipeline's source, which
+    # `_read_tap_snapshot` (rebuilding the full key) then misses.
+    #
+    # That asymmetry was the whole bug (2026-08-16): an unreadable candidate
+    # fell through to `traced_paths_for`'s `recompute=True` DEFAULT and
+    # re-executed the pipeline function inside the web worker —
+    # calibrate -> resolve_calibration -> find_external_master walking
+    # calibration directories with is_dir(). 31 s per request on the Heart
+    # target (n=325, max 43 s), and TargetPanel refires on every SSE tick, so
+    # ~18 of them piled up. Reads below are snapshot-only now, so an
+    # unreadable candidate would just render an empty section — drop it here.
+    items = [(object_type, object_id), *ancestors]
+    applicable = [
+        name for name in candidates
+        if any(_snapshot_key((t, i, name)) in snapshots for t, i in items)
+    ]
 
     traces: dict[str, dict[str, dict[str, str]]] = {}
     extras: set[str] = set()
     for name in applicable:
         by_display: dict[str, dict[str, str]] = {}
-        for e in tap_outputs_for((object_type, object_id, name), ancestors=ancestors):
+        for e in tap_outputs_for((object_type, object_id, name),
+                                 recompute=False, ancestors=ancestors):
             fk = str(e["filter"])
             by_display.setdefault(e["display"], {})[fk] = e["path"]
             if fk not in entity_filter_strs:

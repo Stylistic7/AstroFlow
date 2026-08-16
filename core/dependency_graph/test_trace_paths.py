@@ -353,3 +353,69 @@ def test_tap_outputs_for_scopes_ancestor_trace_to_leaf(monkeypatch):
     out = tp.tap_outputs_for(
         ("stack", "child", "P"), ancestors=(("target", "parent"),))
     assert [e["path"] for e in out] == ["/o/child"]   # sibling's Channel dropped
+
+
+# --------------------------------------------------------------------------- #
+# Web-facing reads must NEVER live-trace (2026-08-16)                          #
+# --------------------------------------------------------------------------- #
+#
+# `traced_paths_for(recompute=True)` re-executes the pipeline function in the
+# CALLER's process. On the driver that is intended (sweep / archive of an item
+# outside the current graph). In a web worker it meant
+# calibrate -> resolve_calibration -> find_external_master walking calibration
+# directories with is_dir(), measured at 31 s per /api/pipeline_outputs request
+# on the Heart target (n=325, max 43 s) and 32 s for one thumbnail — while
+# TargetPanel refires on every SSE tick, piling ~18 deep.
+#
+# `tap_path_for` documents itself as snapshot-only but omitted the flag. These
+# pin the contract from both sides so it cannot silently regress.
+
+def test_tap_path_for_never_live_traces_on_a_miss(monkeypatch):
+    """A snapshot miss must be a fast None, never a pipeline re-execution."""
+    import dependency_graph.trace_paths as tp
+
+    monkeypatch.setattr(tp, "_read_tap_snapshot", lambda item: None)
+
+    def _boom(*args, **kwargs):
+        raise AssertionError(
+            "tap_path_for live-traced on a snapshot miss — it is called from "
+            "web workers (preview/tile routes) and must stay snapshot-only")
+
+    monkeypatch.setattr(tp, "_resolve_pipeline_call", _boom)
+
+    assert tp.tap_path_for(
+        ("target", "abc", "Some Pipeline"), "Linear SHO", "RGB") is None
+
+
+def test_tap_outputs_for_recompute_false_never_live_traces(monkeypatch):
+    """The same guarantee for the /api/pipeline_outputs read path."""
+    import dependency_graph.trace_paths as tp
+
+    monkeypatch.setattr(tp, "_read_tap_snapshot", lambda item: None)
+
+    def _boom(*args, **kwargs):
+        raise AssertionError("live trace attempted with recompute=False")
+
+    monkeypatch.setattr(tp, "_resolve_pipeline_call", _boom)
+
+    assert tp.tap_outputs_for(
+        ("target", "abc", "Some Pipeline"), recompute=False) == []
+
+
+def test_recompute_true_still_traces(monkeypatch):
+    """The DRIVER-side path must keep tracing on demand — the sweep and archive
+    depend on resolving items outside the current graph, so the fix above must
+    not be applied globally."""
+    import dependency_graph.trace_paths as tp
+
+    monkeypatch.setattr(tp, "_read_tap_snapshot", lambda item: None)
+    calls = []
+
+    def _record(item):
+        calls.append(item)
+        return (None, None, None)      # fn is None -> tolerant [] return
+
+    monkeypatch.setattr(tp, "_resolve_pipeline_call", _record)
+
+    assert tp.traced_paths_for(("target", "abc", "P"), recompute=True) == []
+    assert calls == [("target", "abc", "P")]

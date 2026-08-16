@@ -379,7 +379,13 @@ def tap_path_for(
     resolve from the ancestor's; `_routes_to_item` scopes the shared trace."""
     object_type, object_id, _pipeline = item
     f = str(filter)
-    for e in traced_paths_for(item, ancestors=ancestors):
+    # `recompute=False` to match this function's contract ("From the build-time
+    # snapshot (Ray-free)") — it was omitted, so the DEFAULT True re-executed the
+    # pipeline inside whatever process asked, which for the preview/tile routes
+    # is a web worker. Same defect, same cost as the pipeline_outputs endpoint:
+    # one `PixInsight Master` thumbnail measured 32 s. `catalog.products_for`
+    # already passes it; this is the call site that didn't.
+    for e in traced_paths_for(item, recompute=False, ancestors=ancestors):
         if (
             e.get("display") == display
             and str(e.get("filter")) == f
