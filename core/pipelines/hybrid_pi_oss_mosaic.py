@@ -77,10 +77,9 @@ def for_stack(stack, config):
 def for_target(target, config):
     """Per-filter channel masters PLUS the full colour tail — a Target IS a
     single-panel mosaic (`Target.viewbox`/`.targets`/`.strips`), so it runs
-    the exact machinery `for_mosaic` uses: each channel is placed
-    (reprojected into the target's own Mercator viewbox — the tail's tile
-    geometry assumes viewbox space, and a native-projection master can
-    differ by tens of percent at high declination) and single-input-merged
+    the exact machinery `for_mosaic` uses: each channel is placed (reprojected
+    into the target's own viewbox — the tail's tile geometry assumes viewbox
+    space) and single-input-merged
     through the same self-cleaning `{place → merge}` scope, then
     `color_post_process` produces the same Hubble/Foraxx/Linear SHO/Stars
     deliverables mosaics get. Taps route to the TARGET (the ops receive it

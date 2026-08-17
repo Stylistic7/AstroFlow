@@ -348,7 +348,11 @@ def _place_image_narrow(args, kwargs):
     ephemeral=True,
     cache_key_narrow=_place_image_narrow,
     auto_memory=True,
-    plate_solve=False,  # reprojected into the mosaic viewbox (Mercator-like) — non-square pixels, can't solve
+    # Reprojected into the mosaic's Mercator viewbox: non-square pixels, can't
+    # solve. (A Target's viewbox is now gnomonic-with-rotation, which IS a valid
+    # TAN frame with square pixels, so single-field placements could carry a
+    # real WCS — worth revisiting, but flipping this re-keys every placement.)
+    plate_solve=False,
 )
 def place_image(
     mosaic: Mosaic, target: Target, filter: str, viewbox: Viewbox,
