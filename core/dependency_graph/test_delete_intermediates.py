@@ -1,11 +1,16 @@
-"""`Graph(..., delete_intermediates=True)` — a dynamic subgraph that cleans
-up after itself, and only after itself.
+"""`@node(ephemeral=True)` — an op that declares its own output disposable,
+and a subgraph that cleans up after itself and only after itself.
+
+Ephemerality is per-OP, not per-graph (2026-08-17): the author of the op knows
+whether it is cheap to recompute, so the declaration sits next to that code
+rather than in whichever pipeline happens to build a scope around it.
 
 Two properties, both end-to-end through the real runtime:
 
-1. When the subgraph concludes successfully, every `@makes_image` node in it
-   EXCEPT the single terminal has its output deleted and its cache entry
-   invalidated. The terminal escapes and persists.
+1. When the subgraph concludes successfully, every EPHEMERAL node in it EXCEPT
+   the single terminal has its output deleted and its cache entry invalidated.
+   The terminal escapes and persists — a DEFERRAL, not an exemption: one level
+   up it is interior, and the enclosing graph reclaims it there.
 2. On a later run the terminal is a cache HIT, so the whole subgraph is
    skipped at splice time — the intermediates are never re-derived just to be
    deleted again.
@@ -68,17 +73,19 @@ def test_intermediates_deleted_and_subgraph_skipped_next_run(test_context):
 # ── unit level: the rules, without Ray ────────────────────────────────────
 
 class _FakeRemote:
-    """Minimal task stand-in: Node needs `task._function`."""
-    def __init__(self, name):
+    """Minimal task stand-in: Node needs `task._function`. `_ephemeral` is what
+    `@node(ephemeral=True)` attaches, and what the runtime reads."""
+    def __init__(self, name, ephemeral=False):
         def fn():
             pass
         fn.__name__ = name
         fn.__module__ = "test_delete_intermediates"
         self._function = fn
+        self._ephemeral = ephemeral
 
 
-def _node(name):
-    return Node(_FakeRemote(name), name=name)
+def _node(name, ephemeral=False):
+    return Node(_FakeRemote(name, ephemeral), name=name)
 
 
 def _spliced(monkeypatch, child_graph):
@@ -103,11 +110,8 @@ def test_failed_subgraph_keeps_its_intermediates(monkeypatch):
         "cache.reclaim.reclaim_artifact",
         lambda node, result, fn_args: calls.append(node),
     )
-    interior, terminal = _node("interior"), _node("terminal")
-    _, _, child = _spliced(
-        monkeypatch,
-        Graph({terminal: [interior]}, delete_intermediates=True),
-    )
+    interior, terminal = _node("interior", ephemeral=True), _node("terminal")
+    _, _, child = _spliced(monkeypatch, Graph({terminal: [interior]}))
 
     child.node_completed(interior, "interior-result")
     child.node_failed(terminal, RuntimeError("boom"))
@@ -126,6 +130,51 @@ def test_plain_subgraph_deletes_nothing(monkeypatch):
         lambda node, result, fn_args: calls.append(node),
     )
     interior, terminal = _node("interior"), _node("terminal")
+    _, _, child = _spliced(monkeypatch, Graph({terminal: [interior]}))
+
+    child.node_completed(interior, "interior-result")
+    child.node_completed(terminal, "terminal-result")
+    child.parent._propagate_completed_children()
+
+    assert calls == []
+
+
+def test_ephemeral_terminal_is_spared_not_exempt(monkeypatch):
+    """A graph's terminal is SPARED even when its op says ephemeral=True.
+
+    Its result is what escapes to consumers outside this graph, and inside it
+    the terminal has no dependents at all — so "everything that needed it is
+    done" is vacuously true and reclaiming here would delete a value about to
+    be read. The deferral is what lets `blend_panels` be ephemeral: spared
+    inside `process_in_panels`, reclaimed by the graph that consumes it.
+    """
+    calls = []
+    monkeypatch.setattr(
+        "cache.reclaim.reclaim_artifact",
+        lambda node, result, fn_args: calls.append(node.name),
+    )
+    interior = _node("interior", ephemeral=True)
+    terminal = _node("terminal", ephemeral=True)      # ephemeral AND terminal
+    _, _, child = _spliced(monkeypatch, Graph({terminal: [interior]}))
+
+    child.node_completed(interior, "interior-result")
+    child.node_completed(terminal, "terminal-result")
+    child.parent._propagate_completed_children()
+
+    assert calls == ["interior"], (
+        "the terminal must survive its own graph even when marked ephemeral"
+    )
+
+
+def test_non_ephemeral_nodes_are_never_reclaimed(monkeypatch):
+    """The default is the pure world: an op that never opted in keeps its
+    output, whatever graph it happens to sit in."""
+    calls = []
+    monkeypatch.setattr(
+        "cache.reclaim.reclaim_artifact",
+        lambda node, result, fn_args: calls.append(node.name),
+    )
+    interior, terminal = _node("interior"), _node("terminal")   # neither opted in
     _, _, child = _spliced(monkeypatch, Graph({terminal: [interior]}))
 
     child.node_completed(interior, "interior-result")

@@ -228,6 +228,19 @@ class _Node:
         # frame we nonetheless can't solve (non-square pixels), so it keeps
         # image_type="light" yet sets plate_solve=False.
         image_type = ray_opts.pop("image_type", "light")
+        # This op's output is a WORKING VALUE, not a deliverable: reclaimed as
+        # soon as the graph that consumes it completes. The author of the op is
+        # the one who knows whether it is cheap to recompute, so the decision
+        # lives HERE rather than in whichever pipeline happens to build a scope
+        # around it (which is where `Graph(delete_intermediates=True)` used to
+        # put it — a different file from the cost knowledge, and duplicated at
+        # every scope site).
+        #
+        # Lifetime, precisely: when a graph completes, every ephemeral node in
+        # it is reclaimed EXCEPT that graph's terminal, whose result escapes to
+        # consumers outside. That is a DEFERRAL, not an exemption — one level
+        # up the same node is interior, so the enclosing graph reclaims it.
+        ephemeral = ray_opts.pop("ephemeral", False)
 
         # A `final=True` op is a deliverable, and a deliverable is always
         # user-facing (shown + openable). So `final` requires an explicit,
@@ -236,6 +249,14 @@ class _Node:
             raise ValueError(
                 f"@node on {func.__name__!r}: final=True requires "
                 'display="Name" (a final deliverable is always user-facing).'
+            )
+        # A deliverable that deletes itself is a contradiction, and the failure
+        # would be silent and remote (a missing tap, hours later). Catch it at
+        # decoration time instead.
+        if final and ephemeral:
+            raise ValueError(
+                f"@node on {func.__name__!r}: final=True and ephemeral=True "
+                "are contradictory — a deliverable is never reclaimed."
             )
 
         # ---- 2. Compute shared artifacts ------------------------------
@@ -326,6 +347,11 @@ class _Node:
         # ---- 4. Attach public-API attributes on the final wrapper -----
         wrapper._fn_hash = fn_hash
         wrapper._cache_key_narrow = cache_key_narrow
+        # Read by the runtime's reclaim pass at every graph completion. Set
+        # unconditionally (not only for artifact producers) so the flag reads
+        # the same on every op; a node that produces no file simply has nothing
+        # to reclaim.
+        wrapper._ephemeral = ephemeral
         if display_name is not None:
             wrapper._display_name = display_name
 

@@ -342,7 +342,10 @@ def _place_image_narrow(args, kwargs):
             config.edge_erosion_px, image_metadata), kwargs
 
 
+# ephemeral: a multi-GB reprojection whose ONLY consumer is the merge that
+# immediately follows it; CPU-cheap to re-derive.
 @node(
+    ephemeral=True,
     cache_key_narrow=_place_image_narrow,
     auto_memory=True,
     plate_solve=False,  # reprojected into the mosaic viewbox (Mercator-like) — non-square pixels, can't solve

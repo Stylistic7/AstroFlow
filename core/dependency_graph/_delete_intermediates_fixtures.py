@@ -61,7 +61,8 @@ def _write_small_fits(path, seed) -> None:
     hdu.writeto(str(path), overwrite=True)
 
 
-@node(plate_solve=False)
+# Also interior to the scope, and also disposable.
+@node(plate_solve=False, ephemeral=True)
 def _di_source(seed: int) -> FitsFilePath:
     _note_execution("_di_source")
     out = _di_source.filename_fn(seed)
@@ -70,7 +71,9 @@ def _di_source(seed: int) -> FitsFilePath:
     return FitsFilePath(out)
 
 
-@node(plate_solve=False)
+# The interior of the scope: declares itself disposable, so the runtime
+# reclaims it when the subgraph concludes.
+@node(plate_solve=False, ephemeral=True)
 def _di_middle(config: str, source) -> FitsFilePath:
     _note_execution("_di_middle")
     out = _di_middle.filename_fn(config, source)
@@ -93,7 +96,7 @@ def build_scoped_subgraph(seed, config, dry_run=False):
     """A subgraph whose author declares its intermediates disposable.
 
     Traces source → middle → terminal, then returns that graph wrapped with
-    `delete_intermediates=True`: the terminal escapes and persists, and
+    Its interior op declares `ephemeral=True`: the terminal escapes and persists, and
     `_di_source` / `_di_middle` are deleted once this subgraph concludes.
     """
     del dry_run
@@ -103,7 +106,7 @@ def build_scoped_subgraph(seed, config, dry_run=False):
         middle = _di_middle(config, source)
         return _di_terminal(config, middle)
 
-    return Graph(trace(_body), delete_intermediates=True)
+    return Graph(trace(_body))
 
 
 def build_top_level_graph(seed, config) -> Graph:

@@ -190,7 +190,10 @@ def _crop_panel_narrow(args, kwargs):
     return (mosaic.stable_hash, rect, scope_hashes), kwargs
 
 
-@node(cache_key_narrow=_crop_panel_narrow, auto_memory=True, plate_solve=False)
+# ephemeral: a materialized VIEW of the merged raster, written only because
+# rc-astro needs a file path. Re-cropping is seconds; keeping it cost 235 GB.
+@node(cache_key_narrow=_crop_panel_narrow, auto_memory=True, plate_solve=False,
+      ephemeral=True)
 def crop_panel(mosaic: Mosaic, rect: tuple, source: ImageMetadata,
                scope_hashes: tuple) -> WithSidecar[TiffFilePath]:
     """One panel's padded bbox cropped out of the merged mosaic — streaming, so
@@ -213,7 +216,13 @@ def _blend_panels_narrow(args, kwargs):
     return (mosaic.stable_hash, config.tiling, rects, *tiles), kwargs
 
 
-@node(cache_key_narrow=_blend_panels_narrow, auto_memory=True, plate_solve=False)
+# ephemeral: a feather of tiles that are THEMSELVES retained (the GPU stages
+# persist), so re-deriving this is one blend — ~58 s median — not GPU minutes.
+# It is consumed only by the next stage's crops inside the same pipeline graph,
+# so it is reclaimed when that graph concludes. Measured 2026-08-17: 181 GB,
+# 72 GB per compute-hour — the worst disk-for-compute trade in the tail.
+@node(cache_key_narrow=_blend_panels_narrow, auto_memory=True, plate_solve=False,
+      ephemeral=True)
 def blend_panels(mosaic: Mosaic, config: ProcessingConfig, rects: tuple,
                  *tiles: ImageMetadata) -> WithSidecar[TiffFilePath]:
     """Feather the processed panel tiles back into one BigTIFF — streaming (never
@@ -255,7 +264,7 @@ def _panel_stage(op_ref, mosaic, rect, scope_hashes, lead, source_merged,
         crop = crop_panel(mosaic, rect, source_merged, scope_hashes)
         return op(*lead, crop)
 
-    return Graph(trace(_body), delete_intermediates=True)
+    return Graph(trace(_body))
 
 
 def process_in_panels(op, *op_args, viewbox, blend=blend_panels) -> PanelMosaic:

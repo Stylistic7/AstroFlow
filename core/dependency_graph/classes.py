@@ -199,25 +199,9 @@ GraphUpdateFn = Callable[..., Any]
 
 
 class Graph(dict[TaskDescriptor, Iterable[TaskDescriptor]]):
-    __slots__ = ("graph_update_fn", "node_status_fn", "delete_intermediates",
-                 "version_supersede")
+    __slots__ = ("graph_update_fn", "node_status_fn", "version_supersede")
     graph_update_fn: GraphUpdateFn | None
     node_status_fn: NodeStatusFn | None
-    # The graph's AUTHOR declares that this graph computes cheap intermediates
-    # not worth persisting — e.g. `process_in_panels`, whose `crop_panel` tiles
-    # are views of another image, materialized only because a CLI boundary
-    # needs a file path. Every `@makes_image` node in the graph is then subject
-    # to deletion EXCEPT its single terminal, when this graph runs as a dynamic
-    # subgraph and concludes successfully (`GraphRuntime._delete_intermediates`
-    # deletes the file atom and invalidates the cache entry).
-    #
-    # The subgraph IS the scope: a builder traces into a fresh Graph, so
-    # membership needs no registry, and the single-terminal invariant the
-    # runtime already asserts makes the escape set free. Nothing global, no
-    # refcounts, no cross-pipeline census — an intermediate another pipeline
-    # wants is simply re-derived, which is cheap by construction (that's what
-    # qualifies it as an intermediate).
-    delete_intermediates: bool
     # Optional `{node: version_log_key}` map attached by `run_pipeline` to its
     # returned sub-graph. The runtime consults it at node completion to record
     # the landed version and delete the superseded one (graceful N/N-1,
@@ -229,14 +213,12 @@ class Graph(dict[TaskDescriptor, Iterable[TaskDescriptor]]):
         *args,
         graph_update_fn: GraphUpdateFn | None = None,
         node_status_fn: NodeStatusFn | None = None,
-        delete_intermediates: bool = False,
         version_supersede: "dict | None" = None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.graph_update_fn = graph_update_fn
         self.node_status_fn = node_status_fn
-        self.delete_intermediates = delete_intermediates
         self.version_supersede = version_supersede
 
 

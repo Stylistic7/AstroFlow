@@ -284,7 +284,7 @@ def merge_scope(mosaic, filter, viewbox, config, targets, *corrected,
         ]
         return merge_images_oss(mosaic, filter, *placed)
 
-    return Graph(trace(_body), delete_intermediates=True)
+    return Graph(trace(_body))
 
 
 @node(

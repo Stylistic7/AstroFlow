@@ -48,6 +48,16 @@ from cache.types import NeverRun
 from dependency_graph.classes import Skipped
 
 
+def _is_ephemeral(node: Node) -> bool:
+    """Whether `node`'s op declared `@node(ephemeral=True)`.
+
+    Read off the task's wrapper. Defaults False, so an op that never opted in
+    keeps its output — the safe direction, and it means a node built directly in
+    a test (no @node wrapper) is never reclaimed."""
+    task = getattr(node, "task", None)
+    return bool(getattr(task, "_ephemeral", False))
+
+
 def _terminal_cache_hit(graph: Graph) -> "tuple[bool, Any]":
     """`(hit, value)` for a subgraph's single terminal — a read-only cache
     probe that never executes anything.
@@ -153,13 +163,6 @@ class GraphRuntime:
         self.filenames: dict[Node, Any] = {}
         self.final_result: Any = None
 
-        # Declared by the Graph's author: everything here except the single
-        # terminal is a cheap intermediate, reclaimed when this subgraph
-        # concludes (see `Graph.delete_intermediates` and `_delete_intermediates`).
-        # `canonicalize_graph` returns a plain dict, so the flag is lifted
-        # off the original Graph here rather than read back later.
-        self.delete_intermediates: bool = bool(getattr(graph, "delete_intermediates", False))
-
         # Callbacks inherited from Graph
         self.graph_update_fn: GraphUpdateFn | None = graph.graph_update_fn
         self.node_status_fn: NodeStatusFn | None = (
@@ -225,12 +228,12 @@ class GraphRuntime:
             # SKIP THE WHOLE SUBGRAPH when its terminal is already a cache hit.
             # Only decidable here, at runtime: the Graph exists, so its terminal
             # and that terminal's dep handles are in hand. This matters
-            # specifically for `delete_intermediates` graphs — their
-            # intermediates were deleted after the last run, so expanding would
-            # re-derive every one of them just to hand the terminal a cache hit
-            # and delete them again. Skipping hands the consumer the terminal's
+            # specifically for graphs holding EPHEMERAL nodes — their outputs
+            # were reclaimed after the last run, so expanding would re-derive
+            # every one of them just to hand the terminal a cache hit and
+            # reclaim them again. Skipping hands the consumer the terminal's
             # cached value and never dispatches anything.
-            if getattr(result, "delete_intermediates", False):
+            if any(_is_ephemeral(n) for n in result):
                 hit, value = _terminal_cache_hit(result)
                 if hit:
                     self._mark_done(node, value, logs, succeeded=True)
@@ -384,33 +387,47 @@ class GraphRuntime:
                     node, child.final_result, child.logs,
                     succeeded=parent_succeeded,
                 )
-                # SCOPE-LOCAL cleanup: the one moment a dynamic subgraph
-                # concludes, so the one place a self-cleaning scope reclaims
-                # its interior. Declared by the graph's author via
-                # `Graph(..., delete_intermediates=True)` — they know whether it holds
-                # cheap intermediates (crops) or real products. Success only:
-                # a failed scope keeps its files so a retry resumes from
-                # real data instead of re-deriving the whole scope.
-                if parent_succeeded and child.delete_intermediates:
-                    child._delete_intermediates()
+                # The one moment a subgraph concludes, so the one place its
+                # ephemeral outputs can be reclaimed. Fires for EVERY concluded
+                # child: what is reclaimable is now declared per-OP
+                # (`@node(ephemeral=True)`), not per-graph, so the runtime no
+                # longer needs the builder to have flagged the scope. Success
+                # only: a failed graph keeps its files so a retry resumes from
+                # real data instead of re-deriving everything.
+                if parent_succeeded:
+                    child._reclaim_ephemerals()
                 # Move out of _children so we stop scheduling against
                 # it, but keep it in _completed_children so the
                 # workflow-graph UI can still render the subgraph.
                 self._completed_children[node] = self._children.pop(node)
 
-    def _delete_intermediates(self) -> None:
-        """Delete this subgraph's intermediate images — every `@makes_image`
-        node EXCEPT the single terminal — and invalidate their cache entries.
+    def _reclaim_ephemerals(self) -> None:
+        """Reclaim this graph's EPHEMERAL outputs, sparing its terminal.
 
-        Runs only for a graph whose author set `delete_intermediates=True`,
-        and only after the subgraph concluded successfully.
+        Ephemerality is declared by the OP, not by whoever built the graph:
+        `@node(ephemeral=True)` means "my output is a working value, not a
+        deliverable". The op's author is the one who knows whether it is cheap
+        to recompute, so the decision lives with the code that knows the answer
+        instead of in a `Graph(delete_intermediates=True)` in some pipeline file
+        — a different file, and duplicated at every scope site.
 
-        Each file is found from that node's own RUNTIME result, never a
-        predicted path, so this can only ever delete something this subgraph
-        actually produced. The terminal is what escapes and is exactly what
-        consumers hold, so it always survives. Nodes that produce no image
-        (orchestration, sentinels) have nothing to delete and are skipped by
-        `reclaim_artifact` itself.
+        THE TERMINAL IS SPARED, even when marked ephemeral. Its result is what
+        escapes to consumers outside this graph, and inside this graph it has no
+        dependents at all, so "everything that needed it is done" is vacuously
+        true and reclaiming it here would delete a value about to be read. That
+        is a DEFERRAL, not an exemption: one level up the same value is an
+        interior node, and the enclosing graph reclaims it then. This is what
+        lets `blend_panels` be reclaimed at pipeline completion while
+        `crop_panel` still dies per-panel.
+
+        Runs only after the graph concluded SUCCESSFULLY — a failed graph keeps
+        its files so a retry resumes from real data rather than re-deriving
+        everything.
+
+        Each file comes from that node's own RUNTIME result, never a predicted
+        path, so this can only ever delete something this graph actually
+        produced. Nodes that produce no image (orchestration, sentinels) are
+        skipped by `reclaim_artifact` itself.
 
         Sharing is deliberately untracked: an intermediate another pipeline
         wants is re-derived. Never raises — reclaim is a side effect, never
@@ -422,7 +439,7 @@ class GraphRuntime:
         keep = set(_terminals(self._graph))
         deleted = 0
         for node in self._graph:
-            if node in keep:
+            if node in keep or not _is_ephemeral(node):
                 continue
             result = self.results.get(node)
             if result is None:
@@ -431,11 +448,11 @@ class GraphRuntime:
                 reclaim_artifact(node, result, self.make_fn_args(node))
                 deleted += 1
             except Exception as e:
-                print(f"### delete_intermediates failed (non-fatal) for "
+                print(f"### ephemeral reclaim failed (non-fatal) for "
                       f"{node.name}: {type(e).__name__}: {e}")
         if deleted:
-            print(f"### deleted {deleted} intermediate(s) from a concluded "
-                  f"subgraph")
+            print(f"### reclaimed {deleted} ephemeral output(s) from a "
+                  f"concluded graph")
 
     def is_active(self) -> bool:
         """True if there is still work to do at this level or any child."""
