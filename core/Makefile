@@ -163,8 +163,22 @@ ray-status:
 # --- App lifecycle ---------------------------------------------------------
 # Start the live app (Ray head + gunicorn web server) in the FOREGROUND.
 # Run from core/. Ctrl-C stops it (main.py's atexit cleans up gunicorn + ray).
-start: sweep-pi-swap
+start: sweep-pi-swap sweep-staging
 	uv run python main.py
+
+# Recover payloads stranded by a killed publish, and reap partial copies.
+# Runs at START, with the cluster DOWN, which is what makes it safe: staging
+# files are only ever touched when their writer is dead AND the file is stale,
+# and a shared filesystem means a PID from another node can look dead here.
+#
+# NOT a plain `find -delete`: `registry._publish_with_presentations` renames the
+# payload ASIDE while it builds the pyramid, so a leftover `.staging.` file
+# whose canonical name is missing IS the product. Deleting one cost an 18.9 GB
+# combine_broadband_rgb master on 2026-08-17. See file_io/staging.py.
+.PHONY: sweep-staging
+sweep-staging:
+	@PYTHONPATH=. uv run python -m scripts.sweep_staging --apply 2>/dev/null \
+		| grep -vE "^\s*$$" || true
 
 # Reclaim orphaned PixInsight swap files (~PI~*.swp) stranded by hard-killed PI
 # sessions — the inactivity watchdog, `make stop`, or crashes. PI only deletes
