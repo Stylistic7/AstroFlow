@@ -90,9 +90,16 @@ def _resolve(object_type: str, object_id: str, pipeline: str, display: str,
 
 
 def render_canonical_preview(object_type: str, object_id: str,
-                             ancestors=()) -> "bytes | None":
+                             ancestors=(), pipeline: "str | None" = None,
+                             ) -> "bytes | None":
     """PNG bytes of the canonical look, or None when no scene format is
-    servable yet. Hubble for anything with narrowband; RGB otherwise."""
+    servable yet. Hubble for anything with narrowband; RGB otherwise.
+
+    `pipeline` PINS which pipeline's scene formats to render. Without it this
+    picks the first that resolves, which is right for a single card but wrong
+    for any A/B: the dashboard shows one preview PER pipeline, and auto-picking
+    would render the same image under both headings (exactly the illusion the
+    2026-08-15 colour-tail collision produced for real)."""
     import cv2
     from catalog.queries import default_pipeline_for
     from context.cache import get_durable_cache
@@ -106,9 +113,12 @@ def render_canonical_preview(object_type: str, object_id: str,
     # Try the default first, then every other pipeline for this class, and
     # take the first that actually resolves a scene format.
     from catalog.queries import pipelines_for
-    default = default_pipeline_for(object_type, object_id)
-    candidates = [default] + [p for p in pipelines_for(object_type, object_id)
-                              if p != default]
+    if pipeline is not None:
+        candidates = [pipeline]
+    else:
+        default = default_pipeline_for(object_type, object_id)
+        candidates = [default] + [p for p in pipelines_for(object_type, object_id)
+                                  if p != default]
     pipeline = None
     for cand in candidates:
         if any(_resolve(object_type, object_id, cand, d, ancestors)

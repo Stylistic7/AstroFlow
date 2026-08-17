@@ -234,7 +234,11 @@ def canonical_preview(object_type: str, object_id: str):
     (the card's onError falls back to the classic thumbnail)."""
     import flask
     from finishes.preview import render_canonical_preview
-    png = render_canonical_preview(object_type, object_id)
+    # `?pipeline=` pins which pipeline's scene formats to render. The dashboard
+    # passes it so an A/B shows one preview PER pipeline; omitting it keeps the
+    # auto-pick used by the object cards.
+    png = render_canonical_preview(
+        object_type, object_id, pipeline=flask.request.args.get("pipeline"))
     if png is None:
         return flask.abort(404)
     return flask.Response(png, mimetype="image/png",

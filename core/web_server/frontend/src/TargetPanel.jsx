@@ -1,5 +1,5 @@
 import React, { useContext } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { Box } from "@mui/material";
 
 import StackThumbnail from "./StackThumbnail.jsx";
@@ -37,23 +37,8 @@ export default function TargetPanel() {
 	const pipelines = (pipelineOutputs?.pipelines || [])
 		.filter((p) => (p.taps || []).length > 0);
 
-	// Live-finish entry point (mirrors MosaicDashboard's hero): the first
-	// built linear scene format, by preference.
-	const navigate = useNavigate();
-	let liveView = null;
-	for (const p of pipelines) {
-		for (const disp of ["Linear SHO", "Linear RGB",
-		                    "Linear Narrowband Starless"]) {
-			const tap = (p.taps || []).find((t) => t.display === disp
-				&& (t.outputs || []).some((o) => o.exists));
-			if (tap) {
-				liveView = { pipeline: p.name, display: disp,
-				             filter: tap.outputs.find((o) => o.exists).filter };
-				break;
-			}
-		}
-		if (liveView) break;
-	}
+	// No page-level hero here either: each PipelineSection renders its own
+	// canonical preview, deep-linked into that pipeline's viewer.
 
 	// When a view is picked, drilldown URLs propagate it (stack defaults
 	// for display via inheritView); without a view, links degrade to the
@@ -94,40 +79,6 @@ export default function TargetPanel() {
 						</StackThumbnail>
 					))}
 			</div>
-			{liveView && (
-				<Box
-					onClick={() => navigate(buildUrl({
-						hierarchy,
-						view: liveView,
-					}))}
-					sx={{
-						cursor: "pointer", mx: "2em", mt: "1.5em",
-						position: "relative", borderRadius: 1,
-						overflow: "hidden", border: "1px solid",
-						borderColor: "divider", display: "inline-block",
-						maxWidth: "calc(100% - 4em)",
-						"&:hover .liveBadge": { backgroundColor: "primary.main" },
-					}}
-				>
-					<img
-						src={`/thumbnail/preview/target/${params.target_id}`}
-						alt="canonical preview"
-						onError={(e) => {
-							e.currentTarget.parentElement.style.display = "none";
-						}}
-						style={{ display: "block", maxHeight: "50vh",
-						         maxWidth: "100%" }}
-					/>
-					<Box className="liveBadge" sx={{
-						position: "absolute", bottom: 0, left: 0, right: 0,
-						backgroundColor: "rgba(0,0,0,0.65)", color: "white",
-						px: 1.5, py: 0.75, fontSize: 14,
-						transition: "background-color 120ms",
-					}}>
-						Open in the live finish pipeline — real-time sliders →
-					</Box>
-				</Box>
-			)}
 			{pipelines.length > 0 && (
 				<Box sx={{ mx: "2em", mt: "1.5em" }}>
 					{pipelines.map((p) => (

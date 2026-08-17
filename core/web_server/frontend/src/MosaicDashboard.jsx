@@ -1,18 +1,30 @@
-// MosaicDashboard.jsx — at-a-glance view of a mosaic. One section per
-// registered pipeline, one ROW per tap point within that pipeline (in ORDER OF
-// COMPUTATION), showing ONLY the filters that actually route through that tap.
+// MosaicDashboard.jsx — at-a-glance view of a mosaic: what each pipeline
+// PRODUCED, and whether it is current. One section per registered pipeline,
+// each showing three kinds of thing and nothing else:
 //
-// A tap node isn't filter-specific — its real filter set is whatever the
-// pipeline×object trace produced for it — so each row renders its own
-// `tap.outputs` (no global filter grid, no phantom blanks). The images in a row
-// split the full viewport width, so a one-filter tap (e.g. a Hubble composite)
-// renders large and a many-filter tap (e.g. Linear H/S/O) renders as a strip.
+//   1. THE DELIVERABLE — that pipeline's canonical finished preview, rendered
+//      server-side by the SAME traced finish the viewer runs live, so it can
+//      never drift from the sliders. Pinned with `?pipeline=`, because on an
+//      A/B object an auto-picked preview renders one image under both headings.
+//   2. THE SANITY CHECK — the raw per-filter channels (Mosaic / Merged /
+//      Subframe / Master). One band, autostretched, is an honest picture of
+//      that band: a bad panel or registration slip shows up immediately.
+//   3. THE PLUMBING — the multi-band linear scene formats, as STATUS ROWS, not
+//      pictures. See `isSceneFormat` for why rendering them was worse than
+//      merely ugly.
+//
+// This replaced a uniform grid of one thumbnail per (tap × filter) — a design
+// from when the pipeline BAKED Hubble/Foraxx images to disk. Once colour moved
+// into the viewer's live WGSL finishes, every tile that grid showed became an
+// intermediate, and the page was showing the plumbing.
 //
 // Data source: `/api/pipeline_outputs/mosaic/<id>` returns one entry per
 // pipeline, each with its tap points (display labels, in trace order) and, per
-// tap, the real (filter, on-disk-existence) outputs. Tap points are discovered
-// at pipeline-trace time from `@makes_image(display=...)` annotations, so user
-// pipelines surface in this dashboard automatically.
+// tap, the real (filter, on-disk-existence, status) outputs. Tap points are
+// discovered at pipeline-trace time from `@makes_image(display=...)`
+// annotations, so user pipelines surface here automatically — and classify
+// themselves, since the split above is derived from the outputs, not a
+// hardcoded list of display names.
 import React, { useContext, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Box, Paper, Typography, Divider, Button } from "@mui/material";
@@ -95,11 +107,81 @@ function VersionThumbnail({
 }
 
 
+// A tap whose outputs are ALL "RGB" is a multi-band LINEAR SCENE FORMAT —
+// Linear SHO / Narrowband / RGB / RGB Stars — i.e. the viewer's INPUT BUFFER,
+// not a picture. We deliberately don't render those as images (2026-08-16):
+//
+//   * they are ugly for a real reason — Linear SHO is S/H/O crammed into RGB
+//     with no palette; the meaning arrives in the viewer's WGSL finish;
+//   * worse, the thumbnail is autostretched by the THUMBNAIL path while the
+//     viewer renders the same tap through a live finish, so the tile shows a
+//     transfer function no product actually has. A sickly green tile then reads
+//     as "bad data" when the data is fine — a false-alarm generator.
+//
+// Per-FILTER taps (Mosaic / Merged / Subframe / Master / Channel) stay as
+// images: one band, autostretched, is an honest picture of that band and the
+// cheapest sanity check there is for a bad panel or a registration slip.
+// Deriving this from the OUTPUTS rather than a display-name list means user
+// pipelines classify themselves.
+function isSceneFormat(tap) {
+    const outs = tap.outputs || [];
+    return outs.length > 0 && outs.every((o) => String(o.filter) === "RGB");
+}
+
+
+// The scene formats, as a compact status line instead of a misleading picture:
+// what exists, whether it's current, and a way into the viewer that renders it
+// properly.
+function SceneFormatRow({ objectType, objectId, pipeline, tap }) {
+    const navigate = useNavigate();
+    const o = (tap.outputs || [])[0] || {};
+    const href = buildUrl({
+        hierarchy: [{ type: objectType, id: objectId }],
+        view: { pipeline, display: tap.display, filter: o.filter },
+    });
+    const tone = !o.exists ? 'text.disabled'
+        : o.status === 'out_of_date' ? 'warning.main' : 'success.main';
+    const label = !o.exists ? 'not built'
+        : o.status === 'out_of_date' ? 'out of date' : 'built';
+    return (
+        <Box
+            onClick={() => navigate(href)}
+            sx={{
+                display: 'flex', alignItems: 'center', gap: 1.5,
+                px: 1.5, py: 0.75, borderRadius: 1, cursor: 'pointer',
+                border: '1px solid', borderColor: 'divider',
+                '&:hover': { borderColor: 'primary.main' },
+            }}
+        >
+            <Typography variant="body2" sx={{ flexGrow: 1 }}>
+                {tap.display}
+            </Typography>
+            <Typography variant="caption" sx={{ color: tone, fontWeight: 600 }}>
+                {label}
+            </Typography>
+            <Typography variant="caption" sx={{ color: 'text.disabled' }}>
+                open in viewer →
+            </Typography>
+        </Box>
+    );
+}
+
+
 // Exported: TargetPanel renders the same per-pipeline tap sections — the
 // component is object-type-agnostic (every URL/API it touches is keyed by
 // (objectType, objectId)).
 export function PipelineSection({ objectType, objectId, pipeline }) {
     const [discardOpen, setDiscardOpen] = useState(false);
+    const navigate = useNavigate();
+    const scene = (pipeline.taps || []).filter(isSceneFormat);
+    const channels = (pipeline.taps || []).filter((t) => !isSceneFormat(t));
+    // Deep-link the finished preview at the first built scene format of THIS
+    // pipeline, so the click lands in the viewer on the pixels it just showed.
+    const first = scene.find((t) => (t.outputs || []).some((o) => o.exists));
+    const heroView = first && {
+        pipeline: pipeline.name, display: first.display,
+        filter: (first.outputs.find((o) => o.exists) || {}).filter,
+    };
     return (
         <Box sx={{ mb: 4 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
@@ -124,7 +206,38 @@ export function PipelineSection({ objectType, objectId, pipeline }) {
                 open={discardOpen}
                 onClose={() => setDiscardOpen(false)}
             />
-            {pipeline.taps.map((tap) => (
+            {/* THE DELIVERABLE: this pipeline's canonical finished look,
+                rendered server-side by the SAME traced finish the viewer runs,
+                so it can never drift from what the sliders show. `?pipeline=`
+                pins it — without that, an A/B renders one image twice. */}
+            {heroView && (
+                <Box
+                    onClick={() => navigate(buildUrl({
+                        hierarchy: [{ type: objectType, id: objectId }],
+                        view: heroView,
+                    }))}
+                    sx={{
+                        cursor: 'pointer', mb: 2, position: 'relative',
+                        alignSelf: 'flex-start', borderRadius: 1,
+                        overflow: 'hidden', border: '1px solid',
+                        borderColor: 'divider', maxWidth: '100%',
+                    }}
+                >
+                    <img
+                        src={`/thumbnail/preview/${objectType}/${objectId}`
+                             + `?pipeline=${encodeURIComponent(pipeline.name)}`}
+                        alt={`${pipeline.name} — canonical preview`}
+                        onError={(e) => {
+                            e.currentTarget.parentElement.style.display = 'none';
+                        }}
+                        style={{ display: 'block', maxHeight: '48vh',
+                                 maxWidth: '100%' }}
+                    />
+                </Box>
+            )}
+
+            {/* THE SANITY CHECK: raw per-filter channels, one band each. */}
+            {channels.map((tap) => (
                 <Box key={tap.display} sx={{ mb: 2 }}>
                     <Typography variant="body2" sx={{
                         color: 'text.secondary',
@@ -156,6 +269,28 @@ export function PipelineSection({ objectType, objectId, pipeline }) {
                     </Box>
                 </Box>
             ))}
+
+            {/* THE PLUMBING: status only, never a picture. */}
+            {scene.length > 0 && (
+                <Box sx={{ mt: 2 }}>
+                    <Typography variant="body2" sx={{
+                        color: 'text.secondary', mb: 0.5,
+                    }}>
+                        Scene formats
+                    </Typography>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                        {scene.map((tap) => (
+                            <SceneFormatRow
+                                key={tap.display}
+                                objectType={objectType}
+                                objectId={objectId}
+                                pipeline={pipeline.name}
+                                tap={tap}
+                            />
+                        ))}
+                    </Box>
+                </Box>
+            )}
         </Box>
     );
 }
@@ -165,7 +300,6 @@ export default function MosaicDashboard() {
     const { mosaic_id } = useParams();
     const { mosaics, computeGraphStatus } = useContext(AstroFlowContext);
     const [data, setData] = useState(null);
-    const navigate = useNavigate();
 
     const mosaic = mosaics?.[mosaic_id];
 
@@ -182,25 +316,10 @@ export default function MosaicDashboard() {
 
     const pipelines = data?.pipelines || [];
 
-    // The live-finish entry point: the first built linear scene format, by
-    // preference. Clicking the hero preview below opens ITS viewer page,
-    // where the WebGPU finish pipeline (Hubble/Foraxx/RGB/… with sliders)
-    // runs on exactly these pixels.
-    let liveView = null;
-    for (const p of pipelines) {
-        for (const disp of ["Linear SHO", "Linear RGB",
-                            "Linear Narrowband Starless"]) {
-            const tap = (p.taps || []).find((t) => t.display === disp
-                && (t.outputs || []).some((o) => o.exists));
-            if (tap) {
-                liveView = { pipeline: p.name, display: disp,
-                             filter: tap.outputs.find((o) => o.exists).filter };
-                break;
-            }
-        }
-        if (liveView) break;
-    }
-
+    // No page-level hero: each PipelineSection renders its OWN canonical
+    // preview, so a single auto-picked one on top would just duplicate
+    // whichever pipeline happened to win — and on an A/B object it silently
+    // implied the two pipelines shared a look.
     return (
         <Paper elevation={2} sx={{
             borderRadius: 0,
@@ -216,45 +335,6 @@ export default function MosaicDashboard() {
             <Typography variant="h5" sx={{ mb: 3 }}>
                 {mosaic.name || `Mosaic ${mosaic_id.slice(0, 8)}`}
             </Typography>
-
-            {/* Hero: the canonical server-rendered preview, clickable into
-                the LIVE finish pipeline (the viewer on the first built
-                linear scene format, where every look runs in WebGPU with
-                its knobs as sliders). */}
-            {liveView && (
-                <Box
-                    onClick={() => navigate(buildUrl({
-                        hierarchy: [{ type: 'mosaic', id: mosaic_id }],
-                        view: liveView,
-                    }))}
-                    sx={{
-                        cursor: 'pointer', mb: 4, position: 'relative',
-                        alignSelf: 'flex-start', borderRadius: 1,
-                        overflow: 'hidden', border: '1px solid',
-                        borderColor: 'divider', maxWidth: '100%',
-                        '&:hover .liveBadge': { backgroundColor: 'primary.main' },
-                    }}
-                >
-                    <img
-                        src={`/thumbnail/preview/mosaic/${mosaic_id}`}
-                        alt="canonical preview"
-                        onError={(e) => {
-                            e.currentTarget.parentElement.style.display = 'none';
-                        }}
-                        style={{ display: 'block', maxHeight: '55vh',
-                                 maxWidth: '100%' }}
-                    />
-                    <Box className="liveBadge" sx={{
-                        position: 'absolute', bottom: 0, left: 0, right: 0,
-                        backgroundColor: 'rgba(0,0,0,0.65)', color: 'white',
-                        px: 1.5, py: 0.75, fontSize: 14,
-                        transition: 'background-color 120ms',
-                    }}>
-                        Open in the live finish pipeline — Hubble, Foraxx,
-                        RGB &amp; friends with real-time sliders →
-                    </Box>
-                </Box>
-            )}
 
             {pipelines.length === 0 ? (
                 <Typography sx={{ color: 'text.secondary' }}>

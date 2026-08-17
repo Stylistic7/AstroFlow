@@ -323,11 +323,20 @@ def open_image(filename):
     if not any(resolved.startswith(root + os.sep) or resolved == root
                for root in roots):
         return jsonify({"error": "path outside AstroFlow data roots"}), 403
-    print(f"### opening filename {resolved}")
+    # PixInsight cannot read a TILED tiff and fails SILENTLY on one
+    # (ImageWindow.open returns an empty array, no exception) — so a pyramid
+    # handed over directly looks like a no-op. Reconstruct page 0 as a stripped
+    # TIFF first; a non-tiled source passes through at zero cost. See
+    # file_io/planar.py for the measurements.
+    from file_io.planar import reconstruct_planar_tiff
+    to_open = os.fspath(reconstruct_planar_tiff(resolved))
+    if to_open != resolved:
+        print(f"### open_image: reconstructed planar TIFF {to_open}")
+    print(f"### opening filename {to_open}")
     subprocess.Popen(
         [
             "/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight",
-            resolved,
+            to_open,
         ]
     )
 
@@ -349,9 +358,13 @@ def open_mosaic_master(mosaic_id, pipeline, display, filter):
     if path is None:
         return jsonify({"error": "no image available to open"}), 404
 
-    print(f"### opening {path} in PixInsight")
+    # Same tiled-TIFF reconstruction as `open_image` — the scene-format taps
+    # this most often resolves to are exactly the ones stored ONLY as pyramids.
+    from file_io.planar import reconstruct_planar_tiff
+    to_open = reconstruct_planar_tiff(path)
+    print(f"### opening {to_open} in PixInsight")
     subprocess.Popen([
         "/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight",
-        str(path),
+        str(to_open),
     ])
-    return jsonify({"opened": str(path)})
+    return jsonify({"opened": str(to_open)})
