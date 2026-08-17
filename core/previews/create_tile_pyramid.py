@@ -249,14 +249,23 @@ def pyramid_path_for(primary: Path) -> Path:
 def needs_display_pyramid(source: Path) -> bool:
     """Whether `source` gets a separate `_tiles.tiff` display pyramid.
 
-    Linear/float deliverables (`.fits`/`.xisf`, and float `.tiff`s like
-    the baked-stretch color images) DO — the viewer tone-maps / zooms
-    them from a multi-resolution pyramid. Already-display-ready uint8
-    `.tiff`s (the autostretched Subframe previews) do NOT: they are their
-    own display artifact and serve directly (the tile route's `uchar`
-    branch rescales /255), so building a float pyramid from them would
-    blow them out. Non-tiff sources are always linear float."""
+    Linear/float `.fits` and float `.tiff`s (the baked-stretch colour images)
+    DO — the viewer tone-maps / zooms them from a multi-resolution pyramid.
+    Already-display-ready uint8 `.tiff`s (the autostretched Subframe previews)
+    do NOT: they are their own display artifact and serve directly (the tile
+    route's `uchar` branch rescales /255), so building a float pyramid from them
+    would blow them out.
+
+    `.xisf` does NOT, since 2026-08-17: its pixel block is raw, uncompressed and
+    contiguous, so the tile route memory-maps it and shrinks per zoom level —
+    faster than reading a stored pyramid (0.4-0.9 ms/tile vs 1-6 ms) at zero
+    disk and zero build time. Building them cost 273.8 GB and ~4.3 h per full
+    run to serve displays with no recorded tile requests. See
+    `file_io/xisf_mmap`; `viewable_from_master` returns XISF masters directly.
+    """
     source = Path(source)
+    if source.suffix.lower() == ".xisf":
+        return False
     if source.suffix.lower() not in (".tif", ".tiff"):
         return True
     try:

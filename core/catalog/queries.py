@@ -179,6 +179,14 @@ def viewable_from_master(master: "str | Path | None") -> "Path | None":
     if (str(master).endswith((".tiff", ".tif")) and os.path.exists(master)
             and not needs_display_pyramid(master)):
         return master
+    # XISF masters serve DIRECTLY (2026-08-17): the tile route memory-maps the
+    # pixel block and shrinks on the fly, so there is no pyramid to wait for and
+    # none is written. That escapes both hazards in the comment above — the
+    # mapped image is shrunk per zoom level rather than served full-res at every
+    # zoom, and reads come from mapped pages rather than full-width strips.
+    # 273.8 GB of XISF pyramids deleted on that basis; see file_io/xisf_mmap.
+    if str(master).lower().endswith(".xisf") and os.path.exists(master):
+        return master
     return None
 
 
