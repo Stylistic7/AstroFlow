@@ -1,11 +1,13 @@
 """End-to-end tests of the sweep CLI's orphan classification.
 
-Phase 1b: the live set is the RUNTIME CENSUS — the durable record of every
-path the last COMPLETE pass landed — unioned with `context.archive`'s
-inline paths and the version-log pins. Trace predictions are gone (they
-diverged from runtime landings). These tests monkeypatch the durable-cache
-census read; the exhaustive test below drives the full Orion mosaic so the
-census is produced by a real completed run.
+The live set is the TRACE (2026-08-17): every path traced for every cart item,
+every ARCHIVED item, and the pipelines implicitly carted per mosaic, unioned
+with the version-log pins. The runtime census is gone — it under-pinned, needed
+a completeness guard, and that guard deadlocked when a run failed. A trace
+over-pins, which is the safe direction for a deletion authority.
+
+These tests stub `traced_paths_for`; the exhaustive test below drives the full
+Orion mosaic so the live set comes from a real trace.
 """
 from __future__ import annotations
 
@@ -40,22 +42,17 @@ def _clean_cart_and_archive():
 
 
 @pytest.fixture
-def fake_census(monkeypatch):
-    """Stub the durable-cache census read. Caller mutates
-    `census["paths"]`; starts complete-and-empty."""
-    import types
-    import context.cache as cc
-    census = {"paths": [], "complete": True}
+def fake_trace(monkeypatch):
+    """Stub the trace. Caller mutates `paths["live"]` — every cart item traces
+    to that list, so tests declare liveness directly."""
+    import dependency_graph.trace_paths as tp
+    paths = {"live": []}
     monkeypatch.setattr(
-        cc, "get_durable_cache",
-        lambda: types.SimpleNamespace(
-            get=lambda k, default=None: (
-                census if k == "runtime_live_census" else default
-            )
-        ),
+        tp, "traced_paths_for",
+        lambda item, *a, **kw: [{"path": p} for p in paths["live"]],
     )
     monkeypatch.setattr(orphan_sweep, "_pinned_versions", lambda: set())
-    return census
+    return paths
 
 
 def _make_file(path: Path, size: int = 100) -> Path:
@@ -76,17 +73,18 @@ def test_walk_and_classify_returns_unreferenced_files_only(temp_output_dir):
 
 
 def test_live_set_includes_archive_paths_and_their_siblings(
-    temp_output_dir, fake_census,
+    temp_output_dir, fake_trace,
 ):
-    """Archive entries' paths are live. Their sibling sidecar
-    (`.xisf.json`) and tile pyramid (`_tiles.tiff`) are also live so
-    the sweep doesn't strand them when a primary is preserved."""
+    """An ARCHIVED item is traced exactly like a live cart item — archived
+    means "don't recompute me", never "you may delete my images". Its sidecar
+    and tile pyramid come along so a preserved primary is never stranded."""
     primary = temp_output_dir / "mosaic" / "preserved.xisf"
     sidecar = temp_output_dir / "mosaic" / "preserved.xisf.json"
     tile = temp_output_dir / "mosaic" / "preserved_tiles.tiff"
     _make_file(primary); _make_file(sidecar); _make_file(tile)
 
-    context.archive = [("mosaic", "abc", "P", [str(primary)])]
+    context.archive = [("mosaic", "abc", "P")]
+    fake_trace["live"] = [str(primary)]
 
     live = orphan_sweep.live_set(context)
 
@@ -95,31 +93,37 @@ def test_live_set_includes_archive_paths_and_their_siblings(
     assert str(tile) in live
 
 
-def test_live_set_includes_census_paths(temp_output_dir, fake_census):
-    """The runtime census contributes its landed paths to the live set."""
+def test_live_set_includes_traced_paths(temp_output_dir, fake_trace):
+    """A cart item's traced paths are the live set."""
     live_path = temp_output_dir / "stack" / "master.xisf"
     _make_file(live_path)
-    fake_census["paths"] = [str(live_path)]
+    context.shopping_cart = [("stack", "s1", "P")]
+    fake_trace["live"] = [str(live_path)]
 
     live = orphan_sweep.live_set(context)
 
     assert str(live_path) in live
 
 
-def test_live_set_raises_without_census(temp_output_dir):
-    """No complete runtime census → live_set raises rather than silently
-    sweeping against an incomplete picture (fail-fast). The test durable
-    cache holds no census, so the real read path raises."""
+def test_live_set_raises_on_unresolvable_cart_item(temp_output_dir, monkeypatch):
+    """An item whose trace fails must RAISE, never drop silently out of the
+    live set — dropping it would condemn all of its outputs as orphans."""
+    import dependency_graph.trace_paths as tp
     from dependency_graph.trace_paths import TraceResolutionError
     _make_file(temp_output_dir / "stack" / "stranded.xisf")
+    context.shopping_cart = [("stack", "s1", "P")]
+
+    def boom(item, *a, **kw):
+        raise TraceResolutionError("unresolvable")
+    monkeypatch.setattr(tp, "traced_paths_for", boom)
 
     with pytest.raises(TraceResolutionError):
         orphan_sweep.live_set(context)
 
 
-def test_sweep_refuses_when_live_set_empty(temp_output_dir, fake_census):
-    """Defensive floor: a complete-but-empty census with an empty archive
-    yields an empty live set. sweep() must NOT treat every file under
+def test_sweep_refuses_when_live_set_empty(temp_output_dir, fake_trace):
+    """Defensive floor: an empty cart and archive yield an empty live set.
+    sweep() must NOT treat every file under
     output_dir as an orphan — it returns skipped_empty_live and deletes
     nothing."""
     orphan = _make_file(temp_output_dir / "stack" / "would_be_wiped.xisf")
@@ -131,32 +135,34 @@ def test_sweep_refuses_when_live_set_empty(temp_output_dir, fake_census):
     assert orphan.exists()  # nothing deleted
 
 
-def test_sweep_deletes_orphans_when_census_defines_live(
-    temp_output_dir, fake_census,
+def test_sweep_deletes_orphans_when_trace_defines_live(
+    temp_output_dir, fake_trace,
 ):
     """With a non-empty live set, delete=True unlinks orphans while sparing
-    the census-landed file — the empty-live floor doesn't block cleanup."""
+    the traced file — the empty-live floor doesn't block cleanup."""
     live = _make_file(temp_output_dir / "stack" / "keep.xisf")
     orphan = _make_file(temp_output_dir / "stack" / "drop.xisf")
-    fake_census["paths"] = [str(live)]
+    context.shopping_cart = [("stack", "s1", "P")]
+    fake_trace["live"] = [str(live)]
 
     report = orphan_sweep.sweep(context, delete=True)
 
     assert report["skipped_empty_live"] is False
-    assert live.exists()        # census-landed → live, spared
+    assert live.exists()        # traced → live, spared
     assert not orphan.exists()  # unreferenced → deleted
     assert report["deleted"] >= 1
 
 
-def test_full_sweep_classifies_correctly(temp_output_dir, fake_census):
-    """End-to-end: the census lands one master, archive preserves another,
-    a third file is neither — only the third shows up as an orphan."""
-    census_path = _make_file(temp_output_dir / "a" / "landed.xisf")
+def test_full_sweep_classifies_correctly(temp_output_dir, fake_trace):
+    """End-to-end: the trace covers a cart item and an archived one; a third
+    file is in neither — only the third shows up as an orphan."""
+    cart_path = _make_file(temp_output_dir / "a" / "landed.xisf")
     archive_path = _make_file(temp_output_dir / "b" / "archive.xisf")
     orphan_path = _make_file(temp_output_dir / "c" / "orphan.xisf")
 
-    fake_census["paths"] = [str(census_path)]
-    context.archive = [("mosaic", "2", "P", [str(archive_path)])]
+    context.shopping_cart = [("stack", "s1", "P")]
+    context.archive = [("mosaic", "2", "P")]
+    fake_trace["live"] = [str(cart_path), str(archive_path)]
 
     live = orphan_sweep.live_set(context)
     orphans, _ = orphan_sweep.walk_and_classify(temp_output_dir, live)
@@ -178,7 +184,7 @@ def test_walk_and_classify_with_no_output_dir_returns_empty():
     assert by_dir == {}
 
 
-def test_include_scopes_to_named_dirs(temp_output_dir, fake_census):
+def test_include_scopes_to_named_dirs(temp_output_dir, fake_trace):
     """--include restricts classification to the named op directories;
     files outside are neither live nor orphan, just ignored."""
     included = _make_file(temp_output_dir / "place_image" / "a.tiff")
@@ -378,15 +384,11 @@ def test_orion_mosaic_trace_matches_disk_and_archive_lifecycle(test_context) -> 
         )
 
     # --- Phase 3: sweep classifies correctly --------------------------
-    # Census semantics (Phase 1b): liveness is what the last COMPLETE pass
-    # LANDED, so removing the item from the cart doesn't retire its files
-    # until a pass runs WITHOUT it. Re-run here to refresh the census; the
-    # archived finals stay live through the archive entry, and the
-    # intermediates — untouched by this pass — become orphans.
-    # `store_census=True`: opt-in for the AUTHORITATIVE full-graph run
-    # (production: the StateActor pass) — which is exactly what this
-    # simulates; without it live_set correctly refuses to sweep.
-    run_graph(build_compute_graph(), store_census=True)
+    # Trace semantics (2026-08-17): liveness is what the TRACE says should
+    # exist for the cart plus the archive, so removing an item from the cart
+    # retires its files IMMEDIATELY — no pass has to run first. The archived
+    # finals stay live because an archived item is traced like any other; the
+    # intermediates, referenced by nothing, become orphans.
 
     live = orphan_sweep.live_set(context)
     orphans, _by_dir = orphan_sweep.walk_and_classify(

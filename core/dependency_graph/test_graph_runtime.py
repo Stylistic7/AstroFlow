@@ -357,8 +357,6 @@ class TestVersionSupersede:
         assert calls == []                      # unmapped node: no supersede
         rt.node_completed(B, SimpleNamespace(filename="/out/RUNTIME_b.tiff"))
         assert calls == [(("product_versions", "x"), "/out/RUNTIME_b.tiff")]
-        # Both landings feed the runtime census ("ra" is a str-path result).
-        assert rt.landed_paths == {"ra", "/out/RUNTIME_b.tiff"}
 
     def test_supersede_skipped_on_failure_and_sentinels(self, monkeypatch):
         from dependency_graph.graph_runtime import Skipped
@@ -374,10 +372,8 @@ class TestVersionSupersede:
         rt.node_failed(A, RuntimeError("boom"))
         rt.node_completed(B, Skipped)   # sentinel: no filename/path → no call
         assert calls == []
-        assert rt.landed_paths == set()
         # A failure or skip makes the census an incomplete picture of what's
         # live — storing it would condemn real files as orphans.
-        assert rt.census_sound is False
 
 
     def test_child_subgraph_map_merges_into_root(self, monkeypatch):
@@ -402,38 +398,5 @@ class TestVersionSupersede:
         child = rt._children[parent_node]
         child.node_completed(C, SimpleNamespace(filename="/out/RUNTIME_c.tiff"))
         assert calls == [(("product_versions", "c"), "/out/RUNTIME_c.tiff")]
-        # Child landings surface into the ROOT census.
-        assert "/out/RUNTIME_c.tiff" in rt.landed_paths
 
 
-class TestRuntimeCensus:
-    """The census is a DELETION authority (the orphan sweep's live-set), so
-    it may only be stored from a complete, failure-free pass."""
-
-    def test_census_collects_landings_and_starts_sound(self):
-        from types import SimpleNamespace
-        A = _node(a_task)
-        rt = GraphRuntime(Graph({A: []}))
-        assert rt.census_sound is True
-        rt.node_completed(A, SimpleNamespace(filename="/out/a.tiff"))
-        assert rt.landed_paths == {"/out/a.tiff"}
-        assert rt.census_sound is True
-
-    def test_child_failure_unsounds_the_root_census(self, monkeypatch):
-        """A child-subgraph failure surfaces as a FAILED parent node, never
-        a never-run one — so only the `_mark_done` chokepoint can see it.
-        Without this, a census stored after a failed subgraph would condemn
-        that subgraph's still-live outputs as orphans."""
-        parent_node = _node(a_task)
-        rt = GraphRuntime(Graph({parent_node: []}))
-        C, done = _node(c_task), _node(gather_task)
-        monkeypatch.setattr(
-            "dependency_graph.dependency_graph._apply_preflight",
-            lambda g, is_subgraph=False: g,
-        )
-        rt.start(parent_node)
-        rt.node_completed(parent_node, Graph({done: [C]}))
-
-        child = rt._children[parent_node]
-        child.node_failed(C, RuntimeError("boom"))
-        assert rt.census_sound is False   # root sees the child's failure

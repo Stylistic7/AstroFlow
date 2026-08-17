@@ -1,11 +1,13 @@
 """CLI over `cache.orphan_sweep` — dry-run report of orphaned pipeline outputs,
 or `--delete` to unlink them.
 
-In normal operation you never run this by hand: the app prunes superseded
-display-product versions per-build and runs the global reconciliation
-automatically at pipeline-completion (see `cache/orphan_sweep.py` and the
-`state_machine` completion hook). This CLI stays as a manual/debugging entry
-point over the same core.
+MANUAL ONLY — run it when the long tail is worth reclaiming, ideally while the
+app is idle. The app never sweeps unattended (see `cache/orphan_sweep.py`).
+
+REQUIRES A RUNNING RAY CLUSTER. Liveness is now the TRACE, and tracing resolves
+entities out of the shared context, so this is no longer the Ray-free operation
+the census-based version was. Start the app first; "idle but up" is exactly the
+right moment anyway.
 
 Usage:
     python -m scripts.sweep_orphans            # dry-run
@@ -15,7 +17,7 @@ from __future__ import annotations
 
 import argparse
 
-from context import local_context
+from context import context
 from cache import orphan_sweep
 
 
@@ -40,7 +42,7 @@ def main() -> None:
         if args.include else None
     )
 
-    report = orphan_sweep.sweep(local_context, delete=args.delete, include=include)
+    report = orphan_sweep.sweep(context, delete=args.delete, include=include)
     orphans, by_dir = report["orphans"], report["by_dir"]
 
     if include is not None:
@@ -51,6 +53,21 @@ def main() -> None:
     print(f"{'op directory':<55}  {'live #':>7}  {'live GB':>8}  {'orph #':>7}  {'orph GB':>8}")
     for op_dir, b in sorted(by_dir.items(), key=lambda kv: -(kv[1][1] + kv[1][3])):
         print(f"{op_dir:<55}  {b[0]:>7}  {b[1]/1e9:>8.2f}  {b[2]:>7}  {b[3]/1e9:>8.2f}")
+
+    # A `delete_intermediates` subgraph reclaims its own interiors when its
+    # terminal completes. One surfacing here means that GC did not run — a bug
+    # to chase, not litter to shrug at — so it gets its own heading rather than
+    # blending into the orphan list.
+    leaks = report.get("scope_gc_leaks") or {}
+    if leaks:
+        total = sum(b[1] for b in leaks.values())
+        print(f"\n⚠️  SCOPE GC LEAK: {sum(b[0] for b in leaks.values())} files, "
+              f"{total / 1e9:.2f} GB")
+        print("    These live inside delete_intermediates scopes and should have "
+              "been reclaimed\n    when their terminal completed. Sweeping them "
+              "is a workaround, not the fix.")
+        for op, (n, b) in sorted(leaks.items(), key=lambda kv: -kv[1][1]):
+            print(f"      {op:<32} {n:>6} files  {b / 1e9:>7.2f} GB")
 
     print("\nLargest orphans:")
     for path, sz in sorted(orphans, key=lambda x: -x[1])[:20]:

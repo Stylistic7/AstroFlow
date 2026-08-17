@@ -111,10 +111,6 @@ _DURABLE_STR_KEYS = frozenset(
         # --- user curation (reason 1: an eviction loses user work) ---
         "shopping_cart",
         "archive",
-        # The orphan sweep's live-set: what the last COMPLETE pass landed
-        # (Phase 1b runtime ledger). Evicting it disables sweeping until the
-        # next full pass — durable so that never happens silently.
-        "runtime_live_census",
         "observing_plan",
         "asiair_device_nicknames",
         "asiair_known_labels",

@@ -178,11 +178,6 @@ class StateActor:
                 status_interval=5,
                 drain_event=self._drain_event,
                 node_sort_key=_filter_priority_hint,
-                # THE authoritative full-graph run: only this one may store
-                # the runtime census the orphan sweep deletes against. The
-                # regroup run below covers a handful of nodes and would
-                # otherwise overwrite it, condemning everything else on disk.
-                store_census=True,
             )
         except GraphCancelled:
             print("### Graph drained; restart already enqueued")

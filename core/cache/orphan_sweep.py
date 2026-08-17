@@ -1,17 +1,41 @@
 """Global orphan reconciliation for `context.output_dir` — the catch-all GC.
 
-The live set (Phase 1b — RUNTIME truth, no trace predictions) is the union of:
-  * the **runtime census**: every path the last COMPLETE pass actually landed
-    (hits and misses alike), collected at `_mark_done` and stored durably at
-    run completion. This replaced trace-based prediction after predictions
-    were proven to diverge from runtime landings (phantoms pinned, real
-    files condemned). No complete census → the sweep refuses to run.
-  * every path preserved in `context.archive`;
+THE TRACE IS THE AUTHORITY (2026-08-17). The live set is the union of:
+  * **every path traced for every cart item, including archived ones** — the
+    cart is the declaration of what should exist on disk. An archived item is
+    traced exactly like a live one; the only difference is that it is not added
+    to the compute graph that runs, so nothing recomputes it.
   * **every path any product_versions log references, unconditionally** — the
-    log is now written only at landings, so its entries are real files.
+    log is written only at landings, so its entries are real files.
   * plus each primary's `.json` sidecar and `<stem>_tiles.tiff` pyramid.
 
 Anything under `output_dir` not in the live set is an orphan.
+
+WHY THE RUNTIME CENSUS IS GONE. It recorded what the last COMPLETE pass landed,
+and was introduced because early trace predictions "diverged from runtime
+landings (phantoms pinned, real files condemned)". But those are two different
+failure modes, and only one is dangerous:
+
+  * a phantom pin is BENIGN — the sweep just declines to delete something;
+  * condemning a real file is FATAL — and that came from the trace
+    UNDER-covering, not from prediction being wrong in principle.
+
+A trace-based live set OVER-pins (it names files that do not exist yet), which
+is the safe direction. The census UNDER-pins (it knows only one pass), which is
+why it needed a completeness guard — and that guard deadlocked: a failed run
+stores no census, so the sweep spared everything and freed nothing, exactly when
+space was needed. Worse, an intermediate the scope GC failed to reclaim was
+recorded as "landed" and thereby pinned live FOREVER (measured: 458 leaked
+`place_image` files, 907 MB, unsweepable by construction).
+
+Measured before the switch, tracing every cart item: 2,717 live paths, 0 trace
+failures, and every file on disk accounted for except genuinely superseded
+products and the leaked interiors above.
+
+SCOPE INTERIORS. A `delete_intermediates` subgraph is responsible for cleaning
+up after itself; its interiors are deliberately absent from the trace. So an
+interior appearing as an orphan here is a SCOPE GC BUG, not routine litter, and
+`sweep` reports it as such rather than quietly reclaiming it.
 
 This is the extracted, callable core: `sweep(ctx, delete=...)` —
 `scripts/sweep_orphans.py` is a thin CLI over it, and that CLI is the ONLY
@@ -65,28 +89,60 @@ def _pinned_versions() -> set[str]:
     return out
 
 
+#: Dispatched over every mosaic by `compute_graph.build_preview_graph`, whose
+#: own comment states the semantics: "every mosaic is implicitly in the cart
+#: with the Subframe pipeline". It writes real files (`merge_images_subframe`,
+#: `store_mosaic_color_channel_subframe` both publish through `filename_fn`), so
+#: the live set must include it or the sweep reclaims ~2 GB of previews that
+#: nothing asked to delete.
+_IMPLICIT_MOSAIC_PIPELINES = ("Subframe",)
+
+
+def _cart_items(ctx) -> "list[tuple]":
+    """Every `(object_type, object_id, pipeline)` whose outputs must survive.
+
+    The cart is the declaration of what should exist on disk, and it has three
+    sources — all traced identically:
+
+      * the shopping cart;
+      * the ARCHIVE. Archived means "don't recompute me", never "you may delete
+        my images", so an archived item pins its outputs exactly like a live
+        one. That is the whole difference: archive entries stay out of the
+        compute graph that runs, and stay in the live set.
+      * the IMPLICIT per-mosaic pipelines above.
+    """
+    items: set[tuple] = set()
+    for src in (ctx.shopping_cart or [], ctx.archive or []):
+        for entry in src:
+            if entry is None:
+                continue
+            t = tuple(entry)
+            if len(t) >= 3:
+                items.add(tuple(str(x) for x in t[:3]))
+    for mosaic_id in (ctx.mosaics or {}):
+        for pipeline in _IMPLICIT_MOSAIC_PIPELINES:
+            items.add(("mosaic", str(mosaic_id), pipeline))
+    return sorted(items)
+
+
 def live_set(ctx) -> set[str]:
-    """Union of the runtime census + archive-preserved primaries (with
-    siblings) and the versioning-pinned entries. Raises
-    `TraceResolutionError` when no COMPLETE census exists — fail loud
-    rather than delete against an incomplete picture."""
-    # Phase 1b: liveness = the RUNTIME CENSUS — every path the last COMPLETE
-    # pass actually landed (hits and misses alike), stored at run completion.
-    # Trace predictions are gone from this set: they proved to diverge from
-    # runtime landings (phantom paths pinned, real files condemned), which
-    # made the old trace-based live-set the most dangerous code in the
-    # system. No census, or an incomplete one → refuse to sweep at all.
-    from context.cache import get_durable_cache
-    census = get_durable_cache().get("runtime_live_census")
-    if not (isinstance(census, dict) and census.get("complete")):
-        raise TraceResolutionError(
-            "no complete runtime census available — run a full pass to "
-            "completion first; sweeping against predictions is forbidden"
-        )
-    primaries: set[str] = set(census.get("paths", []))
-    for entry in (ctx.archive or []):
-        if len(entry) >= 4:  # (object_type, object_id, pipeline, [paths])
-            primaries.update(str(p) for p in entry[3])
+    """Every path the trace says should exist, plus version-log pins.
+
+    Traced STRICTLY: an unresolvable cart item raises `TraceResolutionError`
+    rather than silently dropping out of the live set — a dropped item would
+    condemn all of its outputs as orphans. That refusal is the one guard that
+    matters now the census is gone, and it is the reason this is safe to run at
+    any time: the sweep either knows the whole live set or does nothing.
+    """
+    from dependency_graph.trace_paths import traced_paths_for
+
+    primaries: set[str] = set()
+    for item in _cart_items(ctx):
+        # strict=True: raises TraceResolutionError rather than returning [].
+        for entry in traced_paths_for(item, strict=True):
+            p = entry.get("path")
+            if p:
+                primaries.add(str(p))
 
     live: set[str] = set()
     for p in primaries:
@@ -99,7 +155,6 @@ def live_set(ctx) -> set[str]:
 def walk_and_classify(
     output_dir: "str | Path | None", live: set[str],
     include: "set[str] | None" = None,
-    spare_newer_than: "float | None" = None,
 ) -> "tuple[list[tuple[str, int]], dict[str, list[int]]]":
     """Single walk of `output_dir`: classify each file live/orphan and bucket by
     parent dir (rel to `output_dir`). Returns `(orphans, by_dir)` where
@@ -107,12 +162,7 @@ def walk_and_classify(
     `include` is non-empty, dirs not in it are skipped (not classified, not
     swept).
 
-    `spare_newer_than` (the census timestamp): a file with mtime at or after
-    it POSTDATES the deletion authority's knowledge — e.g. a merge that
-    landed in the pass AFTER the census was stored — and counts as live.
-    A future census will judge it; condemning it now would delete brand-new
-    deliverables (the exact hazard observed with the R channel regenerating
-    minutes after the first census, 2026-08-11)."""
+    `include` limits the walk to named op dirs; everything else is untouched."""
     orphans: list[tuple[str, int]] = []
     by_dir: dict[str, list[int]] = {}
     if output_dir is None:
@@ -132,11 +182,6 @@ def walk_and_classify(
             except OSError:
                 continue
             is_live = full in live
-            if not is_live and spare_newer_than is not None:
-                try:
-                    is_live = os.path.getmtime(full) >= spare_newer_than
-                except OSError:
-                    is_live = True   # vanished/unreadable → never condemn
             if is_live:
                 bucket[0] += 1
                 bucket[1] += sz
@@ -168,14 +213,10 @@ def sweep(ctx, delete: bool = False, include: "set[str] | None" = None) -> dict:
         return {
             "orphans": [], "by_dir": {}, "live_count": 0,
             "reclaimable_bytes": 0, "deleted": 0, "skipped_empty_live": True,
+            "scope_gc_leaks": {},
         }
-    # Spare anything newer than the census: it postdates the deletion
-    # authority's knowledge (see walk_and_classify).
-    from context.cache import get_durable_cache
-    census = get_durable_cache().get("runtime_live_census") or {}
-    census_ts = census.get("ts")
-    orphans, by_dir = walk_and_classify(
-        ctx.output_dir, live, include, spare_newer_than=census_ts)
+    orphans, by_dir = walk_and_classify(ctx.output_dir, live, include)
+    leaks = scope_gc_leaks(orphans)
     deleted = 0
     if delete:
         for path, _ in orphans:
@@ -191,4 +232,28 @@ def sweep(ctx, delete: bool = False, include: "set[str] | None" = None) -> dict:
         "reclaimable_bytes": sum(sz for _, sz in orphans),
         "deleted": deleted,
         "skipped_empty_live": False,
+        "scope_gc_leaks": leaks,
     }
+
+
+# Ops whose outputs live INSIDE a `delete_intermediates` scope. The scope is
+# responsible for reclaiming them when its terminal completes, so one showing up
+# as an orphan means that GC did not run — a bug to fix, not litter to sweep.
+# (Measured 2026-08-17: 458 leaked `place_image` files from runs predating the
+# 2026-08-11 scope GC. `crop_panel` was clean, which is what proves the
+# machinery works when it runs.)
+SCOPE_INTERIOR_OPS = frozenset({"place_image", "crop_panel"})
+
+
+def scope_gc_leaks(orphans: "list[tuple[str, int]]") -> "dict[str, list[int]]":
+    """`{op: [count, bytes]}` for orphans that a scope GC should already have
+    reclaimed. Reported separately so a GC regression is visible rather than
+    silently absorbed by the sweep."""
+    out: dict[str, list[int]] = {}
+    for path, sz in orphans:
+        op = os.path.basename(os.path.dirname(path))
+        if op in SCOPE_INTERIOR_OPS:
+            b = out.setdefault(op, [0, 0])
+            b[0] += 1
+            b[1] += sz
+    return out

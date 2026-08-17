@@ -280,34 +280,6 @@ class GraphRuntime:
         """Get results from this node's dependencies."""
         return [self.results[dep] for dep in self._graph.get(node, [])]
 
-    @property
-    def landed_paths(self) -> set:
-        """RUNTIME census: the primary path of every successful completion
-        (hits and misses alike) this run, collected at `_mark_done` and
-        shared root-wide. Stored durably at full-run completion as the
-        orphan sweep's live-set — the single ledger of what the runtime
-        actually touched, replacing trace predictions (Phase 1b)."""
-        root = self._root
-        if not hasattr(root, "_landed_paths"):
-            root._landed_paths = set()
-        return root._landed_paths
-
-    @property
-    def census_sound(self) -> bool:
-        """False once ANY node in ANY runtime (this one or a child) failed
-        or was Skipped this run.
-
-        A census is a DELETION authority: files not in it are orphans. A
-        failed or skipped node contributes no landed path, yet its output
-        may well exist on disk from an earlier run and still be live — so
-        one failure anywhere makes the census unsafe to store. Set at the
-        `_mark_done` chokepoint, which every runtime funnels through, so
-        child-subgraph failures count too (the root graph alone can't see
-        them: a child's failure surfaces as a FAILED parent node, never as
-        a never-run one)."""
-        root = self._root
-        return getattr(root, "_census_sound", True)
-
     def make_fn_args(self, node: Node) -> list[Any]:
         """Build the argument list for a node's remote function.
 
@@ -350,27 +322,20 @@ class GraphRuntime:
                 self._ready.add(dependent)
 
 
-        # Graceful N/N-1, rebased on RUNTIME truth (Phase 1b): the landed
-        # path comes from the node's ACTUAL result, never a prediction.
-        # `supersede` records the landed entry as the product's current
-        # version and deletes every other logged version's files — the only
-        # deletion moment where supersession is a local fact. Best-effort:
-        # a versioning hiccup must never fail the run. Every landed path
-        # also feeds the run's census (`landed_paths`) — the runtime ledger
-        # the orphan sweep's live-set is built from.
-        if not succeeded:
-            # Failure or Skipped sentinel: the census can no longer claim to
-            # be a complete picture of what's live (see `census_sound`).
-            # Name every offender — passes were failing census soundness for
-            # DAYS with no way to see which node was responsible.
-            print(f"### census poisoned by {node.name} "
-                  f"({node.task._function.__name__}): "
-                  f"result={type(result).__name__}")
-            self._root._census_sound = False
+        # Graceful N/N-1, rebased on RUNTIME truth: the landed path comes from
+        # the node's ACTUAL result, never a prediction. `supersede` records the
+        # landed entry as the product's current version and deletes every other
+        # logged version's files — the only deletion moment where supersession
+        # is a local fact. Best-effort: a versioning hiccup must never fail the
+        # run.
+        #
+        # No runtime census is collected here any more (2026-08-17): the orphan
+        # sweep's live set is the TRACE, which over-pins (safe) where a census
+        # under-pins (needs a completeness guard, and deadlocks without one).
+        # See cache/orphan_sweep.py.
         if succeeded:
             landed = _landed_path(result)
             if landed is not None:
-                self._root.landed_paths.add(landed)
                 key = self._root._version_supersede.get(node)
                 if key is not None:
                     try:
