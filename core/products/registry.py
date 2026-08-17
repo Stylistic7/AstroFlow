@@ -382,16 +382,39 @@ def _publish_with_presentations(
     staging = source.with_name(
         f".{source.stem}.staging.{os.getpid()}{source.suffix}")
     os.replace(source, staging)          # unpublish — atomic, instant
+    published = staging                  # what will finally land at `source`
+    scratch = None
     try:
         _stamp_header(staging, call_hash, image_type, args)
         # `_make_tile_pyramid` swallows+logs build failures by design (the
         # pyramid is optional; failing must not discard the expensive master).
-        _make_tile_pyramid(staging, dest=pyramid_path_for(source))
+        if _pyramid_is_the_payload(staging):
+            # THE PYRAMID IS THE PAYLOAD (2026-08-17). A pyramidal TIFF's page 0
+            # is bit-identical to the planar master — verified maxdiff 0.0 at
+            # five crops, image-description preserved — so storing both wastes
+            # ~265 GB at full build. Build it beside the staging file and land
+            # THAT as the product; no `_tiles.tiff` sibling is written.
+            #
+            # The I/O is identical to what already happened: this same
+            # read-back-and-write-pyramid ran every publish, just to a sibling
+            # path. Only the destination and the discarded planar copy differ.
+            scratch = staging.with_name(staging.name + ".pyr")
+            _make_tile_pyramid(staging, dest=scratch)
+            if scratch.exists() and scratch.stat().st_size > 0:
+                published = scratch
+        else:
+            _make_tile_pyramid(staging, dest=pyramid_path_for(source))
     finally:
         # ALWAYS republish, even if stamping or the pyramid raised. Otherwise
         # the payload is stranded under its dot-name and the product vanishes
-        # entirely — strictly worse than a missing pyramid.
-        os.replace(staging, source)      # payload lands LAST
+        # entirely — strictly worse than a missing pyramid. On the pyramidal
+        # path a failed build leaves `published is staging`, so the planar
+        # master lands and the product is still correct, just unpyramided.
+        os.replace(published, source)    # payload lands LAST
+        if published is not staging:
+            staging.unlink(missing_ok=True)
+        elif scratch is not None:
+            scratch.unlink(missing_ok=True)
 
 
 def _generate_presentations(
@@ -408,6 +431,26 @@ def _generate_presentations(
     if result is None:
         return
     _make_tile_pyramid(result)
+
+
+def _pyramid_is_the_payload(source: Path) -> bool:
+    """Whether this product should BE its pyramid rather than have one.
+
+    True only for TIFF display taps. Two exclusions, both deliberate:
+
+      * NON-DISPLAY TIFFs (crop_panel, bxt_correct, sxt_starless, nxt, ...) get
+        no pyramid at all today, and giving them one would ADD ~156 GB of mip
+        levels nobody reads. `needs_display_pyramid` already draws that line.
+        It also keeps the rc-astro inputs planar: `crop_panel` feeds BXT/SXT/NXT
+        as CLI tools whose tiled-TIFF support is unverified, and PixInsight —
+        measured 2026-08-17 — silently returns ZERO windows on tiled input.
+      * NON-TIFF payloads (FITS) keep a sibling pyramid; a TIFF pyramid cannot
+        be the payload for a format the pipeline must hand to other tools.
+        (XISF needs no pyramid at all — see `file_io/xisf_mmap`.)
+    """
+    from previews.create_tile_pyramid import needs_display_pyramid
+    return (source.suffix.lower() in (".tif", ".tiff")
+            and needs_display_pyramid(source))
 
 
 def _make_tile_pyramid(result, dest: "Path | None" = None) -> "Path | None":

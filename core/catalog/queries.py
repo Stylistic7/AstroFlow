@@ -166,6 +166,13 @@ def viewable_from_master(master: "str | Path | None") -> "Path | None":
     tiff = pyramid_path_for(master)
     if tiff.exists():
         return tiff
+    # THE PAYLOAD MAY BE ITS OWN PYRAMID (2026-08-17): display-tap TIFFs are
+    # now written pyramidal, so there is no `_tiles.tiff` sibling to find. A
+    # tiled multi-page TIFF serves exactly like one — same pages, same tiles —
+    # because page 0 IS the master. See `products.registry._pyramid_is_the_payload`.
+    from file_io.planar import is_tiled_tiff
+    if is_tiled_tiff(master):
+        return master
     # Fall back to the master ONLY when it is its own display artifact — an
     # already-display-ready uint8 tiff (the Subframe previews), which the tile
     # route's `uchar` branch rescales /255. A float master must NEVER be

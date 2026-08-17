@@ -60,15 +60,20 @@ def _run(master, monkeypatch, pyramid_side_effect=None, record=None):
 
 
 class TestOrdering:
-    def test_pyramid_lands_before_payload(self, master, monkeypatch):
+    def test_payload_lands_last_and_is_the_pyramid(self, master, monkeypatch):
+        """Since 2026-08-17 a TIFF display tap IS its pyramid, so there is no
+        sibling to land first — the ordering hazard this file was written for
+        cannot exist for these products. What still matters: the payload lands
+        LAST, so a reader never sees the parked dot-name."""
         record = []
         _run(master, monkeypatch, record=record)
         replaces = [n for kind, n in record if kind == "replace_to"]
-        # unpublish (dot-name), then the payload republish last
         assert replaces[0].startswith(".abc123.staging"), replaces
         assert replaces[-1] == "abc123.tiff", replaces
-        pyr = master.with_name("abc123_tiles.tiff")
-        assert pyr.exists(), "pyramid was not written"
+        assert not master.with_name("abc123_tiles.tiff").exists(), (
+            "a TIFF display tap must NOT get a sibling pyramid — the payload is one"
+        )
+        assert master.exists()
 
     def test_pyramid_is_built_from_the_parked_payload(self, master, monkeypatch):
         record = []
@@ -117,3 +122,70 @@ class TestNonFileResults:
         p.write_bytes(b"")
         assert registry._result_path(p) == p
         assert registry._result_path(np.zeros(3)) is None
+
+
+class TestPyramidIsThePayload:
+    """A TIFF display tap IS its pyramid (2026-08-17): page 0 is bit-identical
+    to the planar master, so storing both wasted ~265 GB at full build."""
+
+    def test_published_tiff_is_tiled_and_pixel_identical(self, tmp_path, monkeypatch):
+        """The real build, not the fake one — the whole claim is that page 0
+        survives the conversion unchanged."""
+        import pyvips
+        from file_io.planar import is_tiled_tiff
+        a = (np.arange(300 * 200, dtype="float32").reshape(200, 300) / 1e4)
+        p = tmp_path / "store" / "abc123.tiff"
+        p.parent.mkdir(parents=True)
+        pyvips.Image.new_from_memory(a.tobytes(), 300, 200, 1, "float").tiffsave(str(p))
+
+        monkeypatch.setattr(registry, "_stamp_header", lambda *a, **k: None)
+        registry._publish_with_presentations(p, "abc123", None, ())
+
+        assert is_tiled_tiff(p), "payload should have been written pyramidal"
+        assert not p.with_name("abc123_tiles.tiff").exists()
+        page0 = pyvips.Image.tiffload(str(p), page=0)
+        got = np.ndarray(buffer=page0.write_to_memory(), dtype="float32",
+                         shape=(page0.height, page0.width))
+        assert np.array_equal(got, a)
+        assert int(page0.get("n-pages")) > 1
+
+    def test_uint8_preview_stays_planar(self, tmp_path, monkeypatch):
+        """Non-display TIFFs must NOT become pyramidal: they get no pyramid
+        today, and adding mip levels to ~445 GB of intermediates would ADD
+        ~156 GB. It also keeps rc-astro's inputs planar."""
+        import pyvips
+        from file_io.planar import is_tiled_tiff
+        u = np.arange(300 * 200, dtype="uint8").reshape(200, 300)
+        p = tmp_path / "store" / "preview.tiff"
+        p.parent.mkdir(parents=True)
+        pyvips.Image.new_from_memory(u.tobytes(), 300, 200, 1, "uchar").tiffsave(str(p))
+
+        monkeypatch.setattr(registry, "_stamp_header", lambda *a, **k: None)
+        registry._publish_with_presentations(p, "abc123", None, ())
+
+        assert not is_tiled_tiff(p), "a non-display tiff must stay planar"
+        assert p.exists()
+
+    def test_failed_pyramid_build_still_publishes_the_planar_master(
+        self, master, monkeypatch,
+    ):
+        """A build failure must never lose the expensive master: `published`
+        stays the staging file, so the planar payload lands unpyramided rather
+        than the product vanishing."""
+        _run(master, monkeypatch, pyramid_side_effect=RuntimeError("boom"))
+        assert master.exists(), "payload must survive a failed pyramid build"
+
+    def test_no_scratch_file_is_left_behind(self, tmp_path, monkeypatch):
+        """The `.pyr` scratch must not survive — an orphan beside every product
+        would be the staging-leak class all over again."""
+        import pyvips
+        a = (np.arange(300 * 200, dtype="float32").reshape(200, 300) / 1e4)
+        p = tmp_path / "store" / "abc123.tiff"
+        p.parent.mkdir(parents=True)
+        pyvips.Image.new_from_memory(a.tobytes(), 300, 200, 1, "float").tiffsave(str(p))
+
+        monkeypatch.setattr(registry, "_stamp_header", lambda *a, **k: None)
+        registry._publish_with_presentations(p, "abc123", None, ())
+
+        leftovers = [f.name for f in p.parent.iterdir() if f.name != "abc123.tiff"]
+        assert leftovers == [], leftovers
