@@ -26,7 +26,7 @@ from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
 from stacks.calibration_selection import calibration_plan
 from stacks.composite_stack import Stack
-from stacks.downscale import downscale_stack
+from stacks.downscale import downscale_stack, downscale_dest_dir
 from stacks.post_processing.pixinsight import post_process_stack
 from stacks.stacking.pixinsight import stack_files
 from targets.merging.pixinsight import merge_target_channel
@@ -38,11 +38,12 @@ def _post_processed_master(stack, config):
     """Downscale every stack (cal AND light) by 8×, then stack +
     post-process. Same structure as PI Downscaled."""
     steps, top_ids = calibration_plan(stack, config)
+    _dsdir = downscale_dest_dir()
     masters = {}
     for cs, dep_ids in steps:
         masters[str(cs.stable_hash)] = stack_files(
-            downscale_stack(8, cs), config, *(masters[i] for i in dep_ids))
-    s_downscaled = downscale_stack(8, stack)
+            downscale_stack(8, _dsdir, cs), config, *(masters[i] for i in dep_ids))
+    s_downscaled = downscale_stack(8, _dsdir, stack)
     master = stack_files(
         s_downscaled, config, *(masters[i] for i in top_ids))
     return post_process_stack(s_downscaled, config, master)

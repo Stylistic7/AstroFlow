@@ -29,7 +29,7 @@ def _downsample_of(arguments) -> str:
 
 def _solution(filename) -> "plate_solving.PlateSolution":
     return plate_solving.PlateSolution(
-        image_filename=str(filename), header={"CRVAL1": 311.5, "CRVAL2": 30.7},
+        header={"CRVAL1": 311.5, "CRVAL2": 30.7},
         num_stars=42, center=(311.5, 30.7), image_scale=1.2,
         rotation_angle=0.1,
     )

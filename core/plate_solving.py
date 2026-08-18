@@ -33,7 +33,6 @@ class PlateSolveFailedException(Exception):
 
 @dataclass(frozen=True)
 class PlateSolution:
-    image_filename: str
     header: dict
     num_stars: int
     center: tuple[Degrees, Degrees]
@@ -149,7 +148,6 @@ def _solve_field(
             try:
                 num_stars = get_num_stars(axy_file)
                 soln = PlateSolution(
-                    image_filename=str(filename),
                     header=header,
                     center=get_center(header),
                     image_scale=get_image_scale(header),
@@ -203,7 +201,12 @@ def _plate_solution_from_obj(obj: dict[str, Any]) -> PlateSolution:
         d["image_scale"] = ArcsecondsPerPixel(d["image_scale"])
     if "rotation_angle" in d and d["rotation_angle"] is not None:
         d["rotation_angle"] = Radians(d["rotation_angle"])
+    # Sidecars are write-once and never rewritten, so every one already on
+    # disk still carries `image_filename` — an absolute path that nothing
+    # ever read. Dropping it here is the same move `footprint` needed when
+    # it was removed; without it every historical sidecar raises TypeError.
     d.pop("footprint", None)
+    d.pop("image_filename", None)
     return PlateSolution(**d)
 
 

@@ -326,15 +326,18 @@ def preview_graph_done() -> None:
     pass
 
 
-@node
+# A graph BUILDER, like `build_regroup_graph` — not a @node. It writes
+# `local_context.targets` so the Subframe pipeline body can resolve
+# `mosaic.targets` while its traces are built, and a side effect belongs in a
+# builder, never in a cached op: as a @node this write was SKIPPED on every
+# cache hit. Builders may read and write context; @node functions may not.
+# `code_version` went with the @node — it existed only to bust that cache.
+@ray.remote(num_cpus=0.1)
 def build_preview_graph(
     development_settings: DevelopmentSettings,
     min_frames_in_stack: int,
-    code_version: str,
     objects: Objects,
 ) -> Graph:
-    # `code_version` is a cache-key arg only (see build_main_processing_graph):
-    # any code change re-derives this cached preview graph.
     from decisions.settings import ProcessingConfig
     from cache.context_ref import ContextRef
 
@@ -859,7 +862,7 @@ def build_compute_graph() -> Graph:
         (build_main_processing_graph, dev, min_frames, overrides, shopping_cart, code_version): {regroup},
     }
     if not dev.skip_preview_graph:
-        graph[(build_preview_graph, dev, min_frames, code_version)] = {regroup}
+        graph[(build_preview_graph, dev, min_frames)] = {regroup}
 
     return Graph(graph)
 

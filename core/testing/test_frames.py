@@ -339,7 +339,6 @@ def make_synthetic_frames(
 
         if image_type == "Light" and not solvable:
             plate_solution = plate_solving.PlateSolution(
-                image_filename=fits_filename,
                 header=fits_header,
                 num_stars=num_stars,
                 center=(Degrees(center[0]), Degrees(center[1])),

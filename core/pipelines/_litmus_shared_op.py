@@ -13,7 +13,7 @@ dispatcher.
 from astroflow.pipeline import pipeline
 from stacks.calibration_selection import calibrate, calibration_plan
 from stacks.composite_stack import Stack
-from stacks.downscale import downscale_stack
+from stacks.downscale import downscale_stack, downscale_dest_dir
 from stacks.post_processing.pixinsight import post_process_stack
 from stacks.stacking.pixinsight import stack_files
 
@@ -32,10 +32,11 @@ def shared_op_test_downscaled(stack, config):
     # framework must distinguish the two calls via call_hash and
     # write to distinct files.
     steps, top_ids = calibration_plan(stack, config)
+    _dsdir = downscale_dest_dir()
     masters = {}
     for cs, dep_ids in steps:
         masters[str(cs.stable_hash)] = stack_files(
-            downscale_stack(8, cs), config, *(masters[i] for i in dep_ids))
-    s = downscale_stack(8, stack)
+            downscale_stack(8, _dsdir, cs), config, *(masters[i] for i in dep_ids))
+    s = downscale_stack(8, _dsdir, stack)
     master = stack_files(s, config, *(masters[i] for i in top_ids))
     return post_process_stack(s, config, master)

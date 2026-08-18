@@ -190,8 +190,25 @@ def _downscale_run(run: BaseRun, factor: int, dest_dir: Path) -> BaseRun:
     return dataclasses.replace(run, **overrides)
 
 
+def downscale_dest_dir() -> Path:
+    """Where `downscale_stack` scatters its derived frames.
+
+    Lives OUTSIDE the node on purpose. `downscale_stack` used to read
+    `context.output_dir` in its own body, which made its cached result
+    depend on a value its cache key could not see — the same shape of bug
+    that cost 2026-08-18 (a relocated library invalidated nothing). Callers
+    are pipelines and builders, which may read context; the resolved path
+    is then an ordinary literal argument and enters the call hash, so
+    moving `output_dir` correctly re-keys the derived frames.
+    """
+    from context import context
+    return Path(context.output_dir) / "downscale_stack"
+
+
 @node
-def downscale_stack(factor: int, stack: BaseStack) -> BaseStack:
+def downscale_stack(
+    factor: int, dest_dir: Path, stack: BaseStack
+) -> BaseStack:
     """Block-mean-downscale every frame in `stack` by `factor`.
 
     Returns a new Stack with the SAME `stable_hash` as the input
@@ -218,13 +235,12 @@ def downscale_stack(factor: int, stack: BaseStack) -> BaseStack:
 
     Pipeline-agnostic — works on `Stack` (light frames) and
     `CalibrationStack` (bias/dark/flat) the same way."""
-    from context import context
     from concurrent.futures import ThreadPoolExecutor
 
     if factor == 1:
         return stack
 
-    dest_dir = Path(context.output_dir) / "downscale_stack"
+    dest_dir = Path(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
     jobs = []
     for run in stack.contents.values():

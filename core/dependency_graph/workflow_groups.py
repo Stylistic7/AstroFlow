@@ -58,7 +58,7 @@ def workflow_group(fn=None, *, display_name: str | None = None):
             masters = {}
             for cs, dep_ids in steps:
                 masters[str(cs.stable_hash)] = stack_files(
-                    downscale_stack(8, cs), config,
+                    downscale_stack(8, dest_dir, cs), config,
                     *(masters[i] for i in dep_ids),
                 )
             return [masters[i] for i in top_ids]

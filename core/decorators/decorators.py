@@ -136,6 +136,61 @@ def _metadata_wrap(func, plate_solve=True):
     return wrapper
 
 
+def _assert_pure_of_context(func) -> None:
+    """A @node may not touch `context` — that is hidden state.
+
+    A node's cache key is computed from its ARGUMENTS. Anything the body
+    reads that is not an argument is invisible to the key, so the cached
+    result stops corresponding to the thing it is keyed on and no eviction
+    can notice. Anything it WRITES is worse: on a cache hit the body never
+    runs, so the side effect silently does not happen.
+
+    Passing a `ContextRef` as a PARAMETER is the supported idiom and is
+    pure — the ref carries its own content_hash, so the dependency is
+    declared and enters the call hash. Builders that must touch context are
+    `@ray.remote` (see `build_regroup_graph`), never `@node`.
+
+    Raised at decoration (import) time, so a violation is a load failure
+    rather than a wrong answer found hours into a run.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    try:
+        tree = ast.parse(textwrap.dedent(inspect.getsource(func)))
+    except (OSError, TypeError, SyntaxError, IndentationError):
+        return  # dynamically built function: nothing to inspect
+    fn = next(
+        (n for n in ast.walk(tree)
+         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+         and n.name == func.__name__),
+        None,
+    )
+    if fn is None:
+        return
+    params = {a.arg for a in fn.args.args} | {a.arg for a in fn.args.kwonlyargs}
+    if fn.args.vararg:
+        params.add(fn.args.vararg.arg)
+    if fn.args.kwarg:
+        params.add(fn.args.kwarg.arg)
+    for n in ast.walk(fn):
+        if isinstance(n, ast.ImportFrom) and (n.module or "").split(".")[0] == "context":
+            offence = f"`from {n.module} import ...` on line {n.lineno}"
+        elif isinstance(n, ast.Name) and n.id == "context" and "context" not in params:
+            offence = f"a reference to `context` on line {n.lineno}"
+        else:
+            continue
+        raise TypeError(
+            f"@node on {func.__name__!r} touches context: {offence}. A node's "
+            "cache key comes from its arguments, so context access is hidden "
+            "state the key cannot see (and a WRITE is skipped entirely on a "
+            "cache hit). Pass a ContextRef as a parameter instead — it carries "
+            "a content_hash and enters the call hash — or make this an "
+            "@ray.remote builder if it genuinely must touch context."
+        )
+
+
 class _Node:
     """Single decorator for cached Ray-remote ops.
 
@@ -258,6 +313,8 @@ class _Node:
                 f"@node on {func.__name__!r}: final=True and ephemeral=True "
                 "are contradictory — a deliverable is never reclaimed."
             )
+
+        _assert_pure_of_context(func)
 
         # ---- 2. Compute shared artifacts ------------------------------
         fn_hash = hash_source_code(func)
