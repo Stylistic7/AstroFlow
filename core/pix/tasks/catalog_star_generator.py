@@ -38,7 +38,7 @@ _DEFAULT_PARAMETERS: dict[str, str] = {
     # WCS source: read from the active view's astrometric solution.
     f"{_P}useImageMetadata": "true",
     # Catalog: the local Gaia DR3 XPSD database the user has under
-    # /Volumes/Astro/Catalogs/, registered as "Gaia DR3 (XPSD)" per
+    # /Volumes/AstroProcessed/Catalogs/, registered as "Gaia DR3 (XPSD)" per
     # AstronomicalCatalogs.jsh.
     f"{_P}catalogName": "Gaia DR3 (XPSD)",
     # Star magnitude bounds. Defaults chosen to bracket "detectable to

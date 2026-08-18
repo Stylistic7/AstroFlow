@@ -3,7 +3,7 @@
 Usage: `python -m scripts.backfill_tile_pyramids [ROOT] [--force] [--dry-run]`
 (run as a module from the `core/` working dir — it imports `previews`).
 
-Walks ROOT (default: the cache's `output_dir`, e.g. /Volumes/Astro/Processed)
+Walks ROOT (default: the cache's `output_dir`, e.g. /Volumes/AstroProcessed/Processed)
 and, for every linear master (`.xisf` / `.fits`), (re)writes its separate
 `<stem>_tiles.tiff` display pyramid — a *true* multi-resolution TIFF — via
 `default_make_tile_pyramid`.

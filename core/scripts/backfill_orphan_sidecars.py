@@ -29,7 +29,7 @@ from file_io.sidecar import get_section
 from metadata.image_metadata import compute_image_metadata
 
 
-PROCESSED_ROOT = Path("/Volumes/Astro/Processed")
+PROCESSED_ROOT = Path("/Volumes/AstroProcessed/Processed")
 
 
 def _needs_backfill(xisf_path: Path) -> bool:

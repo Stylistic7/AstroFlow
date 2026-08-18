@@ -10,7 +10,7 @@ from pix.tasks.js import execute_on_views
 _DEFAULT_PARAMETERS = {
     "useMARSDatabase": True,
     "marsDatabaseFiles": [
-        [True, "/Volumes/Astro/Catalogs/MARS-DR1-1.1.1.xmars"]
+        [True, "/Volumes/AstroProcessed/Catalogs/MARS-DR1-1.1.1.xmars"]
     ],
     "grayMARSFilter": "Ha",
     "referenceImageId": "",

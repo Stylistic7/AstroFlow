@@ -15,7 +15,7 @@ Ray, no context import. Idempotent; a future re-stack overwrites with
 identical values.
 
 Usage:  python scripts/refresh_master_metadata.py [--dry-run] [DIR]
-        (default DIR: /Volumes/Astro/Processed/stack_files)
+        (default DIR: /Volumes/AstroProcessed/Processed/stack_files)
 """
 from __future__ import annotations
 
@@ -52,7 +52,7 @@ def refresh(master: Path, dry_run: bool = False) -> str:
 def main() -> None:
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     dry = "--dry-run" in sys.argv
-    root = Path(args[0]) if args else Path("/Volumes/Astro/Processed/stack_files")
+    root = Path(args[0]) if args else Path("/Volumes/AstroProcessed/Processed/stack_files")
     masters = sorted(root.glob("*.xisf"))
     counts: dict[str, int] = {}
     for m in masters:

@@ -57,9 +57,16 @@ QUEUE_NAME = "node_state_machine"
 
 # SMB share names the head exposes, mirrored 1:1 to /Volumes/<share> mountpoints
 # on every node. Matches the hardcoded paths in `_populate_context`
-# (/Volumes/Astro, /Volumes/Astro2). Advertised to workers via zeroconf so they
-# can mount the head's disks over 10 GbE.
-HEAD_SHARES = ["Astro", "Astro2"]
+# (/Volumes/AstroRaw, /Volumes/AstroProcessed). Advertised to workers via
+# zeroconf so they can mount the head's disks over 10 GbE.
+#
+# Renamed 2026-08-18 from Astro/Astro2. The volumes now split by REPLACEABILITY,
+# not by history: AstroRaw holds the one thing that cannot be regenerated (and
+# is the only one worth backing up), AstroProcessed holds derived output that
+# any rebuild reproduces from Raw + a code SHA. These names ARE the SMB share
+# names, so a rename here without renaming the volumes leaves workers unable to
+# mount, and vice versa.
+HEAD_SHARES = ["AstroRaw", "AstroProcessed"]
 
 
 def is_uncommitted_mode() -> bool:
@@ -172,11 +179,15 @@ def _populate_context(
     # TODO: Put these in the UI.
     print(f"### _populate_context")
 
+    # ONE raw root since 2026-08-18 (was /Volumes/Astro/Raw + /Volumes/Astro2/Raw).
+    # Listing a path whose VOLUME is absent is not a no-op: `library_scan`
+    # reads an unmounted volume as "disconnected" and reuses that dir's last
+    # record verbatim, so a stale entry here would resurrect every frame of the
+    # old library as a phantom that no delta can ever clear.
     context.input_dirs = [
-        Path("/Volumes/Astro/Raw"),
-        Path("/Volumes/Astro2/Raw"),
+        Path("/Volumes/AstroRaw/Raw"),
     ]
-    context.output_dir = Path("/Volumes/Astro/Processed")
+    context.output_dir = Path("/Volumes/AstroProcessed/Processed")
 
     context.asiair_devices = []
     context.compute_graphs = [GraphRuntime(Graph({}))]

@@ -15,7 +15,7 @@ import re
 import time
 from pathlib import Path
 
-DIRS = ("/Volumes/Astro/Raw", "/Volumes/Astro2/Raw")
+DIRS = ("/Volumes/AstroRaw/Raw", "/Volumes/AstroRaw/Raw")
 NIGHT = re.compile(r"(20\d{6})")
 
 

@@ -14,7 +14,7 @@ nested key to a top-level section so the restore path reads only the
 small `image_metadata` section.
 
 Usage:
-    python -m scripts.migrate_defect_candidates /Volumes/Astro/Raw /Volumes/Astro2/Raw
+    python -m scripts.migrate_defect_candidates /Volumes/AstroRaw/Raw /Volumes/AstroRaw/Raw
     python -m scripts.migrate_defect_candidates --workers 8 ROOT [ROOT ...]
 
 Idempotent: re-runs skip sidecars already in the new shape.
@@ -110,7 +110,7 @@ def _gather_sidecars(roots: list[Path]) -> list[Path]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("roots", nargs="+", type=Path,
-                        help="One or more roots to walk (e.g. /Volumes/Astro/Raw).")
+                        help="One or more roots to walk (e.g. /Volumes/AstroRaw/Raw).")
     parser.add_argument("--workers", type=int, default=max(1, mp.cpu_count() - 2),
                         help="Process pool size. Defaults to (CPU count − 2).")
     parser.add_argument("--limit", type=int, default=None,

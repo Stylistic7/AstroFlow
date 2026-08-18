@@ -12,6 +12,6 @@ if __name__ == "__main__":
     stack_id = "2c71f4db63b27773"
     key = ("placed_image", mosaic_id, filter, stack_id)
 
-    filename = f"/Volumes/Astro/tmp/{'_'.join(key)}.fits"
+    filename = f"/Volumes/AstroProcessed/tmp/{'_'.join(key)}.fits"
     open(filename, "wb").write(cache[key])
     print(f"### Wrote filename {filename}")

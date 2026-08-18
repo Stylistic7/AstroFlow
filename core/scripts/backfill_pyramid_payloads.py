@@ -82,7 +82,7 @@ def verify_equivalent(payload: Path, pyramid: Path) -> "str | None":
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("root", nargs="?", type=Path,
-                    default=Path("/Volumes/Astro/Processed"))
+                    default=Path("/Volumes/AstroProcessed/Processed"))
     ap.add_argument("--apply", action="store_true",
                     help="actually convert (default is a dry run)")
     args = ap.parse_args()
