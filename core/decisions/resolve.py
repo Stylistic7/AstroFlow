@@ -140,6 +140,16 @@ def is_run_included(
 # shared with the cal-to-cal associator, so the two can't drift.
 
 
+# What the user actually SEES when each kind of master is missing. A generic
+# message here said "vignetting or dust shadows" for a missing bias, which is
+# the flat's symptom and sends someone looking for the wrong problem.
+_UNCALIBRATED_SYMPTOM = {
+    "bias": "leaves the sensor's read offset and fixed-pattern noise in",
+    "dark": "leaves hot pixels, amp glow and dark current in",
+    "flat": "leaves vignetting and dust shadows uncorrected",
+}
+
+
 def _prefer_same_camera(cands: list, cam_id: str | None, cam_of) -> list:
     """Narrow candidates to the SAME physical camera, where that is knowable.
 
@@ -313,16 +323,17 @@ def resolve_calibration(
         _concern_warn(
             f"Stacking with no {kinds} master",
             detail=(
-                f"No {kinds} master could be matched for "
-                + ", ".join(
-                    f"{n} run{'s' if n != 1 else ''} needing a {k}"
+                "; ".join(
+                    f"{n} run{'s' if n != 1 else ''} had no {k} master to "
+                    f"match ({_UNCALIBRATED_SYMPTOM[k]})"
                     for k, n in sorted(missing.items())
                 )
-                + ". The integration will proceed uncalibrated, which "
-                "typically shows up as uncorrected vignetting or dust "
-                "shadows rather than as an error. Either shoot the missing "
-                "frames, or choose a master explicitly from this stack's "
-                "calibration decisions."
+                + ". The integration proceeds uncalibrated — that is "
+                "deliberate, since not everyone shoots every kind of "
+                "calibration frame, and it is reported rather than silent "
+                "because the result looks perfectly plausible either way. "
+                "Either shoot the missing frames, or choose a master "
+                "explicitly from this stack's calibration decisions."
             ),
             stack=stack.stable_hash,
             missing=dict(sorted(missing.items())),
