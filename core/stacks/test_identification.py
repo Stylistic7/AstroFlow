@@ -124,12 +124,12 @@ def test_identify_camera_fingerprints_builds_map_keyed_by_consensus(test_context
 
     make_synthetic_frames(
         ra=100, dec=50, prefix="bodyA", number=5,
-        instrument="ZWO ASI6200MM Pro",
+        instrument="ZWO ASI6200MM Pro", n_hot_pixels=200,
         dither=0, dest_dir=context.input_dirs[0],
     )
     make_synthetic_frames(
         ra=200, dec=-50, prefix="bodyB", number=5,
-        instrument="ZWO ASI6200MM Pro #B",
+        instrument="ZWO ASI6200MM Pro #B", n_hot_pixels=200,
         dither=0, dest_dir=context.input_dirs[0],
     )
 
@@ -162,25 +162,31 @@ def test_identify_camera_fingerprints_builds_map_keyed_by_consensus(test_context
     assert a_consensuses != b_consensuses
 
 
-def test_same_instrume_two_bodies_separated_by_fingerprint(test_context):
-    """Two physical sensors with the same INSTRUME (e.g. two ASI6200MM Pros)
-    must split into two Stacks. They differ only in hot-pixel fingerprint —
-    same model, same sensor shape — so this regression test guards the
-    fingerprint subdivision inside `camera_clusters`. Synthetic hot pixels
-    are seeded by `(instrument, width, height)`; we shift `instrument` to
-    'ZWO ASI6200MM Pro #B' for the second body to inject a distinct
-    fingerprint while keeping the user-facing model string the same in
-    practice (we also rewrite the cached metadata INSTRUME below so all 20
-    frames share the canonical model name)."""
+def test_two_bodies_separated_by_fingerprint_alone(test_context):
+    """Two physical sensors of the same model must split into two Stacks on
+    the strength of their hot pixels alone.
+
+    They share a sensor shape and a pointing, so the fingerprint subdivision
+    inside `camera_clusters` is the ONLY thing that can separate them —
+    nothing reads `INSTRUME` any more. Synthetic hot pixels are seeded by
+    `(instrument, width, height)`, so the second body passes a different
+    string purely to get a different defect pattern out of the generator;
+    the string itself is never consulted downstream.
+
+    `n_hot_pixels=200` keeps the synthetic defect density physically
+    representative — see the note in `make_synthetic_frames`. At the 1200
+    default this 0.78 MP stand-in is ~80x denser than a real sensor and
+    chance overlap alone fuses the two bodies.
+    """
     make_synthetic_frames(
         ra=100, dec=50, prefix="bodyA", number=5,
-        instrument="ZWO ASI6200MM Pro",
+        instrument="ZWO ASI6200MM Pro", n_hot_pixels=200,
         dither=0, dest_dir=context.input_dirs[0],
     )
     make_synthetic_frames(
         ra=100, dec=50, prefix="bodyB", number=5,
         instrument="ZWO ASI6200MM Pro #B",  # distinct fingerprint seed
-        dither=0, dest_dir=context.input_dirs[0],
+        n_hot_pixels=200, dither=0, dest_dir=context.input_dirs[0],
     )
     run_graph(build_compute_graph())
     stacks = {h: ref.get() for h, ref in (context.stacks or {}).items()}

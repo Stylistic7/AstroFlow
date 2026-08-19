@@ -9,7 +9,7 @@ from clustering.fingerprint import (
     cluster_by_fingerprint,
     consensus_pixels_for_cluster,
     initial_clusters,
-    HEADER_ONLY_IDENTITY,
+    SHAPE_ONLY_IDENTITY,
 )
 
 
@@ -261,8 +261,10 @@ def test_attribute_by_consensus_no_consensuses():
 
 # ---- Pass 3: locality / header fallback -----------------------------------
 
-_HK_A = ("ZWO ASI6200MM Pro", 9576, 6388, 3.76, 3.76)
-_HK_CCD = ("Voyager FLI CCD", 3072, 2048, 9.0, 9.0)
+# `sensor_key` shape: (NAXIS1, NAXIS2). No camera string — that is the
+# point of the key, and a tuple carrying one would not be a sensor key.
+_SENSOR_A = (9576, 6388)
+_SENSOR_CCD = (3072, 2048)
 
 
 def test_attribute_by_locality_folder_proximity():
@@ -271,9 +273,9 @@ def test_attribute_by_locality_folder_proximity():
     out = attribute_by_locality(
         [_h("x")],
         folder_of={_h("a1"): "/n1", _h("a2"): "/n1", _h("x"): "/n1"},
-        header_of={_h("x"): _HK_A},
+        sensor_of={_h("x"): _SENSOR_A},
         attributed={_h("a1"): _CONS_A, _h("a2"): _CONS_A},
-        header_consensuses={_HK_A: [_CONS_A]},
+        sensor_consensuses={_SENSOR_A: [_CONS_A]},
     )
     assert out == {_h("x"): _CONS_A}
 
@@ -284,9 +286,9 @@ def test_attribute_by_locality_single_body_header():
     out = attribute_by_locality(
         [_h("x")],
         folder_of={_h("a1"): "/n1", _h("x"): "/n2"},
-        header_of={_h("x"): _HK_A},
+        sensor_of={_h("x"): _SENSOR_A},
         attributed={_h("a1"): _CONS_A},
-        header_consensuses={_HK_A: [_CONS_A]},
+        sensor_consensuses={_SENSOR_A: [_CONS_A]},
     )
     assert out == {_h("x"): _CONS_A}
 
@@ -297,12 +299,12 @@ def test_attribute_by_locality_pure_ccd_gets_header_sentinel():
     out = attribute_by_locality(
         [_h("ccd0"), _h("ccd1")],
         folder_of={_h("ccd0"): "/fli", _h("ccd1"): "/fli"},
-        header_of={_h("ccd0"): _HK_CCD, _h("ccd1"): _HK_CCD},
+        sensor_of={_h("ccd0"): _SENSOR_CCD, _h("ccd1"): _SENSOR_CCD},
         attributed={},
-        header_consensuses={},
+        sensor_consensuses={},
     )
-    assert out == {_h("ccd0"): HEADER_ONLY_IDENTITY,
-                   _h("ccd1"): HEADER_ONLY_IDENTITY}
+    assert out == {_h("ccd0"): SHAPE_ONLY_IDENTITY,
+                   _h("ccd1"): SHAPE_ONLY_IDENTITY}
 
 
 def test_attribute_by_locality_ambiguous_multibody_skipped():
@@ -311,9 +313,9 @@ def test_attribute_by_locality_ambiguous_multibody_skipped():
     out = attribute_by_locality(
         [_h("x")],
         folder_of={_h("x"): "/lonely"},
-        header_of={_h("x"): _HK_A},
+        sensor_of={_h("x"): _SENSOR_A},
         attributed={},
-        header_consensuses={_HK_A: [_CONS_A, _CONS_B]},
+        sensor_consensuses={_SENSOR_A: [_CONS_A, _CONS_B]},
     )
     assert out == {}
 
@@ -324,8 +326,8 @@ def test_attribute_by_locality_folder_beats_ambiguous_header():
     out = attribute_by_locality(
         [_h("x")],
         folder_of={_h("a"): "/n3", _h("x"): "/n3"},
-        header_of={_h("x"): _HK_A},
+        sensor_of={_h("x"): _SENSOR_A},
         attributed={_h("a"): _CONS_B},
-        header_consensuses={_HK_A: [_CONS_A, _CONS_B]},
+        sensor_consensuses={_SENSOR_A: [_CONS_A, _CONS_B]},
     )
     assert out == {_h("x"): _CONS_B}

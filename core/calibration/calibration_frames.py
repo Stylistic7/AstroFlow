@@ -12,6 +12,7 @@ from stacks.types import StackHash
 from stacks.run import calibration_run_from_frames
 from stacks.composite_stack import CalibrationStack, CalibrationStacksDict
 import clustering
+from clustering.fingerprint import sensor_key
 from cache.context_ref import ContextRef
 from metadata.classes import MetadataDict
 from metadata.image_types import is_master
@@ -30,11 +31,18 @@ def _group_by_camera(
 ]:
     """Group calibration frames by physical camera identity.
 
-    The key is `(INSTRUME, consensus_tuple)`. Frames in `fingerprint_map`
-    use the consensus from that map (built globally upstream for light
-    frames). Calibration-only frames — biases, low-defect flats — fall
-    back to `(INSTRUME, ())`; the empty consensus tells downstream
+    The key is `(sensor_key, consensus_tuple)` — geometry plus defect
+    fingerprint, no header strings. Frames in `fingerprint_map` use the
+    consensus from that map (built globally upstream for light frames).
+    Calibration-only frames — biases, low-defect flats — fall back to
+    `(sensor_key, ())`; the empty consensus tells downstream
     `CalibrationStack.from_run` to leave `camera_id_hash=None`.
+
+    `INSTRUME` used to lead this key. Dropping it strictly reduces false
+    SPLITS (a renamed driver no longer forks one sensor's darks into two
+    stacks) and adds no false MERGE the old key did not already have: two
+    same-model bodies shared one INSTRUME then and share one sensor_key
+    now, so unfingerprintable biases were already pooled across them.
 
     Returns:
         frames_for_camera: camera_key -> set of frame hashes
@@ -43,9 +51,8 @@ def _group_by_camera(
     frames_for_camera: dict[tuple, set[FrameHash]] = {}
     consensus_for_camera: dict[tuple, tuple[int, ...]] = {}
     for h, m in metadata.items():
-        instr = m.header.get("INSTRUME") or ""
         consensus = fingerprint_map.get(FrameHash(h), ())
-        key = (instr, consensus)
+        key = (sensor_key(m.header), consensus)
         frames_for_camera.setdefault(key, set()).add(FrameHash(h))
         consensus_for_camera[key] = consensus
     return frames_for_camera, consensus_for_camera
@@ -101,12 +108,12 @@ def identify_calibration_stacks(
         }
 
     frames_for_image_type = group_by_header(metadata.values(), "IMAGETYP", "")
-    # `camera_key` here is the synthetic tuple `(INSTRUME, consensus_tuple)`
+    # `camera_key` here is the synthetic tuple `(sensor_key, consensus_tuple)`
     # where `consensus_tuple` is empty for biases / low-defect frames that
     # cannot be fingerprinted. Frames sharing the same camera_key are from
-    # the same physical sensor (or from the same INSTRUME bucket if no
+    # the same physical sensor (or from the same sensor GEOMETRY if no
     # fingerprint is available — biases need session-affinity attribution
-    # to choose between sensors of the same model, deferred).
+    # to choose between same-model bodies, deferred).
     frames_for_camera, consensus_for_camera = _group_by_camera(
         metadata, fingerprint_map
     )
@@ -160,38 +167,71 @@ def _midpoint_s(a: datetime, b: datetime) -> float:
     return (a.timestamp() + b.timestamp()) * 0.5
 
 
+def sensor_of(s) -> tuple[int, int]:
+    """The physical sensor bucket for calibration matching: pixel dimensions.
+
+    Works on anything with ImagingAttributes — a light Run or a
+    CalibrationStack — so both sides of a match derive the key the same way.
+    """
+    return (s.width_pixels, s.height_pixels)
+
+
 def _build_cal_index(cal_stacks: dict[StackHash, CalibrationStack]):
-    bias_by_cam: dict[str, list[tuple[float, float, StackHash]]] = {}
-    dark_by_cam: dict[str, list[tuple[float, float, float, StackHash]]] = {}
-    flat_by_cam_filter: dict[
-        tuple[str, str], list[tuple[float, StackHash]]
+    """Index calibration stacks for chronological matching, bucketed by SENSOR
+    GEOMETRY and tagged with camera identity.
+
+    These buckets used to be keyed on `CalibrationStack.camera` — the
+    INSTRUME string. That was a live correctness bug: a light run whose
+    driver had renamed itself between sessions looked up a bucket that did
+    not exist, got `None`, and was integrated with no master at all.
+
+    Geometry is the widest bucket that is still physically valid — a master
+    with different pixel dimensions cannot calibrate the frame under any
+    interpretation. `camera_id_hash` (the defect fingerprint) then narrows
+    within the bucket via `_prefer_same_camera`, so the strong signal still
+    wins wherever it exists without being able to starve a run of masters
+    where it does not.
+
+    Each entry carries its own `camera_id_hash` so that narrowing needs no
+    second pass over cal_stacks.
+    """
+    bias_by_sensor: dict[
+        tuple, list[tuple[float, float, str | None, StackHash]]
+    ] = {}
+    dark_by_sensor: dict[
+        tuple, list[tuple[float, float, float, str | None, StackHash]]
+    ] = {}
+    flat_by_sensor_filter: dict[
+        tuple[tuple, str], list[tuple[float, str | None, StackHash]]
     ] = {}
 
     for sid, s in cal_stacks.items():
         mid = _midpoint_s(s.oldest_date, s.newest_date)
-        cam = s.camera
+        sensor = sensor_of(s)
+        cam = s.camera_id_hash
         if s.image_type == "bias":
-            bias_by_cam.setdefault(cam, []).append(
-                (mid, s.mean_temperature, sid)
+            bias_by_sensor.setdefault(sensor, []).append(
+                (mid, s.mean_temperature, cam, sid)
             )
         elif s.image_type == "dark":
-            dark_by_cam.setdefault(cam, []).append(
-                (mid, s.mean_temperature, s.exposure, sid)
+            dark_by_sensor.setdefault(sensor, []).append(
+                (mid, s.mean_temperature, s.exposure, cam, sid)
             )
         elif s.image_type == "flat":
-            flat_by_cam_filter.setdefault((cam, s.filter), []).append(
-                (mid, sid)
+            flat_by_sensor_filter.setdefault((sensor, s.filter), []).append(
+                (mid, cam, sid)
             )
 
-    # Optionally sort each bucket by midpoint to help cache locality; not required for correctness.
-    for lst in bias_by_cam.values():
+    # Sort each bucket by midpoint; helps cache locality, not required for
+    # correctness (every matcher takes an explicit min over its candidates).
+    for lst in bias_by_sensor.values():
         lst.sort(key=lambda x: x[0])
-    for lst in dark_by_cam.values():
+    for lst in dark_by_sensor.values():
         lst.sort(key=lambda x: x[0])
-    for lst in flat_by_cam_filter.values():
+    for lst in flat_by_sensor_filter.values():
         lst.sort(key=lambda x: x[0])
 
-    return bias_by_cam, dark_by_cam, flat_by_cam_filter
+    return bias_by_sensor, dark_by_sensor, flat_by_sensor_filter
 
 
 @node

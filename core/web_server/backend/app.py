@@ -383,13 +383,23 @@ def recent():
 
 
 # TODO: Loading stuff from the cache on every endpoint call is very slow.
-@app.route("/api/flats/<camera>/<filter>")
-def flats_for_camera_and_filter(camera, filter):
-    print(f"### getting flats for camera {camera} and filter {filter}")
+@app.route("/api/flats/<width>/<height>/<filter>")
+def flats_for_sensor_and_filter(width, height, filter):
+    """Flats the user may pick from for a stack of this sensor and filter.
+
+    Keyed on sensor GEOMETRY, matching what `resolve_calibration` considers
+    automatically — this list is the manual-override path for the same
+    decision, so offering a different candidate set than the automatic
+    matcher would be its own bug. It was keyed on the INSTRUME string, which
+    silently returned nothing whenever a driver had renamed the camera.
+    """
+    sensor = (int(width), int(height))
     return [
         k
         for k, s in context.calibration_stacks.items()
-        if s.image_type == "flat" and s.camera == camera and s.filter == filter  # calibration_stacks holds real Run objects
+        if s.image_type == "flat"
+        and (s.width_pixels, s.height_pixels) == sensor
+        and s.filter == filter  # calibration_stacks holds real Run objects
     ]
 
 

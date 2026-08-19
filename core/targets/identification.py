@@ -35,20 +35,24 @@ def identify_targets(
     def camera_clusters(
         stack_hashes: tuple[StackHash, ...],
     ) -> Iterator[tuple[StackHash, ...]]:
-        cameras = [
+        # Sensor GEOMETRY, not the camera string. `INSTRUME` is free text a
+        # driver can rewrite between sessions, and splitting Targets on it
+        # scatters one night's data across two Targets. Two stacks agreeing
+        # on geometry, image scale, pointing and rotation are framing the
+        # same field, which is what a Target is.
+        sensors = [
             (
                 resolved[s].stable_hash,
                 (
-                    resolved[s].camera,
                     resolved[s].width_pixels,
                     resolved[s].height_pixels,
                 ),
             )
             for s in stack_hashes
         ]
-        for cluster in clustering.cluster_discrete(cameras):
-            stack_hashes, cameras = zip(*cluster)
-            assert len(set(cameras)) == 1
+        for cluster in clustering.cluster_discrete(sensors):
+            stack_hashes, sensors = zip(*cluster)
+            assert len(set(sensors)) == 1
             yield stack_hashes
 
     @beartype

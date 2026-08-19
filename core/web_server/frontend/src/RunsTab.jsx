@@ -23,7 +23,7 @@ const RunsTab = ({ stack }) => {
   useEffect(() => {
     const fetchFlats = async () => {
       try {
-        const res = await fetch(`/api/flats/${stack.camera}/${stack.filter}`);
+        const res = await fetch(`/api/flats/${stack.width_pixels}/${stack.height_pixels}/${stack.filter}`);
         const json = await res.json();
         setFlatIds(json);
       } catch (err) {
@@ -31,7 +31,7 @@ const RunsTab = ({ stack }) => {
       }
     };
     fetchFlats();
-  }, [stack.camera, stack.filter]);
+  }, [stack.width_pixels, stack.height_pixels, stack.filter]);
 
   useEffect(() => {
     const fetchDecisions = async () => {

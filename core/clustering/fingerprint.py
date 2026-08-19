@@ -1,7 +1,7 @@
 """Cluster frames by hot-pixel-defect fingerprint overlap.
 
 This module discriminates physical cameras among frames sharing the same
-INSTRUME header. Same-model sensors (two ASI6200MM Pros, e.g.) produce
+SENSOR GEOMETRY. Same-model sensors (two ASI6200MM Pros, e.g.) produce
 distinct hot-pixel defect sets — `extract_defects` exposes the top-N hottest
 per frame as `ImageMetadata.defect_candidates`. We cluster frames by how
 much their defect sets overlap; one cluster = one physical sensor.
@@ -102,9 +102,42 @@ _DEFAULT_SUBSET_MIN_HITS = 5
 # Sentinel "consensus" for frames identified by header/locality alone (no
 # usable defect fingerprint — e.g. CCD frames, whose column/cluster defects
 # extract_defects can't see). Non-empty so `_camera_id_hash_from` yields a
-# real (header-derived) id; -1 is not a valid flat pixel index, so it never
-# collides with a real consensus.
-HEADER_ONLY_IDENTITY: tuple[int, ...] = (-1,)
+# real (shape-derived) id; -1 is not a valid flat pixel index, so it never
+# collides with a real consensus. CAVEAT: two CCDs of identical geometry
+# now share this sentinel, where INSTRUME used to separate them. The
+# principled fix is to teach `extract_defects` to see column/cluster
+# defects so CCDs fingerprint like CMOS does — not to trust the name.
+SHAPE_ONLY_IDENTITY: tuple[int, ...] = (-1,)
+
+
+def sensor_key(header: dict) -> tuple:
+    """The (sensor-shape, pixel-pitch) pre-group key — PHYSICAL only.
+
+    The single definition of "same sensor, before fingerprinting" shared by
+    light-stack identification and calibration-stack identification, so the
+    two cannot drift apart.
+
+    NAXIS1/NAXIS2 are the only header cards used, because they are the only
+    ones that are really pixels: FITS requires them to describe the data
+    array, and astropy will not hand you a frame whose NAXIS disagrees with
+    its own shape. Everything else here would be a promise, not a
+    measurement.
+
+    `INSTRUME` is deliberately NOT here. It is free text the capture software
+    chooses; it is identical across every body of a model, and it can change
+    under the user mid-session — on 2026-02-16 a reconnecting driver renamed
+    one camera from "ASI Camera (1)" to "ZWO ASI2600MM Duo", partitioning one
+    sensor's frames into two pre-groups that no amount of downstream
+    clustering could rejoin.
+
+    `XPIXSZ`/`YPIXSZ` are not here either, for the same reason at lower
+    volume: pixel pitch in microns is metadata the driver asserts, nothing
+    validates it, and a session written with a wrong pitch would fork one
+    sensor exactly the way the rename did. It also buys almost nothing —
+    two bodies sharing a pixel COUNT are separated by their defects, and
+    differing optics are already separated by `image_scale` clustering.
+    """
+    return (header.get("NAXIS1"), header.get("NAXIS2"))
 
 
 @beartype
@@ -401,9 +434,9 @@ def attribute_by_locality(
     unattributed: Sequence[FrameHash],
     *,
     folder_of: dict[FrameHash, str | None],
-    header_of: dict[FrameHash, tuple],
+    sensor_of: dict[FrameHash, tuple],
     attributed: dict[FrameHash, tuple[int, ...]],
-    header_consensuses: dict[tuple, Sequence[tuple[int, ...]]],
+    sensor_consensuses: dict[tuple, Sequence[tuple[int, ...]]],
 ) -> dict[FrameHash, tuple[int, ...]]:
     """Weak, non-fingerprint fallback for frames with no usable defect signal
     (e.g. CCD frames — `extract_defects` targets CMOS single-pixel hot pixels
@@ -414,14 +447,14 @@ def attribute_by_locality(
       1. capture-folder proximity: if the frame's folder contains fingerprinted
          frames of exactly one camera, borrow that consensus (a shared night =
          the same camera; the folder disambiguates multi-body rigs);
-      2. single-body header: else if the frame's (INSTRUME, sensor-shape) maps
-         to exactly one real consensus library-wide, use it;
-      3. header-only identity: else if that header never fingerprinted at all
-         (a pure-CCD camera), tag with `HEADER_ONLY_IDENTITY` so same-header
+      2. single-body geometry: else if the frame's sensor-shape maps to
+         exactly one real consensus library-wide, use it;
+      3. shape-only identity: else if that geometry never fingerprinted at all
+         (a pure-CCD camera), tag with `SHAPE_ONLY_IDENTITY` so same-sensor
          frames still stack together (their camera_id_hash stays distinct per
-         INSTRUME+shape);
+         shape);
       4. otherwise leave it unattributed (ambiguous: multiple bodies share the
-         header and there is no locality signal to choose between them).
+         geometry and there is no locality signal to choose between them).
 
     Returns `{frame: consensus-or-sentinel}` for the frames it could place.
     """
@@ -437,10 +470,10 @@ def attribute_by_locality(
         if cams is not None and len(cams) == 1:
             out[h] = next(iter(cams))
             continue
-        uniq = set(header_consensuses.get(header_of.get(h), ()))
+        uniq = set(sensor_consensuses.get(sensor_of.get(h), ()))
         if len(uniq) == 1:
             out[h] = next(iter(uniq))
         elif len(uniq) == 0:
-            out[h] = HEADER_ONLY_IDENTITY
-        # else: multiple bodies share this header and no folder signal — skip.
+            out[h] = SHAPE_ONLY_IDENTITY
+        # else: multiple bodies share this geometry, no folder signal — skip.
     return out

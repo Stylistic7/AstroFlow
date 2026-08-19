@@ -24,17 +24,26 @@ from cache.context_ref import ContextRef
 def _camera_id_hash_from(
     imaging: "ImagingAttributes", consensus: tuple[int, ...]
 ) -> str | None:
-    """Stable hash binding camera identity to (model, sensor shape, defect
-    consensus). None if consensus is empty (no fingerprint → no known camera).
+    """Stable hash binding camera identity to (sensor shape, defect consensus).
+    None if consensus is empty (no fingerprint → no known camera).
 
-    Includes camera + sensor shape to disambiguate the (extraordinarily
-    unlikely) case where two different sensors land on the same consensus
-    pixel tuple by chance.
+    Derived from PIXELS ONLY. `INSTRUME` is deliberately absent: it is free
+    text the capture software chooses, it is not unique to a body (every
+    ASI2600MM Duo ships the same string), and it can change under the user
+    mid-session — on 2026-02-16 one camera renamed itself from
+    "ASI Camera (1)" to "ZWO ASI2600MM Duo" when its driver reconnected, which
+    split one physical sensor into two identities and cost four Starbase light
+    stacks their flat masters. A defect consensus is a property of the silicon
+    and survives a driver's opinion of itself.
+
+    Sensor shape stays in the hash for two reasons, and it is not a header
+    string: consensus entries are flat pixel INDICES, which only mean anything
+    relative to a known array shape, and shape separates two sensors that
+    improbably agree on a consensus tuple.
     """
     if not consensus:
         return None
     return hash_list([
-        imaging.camera,
         (imaging.height_pixels, imaging.width_pixels),
         consensus,
     ])

@@ -1,6 +1,7 @@
 """Apply decisions to a Stack to produce filtered or annotated views."""
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import replace
 from frozendict import frozendict
 
@@ -139,6 +140,27 @@ def is_run_included(
 # shared with the cal-to-cal associator, so the two can't drift.
 
 
+def _prefer_same_camera(cands: list, cam_id: str | None, cam_of) -> list:
+    """Narrow candidates to the SAME physical camera, where that is knowable.
+
+    `camera_id_hash` is a defect fingerprint, so it exists only for frames
+    that carried enough hot pixels to cluster — biases and clean flats often
+    have none, and external pre-stacked masters have none at all (they are
+    integrations, and `extract_defects` wants a raw mono frame).
+
+    So this PREFERS rather than REQUIRES: when both sides have an identity
+    and some candidate matches, that is the strongest evidence available and
+    it wins outright; otherwise the whole sensor-geometry bucket stands.
+    Requiring it would recreate the bug this replaced — refusing to
+    calibrate because a master could not be fingerprinted is how stacks
+    silently lost their masters in the first place.
+    """
+    if cam_id is None:
+        return cands
+    same = [c for c in cands if cam_of(c) == cam_id]
+    return same or cands
+
+
 def resolve_calibration(
     stack: Stack,
     cal_stacks: CalibrationStacksDict,
@@ -150,34 +172,45 @@ def resolve_calibration(
     logic is wrapped in a lazy default. The decision framework returns the
     cached default or user override.
     """
-    from calibration.calibration_frames import _build_cal_index, _midpoint_s
+    from calibration.calibration_frames import (
+        _build_cal_index, _midpoint_s, sensor_of,
+    )
     from calibration.directory_affinity import find_external_master
     from calibration.topology import CALIBRATION_TOPOLOGY
 
-    bias_by_cam, dark_by_cam, flat_by_cam_filter = _build_cal_index(cal_stacks)
+    bias_by_sensor, dark_by_sensor, flat_by_sensor_filter = _build_cal_index(
+        cal_stacks
+    )
+    # Camera identity for THIS stack: a defect fingerprint, or None when its
+    # frames carried no usable hot pixels. Used to prefer, never to require.
+    cam_id = stack.camera_id_hash
 
     def _chronological_bias(run: Run):
-        cand = bias_by_cam.get(run.camera)
+        cand = bias_by_sensor.get(sensor_of(run))
         if not cand:
             return None
+        cand = _prefer_same_camera(cand, cam_id, lambda x: x[2])
         mid = _midpoint_s(run.oldest_date, run.newest_date)
         T = run.mean_temperature
-        filtered = [(m, t, sid) for (m, t, sid) in cand if abs(t - T) < 10.0]
-        if not filtered:
-            return None
-        return min(filtered, key=lambda x: abs(x[0] - mid))[2]
-
-    def _chronological_dark(run: Run):
-        cand = dark_by_cam.get(run.camera)
-        if not cand:
-            return None
-        mid = _midpoint_s(run.oldest_date, run.newest_date)
-        T = run.mean_temperature
-        exp = run.exposure
-        filtered = [(m, t, e, sid) for (m, t, e, sid) in cand if abs(t - T) < 10.0 and e <= exp]
+        filtered = [c for c in cand if abs(c[1] - T) < 10.0]
         if not filtered:
             return None
         return min(filtered, key=lambda x: abs(x[0] - mid))[3]
+
+    def _chronological_dark(run: Run):
+        cand = dark_by_sensor.get(sensor_of(run))
+        if not cand:
+            return None
+        cand = _prefer_same_camera(cand, cam_id, lambda x: x[3])
+        mid = _midpoint_s(run.oldest_date, run.newest_date)
+        T = run.mean_temperature
+        exp = run.exposure
+        filtered = [
+            c for c in cand if abs(c[1] - T) < 10.0 and c[2] <= exp
+        ]
+        if not filtered:
+            return None
+        return min(filtered, key=lambda x: abs(x[0] - mid))[4]
 
     # Build set of quarantined flat stack IDs so auto-selection skips them.
     quarantined_flat_ids = {
@@ -190,14 +223,15 @@ def resolve_calibration(
     }
 
     def _chronological_flat(run: Run):
-        cand = flat_by_cam_filter.get((run.camera, run.filter))
+        cand = flat_by_sensor_filter.get((sensor_of(run), run.filter))
         if not cand:
             return None
-        cand = [(m, sid) for m, sid in cand if sid not in quarantined_flat_ids]
+        cand = [c for c in cand if c[2] not in quarantined_flat_ids]
         if not cand:
             return None
+        cand = _prefer_same_camera(cand, cam_id, lambda x: x[1])
         mid = _midpoint_s(run.oldest_date, run.newest_date)
-        return min(cand, key=lambda x: abs(x[0] - mid))[1]
+        return min(cand, key=lambda x: abs(x[0] - mid))[2]
 
     chronological = {
         "bias": _chronological_bias,
@@ -217,7 +251,7 @@ def resolve_calibration(
         path = find_external_master(
             (m.filename for m in run.metadata.values()),
             kind=cal_type,
-            camera=run.camera,
+            shape=sensor_of(run),
             temperature=run.mean_temperature,
             filter=(run.filter if cal_type == "flat" else None),
             exposure=(run.exposure if cal_type == "dark" else None),
@@ -227,6 +261,7 @@ def resolve_calibration(
         return chronological[cal_type](run)
 
     new_contents = RunsDict()
+    missing: Counter[str] = Counter()
     for run_hash, run in stack.contents.items():
         deps = dict(run.dependencies)
         for cal_type in CALIBRATION_TOPOLOGY.get(run.image_type, ()):
@@ -246,6 +281,14 @@ def resolve_calibration(
             )
 
             if choice is None:
+                # Nothing matched. Proceeding is deliberate — plenty of
+                # people never shoot flats and failing their data outright
+                # would be worse — but it must not be silent. An
+                # uncalibrated integration looks perfectly fine and is
+                # wrong, so it is surfaced on the stack instead of being
+                # dropped here (which is how four Starbase stacks were
+                # integrated flat-less without anyone noticing).
+                missing[cal_type] += 1
                 continue
             if isinstance(choice, str) and choice.startswith("/"):
                 deps[cal_type] = FilenameDependency(filename=choice)
@@ -263,5 +306,26 @@ def resolve_calibration(
                 deps[cal_type] = StackIdDependency(stack_id=choice)
 
         new_contents[run_hash] = replace(run, dependencies=frozendict(deps))
+
+    if missing:
+        from concerns import warn as _concern_warn
+        kinds = "/".join(sorted(missing))
+        _concern_warn(
+            f"Stacking with no {kinds} master",
+            detail=(
+                f"No {kinds} master could be matched for "
+                + ", ".join(
+                    f"{n} run{'s' if n != 1 else ''} needing a {k}"
+                    for k, n in sorted(missing.items())
+                )
+                + ". The integration will proceed uncalibrated, which "
+                "typically shows up as uncorrected vignetting or dust "
+                "shadows rather than as an error. Either shoot the missing "
+                "frames, or choose a master explicitly from this stack's "
+                "calibration decisions."
+            ),
+            stack=stack.stable_hash,
+            missing=dict(sorted(missing.items())),
+        )
 
     return replace(stack, contents=new_contents)

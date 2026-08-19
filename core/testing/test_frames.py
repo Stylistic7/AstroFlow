@@ -182,6 +182,7 @@ def make_synthetic_frames(
     focal_length_m: float = 0.35,
     pixel_pitch_um: float = 3.76,
     instrument: str = "ZWO ASI6200MM Pro",
+    n_hot_pixels: int = 1200,
     width_pixels: int = 1080,
     height_pixels: int = 720,
     temperature: float = -20,
@@ -261,20 +262,33 @@ def make_synthetic_frames(
 
         # Inject deterministic hot pixels so the defect-fingerprint
         # extractor produces overlapping, stable defect sets across all
-        # frames from this "camera" (= instrument + sensor shape). Without
-        # this, fingerprint clustering would see only random noise outliers
-        # and exclude every synthetic frame as no-fingerprint.
+        # frames from this "camera". Without this, fingerprint clustering
+        # would see only random noise outliers and exclude every synthetic
+        # frame as no-fingerprint.
         # Skip when pixel_arrays is provided — caller bakes hot pixels
         # into the array via the dark-current ndarray if they want them
         # (and the physics harness does, via the same `_hot_seed` shape).
+        #
+        # `instrument` seeds the pattern purely as a convenient way to give
+        # each synthetic BODY a distinct defect set. Production identity is
+        # read from these pixels, never from the string that generated them.
+        #
+        # DEFECT DENSITY IS PHYSICS, and a test that discriminates two bodies
+        # must respect it. Chance overlap between unrelated defect sets goes
+        # as n^2/n_pixels: a real ASI6200MM Pro carries ~1000 defects across
+        # 61 MP, so two of its frames collide on ~0.02 pixels by luck. The
+        # default 1200 on this 0.78 MP stand-in collides on ~1.3 — some 80x
+        # denser than any real sensor, enough for chance alone to clear
+        # `o_min` and fuse two cameras through single-linkage. Tests that
+        # care about telling bodies apart should pass a count that keeps
+        # n^2/(w*h) well under 1.
         if pixel_arrays is None and image_type != "Bias":
             _hot_seed = xxhash.xxh64(
                 f"{instrument}|{width_pixels}x{height_pixels}"
             ).intdigest()
             _hot_rng = np.random.default_rng(_hot_seed)
-            n_hot = 1200
-            xs = _hot_rng.integers(0, width_pixels, size=n_hot)
-            ys = _hot_rng.integers(0, height_pixels, size=n_hot)
+            xs = _hot_rng.integers(0, width_pixels, size=n_hot_pixels)
+            ys = _hot_rng.integers(0, height_pixels, size=n_hot_pixels)
             image_data[ys, xs] = np.iinfo(np.uint16).max
 
         if content_hashes is not None:

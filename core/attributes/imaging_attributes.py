@@ -1,3 +1,4 @@
+from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 import numpy as np
@@ -24,6 +25,29 @@ def get_unique_quality(values: Iterable[Any], allow_empty: bool = False) -> Any:
     return next(iter(distinct))
 
 
+def _camera_label(values: Iterable[Any]) -> str:
+    """A human-facing NAME for the camera — never an identity.
+
+    `INSTRUME` is free text the capture software chooses, so the frames of
+    one physical sensor may legitimately disagree about it: on 2026-02-16 a
+    reconnecting driver renamed one camera mid-session from "ASI Camera (1)"
+    to "ZWO ASI2600MM Duo". Identity lives in `camera_id_hash`, derived from
+    defect pixels and sensor geometry; this string only labels the UI and
+    master filenames.
+
+    So this must NEVER assert — a disagreement means a renamed driver, not a
+    mixed-camera stack, and asserting would abort identification over
+    cosmetics. Pick the most common spelling, ties broken alphabetically, so
+    the label is deterministic across processes (a bare `set` iteration
+    would not be — see project_determinism_guards).
+    """
+    names = [str(v) for v in values if v not in (None, "")]
+    if not names:
+        return ""
+    counts = Counter(names)
+    return min(counts, key=lambda n: (-counts[n], n))
+
+
 def _aggregate_exposure(values: list[float]) -> Seconds:
     """Reduce per-frame EXPOSURE to one value for a stack/run.
 
@@ -44,6 +68,9 @@ def _aggregate_exposure(values: list[float]) -> Seconds:
 @dataclass(frozen=True)
 class ImagingAttributes:
     image_type: str
+    # DISPLAY LABEL ONLY (see `_camera_label`). Camera IDENTITY is
+    # `BaseStack.camera_id_hash`, derived from defect pixels + sensor
+    # geometry. Never match, group, or key on this string.
     camera: str
     filter: str | None
     mean_temperature: Celsius
@@ -122,7 +149,7 @@ class ImagingAttributes:
             return values[0]
 
         image_type = get_unique_quality("IMAGETYP")
-        camera = get_unique_quality("INSTRUME")
+        camera = _camera_label(i.header.get("INSTRUME") for i in metadata_list)
         width_pixels = get_unique_quality("NAXIS1")
         height_pixels = get_unique_quality("NAXIS2")
         filter = get_unique_quality("FILTER", allow_empty=True)
@@ -155,7 +182,7 @@ class ImagingAttributes:
         cls, objects: Iterable["ImagingAttributes"]
     ) -> "ImagingAttributes":
         image_type = get_unique_quality([o.image_type for o in objects])
-        camera = get_unique_quality([o.camera for o in objects])
+        camera = _camera_label(o.camera for o in objects)
         filter = list(set(o.filter for o in objects))
         mean_temperature = Celsius(np.mean([o.mean_temperature for o in objects]))
         exposure = _aggregate_exposure([float(o.exposure) for o in objects])

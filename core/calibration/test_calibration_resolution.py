@@ -53,9 +53,17 @@ def _make_master_fits(path: Path, image_type: str, *, exposure: float | None = N
     BITPIX check even though the IMAGETYP is just "Bias" / "Dark" / "Flat".
     Filename is set up to start with `Master*` per the user's convention so
     `find_image_files` skips it for raw-frame discovery.
+
+    Dimensions match `make_synthetic_frames`' default 1080x720 light frames
+    on purpose: directory-affinity matching requires the master to share the
+    light's pixel array, which is the physical constraint that replaced
+    comparing `INSTRUME` strings. A 4x4 master could not calibrate a
+    1080x720 light under any interpretation, so a fixture that produced one
+    was testing a match that cannot happen.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    hdu = pyfits.PrimaryHDU(np.zeros((4, 4), dtype=np.float32))
+    # numpy is (rows, cols) = (NAXIS2, NAXIS1) = (height, width).
+    hdu = pyfits.PrimaryHDU(np.zeros((720, 1080), dtype=np.float32))
     hdu.header["IMAGETYP"] = f"Master {image_type.capitalize()}"
     hdu.header["INSTRUME"] = camera
     hdu.header["CCD-TEMP"] = temperature
@@ -277,3 +285,66 @@ def test_resolve_handles_stale_cached_choice(test_context) -> None:
     assert "bias" not in deps
     assert isinstance(deps["flat"], StackIdDependency)
     assert deps["flat"].stack_id in context.calibration_stacks
+
+
+@pytest.mark.exhaustive
+def test_master_matches_across_a_camera_rename(test_context) -> None:
+    """THE REGRESSION. A master whose INSTRUME disagrees with the lights'
+    still calibrates them.
+
+    On 2026-02-16 a reconnecting driver renamed one ZWO body mid-session, so
+    an afternoon's Starbase lights carried "ZWO ASI2600MM Duo" while the
+    masters beside them still said "ASI Camera (1)". Matching required the
+    two strings to be equal, so nothing matched, `resolve_calibration`
+    dropped the dependency without a word, and four light stacks were
+    integrated with no flat at all — output that looks fine and is wrong.
+
+    Identity now comes from the pixels: the master shares the lights' array
+    dimensions, so it matches regardless of what either file calls itself.
+    """
+    target_dir = Path(context.input_dirs[0]) / "Starbase"
+    _make_lights_with_raw_cals(target_dir)
+
+    master_path = _make_master_fits(
+        target_dir / "Calibration Masters" / "MasterDark_120s_-20c.fit",
+        image_type="dark", exposure=120, temperature=-20.0,
+        camera="ASI Camera (1)",           # the driver's other name for it
+    )
+
+    run_graph(build_compute_graph())
+
+    deps = _resolve_first_light(_the_one_light_stack())
+    assert isinstance(deps.get("dark"), FilenameDependency), (
+        f"a renamed camera must not cost a stack its master; got {deps.get('dark')!r}"
+    )
+    assert deps["dark"].filename == str(master_path.resolve())
+
+
+@pytest.mark.exhaustive
+def test_unresolvable_calibration_is_surfaced_not_silent(test_context) -> None:
+    """A run with no matchable master proceeds — but says so.
+
+    Plenty of people never shoot flats, so failing their data outright would
+    be worse than integrating without one. What is not acceptable is doing it
+    silently, which is how the flat-less Starbase masters went unnoticed: an
+    uncalibrated integration produces a perfectly plausible-looking image.
+    """
+    import structlog
+
+    target_dir = Path(context.input_dirs[0]) / "NoCals"
+    lights_dir = target_dir / "Lights"
+    lights_dir.mkdir(parents=True, exist_ok=True)
+    make_synthetic_frames(
+        number=3, image_type="Light", instrument="ZWO ASI6200MM Pro",
+        temperature=-20.0, exposure=120, filter="G", dest_dir=str(lights_dir),
+    )
+
+    run_graph(build_compute_graph())
+
+    with structlog.testing.capture_logs() as events:
+        deps = _resolve_first_light(_the_one_light_stack())
+
+    assert "flat" not in deps, "nothing to match, so no flat should be invented"
+    concerns = [e for e in events if e.get("_concern")]
+    assert concerns, f"the missing master must be surfaced; saw {events!r}"
+    assert any("flat" in str(e.get("missing", "")) for e in concerns), concerns

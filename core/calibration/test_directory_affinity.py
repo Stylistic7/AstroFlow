@@ -26,9 +26,9 @@ def _clear_master_cache():
     _dir_master_cache.clear()
 
 
-def _write_fits(path: Path, header: dict) -> None:
+def _write_fits(path: Path, header: dict, shape: tuple = (4, 4)) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    hdu = pyfits.PrimaryHDU(np.zeros((4, 4), dtype=np.float32))
+    hdu = pyfits.PrimaryHDU(np.zeros(shape, dtype=np.float32))
     for k, v in header.items():
         hdu.header[k] = v
     hdu.writeto(path, overwrite=True)
@@ -62,7 +62,7 @@ def test_finds_master_in_sibling_directory(tmp_path):
     found = find_external_master(
         [str(light_dir / "light_001.fit"), str(light_dir / "light_002.fit")],
         kind="dark",
-        camera="ZWO ASI6200MM Pro",
+        shape=(4, 4),
         temperature=-20.0,
         filter=None,
         exposure=120.0,
@@ -81,7 +81,7 @@ def test_walks_up_to_grandparent(tmp_path):
 
     found = find_external_master(
         [str(light_dir / "light_001.fit")],
-        kind="bias", camera="ZWO ASI6200MM Pro", temperature=-20.0,
+        kind="bias", shape=(4, 4), temperature=-20.0,
         filter=None, exposure=None,
     )
     assert found == str(master_path.resolve())
@@ -98,7 +98,7 @@ def test_skips_master_with_wrong_temperature(tmp_path):
 
     found = find_external_master(
         [str(light_dir / "light_001.fit")],
-        kind="bias", camera="ZWO ASI6200MM Pro", temperature=-20.0,
+        kind="bias", shape=(4, 4), temperature=-20.0,
         filter=None, exposure=None,
     )
     assert found is None
@@ -115,7 +115,7 @@ def test_flat_requires_filter_match(tmp_path):
 
     found = find_external_master(
         [str(light_dir / "light_001.fit")],
-        kind="flat", camera="ZWO ASI6200MM Pro", temperature=None,
+        kind="flat", shape=(4, 4), temperature=None,
         filter="Ha", exposure=None,
     )
     assert found is None
@@ -133,7 +133,7 @@ def test_only_master_files_picked_up(tmp_path):
 
     found = find_external_master(
         [str(light_dir / "light_001.fit")],
-        kind="bias", camera="ZWO ASI6200MM Pro", temperature=None,
+        kind="bias", shape=(4, 4), temperature=None,
         filter=None, exposure=None,
     )
     assert found is None
@@ -150,7 +150,7 @@ def test_dark_exposure_must_be_at_least_light(tmp_path):
 
     found = find_external_master(
         [str(light_dir / "light_001.fit")],
-        kind="dark", camera="ZWO ASI6200MM Pro", temperature=-20.0,
+        kind="dark", shape=(4, 4), temperature=-20.0,
         filter=None, exposure=120.0,
     )
     assert found is None
@@ -166,3 +166,78 @@ def test_masters_in_dir_caches(tmp_path):
                 _master_header("dark", exposure=120, temperature=-20.0))
     second = masters_in_dir(cal)
     assert first == second
+
+
+def test_renamed_camera_still_matches(tmp_path):
+    """THE REGRESSION. A master whose INSTRUME disagrees with the light's still
+    calibrates it.
+
+    On 2026-02-16 a reconnecting driver renamed one ZWO body mid-session, so
+    the afternoon's lights carried "ZWO ASI2600MM Duo" while the flats sitting
+    in their own `Calibration Masters/` folder still said "ASI Camera (1)".
+    The old string-equality test rejected them and four Starbase stacks were
+    integrated with no flat at all. Geometry matches, so the name may differ.
+    """
+    target = tmp_path / "Starbase"
+    light_dir = target / "Lights"
+    cal_dir = target / "Calibration Masters"
+    _write_fits(light_dir / "light_001.fit",
+                {"IMAGETYP": "Light", "FILTER": "B",
+                 "INSTRUME": "ZWO ASI2600MM Duo"})
+    master = cal_dir / "MasterFlat_B.fit"
+    _write_fits(master, _master_header(
+        "flat", filter="B", temperature=None, camera="ASI Camera (1)",
+    ))
+
+    found = find_external_master(
+        [str(light_dir / "light_001.fit")],
+        kind="flat", shape=(4, 4), temperature=None,
+        filter="B", exposure=None,
+    )
+    assert found == str(master.resolve())
+
+
+def test_geometry_mismatch_is_rejected(tmp_path):
+    """A master of different pixel dimensions cannot calibrate the frame.
+
+    This is the constraint that replaced camera-string equality, so it has to
+    actually bite — otherwise dropping the string would have removed the only
+    check that a master belongs to this sensor at all.
+    """
+    target = tmp_path / "mismatch"
+    light_dir = target / "Lights"
+    cal_dir = target / "Calibration Masters"
+    _write_fits(light_dir / "light_001.fit", {"IMAGETYP": "Light", "FILTER": "B"})
+    _write_fits(cal_dir / "MasterFlat_B.fit",
+                _master_header("flat", filter="B", temperature=None),
+                shape=(8, 8))
+
+    found = find_external_master(
+        [str(light_dir / "light_001.fit")],
+        kind="flat", shape=(4, 4), temperature=None,
+        filter="B", exposure=None,
+    )
+    assert found is None
+
+
+def test_calibration_named_directory_wins_over_unnamed_sibling(tmp_path):
+    """Two siblings both hold a valid master; the one NAMED for calibration wins.
+
+    A folder called `Calibration Masters/` beside the lights is the clearest
+    statement of intent the filesystem can carry. `Archive/` sorts first
+    alphabetically, so a plain `sorted()` walk would have picked it.
+    """
+    target = tmp_path / "intent"
+    light_dir = target / "Lights"
+    _write_fits(light_dir / "light_001.fit", {"IMAGETYP": "Light", "FILTER": "B"})
+    intended = target / "Calibration Masters" / "MasterFlat_B.fit"
+    other = target / "Archive" / "MasterFlat_B.fit"
+    for path in (intended, other):
+        _write_fits(path, _master_header("flat", filter="B", temperature=None))
+
+    found = find_external_master(
+        [str(light_dir / "light_001.fit")],
+        kind="flat", shape=(4, 4), temperature=None,
+        filter="B", exposure=None,
+    )
+    assert found == str(intended.resolve())

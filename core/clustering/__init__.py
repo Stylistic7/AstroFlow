@@ -14,5 +14,6 @@ from .fingerprint import (
     cluster_by_fingerprint,
     attribute_by_consensus,
     attribute_by_locality,
-    HEADER_ONLY_IDENTITY,
+    SHAPE_ONLY_IDENTITY,
+    sensor_key,
 )

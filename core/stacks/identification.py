@@ -8,7 +8,7 @@ from frozendict import frozendict
 
 from typing import Iterator
 import clustering
-from clustering.fingerprint import FingerprintMap
+from clustering.fingerprint import FingerprintMap, sensor_key
 from stacks.composite_stack import Stack, StacksDict
 from metadata.classes import DefectsDict, FrameHash, MetadataDict
 from metadata.image_types import is_light_frame
@@ -26,18 +26,6 @@ from decisions.decisions import (
 
 
 log = structlog.get_logger()
-
-
-def _header_key(m) -> tuple:
-    """The (INSTRUME, sensor-shape, pixel-size) pre-group key. Same header,
-    same pre-group; also the identity axis that separates camera models and
-    on-camera crops before the hot-pixel fingerprint separates same-model
-    bodies."""
-    h = m.header
-    return (
-        h.get("INSTRUME"), h.get("NAXIS1"), h.get("NAXIS2"),
-        h.get("XPIXSZ"), h.get("YPIXSZ"),
-    )
 
 
 def build_fingerprint_map(
@@ -72,7 +60,7 @@ def build_fingerprint_map(
         num_frames=len(metadata), num_with_defects=len(defects),
     )
 
-    header_of = {h: _header_key(m) for h, m in metadata.items()}
+    sensor_of = {h: sensor_key(m.header) for h, m in metadata.items()}
     folder_of = {
         h: (os.path.dirname(str(m.filename)) if m.filename else None)
         for h, m in metadata.items()
@@ -81,11 +69,11 @@ def build_fingerprint_map(
     by_pre_group: dict[tuple, list[FrameHash]] = {}
     for h in metadata:
         if h in defects:
-            by_pre_group.setdefault(header_of[h], []).append(h)
+            by_pre_group.setdefault(sensor_of[h], []).append(h)
 
     import gc
     fp = FingerprintMap()
-    header_consensuses: dict[tuple, list[tuple[int, ...]]] = {}
+    sensor_consensuses: dict[tuple, list[tuple[int, ...]]] = {}
     leftover: list[FrameHash] = []
     n_subset = 0
     for key, hashes in by_pre_group.items():
@@ -101,7 +89,7 @@ def build_fingerprint_map(
                     fp[h] = consensus
             else:
                 pre_leftover.extend(cluster_frames)
-        header_consensuses.setdefault(key, []).extend(consensuses)
+        sensor_consensuses.setdefault(key, []).extend(consensuses)
 
         # Pass 2: subset-attribution — leftover LIGHTS only.
         light_leftover = [
@@ -133,9 +121,9 @@ def build_fingerprint_map(
     fallback = clustering.attribute_by_locality(
         leftover + no_defect_lights,
         folder_of=folder_of,
-        header_of=header_of,
+        sensor_of=sensor_of,
         attributed=dict(fp),
-        header_consensuses=header_consensuses,
+        sensor_consensuses=sensor_consensuses,
     )
     fp.update(fallback)
 
@@ -232,15 +220,16 @@ def identify_stacks(
     def camera_clusters(
         frames: tuple[FrameHash, ...],
     ) -> Iterator[tuple[tuple[FrameHash, ...], tuple[int, ...]]]:
-        # Two-level discrete clustering: first by header (INSTRUME, NAXIS,
+        # Two-level discrete clustering: first by sensor geometry (NAXIS,
         # XPIXSZ) — cheap and exact — then by camera fingerprint (looked
         # up from `fingerprint_map`, which was clustered once upfront).
-        # Same-model bodies separate at the fingerprint step.
+        # Same-model bodies separate at the fingerprint step. INSTRUME is
+        # deliberately absent: it split one sensor in two when a driver
+        # renamed it (see `clustering.fingerprint.sensor_key`).
         cameras = [
             (
                 metadata[k].content_hash,
                 (
-                    metadata[k].header["INSTRUME"],
                     metadata[k].header["NAXIS1"],
                     metadata[k].header["NAXIS2"],
                     metadata[k].header["XPIXSZ"],

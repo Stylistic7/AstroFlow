@@ -681,25 +681,35 @@ def test_generic_grouping(test_context) -> None:
 def test_darks_from_two_bodies_split_by_camera_id_hash(test_context) -> None:
     """Two physical bodies of the same model produce distinct dark
     fingerprints, so their darks land in separate CalibrationStacks
-    each carrying its own camera_id_hash."""
+    each carrying its own camera_id_hash.
+
+    `n_hot_pixels=200` keeps the synthetic defect density physically
+    representative. This is the only test that asks the fingerprint to tell
+    two BODIES apart, and the default 1200 defects on a 0.78 MP stand-in is
+    ~80x denser than a real sensor — dense enough that chance overlap alone
+    clears `o_min` and single-linkage welds the two cameras together. At 200
+    the numbers behave like real hardware: ~200 shared pixels within a body,
+    ~0.05 expected between bodies. Nothing about the camera STRING is load-
+    bearing here; the bodies differ only in the pixels they emit.
+    """
     make_synthetic_frames(
         prefix="bodyA_lights", number=5, ra=100, dec=50, dither=0,
-        instrument="ZWO ASI6200MM Pro",
+        instrument="ZWO ASI6200MM Pro", n_hot_pixels=200,
         dest_dir=context.input_dirs[0],
     )
     make_synthetic_frames(
         prefix="bodyA_darks", number=5, image_type="Dark",
-        instrument="ZWO ASI6200MM Pro",
+        instrument="ZWO ASI6200MM Pro", n_hot_pixels=200,
         temperature=-15, dest_dir=context.input_dirs[0],
     )
     make_synthetic_frames(
         prefix="bodyB_lights", number=5, ra=200, dec=-50, dither=0,
         instrument="ZWO ASI6200MM Pro #B",  # distinct fingerprint seed
-        dest_dir=context.input_dirs[0],
+        n_hot_pixels=200, dest_dir=context.input_dirs[0],
     )
     make_synthetic_frames(
         prefix="bodyB_darks", number=5, image_type="Dark",
-        instrument="ZWO ASI6200MM Pro #B",
+        instrument="ZWO ASI6200MM Pro #B", n_hot_pixels=200,
         temperature=-15, dest_dir=context.input_dirs[0],
     )
 
