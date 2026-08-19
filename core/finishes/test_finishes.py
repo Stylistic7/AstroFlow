@@ -197,10 +197,73 @@ class TestRegistry:
         try:
             refresh_finishes()
             f = get_finish("RGB", primary="Linear RGB")
-            assert [p.name for p in f.params] == ["mid"], \
+            authored = [p.name for p in f.params if not p.builtin]
+            assert authored == ["mid"], \
                 "user file must OVERRIDE the stock RGB"
+            # A user-authored finish goes through the SAME composition as a
+            # stock one — the framework's common first pass is injected here
+            # too, so both run the identical traced path.
+            assert [p.name for p in f.params if p.builtin] == ["trim_ragged"]
             assert get_finish("Hubble") is not None, \
                 "a broken sibling file must not abort discovery"
         finally:
             monkeypatch.undo()
             refresh_finishes()
+
+
+class TestCommonFirstPass:
+    """The framework's common first pass, composed in front of every finish."""
+
+    def _hubble(self):
+        from finishes.registry import discover_finishes, get_finish
+        discover_finishes()
+        return get_finish("Hubble")
+
+    def test_injected_into_every_finish_as_a_builtin_toggle(self):
+        from finishes.registry import discover_finishes, finish_specs
+        discover_finishes()
+        for s in finish_specs():
+            builtin = [p for p in s["params"] if p.get("builtin")]
+            assert [p["name"] for p in builtin] == ["trim_ragged"], s["name"]
+            assert builtin[0]["kind"] == "toggle", s["name"]
+            # LAST, so author param order — and therefore the uniform packing
+            # index every author already depends on — is untouched.
+            assert s["params"][-1]["name"] == "trim_ragged", s["name"]
+
+    def test_zeroes_pixels_missing_a_required_band(self):
+        import numpy as np
+        f = self._hubble()
+        # covered, missing H, missing O, missing S
+        nb = np.array([[[0.02, 0.03, 0.02], [0.02, 0.0, 0.02],
+                        [0.02, 0.03, 0.0], [0.0, 0.03, 0.02]]], dtype=np.float32)
+        out = f.bake([nb, np.zeros_like(nb)], {"trim_ragged": 1.0})[0]
+        assert out[0].max() > 0, "a fully covered pixel must survive"
+        assert np.all(out[1:] == 0), "ragged pixels must go black"
+
+    def test_toggle_off_restores_the_ragged_pixels(self):
+        import numpy as np
+        f = self._hubble()
+        nb = np.array([[[0.02, 0.03, 0.02], [0.02, 0.0, 0.02]]], dtype=np.float32)
+        stars = np.zeros_like(nb)
+        on = f.bake([nb, stars], {"trim_ragged": 1.0})[0]
+        off = f.bake([nb, stars], {"trim_ragged": 0.0})[0]
+        assert np.all(on[1] == 0)
+        assert off[1].max() > 0, "off must render the partial pixel's colour"
+        assert np.allclose(on[0], off[0]), "covered pixels are untouched either way"
+
+    def test_optional_inputs_are_not_tested(self):
+        """A missing OPTIONAL input binds black; testing it would blank the
+        whole image instead of its rim."""
+        import numpy as np
+        f = self._hubble()
+        assert "Linear RGB Stars" in f.optional
+        nb = np.full((1, 2, 3), 0.02, dtype=np.float32)
+        out = f.bake([nb, np.zeros_like(nb)], {"trim_ragged": 1.0})[0]
+        assert out.max() > 0, "an absent star layer must not black out the image"
+
+    def test_traced_into_the_wgsl(self):
+        """It goes through the tracer like any author op — not spliced into
+        the shader template — so WGSL and numpy come from one source."""
+        f = self._hubble()
+        assert "trim_ragged: f32" in f.wgsl
+        assert "select(" in f.wgsl

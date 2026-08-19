@@ -19,6 +19,7 @@ import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import Divider from '@mui/material/Divider';
 import Slider from '@mui/material/Slider';
 import Switch from '@mui/material/Switch';
 import FormControlLabel from '@mui/material/FormControlLabel';
@@ -568,6 +569,50 @@ export default function TileViewerV2({
         renderer.clearTiles();
     }, [renderer.isReady, tileMeta?.mtime]);
 
+    /** One control per served param: a switch for `kind === "toggle"`, a
+     * slider otherwise. Built-in (framework-injected) params come first and
+     * are separated from the author's own by a rule. */
+    function renderFinishParams(params) {
+        const builtin = params.filter((p) => p.builtin);
+        const authored = params.filter((p) => !p.builtin);
+        const control = (p) => (p.kind === 'toggle' ? (
+            <FormControlLabel
+                key={p.name}
+                control={
+                    <Switch
+                        size="small"
+                        checked={(genericValues[p.name] ?? p.default) > 0.5}
+                        onChange={(e) => setGenericValues(
+                            (s) => ({ ...s, [p.name]: e.target.checked ? 1 : 0 }))}
+                    />
+                }
+                label={<Typography variant="caption" sx={{ opacity: 0.85 }}>{p.label}</Typography>}
+                sx={{ ml: 0, color: '#fff' }}
+            />
+        ) : (
+            <Box key={p.name}>
+                <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
+                    {p.label} — {(genericValues[p.name] ?? p.default).toFixed(3)}
+                </Typography>
+                <Slider
+                    size="small"
+                    value={genericValues[p.name] ?? p.default}
+                    min={p.lo} max={p.hi}
+                    step={Math.max((p.hi - p.lo) / 200, 1e-4)}
+                    onChange={(_, v) => setGenericValues((s) => ({ ...s, [p.name]: v }))}
+                    sx={{ color: '#fff' }}
+                />
+            </Box>
+        ));
+        return (<>
+            {builtin.map(control)}
+            {builtin.length > 0 && authored.length > 0 && (
+                <Divider sx={{ my: 1, borderColor: 'rgba(255,255,255,0.25)' }} />
+            )}
+            {authored.map(control)}
+        </>);
+    }
+
     // Install (or clear) the data-driven finish's compiled shader. When a Python
     // finish is picked on a Linear SHO tap, the renderer switches to a pipeline
     // built from its served WGSL; otherwise it falls back to the built-in one.
@@ -1015,25 +1060,18 @@ export default function TileViewerV2({
                         control there; palette + stars below stay as globals). */}
                     {!gridActive && (<>
                     {genericMode ? (
-                        // Data-driven sliders — one per param EXTRACTED from the
+                        // Data-driven controls — one per param EXTRACTED from the
                         // Python finish (name/label/range/step all from the spec).
                         // A data-driven finish gets RAW linear input (no global
                         // normalise / Sky floor); its own params do all scaling.
-                        activeFinish.params.map((p) => (
-                            <Box key={p.name}>
-                                <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
-                                    {p.label} — {(genericValues[p.name] ?? p.default).toFixed(3)}
-                                </Typography>
-                                <Slider
-                                    size="small"
-                                    value={genericValues[p.name] ?? p.default}
-                                    min={p.lo} max={p.hi}
-                                    step={Math.max((p.hi - p.lo) / 200, 1e-4)}
-                                    onChange={(_, v) => setGenericValues((s) => ({ ...s, [p.name]: v }))}
-                                    sx={{ color: '#fff' }}
-                                />
-                            </Box>
-                        ))
+                        //
+                        // BUILT-IN params (framework-injected, e.g. the common
+                        // first pass's "Zero ragged edges") render FIRST, above a
+                        // rule, so someone reading their own finish can tell which
+                        // controls they declared and which came with the system.
+                        // They are ordinary params otherwise — same spec, same
+                        // uniform packing, same traced WGSL.
+                        renderFinishParams(activeFinish.params)
                     ) : (<>
                     {/* Sky floor lives with the built-in GHS finish only — it's
                         that pipeline's normalise anchor, not a global. */}
