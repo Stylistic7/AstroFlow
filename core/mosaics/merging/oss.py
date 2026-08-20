@@ -113,7 +113,47 @@ def _edt_weight(mask_crop, bbox, canvas_shape):
     return dist[pt:pt + (r1 - r0), pl:pl + (c1 - c0)]
 
 
-def _blend_many(paths: list[Path]) -> np.ndarray:
+_LEVEL_MIN_OVERLAP_PX = 256  # a few-pixel seam cannot carry a level constraint
+
+
+def _level_fit_rows(bboxes, masks, crops) -> list[dict]:
+    """Montage-shaped level-fit rows from the blend's retained crops.
+
+    One row per overlapping pair: `c = median(plus − minus)` over the
+    both-covered pixels — median because overlaps contain real structure
+    (stars, nebulosity) and the DC disagreement is a property of the SKY.
+    Boxes are the REAL overlap rectangles in canvas units: mBgModel
+    silently zeroes every correction when handed degenerate boxes (the
+    2026-08-19 lab regression pinned in test_background.py)."""
+    rows = []
+    n = len(crops)
+    for i in range(n):
+        if bboxes[i] is None:
+            continue
+        for j in range(i):
+            if bboxes[j] is None:
+                continue
+            region = _intersect(bboxes[i], bboxes[j])
+            if region is None:
+                continue
+            both = _sub(masks[i], bboxes[i], region) & _sub(masks[j], bboxes[j], region)
+            npix = int(both.sum())
+            if npix < _LEVEL_MIN_OVERLAP_PX:
+                continue
+            diff = (_sub(crops[j], bboxes[j], region)[both]
+                    - _sub(crops[i], bboxes[i], region)[both])
+            r0, r1, c0, c1 = region
+            rows.append({
+                "plus": j, "minus": i, "c": float(np.median(diff)),
+                "npixel": npix, "rms": max(float(diff.std()), 1e-9),
+                "xmin": c0, "xmax": c1, "ymin": r0, "ymax": r1,
+                "xcenter": (c0 + c1) / 2.0, "ycenter": (r0 + r1) / 2.0,
+                "boxwidth": float(c1 - c0), "boxheight": float(r1 - r0),
+            })
+    return rows
+
+
+def _blend_many(paths: list[Path], level_match: bool = False) -> np.ndarray:
     """Variadic distance-weighted blend with least-squares flux solve.
 
     Streams every panel off disk one at a time and works per-panel in its
@@ -136,6 +176,12 @@ def _blend_many(paths: list[Path]) -> np.ndarray:
     decompression, and the three passes reuse the retained crop instead of the
     old 3x re-read. The tight non-zero bbox is recomputed from the small array
     (it lies inside the stored bbox rectangle), keeping the math identical.
+
+    `level_match=True` fuses Montage background rectification into the same
+    pass — rectify, then feather: fit rows from the overlaps already
+    intersected here, one global `mBgModel -l` solve, in-place subtraction
+    of each panel's level (no-data zeros stay zero), and the flux solve
+    then sees the CORRECTED sky. No extra I/O, no intermediate artifacts.
     """
     if len(paths) == 1:
         arr, (x0, y0), (cw, ch) = read_placed_panel(paths[0])
@@ -193,6 +239,20 @@ def _blend_many(paths: list[Path]) -> np.ndarray:
         both = _sub(masks[a], bboxes[a], region) & _sub(masks[b], bboxes[b], region)
         mj = float(_sub(crops[a], bboxes[a], region)[both].mean()) if both.any() else 0.0
         overlap_means[(a, b)] = (mj, mi)
+
+    if level_match:
+        from mosaics.merging.background import solve_levels
+        levels = solve_levels(_level_fit_rows(bboxes, masks, crops),
+                              n, canvas_shape)
+        for i in range(n):
+            if crops[i] is not None and levels[i] != 0.0:
+                np.subtract(crops[i], np.float32(levels[i]),
+                            out=crops[i], where=masks[i])
+        overlap_means = {
+            (a, b): (None if mj is None else mj - levels[a],
+                     None if mi is None else mi - levels[b])
+            for (a, b), (mj, mi) in overlap_means.items()
+        }
 
     scales = _solve_flux_scales(n, overlap_means)
 

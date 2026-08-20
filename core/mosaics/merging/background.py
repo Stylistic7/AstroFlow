@@ -19,6 +19,17 @@ mosaic viewbox), so overlap differencing is plain array math, and Montage's
 WCS-driven ends (mProject/mDiff/mFitplane) would only re-derive what the
 placement stage already guarantees.
 
+FUSED INTO THE MERGE, not a separate graph stage: `merge_images_matched`
+(below) is `merge_images_oss` with `level_match=True` — the blend already
+reads every bbox-on-disk panel once and intersects every overlapping pair
+for its flux solve, so the level fit rides that same pass and the solve is
+a plain function call inside the node. Rectify, then feather. Two designs
+died before this one (2026-08-20): per-panel apply nodes calling the solve
+node at runtime (a @node is a remote task — forbidden), then a levels-as-
+1xN-TIFF artifact edge (works, but smuggles floats through a file and
+re-reads panels a second time — and its canvas-aligned pairwise fitter was
+silently WRONG for bbox-on-disk panels).
+
 LEVEL-ONLY, deliberately (`mBgModel -l`): GraXpert has already removed each
 panel's internal gradient, so the residual disagreement is DC steps — which
 is exactly what the Horsehead measurement shows. Solving planes as well
@@ -39,14 +50,12 @@ below are copied verbatim from what mImgtbl/mFitExec wrote in that lab.
 # apply op silently lost its `filename_fn` and every trace of this pipeline
 # died with AttributeError at trace time (2026-08-19).
 
-import os
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 
 import numpy as np
-import pyvips
 import structlog
 
 from context import context  # noqa: F401  (import parity with siblings; unused)
@@ -57,76 +66,6 @@ from mosaics.types import Mosaic
 
 log = structlog.get_logger()
 
-# Overlap fitting runs on shrunken panels: a DC level estimate does not need
-# full resolution, and 8× shrink cuts the I/O 64-fold. Panels share the
-# mosaic viewbox grid, so equal shrink keeps them aligned.
-_FIT_SHRINK = 8
-# A pair must share at least this many (shrunken) pixels to contribute a
-# constraint — tiny slivers give noisy constants and mBgModel weights by
-# npixel anyway, but a hard floor keeps degenerate corners out entirely.
-_MIN_OVERLAP_PX = 500
-
-
-def _open_shrunk(path: str) -> "np.ndarray":
-    img = pyvips.Image.new_from_file(path, access="sequential")
-    small = img.shrink(_FIT_SHRINK, _FIT_SHRINK)
-    a = np.ndarray(
-        buffer=small.write_to_memory(), dtype=np.float32,
-        shape=(small.height, small.width, small.bands),
-    )
-    return a[..., 0] if a.ndim == 3 else a
-
-
-def pairwise_level_fits(paths: list[str]) -> list[dict]:
-    """Median level difference over every overlapping pair.
-
-    Panels are canvas-sized with 0 = no-data (`place_image` fills 0 and
-    erodes the edge), so the overlap mask is simply both-nonzero. Median,
-    not mean: the overlap contains real structure (stars, nebulosity), and
-    the DC disagreement is a property of the SKY.
-
-    Returns Montage-shaped fit rows: `c = plus − minus` (the lab-verified
-    convention), plus the npixel/rms fields mBgModel weights by.
-    """
-    imgs = [_open_shrunk(p) for p in paths]
-    fits = []
-    for i in range(len(imgs)):
-        for j in range(i + 1, len(imgs)):
-            a, b = imgs[i], imgs[j]
-            h = min(a.shape[0], b.shape[0])
-            w = min(a.shape[1], b.shape[1])
-            a, b = a[:h, :w], b[:h, :w]
-            mask = (a != 0) & (b != 0)
-            n = int(mask.sum())
-            if n < _MIN_OVERLAP_PX:
-                continue
-            diff = a[mask] - b[mask]
-            c = float(np.median(diff))
-            mad = float(np.median(np.abs(diff - c)))
-            ys, xs = np.nonzero(mask)
-            # Real overlap bounding box, back in FULL-RES pixel units.
-            # mBgModel validates/weights fits by their box geometry and
-            # silently zeroes corrections when the box is degenerate
-            # (measured: zeroed-box rows -> all-zero corrections; same rows
-            # with real boxes -> exact recovery).
-            s = _FIT_SHRINK
-            x0, x1 = int(xs.min()) * s, int(xs.max()) * s
-            y0, y1 = int(ys.min()) * s, int(ys.max()) * s
-            fits.append({
-                "plus": i, "minus": j, "c": c,
-                "npixel": n * s * s,
-                "rms": 1.4826 * mad if mad > 0 else 1e-6,
-                "xmin": x0, "xmax": x1, "ymin": y0, "ymax": y1,
-                "xcenter": (x0 + x1) / 2.0, "ycenter": (y0 + y1) / 2.0,
-                "boxwidth": float(x1 - x0), "boxheight": float(y1 - y0),
-            })
-    return fits
-
-
-# ---------------------------------------------------------------------------
-# The mBgModel bridge: synthesize the two IPAC tables it reads, run it in
-# level-only mode, parse the corrections. Formats copied from the lab run.
-# ---------------------------------------------------------------------------
 
 def _write_images_tbl(path: Path, n: int, width: int, height: int) -> None:
     with open(path, "w") as f:
@@ -204,70 +143,68 @@ def _solve_lstsq(fits: list[dict], n: int) -> list[float]:
     return [float(x) for x in sol]
 
 
-@node
-def solve_panel_backgrounds(
-    mosaic: Mosaic, filter: str, *panels: ImageMetadata,
-) -> tuple[float, ...]:
-    """Per-panel background levels to SUBTRACT so all panels agree.
-
-    Pure over the placed panels (their content hashes key the cache); the
-    result is a handful of floats, so the entry is nearly free and re-solves
-    only when a panel actually changes. A single panel — or panels with no
+def solve_levels(rows: list[dict], n: int,
+                 canvas_shape: tuple[int, int]) -> list[float]:
+    """Global level solve over Montage-shaped fit rows — a PLAIN function,
+    called from inside the fused merge (`_blend_many(level_match=True)`).
+    mBgModel when installed; the numpy least-squares fallback is the same
+    problem in the min-norm gauge. A single panel — or panels with no
     usable overlaps — correctly gets zero correction: there is nothing to
-    disagree with.
-    """
-    paths = [str(p.filename) for p in panels]
-    if len(paths) < 2:
-        return tuple(0.0 for _ in paths)
-    fits = pairwise_level_fits(paths)
-    if not fits:
-        log.warning("background matching: no usable overlaps",
-                    mosaic=mosaic.stable_hash, filter=filter)
-        return tuple(0.0 for _ in paths)
-    probe = pyvips.Image.new_from_file(paths[0])
+    disagree with."""
+    if n < 2 or not rows:
+        if n >= 2:
+            log.warning("background matching: no usable overlaps")
+        return [0.0] * n
+    ch, cw = canvas_shape
     if shutil.which("mBgModel"):
-        levels = _solve_mbgmodel(fits, len(paths), probe.width, probe.height)
+        levels = [float(v) for v in _solve_mbgmodel(rows, n, cw, ch)]
     else:
         print("### mBgModel not installed on this node — using the numpy "
               "least-squares fallback (same problem, min-norm gauge). "
               "`brew install montage` for the reference solver.")
-        levels = _solve_lstsq(fits, len(paths))
+        levels = [float(v) for v in _solve_lstsq(rows, n)]
     log.info("background levels solved",
-             mosaic=mosaic.stable_hash, filter=filter,
-             levels=[round(v, 6) for v in levels],
-             pairs=len(fits))
-    return tuple(levels)
+             levels=[round(v, 6) for v in levels], pairs=len(rows))
+    return levels
 
 
-@node(ephemeral=True, auto_memory=True, plate_solve=False)
-def apply_background_level(
-    mosaic: Mosaic, filter: str, index: int, *panels: ImageMetadata,
+@node(display="Mosaic", final=True, auto_memory=True, plate_solve=False)  # mosaic projection — non-square pixels
+def merge_images_matched(
+    mosaic: Mosaic, filter: str, *inputs: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
-    """Panel `index` with its solved background level subtracted.
+    """`merge_images_oss` with Montage level matching fused in — rectify,
+    then feather. The blend already reads every panel once and intersects
+    every overlapping pair for its flux solve; the level fit rides that
+    same pass (`_level_fit_rows` → `solve_levels` → in-place subtraction),
+    so rectification costs no extra I/O and no intermediate artifacts, and
+    the solve is a normal function call inside this one node.
 
-    Takes ALL panels (not just its own) because the level is a joint
-    property: any panel changing re-solves every level, so every matched
-    output must re-key — which the variadic signature encodes directly in
-    the call hash. The solve itself runs once and cache-hits for the
-    siblings. Streaming end to end: lazy vips arithmetic pulled
-    stripe-by-stripe by the tiffsave sink — the multi-GB canvas panel is
-    never resident.
+    The wrapper mirrors merge_images_oss line for line instead of sharing
+    a helper: the twin's body is hash-frozen — extracting one would re-key
+    every existing mosaic merge in the parent pipelines."""
+    from mosaics.merging.oss import (
+        _blend_many, _panel_count, _set_panel_count, write_tiff_image,
+    )
+    from hashing import hash_list
 
-    Zero stays zero: 0 is `place_image`'s no-data fill, not sky, so the
-    correction applies only where the panel has data.
-    """
-    from mosaics.color.post_process import _save_mono_vips
+    assert len(inputs) >= 1
+    output_filename = merge_images_matched.filename_fn(mosaic, filter, *inputs)
+    Path(output_filename).parent.mkdir(parents=True, exist_ok=True)
 
-    levels = solve_panel_backgrounds(mosaic, filter, *panels)
-    level = levels[index]
-    src = pyvips.Image.new_from_file(
-        str(panels[index].filename), access="sequential")
-    if src.bands > 1:
-        src = src[0]
-    corrected = (src != 0).ifthenelse(src - level, 0.0)
-    out = apply_background_level.filename_fn(mosaic, filter, index, *panels)
-    _save_mono_vips(str(out), corrected, filter)
-    return WithSidecar(TiffFilePath(out))
+    paths = [inp.filename.resolve(strict=True) for inp in inputs]
+    result = _blend_many(paths, level_match=True)
+
+    write_tiff_image(Path(output_filename), result.astype(np.float32),
+                     {"FILTER": filter,
+                      "STBLHASH": hash_list([inp.stable_hash for inp in inputs]),
+                      "PIPELINE": "AstroFlow-OSS-Montage"})
+
+    new_count = sum(_panel_count(inp) for inp in inputs)
+    _set_panel_count(output_filename, new_count)
+
+    log.info("level-matched OSS merge complete", output=str(output_filename),
+             panel_count=new_count, n_inputs=len(inputs))
+    return WithSidecar(output_filename)
 
 
 import ray
@@ -276,18 +213,17 @@ import ray
 @ray.remote(num_cpus=0.1)
 def merge_scope_matched(mosaic, filter, viewbox, config, targets, *corrected,
                         dry_run=False):
-    """`merge_scope` with ONE inserted step: panel background levels are
-    solved globally (mBgModel over every pairwise overlap) and subtracted
-    before the OSS blend. Same `delete_intermediates` semantics — the
-    placements AND the matched copies are interiors reclaimed at scope
+    """`merge_scope` with its terminal swapped: `merge_images_matched`
+    fuses the global level solve (mBgModel over every pairwise overlap)
+    into the OSS blend itself. Same shape, same `delete_intermediates`
+    semantics — the placements are interiors reclaimed at scope
     conclusion; the merge is the terminal and persists. See `merge_scope`
-    in mosaics/merging/oss.py for the machinery this mirrors, including the
-    runtime fold confession below.
+    in mosaics/merging/oss.py for the machinery this mirrors, including
+    the runtime fold confession below.
     """
     del dry_run
     from dependency_graph.classes import Graph
     from dependency_graph.tracing import trace
-    from mosaics.merging.oss import merge_images_oss
     from mosaics.placement.astroflow import place_image
 
     print("### merge_scope_matched fold %s/%s: %s" % (
@@ -299,10 +235,6 @@ def merge_scope_matched(mosaic, filter, viewbox, config, targets, *corrected,
             place_image(mosaic, target, filter, viewbox, config, channel)
             for target, channel in zip(targets, corrected)
         ]
-        matched = [
-            apply_background_level(mosaic, filter, i, *placed)
-            for i in range(len(placed))
-        ]
-        return merge_images_oss(mosaic, filter, *matched)
+        return merge_images_matched(mosaic, filter, *placed)
 
     return Graph(trace(_body))

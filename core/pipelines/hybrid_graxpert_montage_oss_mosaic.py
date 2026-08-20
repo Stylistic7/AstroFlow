@@ -1,9 +1,10 @@
 """Hybrid pipeline: GraXpert gradients + Montage level-matching + OSS mosaic.
 
 An A/B fork of `hybrid_graxpert_oss_mosaic.py`. **One thing differs**: after
-placement and before the OSS blend, every panel's background LEVEL is solved
-globally — Montage's `mBgModel` least-squares over all pairwise overlaps —
-and subtracted, so the panels agree about where the sky sits.
+placement, the merge is `merge_images_matched` — the OSS blend with
+Montage's `mBgModel` level solve fused in (rectify, then feather): every
+panel's background LEVEL is solved globally over all pairwise overlaps and
+subtracted in-stream, so the panels agree about where the sky sits.
 
 WHY (measured on the Horsehead 4-panel mosaic, 2026-08-19). GraXpert flattens
 each panel's gradient INDEPENDENTLY, so each lands on its own residual DC
@@ -37,9 +38,8 @@ from dependency_graph.tracing import (
     IdentityRef, present_terminal, workflow_group,
 )
 from mosaics.merging.background import (
-    apply_background_level, merge_scope_matched,
+    merge_images_matched, merge_scope_matched,
 )
-from mosaics.merging.oss import merge_images_oss
 from mosaics.color.post_process import (
     bxt_correct_only, color_post_process, panel_source_manifest,
 )
@@ -124,13 +124,12 @@ def _merged_channels(mosaic, targets_by_id, channels, config) -> dict:
     """Per-filter `{filter: merged-channel handle}` — the parent's structure
     with the level-matching step spliced between placement and merge.
 
-    The trace-time path prediction extends the parent's one hop further:
-    matched refs derive from `apply_background_level.filename_fn` over the
-    placed refs (outputs' content hashes ARE their producers' call hashes,
-    so the chain is computable inductively at trace time — see the CONTHASH
-    note in cache/cached_decorator.py). The apply op is variadic over ALL
-    placed panels on purpose: the level is a joint property, so any panel
-    changing re-keys every matched output, and the merge behind them."""
+    Trace-time path prediction is the parent's exact pattern — one hop
+    from the placed refs to the terminal's filename (outputs' content
+    hashes ARE their producers' call hashes; see the CONTHASH note in
+    cache/cached_decorator.py). The merge is variadic over ALL placed
+    panels, so any panel changing re-keys the whole matched merge — the
+    level is a joint property."""
     out = {}
     for filter in mosaic.filters:
         viewbox = mosaic.viewbox("Master")
@@ -154,17 +153,12 @@ def _merged_channels(mosaic, targets_by_id, channels, config) -> dict:
                 mosaic, target, filter, viewbox, config, channel)).stem)
             for target, channel in entries
         ]
-        matched_refs = [
-            IdentityRef(Path(apply_background_level.filename_fn(
-                mosaic, filter, i, *placed_refs)).stem)
-            for i in range(len(placed_refs))
-        ]
-        merge_path = merge_images_oss.filename_fn(
-            mosaic, filter, *matched_refs)
+        merge_path = merge_images_matched.filename_fn(
+            mosaic, filter, *placed_refs)
         handle = record(
             merge_scope_matched, mosaic, filter, viewbox, config,
             tuple(target for target, _ in entries),
             *[channel for _, channel in entries])
         out[filter] = present_terminal(
-            handle, merge_images_oss, path=merge_path)
+            handle, merge_images_matched, path=merge_path)
     return out
