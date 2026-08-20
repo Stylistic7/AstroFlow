@@ -398,6 +398,22 @@ def _select_node(
     It then runs alone and OOMs loudly if genuinely too big — traceable, unlike a
     silent hang."""
     pressure = pressure_by_node or {}
+    # UNMEASURED nodes are still candidates, on the RESERVED leg alone
+    # (capacity − reserved, no psutil truth): before this, a node whose
+    # probe timed out was dropped from candidacy entirely, which — combined
+    # with cold probes needing warm workers — made idleness self-sustaining
+    # (the 2026-08-19 MBP starvation; see state/node_sentinel.py). One
+    # conservative admission beats permanent exile; the sentinel actors make
+    # the unmeasured case rare, this makes it survivable. Loud, because the
+    # exile used to be silent across 500+ one-sided placements.
+    for n_id, caps in capacity_by_node.items():
+        if n_id in free_by_node or "memory" not in caps:
+            continue
+        cap = int(caps["memory"])
+        free_by_node = {**free_by_node, n_id: cap}
+        total_by_node = {**total_by_node, n_id: cap}
+        print(f"### _select_node: node {str(n_id)[:8]} UNMEASURED — "
+              f"admitting on reserved-ledger leg only")
     scored = []  # (effective_free, node_id)
     for nid, avail in free_by_node.items():
         if not _custom_fits(

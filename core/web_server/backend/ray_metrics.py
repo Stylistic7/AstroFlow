@@ -252,13 +252,38 @@ def sample_node_memory(timeout: float = 4.0) -> dict:
     out: dict[str, tuple[int, int, int]] = {}
     try:
         import ray
+
+        # Sentinel-first: one pinned actor per node answers in milliseconds
+        # regardless of worker warmth — the fix for the bistable starvation
+        # where an idle node's cold probe (>4 s worker start) timed out, the
+        # node fell out of scheduling, and idleness became self-sustaining
+        # (state/node_sentinel.py has the full story). While a sentinel
+        # answers, it ALSO runs the PixInsight wedge check on its node.
+        alive = [n for n in ray.nodes() if n.get("Alive")]
+        try:
+            from state.node_sentinel import sentinel_for
+            refs = []
+            for n in alive:
+                s = sentinel_for(n["NodeID"])
+                refs.append(s.memory.remote())
+                s.kill_wedged_pixinsight.remote()   # fire-and-forget sweep
+            for ref in refs:
+                try:
+                    node_id, avail, total, pressure = ray.get(ref, timeout=timeout)
+                    out[node_id] = (avail, total, pressure)
+                except Exception:
+                    continue
+            if out:
+                return out
+        except Exception:
+            pass  # sentinel path unavailable → legacy probe below
+
         if _sample_node_mem_fn is None:
             _sample_node_mem_fn = _try_import_node_mem_remote()
         if _sample_node_mem_fn is None:
             return out
 
         from ray.util.scheduling_strategies import NodeAffinitySchedulingStrategy
-        alive = [n for n in ray.nodes() if n.get("Alive")]
         refs = []
         for n in alive:
             strategy = NodeAffinitySchedulingStrategy(node_id=n["NodeID"], soft=False)
