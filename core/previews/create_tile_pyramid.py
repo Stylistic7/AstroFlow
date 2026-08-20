@@ -452,6 +452,34 @@ def pyramid_thumbnail(tile_pyramid_path, min_px: int = _THUMBNAIL_MIN_PX) -> byt
     import cv2
 
     path = os.fspath(tile_pyramid_path)
+
+    if path.lower().endswith(".xisf"):
+        # An XISF master has no stored pyramid: since 2ed7012e the tile
+        # route serves it by MEMORY MAP, and the old `_tiles.tiff` siblings
+        # were deleted — so tiffload here met XISF bytes ("bad magic number
+        # 0x4958" = 'XI') and every Channel-tap thumbnail 500'd. Thumbnail
+        # the map the same way: stride-subsample the mapped pixels, which
+        # touches only every k-th row of the file — a 61 MP master costs
+        # roughly a thumbnail's worth of page-ins, no decode of the rest.
+        from file_io.xisf_mmap import open_vips
+        img, keepalive = open_vips(path)
+        k = max(1, min(img.width, img.height) // min_px)
+        if isinstance(keepalive, np.ndarray):
+            arr = np.array(keepalive[::k, ::k], dtype=np.float32)
+        else:
+            # Fallback decode path (non-mmapable XISF): the vips image owns
+            # a full decode already; shrink in vips, then read out.
+            small = img.subsample(k, k)
+            arr = np.ndarray(
+                buffer=small.write_to_memory(), dtype=np.float32,
+                shape=(small.height, small.width, small.bands),
+            ).squeeze()
+        arr_u8 = (autostretch(arr) * 255.0).astype(np.uint8)
+        ok, buf = cv2.imencode(".png", arr_u8)
+        if not ok:
+            raise RuntimeError(f"cv2 failed to encode PNG for {path}")
+        return buf.tobytes()
+
     base = pyvips.Image.tiffload(path, page=0, unlimited=True)
 
     try:
