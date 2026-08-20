@@ -147,13 +147,20 @@ class NodeSentinel:
 def sentinel_for(node_id: str):
     """Get-or-create this node's sentinel, pinned hard to the node.
 
-    Named + get_if_exists so every caller shares one actor per node; a dead
+    Named + get_if_exists IN AN EXPLICIT NAMESPACE so every caller shares
+    one actor per node. Detached named actors are namespace-scoped, and each
+    Ray driver (main.py, every gunicorn worker, any ad-hoc shell) connects in
+    its own anonymous namespace — without the explicit namespace each driver
+    would silently spawn its own duplicate sentinel per node. A dead
     node's sentinel dies with it and is simply recreated on the next call
     after rejoin (soft=False placement fails fast while the node is gone —
     callers treat that like any other missed measurement)."""
     from ray.util.scheduling_strategies import NodeAffinitySchedulingStrategy
     return NodeSentinel.options(
         name=f"node-sentinel-{node_id}",
+        # Same resolution as context._get_namespace (mock override for tests),
+        # inlined so the sentinel module never imports the app graph.
+        namespace=os.environ.get("ASTROFLOW_MOCK_NAMESPACE", "AstroFlow"),
         get_if_exists=True,
         lifetime="detached",
         scheduling_strategy=NodeAffinitySchedulingStrategy(node_id=node_id, soft=False),
