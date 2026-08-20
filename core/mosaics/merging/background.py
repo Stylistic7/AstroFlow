@@ -32,7 +32,12 @@ Ground truth (2026-08-19 synthetic lab, three 400×300 panels, pedestals
 brings all three panels to the same level to 3 µ. The table formats emitted
 below are copied verbatim from what mImgtbl/mFitExec wrote in that lab.
 """
-from __future__ import annotations
+# NO `from __future__ import annotations` here, deliberately: it stringifies
+# every annotation, and the @node decorator detects file-returning ops by
+# INSPECTING the return annotation (`_looks_like_file_return` wants the real
+# `WithSidecar[TiffFilePath]`, not the string) — with the future import the
+# apply op silently lost its `filename_fn` and every trace of this pipeline
+# died with AttributeError at trace time (2026-08-19).
 
 import os
 import shutil
@@ -62,7 +67,7 @@ _FIT_SHRINK = 8
 _MIN_OVERLAP_PX = 500
 
 
-def _open_shrunk(path: str) -> np.ndarray:
+def _open_shrunk(path: str) -> "np.ndarray":
     img = pyvips.Image.new_from_file(path, access="sequential")
     small = img.shrink(_FIT_SHRINK, _FIT_SHRINK)
     a = np.ndarray(
