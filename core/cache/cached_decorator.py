@@ -278,6 +278,19 @@ def make_cached_decorator(
                 )
             if isinstance(result, Path) and not result.exists():
                 raise FileNotFoundError(result)
+            from dependency_graph.classes import Graph
+            if isinstance(result, Graph):
+                # A Graph is a PLAN, not a result: a description of work still
+                # to dispatch, valid only inside the runtime pass that receives
+                # it. Caching one persists dead handles across processes and
+                # class revisions — a `__slots__` change on Graph made every
+                # such pickle unreadable (2026-08-19, process_stacks_for_ui),
+                # and even a readable one would replay a stale plan instead of
+                # recomputing it against current state. Delta-only builders
+                # (return dict on all-hits, Graph on misses) still get their
+                # fast path: the all-hits DICT is cached; a miss pass re-runs
+                # the cheap probe next startup, by which time its members hit.
+                return result
             debug_print(
                 f"storing: {key} as {type(result)} into cache "
                 f"{_resolve_cache().directory}"
