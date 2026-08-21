@@ -33,13 +33,25 @@ def test_silent_pi_wedges_after_the_window(monkeypatch):
     s = _bare()
     now = [1000.0]
     monkeypatch.setattr(time, "time", lambda: now[0])
-    monkeypatch.setattr(s, "_pi_snapshot", lambda: [(42, 10.0, 0.0)])
+    monkeypatch.setattr(s, "_pi_snapshot", lambda: [(42, 500.0, 0.0)])
     s.pixinsight_health()                     # baseline
     now[0] += _PI_WEDGE_SECONDS - 10
     assert s.pixinsight_health()[0]["wedged"] is False, "not yet"
     now[0] += 20
     h = s.pixinsight_health()[0]
     assert h["wedged"] is True and h["inactive_s"] > _PI_WEDGE_SECONDS
+
+
+def test_idle_pooled_instance_is_never_wedged(monkeypatch):
+    """A PI with only startup CPU (no real work) idling past the window is a
+    POOL resource, not a wedge — reaping it just forces a cold start."""
+    s = _bare()
+    now = [1000.0]
+    monkeypatch.setattr(time, "time", lambda: now[0])
+    monkeypatch.setattr(s, "_pi_snapshot", lambda: [(42, 15.0, 0.0)])
+    s.pixinsight_health()
+    now[0] += _PI_WEDGE_SECONDS * 10
+    assert s.pixinsight_health()[0]["wedged"] is False
 
 
 def test_scratch_write_counts_as_activity(monkeypatch):

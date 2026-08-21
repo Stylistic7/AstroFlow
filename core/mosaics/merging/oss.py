@@ -115,16 +115,56 @@ def _edt_weight(mask_crop, bbox, canvas_shape):
 
 _LEVEL_MIN_OVERLAP_PX = 256  # a few-pixel seam cannot carry a level constraint
 
+# mFitplane discipline: iteratively reject pixels beyond 2*rms of the current
+# plane fit and refit, until stable (Montage/mFitplane.c does exactly this).
+_PLANE_REJECT_SIGMA = 2.0
+_PLANE_REJECT_ITERS = 5
+
+
+def _fit_plane(x, y, z):
+    """Least-squares z = a*x + b*y + c via 3x3 normal equations (no big
+    design matrix), with mFitplane's iterative 2*rms outlier rejection.
+    Returns (a, b, c, rms, n_used)."""
+    keep = np.ones(z.shape, dtype=bool)
+    a = b = c = 0.0
+    rms = 0.0
+    for _ in range(_PLANE_REJECT_ITERS):
+        xs, ys, zs = x[keep], y[keep], z[keep]
+        n = xs.size
+        if n < 16:
+            break
+        M = np.array([
+            [np.dot(xs, xs), np.dot(xs, ys), xs.sum()],
+            [np.dot(xs, ys), np.dot(ys, ys), ys.sum()],
+            [xs.sum(),       ys.sum(),       float(n)],
+        ])
+        v = np.array([np.dot(xs, zs), np.dot(ys, zs), zs.sum()])
+        try:
+            a, b, c = np.linalg.solve(M, v)
+        except np.linalg.LinAlgError:
+            break
+        resid = z - (a * x + b * y + c)
+        rms = float(np.sqrt(np.mean(resid[keep] ** 2)))
+        new_keep = np.abs(resid) <= _PLANE_REJECT_SIGMA * max(rms, 1e-12)
+        if new_keep.sum() == keep.sum():
+            keep = new_keep
+            break
+        keep = new_keep
+    return float(a), float(b), float(c), max(rms, 1e-9), int(keep.sum())
+
 
 def _level_fit_rows(bboxes, masks, crops) -> list[dict]:
-    """Montage-shaped level-fit rows from the blend's retained crops.
+    """Montage-shaped PLANE fit rows from the blend's retained crops —
+    the first-degree ("LNC") generalisation of the original constant fits.
 
-    One row per overlapping pair: `c = median(plus − minus)` over the
-    both-covered pixels — median because overlaps contain real structure
-    (stars, nebulosity) and the DC disagreement is a property of the SKY.
-    Boxes are the REAL overlap rectangles in canvas units: mBgModel
-    silently zeroes every correction when handed degenerate boxes (the
-    2026-08-19 lab regression pinned in test_background.py)."""
+    One row per overlapping pair: `diff = a*x + b*y + c` fitted to
+    (plus − minus) over the both-covered pixels with mFitplane's iterative
+    2*rms rejection, in ZERO-BASED CANVAS coordinates (crpix1 = crpix2 = 0,
+    so x = canvas column, y = canvas row — the same frame the boxes are
+    written in and the apply step subtracts in; the ground-truth lab in
+    test_background.py pins the round trip). Boxes are the REAL overlap
+    rectangles: mBgModel silently zeroes every correction when handed
+    degenerate boxes (the 2026-08-19 lab regression)."""
     rows = []
     n = len(crops)
     for i in range(n):
@@ -140,17 +180,43 @@ def _level_fit_rows(bboxes, masks, crops) -> list[dict]:
             npix = int(both.sum())
             if npix < _LEVEL_MIN_OVERLAP_PX:
                 continue
-            diff = (_sub(crops[j], bboxes[j], region)[both]
-                    - _sub(crops[i], bboxes[i], region)[both])
             r0, r1, c0, c1 = region
+            yy, xx = np.nonzero(both)
+            x = (xx + c0).astype(np.float64)
+            y = (yy + r0).astype(np.float64)
+            z = (_sub(crops[j], bboxes[j], region)[both]
+                 - _sub(crops[i], bboxes[i], region)[both]).astype(np.float64)
+            a, b, c, rms, used = _fit_plane(x, y, z)
             rows.append({
-                "plus": j, "minus": i, "c": float(np.median(diff)),
-                "npixel": npix, "rms": max(float(diff.std()), 1e-9),
+                "plus": j, "minus": i, "a": a, "b": b, "c": c,
+                "npixel": used, "rms": rms,
                 "xmin": c0, "xmax": c1, "ymin": r0, "ymax": r1,
                 "xcenter": (c0 + c1) / 2.0, "ycenter": (r0 + r1) / 2.0,
                 "boxwidth": float(c1 - c0), "boxheight": float(r1 - r0),
             })
     return rows
+
+
+def _overlap_means(bboxes, masks, crops):
+    """Pass 1+2 of the blend: i-side and j-side overlap means per pair."""
+    n = len(crops)
+    means = {}
+    for i in range(n):
+        if bboxes[i] is None:
+            continue
+        for j in range(i):
+            if bboxes[j] is None:
+                continue
+            region = _intersect(bboxes[i], bboxes[j])
+            if region is None:
+                continue
+            both = _sub(masks[i], bboxes[i], region) & _sub(masks[j], bboxes[j], region)
+            if not both.any():
+                continue
+            mi = float(_sub(crops[i], bboxes[i], region)[both].mean())
+            mj = float(_sub(crops[j], bboxes[j], region)[both].mean())
+            means[(j, i)] = (mj, mi)
+    return means
 
 
 def _blend_many(paths: list[Path], level_match: bool = False) -> np.ndarray:
@@ -178,10 +244,12 @@ def _blend_many(paths: list[Path], level_match: bool = False) -> np.ndarray:
     (it lies inside the stored bbox rectangle), keeping the math identical.
 
     `level_match=True` fuses Montage background rectification into the same
-    pass — rectify, then feather: fit rows from the overlaps already
-    intersected here, one global `mBgModel -l` solve, in-place subtraction
-    of each panel's level (no-data zeros stay zero), and the flux solve
-    then sees the CORRECTED sky. No extra I/O, no intermediate artifacts.
+    pass — rectify, then feather, FIRST DEGREE ("LNC"): a plane per overlap
+    difference (mFitplane's model + 2*rms rejection), one global two-phase
+    `mBgModel` solve (levels first, then slopes; its area/linear/2-sigma
+    overlap gates active), and in-place subtraction of each panel's solved
+    plane before the flux solve sees the corrected sky. No extra I/O, no
+    intermediate artifacts.
     """
     if len(paths) == 1:
         arr, (x0, y0), (cw, ch) = read_placed_panel(paths[0])
@@ -215,44 +283,28 @@ def _blend_many(paths: list[Path], level_match: bool = False) -> np.ndarray:
         masks.append(crop > 0)
         crops.append(crop)
 
-    # Pass 1: i-side (higher-index) overlap mean of every overlapping pair.
-    overlap_means: dict[tuple[int, int], tuple[float | None, float | None]] = {}
-    for i in range(n):
-        if bboxes[i] is None:
-            continue
-        for j in range(i):
-            if bboxes[j] is None:
-                continue
-            region = _intersect(bboxes[i], bboxes[j])
-            if region is None:
-                continue
-            both = _sub(masks[i], bboxes[i], region) & _sub(masks[j], bboxes[j], region)
-            if not both.any():
-                continue
-            mi = float(_sub(crops[i], bboxes[i], region)[both].mean())
-            overlap_means[(j, i)] = (None, mi)  # j-side filled in pass 2
-
-    # Pass 2: fill in the j (lower-index) side mean — from the retained crop.
-    for (a, b) in list(overlap_means):
-        _, mi = overlap_means[(a, b)]
-        region = _intersect(bboxes[a], bboxes[b])
-        both = _sub(masks[a], bboxes[a], region) & _sub(masks[b], bboxes[b], region)
-        mj = float(_sub(crops[a], bboxes[a], region)[both].mean()) if both.any() else 0.0
-        overlap_means[(a, b)] = (mj, mi)
+    overlap_means = _overlap_means(bboxes, masks, crops)
 
     if level_match:
-        from mosaics.merging.background import solve_levels
-        levels = solve_levels(_level_fit_rows(bboxes, masks, crops),
+        from mosaics.merging.background import solve_planes
+        planes = solve_planes(_level_fit_rows(bboxes, masks, crops),
                               n, canvas_shape)
+        # Rectify-then-feather, first degree: subtract each panel's solved
+        # plane over its crop's canvas coordinates (no-data zeros stay
+        # zero), then RECOMPUTE the overlap means so the flux solve sees
+        # the corrected sky.
         for i in range(n):
-            if crops[i] is not None and levels[i] != 0.0:
-                np.subtract(crops[i], np.float32(levels[i]),
-                            out=crops[i], where=masks[i])
-        overlap_means = {
-            (a, b): (None if mj is None else mj - levels[a],
-                     None if mi is None else mi - levels[b])
-            for (a, b), (mj, mi) in overlap_means.items()
-        }
+            if crops[i] is None:
+                continue
+            pa, pb, pc = planes[i]
+            if pa == 0.0 and pb == 0.0 and pc == 0.0:
+                continue
+            r0, r1, c0, c1 = bboxes[i]
+            ramp = (pa * np.arange(c0, c1, dtype=np.float32)[None, :]
+                    + pb * np.arange(r0, r1, dtype=np.float32)[:, None]
+                    + np.float32(pc))
+            np.subtract(crops[i], ramp, out=crops[i], where=masks[i])
+        overlap_means = _overlap_means(bboxes, masks, crops)
 
     scales = _solve_flux_scales(n, overlap_means)
 

@@ -38,6 +38,13 @@ import ray
 # fully silent (compute phases burn CPU, I/O phases touch scratch).
 _PI_WEDGE_SECONDS = 300.0
 
+# A PixInsight is only wedge-ELIGIBLE once it has done real work: a pooled
+# instance idling between dispatches carries only ~10-20s of startup CPU and
+# must not be reaped (the runner cold-starts a replacement, pure waste —
+# observed 2026-08-21: every kill at ~301s, the idle-aging signature, never
+# a mid-task hang). A genuinely wedged WBPP/recipe carries minutes of CPU.
+_PI_MIN_WORK_CPU_SECONDS = 60.0
+
 
 @ray.remote(num_cpus=0)
 class NodeSentinel:
@@ -121,7 +128,8 @@ class NodeSentinel:
             report.append({
                 "pid": pid,
                 "inactive_s": round(now - last_active, 1),
-                "wedged": (now - last_active) > _PI_WEDGE_SECONDS,
+                "wedged": ((now - last_active) > _PI_WEDGE_SECONDS
+                           and cpu > _PI_MIN_WORK_CPU_SECONDS),
             })
         for pid in set(self._pi_activity) - seen:
             del self._pi_activity[pid]

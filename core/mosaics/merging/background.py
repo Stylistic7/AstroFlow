@@ -85,33 +85,42 @@ def _write_fits_tbl(path: Path, fits: list[dict]) -> None:
         f.write(cols)
         for r in fits:
             f.write(
-                f"{r['plus']:10d}{r['minus']:10d}{0.0:17.5e}{0.0:17.5e}"
-                f"{r['c']:17.5e}{1.0:15.2f}{1.0:15.2f}"
+                f"{r['plus']:10d}{r['minus']:10d}"
+                f"{r.get('a', 0.0):17.5e}{r.get('b', 0.0):17.5e}"
+                # crpix = 0: coefficients and boxes share the zero-based
+                # canvas frame (see _level_fit_rows in oss.py).
+                f"{r['c']:17.5e}{0.0:15.2f}{0.0:15.2f}"
                 f"{r['xmin']:11d}{r['xmax']:11d}{r['ymin']:11d}{r['ymax']:11d}"
                 f"{r['xcenter']:14.2f}{r['ycenter']:14.2f}{r['npixel']:14d}"
                 f"{r['rms']:17.5e}{r['xcenter']:17.1f}{r['ycenter']:17.1f}"
                 f"{r['boxwidth']:17.1f}{r['boxheight']:17.1f}{0.0:17.1f} \n")
 
 
-def _parse_corrections(path: Path, n: int) -> list[float]:
-    levels = [0.0] * n
+def _parse_corrections(path: Path, n: int) -> list[tuple]:
+    """corrections.tbl rows are `id  a  b  c` — one plane per image."""
+    planes = [(0.0, 0.0, 0.0)] * n
     for line in open(path):
         if line.startswith("|") or not line.strip():
             continue
         parts = line.split()
         if len(parts) >= 4:
-            levels[int(parts[0])] = float(parts[3])
-    return levels
+            planes[int(parts[0])] = (float(parts[1]), float(parts[2]),
+                                     float(parts[3]))
+    return planes
 
 
-def _solve_mbgmodel(fits: list[dict], n: int, width: int, height: int) -> list[float]:
+def _solve_mbgmodel(fits: list[dict], n: int, width: int, height: int) -> list[tuple]:
+    """Global joint plane solve — mBgModel's DEFAULT two-phase mode (levels
+    relax first, then slopes open up; half-strength corrections, 10k
+    iterations) with its robustness gates active (area >= 0.2% of the mean
+    image, at least one overlap dimension >= 25%, 2-sigma rms rejection of
+    whole fits). Returns one (a, b, c) per image, zero-based-canvas frame."""
     with tempfile.TemporaryDirectory() as d:
         d = Path(d)
         _write_images_tbl(d / "images.tbl", n, width, height)
         _write_fits_tbl(d / "fits.tbl", fits)
-        # -l: level-only (constants, no slopes) — see module docstring.
         r = subprocess.run(
-            ["mBgModel", "-l", str(d / "images.tbl"), str(d / "fits.tbl"),
+            ["mBgModel", str(d / "images.tbl"), str(d / "fits.tbl"),
              str(d / "corrections.tbl")],
             capture_output=True, text=True, timeout=300)
         if r.returncode != 0 or 'stat="OK"' not in (r.stdout + r.stderr):
@@ -119,63 +128,74 @@ def _solve_mbgmodel(fits: list[dict], n: int, width: int, height: int) -> list[f
         return _parse_corrections(d / "corrections.tbl", n)
 
 
-def _solve_lstsq(fits: list[dict], n: int) -> list[float]:
+def _solve_lstsq(fits: list[dict], n: int) -> list[tuple]:
     """Numpy fallback when Montage isn't installed on this node.
 
-    Same problem, min-norm gauge: find per-panel levels L minimising
-    Σ w·(L_plus − L_minus − c)² with mean(L) = 0. Kept so a node without
-    `brew install montage` still merges seamlessly — but says so, since the
-    whole point of this op is wrapping the professional solver.
+    Same problem as mBgModel's plane mode in one shot: per-panel planes
+    (a_i, b_i, c_i) minimising the weighted mismatch against every
+    overlap's fitted difference plane, with a mean-plane gauge (mean a =
+    mean b = mean c = 0). Kept so a node without `brew install montage`
+    still merges seamlessly — but says so, since the whole point of this
+    op is wrapping the professional solver.
     """
     rows, rhs, w = [], [], []
+    def constraint(pi, mi, comp, value, weight):
+        row = np.zeros(3 * n)
+        row[3 * pi + comp], row[3 * mi + comp] = 1.0, -1.0
+        rows.append(row); rhs.append(value); w.append(weight)
     for r in fits:
-        row = np.zeros(n)
-        row[r["plus"]], row[r["minus"]] = 1.0, -1.0
-        rows.append(row)
-        rhs.append(r["c"])
-        w.append(np.sqrt(r["npixel"]))
-    rows.append(np.ones(n))          # gauge: mean level = 0
-    rhs.append(0.0)
-    w.append(1.0)
+        wt = np.sqrt(r["npixel"])
+        constraint(r["plus"], r["minus"], 0, r.get("a", 0.0), wt)
+        constraint(r["plus"], r["minus"], 1, r.get("b", 0.0), wt)
+        constraint(r["plus"], r["minus"], 2, r["c"], wt)
+    for comp in range(3):                     # gauge: mean plane = 0
+        row = np.zeros(3 * n)
+        row[comp::3] = 1.0
+        rows.append(row); rhs.append(0.0); w.append(1.0)
     A = np.asarray(rows) * np.asarray(w)[:, None]
     b = np.asarray(rhs) * np.asarray(w)
     sol, *_ = np.linalg.lstsq(A, b, rcond=None)
-    return [float(x) for x in sol]
+    return [(float(sol[3*i]), float(sol[3*i+1]), float(sol[3*i+2]))
+            for i in range(n)]
 
 
-def solve_levels(rows: list[dict], n: int,
-                 canvas_shape: tuple[int, int]) -> list[float]:
-    """Global level solve over Montage-shaped fit rows — a PLAIN function,
-    called from inside the fused merge (`_blend_many(level_match=True)`).
-    mBgModel when installed; the numpy least-squares fallback is the same
-    problem in the min-norm gauge. A single panel — or panels with no
-    usable overlaps — correctly gets zero correction: there is nothing to
-    disagree with."""
+def solve_planes(rows: list[dict], n: int,
+                 canvas_shape: tuple[int, int]) -> list[tuple]:
+    """Global first-degree ("LNC") solve over Montage-shaped plane fit
+    rows — a PLAIN function, called from inside the fused merge
+    (`_blend_many(level_match=True)`). Returns one `(a, b, c)` per panel
+    in the zero-based canvas frame. mBgModel (two-phase, gated) when
+    installed; the numpy joint least squares is the same problem in the
+    mean-plane gauge. A single panel — or panels with no usable overlaps —
+    correctly gets zero correction: there is nothing to disagree with."""
     if n < 2 or not rows:
         if n >= 2:
             log.warning("background matching: no usable overlaps")
-        return [0.0] * n
+        return [(0.0, 0.0, 0.0)] * n
     ch, cw = canvas_shape
     if shutil.which("mBgModel"):
-        levels = [float(v) for v in _solve_mbgmodel(rows, n, cw, ch)]
+        planes = _solve_mbgmodel(rows, n, cw, ch)
     else:
         print("### mBgModel not installed on this node — using the numpy "
-              "least-squares fallback (same problem, min-norm gauge). "
-              "`brew install montage` for the reference solver.")
-        levels = [float(v) for v in _solve_lstsq(rows, n)]
-    log.info("background levels solved",
-             levels=[round(v, 6) for v in levels], pairs=len(rows))
-    return levels
+              "joint least-squares fallback (same problem, mean-plane "
+              "gauge). `brew install montage` for the reference solver.")
+        planes = _solve_lstsq(rows, n)
+    log.info("background planes solved",
+             c=[round(p[2], 6) for p in planes],
+             slope_max=max((max(abs(p[0]), abs(p[1])) for p in planes),
+                           default=0.0),
+             pairs=len(rows))
+    return planes
 
 
 @node(display="Mosaic", final=True, auto_memory=True, plate_solve=False)  # mosaic projection — non-square pixels
 def merge_images_matched(
     mosaic: Mosaic, filter: str, *inputs: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
-    """`merge_images_oss` with Montage level matching fused in — rectify,
-    then feather. The blend already reads every panel once and intersects
+    """`merge_images_oss` with Montage background rectification fused in —
+    rectify, then feather, at FIRST DEGREE (per-panel planes, "LNC"). The blend already reads every panel once and intersects
     every overlapping pair for its flux solve; the level fit rides that
-    same pass (`_level_fit_rows` → `solve_levels` → in-place subtraction),
+    same pass (`_level_fit_rows` → `solve_planes` → in-place subtraction),
     so rectification costs no extra I/O and no intermediate artifacts, and
     the solve is a normal function call inside this one node.
 
@@ -197,7 +217,13 @@ def merge_images_matched(
     write_tiff_image(Path(output_filename), result.astype(np.float32),
                      {"FILTER": filter,
                       "STBLHASH": hash_list([inp.stable_hash for inp in inputs]),
-                      "PIPELINE": "AstroFlow-OSS-Montage"})
+                      "PIPELINE": "AstroFlow-OSS-Montage",
+                      # Rectification model version. Bumping this line is
+                      # ALSO the deliberate re-key for helper-side changes
+                      # to the matching maths (helpers aren't source-hashed;
+                      # editing this op body is what moves the call hashes
+                      # of every matched merge and its whole downstream).
+                      "MATCHVER": "planes-1"})
 
     new_count = sum(_panel_count(inp) for inp in inputs)
     _set_panel_count(output_filename, new_count)

@@ -68,7 +68,12 @@ def seam_report(bboxes, masks, crops) -> dict:
     `ratio_spread_p95` (multiplicative artifact, |ratio − 1|)."""
     fits = _level_fit_rows(bboxes, masks, crops)
     ratios = seam_ratios(bboxes, masks, crops)
-    steps = np.array([abs(f["c"]) for f in fits]) if fits else np.array([0.0])
+    # The step at an overlap is its fitted difference plane evaluated at
+    # the overlap CENTER (c alone is the value at the canvas origin, which
+    # a slope would inflate meaninglessly).
+    steps = (np.array([abs(f.get("a", 0.0) * f["xcenter"]
+                           + f.get("b", 0.0) * f["ycenter"] + f["c"])
+                       for f in fits]) if fits else np.array([0.0]))
     rdev = (np.array([abs(r["ratio"] - 1.0) for r in ratios])
             if ratios else np.array([0.0]))
     return {

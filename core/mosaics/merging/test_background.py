@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from mosaics.merging.background import _solve_lstsq, _solve_mbgmodel
+from mosaics.merging.background import _solve_lstsq, _solve_mbgmodel, solve_planes
 from mosaics.merging.oss import _blend_many, _level_fit_rows
 from mosaics.placement.panel_io import write_placed_panel
 
@@ -34,10 +34,12 @@ def test_level_fit_rows_recover_known_offset():
     f = rows[0]
     # c = plus - minus (the lab-verified Montage convention)
     assert (f["plus"], f["minus"]) == (0, 1)
+    # plane fit on a constant offset: slopes ~ 0, c carries the offset
+    assert abs(f["a"]) < 1e-6 and abs(f["b"]) < 1e-6
     assert abs(f["c"] - (-0.008)) < 5e-4
     # REAL overlap box in canvas units — degenerate boxes make mBgModel
     # silently zero every correction (the 2026-08-19 lab regression).
-    assert f["npixel"] == 300 * 150
+    assert f["npixel"] >= 0.8 * 300 * 150      # post iterative 2*rms rejection
     assert (f["boxwidth"], f["boxheight"]) == (150.0, 300.0)
     assert (f["xmin"], f["xmax"], f["ymin"], f["ymax"]) == (250, 400, 0, 300)
 
@@ -61,9 +63,26 @@ def test_lstsq_equalises_three_pedestals():
         {"plus": 0, "minus": 1, "c": peds[0] - peds[1], "npixel": 25000, "rms": 1e-4},
         {"plus": 1, "minus": 2, "c": peds[1] - peds[2], "npixel": 25000, "rms": 1e-4},
     ]
-    levels = _solve_lstsq(fits, 3)
-    resid = np.array(peds) - np.array(levels)
+    planes = _solve_lstsq(fits, 3)
+    assert all(abs(a) < 1e-12 and abs(b) < 1e-12 for a, b, _ in planes)
+    resid = np.array(peds) - np.array([c for _, _, c in planes])
     assert resid.max() - resid.min() < 1e-12, "corrected panels must agree exactly"
+
+
+def test_lstsq_recovers_planes():
+    """Joint plane solve: three panels with known planes; overlap rows carry
+    the exact difference planes; recovery is exact up to the gauge plane."""
+    truth = [(0.0, 0.0, 0.0), (2e-8, -1e-8, 0.010), (-3e-8, 2e-8, -0.005)]
+    def drow(p, m, xc, yc):
+        da = truth[p][0] - truth[m][0]; db = truth[p][1] - truth[m][1]
+        dc = truth[p][2] - truth[m][2]
+        return {"plus": p, "minus": m, "a": da, "b": db, "c": dc,
+                "npixel": 200000, "rms": 1e-4, "xcenter": xc, "ycenter": yc}
+    planes = _solve_lstsq([drow(0, 1, 700, 500), drow(1, 2, 1400, 500)], 3)
+    t = np.array(truth); sol = np.array(planes)
+    gauge = (t - sol)
+    assert np.abs(gauge - gauge.mean(axis=0)).max() < 1e-12, \
+        "truth minus solution must be a COMMON plane (pure gauge)"
 
 
 @pytest.mark.skipif(shutil.which("mBgModel") is None,
@@ -79,8 +98,8 @@ def test_mbgmodel_matches_ground_truth():
         {"plus": 1, "minus": 2, "c": peds[1] - peds[2],
          "npixel": 1_600_000, "rms": 1.5e-4, **box},
     ]
-    levels = _solve_mbgmodel(fits, 3, 8003, 2384)
-    resid = np.array(peds) - np.array(levels)
+    planes = _solve_mbgmodel(fits, 3, 8003, 2384)
+    resid = np.array(peds) - np.array([c for _, _, c in planes])
     assert resid.max() - resid.min() < 1e-9, (
         "mBgModel must equalise the pedestals (degenerate-box zeroing "
         "regression: this failed with all-zero corrections before the real "
@@ -160,3 +179,69 @@ def test_seam_metrics_separate_gain_from_offset():
     bb, mb, cb = cut(1.0, 0.0, 250, 650, 36)
     r = seam_report([ba, bb], [ma, mb], [ca, cb])
     assert r["step_p95"] < 5e-5 and r["ratio_dev_median"] < 0.05
+
+
+@pytest.mark.skipif(shutil.which("mBgModel") is None,
+                    reason="Montage not installed on this node")
+def test_mbgmodel_recovers_planes_ground_truth():
+    """The plane-mode lab: three side-by-side panels (full canvas height,
+    so mBgModel's 25%-linear gate passes) with known per-panel planes in
+    the zero-based canvas frame; the two-phase solve must recover them up
+    to a common gauge plane, evaluated ACROSS the whole canvas."""
+    truth = [(0.0, 0.0, 0.0), (2e-8, -1e-8, 0.010), (-3e-8, 2e-8, -0.005)]
+    boxes = [
+        {"xmin": 600, "xmax": 900, "ymin": 0, "ymax": 1000,
+         "xcenter": 750.0, "ycenter": 500.0, "boxwidth": 300.0,
+         "boxheight": 1000.0},
+        {"xmin": 1400, "xmax": 1700, "ymin": 0, "ymax": 1000,
+         "xcenter": 1550.0, "ycenter": 500.0, "boxwidth": 300.0,
+         "boxheight": 1000.0},
+    ]
+    rows = []
+    for (p, m), box in zip(((0, 1), (1, 2)), boxes):
+        rows.append({"plus": p, "minus": m,
+                     "a": truth[p][0] - truth[m][0],
+                     "b": truth[p][1] - truth[m][1],
+                     "c": truth[p][2] - truth[m][2],
+                     "npixel": 300000, "rms": 1.5e-4, **box})
+    planes = _solve_mbgmodel(rows, 3, 2300, 1000)
+    t = np.array(truth); sol = np.array(planes)
+    # residual (truth - solution) must be one common plane; check its
+    # VALUE spread across canvas corners for each panel pair
+    for (x, y) in ((0, 0), (2299, 0), (0, 999), (2299, 999)):
+        vals = [(t[i] - sol[i])[0] * x + (t[i] - sol[i])[1] * y
+                + (t[i] - sol[i])[2] for i in range(3)]
+        assert max(vals) - min(vals) < 5e-6, (
+            f"gauge must be common at ({x},{y}): {vals}")
+
+
+def test_fused_blend_removes_tilted_pedestals(tmp_path):
+    """End-to-end LNC: panels whose pedestals TILT across the canvas (a
+    plane each, not a constant) come out of the matched blend on one flat
+    sky — the case constants provably could not fix (2026-08-21)."""
+    W, H, span = 1600, 1200, 800
+    truthp = [(0.0, 0.0, 0.000), (2.5e-7, 0.0, 0.008)]
+    xs = [100, 700]
+    paths = []
+    for k, (x0, (pa, pb, pc)) in enumerate(zip(xs, truthp)):
+        rng = np.random.default_rng(100 + k)
+        cols = np.arange(x0, x0 + span, dtype=np.float32)[None, :]
+        rows_ = np.arange(0, H, dtype=np.float32)[:, None]
+        bbox_image = (0.005 + pa * cols + pb * rows_ + pc
+                      + rng.normal(0, 2e-4, (H, span)).astype(np.float32)
+                      ).astype(np.float32)
+        path = Path(tmp_path) / f"tilt{k}.tiff"
+        write_placed_panel(path, bbox_image, (x0, 0), (W, H))
+        paths.append(path)
+    matched = _blend_many(paths, level_match=True)
+    nz = matched[matched != 0]
+    # one flat sky: left-only, overlap, right-only regions all agree
+    zones = [matched[:, 150:600], matched[:, 750:850], matched[:, 1000:1450]]
+    meds = [float(np.median(z[z != 0])) for z in zones]
+    assert max(meds) - min(meds) < 6e-4, f"sky must be flat, got {meds}"
+    # and the within-panel ramp is gone: right panel's own span is level
+    right = matched[:, 950:1450]
+    halves = (float(np.median(right[:, :250][right[:, :250] != 0])),
+              float(np.median(right[:, 250:][right[:, 250:] != 0])))
+    assert abs(halves[0] - halves[1]) < 3e-4, f"tilt must be removed: {halves}"
+    assert (matched[:, :100] == 0).all(), "no-data must stay zero"
