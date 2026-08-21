@@ -121,3 +121,42 @@ def test_fused_blend_removes_pedestal_and_keeps_zeros(tmp_path):
 
     # no-data canvas stays exact zero on both sides
     assert (matched[:, :100] == 0).all() and (matched[:, 1500:] == 0).all()
+
+
+def test_seam_metrics_separate_gain_from_offset():
+    """The two seam gauges must each see ONLY their own error class."""
+    from mosaics.merging.seam_metric import seam_report
+    rng = np.random.default_rng(21)
+    def pane(gain, offset, r0, r1, c0, c1, seed):
+        rng2 = np.random.default_rng(seed)
+        signal = np.abs(rng2.normal(2e-3, 1e-3, (r1 - r0, c1 - c0)))
+        crop = (0.005 + offset + gain * signal
+                + rng2.normal(0, 5e-5, signal.shape)).astype(np.float32)
+        return (r0, r1, c0, c1), crop > 0, crop
+    # same signal field (seed) in the overlap? No — panels see the same sky:
+    # build one shared signal canvas and cut both panels from it.
+    canvas = np.abs(rng.normal(2e-3, 1e-3, (300, 650))).astype(np.float32)
+    def cut(gain, offset, c0, c1, seed):
+        sub = canvas[:, c0:c1]
+        crop = (0.005 + offset + gain * sub
+                + np.random.default_rng(seed).normal(0, 5e-5, sub.shape)
+                ).astype(np.float32)
+        return (0, 300, c0, c1), crop > 0, crop
+    # gain-only disagreement (1.4x), no offset
+    ba, ma, ca = cut(1.0, 0.0, 0, 400, 31)
+    bb, mb, cb = cut(1.4, 0.0, 250, 650, 32)
+    r = seam_report([ba, bb], [ma, mb], [ca, cb])
+    assert r["ratio_spread_p95"] > 0.2, "gain gauge must see the 1.4x"
+    # gain shows up in the additive gauge too (median of gained signal) —
+    # that is physics, not a bug; the discriminator is the ratio gauge.
+    # offset-only disagreement, no gain
+    ba, ma, ca = cut(1.0, 0.0, 0, 400, 33)
+    bb, mb, cb = cut(1.0, 4e-4, 250, 650, 34)
+    r = seam_report([ba, bb], [ma, mb], [ca, cb])
+    assert r["step_p95"] > 2e-4, "offset gauge must see the 4e-4 step"
+    assert r["ratio_dev_median"] < 0.1, "ratio gauge must NOT see a pure offset"
+    # agreement: both quiet
+    ba, ma, ca = cut(1.0, 0.0, 0, 400, 35)
+    bb, mb, cb = cut(1.0, 0.0, 250, 650, 36)
+    r = seam_report([ba, bb], [ma, mb], [ca, cb])
+    assert r["step_p95"] < 5e-5 and r["ratio_dev_median"] < 0.05

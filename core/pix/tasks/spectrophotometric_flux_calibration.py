@@ -109,13 +109,24 @@ _default_parameters = {
 _run_sfc = make_process_task(
     "SpectrophotometricFluxCalibration",
     _default_parameters,
-    # Just the unique error string — `*** Error:` and `no astrometric
-    # solution` can land on separate lines when PixInsight wraps the
-    # message (long master filenames trigger this). `re.search` with
-    # default flags doesn't span newlines via `.*`, so the old prefixed
-    # pattern silently missed wrapped errors. Match the distinctive
-    # phrase only.
-    error_patterns=[re.compile(r"no astrometric solution")],
+    # Per-step error_patterns are checked UNCONDITIONALLY by
+    # `_check_for_errors` — unlike the universal `*** Error:` catch-all,
+    # which exempts any recipe containing a success_pattern step. That
+    # exemption is exactly how a failed SFC slipped through on 2026-08-20
+    # (stale /Volumes/Astro Gaia paths; output kept the input's old
+    # PSFFLX00 stamp).
+    #
+    # Patterns are phrase-only (no `*** Error:` prefix): PixInsight wraps
+    # long messages across lines and `re.search` does not span newlines.
+    error_patterns=[
+        re.compile(r"no astrometric solution"),
+        re.compile(r"Invalid Gaia DR3/SP XPSD server execution"),
+        re.compile(r"File I/O Error: Unable to open file"),
+        # A failed marker after SFC starts is a hard failure regardless of
+        # which later line printed it.
+        re.compile(r"SpectrophotometricFluxCalibration: Processing view"
+                   r"[\s\S]*?<\* failed \*>"),
+    ],
 )
 
 
@@ -155,5 +166,11 @@ def _gray_filter_overrides(filter: str | None) -> dict:
 
 def SpectrophotometricFluxCalibration(image: Image, **kwargs) -> Image:
     """Spectrophotometric flux calibration with the gray filter chosen from
-    ``image.filter``. Explicit ``kwargs`` still override everything."""
+    ``image.filter``. Explicit ``kwargs`` still override everything.
+
+    Fails loudly (see `_run_sfc` error_patterns) when the Gaia DR3/SP
+    XPSD database is unreachable — the database file locations live in
+    PixInsight's global preferences and must be updated there after any
+    volume rename (2026-08-20: stale /Volumes/Astro paths made every SFC
+    a silent no-op that kept the input's old PSFFLX00 stamp)."""
     return _run_sfc(image, **(_gray_filter_overrides(image.filter) | kwargs))
