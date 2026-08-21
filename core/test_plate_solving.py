@@ -88,3 +88,36 @@ def test_tombstone_blocks_all_rungs(frame, monkeypatch):
     set_section(frame, "plate_solution",
                 {"schema": plate_solving._PLATESOLUTION_SCHEMA, "data": None})
     assert plate_solving.solve_field(frame) is None
+
+class TestHeaderHints:
+    """Rung-0 priors: conservative parse, pixels still decide the solve."""
+
+    def test_full_hints_from_numeric_cards(self):
+        from plate_solving import _header_hints
+        h = _header_hints({"RA": 51.1135, "DEC": 59.3211,
+                           "FOCALLEN": 937.716, "XPIXSZ": 5.4})
+        assert h[:6] == ["--ra", "51.11350", "--dec", "59.32110",
+                         "--radius", "5"]
+        lo = float(h[h.index("--scale-low") + 1])
+        hi = float(h[h.index("--scale-high") + 1])
+        # 206.265 * 5.4 / 937.716 = 1.1878 arcsec/px, +/-15%
+        assert 1.00 < lo < 1.02 and 1.36 < hi < 1.38
+
+    def test_sexagesimal_ra_yields_no_hints(self):
+        from plate_solving import _header_hints
+        assert _header_hints({"RA": "3 24 27.242", "DEC": "+59 19 15.89"}) == []
+
+    def test_missing_cards_yield_no_hints(self):
+        from plate_solving import _header_hints
+        assert _header_hints({}) == []
+        assert _header_hints({"RA": 51.1}) == []
+
+    def test_out_of_range_coordinates_rejected(self):
+        from plate_solving import _header_hints
+        assert _header_hints({"RA": 400.0, "DEC": 10.0}) == []
+        assert _header_hints({"RA": 51.0, "DEC": -95.0}) == []
+
+    def test_position_without_optics_still_hints(self):
+        from plate_solving import _header_hints
+        h = _header_hints({"RA": 51.0, "DEC": 59.0, "FOCALLEN": None})
+        assert "--ra" in h and "--scale-units" not in h

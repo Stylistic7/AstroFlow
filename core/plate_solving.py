@@ -211,6 +211,34 @@ def _plate_solution_from_obj(obj: dict[str, Any]) -> PlateSolution:
 
 
 @beartype
+def _header_hints(header: Mapping[str, Any]) -> list[str]:
+    """solve-field search PRIORS from the capture header, or [] to stay
+    fully blind. Numeric RA/DEC (degrees) bound the sky search to a 5-deg
+    cone; FOCALLEN+XPIXSZ give a pixel-scale window (+/-15%). Conservative
+    on parse: any missing or non-numeric card (e.g. sexagesimal OBJCTRA
+    spellings) simply yields no hints — never a guess."""
+    try:
+        ra = float(header.get("RA"))
+        dec = float(header.get("DEC"))
+    except (TypeError, ValueError):
+        return []
+    if not (0.0 <= ra < 360.0 and -90.0 <= dec <= 90.0):
+        return []
+    hints = ["--ra", f"{ra:.5f}", "--dec", f"{dec:.5f}", "--radius", "5"]
+    try:
+        focal = float(header.get("FOCALLEN"))
+        pixsz = float(header.get("XPIXSZ"))
+    except (TypeError, ValueError):
+        return hints
+    if focal > 0 and pixsz > 0:
+        scale = 206.265 * pixsz / focal
+        hints += ["--scale-units", "arcsecperpix",
+                  "--scale-low", f"{scale * 0.85:.3f}",
+                  "--scale-high", f"{scale * 1.15:.3f}"]
+    return hints
+
+
+@beartype
 def solve_field(
     filename: Path | str,
     debug: bool = False,
@@ -260,12 +288,6 @@ def solve_field(
         "--no-plots",
         "--new-fits",
         "none",
-        "--scale-low",
-        "0.1",
-        "--scale-high",
-        "180",
-        "--scale-units",
-        "degwidth",
         "--tweak-order",
         "2",
         "--crpix-center",
@@ -273,6 +295,10 @@ def solve_field(
         "600",
         "--objs",
         "1000",
+    ]
+    blind_scale = [
+        "--scale-low", "0.1", "--scale-high", "180",
+        "--scale-units", "degwidth",
     ]
     # RETRY LADDER, universal (no image-class guessing). Rung 1 is the
     # standard extraction. Rung 2 exists for nebula-dominated narrowband
@@ -283,15 +309,31 @@ def solve_field(
     # smooths the small-scale nebulosity away; real stars survive and the
     # same frame solves blind. Tombstone only after BOTH rungs fail.
     result = None
-    for downsample in ("2", "4"):
-        result = _solve_field(
-            filename, base + ["--downsample", downsample], debug,
-        )
+    # Rung 0 — header-HINTED search, when the capture header carries usable
+    # priors. Hints narrow WHERE the solver looks; star quads still decide
+    # the solution, so a wrong header costs one fast failed rung, never a
+    # wrong answer ("trust the pixels" intact — the header only
+    # accelerates). Measured (vdB15 Lum, 2026-08-21): blind burned the full
+    # 600 s CPU budget per rung and never converged; the same master with
+    # header hints solved in <30 s at log-odds 540.
+    hints = _header_hints(header)
+    if hints:
+        scale_hinted = any(a == "--scale-units" for a in hints)
+        rung0 = base + hints + ([] if scale_hinted else blind_scale)
+        result = _solve_field(filename, rung0 + ["--downsample", "4"], debug)
         if result is not None:
-            if downsample != "2":
-                print(f"### plate-solve rescued by --downsample {downsample}: "
-                      f"{filename}")
-            break
+            print(f"### plate-solve via header hints: {filename}")
+    if result is None:
+        for downsample in ("2", "4"):
+            result = _solve_field(
+                filename,
+                base + blind_scale + ["--downsample", downsample], debug,
+            )
+            if result is not None:
+                if downsample != "2":
+                    print(f"### plate-solve rescued by --downsample "
+                          f"{downsample}: {filename}")
+                break
 
     if result is None:
         print(f"Could not plate-solve file {filename} (all retry rungs)")

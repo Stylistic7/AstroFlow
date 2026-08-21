@@ -304,7 +304,14 @@ def make_cached_decorator(
 
         auto_memory = ray_opts.pop("auto_memory", False)
         ray_opts.setdefault("scheduling_strategy", "SPREAD")
-        ray_opts.setdefault("max_retries", 3)
+        # ONE retry, exceptions included: enough to survive a transient
+        # (worker death, wedged-PI kill, rc-astro flake) without tripling
+        # the cost of a deterministic failure — a failing stack_files
+        # re-paid its full WBPP on every Ray retry (vdB15, 2026-08-21).
+        # Across drains a failed node re-dispatches anyway, so persistent
+        # failures still surface every run; they just stop multiplying
+        # within one.
+        ray_opts.setdefault("max_retries", 1)
         ray_opts.setdefault("retry_exceptions", True)
         ray_func = ray.remote(**ray_opts)(inner)
 
