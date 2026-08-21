@@ -115,6 +115,26 @@ def get_ip() -> str:
 
 
 def start_ray_subordinate_node(head_node_address, node_ip_address: str | None = None, timeout=60):
+    # JOIN FENCE: refuse to join when this process context cannot read the
+    # shared volumes. A worker that joins blind LOOKS healthy to the
+    # scheduler but fails every file-touching task it is handed — three
+    # separate blind-rejoin incidents burned ~40 nodes on 2026-08-20/21
+    # (sshd without Full Disk Access, an iTerm-launched follower without
+    # the TCC grant, and a half-unmounted ghost /Volumes/AstroRaw-1).
+    # macOS TCC is PER LAUNCHING APP, so only a runtime probe in THIS
+    # process can know. Fail loud, join never.
+    import os
+    for volume in ("/Volumes/AstroRaw", "/Volumes/AstroProcessed"):
+        try:
+            os.listdir(volume)
+        except OSError as e:
+            raise RuntimeError(
+                f"REFUSING to join the cluster: cannot read {volume} from "
+                f"this process ({e}). Launch from a context with disk "
+                f"access (Terminal.app, or grant the launcher Full Disk "
+                f"Access) and check the volume is mounted — a blind worker "
+                f"poisons every file-touching task it is handed."
+            ) from e
     ray_path = get_bin_dir() / "ray"
     # Reap any local raylet BEFORE starting the one true node, so a join is
     # idempotent: exactly one raylet per machine, always. A worker that restarts
