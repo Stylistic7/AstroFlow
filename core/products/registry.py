@@ -284,6 +284,46 @@ def _primary_stable_hash(args: tuple) -> "str | None":
     return None
 
 
+# Cards the plate solver uses as SEARCH PRIORS (see plate_solving.
+# _header_hints). They cost nothing to carry and turn a blind all-sky quad
+# match into a 5-degree cone search.
+_SOLVER_HINT_KEYS = ("RA", "DEC", "FOCALLEN", "XPIXSZ")
+
+
+def _inherited_solver_hints(header, args) -> dict:
+    """Solver hints copied from the producing op's INPUT image, for outputs
+    written by external tools that drop them.
+
+    rc-astro's BXT writes a TIFF with no RA/DEC/FOCALLEN/XPIXSZ, so
+    `bxt_correct_only` outputs faced the solver completely blind — and on a
+    field the blind ladder cannot crack (vdB15, 2026-08-22) that is a hard
+    failure after two 600 s CPU rungs, repeated every drain. The panel is at
+    the same place on the sky as its input, so the input's cards are exactly
+    the right priors. This does NOT reuse the input's SOLUTION: BXT's
+    aberration correction shifts the geometry, so the re-solve still happens
+    and still produces the corrected WCS (Croman) — it just knows where to
+    look.
+
+    Only fills cards the output is MISSING, so a producer that writes its
+    own always wins."""
+    hints: dict = {}
+    missing = [k for k in _SOLVER_HINT_KEYS if header.get(k) in (None, "")]
+    if not missing:
+        return hints
+    from metadata.classes import ImageMetadata
+    for arg in args:
+        if not isinstance(arg, ImageMetadata):
+            continue
+        src = getattr(arg, "header", None) or {}
+        for key in missing:
+            value = src.get(key)
+            if value not in (None, "") and key not in hints:
+                hints[key] = value
+        if len(hints) == len(missing):
+            break
+    return hints
+
+
 def _stamp_header(
     result: Any, call_hash: str, image_type: str | None,
     args: tuple = (),
@@ -321,6 +361,7 @@ def _stamp_header(
         stable = _primary_stable_hash(args)
         if stable is not None and not header.get("STBLHASH"):
             updates["STBLHASH"] = stable
+        updates |= _inherited_solver_hints(header, args)
         update_header(target, updates)
     except (OSError, ValueError):
         pass
