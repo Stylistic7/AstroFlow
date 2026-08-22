@@ -130,13 +130,13 @@ def test_fused_blend_removes_pedestal_and_keeps_zeros(tmp_path):
     sky_b = np.median(matched[:, 950:1450])
     assert abs(sky_a - sky_b) < 5e-4, "levels must agree after matching"
     plain_gap = np.median(plain[:, 950:1450]) - np.median(plain[:, 150:650])
-    # The unmatched blend's LOG-SPACE FLUX solve cannot tell pedestal from
-    # flux: on this fixture it multiplies panel b by ~0.5 (distorting any
-    # real signal!) yet still leaves ~0.0015 of the 0.008 gap. Measured
-    # 2026-08-20; the fused match removes the gap to ~1e-6 WITHOUT touching
-    # flux (post-rectification scales are ~1).
-    assert plain_gap > 1e-3, "sanity: a pedestal gap must survive the plain blend"
-    assert abs(sky_a - sky_b) < plain_gap / 10
+    # SUPERSEDED SANITY CHECK (2026-08-22): the plain blend used to leave
+    # ~0.0015 of this fixture's 0.008 pedestal gap, because its log-space
+    # FLUX solve cannot tell pedestal from flux. Merge-time sky
+    # equalization now removes the gap in the plain blend too, so both
+    # paths land flat — which is the whole point of moving the additive
+    # fix to the moment panels meet.
+    assert abs(plain_gap) < 5e-4, f"plain blend now equalizes sky too: {plain_gap}"
 
     # no-data canvas stays exact zero on both sides
     assert (matched[:, :100] == 0).all() and (matched[:, 1500:] == 0).all()
@@ -274,3 +274,46 @@ def test_stretched_fused_blend_equalizes_offset_and_gain(tmp_path):
     assert all(0.05 < m < 0.5 for m in meds), f"stretched range sanity: {meds}"
     assert max(meds) - min(meds) < 0.02, f"display-space sky must be flat: {meds}"
     assert (matched[:, :100] == 0).all(), "no-data must stay zero"
+
+
+def test_merge_equalizes_panel_skies_without_a_solve(tmp_path):
+    """The additive fix at the point panels meet: panels arriving with
+    DIFFERENT sky levels (as they do after BXT shifts each one) come out of
+    a plain merge — no level matching — on one sky."""
+    from stacks.post_processing.background_pedestal import DEFAULT_PEDESTAL
+    W, H, span = 1600, 1200, 800
+    rng = np.random.default_rng(77)
+    canvas_sig = np.abs(rng.normal(1e-3, 5e-4, (H, W))).astype(np.float32)
+    paths = []
+    for k, (x0, sky) in enumerate(zip((100, 700), (0.00502, 0.00627))):
+        sub = canvas_sig[:, x0:x0 + span]
+        noise = np.random.default_rng(200 + k).normal(0, 5e-5, sub.shape)
+        bbox_image = (sky + sub + noise).astype(np.float32)
+        path = Path(tmp_path) / f"ped{k}.tiff"
+        write_placed_panel(path, bbox_image, (x0, 0), (W, H))
+        paths.append(path)
+    merged = _blend_many(paths)          # plain merge, level_match=False
+    left = merged[:, 150:600]; right = merged[:, 1000:1450]
+    sl = float(np.percentile(left[left != 0], 5))
+    sr = float(np.percentile(right[right != 0], 5))
+    assert abs(sl - sr) < 2e-4, f"panel skies must agree after merge: {sl} vs {sr}"
+    assert abs(sl - DEFAULT_PEDESTAL) < 6e-4, f"sky should land near the pedestal: {sl}"
+    assert (merged[:, :100] == 0).all(), "no-data must stay zero"
+
+
+def test_merge_sky_equalization_honours_an_explicit_target(tmp_path):
+    """Display-space callers equalize to their own target (or the panels'
+    mean), not the linear pedestal."""
+    W, H, span = 1200, 800, 700
+    paths = []
+    for k, (x0, sky) in enumerate(zip((50, 450), (0.08, 0.12))):
+        rng = np.random.default_rng(300 + k)
+        bbox_image = (sky + np.abs(rng.normal(0, 0.01, (H, span)))).astype(np.float32)
+        path = Path(tmp_path) / f"disp{k}.tiff"
+        write_placed_panel(path, bbox_image, (x0, 0), (W, H))
+        paths.append(path)
+    merged = _blend_many(paths, pedestal=None)      # equalize to their mean
+    a = merged[:, 80:400]; b = merged[:, 800:1100]
+    sa = float(np.percentile(a[a != 0], 5)); sb = float(np.percentile(b[b != 0], 5))
+    assert abs(sa - sb) < 0.01, f"display-space skies must agree: {sa} vs {sb}"
+    assert 0.05 < sa < 0.15, f"should sit near the panels' mean sky: {sa}"

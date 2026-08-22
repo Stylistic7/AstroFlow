@@ -113,6 +113,12 @@ def _edt_weight(mask_crop, bbox, canvas_shape):
     return dist[pt:pt + (r1 - r0), pl:pl + (c1 - c0)]
 
 
+# Sentinel: use the house linear pedestal. Callers in display space pass
+# a target of their own, or None to equalize to the panels' OWN MEAN sky
+# (space-agnostic: no assumption about absolute level).
+_UNSET_PEDESTAL = object()
+
+
 _LEVEL_MIN_OVERLAP_PX = 256  # a few-pixel seam cannot carry a level constraint
 
 # mFitplane discipline: iteratively reject pixels beyond 2*rms of the current
@@ -219,7 +225,56 @@ def _overlap_means(bboxes, masks, crops):
     return means
 
 
-def _blend_many(paths: list[Path], level_match: bool = False) -> np.ndarray:
+def _panel_sky(values: np.ndarray) -> "float | None":
+    """The panel's sky level — lower-quantile median, the same estimator
+    `stacks.post_processing.background_pedestal` uses (single source of
+    truth for the cut). Verified 2026-08-22 against a histogram-mode sky:
+    bias 3.8e-5, uncorrelated with nebula fraction, so it is not scene
+    contaminated even on wall-to-wall emission fields."""
+    from stacks.post_processing.background_pedestal import _SKY_QUANTILE
+    if values.size == 0:
+        return None
+    sky = values[values <= np.quantile(values, _SKY_QUANTILE)]
+    return float(np.median(sky)) if sky.size else None
+
+
+def _equalize_sky(crops, masks, pedestal) -> None:
+    """Shift every panel in place so its own sky sits on the shared target.
+
+    `pedestal` is the house linear pedestal by default, an explicit float
+    for callers in another space, or None to equalize to the panels' OWN
+    MEAN sky (which assumes nothing about absolute level, so it works in
+    display space too)."""
+    from stacks.post_processing.background_pedestal import DEFAULT_PEDESTAL
+    skies = []
+    for crop, mask in zip(crops, masks):
+        skies.append(None if crop is None else _panel_sky(crop[mask]))
+    measured = [v for v in skies if v is not None]
+    if not measured:
+        return
+    if pedestal is _UNSET_PEDESTAL:
+        target = float(DEFAULT_PEDESTAL)
+    elif pedestal is None:
+        target = float(np.mean(measured))
+    else:
+        target = float(pedestal)
+    tiny = np.finfo(np.float32).tiny
+    for crop, mask, sky in zip(crops, masks, skies):
+        if crop is None or sky is None:
+            continue
+        shift = np.float32(target - sky)
+        if shift == 0:
+            continue
+        np.add(crop, shift, out=crop, where=mask)
+        # Hold the mask: a pixel pushed to <= 0 would read as no-data.
+        np.maximum(crop, tiny, out=crop, where=mask)
+    print("### merge sky equalization: target %.6f, panel skies %.6f..%.6f "
+          "(spread %.6f)" % (target, min(measured), max(measured),
+                             max(measured) - min(measured)))
+
+
+def _blend_many(paths: list[Path], level_match: bool = False,
+                pedestal: "float | None" = _UNSET_PEDESTAL) -> np.ndarray:
     """Variadic distance-weighted blend with least-squares flux solve.
 
     Streams every panel off disk one at a time and works per-panel in its
@@ -237,6 +292,16 @@ def _blend_many(paths: list[Path], level_match: bool = False) -> np.ndarray:
     and `_edt_weight` reproduces the canvas EDT within the bbox. See
     `test_oss_blend.py`.
 
+    SKY EQUALIZATION runs first, on every merge: each panel is shifted so
+    its OWN sky median lands on the shared pedestal. Panel masters all
+    leave post-processing at sky = 0.005 exactly, but `bxt_correct_only`
+    (deconvolution) then shifts each panel's background by a
+    content-dependent amount — measured 2026-08-22: masters spread
+    0.000000, BXT outputs spread 0.001247, merged panels 0.000120, which
+    IS the visible quilt. Equalizing here needs no solve, no gauge, and no
+    overlap gates: it is the direct form of "every panel's sky is the same
+    number", and it happens at the point the panels actually meet.
+
     Panels are stored **bbox-on-disk** (bbox pixels + offset in the header; see
     `panel_io`), so each is read exactly ONCE as a small array — no full-canvas
     decompression, and the three passes reuse the retained crop instead of the
@@ -252,6 +317,8 @@ def _blend_many(paths: list[Path], level_match: bool = False) -> np.ndarray:
     intermediate artifacts.
     """
     if len(paths) == 1:
+        # No equalization: with one panel there is nothing to agree WITH,
+        # and single-panel passthrough is a contract (test_oss_blend).
         arr, (x0, y0), (cw, ch) = read_placed_panel(paths[0])
         out = np.zeros((ch, cw), dtype=np.float32)
         h, w = arr.shape
@@ -282,6 +349,8 @@ def _blend_many(paths: list[Path], level_match: bool = False) -> np.ndarray:
         bboxes.append((y0 + tr0, y0 + tr1, x0 + tc0, x0 + tc1))
         masks.append(crop > 0)
         crops.append(crop)
+
+    _equalize_sky(crops, masks, pedestal)
 
     overlap_means = _overlap_means(bboxes, masks, crops)
 
@@ -351,7 +420,11 @@ def merge_images_oss(
     write_tiff_image(Path(output_filename), result.astype(np.float32),
                      {"FILTER": filter,
                       "STBLHASH": hash_list([inp.stable_hash for inp in inputs]),
-                      "PIPELINE": "AstroFlow-OSS"})
+                      "PIPELINE": "AstroFlow-OSS",
+                      # Merge-time sky equalization version. Bumping this
+                      # line is the deliberate re-key for changes to the
+                      # matching maths in the (unhashed) blend helpers.
+                      "SKYVER": "pedestal-1"})
 
     new_count = sum(_panel_count(inp) for inp in inputs)
     _set_panel_count(output_filename, new_count)

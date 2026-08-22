@@ -223,7 +223,8 @@ def merge_images_matched(
                       # to the matching maths (helpers aren't source-hashed;
                       # editing this op body is what moves the call hashes
                       # of every matched merge and its whole downstream).
-                      "MATCHVER": "planes-1"})
+                      "MATCHVER": "planes-1",
+                      "SKYVER": "pedestal-1"})
 
     new_count = sum(_panel_count(inp) for inp in inputs)
     _set_panel_count(output_filename, new_count)

@@ -88,14 +88,20 @@ def merge_images_stretched(
     Path(output_filename).parent.mkdir(parents=True, exist_ok=True)
 
     paths = [inp.filename.resolve(strict=True) for inp in inputs]
-    result = _blend_many(paths, level_match=True)
+    # pedestal=None: these panels are already stretched, so there is no
+    # linear black point to aim at — equalize their skies to their own
+    # MEAN instead (the per-panel autostretch pins each panel's MEDIAN,
+    # i.e. scene content, which measured 2026-08-22 left skies 0.030 apart
+    # in display units; this is the correction for exactly that).
+    result = _blend_many(paths, level_match=True, pedestal=None)
 
     write_tiff_image(Path(output_filename), result.astype(np.float32),
                      {"FILTER": filter,
                       "STBLHASH": hash_list([inp.stable_hash for inp in inputs]),
                       "PIPELINE": "AstroFlow-OSS-Stretched",
                       "COLORSPC": "display",
-                      "MATCHVER": "stretched-1"})
+                      "MATCHVER": "stretched-1",
+                      "SKYVER": "pedestal-1"})
 
     new_count = sum(_panel_count(inp) for inp in inputs)
     _set_panel_count(output_filename, new_count)

@@ -13,6 +13,7 @@ import numpy as np
 import edt
 
 from mosaics.merging.oss import _blend_many, _solve_flux_scales, _panel_bbox
+from mosaics.merging.oss import _equalize_sky, _UNSET_PEDESTAL
 from mosaics.placement.panel_io import write_placed_panel, read_placed_panel
 
 
@@ -27,21 +28,26 @@ def _read_full_canvas(p):
 
 def _blend_many_reference(paths):
     """The pre-bbox full-canvas implementation, verbatim, as the golden ref —
-    now reading the full canvas back from the bbox-on-disk panels."""
+    now reading the full canvas back from the bbox-on-disk panels.
+
+    Carries the same merge-time SKY EQUALIZATION the production blend
+    applies (see `_equalize_sky`): the equivalence these tests pin is
+    "bbox math == full-canvas math", and holding the pre-step in both is
+    what keeps that claim about the REAL production path."""
     if len(paths) == 1:
         return _read_full_canvas(paths[0])
     n = len(paths)
+    canvases = [_read_full_canvas(p) for p in paths]
+    _equalize_sky(canvases, [c > 0 for c in canvases], _UNSET_PEDESTAL)
     masks, overlap_means = [], {}
-    for i, p in enumerate(paths):
-        img = _read_full_canvas(p)
+    for i, img in enumerate(canvases):
         mask = img > 0
         for j, mask_j in enumerate(masks):
             both = mask & mask_j
             if both.any():
                 overlap_means[(j, i)] = (None, float(img[both].mean()))
         masks.append(mask)
-    for j, p in enumerate(paths):
-        img = _read_full_canvas(p)
+    for j, img in enumerate(canvases):
         for (a, b), (_, mi) in list(overlap_means.items()):
             if a != j:
                 continue
@@ -51,8 +57,7 @@ def _blend_many_reference(paths):
     scales = _solve_flux_scales(n, overlap_means)
     numer = np.zeros(masks[0].shape, np.float32)
     denom = np.zeros(masks[0].shape, np.float32)
-    for i, p in enumerate(paths):
-        img = _read_full_canvas(p)
+    for i, img in enumerate(canvases):
         weight = edt.edt(masks[i].astype(np.uint8),
                          black_border=False, parallel=0).astype(np.float32)
         numer += weight * (img * scales[i])
