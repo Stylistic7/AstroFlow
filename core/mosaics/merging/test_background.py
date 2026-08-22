@@ -245,3 +245,32 @@ def test_fused_blend_removes_tilted_pedestals(tmp_path):
               float(np.median(right[:, 250:][right[:, 250:] != 0])))
     assert abs(halves[0] - halves[1]) < 3e-4, f"tilt must be removed: {halves}"
     assert (matched[:, :100] == 0).all(), "no-data must stay zero"
+
+
+def test_stretched_fused_blend_equalizes_offset_and_gain(tmp_path):
+    """The display-space chain end to end: panels differing in BOTH offset
+    and gain — the combination no linear-space stage fully fixed — come out
+    flat after per-panel autostretch + the fused matched merge."""
+    from mosaics.merging.stretched import _stretch_nonzero
+    W, H, span = 1600, 1200, 800
+    xs = [100, 700]
+    rng = np.random.default_rng(9)
+    canvas_sig = np.abs(rng.normal(2e-3, 1e-3, (H, W))).astype(np.float32)
+    paths = []
+    for k, (x0, gain, offset) in enumerate(
+            zip(xs, (1.0, 1.6), (0.000, 0.004))):
+        sub = canvas_sig[:, x0:x0 + span]
+        noise = np.random.default_rng(50 + k).normal(0, 2e-4, sub.shape)
+        bbox_image = (0.005 + offset + gain * sub + noise).astype(np.float32)
+        stretched = _stretch_nonzero(bbox_image)
+        assert (stretched[bbox_image == 0] == 0).all() if (bbox_image == 0).any() else True
+        path = Path(tmp_path) / f"st{k}.tiff"
+        write_placed_panel(path, stretched, (x0, 0), (W, H))
+        paths.append(path)
+    matched = _blend_many(paths, level_match=True)
+    zones = [matched[:, 150:600], matched[:, 750:850], matched[:, 1000:1450]]
+    meds = [float(np.median(z[z != 0])) for z in zones]
+    # in display space the target background is 0.15; panels must agree
+    assert all(0.05 < m < 0.5 for m in meds), f"stretched range sanity: {meds}"
+    assert max(meds) - min(meds) < 0.02, f"display-space sky must be flat: {meds}"
+    assert (matched[:, :100] == 0).all(), "no-data must stay zero"

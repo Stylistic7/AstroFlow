@@ -242,7 +242,7 @@ def sweep(ctx, delete: bool = False, include: "set[str] | None" = None) -> dict:
 # (Measured 2026-08-17: 458 leaked `place_image` files from runs predating the
 # 2026-08-11 scope GC. `crop_panel` was clean, which is what proves the
 # machinery works when it runs.)
-SCOPE_INTERIOR_OPS = frozenset({"place_image", "crop_panel"})
+SCOPE_INTERIOR_OPS = frozenset({"place_image", "crop_panel", "autostretch_panel"})
 
 
 def scope_gc_leaks(orphans: "list[tuple[str, int]]") -> "dict[str, list[int]]":
