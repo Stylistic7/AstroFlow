@@ -317,3 +317,32 @@ def test_merge_sky_equalization_honours_an_explicit_target(tmp_path):
     sa = float(np.percentile(a[a != 0], 5)); sb = float(np.percentile(b[b != 0], 5))
     assert abs(sa - sb) < 0.01, f"display-space skies must agree: {sa} vs {sb}"
     assert 0.05 < sa < 0.15, f"should sit near the panels' mean sky: {sa}"
+
+
+def test_flux_scaling_does_not_move_the_sky(tmp_path):
+    """Flux scaling is for FLUX. Two panels with IDENTICAL sky differing
+    only in signal gain must come out of the blend on the same sky.
+
+    Before the 2026-08-22 fix, `sub *= scale` multiplied the pedestal too:
+    this exact fixture came out 5.95e-4 apart — five times the production
+    quilt, and the reason every additive correction applied upstream of
+    the flux solve (level constants, planes, SPFC gain, merge-time sky
+    equalization) was silently undone."""
+    W, H, span = 1600, 1200, 800
+    rng = np.random.default_rng(5)
+    sig = np.abs(rng.normal(2e-3, 1e-3, (H, W))).astype(np.float32)
+    paths = []
+    for k, (x0, gain) in enumerate(zip((100, 700), (1.0, 1.5))):
+        sub = sig[:, x0:x0 + span]
+        noise = np.random.default_rng(600 + k).normal(0, 3e-5, sub.shape)
+        img = (0.005 + gain * sub + noise).astype(np.float32)
+        path = Path(tmp_path) / f"gain{k}.tiff"
+        write_placed_panel(path, img, (x0, 0), (W, H))
+        paths.append(path)
+    merged = _blend_many(paths)
+    left = merged[:, 150:600]; right = merged[:, 1000:1450]
+    sl = float(np.percentile(left[left != 0], 5))
+    sr = float(np.percentile(right[right != 0], 5))
+    assert abs(sl - sr) < 5e-5, (
+        f"gain difference must not move the sky: {sl} vs {sr}")
+    assert (merged[:, :100] == 0).all(), "no-data must stay zero"

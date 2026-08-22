@@ -238,7 +238,7 @@ def _panel_sky(values: np.ndarray) -> "float | None":
     return float(np.median(sky)) if sky.size else None
 
 
-def _equalize_sky(crops, masks, pedestal) -> None:
+def _equalize_sky(crops, masks, pedestal) -> "float | None":
     """Shift every panel in place so its own sky sits on the shared target.
 
     `pedestal` is the house linear pedestal by default, an explicit float
@@ -251,7 +251,7 @@ def _equalize_sky(crops, masks, pedestal) -> None:
         skies.append(None if crop is None else _panel_sky(crop[mask]))
     measured = [v for v in skies if v is not None]
     if not measured:
-        return
+        return None
     if pedestal is _UNSET_PEDESTAL:
         target = float(DEFAULT_PEDESTAL)
     elif pedestal is None:
@@ -271,6 +271,20 @@ def _equalize_sky(crops, masks, pedestal) -> None:
     print("### merge sky equalization: target %.6f, panel skies %.6f..%.6f "
           "(spread %.6f)" % (target, min(measured), max(measured),
                              max(measured) - min(measured)))
+    return target
+
+
+def _signal_means(overlap_means, sky_target):
+    """Overlap means with the shared pedestal removed, for the flux solve.
+
+    Floored just above zero: `_solve_flux_scales` works in log space, and a
+    faint overlap whose mean sits at or below the pedestal would otherwise
+    produce a non-finite constraint."""
+    if sky_target is None:
+        return overlap_means
+    def strip(v):
+        return None if v is None else max(v - sky_target, 1e-9)
+    return {k: (strip(a), strip(b)) for k, (a, b) in overlap_means.items()}
 
 
 def _blend_many(paths: list[Path], level_match: bool = False,
@@ -350,7 +364,7 @@ def _blend_many(paths: list[Path], level_match: bool = False,
         masks.append(crop > 0)
         crops.append(crop)
 
-    _equalize_sky(crops, masks, pedestal)
+    sky_target = _equalize_sky(crops, masks, pedestal)
 
     overlap_means = _overlap_means(bboxes, masks, crops)
 
@@ -375,7 +389,21 @@ def _blend_many(paths: list[Path], level_match: bool = False,
             np.subtract(crops[i], ramp, out=crops[i], where=masks[i])
         overlap_means = _overlap_means(bboxes, masks, crops)
 
-    scales = _solve_flux_scales(n, overlap_means)
+    # FLUX SCALING IS FOR FLUX, NOT FOR THE PEDESTAL. Both the solve and
+    # the application work on signal ABOVE the shared sky:
+    #
+    #   solve   on (mean - sky), so the scales match real signal rather
+    #           than signal+pedestal;
+    #   apply   as (panel - sky)*scale + sky, so a panel's sky comes out
+    #           exactly where the pedestal put it.
+    #
+    # Multiplying the whole panel instead moves its sky by (scale-1)*sky.
+    # Measured 2026-08-22: two panels with IDENTICAL 0.005 skies differing
+    # only in signal gain came out of the blend 6e-4 apart — five times the
+    # production quilt, and the reason every additive fix upstream of this
+    # point (level constants, planes, SPFC gain, merge-time equalization)
+    # was silently undone here.
+    scales = _solve_flux_scales(n, _signal_means(overlap_means, sky_target))
 
     # Pass 3: weighted sum, accumulated per-panel into its bbox slice.
     numer = np.zeros(canvas_shape, dtype=np.float32)
@@ -386,7 +414,13 @@ def _blend_many(paths: list[Path], level_match: bool = False,
         r0, r1, c0, c1 = bboxes[i]
         weight = _edt_weight(masks[i], bboxes[i], canvas_shape)
         sub = crops[i]  # the retained crop, mutated in place (last use)
-        sub *= scales[i]
+        if sky_target is None:
+            sub *= scales[i]
+        else:
+            # (sub - t)*s + t, masked so no-data zeros stay exactly zero.
+            np.multiply(sub, scales[i], out=sub, where=masks[i])
+            np.add(sub, np.float32(sky_target * (1.0 - scales[i])),
+                   out=sub, where=masks[i])
         sub *= weight
         numer[r0:r1, c0:c1] += sub
         denom[r0:r1, c0:c1] += weight
@@ -424,7 +458,7 @@ def merge_images_oss(
                       # Merge-time sky equalization version. Bumping this
                       # line is the deliberate re-key for changes to the
                       # matching maths in the (unhashed) blend helpers.
-                      "SKYVER": "pedestal-1"})
+                      "SKYVER": "pedestal-2"})
 
     new_count = sum(_panel_count(inp) for inp in inputs)
     _set_panel_count(output_filename, new_count)
