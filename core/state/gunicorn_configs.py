@@ -10,7 +10,16 @@ def guincorn_configs() -> list[GunicornConfig]:
             worker_type="sync",
             num_servers=1,
             start_port=8000,
-            num_workers=None,
+            # FOUR worker PROCESSES, not the gunicorn default of one.
+            # `sync` + the shared `--threads 4` silently promotes to a
+            # single gthread process, and threads are GIL-bound: one
+            # CPU-heavy request (a trace rebuild after a cart change, a
+            # first-view pyramid build) starves every other request and the
+            # whole UI reads as hung — three times on 2026-08-21/22, each
+            # cleared only by killing the worker. gthread also heartbeats
+            # from its own thread, so `timeout` never trips on a long
+            # request. Processes are the only thing that actually isolates.
+            num_workers=4,
             timeout=300,
         ),
         "stream_server": GunicornConfig(
