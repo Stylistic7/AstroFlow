@@ -126,15 +126,27 @@ def start_ray_subordinate_node(head_node_address, node_ip_address: str | None = 
     import os
     for volume in ("/Volumes/AstroRaw", "/Volumes/AstroProcessed"):
         try:
-            os.listdir(volume)
+            entries = os.listdir(volume)
         except OSError as e:
             raise RuntimeError(
                 f"REFUSING to join the cluster: cannot read {volume} from "
                 f"this process ({e}). Launch from a context with disk "
                 f"access (Terminal.app, or grant the launcher Full Disk "
-                f"Access) and check the volume is mounted — a blind worker "
-                f"poisons every file-touching task it is handed."
+                f"Access) — a blind worker poisons every file-touching "
+                f"task it is handed."
             ) from e
+        # An UNMOUNTED volume is an empty directory, and listdir on it
+        # succeeds — which is exactly how a blind worker slipped past the
+        # first version of this fence on 2026-08-22 and failed ~20
+        # placements. A shared data volume is never legitimately empty.
+        if not entries:
+            raise RuntimeError(
+                f"REFUSING to join the cluster: {volume} is EMPTY, which "
+                f"means it is not mounted (an unmounted mount point is a "
+                f"bare directory that reads as empty). Mount it and "
+                f"relaunch — a blind worker poisons every file-touching "
+                f"task it is handed."
+            )
     ray_path = get_bin_dir() / "ray"
     # Reap any local raylet BEFORE starting the one true node, so a join is
     # idempotent: exactly one raylet per machine, always. A worker that restarts
