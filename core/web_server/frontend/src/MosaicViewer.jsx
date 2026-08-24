@@ -91,6 +91,17 @@ export default function MosaicViewer() {
     }, [pipeline, display, filter, objectType, objectId, versionsData, navigate]);
 
     const openInPixInsight = () => {
+        // A target opens ALL of its channel masters at once, each view named
+        // for its filter — that is the useful unit of work in PI, and it
+        // takes no display/filter because the masters live at one fixed tap
+        // ("Channel") regardless of which colour tap the page is showing.
+        if (target_id) {
+            fetch(`/api/open_target_masters/${target_id}/${encodeURIComponent(pipeline)}`,
+                  { method: 'POST' })
+                .then((r) => { if (!r.ok) console.warn("open_target_masters failed", r.status); })
+                .catch(console.error);
+            return;
+        }
         // open_mosaic_master's hierarchy is just <mosaic_id> (not
         // <type>/<id>), so spell out the prefix explicitly.
         const tap = `${encodeURIComponent(pipeline)}/${encodeURIComponent(display)}/${encodeURIComponent(filter)}`;
@@ -173,28 +184,28 @@ export default function MosaicViewer() {
 						</Select>
 					</Tooltip>
 				</>)}
-				{mosaic && <>
-					<Tooltip title="Export to Telescopius">
+				{mosaic && <Tooltip title="Export to Telescopius">
+					<IconButton
+						size="small"
+						onClick={() => setTelescopiusOpen(true)}
+						sx={{ color: 'text.secondary' }}
+					>
+						<ShareIcon fontSize="small" />
+					</IconButton>
+				</Tooltip>}
+				<Tooltip title={target_id
+					? "Open all channel masters in PixInsight"
+					: "Open in PixInsight"}>
+					<span>
 						<IconButton
 							size="small"
-							onClick={() => setTelescopiusOpen(true)}
+							onClick={openInPixInsight}
 							sx={{ color: 'text.secondary' }}
 						>
-							<ShareIcon fontSize="small" />
+							<LaunchIcon fontSize="small" />
 						</IconButton>
-					</Tooltip>
-					<Tooltip title="Open in PixInsight">
-						<span>
-							<IconButton
-								size="small"
-								onClick={openInPixInsight}
-								sx={{ color: 'text.secondary' }}
-							>
-								<LaunchIcon fontSize="small" />
-							</IconButton>
-						</span>
-					</Tooltip>
-				</>}
+					</span>
+				</Tooltip>
 				<ConcernsBadge
 					objectType={objectType}
 					objectId={objectId}

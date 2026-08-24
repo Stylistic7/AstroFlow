@@ -472,3 +472,43 @@ def run_scp(
 
         if _should_restart(slot):
             _kill_instance(slot)
+
+
+# The interactive instance. PixInsight assigns the first free slot to a
+# plain launch, and `_DEFAULT_SLOTS` is [1], so the pipeline's pool and the
+# window the user is looking at are the same instance.
+_GUI_SLOT = 1
+
+
+def open_in_gui(views: dict[str, Path]) -> None:
+    """Open images in the interactive PixInsight instance, each view named
+    by its mapping key.
+
+    Deliberately unlike `run_script`, in two ways. It takes no slot lock: a
+    UI click must not block behind a WBPP run that happens to hold slot 1.
+    And it emits no `close --force *`: the recipe path opens with a clean
+    slate because it addresses views programmatically, but here the windows
+    the user already has open have to survive.
+
+    The cost of both choices is that a pipeline task dispatching its own
+    `close --force *` will close these again. That is visible and
+    recoverable (press the button again); silently closing the user's work
+    would not be.
+    """
+    from pix.recipe import with_engine_directive
+    from pix.tasks.open_images import generate_named_open_js
+
+    _start_instance(_GUI_SLOT)
+
+    script_id = uuid.uuid4().hex[:12]
+    js_path = _LOCK_DIR / f"pix-open-{script_id}.js"
+    scp_path = _LOCK_DIR / f"pix-open-{script_id}.scp"
+    js_path.write_text(with_engine_directive(generate_named_open_js(views)))
+    scp_path.write_text(f'run -x "{js_path}"\n')
+    print(f"### pix: opening {len(views)} view(s) in GUI slot {_GUI_SLOT}: "
+          f"{sorted(views)}")
+
+    subprocess.run(
+        [_PIXINSIGHT_EXECUTABLE, f"--execute={_GUI_SLOT}:{scp_path}"],
+        timeout=_DISPATCH_TIMEOUT,
+    )

@@ -329,16 +329,11 @@ def open_image(filename):
     # TIFF first; a non-tiled source passes through at zero cost. See
     # file_io/planar.py for the measurements.
     from file_io.planar import reconstruct_planar_tiff
-    to_open = os.fspath(reconstruct_planar_tiff(resolved))
-    if to_open != resolved:
+    from pix.runner import open_in_gui
+    to_open = Path(reconstruct_planar_tiff(resolved))
+    if os.fspath(to_open) != resolved:
         print(f"### open_image: reconstructed planar TIFF {to_open}")
-    print(f"### opening filename {to_open}")
-    subprocess.Popen(
-        [
-            "/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight",
-            to_open,
-        ]
-    )
+    open_in_gui({to_open.stem: to_open})
 
     return Response(status=200)
 
@@ -361,10 +356,50 @@ def open_mosaic_master(mosaic_id, pipeline, display, filter):
     # Same tiled-TIFF reconstruction as `open_image` — the scene-format taps
     # this most often resolves to are exactly the ones stored ONLY as pyramids.
     from file_io.planar import reconstruct_planar_tiff
-    to_open = reconstruct_planar_tiff(path)
-    print(f"### opening {to_open} in PixInsight")
-    subprocess.Popen([
-        "/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight",
-        str(to_open),
-    ])
+    from pix.runner import open_in_gui
+    to_open = Path(reconstruct_planar_tiff(path))
+    open_in_gui({filter or to_open.stem: to_open})
     return jsonify({"opened": str(to_open)})
+
+
+@files_bp.route("/api/open_target_masters/<target_id>/<path:pipeline>",
+                methods=["POST"])
+def open_target_masters(target_id, pipeline):
+    """Open every channel master of a target in PixInsight, each view named
+    for its filter.
+
+    Paths come from the pipeline trace (`available_tap_path` at the
+    "Channel" tap that `merge_target_channel` declares), never from a
+    filesystem scan. Scanning for a master by stable_hash matches
+    superseded generations as readily as current ones, and a stale master
+    opened by hand is indistinguishable from live output once it is on
+    screen — which is the whole reason this button exists.
+    """
+    from web_server.backend.metadata import available_tap_path
+    from file_io.planar import reconstruct_planar_tiff
+    from pix.runner import open_in_gui
+
+    targets = context.targets or {}
+    if target_id not in targets:
+        return jsonify({"error": "target not found"}), 404
+    target = targets[target_id].get()
+    stacks = context.stacks or {}
+
+    views: dict[str, Path] = {}
+    missing: list[str] = []
+    for stack_id in target.stack_ids:
+        filter = stacks[stack_id].get().filter
+        path = available_tap_path(
+            pipeline, "Channel", "target", target_id, filter)
+        if path is None:
+            missing.append(filter)
+            continue
+        views[filter] = Path(reconstruct_planar_tiff(path))
+
+    if not views:
+        return jsonify(
+            {"error": "no channel masters on disk", "missing": missing}), 404
+
+    open_in_gui(views)
+    return jsonify({"opened": {k: str(v) for k, v in views.items()},
+                    "missing": missing})
