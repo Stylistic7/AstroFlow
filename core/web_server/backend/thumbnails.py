@@ -144,6 +144,21 @@ def _producer_accepts(producer, nargs: int) -> bool:
     return required <= nargs <= required + optional
 
 
+def _is_pyramidal(path) -> bool:
+    """Whether `path` carries its own multi-resolution pyramid.
+
+    Since "the pyramid IS the payload" a deliverable's primary can be
+    pyramidal with no `_tiles.tiff` sibling, so page count — not the presence
+    of a sibling file — is what says whether a cheap stored level exists.
+    Cheap: a header read, no pixels decoded."""
+    try:
+        import pyvips
+        return int(pyvips.Image.new_from_file(
+            str(path), access="sequential").get("n-pages")) > 1
+    except Exception:
+        return False
+
+
 def get_thumbnail(entity, *extra_args):
     """Best-available thumbnail for an entity + optional extra producer
     args (e.g. filter for Mosaic channels, substack for Runs).
@@ -201,16 +216,30 @@ def get_thumbnail(entity, *extra_args):
         # Largest, fresher wins.
         candidates.sort(key=lambda t: (t[0], t[1]), reverse=True)
         _size, _mtime, producer, path = candidates[0]
-        # Prefer the pyramidal `_tiles.tiff` sibling — serve a small
-        # stored level instead of decoding the (possibly multi-GB) source.
-        from previews.create_tile_pyramid import pyramid_path_for
-        tiff = pyramid_path_for(Path(path))
-        if tiff.exists():
-            from previews.create_tile_pyramid import pyramid_thumbnail
+        # Prefer a pyramid — serve a small stored level instead of decoding
+        # the (possibly multi-GB) source. It lives in one of two places:
+        # the `_tiles.tiff` SIBLING, or, since "the pyramid IS the payload"
+        # (2026-08-17, `products/registry._publish_with_presentations`),
+        # INSIDE the primary itself.
+        #
+        # Only the sibling was checked. That sibling is no longer written for
+        # pyramidal primaries, so every such deliverable fell through to the
+        # decode path below — which `_exceeds_thumbnail_budget` refuses at
+        # 50 MP, i.e. every real master. The result was a silent 404 where a
+        # cheap stored level was sitting in the file all along.
+        from previews.create_tile_pyramid import (
+            pyramid_path_for, pyramid_thumbnail,
+        )
+        sibling = pyramid_path_for(Path(path))
+        for candidate in (sibling if sibling.exists() else None,
+                          Path(path) if _is_pyramidal(path) else None):
+            if candidate is None:
+                continue
             try:
-                return _png_response(pyramid_thumbnail(tiff), producer.__name__)
+                return _png_response(
+                    pyramid_thumbnail(candidate), producer.__name__)
             except Exception:
-                pass
+                continue
         # No pyramid (e.g. a raw-frame placeholder for an un-built
         # object) — fall back to the lightweight read+resize path.
         thumbnail = _thumbnail_for(entity, args, producer)

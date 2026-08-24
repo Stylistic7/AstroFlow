@@ -37,28 +37,28 @@ def test_downscaled_mosaic_has_real_pixels(test_context):
     stacks = context.stacks
     assert len(stacks) >= 4
 
-    # The DownscaledMaster mosaic landed somewhere — find any non-empty
-    # PlacedImage tiff under the per-op output directory.
+    # The placements themselves are gone by now: they are multi-GB, feed only
+    # the merge, and the pipeline wraps them in a block that "cleans up once
+    # it's been consumed" (see `pipelines/pixinsight_master_downscaled.py`).
+    # So this checks the SURVIVING artifacts for real pixels instead — which
+    # is the point of the test either way: a graph that ran but composited
+    # nothing yields zeros here.
     output_dir = context.output_dir
-    placed_dir = output_dir / "place_image"
-    assert placed_dir.exists(), f"PlacedImage dir missing: {placed_dir}"
 
-    placed_count = 0
-    for tiff in placed_dir.glob("*.tiff"):
-        image = read_image(tiff)
-        if image.shape[0] > 0 and image.shape[1] > 0 and np.any(image != 0):
-            placed_count += 1
-    assert placed_count >= 1, (
-        f"Expected at least 1 non-empty placed image in {placed_dir}, "
-        f"got {placed_count}"
+    merged_dir = output_dir / "merge_images"
+    merged = sorted(merged_dir.glob("*.xisf")) if merged_dir.exists() else []
+    assert merged, f"No merged mosaic produced in {merged_dir}"
+    assert any(np.any(read_image(m) != 0) for m in merged), (
+        f"All {len(merged)} merged mosaics in {merged_dir} are zeros — the "
+        "graph ran but composited nothing"
     )
 
-    # Same shape for the final per-filter Mosaic output.
+    # The per-filter deliverable, unconditionally: it was guarded by
+    # `if final_dir.exists()` / `if finals`, so it passed vacuously whenever
+    # the pipeline produced nothing at all — the exact failure it exists to
+    # catch.
     final_dir = output_dir / "post_process_mosaic_color_channel"
-    if final_dir.exists():
-        finals = list(final_dir.glob("*.xisf"))
-        if finals:
-            image = read_image(finals[0])
-            assert np.any(image != 0), (
-                f"Final mosaic {finals[0]} is all zeros"
-            )
+    finals = sorted(final_dir.glob("*.xisf")) if final_dir.exists() else []
+    assert finals, f"No per-filter mosaic deliverable in {final_dir}"
+    image = read_image(finals[0])
+    assert np.any(image != 0), f"Final mosaic {finals[0]} is all zeros"

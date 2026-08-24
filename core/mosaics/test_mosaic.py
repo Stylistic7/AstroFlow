@@ -117,10 +117,17 @@ def test_orion_mosaic(test_context) -> None:
     # and each carries FILTER=H (the test corpus is single-band).
     assert_files("post_process_stack/*.xisf", 4, {"FILTER": "H"})
 
-    # Placed panels: 4 stacks × 2 viewbox sizes (Master + Subframe)
-    # = 8 distinct call_hashes. Different viewboxes → different
-    # call_hashes → different files inside the same op directory.
-    assert_files("place_image/*.tiff", 8, {"FILTER": "H"})
+    # Placed panels: NONE survive. This used to expect 8 (4 stacks × 2 viewbox
+    # sizes, Master + Subframe, each a distinct call_hash). `place_image` is
+    # `@node(ephemeral=True)` — a working value, not a deliverable — and
+    # `GraphRuntime._reclaim_ephemerals` reclaims it when any graph concludes,
+    # sparing only that graph's terminal.
+    #
+    # Kept as an assertion rather than deleted, because 0 is now the load-
+    # bearing value: a non-zero count means reclamation did NOT run, which is
+    # exactly the leak `cache/orphan_sweep.SCOPE_INTERIOR_OPS` exists to
+    # report (458 leaked `place_image` files were measured on 2026-08-17).
+    assert_files("place_image/*.tiff", 0)
 
     # Master-pipeline mosaic merge: pairwise PhotometricMosaic over the
     # 4 panels in a 2x2 layout → 2 within-strip + 1 cross-strip = 3
@@ -129,12 +136,14 @@ def test_orion_mosaic(test_context) -> None:
     assert_files("merge_images/*.xisf", 3, {"FILTER": "H"})
 
     # Subframe-pipeline mosaic merge (numpy TIFF). One variadic `_blend_many`
-    # over all 4 panels → a single merge per filter — but `merge_images_subframe`
-    # carries `display="Merged"`, so its primary `.tiff` gets a `_tiles.tiff`
-    # pyramid sibling: 2 `.tiff` for the single-filter corpus (mirrors how the
-    # OSS test counts `merge_images_oss`'s primary + pyramid). FILTER=H is
-    # verified on the `store_mosaic_color_channel_subframe` deliverable below.
-    assert_files("merge_images_subframe/*.tiff", 2)
+    # over all 4 panels → a single merge per filter, so ONE `.tiff` for the
+    # single-filter corpus. This expected 2 while `display="Merged"` meant a
+    # `_tiles.tiff` pyramid SIBLING was written beside the primary; since
+    # "the pyramid IS the payload" (2026-08-17,
+    # `products/registry._publish_with_presentations`) the primary is itself
+    # pyramidal and no sibling is written. FILTER=H is verified on the
+    # `store_mosaic_color_channel_subframe` deliverable below.
+    assert_files("merge_images_subframe/*.tiff", 1)
 
     assert_files("store_mosaic_color_channel_subframe/*.tiff", 1, {"FILTER": "H"})
     assert_files("post_process_mosaic_color_channel/*.xisf", 1, {"FILTER": "H"})
@@ -206,7 +215,13 @@ def test_orion_mosaic_hybrid_oss(test_context) -> None:
     # prefer-OSS-formats decision — no FITS anywhere in the OSS merge path)
     # plus one `_tiles.tiff` display pyramid. No separate store/copy op.
     assert_files("merge_images_oss/*.fits", 0)
-    assert_files("merge_images_oss/*_tiles.tiff", 1)
+
+    # NO `_tiles.tiff` sibling: since "the pyramid IS the payload"
+    # (2026-08-17, `products/registry._publish_with_presentations`), page 0 of
+    # the pyramidal TIFF is bit-identical to the planar master, so storing
+    # both wasted ~265 GB at full build. The primary IS the pyramid now.
+    assert_files("merge_images_oss/*_tiles.tiff", 0)
+
     merge_primaries = [
         p for p in Path(context.output_dir).rglob("merge_images_oss/*.tiff")
         if not p.name.endswith("_tiles.tiff")
@@ -216,17 +231,33 @@ def test_orion_mosaic_hybrid_oss(test_context) -> None:
     merge_header = read_header(merge_primaries[0])
     assert merge_header.get("FILTER") == "H", merge_header.get("FILTER")
 
+    # The display pyramid still has to EXIST — it just lives inside the
+    # primary. Checking page count keeps the original coverage ("this
+    # deliverable is tileable") instead of checking a filename that no longer
+    # gets written, which would have passed while serving broken tiles.
+    import pyvips
+    pages = pyvips.Image.new_from_file(
+        str(merge_primaries[0]), access="sequential").get("n-pages")
+    assert pages > 1, (
+        f"{merge_primaries[0].name} has {pages} page(s) — not pyramidal, so "
+        "the tile route has nothing to serve")
+
     # No vestigial store op, and the PI XISF terminal isn't invoked here.
     assert_files("store_mosaic_color_channel_oss/*.fits", 0)
     assert_files("post_process_mosaic_color_channel/*.xisf", 0)
 
-    # 4 placed panels persist — the Subframe-preview placements (downscaled
-    # viewbox; that pipeline has no scope). The 4 OSS-Master placements live
-    # inside the `{place_image → merge_images_oss}` scope (merge_scope,
-    # delete_intermediates=True) and were deleted when the merge concluded —
-    # the merge itself persists above, PRESENTED by its builder
+    # NO placed panels persist — not even the Subframe-preview ones. This
+    # expected 4 back when reclamation was per-SCOPE
+    # (`Graph(delete_intermediates=True)`), so placements survived in any
+    # pipeline that didn't build a scope, and the Subframe pipeline doesn't.
+    # Ephemerality is now declared per-OP — `place_image` is
+    # `@node(ephemeral=True)` — and `GraphRuntime._reclaim_ephemerals` fires
+    # for EVERY concluded graph, sparing only that graph's terminal. So the
+    # placements go everywhere, scope or no scope.
+    #
+    # The merge still persists (asserted above), PRESENTED by its builder
     # (builder ≡ terminal), which is why the Mosaic tap still routes.
-    assert_files("place_image/*.tiff", 4)
+    assert_files("place_image/*.tiff", 0)
 
     # Panel CROPS are scope-local ({crop, op} subgraphs built with
     # delete_intermediates=True): every crop was deleted the moment its
