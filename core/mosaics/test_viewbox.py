@@ -1,5 +1,6 @@
 """Unit tests for viewbox computation."""
 import numpy as np
+import pytest
 from spherical_geometry.polygon import SingleSphericalPolygon
 from frozendict import frozendict
 
@@ -56,13 +57,33 @@ def test_viewbox_dimensions_positive():
         assert vb.y_span > 0
 
 
-def test_viewbox_tile_count():
+def test_viewbox_canvas_contains_the_field():
+    """The canvas must hold the whole projected footprint.
+
+    Regression: `resolution` was derived from a tile-rounded width while the
+    un-rounded width was returned, so the field spanned `x_span/resolution`
+    pixels against a narrower canvas — 8192 vs 6174 on the Heart, clipping
+    24.6% off the right edge of every master. Height was computed FROM
+    `resolution` and so never clipped, which is why only x is a real risk;
+    both are asserted so a future edit can't invert that.
+    """
+    for fov in (0.5, 1.0, 2.5, 5.0):
+        for mode in ("Subframe", "Master"):
+            vb = compute_viewbox(mode, _make_object(fov_deg=fov))
+            assert vb.x_span / vb.resolution <= vb.num_pixels_x + 1e-6, (
+                f"canvas {vb.num_pixels_x} px narrower than the "
+                f"{vb.x_span / vb.resolution:.1f} px field at fov={fov} {mode}")
+            assert vb.y_span / vb.resolution <= vb.num_pixels_y + 1e-6
+
+
+def test_viewbox_resolution_is_native_scale():
+    """No silent upsampling: a Master canvas samples at the object's own
+    image scale, not finer. Rounding the width up to a 2048 multiple and
+    dividing x_span by THAT inflated every canvas by up to 1.33x per axis."""
     obj = _make_object()
     vb = compute_viewbox("Master", obj)
-    assert vb.num_tiles_x >= 1
-    assert vb.num_tiles_y >= 1
-    assert vb.tile_width == 2048
-    assert vb.tile_height == 2048
+    actual_arcsec = np.rad2deg(vb.resolution) * 3600
+    assert actual_arcsec == pytest.approx(obj.image_scale, rel=1e-3)
 
 
 def test_viewbox_wider_fov_more_pixels():

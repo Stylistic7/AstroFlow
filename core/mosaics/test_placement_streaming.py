@@ -18,6 +18,15 @@ from mosaics.test_placement import (
 )
 
 _TILE = 128
+
+
+# Chunking is a placement detail now, so shrink it here rather than
+# passing a size through the viewbox. Autouse fixtures do not cross
+# module boundaries, so this repeats test_placement's patch.
+@pytest.fixture(autouse=True)
+def _small_tiles(monkeypatch):
+    import mosaics.placement.astroflow as _placement
+    monkeypatch.setattr(_placement, "_TILE_SIZE", _TILE)
 _EROSION_PX = 10
 
 
@@ -26,22 +35,19 @@ def _enlarge_viewbox(vb: Viewbox, pad_tiles: int) -> Viewbox:
     footprint sits in the interior of a canvas much larger than itself — this
     is what makes the tile-bbox restriction non-trivial (and exercises the
     margins on all four sides)."""
-    res, th, tw = vb.resolution, vb.tile_height, vb.tile_width
-    num_tiles_x = vb.num_tiles_x + 2 * pad_tiles
-    num_tiles_y = vb.num_tiles_y + 2 * pad_tiles
+    res = vb.resolution
+    pad_px = pad_tiles * _TILE
+    num_pixels_x = vb.num_pixels_x + 2 * pad_px
+    num_pixels_y = vb.num_pixels_y + 2 * pad_px
     return Viewbox(
         projection=vb.projection,
-        x_min=vb.x_min - pad_tiles * tw * res,
-        y_min=vb.y_min - pad_tiles * th * res,
-        x_span=num_tiles_x * tw * res,
-        y_span=num_tiles_y * th * res,
+        x_min=vb.x_min - pad_px * res,
+        y_min=vb.y_min - pad_px * res,
+        x_span=num_pixels_x * res,
+        y_span=num_pixels_y * res,
         resolution=res,
-        num_pixels_x=num_tiles_x * tw,
-        num_pixels_y=num_tiles_y * th,
-        num_tiles_x=num_tiles_x,
-        num_tiles_y=num_tiles_y,
-        tile_width=tw,
-        tile_height=th,
+        num_pixels_x=num_pixels_x,
+        num_pixels_y=num_pixels_y,
     )
 
 
@@ -58,7 +64,7 @@ def _setup(pad_tiles: int):
     image = np.tile(np.arange(ny, dtype=np.float64), (nx, 1)).T + 1.0  # row gradient, no zeros
     wcs = _make_tan_wcs(100.0, 0.0, 10.0, nx, ny)
     interp = _make_interpolator(image)
-    vb = _enlarge_viewbox(_make_viewbox_for_wcs(wcs, nx, ny, tile_size=_TILE), pad_tiles)
+    vb = _enlarge_viewbox(_make_viewbox_for_wcs(wcs, nx, ny), pad_tiles)
     return wcs, interp, vb, (ny, nx)
 
 
@@ -149,5 +155,5 @@ def test_footprint_entirely_off_canvas_returns_none():
     interp = _make_interpolator(image)
     # A viewbox centered on the opposite side of the sky.
     far_wcs = _make_tan_wcs(280.0, 0.0, 10.0, nx, ny)
-    vb = _make_viewbox_for_wcs(far_wcs, nx, ny, tile_size=_TILE)
+    vb = _make_viewbox_for_wcs(far_wcs, nx, ny)
     assert _footprint_tile_bbox(wcs, vb, (ny, nx)) is None

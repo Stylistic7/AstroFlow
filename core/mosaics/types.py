@@ -144,12 +144,6 @@ class Viewbox(ContentHashed):
     num_pixels_y: int
     num_pixels_x: int
 
-    num_tiles_y: int
-    num_tiles_x: int
-
-    tile_height: int
-    tile_width: int
-
     def __str__(self):
         return (
             f"Viewbox(content_hash={self.content_hash} "

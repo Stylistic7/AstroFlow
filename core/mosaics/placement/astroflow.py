@@ -46,6 +46,26 @@ class PlacedImage:
 def round_to_nearest_multiple(number: float, multiple: int) -> int:
     return int(np.ceil(number / multiple) * multiple)
 
+
+# The chunk size for projecting a canvas. This is a MEMORY-BOUNDING detail of
+# how `place_image` walks the canvas — not a property of the viewbox, and not
+# a storage format: the colour tail tiles by PANEL, and the display pyramids
+# use their own 256 px tiling in `previews/create_tile_pyramid.py`.
+#
+# It lived on `Viewbox` as `tile_width`/`tile_height`/`num_tiles_*` until it
+# was moved here. That was actively harmful twice over: `Viewbox.__hash__` is
+# `hash_dataclass`, so four constants rode along in every cache key, and
+# `compute_viewbox` rounded the CANVAS WIDTH up to a multiple of this while
+# returning the un-rounded width — which clipped 24.6% off the right edge of
+# every master. Canvas geometry has nothing to do with how it gets chunked.
+_TILE_SIZE = 2048
+
+
+def _num_tiles(pixels: int) -> int:
+    """Chunks needed to cover `pixels`. The last one overhangs, which is
+    fine — `place_image` crops the assembled buffer to the canvas."""
+    return int(np.ceil(pixels / _TILE_SIZE))
+
 @beartype
 def place_tile(
     viewbox: Viewbox,
@@ -56,14 +76,14 @@ def place_tile(
     skip_empty: bool = True,
 ) -> tuple[int, int, np.ndarray | None]:
     tile_y_min = (
-        viewbox.y_min + tile_y * viewbox.tile_height * viewbox.resolution
+        viewbox.y_min + tile_y * _TILE_SIZE * viewbox.resolution
     )
-    tile_y_max = tile_y_min + viewbox.tile_height * viewbox.resolution
+    tile_y_max = tile_y_min + _TILE_SIZE * viewbox.resolution
 
     tile_x_min = (
-        viewbox.x_min + tile_x * viewbox.tile_width * viewbox.resolution
+        viewbox.x_min + tile_x * _TILE_SIZE * viewbox.resolution
     )
-    tile_x_max = tile_x_min + viewbox.tile_width * viewbox.resolution
+    tile_x_max = tile_x_min + _TILE_SIZE * viewbox.resolution
 
     if skip_empty:
         # Compute the four corner points in RA/Dec.
@@ -87,9 +107,9 @@ def place_tile(
 
     # Compute the RA, Dec of all the tile's pixels.
     ys = np.linspace(
-        tile_y_min, tile_y_max, viewbox.tile_height, endpoint=False
+        tile_y_min, tile_y_max, _TILE_SIZE, endpoint=False
     )
-    xs = np.linspace(tile_x_min, tile_x_max, viewbox.tile_width, endpoint=False)
+    xs = np.linspace(tile_x_min, tile_x_max, _TILE_SIZE, endpoint=False)
     xx, yy = np.meshgrid(xs, ys, indexing="xy")
     ras, decs = viewbox.projection.unproject(xx, yy)
     ras, decs = np.degrees(ras), np.degrees(decs)
@@ -154,10 +174,10 @@ def _project_in_tiles(
     from concurrent.futures import ThreadPoolExecutor
 
     ty0, ty1, tx0, tx1 = tile_range or (
-        0, viewbox.num_tiles_y, 0, viewbox.num_tiles_x,
+        0, _num_tiles(viewbox.num_pixels_y), 0, _num_tiles(viewbox.num_pixels_x),
     )
-    buf_h = (ty1 - ty0) * viewbox.tile_height
-    buf_w = (tx1 - tx0) * viewbox.tile_width
+    buf_h = (ty1 - ty0) * _TILE_SIZE
+    buf_w = (tx1 - tx0) * _TILE_SIZE
     projected_image = np.zeros((buf_h, buf_w), dtype=np.float32)
 
     tiles = list(product(range(ty0, ty1), range(tx0, tx1)))
@@ -170,17 +190,17 @@ def _project_in_tiles(
         ):
             if tile_data is None:
                 continue
-            ly = (tile_y - ty0) * viewbox.tile_height
-            lx = (tile_x - tx0) * viewbox.tile_width
+            ly = (tile_y - ty0) * _TILE_SIZE
+            lx = (tile_x - tx0) * _TILE_SIZE
             projected_image[
-                ly : ly + viewbox.tile_height,
-                lx : lx + viewbox.tile_width,
+                ly : ly + _TILE_SIZE,
+                lx : lx + _TILE_SIZE,
             ] = tile_data
 
     # Drop tile-grid padding that spills past the canvas edge (num_pixels is
     # <= num_tiles * tile_size). Matching the old full-canvas slice keeps the
     # eroded canvas-edge behaviour unchanged.
-    y0_px, x0_px = ty0 * viewbox.tile_height, tx0 * viewbox.tile_width
+    y0_px, x0_px = ty0 * _TILE_SIZE, tx0 * _TILE_SIZE
     clip_h = min(buf_h, viewbox.num_pixels_y - y0_px)
     clip_w = min(buf_w, viewbox.num_pixels_x - x0_px)
     return projected_image[:clip_h, :clip_w], y0_px, x0_px
@@ -225,10 +245,10 @@ def _footprint_tile_bbox(
         return None
 
     m = _BBOX_TILE_MARGIN
-    ty0 = max(0, int(np.floor(miny / viewbox.tile_height)) - m)
-    ty1 = min(viewbox.num_tiles_y, int(np.ceil(maxy / viewbox.tile_height)) + m)
-    tx0 = max(0, int(np.floor(minx / viewbox.tile_width)) - m)
-    tx1 = min(viewbox.num_tiles_x, int(np.ceil(maxx / viewbox.tile_width)) + m)
+    ty0 = max(0, int(np.floor(miny / _TILE_SIZE)) - m)
+    ty1 = min(_num_tiles(viewbox.num_pixels_y), int(np.ceil(maxy / _TILE_SIZE)) + m)
+    tx0 = max(0, int(np.floor(minx / _TILE_SIZE)) - m)
+    tx1 = min(_num_tiles(viewbox.num_pixels_x), int(np.ceil(maxx / _TILE_SIZE)) + m)
     if ty0 >= ty1 or tx0 >= tx1:
         return None
     return (ty0, ty1, tx0, tx1)

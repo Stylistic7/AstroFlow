@@ -36,7 +36,7 @@ def _make_tan_wcs(
     return WCS(header)
 
 
-def _make_viewbox_for_wcs(wcs: WCS, nx: int, ny: int, tile_size: int = 256) -> Viewbox:
+def _make_viewbox_for_wcs(wcs: WCS, nx: int, ny: int) -> Viewbox:
     """Build a Viewbox that covers the same sky region as the WCS."""
     projection = MercatorProjection()
 
@@ -56,8 +56,6 @@ def _make_viewbox_for_wcs(wcs: WCS, nx: int, ny: int, tile_size: int = 256) -> V
 
     num_pixels_x = nx
     num_pixels_y = int(np.ceil(y_span / resolution))
-    num_tiles_x = int(np.ceil(num_pixels_x / tile_size))
-    num_tiles_y = int(np.ceil(num_pixels_y / tile_size))
 
     return Viewbox(
         projection=projection,
@@ -68,10 +66,6 @@ def _make_viewbox_for_wcs(wcs: WCS, nx: int, ny: int, tile_size: int = 256) -> V
         resolution=resolution,
         num_pixels_x=num_pixels_x,
         num_pixels_y=num_pixels_y,
-        num_tiles_x=num_tiles_x,
-        num_tiles_y=num_tiles_y,
-        tile_width=tile_size,
-        tile_height=tile_size,
     )
 
 
@@ -91,6 +85,20 @@ def _make_interpolator(image: np.ndarray) -> RegularGridInterpolator:
 # ---------------------------------------------------------------------------
 
 from mosaics.placement import place_tile
+from mosaics.placement.astroflow import _num_tiles
+import mosaics.placement.astroflow as _placement
+
+
+# Chunk size is a placement detail, not viewbox geometry. These tests want
+# a canvas of several chunks without building a 2048-px-per-side image, so
+# they shrink it rather than threading a parameter through production code.
+_TILE_SIZE = 128
+
+
+@pytest.fixture(autouse=True)
+def _small_tiles(monkeypatch):
+    monkeypatch.setattr(_placement, "_TILE_SIZE", _TILE_SIZE)
+
 
 
 def _call_place_tile(viewbox, tile_y, tile_x, wcs, interp, skip_empty=False):
@@ -112,7 +120,7 @@ class TestPlaceTile:
 
         wcs = _make_tan_wcs(ra, dec, scale, nx, ny)
         interp = _make_interpolator(image)
-        viewbox = _make_viewbox_for_wcs(wcs, nx, ny, tile_size=128)
+        viewbox = _make_viewbox_for_wcs(wcs, nx, ny)
 
         return image, wcs, interp, viewbox
 
@@ -120,7 +128,7 @@ class TestPlaceTile:
         _, wcs, interp, viewbox = setup
         ty, tx, data = _call_place_tile(viewbox, 0, 0, wcs, interp)
         assert data is not None
-        assert data.shape == (viewbox.tile_height, viewbox.tile_width)
+        assert data.shape == (_TILE_SIZE, _TILE_SIZE)
         assert data.dtype == np.float32
 
     def test_has_nonzero_pixels(self, setup):
@@ -152,10 +160,6 @@ class TestPlaceTile:
             resolution=viewbox.resolution,
             num_pixels_x=viewbox.num_pixels_x,
             num_pixels_y=viewbox.num_pixels_y,
-            num_tiles_x=viewbox.num_tiles_x,
-            num_tiles_y=viewbox.num_tiles_y,
-            tile_width=viewbox.tile_width,
-            tile_height=viewbox.tile_height,
         )
         _, _, data = _call_place_tile(far_viewbox, 0, 0, wcs, interp)
         assert data is not None
@@ -172,10 +176,6 @@ class TestPlaceTile:
             resolution=viewbox.resolution,
             num_pixels_x=viewbox.num_pixels_x,
             num_pixels_y=viewbox.num_pixels_y,
-            num_tiles_x=viewbox.num_tiles_x,
-            num_tiles_y=viewbox.num_tiles_y,
-            tile_width=viewbox.tile_width,
-            tile_height=viewbox.tile_height,
         )
         _, _, data = _call_place_tile(far_viewbox, 0, 0, wcs, interp, skip_empty=True)
         assert data is None, "skip_empty should return None for off-footprint tile"
@@ -187,10 +187,10 @@ class TestPlaceTile:
         wcs = _make_tan_wcs(100.0, 0.0, 10.0, nx, ny)
         interp = _make_interpolator(image)
         # Small tile (128px) well inside a large source (1000px) — corners are in footprint.
-        viewbox = _make_viewbox_for_wcs(wcs, nx, ny, tile_size=128)
+        viewbox = _make_viewbox_for_wcs(wcs, nx, ny)
         # Use a central tile.
-        center_ty = viewbox.num_tiles_y // 2
-        center_tx = viewbox.num_tiles_x // 2
+        center_ty = _num_tiles(viewbox.num_pixels_y) // 2
+        center_tx = _num_tiles(viewbox.num_pixels_x) // 2
         _, _, data = _call_place_tile(viewbox, center_ty, center_tx, wcs, interp, skip_empty=True)
         assert data is not None, "Central tile corners should be inside footprint"
 
@@ -219,7 +219,7 @@ class TestCoordinateRoundTrip:
         nx, ny = 100, 100
         ra, dec = 100.0, 10.0
         wcs = _make_tan_wcs(ra, dec, 10.0, nx, ny)
-        viewbox = _make_viewbox_for_wcs(wcs, nx, ny, tile_size=128)
+        viewbox = _make_viewbox_for_wcs(wcs, nx, ny)
 
         # WCS center pixel → RA/Dec
         center_ra, center_dec = wcs.all_pix2world(nx / 2, ny / 2, 0)

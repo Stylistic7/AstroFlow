@@ -242,15 +242,20 @@ class TestEndToEndPlacement:
         ntx, nty = int(np.ceil(npx / tile)), int(np.ceil(npy / tile))
         vb = Viewbox(projection=projection, x_min=x_min, x_span=x_span,
                      y_min=y_min, y_span=y_span, resolution=res,
-                     num_pixels_x=npx, num_pixels_y=npy,
-                     num_tiles_x=ntx, num_tiles_y=nty,
-                     tile_width=tile, tile_height=tile)
+                     num_pixels_x=npx, num_pixels_y=npy)
+
+        # Chunk size is a placement detail, not viewbox geometry. Shrink it so
+        # a 512x384 frame spans several chunks; patched rather than passed
+        # because the fixtures here are class-scoped and monkeypatch is not.
+        from unittest.mock import patch
+        import mosaics.placement.astroflow as _placement
 
         canvas = np.zeros((nty * tile, ntx * tile), np.float32)
-        for ty in range(nty):
-            for tx in range(ntx):
-                _, _, data = place_tile(vb, ty, tx, wcs, interp, False)
-                canvas[ty*tile:(ty+1)*tile, tx*tile:(tx+1)*tile] = data
+        with patch.object(_placement, "_TILE_SIZE", tile):
+            for ty in range(nty):
+                for tx in range(ntx):
+                    _, _, data = place_tile(vb, ty, tx, wcs, interp, False)
+                    canvas[ty*tile:(ty+1)*tile, tx*tile:(tx+1)*tile] = data
         return canvas[:npy, :npx], image
 
     @pytest.fixture(scope="class")

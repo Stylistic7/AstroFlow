@@ -12,7 +12,6 @@ from geometry.viewbox import compute_viewbox as geometry_compute_viewbox
 from geometry.polygons import project_polygon
 from previews.types import DOWNSCALE_FACTORS, SUBFRAME
 
-_TILE_SIZE = 2048  # pixels
 
 
 def _projection_for(object: AstrometricAttributes) -> Projection:
@@ -79,9 +78,6 @@ def _projection_for(object: AstrometricAttributes) -> Projection:
 def compute_viewbox(
     quality: str, object: AstrometricAttributes,
 ) -> Viewbox:
-    def round_to_nearest_multiple(number: float, multiple: int) -> int:
-        return int(np.ceil(number / multiple) * multiple)
-
     projection = _projection_for(object)
 
     # Project from spherical coordinates on the sky into 2D coordinates, in
@@ -99,19 +95,24 @@ def compute_viewbox(
         num_pixels_x = x_span / np.deg2rad(effective_scale / 3600)
     finished_pixels_x = int(np.ceil(num_pixels_x))
 
-    # Round the number of pixels up to a multiple of the tile size.
-    num_pixels_x = round_to_nearest_multiple(num_pixels_x, multiple=_TILE_SIZE)
+    # Resolution follows the canvas actually returned. This used to divide
+    # x_span by a TILE-ROUNDED width while returning the un-rounded one, so
+    # `resolution` was finer than the width it was paired with by exactly the
+    # rounding factor — and the field then spanned more pixels than the canvas
+    # had. The Heart's H merge came out 6174 px wide against a field needing
+    # 8192 at its own resolution, clipping 24.6% off the right edge. Height
+    # escaped because it is derived from `resolution`, which is why the bug
+    # presented as "cropped on the right" only.
+    #
+    # Nothing needed the width to be a tile multiple. Chunking is a placement
+    # concern and now lives there (`mosaics/placement/astroflow.py`), where
+    # the last chunk simply overhangs. Rounding into `resolution` also
+    # silently upsampled every canvas by up to 1.33x per axis — carrying no
+    # more detail at 1.77x the pixels through every GPU stage — which is the
+    # same inflation `_projection_for` rejects Mercator for.
+    resolution = x_span / finished_pixels_x
 
-    # Compute the effective resolution, with the rounded-up number of pixels.
-    resolution = x_span / num_pixels_x
-
-    # Compute the number of pixels in the y-axis, using the same resolution.
-    num_pixels_y = y_span / resolution
-    finished_pixels_y = int(np.ceil(num_pixels_y))
-    num_pixels_y = round_to_nearest_multiple(num_pixels_y, multiple=_TILE_SIZE)
-
-    num_tiles_y = int(np.ceil(num_pixels_y / _TILE_SIZE))
-    num_tiles_x = int(np.ceil(num_pixels_x / _TILE_SIZE))
+    finished_pixels_y = int(np.ceil(y_span / resolution))
 
     return Viewbox(
         projection=projection,
@@ -122,8 +123,4 @@ def compute_viewbox(
         resolution=resolution,
         num_pixels_y=finished_pixels_y,
         num_pixels_x=finished_pixels_x,
-        num_tiles_y=num_tiles_y,
-        num_tiles_x=num_tiles_x,
-        tile_height=_TILE_SIZE,
-        tile_width=_TILE_SIZE,
     )
