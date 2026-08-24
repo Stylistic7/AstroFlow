@@ -105,24 +105,49 @@ def _cart_items(ctx) -> "list[tuple]":
     sources — all traced identically:
 
       * the shopping cart;
-      * the ARCHIVE. Archived means "don't recompute me", never "you may delete
-        my images", so an archived item pins its outputs exactly like a live
-        one. That is the whole difference: archive entries stay out of the
-        compute graph that runs, and stay in the live set.
       * the IMPLICIT per-mosaic pipelines above.
+
+    NOT the archive. An archive entry carries its own frozen list of preserved
+    paths — see `_archived_paths` — because the user CHOSE what to keep when
+    they removed the item from the cart.
     """
     items: set[tuple] = set()
-    for src in (ctx.shopping_cart or [], ctx.archive or []):
-        for entry in src:
-            if entry is None:
-                continue
-            t = tuple(entry)
-            if len(t) >= 3:
-                items.add(tuple(str(x) for x in t[:3]))
+    for entry in (ctx.shopping_cart or []):
+        if entry is None:
+            continue
+        t = tuple(entry)
+        if len(t) >= 3:
+            items.add(tuple(str(x) for x in t[:3]))
     for mosaic_id in (ctx.mosaics or {}):
         for pipeline in _IMPLICIT_MOSAIC_PIPELINES:
             items.add(("mosaic", str(mosaic_id), pipeline))
     return sorted(items)
+
+
+def _archived_paths(ctx) -> set[str]:
+    """The paths an archive entry PRESERVES, read from the entry itself.
+
+    An archive entry is `(object_type, object_id, pipeline, paths)`: when the
+    user removed the item from the cart they chose `preserve="all" |
+    "finals" | "none"`, and `state/archive.py` froze the resulting path list
+    INTO the entry.
+
+    Re-tracing the item instead — which is what happened until now, because
+    `_cart_items` took `t[:3]` and dropped the list — pins every intermediate
+    the pipeline ever wrote. That silently voids the user's choice: "finals"
+    and "all" behave identically, and nothing archived is ever sweepable. It
+    also means archived generations keep superseded intermediates alive
+    indefinitely, which is how a stale master survives a sweep and later gets
+    mistaken for current output.
+    """
+    out: set[str] = set()
+    for entry in (ctx.archive or []):
+        if entry is None:
+            continue
+        t = tuple(entry)
+        if len(t) >= 4 and t[3]:
+            out.update(str(p) for p in t[3])
+    return out
 
 
 def live_set(ctx) -> set[str]:
@@ -143,6 +168,7 @@ def live_set(ctx) -> set[str]:
             p = entry.get("path")
             if p:
                 primaries.add(str(p))
+    primaries |= _archived_paths(ctx)
 
     live: set[str] = set()
     for p in primaries:

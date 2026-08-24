@@ -75,22 +75,37 @@ def test_walk_and_classify_returns_unreferenced_files_only(temp_output_dir):
 def test_live_set_includes_archive_paths_and_their_siblings(
     temp_output_dir, fake_trace,
 ):
-    """An ARCHIVED item is traced exactly like a live cart item — archived
-    means "don't recompute me", never "you may delete my images". Its sidecar
-    and tile pyramid come along so a preserved primary is never stranded."""
+    """An archive entry pins EXACTLY the paths frozen into it — the list the
+    user chose (`preserve="all"|"finals"|"none"`) when removing the item from
+    the cart (`state/archive.py`). Siblings (sidecar, tile pyramid) come along
+    so a preserved primary is never stranded.
+
+    It is NOT re-traced like a cart item. Re-tracing pinned every intermediate
+    the pipeline ever wrote, which silently voided the user's choice ("finals"
+    behaved like "all") and kept superseded generations alive forever — that
+    is how a stale master survived the 2026-08-24 sweep and was later
+    mistaken for current output."""
     primary = temp_output_dir / "mosaic" / "preserved.xisf"
     sidecar = temp_output_dir / "mosaic" / "preserved.xisf.json"
     tile = temp_output_dir / "mosaic" / "preserved_tiles.tiff"
+    unpreserved = temp_output_dir / "mosaic" / "intermediate.xisf"
     _make_file(primary); _make_file(sidecar); _make_file(tile)
+    _make_file(unpreserved)
 
-    context.archive = [("mosaic", "abc", "P")]
-    fake_trace["live"] = [str(primary)]
+    # 4-tuple: (type, id, pipeline, frozen preserved paths).
+    context.archive = [("mosaic", "abc", "P", [str(primary)])]
+    # The trace would ALSO yield the intermediate — proving the entry's own
+    # list wins over a re-trace.
+    fake_trace["live"] = [str(primary), str(unpreserved)]
 
     live = orphan_sweep.live_set(context)
 
     assert str(primary) in live
     assert str(sidecar) in live
     assert str(tile) in live
+    assert str(unpreserved) not in live, (
+        "archived item was re-traced — its unpreserved intermediates must "
+        "not be pinned")
 
 
 def test_live_set_includes_traced_paths(temp_output_dir, fake_trace):
@@ -326,7 +341,17 @@ def test_orion_mosaic_trace_matches_disk_and_archive_lifecycle(test_context) -> 
     traced = {str(p) for p in paths_for_cart_item(item)}
     on_disk = _gather_disk_primaries(Path(context.output_dir))
 
-    only_traced = traced - on_disk
+    # Ops inside a `delete_intermediates` scope are TRACED but deliberately
+    # NOT on disk — the scope reclaims them once its terminal completes (the
+    # placements are multi-GB and feed only the merge). So their absence is
+    # correct, not a divergence. Reuse the sweep's own definition rather than
+    # a second list that could drift from it.
+    from cache.orphan_sweep import SCOPE_INTERIOR_OPS
+
+    def _is_scope_interior(path: str) -> bool:
+        return os.path.basename(os.path.dirname(path)) in SCOPE_INTERIOR_OPS
+
+    only_traced = {p for p in traced - on_disk if not _is_scope_interior(p)}
     only_disk = on_disk - traced
 
     if only_traced or only_disk:
