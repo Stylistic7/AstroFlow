@@ -42,6 +42,7 @@ from dependency_graph.tracing import (
     IdentityRef, present_terminal, workflow_group,
 )
 from mosaics.merging.oss import merge_images_oss, merge_scope
+from mosaics.viewbox_measured import compute_viewbox_measured
 from mosaics.color.post_process import (
     bxt_correct_only, color_post_process, panel_source_manifest,
 )
@@ -93,15 +94,16 @@ def for_target(target, config):
         (target.id, filter): sink
         for filter, sink in _channels_for_target(target, config).items()
     }
-    merged = _merged_channels(target, {target.id: target}, channels, config)
+    viewbox = _measured_viewbox(channels, single_panel=True)
+    merged = _merged_channels(target, {target.id: target}, channels, config,
+                              viewbox)
     # Per-panel pre-merge identity — this is what keeps THIS pipeline's colour
     # tail distinct from the MGC pipeline's on the same target (see panels.py).
     panel_sources = {
         f: panel_source_manifest({target.id: target}, f, config, channels)
         for f in merged
     }
-    color = color_post_process(target, merged, config,
-                               target.viewbox("Master"), panel_sources)
+    color = color_post_process(target, merged, config, viewbox, panel_sources)
     return {**merged, **color}
 
 
@@ -113,27 +115,49 @@ def for_mosaic(mosaic, config):
     for target in mosaic.targets:
         for filter, sink in _channels_for_target(target, config).items():
             channels[(target.id, filter)] = sink
-    out = _merged_channels(mosaic, targets_by_id, channels, config)
+    viewbox = _measured_viewbox(channels,
+                                single_panel=len(targets_by_id) == 1)
+    out = _merged_channels(mosaic, targets_by_id, channels, config, viewbox)
     panel_sources = {
         f: panel_source_manifest(targets_by_id, f, config, channels)
         for f in out
     }
-    color = color_post_process(mosaic, out, config,
-                               mosaic.viewbox("Master"), panel_sources)
+    color = color_post_process(mosaic, out, config, viewbox, panel_sources)
     return {**out, **color}
 
 
-def _merged_channels(mosaic, targets_by_id, channels, config) -> dict:
+def _measured_viewbox(channels, single_panel: bool):
+    """ONE canvas for the whole object, from the channels' MEASURED geometry.
+
+    Recorded as a node over the PRE-BXT channel masters — same measured WCS
+    as the BXT'd copies (BXT preserves geometry and the output is re-solved),
+    but the canvas doesn't re-key when BXT settings change and doesn't wait
+    on GPU work. Sorted for a deterministic arg order (the call hash folds
+    it). The returned HANDLE threads through `_merged_channels` (place +
+    merge) and `color_post_process` (panel crops), so every stage shares one
+    pixel grid; the runtime resolves it to a `Viewbox` carrying the same
+    content_hash the handle predicts (the pure-Merkle result stamp)."""
+    return compute_viewbox_measured(
+        "Master", single_panel,
+        *[channels[k] for k in sorted(channels)])
+
+
+def _merged_channels(mosaic, targets_by_id, channels, config,
+                     viewbox) -> dict:
     """Per-filter `{filter: merged-channel handle}`.
 
-    Verbatim from `hybrid_pi_oss_mosaic._merged_channels` — including the
-    STRIPS iteration order, which the variadic merge key folds in, so changing
-    it would re-key every channel. The placements live inside a
-    `{N x place_image -> merge_images_oss}` scope with
-    delete_intermediates=True; the merge is the terminal and persists."""
+    Follows `hybrid_pi_oss_mosaic._merged_channels` — including the STRIPS
+    iteration order, which the variadic merge key folds in, so changing it
+    would re-key every channel. The placements live inside the
+    `{N x place_image -> merge_images_oss}` scope; the merge is the terminal
+    and persists.
+
+    `viewbox` is the SHARED measured-geometry handle from
+    `_measured_viewbox` — one canvas across every filter, so the per-filter
+    merges land on one pixel grid (the colour tail combines them
+    pixel-by-pixel). It resolves at runtime inside `merge_scope`."""
     out = {}
     for filter in mosaic.filters:
-        viewbox = mosaic.viewbox("Master")
         corrected = {
             tid: bxt_correct_only(targets_by_id[tid], filter, config,
                                   channels[(tid, filter)])

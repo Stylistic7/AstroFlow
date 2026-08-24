@@ -112,10 +112,16 @@ def test_target_tail_traces_with_target_taps(tmp_path, monkeypatch):
 
     def _tail(target, channels, config):
         from mosaics.color.post_process import color_post_process
-        from pipelines.hybrid_pi_oss_mosaic import _merged_channels
-        merged = _merged_channels(target, {target.id: target}, channels, config)
-        color = color_post_process(target, merged, config,
-                                   target.viewbox("Master"))
+        from pipelines.hybrid_pi_oss_mosaic import (
+            _measured_viewbox, _merged_channels,
+        )
+        # Trace-level only: the viewbox is a recorded HANDLE here (the node
+        # body never runs, so the synthetic channels' absent plate solutions
+        # are never read) — exactly the state the real pipeline traces in.
+        viewbox = _measured_viewbox(channels, single_panel=True)
+        merged = _merged_channels(target, {target.id: target}, channels,
+                                  config, viewbox)
+        color = color_post_process(target, merged, config, viewbox)
         return {**merged, **color}
 
     graph = trace(_tail, t, channels, config)
@@ -172,10 +178,16 @@ def test_lrgb_target_traces_rgb_and_lrgb(tmp_path, monkeypatch):
 
     def _tail(target, channels, config):
         from mosaics.color.post_process import color_post_process
-        from pipelines.hybrid_pi_oss_mosaic import _merged_channels
-        merged = _merged_channels(target, {target.id: target}, channels, config)
-        color = color_post_process(target, merged, config,
-                                   target.viewbox("Master"))
+        from pipelines.hybrid_pi_oss_mosaic import (
+            _measured_viewbox, _merged_channels,
+        )
+        # Trace-level only: the viewbox is a recorded HANDLE here (the node
+        # body never runs, so the synthetic channels' absent plate solutions
+        # are never read) — exactly the state the real pipeline traces in.
+        viewbox = _measured_viewbox(channels, single_panel=True)
+        merged = _merged_channels(target, {target.id: target}, channels,
+                                  config, viewbox)
+        color = color_post_process(target, merged, config, viewbox)
         return {**merged, **color}
 
     graph = trace(_tail, t, channels, config)
@@ -218,10 +230,16 @@ def test_galaxy_target_traces_ha_blend_taps(tmp_path, monkeypatch):
 
     def _tail(target, channels, config):
         from mosaics.color.post_process import color_post_process
-        from pipelines.hybrid_pi_oss_mosaic import _merged_channels
-        merged = _merged_channels(target, {target.id: target}, channels, config)
-        color = color_post_process(target, merged, config,
-                                   target.viewbox("Master"))
+        from pipelines.hybrid_pi_oss_mosaic import (
+            _measured_viewbox, _merged_channels,
+        )
+        # Trace-level only: the viewbox is a recorded HANDLE here (the node
+        # body never runs, so the synthetic channels' absent plate solutions
+        # are never read) — exactly the state the real pipeline traces in.
+        viewbox = _measured_viewbox(channels, single_panel=True)
+        merged = _merged_channels(target, {target.id: target}, channels,
+                                  config, viewbox)
+        color = color_post_process(target, merged, config, viewbox)
         return {**merged, **color}
 
     graph = trace(_tail, t, channels, config)

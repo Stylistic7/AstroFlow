@@ -29,6 +29,7 @@ from beartype import beartype as _beartype
 from dataclasses import dataclass
 from ray.runtime_context import get_runtime_context
 
+from cache.content_hashed import ContentHashed
 from cache.context_ref import ContextRef, strip_refs
 from cache.types import NeverRun
 from protocols import CacheProtocol
@@ -278,6 +279,20 @@ def make_cached_decorator(
                 )
             if isinstance(result, Path) and not result.exists():
                 raise FileNotFoundError(result)
+            # Pure-Merkle stamp for PLAIN-OBJECT results. The trace side already
+            # stamps every handle with `content_hash = canonical_call_hash(...)`
+            # and documents that as "the content_hash its runtime result will
+            # carry" — but only image producers actually carried it (via the
+            # CONTHASH header that `compute_image_metadata` reads back). A
+            # ContentHashed value returned by a plain @node came back with
+            # content_hash="", so a trace-time key built from the HANDLE and a
+            # runtime key built from the RESULT disagreed — exactly the
+            # mismatch that would break `process_in_panels`-style identity
+            # prediction over a Viewbox handle. Results that set their own
+            # content_hash (Stack, Target, Mosaic from the identify ops) are
+            # left alone.
+            if isinstance(result, ContentHashed) and not result.content_hash:
+                object.__setattr__(result, "content_hash", call_hash)
             from dependency_graph.classes import Graph
             if isinstance(result, Graph):
                 # A Graph is a PLAN, not a result: a description of work still

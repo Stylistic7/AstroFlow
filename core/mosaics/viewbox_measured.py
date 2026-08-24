@@ -67,7 +67,10 @@ def _measured_footprint(channel: ImageMetadata) -> SingleSphericalPolygon:
 
 
 @beartype
-@node
+# Head-pinned like the other file-less orchestration ops: its
+# result caches in the per-machine diskcache, and a value that
+# only ever materializes on the head can't diverge across nodes.
+@node(resources={"diskcache": 0.001})
 def compute_viewbox_measured(
     quality: str,
     single_panel: bool,

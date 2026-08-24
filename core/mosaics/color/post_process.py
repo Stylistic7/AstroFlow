@@ -362,10 +362,14 @@ def _nxt_narrow(args, kwargs):
 
 
 def _blend_sho_narrow(args, kwargs):
-    """Cache-key hook for the reassembly: beyond the tile handles + their rects,
-    only the feather params (config.tiling) matter."""
-    mosaic, config, rects, *tiles = args
-    return (mosaic.stable_hash, config.tiling, rects, *tiles), kwargs   # stable_hash: no cross-panel churn
+    """Cache-key hook for the reassembly: beyond the tile handles + the rect
+    inputs (panels + viewbox) and the feather params (config.tiling), nothing
+    matters. Panels reduce to stable ids — their content already rides in the
+    tiles; the viewbox reduces to its content_hash (handle or runtime-stamped
+    value, identical by the pure-Merkle stamp)."""
+    mosaic, config, viewbox, panels, *tiles = args
+    return (mosaic.stable_hash, config.tiling, viewbox,
+            tuple(p.stable_hash for p in panels), *tiles), kwargs   # stable_hash: no cross-panel churn
 
 
 @node(auto_memory=True, plate_solve=False)  # streaming bandjoin of the 3 starless channels
@@ -420,16 +424,22 @@ def nxt(
 
 @node(cache_key_narrow=_blend_sho_narrow, display=LINEAR_SHO_DISPLAY, filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-channel LINEAR, NXT-denoised
 def blend_linear_sho(
-    mosaic: Mosaic, config: ProcessingConfig, rects: tuple, *tiles: ImageMetadata,
+    mosaic: Mosaic, config: ProcessingConfig, viewbox, panels: tuple,
+    *tiles: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
     """Feather the NXT'd tiles back into the single linear-SHO master — the
     source the WebGPU tile viewer finishes live. Fully streaming (see
     file_io/tiling.feather_blend_to_bigtiff): never materializes the canvas.
-    `final=True` exempts this deliverable from any ephemeral scope (the NXT
-    tiles themselves are GPU work — kept, never ephemeral). display="Linear
-    SHO" makes the tap run the live SHO colour finish (see
-    LINEAR_SHO_DISPLAY)."""
-    out = blend_linear_sho.filename_fn(mosaic, config, rects, *tiles)
+    Rects re-derived from `(panels, viewbox, pad)` — the same arithmetic the
+    crops used, so tile and placement can't disagree. `final=True` exempts
+    this deliverable from any ephemeral scope (the NXT tiles themselves are
+    GPU work — kept, never ephemeral). display="Linear SHO" makes the tap run
+    the live SHO colour finish (see LINEAR_SHO_DISPLAY)."""
+    from mosaics.panels import panel_rect
+    pad = config.tiling.overlap_px
+    rects = [panel_rect(panel, viewbox, pad) for panel in panels]
+    assert all(r is not None for r in rects), "panel projects off-canvas"
+    out = blend_linear_sho.filename_fn(mosaic, config, viewbox, panels, *tiles)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     feather_blend_to_bigtiff(
         [tuple(r) for r in rects], [t.filename for t in tiles], out,

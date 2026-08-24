@@ -57,12 +57,19 @@ def _viewbox_for(panels, resolution=1e-4, margin_px=200):
     return SimpleNamespace(
         projection=proj, x_min=x_min, y_min=y_min, resolution=resolution,
         num_pixels_x=w, num_pixels_y=h,
+        # The narrow keys on the viewbox; a real one carries its producer's
+        # call hash (the pure-Merkle runtime stamp). The duck fakes that so
+        # hash_list reduces it instead of address-repring a SimpleNamespace.
+        content_hash="VIEWBOX_HASH",
     )
 
 
 def _panel(pid, content_hash, ra, dec, radius=0.4):
     return SimpleNamespace(
         id=pid, content_hash=content_hash,
+        # The crop narrow routes on the panel's STABLE id (content churn rides
+        # in scope_hashes) — same convention as production Targets.
+        stable_hash=f"stable_{pid}",
         footprint=SingleSphericalPolygon.from_cone(ra, dec, radius, steps=32),
     )
 
@@ -135,9 +142,13 @@ def test_panel_tiles_scope_reflects_overlap():
 # Cache-key narrow + manifest — collisions & incremental re-keys               #
 # --------------------------------------------------------------------------- #
 
-def _key(mosaic, rect, source, scope_hashes):
-    """The real crop cache-key hash_call computes from a _crop_panel_narrow."""
-    narrowed, kw = _crop_panel_narrow((mosaic, rect, source, scope_hashes), {})
+def _key(mosaic, panel, viewbox, source, scope_hashes):
+    """The real crop cache-key hash_call computes from a _crop_panel_narrow.
+    The rect is no longer IN the key — `(panel, viewbox, pad)` stand in for
+    it, computable at trace time when the viewbox is a handle."""
+    narrowed, kw = _crop_panel_narrow(
+        (mosaic, panel, viewbox, _CONFIG.tiling.overlap_px, source,
+         scope_hashes), {})
     return hash_call("crop_panel_fn", *narrowed, **kw)
 
 
@@ -240,13 +251,15 @@ def test_no_collisions_across_panels_and_stages():
         manifests[f"{filt}:base"] = base
         manifests[f"{filt}:bxt"] = _derive(base, "bxt_correct")
         manifests[f"{filt}:sxt"] = _derive(manifests[f"{filt}:bxt"], "sxt_starless")
+    by_id = {t.id: t for t in m.targets}
     keys = []
     for stage, manifest in manifests.items():
         for pid, rect, scope in tiles:
-            keys.append(_key(m, rect, None, _scope_hashes(manifest, scope)))
+            keys.append(_key(m, by_id[pid], vb, None,
+                             _scope_hashes(manifest, scope)))
     # Every (panel × stage) crop is a DISTINCT cache key — no product ever
-    # collides onto another's crop. (Distinct panels have distinct rects;
-    # distinct stages have distinct scope hashes.)
+    # collides onto another's crop. (Distinct panels have distinct stable
+    # ids; distinct stages have distinct scope hashes.)
     assert len(set(keys)) == len(keys), (
         f"{len(keys) - len(set(keys))} colliding crop keys")
 
@@ -257,8 +270,9 @@ def test_same_panel_same_stage_is_stable_and_dedups():
     tiles = panel_tiles(m, vb, _CONFIG)
     base = base_panel_mosaic(m, "H", merged=None).manifest
     pid, rect, scope = tiles[0]
-    k1 = _key(m, rect, None, _scope_hashes(base, scope))
-    k2 = _key(m, rect, SimpleNamespace(content_hash="ANOTHER_SOURCE"),
+    panel = next(t for t in m.targets if t.id == pid)
+    k1 = _key(m, panel, vb, None, _scope_hashes(base, scope))
+    k2 = _key(m, panel, vb, SimpleNamespace(content_hash="ANOTHER_SOURCE"),
               _scope_hashes(base, scope))
     assert k1 == k2   # source excluded from the key -> stable across source churn
 
@@ -276,9 +290,11 @@ def test_only_overlapping_tiles_rekey_on_panel_change():
     )
     after = base_panel_mosaic(m2, "H", merged=None).manifest
 
+    by_id = {t.id: t for t in m.targets}
+
     def key_for(pid, manifest):
         rect, scope = next((r, s) for p, r, s in tiles if p == pid)
-        return _key(m, rect, None, _scope_hashes(manifest, scope))
+        return _key(m, by_id[pid], vb, None, _scope_hashes(manifest, scope))
 
     # A's tile re-keys (its own hash changed); B's tile re-keys (A ∈ B's scope);
     # C's tile is UNCHANGED (A ∉ C's scope) -> a genuine cache hit.

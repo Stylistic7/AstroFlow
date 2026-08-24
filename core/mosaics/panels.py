@@ -50,7 +50,8 @@ from mosaics.trimming import project_to_viewbox
 # its own single-panel mosaic WITHOUT touching the `mosaic: Mosaic`
 # annotations — those serialize into the op code hash, so editing them would
 # re-key every op in this module (see mosaics/types.py).
-from mosaics.types import MosaicLike as Mosaic
+from mosaics.types import MosaicLike as Mosaic, Viewbox
+from targets.types import Target
 
 
 @dataclass(frozen=True)
@@ -138,6 +139,33 @@ def _rects_overlap(a: tuple, b: tuple) -> bool:
     return not (ax1 < bx0 or bx1 < ax0 or ay1 < by0 or by1 < ay0)
 
 
+def panel_rect(panel, viewbox, pad: int) -> "tuple | None":
+    """One panel's padded crop rect `(x0, y0, w, h)` in `viewbox` pixel space,
+    clamped to the canvas — or None when the panel doesn't project finitely.
+
+    Computed at RUNTIME from whichever viewbox the op actually received, so
+    the rect always lives on the same canvas as the merged image it crops —
+    the viewbox may be a measured-geometry node result the trace only knew as
+    a handle. The panel's DECLARED footprint bounds the box; the declared vs
+    measured drift observed on real data (3.38 deg of rotation, 25-90 px of
+    translation, worst-case ~180 px corner displacement) is well inside the
+    512 px default pad, and the feather design already treats an over-large
+    crop as free (crops overlap by construction; the taper eats the excess).
+    """
+    bounds = project_to_viewbox(panel.footprint, viewbox).bounds
+    if len(bounds) != 4 or not all(np.isfinite(bounds)):
+        return None
+    minx, miny, maxx, maxy = bounds
+    W, H = viewbox.num_pixels_x, viewbox.num_pixels_y
+    x0 = max(0, int(np.floor(minx)) - pad)
+    y0 = max(0, int(np.floor(miny)) - pad)
+    x1 = min(W, int(np.ceil(maxx)) + pad)
+    y1 = min(H, int(np.ceil(maxy)) + pad)
+    if x1 <= x0 or y1 <= y0:
+        return None
+    return (x0, y0, x1 - x0, y1 - y0)
+
+
 def panel_tiles(mosaic: Mosaic, viewbox, config: ProcessingConfig) -> list[tuple]:
     """`[(panel_id, padded_rect(x0,y0,w,h), scope_ids), ...]` — one tile per panel
     with a finite bbox.
@@ -176,7 +204,14 @@ def panel_tiles(mosaic: Mosaic, viewbox, config: ProcessingConfig) -> list[tuple
 # --------------------------------------------------------------------------- #
 
 def _crop_panel_narrow(args, kwargs):
-    """Cache key = (mosaic.stable_hash, padded_rect, scope_manifest_hashes).
+    """Cache key = (mosaic.stable_hash, panel.stable_hash, viewbox, pad,
+    scope_manifest_hashes).
+
+    The rect used to sit here directly; it is now DERIVED at runtime from
+    `(panel, viewbox, pad)`, so those three stand in for it — same
+    information, but computable at trace time when `viewbox` is a handle
+    (its content_hash is what the hash machinery reduces it to, and the
+    runtime-stamped Viewbox carries the identical hash).
 
     `source` (the merged image handle) is DELIBERATELY excluded: its whole-image
     content_hash churns whenever any panel moved. `scope_manifest_hashes` — the
@@ -185,23 +220,34 @@ def _crop_panel_narrow(args, kwargs):
     OR a prior op changed (the manifest folds both), and differs between stages
     (BXT-source manifest ≠ SXT-source manifest), so no two products collide. No
     `config`: config-sensitivity already rides inside `scope_manifest_hashes`
-    (each derived hash is an op's `filename_fn`, which narrows on config)."""
-    mosaic, rect, source, scope_hashes = args
-    return (mosaic.stable_hash, rect, scope_hashes), kwargs
+    (each derived hash is an op's `filename_fn`, which narrows on config) — and
+    `pad` (the one tiling field the rect depends on) is an explicit arg."""
+    mosaic, panel, viewbox, pad, source, scope_hashes = args
+    return (mosaic.stable_hash, panel.stable_hash, viewbox, pad,
+            scope_hashes), kwargs
 
 
 # ephemeral: a materialized VIEW of the merged raster, written only because
 # rc-astro needs a file path. Re-cropping is seconds; keeping it cost 235 GB.
 @node(cache_key_narrow=_crop_panel_narrow, auto_memory=True, plate_solve=False,
       ephemeral=True)
-def crop_panel(mosaic: Mosaic, rect: tuple, source: ImageMetadata,
+def crop_panel(mosaic: Mosaic, panel: Target, viewbox: Viewbox, pad: int,
+               source: ImageMetadata,
                scope_hashes: tuple) -> WithSidecar[TiffFilePath]:
     """One panel's padded bbox cropped out of the merged mosaic — streaming, so
     only the tile's pixels are read. Written STRIP-based so rc-astro reads it
     directly (it rejects tiled TIFF). Ephemeral: reclaimed after its op consumes
-    it. The body reads `source.filename` (the merged image is always fresh on a
-    miss); `scope_hashes` only tightens the key (see `_crop_panel_narrow`)."""
-    out = crop_panel.filename_fn(mosaic, rect, source, scope_hashes)
+    it. The rect is derived HERE from `(panel, viewbox, pad)` — see
+    `panel_rect` — so it always lives on the canvas the merged image was
+    actually built on. The body reads `source.filename` (the merged image is
+    always fresh on a miss); `scope_hashes` only tightens the key (see
+    `_crop_panel_narrow`)."""
+    rect = panel_rect(panel, viewbox, pad)
+    assert rect is not None, (
+        f"panel {panel.stable_hash} projects off the canvas it was placed "
+        f"on — viewbox/placement disagreement")
+    out = crop_panel.filename_fn(mosaic, panel, viewbox, pad, source,
+                                 scope_hashes)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     write_tiff_image(Path(out), crop_source_region(source.filename, rect),
                      {"PIPELINE": "AstroFlow-OSS"})
@@ -209,11 +255,13 @@ def crop_panel(mosaic: Mosaic, rect: tuple, source: ImageMetadata,
 
 
 def _blend_panels_narrow(args, kwargs):
-    """Beyond the tile handles + their rects, only the feather params
-    (`config.tiling`) matter; route on `mosaic.stable_hash` (not the churning
-    `content_hash`)."""
-    mosaic, config, rects, *tiles = args
-    return (mosaic.stable_hash, config.tiling, rects, *tiles), kwargs
+    """Beyond the tile handles + the rect inputs (panels + viewbox + the
+    feather params in `config.tiling`), nothing matters; route on
+    `mosaic.stable_hash` (not the churning `content_hash`). Panels reduce to
+    their stable ids — their CONTENT is already folded into each tile."""
+    mosaic, config, viewbox, panels, *tiles = args
+    return (mosaic.stable_hash, config.tiling, viewbox,
+            tuple(p.stable_hash for p in panels), *tiles), kwargs
 
 
 # ephemeral: a feather of tiles that are THEMSELVES retained (the GPU stages
@@ -223,12 +271,18 @@ def _blend_panels_narrow(args, kwargs):
 # 72 GB per compute-hour — the worst disk-for-compute trade in the tail.
 @node(cache_key_narrow=_blend_panels_narrow, auto_memory=True, plate_solve=False,
       ephemeral=True)
-def blend_panels(mosaic: Mosaic, config: ProcessingConfig, rects: tuple,
+def blend_panels(mosaic: Mosaic, config: ProcessingConfig, viewbox: Viewbox,
+                 panels: tuple,
                  *tiles: ImageMetadata) -> WithSidecar[TiffFilePath]:
     """Feather the processed panel tiles back into one BigTIFF — streaming (never
     materializes the canvas). The generic INTERMEDIATE blend (no `display=`); a
-    deliverable passes its own display-carrying blend to `process_in_panels`."""
-    out = blend_panels.filename_fn(mosaic, config, rects, *tiles)
+    deliverable passes its own display-carrying blend to `process_in_panels`.
+    Rects are re-derived from `(panels, viewbox, pad)` — the identical
+    arithmetic the crops used, so tile and placement can't disagree."""
+    pad = config.tiling.overlap_px
+    rects = [panel_rect(panel, viewbox, pad) for panel in panels]
+    assert all(r is not None for r in rects), "panel projects off-canvas"
+    out = blend_panels.filename_fn(mosaic, config, viewbox, panels, *tiles)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     feather_blend_to_bigtiff(
         [tuple(r) for r in rects], [t.filename for t in tiles], out,
@@ -242,8 +296,8 @@ def blend_panels(mosaic: Mosaic, config: ProcessingConfig, rects: tuple,
 # --------------------------------------------------------------------------- #
 
 @ray.remote(num_cpus=0.1)
-def _panel_stage(op_ref, mosaic, rect, scope_hashes, lead, source_merged,
-                 dry_run=False):
+def _panel_stage(op_ref, mosaic, panel, viewbox, pad, scope_hashes, lead,
+                 source_merged, dry_run=False):
     """One panel: crop its padded bbox out of the merged source, run `op` on
     that tile, and hand the tile back. Returned as a dynamic subgraph with
     `delete_intermediates=True`, so the CROP — a view of `source_merged` that
@@ -261,7 +315,8 @@ def _panel_stage(op_ref, mosaic, rect, scope_hashes, lead, source_merged,
     op = getattr(importlib.import_module(op_ref[0]), op_ref[1])
 
     def _body():
-        crop = crop_panel(mosaic, rect, source_merged, scope_hashes)
+        crop = crop_panel(mosaic, panel, viewbox, pad, source_merged,
+                          scope_hashes)
         return op(*lead, crop)
 
     return Graph(trace(_body))
@@ -297,21 +352,41 @@ def process_in_panels(op, *op_args, viewbox, blend=blend_panels) -> PanelMosaic:
     # incremental runs still cache-hit it. Before this, 24 panels x several
     # stages left 235 GB of crops on disk forever.
     op_ref = (op._function.__module__, op._function.__name__)
-    rects, handles = [], []
-    for pid, rect, scope in panel_tiles(mosaic, viewbox, config):
+    # SCOPE (which panels invalidate which tiles) is decided on the DECLARED
+    # Master canvas, deliberately: the passed `viewbox` may be a runtime
+    # handle (measured geometry), unreadable at trace time, and scope only
+    # needs a conservative overlap answer, not the exact canvas. The pad is
+    # inflated 8x so the answer stays conservative for downscaled canvases
+    # too (their pad covers 8x the sky per pixel) — "too broad re-runs a few
+    # extra tiles, too narrow silently corrupts". Crop RECTS, by contrast,
+    # are computed at runtime inside the ops from the viewbox they actually
+    # received.
+    import dataclasses as _dc
+    from mosaics.viewbox import compute_viewbox as _declared_viewbox
+    scope_config = _dc.replace(
+        config, tiling=_dc.replace(config.tiling,
+                                   overlap_px=config.tiling.overlap_px * 8))
+    scope_tiles = panel_tiles(
+        mosaic, _declared_viewbox("Master", mosaic), scope_config)
+    pad = config.tiling.overlap_px
+    targets_by_id = {t.id: t for t in mosaic.targets}
+    panels, handles = [], []
+    for pid, _scope_rect, scope in scope_tiles:
+        panel = targets_by_id[pid]
         scope_hashes = tuple(sorted(
             source.manifest[j] for j in scope if j in source.manifest))
         # Identities are pure `filename_fn` arithmetic — no node in THIS trace.
         # The crop's stem is its call hash, which is exactly the content_hash
         # its result will carry, so the op's identity is unchanged from when
-        # the crop handle sat here.
+        # the crop handle sat here. A handle viewbox reduces to its stamped
+        # content_hash; the resolved Viewbox carries the same one.
         crop_id = Path(crop_panel.filename_fn(
-            mosaic, rect, source.merged, scope_hashes)).stem
+            mosaic, panel, viewbox, pad, source.merged, scope_hashes)).stem
         # The tile's new identity IS its op's output identity — folds op code,
         # config (via the op's narrow), and the scoped source, drift-free.
         tile_path = op.filename_fn(*lead, IdentityRef(crop_id))
-        handle = record(_panel_stage, op_ref, mosaic, rect, scope_hashes,
-                        lead, source.merged)
+        handle = record(_panel_stage, op_ref, mosaic, panel, viewbox, pad,
+                        scope_hashes, lead, source.merged)
         # Builder ≡ terminal: the handle presents the op's output — identity
         # (so `blend`'s key and every downstream key are bit-identical to the
         # pre-subgraph version), expected path (so the workflow UI's on-disk
@@ -319,9 +394,9 @@ def process_in_panels(op, *op_args, viewbox, blend=blend_panels) -> PanelMosaic:
         # carry no display=, so nothing UI-facing is stamped here.
         present_terminal(handle, op, path=tile_path)
         handles.append(handle)
-        rects.append(rect)
+        panels.append(panel)
         manifest[pid] = Path(tile_path).stem
-    merged = blend(mosaic, config, tuple(rects), *handles)
+    merged = blend(mosaic, config, viewbox, tuple(panels), *handles)
     return PanelMosaic(merged=merged, manifest=manifest, mosaic=mosaic)
 
 
