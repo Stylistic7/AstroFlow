@@ -64,23 +64,31 @@ def test_live_set_refuses_on_an_unresolvable_item(tmp_path, monkeypatch):
 
 
 def test_live_set_covers_cart_archive_and_siblings(tmp_path, monkeypatch):
-    """Cart and ARCHIVE are traced identically — archived means "don't
-    recompute me", never "you may delete my images" — and every primary drags
-    its sidecar and pyramid in with it."""
+    """The cart is traced; an ARCHIVE entry pins exactly its frozen path list
+    (the `preserve=` choice the user made removing it from the cart, see
+    `state/archive.py`) — NOT a re-trace, which pinned every intermediate and
+    silently voided that choice. Every primary from either source drags its
+    sidecar and pyramid in with it."""
     _no_pins(monkeypatch)
     _fake_trace(monkeypatch, {
         ("target", "t1", "P"): ["/o/a.tiff"],
-        ("target", "t2", "P"): ["/o/b.tiff"],
+        # The archived item's trace would ALSO yield an intermediate —
+        # proving the entry's own list wins over a re-trace.
+        ("target", "t2", "P"): ["/o/b.tiff", "/o/b_intermediate.tiff"],
     })
     ctx = _ctx(tmp_path,
                cart=[("target", "t1", "P")],
-               archive=[("target", "t2", "P")])
+               archive=[("target", "t2", "P", ["/o/b.tiff"])])
 
     live = orphan_sweep.live_set(ctx)
 
     assert {"/o/a.tiff", "/o/b.tiff"} <= live
     assert "/o/a.tiff.json" in live          # sidecar
     assert "/o/a_tiles.tiff" in live         # pyramid
+    assert "/o/b.tiff.json" in live          # archived primary's sidecar too
+    assert "/o/b_intermediate.tiff" not in live, (
+        "archived item was re-traced — unpreserved intermediates must not "
+        "be pinned")
 
 
 def test_mosaics_implicitly_carry_the_subframe_pipeline(tmp_path, monkeypatch):

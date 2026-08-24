@@ -159,14 +159,124 @@ def _is_pyramidal(path) -> bool:
         return False
 
 
+def _ancestor_chains(entity) -> list[tuple]:
+    """Candidate cart-item ancestor chains for a child leaf, root→leaf —
+    the same `(type, id)` tuples `parse_ancestors` produces from a URL.
+
+    A Stack/Target has no tap snapshot of its own; only cart items (mosaics,
+    standalone targets) do, and `_routes_to_item` filters the ancestor's
+    snapshot down to the leaf. The frontend derives ancestors from the URL
+    hierarchy; a bare `/thumbnail/<type>/<id>` has no URL to read, but the
+    containment is in context. Chains are tried in order until one resolves,
+    longest (most specific) first; `()` last so a top-level entity still
+    resolves from its own snapshot."""
+    sid = getattr(entity, "stable_hash", None)
+    kind = type(entity).__name__
+    chains: list[tuple] = []
+    if kind == "Stack" and sid:
+        for tid, tref in sorted((context.targets or {}).items()):
+            target = tref.get()
+            if sid not in target.stack_ids:
+                continue
+            for mid, mref in sorted((context.mosaics or {}).items()):
+                if tid in mref.get().target_ids:
+                    chains.append((("mosaic", mid), ("target", tid)))
+            chains.append((("target", tid),))
+    elif kind == "Target" and sid:
+        for mid, mref in sorted((context.mosaics or {}).items()):
+            if sid in mref.get().target_ids:
+                chains.append((("mosaic", mid),))
+    chains.append(())
+    return chains
+
+
+def _catalog_thumbnail(entity, args: tuple, extra_args: tuple):
+    """Thumbnail via the CATALOG — tap snapshots + version-log last-good —
+    the app's own answer to "what file shows this object right now".
+
+    This is the primary source. Producer `filename_fn`s became call-hash
+    based, so they need the op's FULL arguments — `stack_files(stack,
+    config, *cal_masters)` — and a bare `/thumbnail/stack/<id>` URL cannot
+    supply them: every file-backed producer silently skipped and Stack
+    thumbnails 404'd. The catalog needs only (type, stable_hash, filter),
+    resolves through the same snapshot/version-log machinery as the viewer,
+    and never re-derives a filename without its args — the same "resolve
+    versions via the app" rule that keeps stale generations from being
+    mistaken for current output.
+
+    Returns PNG bytes or None. Run-shaped requests (a non-str extra arg,
+    e.g. a substack) return None — the catalog has no Run products; the
+    producer path below still owns those."""
+    if any(not isinstance(a, str) for a in extra_args):
+        return None
+    sid = getattr(entity, "stable_hash", None)
+    if not sid:
+        return None
+
+    key = _presentation_cache_key(entity, args, "catalog")
+    thumbnail = context.get(key)
+    if thumbnail:
+        return thumbnail
+    with _key_lock(key):
+        thumbnail = context.get(key)
+        if thumbnail:
+            return thumbnail
+
+        from catalog.queries import default_product_for, viewable_path
+        path = None
+        for ancestors in _ancestor_chains(entity):
+            product = default_product_for(
+                type(entity).__name__, sid,
+                filter=extra_args[0] if extra_args else None,
+                ancestors=ancestors)
+            if product is None:
+                continue
+            candidate = viewable_path(product, ancestors)
+            if candidate is not None and os.path.exists(candidate):
+                path = candidate
+                break
+        if path is None:
+            return None
+
+        png = None
+        from previews.create_tile_pyramid import (
+            pyramid_path_for, pyramid_thumbnail,
+        )
+        sibling = pyramid_path_for(Path(path))
+        for candidate in (sibling if sibling.exists() else None,
+                          Path(path) if _is_pyramidal(path) else None):
+            if candidate is None:
+                continue
+            try:
+                png = pyramid_thumbnail(candidate)
+                break
+            except Exception:
+                continue
+        if png is None:
+            from previews.operations import (
+                resize_array, autostretch, array_to_png,
+            )
+            try:
+                png = _make_thumbnail(
+                    str(path), resize_array, autostretch, array_to_png)
+            except Exception:
+                return None
+        if png is not None:
+            context[key] = png
+        return png
+
+
 def get_thumbnail(entity, *extra_args):
     """Best-available thumbnail for an entity + optional extra producer
     args (e.g. filter for Mosaic channels, substack for Runs).
 
-    Ranking: among all producers whose first param accepts type(entity)
-    and whose `filename_fn` resolves to an on-disk file, pick the one
-    with the LARGEST file (mtime breaks ties — fresher artifact wins if
-    sizes match). Bigger file ≈ more pixels ≈ higher quality, so a
+    The CATALOG answers first (`_catalog_thumbnail`): the same tap-snapshot +
+    version-log resolution the viewer uses, needing only the entity identity.
+
+    Producer ranking is the fallback: among all producers whose first param
+    accepts type(entity) and whose `filename_fn` resolves to an on-disk file,
+    pick the one with the LARGEST file (mtime breaks ties — fresher artifact
+    wins if sizes match). Bigger file ≈ more pixels ≈ higher quality, so a
     post-processed master shows up above the raw-frame subframe
     thumbnail without any explicit priority list.
 
@@ -175,6 +285,10 @@ def get_thumbnail(entity, *extra_args):
     ndarray-returning ones like flat-correction Run thumbnails) and
     invoke the first that succeeds."""
     args = (entity,) + extra_args
+
+    thumbnail = _catalog_thumbnail(entity, args, extra_args)
+    if thumbnail:
+        return _png_response(thumbnail, "catalog")
     candidates: list[tuple[int, float, object, str]] = []
 
     file_backed = []
@@ -251,7 +365,50 @@ def get_thumbnail(entity, *extra_args):
         if thumbnail:
             return _png_response(thumbnail, producer.__name__)
 
+    thumbnail = _stack_subframe_thumbnail(entity, args)
+    if thumbnail:
+        return _png_response(thumbnail, "subframe")
+
     return abort(404)
+
+
+def _stack_subframe_thumbnail(entity, args: tuple):
+    """Last resort for a Stack nothing has been built for yet: its best raw
+    subframe, downsampled — the original lazy-thumbnail design.
+
+    That design worked through the level-based producer lookup; the call-hash
+    registry rewrite silently dropped it, because `get_stack_subframe_image`
+    is a plain `@node` (returns a Path, no `identity=`) and so was never an
+    artifact producer. Calling its raw body here is a pure metadata lookup —
+    frames sorted by star count, no Ray, no pixels — and `_make_thumbnail`
+    does the (budget-gated) read."""
+    if type(entity).__name__ not in ("Stack", "CalibrationStack"):
+        return None
+
+    key = _presentation_cache_key(entity, args, "subframe")
+    thumbnail = context.get(key)
+    if thumbnail:
+        return thumbnail
+    with _key_lock(key):
+        thumbnail = context.get(key)
+        if thumbnail:
+            return thumbnail
+        try:
+            from stacks.compute_graph import get_stack_subframe_image
+            path = get_stack_subframe_image._function(entity)
+        except Exception:
+            return None
+        if path is None or not os.path.exists(path):
+            return None
+        from previews.operations import resize_array, autostretch, array_to_png
+        try:
+            thumbnail = _make_thumbnail(
+                str(path), resize_array, autostretch, array_to_png)
+        except Exception:
+            return None
+        if thumbnail is not None:
+            context[key] = thumbnail
+        return thumbnail
 
 
 @thumbnails_bp.route("/thumbnail/preview/<object_type>/<object_id>")

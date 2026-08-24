@@ -416,7 +416,12 @@ _THUMBNAIL_MIN_PX = 1200
 # the gigapixel-mosaic case that drove a web worker to 10 GB. Above this, the
 # thumbnail layer reports "no preview yet" (HTTP 404) instead. 50 Mpx still lets
 # an ordinary subframe / small master preview (~600 MB for 3-band float).
-_THUMBNAIL_MAX_SRC_PX = 50_000_000
+# Above full-frame sensor size (the 6200MM is 9576x6388 = 61.2 MP, the
+# largest single frame in the library), below any real mosaic canvas. The
+# gate exists to keep GIGAPIXEL un-pyramided masters out of the serving
+# process; at 50 MP it also refused every raw 6200MM subframe, which broke
+# the stack-subframe thumbnail fallback for exactly the frames users shoot.
+_THUMBNAIL_MAX_SRC_PX = 80_000_000
 
 
 class NoPreviewAvailable(Exception):
