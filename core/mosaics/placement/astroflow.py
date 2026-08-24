@@ -9,6 +9,7 @@ from astropy.wcs import WCS, FITSFixedWarning  # type: ignore
 warnings.filterwarnings("ignore", category=FITSFixedWarning)
 from scipy.interpolate import RegularGridInterpolator  # type: ignore
 from itertools import product
+from shapely.geometry import box
 from pathlib import Path
 from typing import Any
 import structlog
@@ -74,6 +75,7 @@ def place_tile(
     wcs: Any,
     interp: RegularGridInterpolator,
     skip_empty: bool = True,
+    footprint_px: Any = None,
 ) -> tuple[int, int, np.ndarray | None]:
     tile_y_min = (
         viewbox.y_min + tile_y * _TILE_SIZE * viewbox.resolution
@@ -85,24 +87,34 @@ def place_tile(
     )
     tile_x_max = tile_x_min + _TILE_SIZE * viewbox.resolution
 
-    if skip_empty:
-        # Compute the four corner points in RA/Dec.
-        corners_x = [tile_x_min, tile_x_max, tile_x_min, tile_x_max]
-        corners_y = [tile_y_min, tile_y_min, tile_y_max, tile_y_max]
-        ras, decs = viewbox.projection.unproject(
-            np.array(corners_x), np.array(corners_y)
-        )
-        ras, decs = np.degrees(ras), np.degrees(decs)
+    tile_y_min_px = tile_y * _TILE_SIZE
+    tile_x_min_px = tile_x * _TILE_SIZE
 
-        # If none of the corners of this tile fall inside the source image's
-        # footprint, this tile can be skipped.
-        inside_footprint = [
-            wcs.footprint_contains(
-                SkyCoord(ra * u.deg, dec * u.deg, frame="icrs")
-            )
-            for ra, dec in zip(ras, decs)
-        ]
-        if not any(inside_footprint):
+    if skip_empty:
+        # Does this tile's rectangle INTERSECT the source footprint?
+        #
+        # This used to ask a one-directional question — "is any TILE corner
+        # inside the SOURCE?" — which is only sound while a tile is smaller
+        # than the field. When a tile CONTAINS the field, no tile corner is
+        # inside it, so the tile was declared empty and the panel silently
+        # placed nothing. That is reachable whenever the canvas is smaller
+        # than a tile: a Downscaled canvas of 786 px against a 2048 px tile
+        # dropped all 402,371 of its non-zero pixels. It also missed two
+        # convex rectangles overlapping in a plus-sign, where neither shape
+        # has a vertex inside the other.
+        #
+        # Rect-vs-polygon in CANVAS PIXEL space is symmetric, exact at
+        # polygon granularity rather than four points, and cheaper — a
+        # prepared-geometry `intersects` beats four SkyCoord constructions
+        # plus `footprint_contains`. It also shares `project_to_viewbox` with
+        # the placement path below, so the skip test and the projection
+        # cannot disagree about where the field is.
+        if footprint_px is None:
+            footprint_px = _prepared_footprint_px(wcs, viewbox)
+        if not footprint_px.intersects(
+            box(tile_x_min_px, tile_y_min_px,
+                tile_x_min_px + _TILE_SIZE, tile_y_min_px + _TILE_SIZE)
+        ):
             return tile_y, tile_x, None
 
     # Compute the RA, Dec of all the tile's pixels.
@@ -180,11 +192,16 @@ def _project_in_tiles(
     buf_w = (tx1 - tx0) * _TILE_SIZE
     projected_image = np.zeros((buf_h, buf_w), dtype=np.float32)
 
+    # Prepare the footprint ONCE for the whole tile sweep. `prep` builds an
+    # index that makes each `intersects` a hair's-breadth test; doing it per
+    # tile would throw that away.
+    footprint_px = _prepared_footprint_px(wcs, viewbox) if skip_empty else None
+
     tiles = list(product(range(ty0, ty1), range(tx0, tx1)))
     with ThreadPoolExecutor(max_workers=_PROJECTION_THREADS) as ex:
         for tile_y, tile_x, tile_data in ex.map(
             lambda tx: place_tile(
-                viewbox, tx[0], tx[1], wcs, interp, skip_empty,
+                viewbox, tx[0], tx[1], wcs, interp, skip_empty, footprint_px,
             ),
             tiles,
         ):
@@ -218,6 +235,29 @@ _BBOX_TILE_MARGIN = 1
 _FOOTPRINT_WCS_STEPS = 16
 
 
+def _footprint_polygon_px(wcs: WCS, viewbox: Viewbox):
+    """The source's footprint as a shapely polygon in CANVAS PIXEL space.
+
+    One definition shared by the tile-skip test and the bbox snap, so the two
+    cannot disagree about where the source lands."""
+    from spherical_geometry.polygon import SingleSphericalPolygon
+    from mosaics.trimming import project_to_viewbox
+
+    footprint = SingleSphericalPolygon.from_wcs(wcs, steps=_FOOTPRINT_WCS_STEPS)
+    return project_to_viewbox(footprint, viewbox)
+
+
+def _prepared_footprint_px(wcs: WCS, viewbox: Viewbox):
+    """`_footprint_polygon_px`, prepared for repeated `intersects` against
+    every tile. Buffered by a pixel: the polygon samples the WCS boundary at
+    `_FOOTPRINT_WCS_STEPS` per edge, so it approximates the true footprint,
+    and erring outward keeps the cover a superset — a tile wrongly kept costs
+    an interpolation, a tile wrongly dropped costs data."""
+    from shapely.prepared import prep
+
+    return prep(_footprint_polygon_px(wcs, viewbox).buffer(1.0))
+
+
 def _footprint_tile_bbox(
     wcs: WCS, viewbox: Viewbox, source_shape: tuple[int, int],
 ) -> tuple[int, int, int, int] | None:
@@ -231,16 +271,12 @@ def _footprint_tile_bbox(
     one-tile margin, and clip to the canvas. Whole tiles keep each `place_tile`
     call byte-identical to the full-canvas run; the margin makes the cover a
     superset, so streaming just the bbox is bit-identical to the full canvas."""
-    from spherical_geometry.polygon import SingleSphericalPolygon
-    from mosaics.trimming import project_to_viewbox
-
     # `from_wcs` reads the image size off the WCS; set it explicitly from the
     # source we actually read, so the footprint is right even if the plate-
     # solution header carries no NAXIS.
     src_h, src_w = source_shape
     wcs.pixel_shape = (src_w, src_h)
-    footprint = SingleSphericalPolygon.from_wcs(wcs, steps=_FOOTPRINT_WCS_STEPS)
-    minx, miny, maxx, maxy = project_to_viewbox(footprint, viewbox).bounds
+    minx, miny, maxx, maxy = _footprint_polygon_px(wcs, viewbox).bounds
     if not all(np.isfinite([minx, miny, maxx, maxy])):
         return None
 
