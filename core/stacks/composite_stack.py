@@ -141,7 +141,15 @@ class Stack(BaseStack, AstrometricAttributes):
 
         chronology_attributes = ChronologyAttributes.from_frames(frames, metadata)
         imaging_attributes = ImagingAttributes.from_frames(frames, metadata)
-        astrometric_attributes = AstrometricAttributes.from_objects(list(contents.values()))
+        # A composite's runs are all the same filter and pointing, so there
+        # is no reference CHANNEL to pick — frame on the oldest run, matching
+        # the convention `stable_hash` already uses. The footprint stays the
+        # INTERSECTION: WBPP crops the integration to where the subframes
+        # overlap, so that is the master's real extent.
+        from attributes.astrometric_attributes import intersect_polygons
+        runs_by_age = sorted(contents.values(), key=lambda r: r.oldest_date)
+        astrometric_attributes = AstrometricAttributes.from_objects(
+            runs_by_age, runs_by_age[0], intersect_polygons)
 
         content_hash = hash_list(sorted(r.content_hash for r in contents.values()))
 

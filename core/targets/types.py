@@ -8,11 +8,35 @@ from attributes import (
     AstrometricAttributes,
     ChronologyAttributes,
 )
+from attributes.astrometric_attributes import covering_polygon
 from cache.content_hashed import ContentHashed
 from cache.context_ref import ContextRef
 from beartype import beartype
 
 TargetHash = NewType("TargetHash", str)
+
+
+# Which channel frames the target's canvas. H for narrowband, L for LRGB, G
+# for RGB — the channel carrying the structure, so it is the one that comes
+# out axis-aligned and unrotated.
+#
+# This MUST be a fixed rule, not a data-dependent one. It feeds
+# `compute_viewbox`, so anything that can flip as data arrives — "most
+# integration time", say — would silently re-key the target and rebuild every
+# placement and colour product the night a deeper panel lands. Unknown filters
+# fall back to alphabetical, which cannot flip either.
+_FILTER_PRIORITY = ("H", "L", "G", "S", "O", "R", "B")
+
+
+def reference_stack(stacks: list[Stack]) -> Stack:
+    """The stack whose rotation and image scale frame the target."""
+    def rank(stack: Stack) -> tuple[int, str]:
+        filter = str(stack.filter or "")
+        known = (_FILTER_PRIORITY.index(filter)
+                 if filter in _FILTER_PRIORITY else len(_FILTER_PRIORITY))
+        return (known, filter)
+
+    return min(stacks, key=rank)
 
 
 @beartype
@@ -25,7 +49,8 @@ class Target(
     @classmethod
     def from_stacks(cls, stacks: list[Stack]) -> Optional["Target"]:
         chronology_attributes = ChronologyAttributes.from_objects(stacks)
-        astrometric_attributes = AstrometricAttributes.from_objects(stacks)
+        astrometric_attributes = AstrometricAttributes.from_objects(
+            stacks, reference_stack(stacks), covering_polygon)
 
         from hashing import hash_list
         stable_hash = sorted(stacks, key=lambda s: s.oldest_date)[0].stable_hash

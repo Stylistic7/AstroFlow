@@ -1,3 +1,4 @@
+import random
 import warnings
 from dataclasses import dataclass
 from beartype import beartype
@@ -78,9 +79,16 @@ def _spherical_polygon_for_wcs(wcs: WCS) -> SingleSphericalPolygon:
 
 
 @beartype
-def _intersect_polygons(
+def intersect_polygons(
     polygons: list[SphericalPolygon],
 ) -> SingleSphericalPolygon:
+    """The region every input shares.
+
+    This is the right footprint for a STACK. WBPP registers the subframes and
+    crops the integration to where they all overlap, so the intersection is
+    not a conservative estimate of the master's extent — it IS the master's
+    extent, and claiming more would claim pixels the file does not have.
+    """
     for i, p in enumerate(polygons):
         log.info(
             "Intersecting polygon",
@@ -102,6 +110,83 @@ def _intersect_polygons(
     assert not SphericalPolygon.self_intersect(footprint.points)
 
     return footprint
+
+
+@beartype
+def covering_polygon(
+    polygons: list[SphericalPolygon],
+) -> SingleSphericalPolygon:
+    """One polygon containing every input — the CONVEX HULL of their
+    vertices, not an exact union.
+
+    This is the right footprint for a TARGET. Its members are separate
+    per-filter masters that get projected onto one shared canvas, and nothing
+    has cropped them to a common region, so the canvas has to hold all of
+    them. (Contrast `intersect_polygons`, which is right for a Stack because
+    WBPP already cropped its master to the overlap.)
+
+    Exactness buys nothing here and costs everything. The consumer,
+    `compute_viewbox`, takes the axis-aligned BOUNDING BOX of the projected
+    footprint, and the bbox of a union equals the bbox of its convex hull —
+    byte-identical canvases either way. Meanwhile
+    `SphericalPolygon.multi_union` accumulates vertices pairwise and blew
+    past a 60s timeout on 20 inputs. The hull does 20 in 6 ms, and always
+    returns exactly one sub-polygon, so the degenerate multi-sub-polygon
+    case a union has to raise on cannot arise at all.
+
+    The cost is over-coverage where members are strongly rotated relative to
+    one another: 1.17x the largest member's area across a 5 degree spread.
+    Real spreads are far smaller — the Heart's six channels span 1.31 degrees
+    — and over-coverage only ever means the canvas carries a little extra
+    empty sky, which stays exactly 0.0 and reads as "no data" downstream.
+    """
+    # `[:-1]` drops each ring's closing duplicate before hulling, matching
+    # `mosaics/identification.py`. The inner loop over `p.points` is
+    # load-bearing separately: `SphericalPolygon.points` yields one array PER
+    # SUB-POLYGON, so vstacking the generators themselves silently produces a
+    # 1-wide array that `convex_hull` then indexes off.
+    points = np.vstack([pts[:-1] for p in polygons for pts in p.points])
+
+    footprint = _hull(points)
+
+    # Shuffle-and-retry on self-intersection, lifted from
+    # `mosaics/identification.py` where it has been reliable in production.
+    # The seed comes from the points so the retry is reproducible — a random
+    # seed would make the footprint, and every cache key downstream of it,
+    # flap between processes.
+    rng = random.Random(hash(tuple(map(tuple, points))))
+    for i in range(10):
+        if SphericalPolygon.self_intersect(footprint.points):
+            shuffled = footprint.points
+            rng.shuffle(shuffled)
+            footprint = _hull(shuffled)
+        else:
+            break
+
+    return footprint
+
+
+def _hull(points: np.ndarray) -> SingleSphericalPolygon:
+    """Convex hull, normalised to the un-complemented sense.
+
+    `convex_hull`'s result depends on the order it receives points in: for one
+    order it returns the field, for the reverse it returns the field's
+    COMPLEMENT — the whole sky minus the field, area 4*pi. Two targets with
+    identical geometry can land on opposite sides of this, and one did: it
+    came back at 12.5657 sr instead of 0.0018, so mosaic identification
+    rejected it for not being "roughly the same area" as the panel beside it,
+    and found 0 mosaics from 2 overlapping frames.
+
+    Re-hulling from the reversed INPUT is the fix. Reversing the OUTPUT points
+    is not, and looks like it works: the complemented result is also
+    degenerate — it comes back a vertex short — so flipping its points yields
+    a clockwise triangle with exactly half the true area, which passes an
+    `is_clockwise()` check while still being wrong.
+    """
+    hull = SingleSphericalPolygon.convex_hull(points)
+    if hull.is_clockwise():
+        return hull
+    return SingleSphericalPolygon.convex_hull(points[::-1])
 
 
 def _to_spherical_polygon(ssp: SingleSphericalPolygon) -> SphericalPolygon:
@@ -178,16 +263,41 @@ class AstrometricAttributes:
 
     @classmethod
     def from_objects(
-        cls, objects: Sequence["AstrometricAttributes"]
+        cls, objects: Sequence["AstrometricAttributes"],
+        primary: "AstrometricAttributes",
+        combine,
     ) -> "AstrometricAttributes":
+        """Geometry for a composite, framed on ONE of its members.
+
+        `primary` supplies the rotation and the image scale instead of a mean
+        over the members. A circular mean is arithmetically right but frames
+        the canvas on an angle no member actually has — the Heart's six
+        channels span 1.31 degrees, so the mean matched none of them and every
+        channel landed tilted. Framing on the reference channel makes THAT
+        channel axis-aligned and leaves the others off by their own real
+        offset, which is both honest and directly diagnosable in pixels.
+
+        `combine` decides the footprint, and the right answer differs by
+        composite. A Stack takes `intersect_polygons`, because WBPP already
+        cropped its master to where the subframes overlap. A Target takes
+        `covering_polygon`, because its per-filter masters are placed onto a
+        shared canvas uncropped, and sizing that canvas to the intersection
+        clips every channel extending past it — which it did, by 25-90 px per
+        channel on the Heart. Pixels covered by some members but not others stay exactly 0.0
+        (`place_image` fills with zero), so ragged edges are a DISPLAY
+        concern, resolved by a coverage test at render time — not a reason to
+        throw the data away here.
+
+        Union is only safe because membership is already gated: identification
+        groups members under an angular tolerance on both position and
+        rotation, so a mis-solved frame cannot join and inflate the canvas.
+        """
         center_raw = spherical_centroid_deg([o.center for o in objects])
         center = (Degrees(center_raw[0]), Degrees(center_raw[1]))
-        image_scale = ArcsecondsPerPixel(np.mean([o.image_scale for o in objects]))
-        rotation_angle = Radians(angular_mean_mod_pi(
-            [o.rotation_angle for o in objects]
-        ))
+        image_scale = ArcsecondsPerPixel(primary.image_scale)
+        rotation_angle = Radians(primary.rotation_angle)
         name = position_string.canonical_target_string(center)
-        footprint = _intersect_polygons(
+        footprint = combine(
             [_to_spherical_polygon(o.footprint) for o in objects]
         )
         projected_footprints = frozendict(footprints.all_projections(footprint))
