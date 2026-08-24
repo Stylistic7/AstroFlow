@@ -144,8 +144,16 @@ def read_xisf_number_of_images(filename: Path | str) -> Optional[int]:
 def read_xisf_image_geometry(filename: Path) -> ImageGeometry:
     xisf = XISF(filename)
     image_meta = xisf.get_images_metadata()[0]
+    # XISF `geometry` is (width, height, channels). `from_shape_and_dtype`
+    # takes a NUMPY shape — (height, width, channels), which is what
+    # `read_xisf_image` actually returns. Passing geometry through verbatim
+    # transposed the recorded dimensions of every XISF master: the Heart's H
+    # channel is 6048x3907 on disk and its sidecar claimed 3907x6048.
+    # FITS and TIFF are unaffected; both pass real numpy shapes.
+    width, height, *rest = tuple(image_meta["geometry"])
+    channels = rest[0] if rest else 1
     return ImageGeometry.from_shape_and_dtype(
-        tuple(image_meta["geometry"]),
+        (height, width, channels),
         image_meta["dtype"],
     )
 
