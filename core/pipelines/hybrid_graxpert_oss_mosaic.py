@@ -137,9 +137,10 @@ def _measured_viewbox(channels, single_panel: bool):
     merge) and `color_post_process` (panel crops), so every stage shares one
     pixel grid; the runtime resolves it to a `Viewbox` carrying the same
     content_hash the handle predicts (the pure-Merkle result stamp)."""
+    ordered = [channels[k] for k in sorted(channels)]
     return compute_viewbox_measured(
         "Master", single_panel,
-        *[channels[k] for k in sorted(channels)])
+        tuple(c.content_hash for c in ordered), *ordered)
 
 
 def _merged_channels(mosaic, targets_by_id, channels, config,

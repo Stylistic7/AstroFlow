@@ -494,6 +494,22 @@ def resolve_output_paths(graph) -> dict:
                 node_hash[n] = Path(presented).stem
                 paths[n] = str(presented)
                 continue
+            # A recorded @node handle carries its pure-Merkle stamp:
+            # `content_hash = canonical_call_hash(...)`, assigned at record
+            # time. That IS the node's identity — use it before the dep
+            # pass-through below, which exists for thin non-@node helpers
+            # and MISREPRESENTS a real value-producing node as its first
+            # dependency. `compute_viewbox_measured` hit exactly that: this
+            # resolver threaded a channel's hash into every placement's
+            # viewbox slot, so the predicted paths diverged from both the
+            # trace-time handle arithmetic and the keys the run landed —
+            # and a stamped node with NO graph deps (`subframe_channel`)
+            # resolved to nothing at all, silently dropping its whole
+            # downstream subtree from the walk.
+            stamped = getattr(n, "content_hash", None)
+            if stamped:
+                node_hash[n] = stamped
+                continue
             # Pass-through propagation for helpers without filename_fn.
             deps = list(graph.get(n, []) or [])
             inherited = next(
@@ -641,20 +657,35 @@ def _resolve_args(
     carrying the dep's call_hash (or the propagated content_hash for
     pass-through helpers) plus the dep's primary entity for dispatcher
     routing."""
-    sig = inspect.signature(node.task._function)
-    args = list(node.args)
-    if len(sig.parameters) > len(node.args):
-        for dep in graph.get(node, []) or []:
-            if dep in node_hash:
-                args.append(_TracedOutput(
-                    content_hash=node_hash[dep],
-                    entity=_find_dep_entity(dep, graph),
-                ))
-            else:
-                # Unresolved dep — append a sentinel that will cause
-                # filename_fn to raise (caught upstream → skip subtree).
-                args.append(None)
-    return args
+    def proxy(dep):
+        if dep in node_hash:
+            return _TracedOutput(
+                content_hash=node_hash[dep],
+                entity=_find_dep_entity(dep, graph),
+            )
+        # Unresolved dep: RAISE (caught upstream -> skip this node). The old
+        # None sentinel assumed filename_fn would choke on it; hashing-only
+        # filename_fns hash None happily, so two different nodes with
+        # unresolved deps FABRICATED THE SAME PATH — the two strip merges of
+        # a 2x2 mosaic collided onto one predicted file (2026-08-25).
+        raise KeyError(dep)
+
+    # Mirror `GraphRuntime.make_fn_args`: dep results sit at their ORIGINAL
+    # arg positions (`_dep_positions`) — first, middle, or last. The old
+    # literals-then-append layout silently misaligned every argument of a
+    # node whose dep sits mid-signature (the measured viewbox is the first
+    # such dep in the tree: `place_image(mosaic, target, filter, VIEWBOX,
+    # config, channel)`), which mis-keyed or skipped the whole subtree.
+    positions = getattr(node, "_dep_positions", None)
+    literals = list(node.args)
+    if positions is None:
+        sig = inspect.signature(node.task._function)
+        if len(sig.parameters) > len(literals):
+            return literals + [proxy(d) for d in (graph.get(node, []) or [])]
+        return literals
+    from dependency_graph.classes import reconstruct_call_args
+    deps = (graph.get(node, []) or [])[: len(positions)]
+    return reconstruct_call_args(literals, [proxy(d) for d in deps], positions)
 
 
 def _resolve_leaf_content_hash(node) -> str | None:

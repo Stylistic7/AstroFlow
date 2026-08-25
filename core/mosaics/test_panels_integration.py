@@ -166,10 +166,13 @@ def test_panel_incremental_is_pixel_identical_and_selective(test_context, tmp_pa
         """{panel_id: crop_panel output path} for the CURRENT context.targets —
         keyed on the per-panel manifest, source EXCLUDED."""
         pm = base_panel_mosaic(mosaic, "L", src1)   # src excluded from key
+        pad = config.tiling.overlap_px
         paths = {}
         for pid, rect, sc in panel_tiles(mosaic, vb, config):
             sh = tuple(sorted(pm.manifest[j] for j in sc if j in pm.manifest))
-            paths[pid] = crop_panel.filename_fn(mosaic, rect, pm.merged, sh)
+            # The rect left the key; (panel, viewbox, pad) stand in for it.
+            paths[pid] = crop_panel.filename_fn(
+                mosaic, context.targets[pid], vb, pad, pm.merged, sh)
         return paths
 
     paths_v1 = crop_paths()

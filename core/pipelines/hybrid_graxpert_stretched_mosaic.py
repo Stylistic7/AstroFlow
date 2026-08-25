@@ -35,6 +35,7 @@ from mosaics.color.post_process import (
     bxt_correct_only, color_post_process, panel_source_manifest,
 )
 from mosaics.placement.astroflow import place_image
+from mosaics.viewbox_measured import compute_viewbox_measured
 from mosaics.types import Mosaic
 from stacks.calibration_selection import calibrate
 from stacks.composite_stack import Stack
@@ -82,7 +83,9 @@ def for_target(target, config):
         (target.id, filter): sink
         for filter, sink in _channels_for_target(target, config).items()
     }
-    merged = _merged_channels(target, {target.id: target}, channels, config)
+    viewbox = _measured_viewbox(channels, single_panel=True)
+    merged = _merged_channels(target, {target.id: target}, channels,
+                              config, viewbox)
     # Per-panel pre-merge identity — this is what keeps THIS pipeline's colour
     # tail distinct from the MGC pipeline's on the same target (see panels.py).
     panel_sources = {
@@ -90,7 +93,7 @@ def for_target(target, config):
         for f in merged
     }
     color = color_post_process(target, merged, config,
-                               target.viewbox("Master"), panel_sources)
+                               viewbox, panel_sources)
     return {**merged, **color}
 
 
@@ -102,17 +105,32 @@ def for_mosaic(mosaic, config):
     for target in mosaic.targets:
         for filter, sink in _channels_for_target(target, config).items():
             channels[(target.id, filter)] = sink
-    out = _merged_channels(mosaic, targets_by_id, channels, config)
+    viewbox = _measured_viewbox(channels,
+                                single_panel=len(targets_by_id) == 1)
+    out = _merged_channels(mosaic, targets_by_id, channels, config,
+                           viewbox)
     panel_sources = {
         f: panel_source_manifest(targets_by_id, f, config, channels)
         for f in out
     }
     color = color_post_process(mosaic, out, config,
-                               mosaic.viewbox("Master"), panel_sources)
+                               viewbox, panel_sources)
     return {**out, **color}
 
 
-def _merged_channels(mosaic, targets_by_id, channels, config) -> dict:
+def _measured_viewbox(channels, single_panel: bool):
+    """ONE canvas for the whole object, from the channels' MEASURED geometry.
+    See `hybrid_graxpert_oss_mosaic._measured_viewbox` — same contract: a
+    node over the pre-BXT channel masters, resolved at runtime, shared by
+    every filter's merge and by the colour tail."""
+    ordered = [channels[k] for k in sorted(channels)]
+    return compute_viewbox_measured(
+        "Master", single_panel,
+        tuple(c.content_hash for c in ordered), *ordered)
+
+
+def _merged_channels(mosaic, targets_by_id, channels, config,
+                     viewbox) -> dict:
     """Per-filter `{filter: merged-channel handle}`.
 
     Verbatim from `hybrid_pi_oss_mosaic._merged_channels` — including the
@@ -122,7 +140,6 @@ def _merged_channels(mosaic, targets_by_id, channels, config) -> dict:
     delete_intermediates=True; the merge is the terminal and persists."""
     out = {}
     for filter in mosaic.filters:
-        viewbox = mosaic.viewbox("Master")
         corrected = {
             tid: bxt_correct_only(targets_by_id[tid], filter, config,
                                   channels[(tid, filter)])

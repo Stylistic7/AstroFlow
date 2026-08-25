@@ -144,9 +144,10 @@ def _measured_viewbox(channels, single_panel: bool):
     See `hybrid_graxpert_oss_mosaic._measured_viewbox` — same contract: a
     node over the pre-BXT channel masters, resolved at runtime, shared by
     every filter's merge and by the colour tail."""
+    ordered = [channels[k] for k in sorted(channels)]
     return compute_viewbox_measured(
         "Master", single_panel,
-        *[channels[k] for k in sorted(channels)])
+        tuple(c.content_hash for c in ordered), *ordered)
 
 
 def _merged_channels(mosaic, targets_by_id, channels, config,

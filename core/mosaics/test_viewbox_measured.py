@@ -84,7 +84,8 @@ def test_reference_channel_is_axis_aligned():
     """The projection is rotated to H's MEASURED angle — the master's own
     solve — so H lands square. Framing on the declared (pre-WBPP) attribute
     left H tilted by the declared/measured gap: 3.38 degrees on the Heart."""
-    vb = compute_viewbox_measured._function("Master", True, *_HEART)
+    vb = compute_viewbox_measured._function(
+        "Master", True, tuple(c.content_hash for c in _HEART), *_HEART)
     assert vb.projection.rotation == pytest.approx(
         -float(_HEART[0].plate_solution.rotation_angle))
     # And square means the bounding box is tight: H's field needs exactly the
@@ -98,7 +99,8 @@ def test_reference_channel_is_axis_aligned():
 def test_canvas_contains_every_channel():
     """The cover guarantees no channel is clipped — the invariant the
     declared intersection violated by 25-90 px per channel."""
-    vb = compute_viewbox_measured._function("Master", True, *_HEART)
+    vb = compute_viewbox_measured._function(
+        "Master", True, tuple(c.content_hash for c in _HEART), *_HEART)
     for c in _HEART:
         need_x, need_y = _needed_px(vb, c)
         assert need_x <= vb.num_pixels_x + 1e-6, c.header["FILTER"]
@@ -108,7 +110,8 @@ def test_canvas_contains_every_channel():
 def test_resolution_is_the_reference_channels_measured_scale():
     """No DOWNSCALE_FACTORS multiplier: a measured scale already IS the
     file's scale, downscaled or not."""
-    vb = compute_viewbox_measured._function("Master", True, *_HEART)
+    vb = compute_viewbox_measured._function(
+        "Master", True, tuple(c.content_hash for c in _HEART), *_HEART)
     actual = np.rad2deg(vb.resolution) * 3600
     assert actual == pytest.approx(
         float(_HEART[0].plate_solution.image_scale), rel=1e-3)
@@ -116,12 +119,14 @@ def test_resolution_is_the_reference_channels_measured_scale():
 
 def test_mercator_for_multi_panel():
     from geometry.projections.mercator import MercatorProjection
-    vb = compute_viewbox_measured._function("Master", False, *_HEART)
+    vb = compute_viewbox_measured._function(
+        "Master", False, tuple(c.content_hash for c in _HEART), *_HEART)
     assert isinstance(vb.projection, MercatorProjection)
 
 
 def test_subframe_canvas_is_fixed_width():
-    vb = compute_viewbox_measured._function("Subframe", True, *_HEART)
+    vb = compute_viewbox_measured._function(
+        "Subframe", True, tuple(c.content_hash for c in _HEART), *_HEART)
     assert vb.num_pixels_x == 2048
 
 
@@ -131,4 +136,6 @@ def test_missing_plate_solution_fails_loudly():
     bad = _channel("O", 90.0)
     object.__setattr__(bad, "plate_solution", None)
     with pytest.raises(AssertionError, match="plate solutions"):
-        compute_viewbox_measured._function("Master", True, _HEART[0], bad)
+        compute_viewbox_measured._function(
+        "Master", True, (_HEART[0].content_hash, bad.content_hash),
+        _HEART[0], bad)

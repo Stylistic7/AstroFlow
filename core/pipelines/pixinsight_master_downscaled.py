@@ -21,6 +21,7 @@ from dependency_graph.tracing import workflow_group
 from mosaics.post_process_channel import post_process_mosaic_color_channel
 from mosaics.merging.pixinsight import merge_images
 from mosaics.placement.astroflow import place_image
+from mosaics.viewbox_measured import compute_viewbox_measured
 from mosaics.types import Mosaic
 from stacks.calibration_selection import calibration_plan
 from stacks.composite_stack import Stack
@@ -87,9 +88,15 @@ def for_mosaic(mosaic, config):
         for filter, sink in _channels_for_target(target, config).items():
             channels[(target.id, filter)] = sink
 
+    # ONE measured canvas for the whole object, shared across filters (see
+    # hybrid_graxpert_oss_mosaic._measured_viewbox). Quality is "Master" (i.e. native-of-the-file), not "DownscaledMaster": a downscaled master's plate solution IS the downscaled scale, so the old x8 factor would double-count.
+    _ordered = [channels[k] for k in sorted(channels)]
+    viewbox = compute_viewbox_measured(
+        "Master", len(targets_by_id) == 1,
+        tuple(c.content_hash for c in _ordered), *_ordered)
+
     out = {}
     for filter in mosaic.filters:
-        viewbox = mosaic.viewbox("DownscaledMaster")
 
         # Placed-panel and intermediate-merge images are multi-GB each
         # and only feed the final `store_*` — everything inside this

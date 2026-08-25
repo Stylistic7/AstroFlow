@@ -352,22 +352,26 @@ def process_in_panels(op, *op_args, viewbox, blend=blend_panels) -> PanelMosaic:
     # incremental runs still cache-hit it. Before this, 24 panels x several
     # stages left 235 GB of crops on disk forever.
     op_ref = (op._function.__module__, op._function.__name__)
-    # SCOPE (which panels invalidate which tiles) is decided on the DECLARED
-    # Master canvas, deliberately: the passed `viewbox` may be a runtime
-    # handle (measured geometry), unreadable at trace time, and scope only
-    # needs a conservative overlap answer, not the exact canvas. The pad is
-    # inflated 8x so the answer stays conservative for downscaled canvases
-    # too (their pad covers 8x the sky per pixel) — "too broad re-runs a few
-    # extra tiles, too narrow silently corrupts". Crop RECTS, by contrast,
-    # are computed at runtime inside the ops from the viewbox they actually
+    # SCOPE (which panels invalidate which tiles) needs a canvas READABLE AT
+    # TRACE TIME, and only a conservative overlap answer. A caller passing a
+    # real Viewbox VALUE gets the exact old behaviour. The migrated pipelines
+    # pass a runtime HANDLE (measured geometry) instead — unreadable here —
+    # so scope falls back to the DECLARED Master canvas with the pad inflated
+    # 8x, keeping it conservative even for downscaled canvases (their pad
+    # covers 8x the sky per pixel): "too broad re-runs a few extra tiles,
+    # too narrow silently corrupts". Crop RECTS, by contrast, are always
+    # computed at runtime inside the ops from the viewbox they actually
     # received.
-    import dataclasses as _dc
-    from mosaics.viewbox import compute_viewbox as _declared_viewbox
-    scope_config = _dc.replace(
-        config, tiling=_dc.replace(config.tiling,
-                                   overlap_px=config.tiling.overlap_px * 8))
-    scope_tiles = panel_tiles(
-        mosaic, _declared_viewbox("Master", mosaic), scope_config)
+    if isinstance(viewbox, Viewbox):
+        scope_tiles = panel_tiles(mosaic, viewbox, config)
+    else:
+        import dataclasses as _dc
+        from mosaics.viewbox import compute_viewbox as _declared_viewbox
+        scope_config = _dc.replace(
+            config, tiling=_dc.replace(config.tiling,
+                                       overlap_px=config.tiling.overlap_px * 8))
+        scope_tiles = panel_tiles(
+            mosaic, _declared_viewbox("Master", mosaic), scope_config)
     pad = config.tiling.overlap_px
     targets_by_id = {t.id: t for t in mosaic.targets}
     panels, handles = [], []

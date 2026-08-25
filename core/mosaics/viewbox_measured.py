@@ -66,14 +66,33 @@ def _measured_footprint(channel: ImageMetadata) -> SingleSphericalPolygon:
     )
 
 
+def _viewbox_narrow(args, kwargs):
+    """Key = (quality, single_panel, channel_ids) — the ImageMetadata args are
+    EXCLUDED, `channel_ids` stands in for them.
+
+    The ids are computed AT TRACE TIME from the channel handles and baked into
+    the call as literal strings, so the trace-time handle stamp and the
+    dispatch-time key agree byte-for-byte. Keying on the metadata args
+    directly does NOT have that property: a handle reduces to its producer's
+    call hash, but a resolved ImageMetadata reduces to its own content_hash —
+    which for a PRODUCED master is the same value (the CONTHASH stamp), but
+    for a RAW FRAME is the file hash. The Subframe pipeline hit exactly that:
+    every trace prediction downstream of its viewbox diverged from the keys
+    the run actually landed under (caught by the trace-vs-disk lifecycle
+    test; confirmed by logging both reductions)."""
+    quality, single_panel, channel_ids, *channels = args
+    return (quality, single_panel, channel_ids), kwargs
+
+
 @beartype
 # Head-pinned like the other file-less orchestration ops: its
 # result caches in the per-machine diskcache, and a value that
 # only ever materializes on the head can't diverge across nodes.
-@node(resources={"diskcache": 0.001})
+@node(cache_key_narrow=_viewbox_narrow, resources={"diskcache": 0.001})
 def compute_viewbox_measured(
     quality: str,
     single_panel: bool,
+    channel_ids: tuple,
     *channels: ImageMetadata,
 ) -> Viewbox:
     """One shared canvas for `channels`, framed on the reference channel.

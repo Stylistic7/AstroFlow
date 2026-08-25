@@ -358,8 +358,16 @@ def make_cached_decorator(
                 # eager-trace/lazy-trace bit-identity claim.
                 try:
                     handle.content_hash = canonical_call_hash(*args)
-                except Exception:
-                    pass  # un-hashable literals surface at dispatch, not here
+                except Exception as e:
+                    # LOUD, deliberately: an unstamped handle silently
+                    # degrades every downstream path prediction (the
+                    # structural resolver and filename_fn arithmetic both
+                    # read this stamp), and the divergence LOOKS
+                    # deterministic while disagreeing with the keys the run
+                    # lands. The un-hashable arg itself still surfaces at
+                    # dispatch.
+                    print(f"### handle-stamp failed for {func.__name__}: "
+                          f"{type(e).__name__}: {e}")
                 return handle
             raise RuntimeError(
                 f"{func.__name__} is a remote task. Use `.remote(...)`."
