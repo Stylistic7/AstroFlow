@@ -20,6 +20,8 @@ is genuinely pipeline-agnostic) but use different merge / store ops:
 Missing panels are tolerated: this is a preview, not a science-
 quality master, so showing whatever frames exist is fine.
 """
+from pathlib import Path
+
 from astroflow.pipeline import pipeline
 from decorators import node
 from metadata.classes import ImageMetadata
@@ -28,6 +30,7 @@ from mosaics.final_storage import store_mosaic_color_channel_subframe
 from mosaics.merging.oss import merge_images_subframe
 from mosaics.placement.astroflow import place_image
 from mosaics.viewbox_measured import compute_viewbox_measured
+from dependency_graph.tracing import IdentityRef, present_terminal, record
 from mosaics.types import Mosaic
 from stacks.compute_graph import get_stack_subframe_image
 from stacks.composite_stack import Stack
@@ -74,21 +77,21 @@ def _channels_for_target(target):
     }
 
 
-@pipeline("Subframe", processes=Stack)
+@pipeline("Subframe", processes=Stack, listed=False)
 def for_stack(stack, config):
     """The highest-star light frame for one stack, with metadata."""
     del config
     return _stack_subframe(stack)
 
 
-@pipeline("Subframe", processes=Target)
+@pipeline("Subframe", processes=Target, listed=False)
 def for_target(target, config):
     """Per-filter representative subframes for one target."""
     del config
     return _channels_for_target(target)
 
 
-@pipeline("Subframe", processes=Mosaic)
+@pipeline("Subframe", processes=Mosaic, listed=False)
 def for_mosaic(mosaic, config):
     """Subframe preview mosaic, end to end. Returns
     `{filter: sink_metadata}`."""
@@ -109,22 +112,54 @@ def for_mosaic(mosaic, config):
 
     out = {}
     for filter in mosaic.filters:
-
-        # One variadic blend over every placed panel for this filter. Subframe
-        # panels are tiny (downscaled), so `merge_images_subframe` (now the same
-        # `_blend_many` as the real mosaic) blends them all in a single seamless,
-        # order-independent pass — no strip/row reduce, and no fed-back
-        # full-canvas accumulator.
-        placed = [
-            place_image(mosaic, targets_by_id[tid], filter, viewbox,
-                        config, channels[(tid, filter)])
+        entries = [
+            (targets_by_id[tid], channels[(tid, filter)])
             for strip in mosaic.strips
             for tid in strip if (tid, filter) in channels
         ]
-        if not placed:
+        if not entries:
             continue
 
-        merged = merge_images_subframe(mosaic, filter, *placed)
+        # The `{N x place_image -> merge_images_subframe}` scope, SAME SHAPE
+        # as every other pipeline's merge (`merge_scope`): the placements are
+        # ephemeral views whose only consumer is the merge, and the runtime's
+        # terminal-cache-hit check skips the whole subgraph when the merge is
+        # already on disk. Before this wrapper the placements were direct
+        # graph nodes — nothing could skip them, so every boot re-derived all
+        # ~458 of them (~15 min) just to hand each merge a cache hit.
+        placed_refs = [
+            IdentityRef(Path(place_image.filename_fn(
+                mosaic, target, filter, viewbox, config, channel)).stem)
+            for target, channel in entries
+        ]
+        merge_path = merge_images_subframe.filename_fn(
+            mosaic, filter, *placed_refs)
+        handle = record(
+            subframe_scope, mosaic, filter, viewbox, config,
+            tuple(target for target, _ in entries),
+            *[channel for _, channel in entries])
+        merged = present_terminal(
+            handle, merge_images_subframe, path=merge_path)
         out[filter] = store_mosaic_color_channel_subframe(mosaic, filter, merged)
 
     return out
+
+
+def subframe_scope(mosaic, filter, viewbox, config, targets, *channels,
+                   dry_run=False):
+    """One filter's `{N x place_image -> merge_images_subframe}` as a dynamic
+    subgraph — the Subframe twin of `mosaics.merging.oss.merge_scope`, and
+    presented the same way (builder = terminal, the merge). `targets` is a
+    tuple aligned with `*channels` (the representative subframes)."""
+    del dry_run
+    from dependency_graph.classes import Graph
+    from dependency_graph.tracing import trace
+
+    def _body():
+        placed = [
+            place_image(mosaic, target, filter, viewbox, config, channel)
+            for target, channel in zip(targets, channels)
+        ]
+        return merge_images_subframe(mosaic, filter, *placed)
+
+    return Graph(trace(_body))

@@ -130,13 +130,18 @@ def get_pipeline(display_name: str, processes: type) -> Callable:
 
 
 def registered_pipeline_names() -> set[str]:
-    """Set of distinct pipeline display names — the values the cart's
-    pipeline dropdown should offer. A name may have multiple entry
-    points (one per class it processes); this collapses them into
-    the user-facing name list."""
+    """Set of distinct USER-FACING pipeline display names — the values the
+    cart's pipeline dropdown should offer. A name may have multiple entry
+    points (one per class it processes); this collapses them into the
+    user-facing name list. Pipelines registered `listed=False` (Subframe,
+    the implicit always-run preview) are excluded here — and ONLY here:
+    every other consumer (catalog, sweep, trace) sees the full registry."""
     if not _DISCOVERED:
         discover_pipelines()
-    return {name for name, _ in _REGISTRY.keys()}
+    return {
+        name for (name, _), runner in _REGISTRY.items()
+        if getattr(runner, "_pipeline_listed", True)
+    }
 
 
 def registered_pipelines() -> dict[tuple[str, type], Callable]:

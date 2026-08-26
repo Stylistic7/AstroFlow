@@ -185,6 +185,41 @@ def _restore_single_terminal(norm, pruned: Graph) -> Graph:
     return pruned
 
 
+def _complete_if_cached(rt, node) -> bool:
+    """DRIVER-SIDE HIT SHORT-CIRCUIT — the admission decision "this node
+    needs no dispatch at all". Probes the node's cache entry read-only and,
+    on a valid hit, completes the node inline.
+
+    Why here and not in the remote task: the check used to ride INSIDE the
+    `@ray.remote` body, so a "hit" still paid a full dispatch — and for
+    `auto_memory` ops (`max_calls=1`) that means booting a fresh worker that
+    imports the whole app to read one cache entry and exit. Measured
+    2026-08-26: 1,799 fresh processes for 4,835 hits — hours of wall-clock
+    for milliseconds of lookups.
+
+    Deps are DONE at ready-time, so `make_fn_args` binds real results and
+    the key is exactly the one the remote lookup would compute. Validity
+    rules are identical too (stale-on-disk included): `cached_value` is the
+    same probe the subgraph terminal-skip trusts. `log_hit=True` keeps the
+    `### node_exec` telemetry stream complete — the hit is recorded by the
+    cache layer itself, same as a remote hit would have been.
+
+    Any probe failure returns False and the node dispatches normally: the
+    short-circuit is an optimization, never load-bearing for correctness.
+    """
+    probe = getattr(node.task, "cached_value", None)
+    if probe is None:
+        return False
+    try:
+        hit, value = probe(*rt.make_fn_args(node), log_hit=True)
+    except Exception:
+        return False
+    if not hit:
+        return False
+    rt.node_completed(node, value)
+    return True
+
+
 def _apply_preflight(graph: Graph, is_subgraph: bool = False) -> Graph:
     """Predict every node's call_hash statically, check disk for
     `final=True` / terminal outputs, and return a filtered Graph that
@@ -605,6 +640,8 @@ def run_graph(
                 and len(pending) < MAX_IN_FLIGHT
             ):
                 rt, node = ready_cache.pop()
+                if not dry_run and _complete_if_cached(rt, node):
+                    continue
                 need_custom = _declared_custom_resources(node.task)
                 need_mem = _node_mem(rt, node)
                 gated = bool(need_custom) or need_mem >= _GATE_MIN_BYTES

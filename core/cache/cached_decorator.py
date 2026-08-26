@@ -7,6 +7,14 @@ remote wrapper that:
 2. Returns the cached result if present.
 3. Otherwise runs `func`, stores the result under that key, and returns it.
 
+WHERE the check runs: steps 1-3 are ALL inside the Ray task body — a
+`.remote()` call ships the lookup to whatever worker Ray schedules; it does
+NOT check on the driver first. Callers that want a dispatch-free hit use
+`wrapper.cached_value` (a read-only probe): the graph executor's
+`_complete_if_cached` does exactly that before submitting any node, which is
+what makes reruns over cached work fast — a remote "hit" on a `max_calls=1`
+op would cost a full worker boot just to read one entry.
+
 That's the entire concern. There is no filename construction, no content-
 hash stamping, no identity routing, no narrowing logic — all of those are
 image-lifecycle concerns owned elsewhere (`makes_image_wrap`) and
@@ -410,14 +418,24 @@ def make_cached_decorator(
             return valid
         wrapper.is_cached = is_cached
 
-        def cached_value(*args, injected_context=None, **kwargs):
+        def cached_value(*args, injected_context=None,
+                         log_hit: bool = False, **kwargs):
             """(hit, value): a read-only probe of this call's cache entry —
             never executes the body. `hit` follows the same validity rules as
             a real lookup (including the stale-on-disk check), so a builder
             can collect hit values and emit graph nodes ONLY for misses —
-            the pattern that keeps unchanged work out of the graph entirely."""
+            the pattern that keeps unchanged work out of the graph entirely.
+
+            `log_hit=True` emits the same `### node_exec ... outcome=hit`
+            record a remote lookup would have emitted — for callers that
+            SUBSTITUTE for a dispatch (the driver's short-circuit), so the
+            telemetry stream stays complete and stays owned by this module.
+            Plain probes (subgraph skip, delta builders) leave it off: they
+            inform a decision rather than replace a dispatch."""
             bound = _bind_args(func, args, kwargs, injected_context)
-            _, _, valid, cached = _key_and_lookup(bound)
+            _, call_hash, valid, cached = _key_and_lookup(bound)
+            if valid and log_hit:
+                _log_node_exec(func.__name__, call_hash, "hit", result=cached)
             return (valid, cached if valid else None)
         wrapper.cached_value = cached_value
 

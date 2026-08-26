@@ -45,7 +45,8 @@ _TYPE_TAG = {
 }
 
 
-def pipeline(display_name: str, processes: type) -> Callable:
+def pipeline(display_name: str, processes: type,
+             listed: bool = True) -> Callable:
     """Decorator: register the wrapped function as an entry point for
     pipeline `display_name`, handling cart entries whose object class
     is `processes`. Re-registration silently overrides (so a user
@@ -77,6 +78,13 @@ def pipeline(display_name: str, processes: type) -> Callable:
         runner._is_pipeline = True
         runner._pipeline_name = display_name
         runner._pipeline_processes = processes
+        # `listed=False`: an app-internal pipeline (Subframe) that runs
+        # implicitly on every mosaic — it must not appear in the cart's
+        # pipeline dropdowns, but is otherwise entirely normal: traceable,
+        # cacheable, sweepable, and the catalog's DEFAULT view when nothing
+        # user-chosen has been built (it ranks below every preferred name in
+        # `catalog._PIPELINE_PREFERENCE`, so anything real front-runs it).
+        runner._pipeline_listed = listed
         _REGISTRY[(display_name, processes)] = runner
         return runner
 
