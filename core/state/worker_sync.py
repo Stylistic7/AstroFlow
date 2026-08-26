@@ -1,5 +1,9 @@
-"""Worker-side pull-deploy: mount the head's shared disks over 10 GbE and
-follow the head's committed code.
+"""Worker-side head attachment: mount the head's shared disks over 10 GbE
+and read the head's advertised code version.
+
+Code does NOT move through here — code moves via git, and the worker FENCES
+on version equality before joining (`state_machine._join_head`). This module
+is mounts + one HTTP version read.
 
 Everything here is worker-initiated. The head only *advertises* (via zeroconf)
 its 10 GbE IP, its share names, and its `cluster_version`; nothing in this
@@ -19,13 +23,6 @@ import subprocess
 import time
 import urllib.request
 from pathlib import Path
-
-from base_path import checkout_dir
-from state.code_version import (
-    is_deployable_version,
-    read_synced_sha,
-    verify_and_extract,
-)
 
 HTTP_PORT = 8000
 _MOUNT_CONFIRM_S = 8
@@ -123,11 +120,6 @@ def unmount_head_shares(shares: list[str]) -> None:
             )
 
 
-def current_synced_sha() -> str | None:
-    """The SHA the worker's checkout currently holds, or None."""
-    return read_synced_sha(checkout_dir())
-
-
 def head_current_version(head_ip: str) -> str:
     """The SHA the head is running RIGHT NOW, read from its AUTHORITATIVE HTTP
     endpoint. Zeroconf only tells us the head's IP — a killed prior head can leave
@@ -139,31 +131,3 @@ def head_current_version(head_ip: str) -> str:
     # this trivial read can spike from ~ms to tens of seconds.
     with urllib.request.urlopen(url, timeout=90) as r:
         return json.loads(r.read()).get("cluster_version", "")
-
-
-def pull_head_snapshot(head_ip: str) -> str:
-    """Fetch the head's CURRENT frozen snapshot — WITHOUT naming a SHA — and
-    extract it. The worker doesn't need to know the SHA in advance: the head
-    stamps the SHA it served in the `X-AstroFlow-SHA` header, and we verify the tar
-    against THAT and record it. So the (code, SHA) pair is always self-consistent,
-    even if the head redeploys mid-fetch. Returns the SHA now on disk."""
-    url = f"http://{head_ip}:{HTTP_PORT}/api/code-snapshot"
-    with urllib.request.urlopen(url, timeout=300) as r:
-        tar = r.read()
-        sha = r.headers.get("X-AstroFlow-SHA", "")
-    verify_and_extract(tar, sha, checkout_dir())
-    return sha
-
-
-def sync_to_head(head_ip: str) -> str | None:
-    """Ensure the checkout holds the head's CURRENT committed code. Reads the
-    version from the head's HTTP endpoint (not the ghost-prone zeroconf TXT) and
-    pulls the current snapshot if we're behind. Returns the SHA now on disk, or
-    None when the head's version is non-deployable (`dev`/`dirty`/`""` — nothing to
-    follow)."""
-    version = head_current_version(head_ip)
-    if not is_deployable_version(version):
-        return None
-    if current_synced_sha() == version:
-        return version
-    return pull_head_snapshot(head_ip)

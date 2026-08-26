@@ -1,31 +1,36 @@
-"""Code-version + snapshot for GitOps-style pull-deploy.
+"""Code-version identity for the cluster. Code moves via GIT, not via the app.
 
-The cluster runs one **frozen snapshot** at a time, identified by a **version**:
+The cluster must run ONE version of the software. The head advertises the
+version it booted with; a worker computes its own version the same way and
+REFUSES to join on a mismatch (`state_machine._join_head`). The remedy is
+`git pull` on the worker, after which it joins on the next discovery tick.
 
-  * committed (default): the version is the repo's HEAD SHA, and the snapshot is
-    `git archive HEAD` — reproducible, ignores the working tree.
-  * uncommitted (opt-in, `--uncommitted`): the version is `wt:<hash>` over the
-    working tree, and the snapshot is a tar of that working tree (tracked +
-    untracked-not-ignored, minus the excludes). Lets you deploy edits across the
-    whole cluster without committing.
+This replaced a pull-deploy snapshot system (the head froze a checkout under
+Application Support, served it over HTTP, and workers extracted + restarted
+into it). That was a second, parallel code-distribution mechanism with its
+own failure modes, and on 2026-08-25 it failed exactly like one: a stale
+frozen checkout kept the ADVERTISED version current while Ray tasks —
+pointed at the frozen dir via `working_dir` — ran old code on the head and
+on every worker that pulled the snapshot. The symptom was
+`ModuleNotFoundError` deep inside placements, poisoning whole subtrees while
+every health signal looked green. One mechanism now: git.
 
-Either way the head freezes a snapshot, runs it, and ships it; workers pull the
-same bytes. So the whole cluster runs identical software, committed or not.
-Uncommitted runs simply aren't reproducible from git — which is why it's opt-in.
-
-This module is the single source of truth for the snapshot file set and how
-snapshots are built / extracted / versioned, so head and workers can't disagree.
+Versions:
+  * committed (default): the repo's HEAD SHA. A worker must be at the SAME
+    SHA with a CLEAN tree (excludes aside) — edited code under a committed
+    banner is a lie, so a dirty tree reports `<sha>-dirty` and can't match.
+  * uncommitted (`ASTROFLOW_UNCOMMITTED=1` / persisted setting): `wt:<hash>`
+    over the working tree's deployable files. A worker only matches when its
+    tree is byte-identical — practically a single-machine/dev mode, and a
+    worker refuses loudly, which is the point.
 """
 import hashlib
-import io
-import os
-import shutil
 import subprocess
-import tarfile
 from pathlib import Path
 
 # Single source of truth for the file set shipped to Ray task workers via
-# `runtime_env.working_dir` AND excluded from working-tree snapshots.
+# `runtime_env.working_dir`, ignored by the working-tree hash, and ignored
+# when deciding whether a tree is dirty.
 RAY_WORKING_DIR_EXCLUDES = [
     ".cache/",
     "cache.tar.gz",
@@ -36,37 +41,30 @@ RAY_WORKING_DIR_EXCLUDES = [
     "pix/testdata/",
 ]
 
-# Sidecar written into a synced/frozen checkout recording its version. Read to
-# decide whether a re-sync is needed and as the restart loop-breaker.
-SYNCED_SHA_FILE = ".astroflow_synced_sha"
-
 _WT_PREFIX = "wt:"
 _HEX = set("0123456789abcdef")
 
 
 def is_deployable_version(version: str) -> bool:
-    """A node follows a version only if it names a concrete frozen snapshot: a
-    committed SHA (40 hex) or a working-tree hash (`wt:<40 hex>`). Empty / other
-    markers are non-deployable."""
+    """A worker fences against a version only if it names concrete code: a
+    committed SHA (40 hex) or a working-tree hash (`wt:<40 hex>`). Empty /
+    other markers are non-deployable — the worker waits."""
     h = version[len(_WT_PREFIX):] if version.startswith(_WT_PREFIX) else version
     return len(h) == 40 and all(c in _HEX for c in h)
 
 
 def _is_excluded(rel: str) -> bool:
-    """Whether a repo-root-relative path is a snapshot exclude.
+    """Whether a repo-root-relative path is excluded from version identity.
 
     `RAY_WORKING_DIR_EXCLUDES` is relative to `core/` (Ray's working_dir), but
     git lists paths from the repo ROOT (e.g. `core/testdata/x`). Match the path
-    AND the path with a leading `core/` stripped, so `core/testdata/` (13 GB!)
-    is dropped, not gzipped into the deploy snapshot."""
-    candidates = [rel]
-    if rel.startswith("core/"):
-        candidates.append(rel[len("core/"):])
-    return any(
-        c == e.rstrip("/") or c.startswith(e.rstrip("/") + "/")
-        for e in RAY_WORKING_DIR_EXCLUDES
-        for c in candidates
-    )
+    AND the path with a leading `core/` stripped."""
+    for e in RAY_WORKING_DIR_EXCLUDES:
+        name = e.rstrip("/")
+        for candidate in (rel, rel[5:] if rel.startswith("core/") else rel):
+            if candidate == name or candidate.startswith(name + "/"):
+                return True
+    return False
 
 
 def _head_sha(repo: Path) -> str:
@@ -78,8 +76,8 @@ def _head_sha(repo: Path) -> str:
 
 
 def _working_tree_files(repo: Path) -> list[str]:
-    """Tracked + untracked-but-not-ignored files, minus the snapshot excludes —
-    i.e. exactly what git would consider deployable from the working tree."""
+    """Tracked + untracked-but-not-ignored files, minus the excludes —
+    i.e. exactly the files that constitute the deployable working tree."""
     out = subprocess.run(
         ["git", "-C", str(repo), "ls-files", "-co", "--exclude-standard"],
         capture_output=True, text=True, check=True,
@@ -91,7 +89,7 @@ def _working_tree_files(repo: Path) -> list[str]:
 
 def working_tree_version(repo: Path) -> str:
     """`wt:<hash>` over the working tree's deployable files (path + content),
-    so any save changes it and workers re-sync."""
+    so any save changes it."""
     h = hashlib.sha256()
     for rel in _working_tree_files(repo):
         p = Path(repo) / rel
@@ -110,104 +108,87 @@ def head_cluster_version(repo: Path, uncommitted: bool) -> str:
     return working_tree_version(repo) if uncommitted else _head_sha(repo)
 
 
-def build_working_tree_tar(repo: Path) -> bytes:
-    buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w:gz") as tf:
-        for rel in _working_tree_files(repo):
-            p = Path(repo) / rel
-            if p.is_file():
-                tf.add(p, arcname=rel)
-    return buf.getvalue()
-
-
-def build_snapshot_tar(repo: Path, version: str) -> bytes:
-    """The frozen snapshot for `version`: the working tree for a `wt:` version,
-    else `git archive <sha>` (committed, reproducible). Both drop the same heavy
-    excludes so the two snapshot kinds — and what Ray ships — stay consistent."""
-    if version.startswith(_WT_PREFIX):
-        return build_working_tree_tar(repo)
-    # git pathspecs: drop the excluded dirs (".git/" never archives). The
-    # excludes are core/-relative, but archive runs from the repo root, so
-    # exclude BOTH the bare path and the core/-prefixed path (covers
-    # core/testdata/ etc., the 13 GB we must not ship).
-    exclude_specs = []
-    for e in RAY_WORKING_DIR_EXCLUDES:
-        name = e.rstrip("/")
-        if name == ".git":
-            continue
-        exclude_specs.append(f":(exclude){name}")
-        exclude_specs.append(f":(exclude)core/{name}")
+def _is_dirty(repo: Path) -> bool:
+    """Whether the tree differs from HEAD in any non-excluded file."""
     out = subprocess.run(
-        ["git", "-C", str(repo), "archive", "--format=tar.gz", version,
-         "--", ".", *exclude_specs],
-        capture_output=True, check=True,
+        ["git", "-C", str(repo), "status", "--porcelain"],
+        capture_output=True, text=True, check=True,
     )
-    return out.stdout
+    for line in out.stdout.splitlines():
+        # Porcelain: `XY <path>`; renames render as `old -> new`.
+        path = line[3:].split(" -> ")[-1].strip().strip('"')
+        if path and not _is_excluded(path):
+            return True
+    return False
 
 
-def tar_directory(path: Path) -> bytes:
-    """Tar an extracted checkout (minus the version sidecar) — how the head
-    serves the exact frozen snapshot it is running."""
-    path = Path(path)
-    buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w:gz") as tf:
-        for p in sorted(path.rglob("*")):
-            if p.is_file() and p.name != SYNCED_SHA_FILE:
-                tf.add(p, arcname=str(p.relative_to(path)))
-    return buf.getvalue()
+def local_code_version(repo: Path, head_version: str) -> str:
+    """THIS machine's version, computed in the head's mode so the two are
+    comparable: `wt:` head -> our working-tree hash; committed head -> our
+    HEAD SHA, suffixed `-dirty` when the tree has non-excluded edits so
+    edited code can never pass the fence under a committed banner."""
+    repo = Path(repo)
+    if head_version.startswith(_WT_PREFIX):
+        return working_tree_version(repo)
+    sha = _head_sha(repo)
+    return f"{sha}-dirty" if _is_dirty(repo) else sha
 
 
-def verify_and_extract(tar_bytes: bytes, version: str, dest: Path) -> None:
-    """Atomically replace `dest` with the extracted snapshot, recording
-    `version`. Extraction is the integrity check; the caller re-confirms the
-    head's advertised version just before, closing the race window."""
-    dest = Path(dest)
-    staging = dest.with_name(dest.name + ".new")
-    backup = dest.with_name(dest.name + ".old")
-
-    if staging.exists():
-        shutil.rmtree(staging)
-    staging.mkdir(parents=True)
-
-    with tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:gz") as tf:
-        tf.extractall(staging, filter="data")
-
-    (staging / SYNCED_SHA_FILE).write_text(version)
-
-    if backup.exists():
-        shutil.rmtree(backup)
-    if dest.exists():
-        os.rename(dest, backup)
-    os.rename(staging, dest)
-    if backup.exists():
-        shutil.rmtree(backup)
+def _unpushed_count(repo: Path) -> "int | None":
+    """Commits on HEAD not reachable from the current branch's upstream, read
+    from LOCAL refs (`@{u}..HEAD`) — no network, no fetch: `git push` updates
+    the local upstream ref, so "pushed" is decidable offline. None when no
+    upstream is configured (bare dev/test repos, detached HEAD)."""
+    out = subprocess.run(
+        ["git", "-C", str(repo), "rev-list", "--count", "@{u}..HEAD"],
+        capture_output=True, text=True,
+    )
+    if out.returncode != 0:
+        return None
+    return int(out.stdout.strip())
 
 
-def read_synced_sha(dest: Path) -> str | None:
-    """The version recorded in a synced/frozen checkout, or None."""
-    f = Path(dest) / SYNCED_SHA_FILE
-    return f.read_text().strip() if f.exists() else None
+def require_clean_and_pushed(repo: Path) -> tuple[bool, str]:
+    """The head's start gate: `(ok, reason)`. The cluster's version is the
+    HEAD SHA, so the head must be running exactly that (clean tree) and the
+    workers must be able to `git pull` it (pushed). Refusing HERE is what
+    makes the deploy flow un-forgettable: commit -> push -> start the head ->
+    pull on workers -> start workers."""
+    if _is_dirty(repo):
+        return False, "the working tree has uncommitted changes"
+    n = _unpushed_count(repo)
+    if n is None:
+        return True, "no upstream configured; skipping the pushed check"
+    if n:
+        return False, f"{n} commit(s) not pushed to the upstream"
+    return True, ""
+
+
+_deployed_version_cache: "str | None" = None
 
 
 def deployed_code_version() -> str:
-    """The code version the running cluster is *executing* — the frozen
-    committed SHA (committed mode) or `wt:<hash>` (uncommitted), read from the
-    checkout the app runs from. This is the exact snapshot `_frozen_version`
-    advertises, so it's consistent across head and workers (workers follow the
-    head's version).
+    """The code version this process is executing — folded into the pipeline
+    trace / tap-snapshot cache keys so that editing ANY op or helper a
+    pipeline calls re-derives the trace (see
+    `trace_paths.pipeline_source_version`).
 
-    Folded into the pipeline trace / tap-snapshot cache keys so that editing
-    ANY op or helper a pipeline calls — not just the pipeline body — re-derives
-    the trace. `hash_source_code(pipeline_fn)` alone covers only the pipeline
-    function; without the code version, an op edit (e.g. `post_process_stack_oss`)
-    leaves the cached trace holding the op's OLD call_hash, silently defeating
-    the edit-invalidates-cache contract (see `trace_paths.pipeline_source_version`).
+    Always the WORKING-TREE hash: it changes on any deployable edit (a strict
+    superset of committed-SHA invalidation) and is identical across the
+    cluster whenever the join fence holds (equal trees hash equal). Computed
+    once per process; a mid-run edit re-keys only processes spawned after it —
+    which is the mixed-code hazard the fence exists to make loud, not
+    something to paper over.
 
-    Returns "" if the frozen SHA can't be read (dev shells, tests, an
-    unconfigured base path). An empty version degrades the trace keys to the
-    previous pipeline-source-only behavior — safe, never worse than before."""
-    try:
-        from base_path import checkout_dir
-        return read_synced_sha(checkout_dir()) or ""
-    except Exception:
-        return ""
+    Returns "" when the checkout isn't a git repo (bundles, bare test dirs) —
+    trace keys then simply lose their code-version component, as before.
+    """
+    global _deployed_version_cache
+    if _deployed_version_cache is None:
+        try:
+            from base_path import get_base_path
+            _deployed_version_cache = working_tree_version(
+                Path(get_base_path()))
+        except Exception:
+            _deployed_version_cache = ""
+    return _deployed_version_cache

@@ -1,22 +1,18 @@
-"""GitOps pull-deploy foundation: committed + working-tree versions/snapshots,
-extraction, and the ASTROFLOW_LIVE_CORE base-path override. Ray-free; uses a
-throwaway git repo.
+"""Code-version identity: committed + working-tree versions, the worker-side
+`local_code_version` fence input, and the per-process `deployed_code_version`
+cache-key component. Ray-free; uses a throwaway git repo.
 """
 import subprocess
 from pathlib import Path
 
 import pytest
 
+import state.code_version as cv
 from state.code_version import (
-    SYNCED_SHA_FILE,
-    build_snapshot_tar,
-    build_working_tree_tar,
     deployed_code_version,
     head_cluster_version,
     is_deployable_version,
-    read_synced_sha,
-    tar_directory,
-    verify_and_extract,
+    local_code_version,
     working_tree_version,
 )
 
@@ -51,149 +47,146 @@ def repo(tmp_path):
 # ---- committed versions -----------------------------------------------------
 
 def test_committed_version_is_head_sha(repo):
-    v = head_cluster_version(repo, uncommitted=False)
-    assert v == _head_sha(repo)
-    assert is_deployable_version(v)
+    assert head_cluster_version(repo, uncommitted=False) == _head_sha(repo)
+    assert is_deployable_version(head_cluster_version(repo, False))
 
 
 def test_committed_mode_ignores_working_tree_edits(repo):
-    # Default mode always deploys HEAD, even with uncommitted edits present.
-    sha = _head_sha(repo)
-    (repo / "core" / "main.py").write_text("print('EDIT')\n")
-    assert head_cluster_version(repo, uncommitted=False) == sha
+    before = head_cluster_version(repo, uncommitted=False)
+    (repo / "core" / "main.py").write_text("print('edited')\n")
+    assert head_cluster_version(repo, uncommitted=False) == before
 
 
-def test_committed_snapshot_excludes_uncommitted_changes(repo, tmp_path):
-    sha = _head_sha(repo)
-    (repo / "core" / "main.py").write_text("print('EDIT')\n")
-    (repo / "core" / "scratch.py").write_text("new\n")
-    dest = tmp_path / "checkout"
-    verify_and_extract(build_snapshot_tar(repo, sha), sha, dest)
-    assert (dest / "core" / "main.py").read_text() == "print('v1')\n"
-    assert not (dest / "core" / "scratch.py").exists()
-
-
-# ---- uncommitted (working-tree) versions ------------------------------------
+# ---- working-tree versions --------------------------------------------------
 
 def test_working_tree_version_is_deployable_and_changes_on_edit(repo):
-    v1 = head_cluster_version(repo, uncommitted=True)
+    v1 = working_tree_version(repo)
     assert v1.startswith("wt:") and is_deployable_version(v1)
-    (repo / "core" / "main.py").write_text("print('EDITED')\n")
+    (repo / "core" / "main.py").write_text("print('edited')\n")
     v2 = working_tree_version(repo)
-    assert v2 != v1 and is_deployable_version(v2)
+    assert v2 != v1
 
 
-def test_working_tree_snapshot_includes_uncommitted_and_untracked(repo, tmp_path):
-    (repo / "core" / "main.py").write_text("print('EDITED')\n")  # modified, uncommitted
-    (repo / "core" / "brand_new.py").write_text("x = 1\n")        # untracked, not ignored
-    (repo / "ignored.txt").write_text("secret\n")                 # gitignored
-
-    v = working_tree_version(repo)
-    dest = tmp_path / "checkout"
-    verify_and_extract(build_working_tree_tar(repo), v, dest)
-
-    assert (dest / "core" / "main.py").read_text() == "print('EDITED')\n"
-    assert (dest / "core" / "brand_new.py").read_text() == "x = 1\n"
-    assert not (dest / "ignored.txt").exists()       # ignored stays put
-    assert read_synced_sha(dest) == v
+def test_working_tree_version_covers_untracked_but_not_ignored(repo):
+    v1 = working_tree_version(repo)
+    (repo / "core" / "new_module.py").write_text("x = 1\n")   # untracked
+    v2 = working_tree_version(repo)
+    assert v2 != v1, "a new untracked file must change the version"
+    (repo / "ignored.txt").write_text("noise\n")              # gitignored
+    assert working_tree_version(repo) == v2
 
 
 def test_excludes_are_dropped_from_working_tree(repo):
-    (repo / "testdata").mkdir()
-    (repo / "testdata" / "big.bin").write_text("blob\n")
-    from state.code_version import _working_tree_files
-    assert not any(f.startswith("testdata/") for f in _working_tree_files(repo))
+    (repo / "core" / "testdata").mkdir()
+    v1 = working_tree_version(repo)
+    (repo / "core" / "testdata" / "big.bin").write_bytes(b"x" * 10)
+    assert working_tree_version(repo) == v1
 
-
-# ---- is_deployable_version --------------------------------------------------
 
 def test_is_deployable_version_rules():
     assert is_deployable_version("a" * 40)
-    assert is_deployable_version("wt:" + "a" * 40)
-    assert not is_deployable_version("A" * 40)        # uppercase isn't git hex
-    assert not is_deployable_version("wt:" + "a" * 39)
-    assert not is_deployable_version("a" * 39)
+    assert is_deployable_version("wt:" + "b" * 40)
     assert not is_deployable_version("")
     assert not is_deployable_version("dev")
+    assert not is_deployable_version("a" * 39)
+    assert not is_deployable_version(("a" * 39) + "-dirty")
 
 
-def test_deployed_code_version_reads_frozen_sha(tmp_path, monkeypatch):
-    """Reads the SHA the running app froze into its checkout — the exact code
-    version driving the trace/tap-snapshot cache keys."""
-    (tmp_path / SYNCED_SHA_FILE).write_text("a" * 40)
-    monkeypatch.setattr("base_path.checkout_dir", lambda: tmp_path)
-    assert deployed_code_version() == "a" * 40
+# ---- local_code_version: the worker's side of the fence ---------------------
 
-
-def test_deployed_code_version_empty_when_no_frozen_checkout(tmp_path, monkeypatch):
-    """No frozen SHA file (dev shells, tests) → "" so trace keys degrade to the
-    prior pipeline-source-only behavior rather than raising."""
-    monkeypatch.setattr("base_path.checkout_dir", lambda: tmp_path)  # empty dir
-    assert deployed_code_version() == ""
-
-
-def test_deployed_code_version_swallows_errors(monkeypatch):
-    """An unconfigured base path must not blow up a trace — degrade to ""."""
-    def boom():
-        raise RuntimeError("base path not configured")
-    monkeypatch.setattr("base_path.checkout_dir", boom)
-    assert deployed_code_version() == ""
-
-
-# ---- extraction / serving ---------------------------------------------------
-
-def test_extract_replaces_existing_checkout(repo, tmp_path):
-    sha1 = _head_sha(repo)
-    dest = tmp_path / "checkout"
-    verify_and_extract(build_snapshot_tar(repo, sha1), sha1, dest)
-    (dest / "core" / "stale.py").write_text("old\n")
-
-    (repo / "core" / "main.py").write_text("print('v2')\n")
-    _git(repo, "commit", "-aqm", "v2")
-    sha2 = _head_sha(repo)
-    verify_and_extract(build_snapshot_tar(repo, sha2), sha2, dest)
-
-    assert (dest / "core" / "main.py").read_text() == "print('v2')\n"
-    assert not (dest / "core" / "stale.py").exists()
-    assert read_synced_sha(dest) == sha2
-
-
-def test_corrupt_tar_leaves_dest_untouched(repo, tmp_path):
+def test_local_version_matches_committed_head(repo):
     sha = _head_sha(repo)
-    dest = tmp_path / "checkout"
-    verify_and_extract(build_snapshot_tar(repo, sha), sha, dest)
-    with pytest.raises(Exception):
-        verify_and_extract(b"not a gzip", "deadbeef", dest)
-    assert (dest / "core" / "main.py").read_text() == "print('v1')\n"
-    assert read_synced_sha(dest) == sha
+    assert local_code_version(repo, sha) == sha
 
 
-def test_tar_directory_roundtrips_and_drops_sidecar(repo, tmp_path):
-    # How the head serves the frozen checkout it runs: tar it, re-extract, same
-    # content, and the version sidecar is NOT shipped (worker rewrites its own).
+def test_local_version_reports_dirty_for_edited_tree(repo):
+    """Edited code can never pass the fence under a committed banner."""
     sha = _head_sha(repo)
-    src = tmp_path / "checkout"
-    verify_and_extract(build_snapshot_tar(repo, sha), sha, src)
-
-    served = tar_directory(src)
-    dest = tmp_path / "worker"
-    verify_and_extract(served, sha, dest)
-    assert (dest / "core" / "main.py").read_text() == "print('v1')\n"
-
-    import tarfile, io
-    with tarfile.open(fileobj=io.BytesIO(served), mode="r:gz") as tf:
-        assert SYNCED_SHA_FILE not in tf.getnames()
+    (repo / "core" / "main.py").write_text("print('edited')\n")
+    assert local_code_version(repo, sha) == f"{sha}-dirty"
 
 
-def test_base_path_honors_live_core_override(monkeypatch, tmp_path):
+def test_local_version_ignores_excluded_dirt(repo):
+    """A change confined to the excludes (caches, testdata) is not dirt —
+    those files are never part of the deployed identity."""
+    sha = _head_sha(repo)
+    (repo / "core" / "testdata").mkdir()
+    (repo / "core" / "testdata" / "scratch.bin").write_bytes(b"x")
+    assert local_code_version(repo, sha) == sha
+
+
+def test_local_version_follows_the_heads_mode(repo):
+    """A `wt:` head compares working trees; identical trees match even when
+    HEAD SHAs would (trivially here) also match — the MODE comes from the
+    head's advertised version, so the two sides always hash the same thing."""
+    assert local_code_version(repo, "wt:" + "0" * 40) == working_tree_version(repo)
+
+
+# ---- deployed_code_version: the trace/tap cache-key component ---------------
+
+def test_deployed_code_version_is_the_working_tree_hash(repo, monkeypatch):
     import base_path
-    monkeypatch.setattr(base_path, "live_core_pointer_file",
-                        lambda: tmp_path / "no_pointer")
-    checkout = tmp_path / "checkout"
-    (checkout / "core").mkdir(parents=True)
-    monkeypatch.setenv("ASTROFLOW_LIVE_CORE", str(checkout))
-    assert str(base_path.get_base_path()) == str(checkout)
-    monkeypatch.setenv("ASTROFLOW_LIVE_CORE", str(tmp_path / "gone"))
-    assert base_path.get_base_path() == Path(base_path.__file__).resolve().parent.parent
-    monkeypatch.delenv("ASTROFLOW_LIVE_CORE")
-    assert base_path.get_base_path() == Path(base_path.__file__).resolve().parent.parent
+    monkeypatch.setattr(base_path, "get_base_path", lambda: str(repo))
+    monkeypatch.setattr(cv, "_deployed_version_cache", None)
+    assert deployed_code_version() == working_tree_version(repo)
+
+
+def test_deployed_code_version_caches_per_process(repo, monkeypatch):
+    import base_path
+    monkeypatch.setattr(base_path, "get_base_path", lambda: str(repo))
+    monkeypatch.setattr(cv, "_deployed_version_cache", None)
+    first = deployed_code_version()
+    (repo / "core" / "main.py").write_text("print('edited')\n")
+    assert deployed_code_version() == first, (
+        "cached per process — a mid-run edit re-keys only NEW processes")
+
+
+def test_deployed_code_version_empty_outside_a_repo(tmp_path, monkeypatch):
+    import base_path
+    monkeypatch.setattr(base_path, "get_base_path", lambda: str(tmp_path))
+    monkeypatch.setattr(cv, "_deployed_version_cache", None)
+    assert deployed_code_version() == ""
+
+
+# ---- require_clean_and_pushed: the head's start gate ------------------------
+
+@pytest.fixture
+def pushed_repo(repo, tmp_path):
+    """`repo` with a bare upstream it has fully pushed to."""
+    remote = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
+    _git(repo, "remote", "add", "origin", str(remote))
+    _git(repo, "push", "-q", "-u", "origin", "HEAD")
+    return repo
+
+
+def test_gate_passes_clean_and_pushed(pushed_repo):
+    ok, reason = cv.require_clean_and_pushed(pushed_repo)
+    assert ok and reason == ""
+
+
+def test_gate_refuses_a_dirty_tree(pushed_repo):
+    (pushed_repo / "core" / "main.py").write_text("print('edited')\n")
+    ok, reason = cv.require_clean_and_pushed(pushed_repo)
+    assert not ok and "uncommitted" in reason
+
+
+def test_gate_refuses_unpushed_commits(pushed_repo):
+    (pushed_repo / "core" / "main.py").write_text("print('v2')\n")
+    _git(pushed_repo, "commit", "-qam", "v2")
+    ok, reason = cv.require_clean_and_pushed(pushed_repo)
+    assert not ok and "not pushed" in reason
+
+
+def test_gate_ignores_excluded_dirt(pushed_repo):
+    (pushed_repo / "core" / "testdata").mkdir()
+    (pushed_repo / "core" / "testdata" / "x.bin").write_bytes(b"x")
+    ok, _ = cv.require_clean_and_pushed(pushed_repo)
+    assert ok
+
+
+def test_gate_skips_pushed_check_without_upstream(repo):
+    """Bare dev/test repos have no upstream — clean is enough, and the reason
+    says the check was skipped rather than silently passing."""
+    ok, reason = cv.require_clean_and_pushed(repo)
+    assert ok and "no upstream" in reason

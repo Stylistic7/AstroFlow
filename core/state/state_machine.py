@@ -7,7 +7,7 @@ import signal
 import sys
 
 from frozendict import frozendict
-from base_path import get_bin_dir, get_base_path, checkout_dir, set_ray_working_dir
+from base_path import get_bin_dir, get_base_path, set_ray_working_dir
 from context import context, get_cache, queue
 from decisions.settings import (
     Settings,
@@ -29,9 +29,8 @@ from state.network_settings import (
 from state.code_version import (
     head_cluster_version,
     is_deployable_version,
-    build_snapshot_tar,
-    verify_and_extract,
-    read_synced_sha,
+    local_code_version,
+    require_clean_and_pushed,
 )
 from asiair.asiair_zeroconf import ASIAIRZeroconf
 from state.types import State, Action
@@ -70,49 +69,74 @@ HEAD_SHARES = ["AstroRaw", "AstroProcessed"]
 
 
 def is_uncommitted_mode() -> bool:
-    """Whether the head deploys its live working tree (a `wt:` snapshot) to the
-    whole cluster instead of committed HEAD. Off by default. Env
-    ASTROFLOW_UNCOMMITTED (one-shot, persisted) or the persisted setting."""
-    env = os.environ.get("ASTROFLOW_UNCOMMITTED", "").lower()
-    if env in ("1", "true", "yes"):
-        update_network_settings(uncommitted=True)
-        return True
-    if env in ("0", "false", "no"):
-        update_network_settings(uncommitted=False)
-        return False
-    return get_network_settings().uncommitted
+    """Whether this launch runs the live working tree (a `wt:` version) and
+    SKIPS the clean-and-pushed start gate. ENV-ONLY and per-launch
+    (`ASTROFLOW_UNCOMMITTED=1`) — this used to also persist into network
+    settings, which is how the head silently stayed in dev mode for weeks:
+    a sticky opt-out defeats a gate whose whole job is to be un-forgettable.
+    Workers practically never match a `wt:` version, so this is a
+    single-machine dev mode by construction."""
+    return os.environ.get("ASTROFLOW_UNCOMMITTED", "").lower() in (
+        "1", "true", "yes")
 
 
-def _frozen_version() -> str:
-    """The version of the snapshot the head froze and is serving/advertising."""
-    return read_synced_sha(checkout_dir()) or ""
+# The version this head advertises (zeroconf + /api/cluster-version), set
+# once at Ray-head startup. Workers FENCE on it: they join only when their own
+# git checkout computes the same version. "" advertises nothing -> no worker
+# joins.
+_cluster_version = ""
 
 
-def _freeze_head_snapshot() -> str:
-    """Freeze the cluster's code into the checkout dir and point Ray's task
-    working_dir at it, so head-dispatched tasks and workers run byte-identical
-    code. Committed mode → `git archive HEAD`; uncommitted → the working tree.
-    The head's own bootstrap + web server keep running from the full repo (the
-    snapshot excludes the frontend/static the UI needs). Returns the version.
+def _publish_cluster_version() -> str:
+    """Compute the head's code version from the LIVE checkout, point Ray's
+    task working_dir at that same checkout, and advertise the version.
 
-    The head needs a git working tree; the app bundle has none, so a
-    bundle-as-head can't deploy — logged, and we advertise nothing (workers
-    won't join) rather than crash.
+    There is no frozen snapshot any more. The old freeze (extract to
+    Application Support, run Ray tasks from the copy, serve it to workers)
+    was a second code path that could — and did, 2026-08-25 — go stale while
+    the advertised version stayed current, so the head's own actors ran old
+    code under a green banner. Now the code that runs IS the checkout the
+    version describes; the only way to change either is git + restart.
+
+    The head needs a git working tree; a bundle-as-head can't compute a
+    version — logged, and we advertise nothing (workers won't join) rather
+    than crash.
     """
+    global _cluster_version
     repo = Path(get_base_path())
+
+    # THE START GATE: a head must be running exactly what it advertises (clean
+    # tree) and what workers can `git pull` (pushed). Refusing to start is the
+    # point — it makes the deploy flow un-forgettable. `ASTROFLOW_UNCOMMITTED=1`
+    # is the explicit, per-launch solo-dev override (workers then can't match).
+    if not is_uncommitted_mode():
+        ok, reason = require_clean_and_pushed(repo)
+        if not ok:
+            print(
+                "### REFUSING to start the head: the checkout must be clean "
+                "and pushed.\n"
+                f"###   {reason}\n"
+                "###   Remedy: git add -A && git commit && git push, then "
+                "start again.\n"
+                "###   (Solo dev without workers: ASTROFLOW_UNCOMMITTED=1)"
+            )
+            raise SystemExit(1)
+        if reason:
+            print(f"### Start gate: {reason}")
+
     try:
         version = head_cluster_version(repo, is_uncommitted_mode())
-        if _frozen_version() != version:
-            verify_and_extract(build_snapshot_tar(repo, version), version,
-                               checkout_dir())
-        set_ray_working_dir(f"{checkout_dir()}/core")
-        print(f"### Froze cluster snapshot {version[:16]} -> {checkout_dir()}")
+        set_ray_working_dir(f"{repo}/core")
+        _cluster_version = version
+        print(f"### Advertising cluster version {version[:16]} from the live "
+              "checkout (workers must `git pull` to match)")
         return version
     except Exception as e:
         print(
-            f"### Cannot freeze a cluster snapshot from {repo!r} ({e}). The "
+            f"### Cannot compute a cluster version from {repo!r} ({e}). The "
             "head must run from a git checkout; workers will not join."
         )
+        _cluster_version = ""
         return ""
 
 
@@ -144,20 +168,24 @@ def is_head_node() -> bool:
 def _init(state: State, action: Action) -> tuple[State, list[Action]]:
     new_actions = []
 
-    # A head runs from its own dev repo, never a synced worker checkout. Clear
-    # any stale pointer file (e.g. this machine was previously a worker) so
-    # get_base_path() resolves to the repo, not a leftover checkout.
-    if is_head_node():
-        from base_path import live_core_pointer_file
-        ptr = live_core_pointer_file()
-        if ptr.exists() and "ASTROFLOW_LIVE_CORE" not in os.environ:
-            try:
-                ptr.unlink()
-            except OSError:
-                pass
+    # Retire the pull-deploy sync state (removed 2026-08-25; code moves via
+    # git now). A leftover pointer file or frozen checkout can only ever
+    # mislead — a stale pointer redirected a worker to weeks-old code.
+    # DELETE THIS BLOCK once every machine has booted this version once.
+    from base_path import app_support_dir
+    import shutil
+    for stale in (app_support_dir() / "live_core",
+                  app_support_dir() / "checkout"):
+        try:
+            if stale.is_dir():
+                shutil.rmtree(stale)
+            elif stale.exists():
+                stale.unlink()
+        except OSError:
+            pass
 
     new_actions.append(Action(type="prepare_pix"))
-    # Only the head serves the user-facing UI + the code-snapshot endpoints.
+    # Only the head serves the user-facing UI + the cluster-version endpoint.
     # Workers run headless — no gunicorn.
     if is_head_node():
         new_actions.append(Action(type="start_gunicorn"))
@@ -254,7 +282,7 @@ def _advertise_zeroconf(
         is_ray_head=True,
         advertised_ip=advertised_ip,
         # Tell workers the frozen snapshot to run and the disks to mount.
-        cluster_version=_frozen_version(),
+        cluster_version=_cluster_version,
         mounted_volumes=HEAD_SHARES,
     )
     return state, []
@@ -278,9 +306,9 @@ def _start_ray_head_node(
     state: State, action: Action
 ) -> tuple[State, list[Action]]:
     assert "ray_process" not in state
-    # Freeze the cluster snapshot and point Ray's working_dir at it BEFORE
-    # ray.init, so head-dispatched tasks and workers run byte-identical code.
-    _freeze_head_snapshot()
+    # Publish the code version and point Ray's working_dir at the live
+    # checkout BEFORE ray.init — workers fence on the version at join.
+    _publish_cluster_version()
 
     node_ip = resolve_interface_ip(get_network_settings().cluster_interface)
     state["ray_process"] = start_ray_head_node(node_ip_address=node_ip)
@@ -379,6 +407,14 @@ def _update_astroflow_services(
     if head is None:
         return state, []
 
+    return _route_head_update(state, head)
+
+
+def _route_head_update(state: State, head: dict) -> tuple[State, list[Action]]:
+    """Route one advertised-head update for a worker: reconnect on IP change,
+    leave on a code-version change, join when not joined. Extracted from
+    `_update_astroflow_services` so the routing is testable without zeroconf
+    scaffolding."""
     head_ip = head["ip"]
     shares = head.get("mounted_volumes", [])
 
@@ -399,81 +435,94 @@ def _update_astroflow_services(
         state.pop("ray_process", None)
         state.pop("connected_head_ip", None)
 
-    # Already joined this head → nothing to do. We do NOT probe connection health
-    # (Ray does that; our `ray status` probe flaked and tore down healthy
-    # raylets) and we do NOT poll for the head advancing to a new version
-    # (deploying restarts the apps; workers re-sync on their next start).
+    # The head's ADVERTISED version moved while we're joined (the zeroconf
+    # props carry it, so this is free — no HTTP): our code is now wrong, and
+    # a wrong-code worker poisons every subtree scheduled onto it. Tear down
+    # and fall through to the join path, whose fence then refuses loudly
+    # until this checkout is `git pull`ed to match. A ghost TXT from a dead
+    # head can't loop us: the join path re-reads the version over HTTP.
+    advertised = head.get("cluster_version")
+    if ("ray_process" in state and advertised
+            and state.get("joined_version")
+            and advertised != state["joined_version"]):
+        print(
+            f"### Head code version changed "
+            f"{state['joined_version'][:16]} -> {advertised[:16]}; leaving "
+            "the cluster to re-fence (git pull this checkout to rejoin)."
+        )
+        try:
+            stop_ray_node()
+        except Exception:
+            pass
+        _unmount_worker_shares(state)
+        state.pop("ray_process", None)
+        state.pop("connected_head_ip", None)
+        state.pop("joined_version", None)
+
+    # Already joined this head → nothing to do. We do NOT probe connection
+    # health (Ray does that; our `ray status` probe flaked and tore down
+    # healthy raylets). Version changes are caught above via the zeroconf
+    # advertisement, not by polling.
     if "ray_process" in state:
         return state, []
 
-    # Not joined → mount disks, sync code, join. The version is read from the
-    # head's HTTP endpoint inside _join_head (not the zeroconf TXT), so the action
-    # only needs the head's IP + shares.
+    # Not joined → mount disks and attempt the fenced join. The version is
+    # read from the head's HTTP endpoint inside _join_head (not the zeroconf
+    # TXT), so the action only needs the head's IP + shares.
     return state, [
         Action(type="join_head", head_ip=head_ip, shares=shares)
     ]
 
 
 def _join_head(state: State, action: Action) -> tuple[State, list[Action]]:
-    """Worker: mount the head's disks, follow its committed code, then join Ray.
+    """Fence, don't sync: mount the head's disks, then join ONLY if this
+    machine's git checkout computes the SAME code version the head advertises.
 
-    Ordered: (1) mount before anything reads /Volumes; (2) only a real
-    committed SHA is followed — a dev/dirty head is skipped; (3) if our checkout
-    isn't at that SHA, fetch it and restart INTO it; (4) once in sync, join.
+    Code moves via git. On a mismatch the worker refuses LOUDLY, names the
+    remedy (`git pull`), and retries on the next discovery tick — so it joins
+    by itself the moment a human syncs the checkout. There is deliberately no
+    "join anyway" path: the old sync machinery joined on a stale SHA whenever
+    the head's HTTP was slow (exactly when the head had just restarted — i.e.
+    exactly when a deploy had just happened), and a stale worker poisons every
+    subtree scheduled onto it while looking perfectly healthy (2026-08-25).
+
+    The version is read from the head's HTTP endpoint, not the zeroconf TXT,
+    which a hard-killed prior head can leave behind as a ghost.
     """
+    from state.worker_sync import head_current_version, mount_head_shares
+
     head_ip = action["head_ip"]
     shares = action["shares"]
-    from state.worker_sync import (
-        mount_head_shares,
-        sync_to_head,
-        current_synced_sha,
-    )
-
     if shares:
-        try:
-            mount_head_shares(head_ip, shares)
-            state["mounted_shares"] = shares
-        except Exception as e:
-            print(f"### Failed to mount head shares: {e}; will retry")
-            return state, []
+        mount_head_shares(head_ip, shares)
+        state["mounted_shares"] = list(shares)
 
-    # Ask the head (over HTTP) what it's running NOW and sync to it — NOT the
-    # zeroconf-advertised version, which a hard-killed prior head leaves behind as
-    # a ghost with a stale SHA (that's the "Code sync failed: 404" the worker was
-    # stuck on). `sync_to_head` reads /api/cluster-version and pulls the current
-    # snapshot, trusting the SHA the head stamps in the response.
-    before = current_synced_sha()
     try:
-        synced = sync_to_head(head_ip)
+        head_version = head_current_version(head_ip)
     except Exception as e:
-        # The head's web server is CPU-starved mid-rebuild, so the version/snapshot
-        # HTTP can time out. If we're ALREADY synced to a deployable SHA, don't let
-        # that block joining — Ray's gcs is a separate service that's likely still
-        # reachable, and its cluster-id is the real gate (a stale join is rejected
-        # and we retry). Only a worker that has NEVER synced keeps waiting.
-        if before and is_deployable_version(before):
-            print(f"### Head sync check failed ({e}); already at {before[:12]}, joining anyway.")
-            return state, [Action(type="start_ray_subordinate_node", head_ip=head_ip)]
-        print(f"### Code sync failed: {e}; will retry")
+        print(f"### Cannot read the head's code version ({e}); will retry.")
         return state, []
-    if synced is None:
+
+    if not is_deployable_version(head_version):
         print(
             "### Head advertises a non-deployable version; waiting to join "
-            "(head is in dev mode or has uncommitted edits)."
+            "(head is in dev mode or has no git checkout)."
         )
         return state, []
 
-    if synced != before:
-        # We pulled new code; `sync_to_head` extracted + recorded the SHA, so
-        # confirm it landed before restarting — the recorded SHA is the
-        # loop-breaker, so this can't restart-loop.
-        if current_synced_sha() == synced:
-            print(f"### Synced to {synced[:12]}; restarting into the new code.")
-            from state.restart import spawn_replacement
-            spawn_replacement(live_core=str(checkout_dir()))
-            return state, [Action(type="quit")]
-        return state, []  # extract didn't land; retry on the next discovery tick
+    local = local_code_version(Path(get_base_path()), head_version)
+    if local != head_version:
+        print(
+            "### REFUSING to join the cluster: code version mismatch.\n"
+            f"###   head:   {head_version}\n"
+            f"###   worker: {local}\n"
+            "### Run `git pull` in this worker's checkout (and commit or "
+            "stash local edits); the worker joins automatically on the next "
+            "discovery tick once the versions match."
+        )
+        return state, []
 
+    state["joined_version"] = head_version
     return state, [
         Action(type="start_ray_subordinate_node", head_ip=head_ip)
     ]
