@@ -22,6 +22,8 @@ quality master, so showing whatever frames exist is fine.
 """
 from pathlib import Path
 
+import ray
+
 from astroflow.pipeline import pipeline
 from decorators import node
 from metadata.classes import ImageMetadata
@@ -145,6 +147,7 @@ def for_mosaic(mosaic, config):
     return out
 
 
+@ray.remote(num_cpus=0.1)
 def subframe_scope(mosaic, filter, viewbox, config, targets, *channels,
                    dry_run=False):
     """One filter's `{N x place_image -> merge_images_subframe}` as a dynamic
