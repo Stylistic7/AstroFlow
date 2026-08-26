@@ -307,6 +307,50 @@ def test_only_overlapping_tiles_rekey_on_panel_change():
 # Plain-python runner (NO pytest — see module docstring)                        #
 # --------------------------------------------------------------------------- #
 
+# --------------------------------------------------------------------------- #
+# The merge term — arms must not share tails                                   #
+# --------------------------------------------------------------------------- #
+
+def _merged_from(op_source):
+    """A duck merged-handle the way `present_terminal` stamps one."""
+    return SimpleNamespace(content_hash="MERGED", _op_source=op_source)
+
+
+def test_different_merge_ops_produce_disjoint_manifests():
+    """Two pipelines sharing channels but differing only in the MERGE
+    algorithm must have disjoint colour tails. Before the merge term, their
+    manifests were identical and the whole tail collided onto one set of
+    cached products (WBPP-constants vs Montage-planes, 2026-08-26) — the
+    first arm to run owned the cache and the other aliased it forever."""
+    m = _overlapping_mosaic()
+    a = base_panel_mosaic(m, "H", _merged_from("src_oss")).manifest
+    b = base_panel_mosaic(m, "H", _merged_from("src_matched")).manifest
+    for pid in ("A", "B", "C"):
+        assert a[pid] != b[pid]
+
+
+def test_same_merge_op_produces_identical_manifests():
+    """The term is the ALGORITHM's identity, not the raster's content hash —
+    same op, same manifests, so a panel re-stack still re-keys only its own
+    tile plus the feather ring (the O(change) property)."""
+    m = _overlapping_mosaic()
+    a = base_panel_mosaic(m, "H", _merged_from("src_oss")).manifest
+    b = base_panel_mosaic(m, "H", _merged_from("src_oss")).manifest
+    assert a == b
+
+
+def test_merge_source_edit_rekeys_the_tail():
+    """`_op_source` is a SOURCE hash: editing the merge algorithm must re-key
+    its consumers — before this term, an edited merge rebuilt its rasters
+    while every tail product kept serving pixels derived from the previous
+    algorithm."""
+    m = _overlapping_mosaic()
+    before = base_panel_mosaic(m, "H", _merged_from("src_v1")).manifest
+    after = base_panel_mosaic(m, "H", _merged_from("src_v2")).manifest
+    for pid in ("A", "B", "C"):
+        assert before[pid] != after[pid]
+
+
 if __name__ == "__main__":
     import ray
     fns = {n: f for n, f in sorted(globals().items())
@@ -322,3 +366,5 @@ if __name__ == "__main__":
             raise
     print(f"\n{passed}/{len(fns)} passed; ray_initialized={ray.is_initialized()}")
     assert not ray.is_initialized(), "Ray must never initialize in this pure test"
+
+

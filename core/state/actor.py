@@ -202,6 +202,10 @@ class StateActor:
             return state, [Action(type="run_entire_graph")]
 
         self._infra_retries = 0  # a clean run resets the retry budget
+        # A clean drain claims "everything built" — verify the TRACE agrees
+        # (a plan built missing a subtree drains green; boot 7, 2026-08-25).
+        from cache.completeness import log_completeness
+        log_completeness(context)
         # No completion-time cleanup: display-product N-1s are deleted
         # deterministically at node completion (`version_log.supersede`),
         # ephemerals by the in-run GC, foreign debris by the janitor. The

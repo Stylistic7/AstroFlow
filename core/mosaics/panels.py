@@ -97,10 +97,28 @@ def base_panel_mosaic(mosaic: Mosaic, filter: str, merged,
     to `target.content_hash` (the pre-2026-08-15 value) so callers that never
     build panels — unit tests exercising manifest algebra — still work. Every
     production pipeline passes it; a pipeline that forgets will silently share
-    the tail with any other pipeline on the same target."""
+    the tail with any other pipeline on the same target.
+
+    THE MERGE TERM (2026-08-26): the base also folds `merged._op_source` —
+    the SOURCE HASH of the op that composited the raster the crops cut from,
+    stamped by `present_terminal` (so no pipeline can omit it). A panel
+    crop's pixels are a function of (its panel, its overlap ring, the stage
+    op, AND the merge algorithm); the first three were keyed, the fourth was
+    invisible — so two pipelines sharing channels but differing only at the
+    merge (WBPP-constants vs Montage-planes, found 2026-08-26) collided
+    their entire colour tails onto one set of cached products, and editing
+    the merge op left every tail serving pixels derived from the PREVIOUS
+    algorithm. The term is constant per pipeline, so per-panel
+    incrementality is untouched. KNOWN BOUNDARY: two pipelines using the
+    SAME merge op with different merge CONFIG would still collide — no such
+    pair exists (the merge ops take no distinguishing config); fold the
+    config here the day one does."""
     sources = panel_sources or {}
-    manifest = {t.id: hash_list([sources.get(t.id, t.content_hash), filter])
-                for t in mosaic.targets}
+    merge_tag = getattr(merged, "_op_source", "")
+    manifest = {
+        t.id: hash_list([sources.get(t.id, t.content_hash), filter, merge_tag])
+        for t in mosaic.targets
+    }
     return PanelMosaic(merged=merged, manifest=manifest, mosaic=mosaic)
 
 

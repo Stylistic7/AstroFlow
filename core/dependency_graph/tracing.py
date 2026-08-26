@@ -175,6 +175,17 @@ def present_terminal(handle, terminal_op, *, path) -> Any:
     handle._presents_path = str(path)
     fn = getattr(terminal_op, "_function", terminal_op)
     handle._op_name = fn.__name__
+    # The terminal op's SOURCE identity, for downstream keys that must vary
+    # with the ALGORITHM that produced these pixels while deliberately
+    # excluding the pixels' own content hash (the colour tail's per-panel
+    # manifests — see `base_panel_mosaic`). Stamped HERE so no pipeline can
+    # forget it: you cannot present a merge without identifying it. Source
+    # hash, not name: editing the algorithm must re-key its consumers too.
+    from hashing import hash_source_code
+    try:
+        handle._op_source = hash_source_code(fn)
+    except Exception:
+        handle._op_source = fn.__name__
     display = getattr(fn, "_display", None) or getattr(terminal_op, "_display", None)
     if display is not None:
         handle._display = display
