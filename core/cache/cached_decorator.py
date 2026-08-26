@@ -245,6 +245,20 @@ def make_cached_decorator(
                     f"longer on disk, treating as miss"
                 )
                 return key, call_hash, False, None
+            from dependency_graph.classes import Graph
+            if isinstance(cached, Graph):
+                # A Graph is a PLAN, not a result — the store side has refused
+                # them since 2026-08-19, but entries written BEFORE that rule
+                # survive in the diskcache, and replaying one re-expands a
+                # stale plan forever: a fossil `process_stacks_for_ui` Graph
+                # made every ~45 s UI poll fan out 1,031 nodes on every boot
+                # for a week (found 2026-08-26). Treat it as a miss; the
+                # re-run's real result (delta builders return a plain dict on
+                # all-hits) overwrites the fossil under the same key, so this
+                # heals each poisoned entry exactly once.
+                print(f"### cache: refusing stale pre-2026-08-19 Graph entry "
+                      f"{key}; treating as miss (will self-heal)")
+                return key, call_hash, False, None
             debug_print(f"cache hit: {key}")
             return key, call_hash, True, cached
 

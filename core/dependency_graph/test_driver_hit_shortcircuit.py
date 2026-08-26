@@ -85,3 +85,31 @@ def test_stale_on_disk_entry_still_dispatches(test_context, monkeypatch):
     assert executions(out_dir, "_hit_probe_op") >= 2, (
         "stale entry (file deleted) must re-run the body, not fake a hit")
     assert produced.exists(), "the re-run must restore the output"
+
+
+def test_cached_graph_entry_is_refused_on_read(test_context):
+    """A pre-2026-08-19 diskcache entry holding a pickled Graph must read as
+    a MISS (the store side already refuses to write them): replaying a
+    cached PLAN re-expands stale nodes forever — a fossil
+    `process_stacks_for_ui` Graph made every UI poll fan out 1,031 nodes on
+    every boot for a week. The re-run's real result then overwrites the
+    fossil under the same key, so the heal is permanent."""
+    from context import get_cache
+    from dependency_graph.classes import Graph
+
+    # Prime a legitimate entry, then poison it the way the old code did.
+    run_graph(Graph(trace(lambda: _hit_probe_op("config-C"))))
+    hit, _ = _hit_probe_op.cached_value("config-C")
+    assert hit
+    cache = get_cache()
+    key = next(k for k in cache.iterkeys()
+               if isinstance(k, tuple) and k[0] == "_hit_probe_op")
+    cache[key] = Graph({})   # the fossil
+
+    hit, value = _hit_probe_op.cached_value("config-C")
+    assert not hit, "a cached Graph must read as a miss, never replay"
+
+    # And the system self-heals: the next run re-executes and overwrites.
+    run_graph(Graph(trace(lambda: _hit_probe_op("config-C"))))
+    hit, value = _hit_probe_op.cached_value("config-C")
+    assert hit and not isinstance(value, Graph)
