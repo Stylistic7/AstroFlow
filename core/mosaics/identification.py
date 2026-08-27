@@ -38,8 +38,14 @@ log = logger
 def roughly_same_area(
     a: SingleSphericalPolygon, b: SingleSphericalPolygon
 ) -> bool:
+    # ±15%, widened from ±10% (2026-08-27): a panel's hull legitimately
+    # grows when it holds single-session stacks whose tight-dither
+    # intersections stay near-full-frame and point slightly off-grid —
+    # two γ Cyg panels measured 1.109 vs their neighbors' 0.998 (pairwise
+    # 1.134) and the whole 24-panel mosaic was dropped. Genuinely
+    # different-FOV pairings measure ≤0.45, so 3× slack remains below.
     ratio = a.area() / b.area()
-    return bool(ratio > 0.9 and ratio < 1.1)
+    return bool(ratio > 0.87 and ratio < 1.15)
 
 
 @beartype
@@ -66,6 +72,10 @@ def targets_overlap(
     angular_tolerance: Radians = Radians(math.radians(10.0)),
     debug: bool = False,
 ) -> Overlap:
+    # Gate constants live in the roughly_same_* helpers; helper edits do
+    # NOT bump this node's cache key, so any threshold change must touch
+    # THIS body too (this comment, 2026-08-27: area gate ±10% → ±15%) or
+    # stale verdicts survive in every machine's diskcache.
     a_target = a_target_ref.get()
     b_target = b_target_ref.get()
 
