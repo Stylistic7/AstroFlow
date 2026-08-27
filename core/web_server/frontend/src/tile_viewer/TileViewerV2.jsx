@@ -89,15 +89,20 @@ function computeVisibleTiles({ viewport, meta, view, objectType, imageHash,
     const { tx, ty, scale, screenW, screenH } = viewport;
     const { maxZoom, width: imageW, height: imageH, port, mtime } = meta;
 
-    // LOD selection: target ~1 source-pixel per screen-pixel.
+    // LOD selection: target ~1 source-pixel per DEVICE pixel.
     // At full res (z = maxZoom), worldStep = 1 px world per source px.
     // At z = maxZoom - 1, each source px covers 2 world px, etc.
-    // We want screen_pixels_per_source_pixel ≈ 1:
-    //   screen_per_world = scale
+    // `scale` is CSS-px based and a HiDPI display has devicePixelRatio
+    // device px per CSS px, so:
+    //   device_per_world = scale * dpr
     //   world_per_source = 2^(maxZoom - z)
-    //   screen_per_source = scale * 2^(maxZoom - z) ≈ 1
-    //   → z ≈ maxZoom + log2(scale)
-    let z = Math.round(maxZoom + Math.log2(scale));
+    //   device_per_source = scale * dpr * 2^(maxZoom - z) ≈ 1
+    //   → z ≈ maxZoom + log2(scale * dpr)
+    // Without the dpr term the first paint picks one level too coarse
+    // on Retina and only "heals" when a zoom cycle happens to seed the
+    // draw cache with finer tiles.
+    const dpr = window.devicePixelRatio || 1;
+    let z = Math.round(maxZoom + Math.log2(scale * dpr));
     z = Math.max(0, Math.min(maxZoom, z));
 
     const worldPerSource = Math.pow(2, maxZoom - z);
@@ -884,10 +889,16 @@ export default function TileViewerV2({
             position: 'relative', width: '100%', height: '100%',
             backgroundColor: '#000', overflow: 'hidden',
         }}>
+            {/* Backing store in DEVICE px (the style pins CSS size); a
+                CSS-px framebuffer on Retina is 2× undersampled and the
+                compositor's upscale blurs every star. The NDC transform
+                in the vertex shader is resolution-independent, and
+                paintGrid derives cell rects from the real framebuffer
+                (ctx.getCurrentTexture()), so nothing else shifts. */}
             <canvas
                 ref={canvasRef}
-                width={containerSize.width}
-                height={containerSize.height}
+                width={Math.round(containerSize.width * (window.devicePixelRatio || 1))}
+                height={Math.round(containerSize.height * (window.devicePixelRatio || 1))}
                 style={{
                     display: 'block',
                     width: '100%',
