@@ -121,57 +121,24 @@ _UNSET_PEDESTAL = object()
 
 _LEVEL_MIN_OVERLAP_PX = 256  # a few-pixel seam cannot carry a level constraint
 
-# mFitplane discipline: iteratively reject pixels beyond 2*rms of the current
-# plane fit and refit, until stable (Montage/mFitplane.c does exactly this).
-_PLANE_REJECT_SIGMA = 2.0
-_PLANE_REJECT_ITERS = 5
+# Robust pairwise-offset clip, mFitplane-shaped: reject beyond 3*MAD of the
+# median difference before taking the final median.
+_LEVEL_REJECT_SIGMA = 3.0
 
 
-def _fit_plane(x, y, z):
-    """Least-squares z = a*x + b*y + c via 3x3 normal equations (no big
-    design matrix), with mFitplane's iterative 2*rms outlier rejection.
-    Returns (a, b, c, rms, n_used)."""
-    keep = np.ones(z.shape, dtype=bool)
-    a = b = c = 0.0
-    rms = 0.0
-    for _ in range(_PLANE_REJECT_ITERS):
-        xs, ys, zs = x[keep], y[keep], z[keep]
-        n = xs.size
-        if n < 16:
-            break
-        M = np.array([
-            [np.dot(xs, xs), np.dot(xs, ys), xs.sum()],
-            [np.dot(xs, ys), np.dot(ys, ys), ys.sum()],
-            [xs.sum(),       ys.sum(),       float(n)],
-        ])
-        v = np.array([np.dot(xs, zs), np.dot(ys, zs), zs.sum()])
-        try:
-            a, b, c = np.linalg.solve(M, v)
-        except np.linalg.LinAlgError:
-            break
-        resid = z - (a * x + b * y + c)
-        rms = float(np.sqrt(np.mean(resid[keep] ** 2)))
-        new_keep = np.abs(resid) <= _PLANE_REJECT_SIGMA * max(rms, 1e-12)
-        if new_keep.sum() == keep.sum():
-            keep = new_keep
-            break
-        keep = new_keep
-    return float(a), float(b), float(c), max(rms, 1e-9), int(keep.sum())
+def _overlap_offsets(bboxes, masks, crops) -> list[tuple]:
+    """Pairwise sky offsets from the overlap DIFFERENCES.
 
-
-def _level_fit_rows(bboxes, masks, crops) -> list[dict]:
-    """Montage-shaped PLANE fit rows from the blend's retained crops —
-    the first-degree ("LNC") generalisation of the original constant fits.
-
-    One row per overlapping pair: `diff = a*x + b*y + c` fitted to
-    (plus − minus) over the both-covered pixels with mFitplane's iterative
-    2*rms rejection, in ZERO-BASED CANVAS coordinates (crpix1 = crpix2 = 0,
-    so x = canvas column, y = canvas row — the same frame the boxes are
-    written in and the apply step subtracts in; the ground-truth lab in
-    test_background.py pins the round trip). Boxes are the REAL overlap
-    rectangles: mBgModel silently zeroes every correction when handed
-    degenerate boxes (the 2026-08-19 lab regression)."""
-    rows = []
+    One `(i, j, d_ij, npix)` per overlapping pair, where `d_ij` is the
+    sigma-clipped median of `crop_i - crop_j` over the both-covered pixels.
+    In a difference of photometrically-matched panels the NEBULOSITY
+    CANCELS, so `d_ij` measures the relative sky offset directly — the
+    estimator an absolute per-panel quantile cannot be in a field with no
+    empty sky (JWST skymatch's "match" method; Montage mBgModel's input).
+    Measured 2026-08-31 on the 24-panel gamma Cyg mosaic: per-panel
+    quantile skies agreed to 1e-4 of the pedestal while the true offsets
+    spanned 1.3e-4 — the visible S/O hue quilt."""
+    out = []
     n = len(crops)
     for i in range(n):
         if bboxes[i] is None:
@@ -186,21 +153,70 @@ def _level_fit_rows(bboxes, masks, crops) -> list[dict]:
             npix = int(both.sum())
             if npix < _LEVEL_MIN_OVERLAP_PX:
                 continue
-            r0, r1, c0, c1 = region
-            yy, xx = np.nonzero(both)
-            x = (xx + c0).astype(np.float64)
-            y = (yy + r0).astype(np.float64)
-            z = (_sub(crops[j], bboxes[j], region)[both]
-                 - _sub(crops[i], bboxes[i], region)[both]).astype(np.float64)
-            a, b, c, rms, used = _fit_plane(x, y, z)
-            rows.append({
-                "plus": j, "minus": i, "a": a, "b": b, "c": c,
-                "npixel": used, "rms": rms,
-                "xmin": c0, "xmax": c1, "ymin": r0, "ymax": r1,
-                "xcenter": (c0 + c1) / 2.0, "ycenter": (r0 + r1) / 2.0,
-                "boxwidth": float(c1 - c0), "boxheight": float(r1 - r0),
-            })
-    return rows
+            d = (_sub(crops[i], bboxes[i], region)[both]
+                 - _sub(crops[j], bboxes[j], region)[both]).astype(np.float64)
+            med = float(np.median(d))
+            mad = float(np.median(np.abs(d - med))) * 1.4826
+            keep = np.abs(d - med) <= _LEVEL_REJECT_SIGMA * max(mad, 1e-12)
+            out.append((i, j, float(np.median(d[keep])), npix))
+    return out
+
+
+def _solve_level_offsets(n: int, pairs: list[tuple]) -> np.ndarray:
+    """One EXACT weighted least-squares over every pairwise offset.
+
+    Rows `o_i - o_j = d_ij` (weight sqrt(npix)) plus a mean-zero gauge row;
+    the panel grid's adjacency loops force closure, so chain drift cannot
+    accumulate. Solved directly (24 unknowns is microseconds) — NOT via
+    mBgModel: its iterative half-strength relaxation left ~half the
+    correction unconverged on the same measured pairs (2026-08-31)."""
+    if n < 2 or not pairs:
+        return np.zeros(n)
+    A = np.zeros((len(pairs) + 1, n))
+    b = np.zeros(len(pairs) + 1)
+    for r, (i, j, dij, npix) in enumerate(pairs):
+        w = np.sqrt(npix)
+        A[r, i] = w
+        A[r, j] = -w
+        b[r] = w * dij
+    A[-1, :] = 1.0  # gauge: mean offset zero
+    o, *_ = np.linalg.lstsq(A, b, rcond=None)
+    return o
+
+
+def _apply_level_offsets(crops, masks, offsets, pedestal) -> "float | None":
+    """Subtract each panel's solved offset, then ONE global shift to the
+    shared pedestal — identical for every panel, so it cannot introduce a
+    seam. Returns the sky target for the flux solve (`_signal_means`)."""
+    from stacks.post_processing.background_pedestal import DEFAULT_PEDESTAL
+    tiny = np.finfo(np.float32).tiny
+    for crop, mask, off in zip(crops, masks, offsets):
+        if crop is None or off == 0.0:
+            continue
+        np.subtract(crop, np.float32(off), out=crop, where=mask)
+    skies = [None if c is None else _panel_sky(c[m])
+             for c, m in zip(crops, masks)]
+    measured = [v for v in skies if v is not None]
+    if not measured:
+        return None
+    if pedestal is _UNSET_PEDESTAL:
+        target = float(DEFAULT_PEDESTAL)
+    elif pedestal is None:
+        target = float(np.mean(measured))
+    else:
+        target = float(pedestal)
+    shift = np.float32(target - float(np.mean(measured)))
+    for crop, mask in zip(crops, masks):
+        if crop is None:
+            continue
+        if shift != 0:
+            np.add(crop, shift, out=crop, where=mask)
+        np.maximum(crop, tiny, out=crop, where=mask)
+    print("### merge level solve: %d panels, offsets spread %.6f, "
+          "global shift %.6f, target %.6f" % (
+              len(measured), float(np.max(offsets) - np.min(offsets)),
+              float(shift), target))
+    return target
 
 
 def _overlap_means(bboxes, masks, crops):
@@ -287,7 +303,7 @@ def _signal_means(overlap_means, sky_target):
     return {k: (strip(a), strip(b)) for k, (a, b) in overlap_means.items()}
 
 
-def _blend_many(paths: list[Path], level_match: bool = False,
+def _blend_many(paths: list[Path], level_solve: "str | None" = None,
                 pedestal: "float | None" = _UNSET_PEDESTAL) -> np.ndarray:
     """Variadic distance-weighted blend with least-squares flux solve.
 
@@ -322,13 +338,12 @@ def _blend_many(paths: list[Path], level_match: bool = False,
     old 3x re-read. The tight non-zero bbox is recomputed from the small array
     (it lies inside the stored bbox rectangle), keeping the math identical.
 
-    `level_match=True` fuses Montage background rectification into the same
-    pass — rectify, then feather, FIRST DEGREE ("LNC"): a plane per overlap
-    difference (mFitplane's model + 2*rms rejection), one global two-phase
-    `mBgModel` solve (levels first, then slopes; its area/linear/2-sigma
-    overlap gates active), and in-place subtraction of each panel's solved
-    plane before the flux solve sees the corrected sky. No extra I/O, no
-    intermediate artifacts.
+    `level_solve="overlap"` replaces the absolute-quantile equalization with
+    constants derived from the pairwise overlap differences (one exact
+    global least-squares; see `_overlap_offsets`/`_solve_level_offsets`),
+    then one uniform shift to the pedestal. Plane fitting was measured and
+    retired: on nebulosity-filled fields the tilt is fit to scene, not sky
+    (A/B 2026-08-26, 8-15x worse block-sky-spread).
     """
     if len(paths) == 1:
         # No equalization: with one panel there is nothing to agree WITH,
@@ -364,30 +379,18 @@ def _blend_many(paths: list[Path], level_match: bool = False,
         masks.append(crop > 0)
         crops.append(crop)
 
-    sky_target = _equalize_sky(crops, masks, pedestal)
+    if level_solve == "overlap":
+        # Constants from the overlap DIFFERENCES + one exact global solve;
+        # the absolute-quantile equalizer stays for callers that opt out
+        # (Subframe previews) — its estimator is scene-biased in fields
+        # with no empty sky (see _overlap_offsets).
+        pairs = _overlap_offsets(bboxes, masks, crops)
+        offsets = _solve_level_offsets(n, pairs)
+        sky_target = _apply_level_offsets(crops, masks, offsets, pedestal)
+    else:
+        sky_target = _equalize_sky(crops, masks, pedestal)
 
     overlap_means = _overlap_means(bboxes, masks, crops)
-
-    if level_match:
-        from mosaics.merging.background import solve_planes
-        planes = solve_planes(_level_fit_rows(bboxes, masks, crops),
-                              n, canvas_shape)
-        # Rectify-then-feather, first degree: subtract each panel's solved
-        # plane over its crop's canvas coordinates (no-data zeros stay
-        # zero), then RECOMPUTE the overlap means so the flux solve sees
-        # the corrected sky.
-        for i in range(n):
-            if crops[i] is None:
-                continue
-            pa, pb, pc = planes[i]
-            if pa == 0.0 and pb == 0.0 and pc == 0.0:
-                continue
-            r0, r1, c0, c1 = bboxes[i]
-            ramp = (pa * np.arange(c0, c1, dtype=np.float32)[None, :]
-                    + pb * np.arange(r0, r1, dtype=np.float32)[:, None]
-                    + np.float32(pc))
-            np.subtract(crops[i], ramp, out=crops[i], where=masks[i])
-        overlap_means = _overlap_means(bboxes, masks, crops)
 
     # FLUX SCALING IS FOR FLUX, NOT FOR THE PEDESTAL. Both the solve and
     # the application work on signal ABOVE the shared sky:
@@ -449,7 +452,7 @@ def merge_images_oss(
     Path(output_filename).parent.mkdir(parents=True, exist_ok=True)
 
     paths = [inp.filename.resolve(strict=True) for inp in inputs]
-    result = _blend_many(paths)
+    result = _blend_many(paths, level_solve="overlap")
 
     write_tiff_image(Path(output_filename), result.astype(np.float32),
                      {"FILTER": filter,
@@ -458,7 +461,7 @@ def merge_images_oss(
                       # Merge-time sky equalization version. Bumping this
                       # line is the deliberate re-key for changes to the
                       # matching maths in the (unhashed) blend helpers.
-                      "SKYVER": "pedestal-2"})
+                      "SKYVER": "overlap-1"})
 
     new_count = sum(_panel_count(inp) for inp in inputs)
     _set_panel_count(output_filename, new_count)

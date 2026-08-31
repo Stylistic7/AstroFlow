@@ -37,11 +37,14 @@ Three entry points, matching the pipeline it forks.
 """
 from pathlib import Path
 
+import ray
+
 from astroflow.pipeline import pipeline, record
 from dependency_graph.tracing import (
     IdentityRef, present_terminal, workflow_group,
 )
 from mosaics.merging.oss import merge_images_oss, merge_scope
+from mosaics.merging.polish import polish_background
 from mosaics.viewbox_measured import compute_viewbox_measured
 from mosaics.color.post_process import (
     bxt_correct_only, color_post_process, panel_source_manifest,
@@ -107,6 +110,36 @@ def for_target(target, config):
     return {**merged, **color}
 
 
+@ray.remote(num_cpus=0.1)
+def merge_polish_scope(mosaic, filter, viewbox, config, targets, *corrected,
+                       dry_run=False):
+    """`merge_scope` with a global background polish appended:
+    `{N x place_image -> merge_images_oss -> polish_background}`. The POLISH
+    is the terminal the caller presents — its output is the "Mosaic" tap
+    and the source identity the colour tail's panel manifests fold in
+    (`present_terminal` stamps `_op_source`). Placements are reclaimed as
+    ephemeral views; the merge persists as a scope intermediate (cheap
+    insurance: a polish-only change replays from the merge file)."""
+    del dry_run
+    from dependency_graph.classes import Graph
+    from dependency_graph.tracing import trace
+    from mosaics.placement.astroflow import place_image
+
+    print("### merge_polish_scope fold %s/%s: %s" % (
+        getattr(mosaic, "stable_hash", "?")[:12], filter,
+        " ".join(str(getattr(c, "content_hash", "?"))[:16] for c in corrected)))
+
+    def _body():
+        placed = [
+            place_image(mosaic, target, filter, viewbox, config, channel)
+            for target, channel in zip(targets, corrected)
+        ]
+        merged = merge_images_oss(mosaic, filter, *placed)
+        return polish_background(mosaic, filter, merged)
+
+    return Graph(trace(_body))
+
+
 @pipeline(PIPELINE, processes=Mosaic)
 def for_mosaic(mosaic, config):
     """Per-filter mosaic channels plus the colour deliverables."""
@@ -117,7 +150,8 @@ def for_mosaic(mosaic, config):
             channels[(target.id, filter)] = sink
     viewbox = _measured_viewbox(channels,
                                 single_panel=len(targets_by_id) == 1)
-    out = _merged_channels(mosaic, targets_by_id, channels, config, viewbox)
+    out = _merged_channels(mosaic, targets_by_id, channels, config, viewbox,
+                           polish=len(targets_by_id) > 1)
     panel_sources = {
         f: panel_source_manifest(targets_by_id, f, config, channels)
         for f in out
@@ -144,7 +178,7 @@ def _measured_viewbox(channels, single_panel: bool):
 
 
 def _merged_channels(mosaic, targets_by_id, channels, config,
-                     viewbox) -> dict:
+                     viewbox, polish: bool = False) -> dict:
     """Per-filter `{filter: merged-channel handle}`.
 
     Follows `hybrid_pi_oss_mosaic._merged_channels` — including the STRIPS
@@ -181,10 +215,23 @@ def _merged_channels(mosaic, targets_by_id, channels, config,
         ]
         merge_path = merge_images_oss.filename_fn(
             mosaic, filter, *placed_refs)
-        handle = record(
-            merge_scope, mosaic, filter, viewbox, config,
-            tuple(target for target, _ in entries),
-            *[channel for _, channel in entries])
-        out[filter] = present_terminal(
-            handle, merge_images_oss, path=merge_path)
+        if polish:
+            # Multi-panel mosaics: polish is the terminal/tap. Targets skip
+            # it — a single panel was already GraXpert-extracted per stack;
+            # a second global model has nothing panel-relative to fix.
+            polish_path = polish_background.filename_fn(
+                mosaic, filter, IdentityRef(Path(merge_path).stem))
+            handle = record(
+                merge_polish_scope, mosaic, filter, viewbox, config,
+                tuple(target for target, _ in entries),
+                *[channel for _, channel in entries])
+            out[filter] = present_terminal(
+                handle, polish_background, path=polish_path)
+        else:
+            handle = record(
+                merge_scope, mosaic, filter, viewbox, config,
+                tuple(target for target, _ in entries),
+                *[channel for _, channel in entries])
+            out[filter] = present_terminal(
+                handle, merge_images_oss, path=merge_path)
     return out

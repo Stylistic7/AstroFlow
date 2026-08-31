@@ -72,7 +72,7 @@ def test_blend_preserves_zeros_end_to_end(tmp_path):
         p = Path(tmp_path) / f"nd{k}.tiff"
         write_placed_panel(p, img, (x0, 0), (W, H))
         paths.append(p)
-    merged = _blend_many(paths, level_match=True)
+    merged = _blend_many(paths, level_solve="overlap")
     assert (merged[:, :60] == 0).all(), "canvas left of both panels must be 0"
     assert (merged[:, 1120:] == 0).all(), "canvas right of both panels must be 0"
     assert (merged[:40, 60:520] == 0).all(), "ragged edge must survive the merge"

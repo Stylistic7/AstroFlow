@@ -12,9 +12,11 @@ autostretch, parameters from that panel's own statistics — the
 zeroth-order equalizer: every panel's sky lands at the same output level
 and its noise at the same output contrast, absorbing offset, gain, and
 regime differences without modeling them) -> the SAME fused joint solve
-(`_blend_many(level_match=True)`: overlap plane fits, global mBgModel,
-now operating in stretched space where the residuals it minimizes are
-exactly the residuals the viewer sees) -> feather. Output is tagged
+(`_blend_many(level_solve="overlap")`: overlap-difference constants,
+one exact global solve — plane fitting retired 2026-08-31, it fit scene
+as sky on nebulosity-filled fields — operating in stretched space where
+the residuals it minimizes are exactly the residuals the viewer sees)
+-> feather. Output is tagged
 COLORSPC "display": already stretched, viewer applies taste, not a second
 autostretch.
 
@@ -93,7 +95,7 @@ def merge_images_stretched(
     # MEAN instead (the per-panel autostretch pins each panel's MEDIAN,
     # i.e. scene content, which measured 2026-08-22 left skies 0.030 apart
     # in display units; this is the correction for exactly that).
-    result = _blend_many(paths, level_match=True, pedestal=None)
+    result = _blend_many(paths, level_solve="overlap", pedestal=None)
 
     write_tiff_image(Path(output_filename), result.astype(np.float32),
                      {"FILTER": filter,
@@ -101,7 +103,7 @@ def merge_images_stretched(
                       "PIPELINE": "AstroFlow-OSS-Stretched",
                       "COLORSPC": "display",
                       "MATCHVER": "stretched-1",
-                      "SKYVER": "pedestal-1"})
+                      "SKYVER": "overlap-1"})
 
     new_count = sum(_panel_count(inp) for inp in inputs)
     _set_panel_count(output_filename, new_count)
