@@ -144,7 +144,7 @@ class StateActor:
                     print(f"### set _busy {self._busy}")
 
     def _run_graph(
-        self, state: State, graph: Graph
+        self, state: State, graph: Graph, completeness: bool = True,
     ) -> tuple[State, list[Action]]:
         from dependency_graph import GraphCancelled
 
@@ -204,8 +204,11 @@ class StateActor:
         self._infra_retries = 0  # a clean run resets the retry budget
         # A clean drain claims "everything built" — verify the TRACE agrees
         # (a plan built missing a subtree drains green; boot 7, 2026-08-25).
-        from cache.completeness import log_completeness
-        log_completeness(context)
+        # Suppressed for the preview phase: its plan deliberately excludes
+        # the heavy pipelines, so the cart trace would false-alarm.
+        if completeness:
+            from cache.completeness import log_completeness
+            log_completeness(context)
         # No completion-time cleanup: display-product N-1s are deleted
         # deterministically at node completion (`version_log.supersede`),
         # ephemerals by the in-run GC, foreign debris by the janitor. The
@@ -234,9 +237,31 @@ class StateActor:
             case "announce":
                 self.state, new_actions = _announce(self.state, action)
             case "update_settings" | "run_entire_graph":
-                self.state, new_actions = self._run_graph(
-                    self.state, build_compute_graph()
-                )
+                # PHASE 1 — previews to COMPLETION before any heavy work: the
+                # Subframe defaults exist for every mosaic before the main
+                # graph dispatches a single node. On a warm boot this is all
+                # cache hits (seconds); after a drain it is exactly the new
+                # data's previews. A phase-1 drain request skips phase 2 —
+                # the enqueued restart re-runs both.
+                # Late imports: one canonical binding (the package attr)
+                # for both builders, so tests patch a single location.
+                import compute_graph as _cg
+                preview = _cg.build_preview_compute_graph()
+                skip_main = False
+                if preview is not None:
+                    self.state, new_actions = self._run_graph(
+                        self.state, preview, completeness=False)
+                    # A drain during phase 1 has already ENQUEUED the restart
+                    # (drain_and_restart), so the event — not the returned
+                    # actions — is the reliable signal; the retry action from
+                    # a node-lost failure is returned, so check both.
+                    skip_main = (self._drain_event.is_set()
+                                 or any(a["type"] == "run_entire_graph"
+                                        for a in new_actions))
+                if not skip_main:
+                    self.state, new_actions = self._run_graph(
+                        self.state, _cg.build_compute_graph()
+                    )
             case "regroup":
                 self.state, new_actions = self._regroup(self.state)
 

@@ -841,6 +841,26 @@ def build_main_processing_graph(
     return graph
 
 
+def build_preview_compute_graph() -> "Graph | None":
+    """Phase 1 of the two-phase run: identification + EVERY mosaic's Subframe
+    preview, nothing else. Run to completion BEFORE the main graph so the
+    default views exist before hours of heavy work start — and so every
+    drain re-establishes "new data gets previews first" (the replan re-runs
+    this phase as cache hits + the new subs' previews only). None when the
+    dev settings skip previews (tests)."""
+    settings = context.settings
+    dev = settings.development_settings
+    if dev.skip_preview_graph:
+        return None
+    regroup = (build_regroup_graph, settings.clustering_settings,
+               settings.decision_overrides)
+    min_frames = settings.clustering_settings.min_frames_in_stack
+    return Graph({
+        regroup: {scatter_compute_image_metadata},
+        (build_preview_graph, dev, min_frames): {regroup},
+    })
+
+
 def build_compute_graph() -> Graph:
     settings = context.settings
     shopping_cart = tuple(context.shopping_cart or [])

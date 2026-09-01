@@ -3,4 +3,5 @@ from .compute_graph import (
     build_regroup_graph,
     build_preview_graph,
     build_main_processing_graph,
+    build_preview_compute_graph,
 )
