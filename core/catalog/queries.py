@@ -218,6 +218,22 @@ def resolve_product(
     master = predict_path(product, ancestors)
     cur = viewable_from_master(master)
     if cur is not None:
+        # SNAPSHOT-LAG GUARD (2026-08-31): `predict_path` reads the build-time
+        # tap snapshot; when a replan re-keys a product, the snapshot can lag
+        # and this "live" is an OLD generation whose file happens to exist —
+        # the boot-16 "Linear SHO current while the current file is absent"
+        # confusion. The version log is append-ordered by COMPLETION, so a
+        # newest entry whose call_hash differs from the predicted one means a
+        # newer generation already finished: serve THAT, badged out_of_date
+        # (the trace, not the log, stays the authority on "live").
+        from products import version_log
+        entries = version_log.versions(version_log.key_for(product))
+        if entries:
+            newest = entries[-1]
+            if newest.get("call_hash") != version_log.call_hash_of(master):
+                prev = viewable_from_master(newest.get("path"))
+                if prev is not None:
+                    return prev, "out_of_date"
         return cur, "live"
     if master is None:
         return None, "absent"  # no current tap in the trace — don't serve stale

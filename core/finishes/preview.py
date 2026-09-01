@@ -81,19 +81,25 @@ def _stf_values(arr: "np.ndarray", suffixes: "tuple[str, ...] | None",
 
 
 def _resolve(object_type: str, object_id: str, pipeline: str, display: str,
-             ancestors=()) -> "Path | None":
+             ancestors=()) -> "tuple[Path, str] | None":
+    """(path, status) for a servable scene format, or None. Status is
+    "live" | "out_of_date" — callers must surface it (the 2026-08-31 lesson:
+    this function used to DROP it, and every preview consumer silently showed
+    last-good generations as if current)."""
     from catalog import Product, resolve_product
     filter_ = "L" if display == "Linear L" else "RGB"
     path, status = resolve_product(
         Product(object_type, object_id, pipeline, display, filter_), ancestors)
-    return path if status in ("live", "out_of_date") else None
+    return (path, status) if status in ("live", "out_of_date") else None
 
 
 def render_canonical_preview(object_type: str, object_id: str,
                              ancestors=(), pipeline: "str | None" = None,
-                             ) -> "bytes | None":
-    """PNG bytes of the canonical look, or None when no scene format is
-    servable yet. Hubble for anything with narrowband; RGB otherwise.
+                             ) -> "tuple[bytes, str] | None":
+    """(PNG bytes, status) of the canonical look, or None when no scene
+    format is servable yet. Status is the PRIMARY source's freshness
+    ("live" | "out_of_date"); the stars layer never downgrades it.
+    Hubble for anything with narrowband; RGB otherwise.
 
     `pipeline` PINS which pipeline's scene formats to render. Without it this
     picks the first that resolves, which is right for a single card but wrong
@@ -129,14 +135,17 @@ def render_canonical_preview(object_type: str, object_id: str,
     if pipeline is None:
         return None
 
-    sho_path = _resolve(object_type, object_id, pipeline, "Linear SHO",
-                        ancestors)
-    rgb_path = _resolve(object_type, object_id, pipeline, "Linear RGB",
-                        ancestors)
-    nb_partial_path = _resolve(object_type, object_id, pipeline,
-                               "Linear Narrowband Starless", ancestors)
-    stars_path = _resolve(object_type, object_id, pipeline,
-                          "Linear RGB Stars", ancestors)
+    def _split(r):
+        return r if r is not None else (None, None)
+    sho_path, sho_status = _split(_resolve(
+        object_type, object_id, pipeline, "Linear SHO", ancestors))
+    rgb_path, rgb_status = _split(_resolve(
+        object_type, object_id, pipeline, "Linear RGB", ancestors))
+    nb_partial_path, nb_status = _split(_resolve(
+        object_type, object_id, pipeline, "Linear Narrowband Starless",
+        ancestors))
+    stars_path, _stars_status = _split(_resolve(
+        object_type, object_id, pipeline, "Linear RGB Stars", ancestors))
 
     # Ladder: full-SHO Hubble is THE canonical look; a partial narrowband
     # set (an Hα-only galaxy) would render Hubble as a monochrome tint
@@ -144,12 +153,14 @@ def render_canonical_preview(object_type: str, object_id: str,
     # Hubble is the last resort for narrowband-only partial images (an HOO
     # bicolor still reads fine).
     if sho_path is not None:
-        finish, primary_path = get_finish("Hubble", primary="Linear SHO"), sho_path
+        finish, primary_path, primary_status = (
+            get_finish("Hubble", primary="Linear SHO"), sho_path, sho_status)
     elif rgb_path is not None:
-        finish, primary_path = get_finish("RGB", primary="Linear RGB"), rgb_path
+        finish, primary_path, primary_status = (
+            get_finish("RGB", primary="Linear RGB"), rgb_path, rgb_status)
     elif nb_partial_path is not None:
         finish = get_finish("Hubble", primary="Linear Narrowband Starless")
-        primary_path = nb_partial_path
+        primary_path, primary_status = nb_partial_path, nb_status
     else:
         return None
     if finish is None or primary_path is None:
@@ -170,7 +181,7 @@ def render_canonical_preview(object_type: str, object_id: str,
            _mtime(primary_path), _mtime(stars_path) if stars_path else 0)
     cached = dc.get(key)
     if cached is not None:
-        return cached
+        return cached, primary_status
 
     primary = read_pyramid_level(primary_path)
     if primary.shape[-1] < 3:
@@ -204,4 +215,4 @@ def render_canonical_preview(object_type: str, object_id: str,
         return None
     png = buf.tobytes()
     dc.set(key, png)
-    return png
+    return png, primary_status

@@ -1,4 +1,4 @@
-import React, { useContext } from "react";
+import React, { useContext, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import Card from '@mui/material/Card';
@@ -7,10 +7,12 @@ import Typography from '@mui/material/Typography';
 import { CardActionArea } from '@mui/material';
 
 import AstroFlowContext from './AstroFlowContext.jsx';
+import PreviewImage from './PreviewImage.jsx';
 
 // TODO: Don't show MosaicCards for "mosaics" with just one panel?
 export default function MosaicCard({ mosaic_id }) {
   const { stacks, targets, mosaics } = useContext(AstroFlowContext);
+  const [previewAbsent, setPreviewAbsent] = useState(false);
 
   const mosaic = mosaics[mosaic_id];
   const navigate = useNavigate();
@@ -44,15 +46,9 @@ export default function MosaicCard({ mosaic_id }) {
               linear scene formats); onError falls back to the classic
               per-filter thumbnail (covers never-built images and the deploy
               window before the backend restart). */}
+          {previewAbsent ? (
           <img
-            src={`/thumbnail/preview/mosaic/${mosaic_id}`}
-            onError={(e) => {
-              if (!e.currentTarget.dataset.fellBack) {
-                e.currentTarget.dataset.fellBack = "1";
-                e.currentTarget.src =
-                  `/thumbnail/mosaic/${mosaic_id}/${get_filters()[0]}`;
-              }
-            }}
+            src={`/thumbnail/mosaic/${mosaic_id}/${get_filters()[0]}`}
             style={{
               height: "100%",
               maxWidth: "100%",
@@ -61,6 +57,20 @@ export default function MosaicCard({ mosaic_id }) {
               marginRight: "auto",
             }}
           />
+          ) : (
+          <PreviewImage
+            src={`/thumbnail/preview/mosaic/${mosaic_id}`}
+            alt="canonical preview"
+            onAbsent={() => setPreviewAbsent(true)}
+            style={{
+              height: "100%",
+              maxWidth: "100%",
+              display: "block",
+              marginLeft: "auto",
+              marginRight: "auto",
+            }}
+          />
+          )}
         </div>
         <CardContent>
           <Typography gutterBottom variant="h5" component="div">

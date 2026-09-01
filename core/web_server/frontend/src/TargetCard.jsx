@@ -1,4 +1,5 @@
 import { useContext } from "react";
+import PreviewImage from "./PreviewImage.jsx";
 import { useNavigate } from "react-router-dom";
 
 import Card from '@mui/material/Card';
@@ -30,9 +31,9 @@ export default function TargetCard({ target_id }) {
           {/* Canonical colour preview (server-rendered Hubble/RGB from the
               linear scene formats); hides itself when the target has no
               servable formats yet — the per-stack grid below always shows. */}
-          <img
+          <PreviewImage
             src={`/thumbnail/preview/target/${target.stable_hash}`}
-            onError={(e) => { e.currentTarget.style.display = "none"; }}
+            alt="canonical preview"
             style={{
               width: "100%",
               display: "block",

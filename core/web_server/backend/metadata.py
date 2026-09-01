@@ -427,6 +427,20 @@ def pipeline_outputs(object_type: str, object_id: str):
                     continue
                 path = cat.viewable_from_master(p)
                 status = "live" if path is not None else "absent"
+                if path is not None:
+                    # Same snapshot-lag guard as catalog.resolve_product: a
+                    # newer COMPLETED generation in the version log outranks
+                    # a stale-snapshot "live" (see queries.resolve_product).
+                    from products import version_log
+                    _entries = version_log.versions(
+                        version_log.key(object_type, object_id, name,
+                                        display, f))
+                    if _entries and _entries[-1].get("call_hash") != \
+                            version_log.call_hash_of(p):
+                        _prev = cat.viewable_from_master(
+                            _entries[-1].get("path"))
+                        if _prev is not None:
+                            path, status = _prev, "out_of_date"
                 if path is None:
                     # Current output isn't built yet → serve the last-good (N-1)
                     # with an out-of-date badge (graceful versioning). Same logic

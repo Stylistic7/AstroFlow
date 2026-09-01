@@ -423,12 +423,21 @@ def canonical_preview(object_type: str, object_id: str):
     # `?pipeline=` pins which pipeline's scene formats to render. The dashboard
     # passes it so an A/B shows one preview PER pipeline; omitting it keeps the
     # auto-pick used by the object cards.
-    png = render_canonical_preview(
+    result = render_canonical_preview(
         object_type, object_id, pipeline=flask.request.args.get("pipeline"))
-    if png is None:
+    if result is None:
         return flask.abort(404)
-    return flask.Response(png, mimetype="image/png",
+    png, status = result
+    # `?fresh=1`: strict mode — never serve a last-good stale generation
+    # (review workflows; the default keeps graceful N/N-1 serving). The
+    # status ALWAYS travels in a header so image consumers can badge it —
+    # previously it was computed and silently dropped (2026-08-31).
+    if flask.request.args.get("fresh") and status != "live":
+        return flask.abort(404)
+    resp = flask.Response(png, mimetype="image/png",
                           direct_passthrough=True)
+    resp.headers["X-Product-Status"] = status
+    return resp
 
 
 @thumbnails_bp.route("/thumbnail/stack/<stack_id>")

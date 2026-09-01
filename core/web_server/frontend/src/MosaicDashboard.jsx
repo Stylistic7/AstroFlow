@@ -33,6 +33,7 @@ import DeleteSweepIcon from "@mui/icons-material/DeleteSweep";
 import AstroFlowContext from "./AstroFlowContext.jsx";
 import DiscardResultsDialog from "./DiscardResultsDialog.jsx";
 import { buildUrl, buildApiUrl } from "./urls.js";
+import PreviewImage from "./PreviewImage.jsx";
 
 
 function VersionThumbnail({
@@ -223,13 +224,10 @@ export function PipelineSection({ objectType, objectId, pipeline }) {
                         borderColor: 'divider', maxWidth: '100%',
                     }}
                 >
-                    <img
+                    <PreviewImage
                         src={`/thumbnail/preview/${objectType}/${objectId}`
                              + `?pipeline=${encodeURIComponent(pipeline.name)}`}
                         alt={`${pipeline.name} — canonical preview`}
-                        onError={(e) => {
-                            e.currentTarget.parentElement.style.display = 'none';
-                        }}
                         style={{ display: 'block', maxHeight: '48vh',
                                  maxWidth: '100%' }}
                     />
