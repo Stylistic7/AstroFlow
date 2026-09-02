@@ -169,6 +169,25 @@ def write_tiff_image(
     del arr  # explicit: buffer no longer referenced after the save
 
 
+def write_tiff_image_streaming(
+    filename: Path,
+    image: "pyvips.Image",
+    metadata: dict[str, Any] | None = None,
+    tile: tuple[int, int] | None = None,
+    compression: str = COMPATIBLE_COMPRESSION,
+) -> None:
+    """`write_tiff_image` for a LAZY pyvips image: tiffsave pulls the
+    pipeline tile-by-tile, so a gigapixel result never materializes in
+    RAM (the `write_tiff_embedded` idiom generalized to any lazy
+    expression). The caller owns keeping any borrowed numpy buffers in
+    the pipeline alive until this returns."""
+    img = image.copy()
+    img.set_type(pyvips.GValue.gstr_type, _DESC,
+                 json.dumps(metadata or {}, ensure_ascii=True))
+    _atomic_tiffsave(img, Path(filename), tile=tile, compression=compression)
+    assert Path(filename).exists()
+
+
 def write_tiff_embedded(
     filename: Path,
     image: np.ndarray,

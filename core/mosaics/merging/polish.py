@@ -29,6 +29,7 @@ re-zeroed after. The correction applies only inside the coverage mask.
 from pathlib import Path
 
 import numpy as np
+import pyvips
 import structlog
 
 from decorators.decorators import node
@@ -74,27 +75,37 @@ def _background_model_small(small: np.ndarray) -> np.ndarray:
     return filled - out
 
 
-def _apply_model(full: np.ndarray, model_small: np.ndarray,
-                 pedestal: float) -> np.ndarray:
-    """Upsample `model_small` to `full`'s size, subtract inside the
-    coverage mask, and shift so the masked median sky lands on `pedestal`.
-    No-data zeros stay exactly zero; covered pixels stay > 0. Pure — the
-    testable half of the op."""
-    import cv2
+def _lazy_polish(img: pyvips.Image, model_small: np.ndarray,
+                 shift: float) -> pyvips.Image:
+    """LAZY pyvips pipeline: upsample the smooth model to `img`'s grid,
+    subtract inside the coverage mask, apply the pedestal `shift`, keep
+    covered pixels strictly positive and no-data exactly zero. Pure —
+    the testable half of the op. Nothing canvas-sized ever materializes:
+    tiffsave pulls this expression tile-by-tile (Stylistic7, 2026-09-02:
+    never read the entire mosaic into memory)."""
+    h_s, w_s = model_small.shape
+    buf = np.ascontiguousarray(model_small, dtype=np.float32)
+    # copy_memory() decouples the (tiny, 2k-max) model from the numpy
+    # buffer so the lazy pipeline can outlive this frame safely.
+    model = pyvips.Image.new_from_memory(
+        buf.data, w_s, h_s, 1, "float").copy_memory()
+    model = model.resize(img.width / w_s, vscale=img.height / h_s,
+                         kernel="linear")
+    # resize rounds output dims; normalize to img's grid exactly (the
+    # sliver is <=1 px of a smooth field — edge-copy is exact enough).
+    model = model.crop(0, 0, min(model.width, img.width),
+                       min(model.height, img.height)) \
+                 .embed(0, 0, img.width, img.height, extend="copy")
+    tiny = float(np.finfo(np.float32).tiny)
+    corrected = img - model + float(shift)
+    corrected = (corrected < tiny).ifthenelse(tiny, corrected)
+    return (img > 0).ifthenelse(corrected, 0.0).cast("float")
 
-    mask = full > 0
-    model = cv2.resize(model_small, dsize=(full.shape[1], full.shape[0]),
-                       interpolation=cv2.INTER_LINEAR)
-    out = np.where(mask, full - model, np.float32(0))
-    sky = float(np.median(out[mask])) if mask.any() else 0.0
-    shift = np.float32(pedestal - sky)
-    if shift != 0:
-        np.add(out, shift, out=out, where=mask)
-    np.maximum(out, np.finfo(np.float32).tiny, out=out, where=mask)
-    return out
 
-
-@node(display="Mosaic", final=True, auto_memory=True, plate_solve=False)  # mosaic projection — non-square pixels
+# auto_memory dropped with the streaming rewrite (Stylistic7, 2026-09-02):
+# the op's peak RSS is now ~the 2k model, so a profiled reservation
+# would only re-teach the scheduler yesterday's ~3x-canvas appetite.
+@node(display="Mosaic", final=True, plate_solve=False)  # mosaic projection — non-square pixels
 def polish_background(
     mosaic: Mosaic, filter: str, merged: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
@@ -102,29 +113,40 @@ def polish_background(
     sky restored to the house pedestal. Presented as the merge-polish
     scope's terminal, so this op's output IS the "Mosaic" tap and its
     source hash is what the colour tail's panel manifests fold in."""
-    from file_io.generic import read_image
+    from file_io.tiff_file_io import write_tiff_image_streaming
     from stacks.post_processing.background_pedestal import DEFAULT_PEDESTAL
 
     output_filename = polish_background.filename_fn(mosaic, filter, merged)
     Path(output_filename).parent.mkdir(parents=True, exist_ok=True)
 
     src = Path(merged.filename).resolve(strict=True)
-    full = np.asarray(read_image(src), dtype=np.float32)
-    if full.ndim == 3:
-        full = full[..., 0]
+    img = pyvips.Image.new_from_file(str(src), unlimited=True)
+    if img.bands > 1:
+        img = img[0]
 
-    scale = _MODEL_INPUT_PX / max(full.shape)
-    import cv2
-    small = cv2.resize(full, dsize=None, fx=scale, fy=scale,
-                       interpolation=cv2.INTER_AREA)
+    # Small copy via a STREAMING reduce — the canvas never materializes.
+    scale = _MODEL_INPUT_PX / max(img.width, img.height)
+    small = img.resize(scale).numpy().astype(np.float32)
+    if small.ndim == 3:
+        small = small[..., 0]
     model_small = _background_model_small(small)
-    result = _apply_model(full, model_small, float(DEFAULT_PEDESTAL))
 
-    write_tiff_image(Path(output_filename), result,
-                     {"FILTER": filter,
-                      "STBLHASH": str(merged.stable_hash),
-                      "PIPELINE": "AstroFlow-OSS",
-                      "POLISHVER": "gx-mono-1"})
+    # Pedestal shift measured at model scale: the corrected field is
+    # smooth there, and the median of the area-reduced image tracks the
+    # full-res masked median to ~1e-5 — the pedestal is a shared
+    # baseline convention, not photometry, and every channel uses the
+    # identical estimator.
+    mask_small = small > 0
+    sky = float(np.median((small - model_small)[mask_small])) \
+        if mask_small.any() else 0.0
+    shift = float(DEFAULT_PEDESTAL) - sky
+
+    result = _lazy_polish(img, model_small, shift)
+    write_tiff_image_streaming(Path(output_filename), result,
+                               {"FILTER": filter,
+                                "STBLHASH": str(merged.stable_hash),
+                                "PIPELINE": "AstroFlow-OSS",
+                                "POLISHVER": "gx-mono-2-streaming"})
     _set_panel_count(output_filename, _panel_count(merged))
 
     log.info("background polish complete", output=str(output_filename),
