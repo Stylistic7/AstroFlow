@@ -124,11 +124,27 @@ def polish_background(
     if img.bands > 1:
         img = img[0]
 
-    # Small copy via a STREAMING reduce — the canvas never materializes.
-    scale = _MODEL_INPUT_PX / max(img.width, img.height)
-    small = img.resize(scale).numpy().astype(np.float32)
-    if small.ndim == 3:
-        small = small[..., 0]
+    # Small copy via a COVERAGE-NORMALIZED streaming box shrink. A plain
+    # resize both averages no-data zeros into every boundary pixel
+    # (darkening bias) and — with vips' default lanczos kernel — RINGS on
+    # the coverage step edge, which GraXpert then bakes into the model as
+    # a periodic bright/dark comb along every edge ("warbling", Stylistic7,
+    # 2026-09-02). Box-shrinking image and mask separately and dividing
+    # makes each small pixel the mean of ONLY its covered full-res pixels
+    # — equivalent to a locally-exact fill before the downscale — with a
+    # ringless kernel. Small pixels under 25% coverage go to zero and are
+    # median-filled inside _background_model_small as before.
+    k = max(img.width, img.height) / _MODEL_INPUT_PX
+    cov = (img > 0).cast("float") / 255.0  # vips relational is 0/255
+    small_sum = img.shrink(k, k).numpy().astype(np.float32)
+    small_cov = cov.shrink(k, k).numpy().astype(np.float32)
+    if small_sum.ndim == 3:
+        small_sum = small_sum[..., 0]
+    if small_cov.ndim == 3:
+        small_cov = small_cov[..., 0]
+    small = np.where(small_cov >= 0.25,
+                     small_sum / np.maximum(small_cov, 1e-6),
+                     np.float32(0))
     model_small = _background_model_small(small)
 
     # Pedestal shift measured at model scale: the corrected field is
@@ -146,7 +162,7 @@ def polish_background(
                                {"FILTER": filter,
                                 "STBLHASH": str(merged.stable_hash),
                                 "PIPELINE": "AstroFlow-OSS",
-                                "POLISHVER": "gx-mono-2-streaming"})
+                                "POLISHVER": "gx-mono-3-covnorm"})
     _set_panel_count(output_filename, _panel_count(merged))
 
     log.info("background polish complete", output=str(output_filename),
