@@ -103,7 +103,7 @@ def merge_images_stretched(
                       "PIPELINE": "AstroFlow-OSS-Stretched",
                       "COLORSPC": "display",
                       "MATCHVER": "stretched-1",
-                      "SKYVER": "overlap-1"})
+                      "SKYVER": "overlap-2"})
 
     new_count = sum(_panel_count(inp) for inp in inputs)
     _set_panel_count(output_filename, new_count)

@@ -31,10 +31,31 @@ OFFSET_RANGE = (0.8e-4, 1.3e-4)  # narrowband per-panel sky constants
 # electrons at the 0.005 pedestal, plus a signal-independent read floor
 # in linear units. Shot noise is signal-DEPENDENT: brighter pixels are
 # noisier in electrons, quieter in relative terms. SNR scales as
-# sqrt(electrons), so this 16x depth spread produces up to a 4x SNR
-# difference between panels — the Cygnus reality where some panels have
-# ~30 minutes and others hours of integration.
-E_AT_PEDESTAL_RANGE = (100.0, 1600.0)
+# sqrt(electrons): a ~2.5x SNR spread across panels. The floor stays OUT
+# of photon starvation (a 100 e- panel cannot pass SPFC's star-quality
+# filters, and production REFUSES such panels rather than including
+# known-bad data — Stylistic7, 2026-09-01; the refusal path is exercised by
+# post_stack_calibrate failing loudly, not by the standing labs).
+# Floor calibrated empirically: on 1200x800 lab panels (~24 catalog
+# stars <= G14), SPFC clears its 5-sample bar from ~550 e- up and fails
+# at <= 286 (4 samples at 254 e-, run 19). Real >=30-min narrowband
+# stacks sit above this floor.
+# Units rescaled 2026-09-01 (x6.52) alongside the labs' star gauge
+# (x0.392) so lab masters carry the PRODUCTION flux scale: SPFC
+# measures ~6e-3 (the frozen _SPFC_REFERENCE_SCALE) and applied gains
+# land ~1.0, exactly like real masters. Star SNR ~ k*sqrt(e) is
+# invariant under the paired rescale, so SPFC sample counts, refusal
+# margins, and draw marginality are preserved EXACTLY.
+# Solve-starvation history (runs 27-31, 2026-09-01): panel 15's Hα
+# looked unsolvable at this depth, but a x4 depth raise did NOT fix it —
+# the real blocker was smooth bright nebulosity skewing solve-field's
+# extraction (267 stars once flattened), now handled by the flatten
+# retry rung in plate_solving.solve_field. The x4 was reverted the same
+# day: the rung makes it unnecessary, and it changed nothing else —
+# S/O truth-r measured identical (0.93/0.90) at both depths; that drop
+# was the metric's stale star-mask threshold (fixed in _truth_r), not
+# the scene. Do not "fix" solve failures with depth.
+E_AT_PEDESTAL_RANGE = (3260.0, 10430.0)
 READ_SIGMA_RANGE = (1e-5, 4e-5)
 
 

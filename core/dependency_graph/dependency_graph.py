@@ -705,6 +705,25 @@ def run_graph(
                             free_by_node[node_id] -= need_mem
                         lease_by_ref[ref] = (node_id, need_mem, need_custom)
                 except AncestorsNeverRan:
+                    # Name the corpse: which resolved args were NeverRun/
+                    # Skipped sentinels. A node whose GRAPH deps all completed
+                    # but whose ARGS resolve to sentinels is the trace-
+                    # divergence signature (see _report_pass_end: blocked_on=
+                    # READY), and without this line it dies silently.
+                    try:
+                        _args = rt.make_fn_args(node)
+                        _bad = [
+                            (i, str(node.args[i])[:100])
+                            for i, x in enumerate(_args)
+                            if x in [NeverRun, Skipped] and i < len(node.args)
+                        ]
+                        print(
+                            f"### ancestors_never_ran "
+                            f"node={node_to_string(node)[:120]} "
+                            f"sentinel_args={_bad}"
+                        )
+                    except Exception:
+                        pass
                     rt.node_completed(node, NeverRun)
                 except AncestorsFailed:
                     rt.node_completed(node, Skipped)
@@ -819,6 +838,7 @@ def _report_pass_end(rt: "GraphRuntime") -> None:
     try:
         from collections import Counter
         from cache.types import NeverRun
+        from dependency_graph.classes import Skipped
         from dependency_graph.preflight import _op_name
 
         def op_of(n):
@@ -832,12 +852,24 @@ def _report_pass_end(rt: "GraphRuntime") -> None:
         for node in rt._graph:
             if not (rt.results.get(node, NeverRun) == NeverRun):
                 continue
-            blocker = None
+            # A dep that FAILED (exception result) or was Skipped in a
+            # failure cascade is just as blocking as one that never ran —
+            # without naming it, a cascade prints as blocked_on=READY and
+            # masquerades as a dispatch bug (misread live 2026-09-01: two
+            # plate-solve failures read as the 08-08 spawn bug).
+            blocker, blocker_kind = None, ""
             for d in rt._graph.get(node, []) or []:
-                if rt.results.get(d, NeverRun) == NeverRun:
+                res = rt.results.get(d, NeverRun)
+                if res == NeverRun:
                     blocker = d
                     break
-            key = (op_of(node), op_of(blocker) if blocker is not None else "READY")
+                if res == Skipped or isinstance(res, Exception):
+                    blocker, blocker_kind = d, (
+                        " (SKIPPED)" if res == Skipped else " (FAILED)")
+                    break
+            key = (op_of(node),
+                   op_of(blocker) + blocker_kind if blocker is not None
+                   else "READY")
             groups[key] += 1
             sample.setdefault(key, node)
         if not groups:

@@ -574,7 +574,8 @@ def panel_source_manifest(targets_by_id: dict, filter: str, config,
 
 @workflow_group
 def color_post_process(mosaic: Mosaic, channels: dict, config, viewbox=None,
-                       panel_sources: dict | None = None) -> dict:
+                       panel_sources: dict | None = None,
+                       bxt: bool = True) -> dict:
     """Turn merged per-filter channels into the LINEAR SCENE FORMATS — the
     orthogonal ≤3-band basis every colour look is assembled from, LIVE, in
     the viewer's WGSL finishes (finishes/stock.py + ~/AstroFlow/finishes/).
@@ -621,7 +622,11 @@ def color_post_process(mosaic: Mosaic, channels: dict, config, viewbox=None,
         # per-panel base manifest); every rc-astro op then tiles by PANEL.
         pm = base_panel_mosaic(mosaic, cf, channel, panels_by_class.get(cf))
         if cf in _NARROWBAND:
-            corrected = process_in_panels(bxt_correct, mosaic, cf, config, pm, viewbox=viewbox)
+            # bxt=False (labs only) skips deconvolution — see
+            # _merged_channels; production always passes the default True.
+            corrected = (process_in_panels(bxt_correct, mosaic, cf, config,
+                                           pm, viewbox=viewbox)
+                         if bxt else pm)
             starless = process_in_panels(sxt_starless, mosaic, cf, config, corrected, viewbox=viewbox)
             corrected_nb[cf] = corrected  # with stars — scene format 1
             starless_nb[cf] = starless  # PanelMosaic — linear source for the Linear SHO tap

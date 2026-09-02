@@ -35,7 +35,7 @@ from targets.types import Target
 
 
 @workflow_group
-def _post_processed_master(stack, config):
+def post_processed_master(stack, config):
     """Downscale every stack (cal AND light) by 8×, then stack +
     post-process. Same structure as PI Downscaled."""
     steps, top_ids = calibration_plan(stack, config)
@@ -51,13 +51,13 @@ def _post_processed_master(stack, config):
 
 
 @workflow_group
-def _channels_for_target(target, config):
+def channels_for_target(target, config):
     """Per-filter HDR-combined channel masters for one target.
     Same as PI Downscaled."""
     channels = {}
     for filter in target.filters:
         stacks = target.stacks_for(filter)
-        masters = [_post_processed_master(s, config) for s in stacks]
+        masters = [post_processed_master(s, config) for s in stacks]
         channels[filter] = merge_target_channel(
             target, filter, stacks, config, *masters,
         )
@@ -67,13 +67,13 @@ def _channels_for_target(target, config):
 @pipeline("Hybrid: PI Downscaled + OSS Mosaic", processes=Stack)
 def for_stack(stack, config):
     """One stack's post-processed 8×-downscaled master."""
-    return _post_processed_master(stack, config)
+    return post_processed_master(stack, config)
 
 
 @pipeline("Hybrid: PI Downscaled + OSS Mosaic", processes=Target)
 def for_target(target, config):
     """Per-filter 8×-downscaled channel masters for one target."""
-    return _channels_for_target(target, config)
+    return channels_for_target(target, config)
 
 
 @pipeline("Hybrid: PI Downscaled + OSS Mosaic", processes=Mosaic)
@@ -93,7 +93,7 @@ def for_mosaic(mosaic, config):
 
     channels = {}
     for target in mosaic.targets:
-        for filter, sink in _channels_for_target(target, config).items():
+        for filter, sink in channels_for_target(target, config).items():
             channels[(target.id, filter)] = sink
 
     # ONE measured canvas, shared across filters (see

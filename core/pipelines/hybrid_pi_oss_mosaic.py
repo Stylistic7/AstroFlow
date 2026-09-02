@@ -47,7 +47,7 @@ from targets.types import Target
 
 
 @workflow_group
-def _post_processed_master(stack, config):
+def post_processed_master(stack, config):
     """Calibrate → WBPP-stack → post-process. Same as PI Master."""
     cal_masters = calibrate(stack, config)
     master = stack_files(stack, config, *cal_masters)
@@ -55,12 +55,12 @@ def _post_processed_master(stack, config):
 
 
 @workflow_group
-def _channels_for_target(target, config):
+def channels_for_target(target, config):
     """Per-filter HDR-combined channel masters. Same as PI Master."""
     channels = {}
     for filter in target.filters:
         stacks = target.stacks_for(filter)
-        masters = [_post_processed_master(s, config) for s in stacks]
+        masters = [post_processed_master(s, config) for s in stacks]
         channels[filter] = merge_target_channel(
             target, filter, stacks, config, *masters,
         )
@@ -71,7 +71,7 @@ def _channels_for_target(target, config):
 def for_stack(stack, config):
     """One stack's post-processed master. Identical to PI Master at the
     stack level — the OSS swap is only relevant for the mosaic step."""
-    return _post_processed_master(stack, config)
+    return post_processed_master(stack, config)
 
 
 @pipeline("Hybrid: PI Master + OSS Mosaic", processes=Target)
@@ -87,7 +87,7 @@ def for_target(target, config):
     in the mosaic slot), so they appear on the target's viewer page."""
     channels = {
         (target.id, filter): sink
-        for filter, sink in _channels_for_target(target, config).items()
+        for filter, sink in channels_for_target(target, config).items()
     }
     viewbox = _measured_viewbox(channels, single_panel=True)
     merged = _merged_channels(target, {target.id: target}, channels, config,
@@ -120,7 +120,7 @@ def for_mosaic(mosaic, config):
 
     channels = {}
     for target in mosaic.targets:
-        for filter, sink in _channels_for_target(target, config).items():
+        for filter, sink in channels_for_target(target, config).items():
             channels[(target.id, filter)] = sink
 
     viewbox = _measured_viewbox(channels,

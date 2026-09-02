@@ -167,6 +167,11 @@ class ProcessingConfig:
     # the post_process_stack{,_oss} cache keys, so changing it re-derives only
     # those masters, nothing upstream.
     background_pedestal: float = 0.005
+    # Whether post_stack_calibrate runs its GraXpert background-extraction
+    # leg (the gain calibration + pedestal pin always run). Off only for
+    # scenes outside the ML model's training distribution (the synthetic
+    # mosaic labs); production default ON. Narrowed into that op's key.
+    background_extraction: bool = True
     # External-tool (rc-astro BXT/SXT) settings for the OSS color pipeline. Each
     # is narrowed into only its own op's cache key (bxt_correct / sxt_*), so
     # tuning them re-derives just the color tail. See BxtSettings/SxtSettings.

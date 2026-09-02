@@ -58,63 +58,151 @@ GRAXPERT_CORRECTION = "Subtraction"
 GRAXPERT_AI_VERSION = "1.0.1"
 
 
-def _post_process_graxpert_narrow(args, kwargs):
-    """Cache-key hook mirroring `pixinsight._post_process_narrow`: this op
-    depends on `config` only through `mock_pixinsight` and
-    `background_pedestal`, so project it to that pair and keep the key
-    independent of unrelated config churn."""
+def _post_stack_calibrate_narrow(args, kwargs):
+    """Cache-key hook: this op depends on `config` only through
+    `mock_pixinsight`, `background_pedestal`, and `background_extraction`;
+    project the key to that triple and stay independent of unrelated
+    config churn."""
     stack, config, master = args
     narrowed = (config.development_settings.mock_pixinsight,
-                config.background_pedestal)
+                config.background_pedestal,
+                config.background_extraction)
     return (stack, narrowed, master), kwargs
+
+
+# The photometric gauge (see units.py): calibrated masters are physical
+# SPFC band flux scaled by SPFC_REFERENCE_SCALE — an engineering unit,
+# DECLARED on every output via PHOTREF (HST keyword pattern; per-band
+# PHOTNMGY conversion to genuine SDSS nanomaggies is the follow-up).
+from units import SPFC_REFERENCE_SCALE, SpfcScale  # noqa: E402
+
+_SPFC_REFERENCE_SCALE: SpfcScale = SpfcScale(SPFC_REFERENCE_SCALE)
+
+# Reads the SPFC solution off the live view (PI 1.9.4 publishes it as the
+# PCL:SPFC:* properties, NOT the old PSFFLX00 keyword), prints the
+# certificate for the sidecar, and applies the gain in-session.
+# rescale/truncate stay OFF: the correction must be purely linear, and
+# star cores above 1.0 are legitimate in float.
+_SPFC_GAIN_JS = """
+let view = View.viewById("{view_id}");
+function first(v) {{
+    return (typeof v == "number") ? v : (v && (v.at ? v.at(0) : v[0]));
+}}
+let flx = first(view.propertyValue("PCL:SPFC:ScaleFactors"));
+let n = first(view.propertyValue("PCL:SPFC:Counts"));
+let sig = first(view.propertyValue("PCL:SPFC:Sigmas"));
+if (flx == null || !isFinite(flx) || flx <= 0)
+    throw new Error("post_stack_calibrate: no SPFC scale after SFC");
+let scale = {reference} / flx;
+console.writeln(format(
+    "ASTROFLOW: spfc_cert scale %.8e n %d sigma %.8e gain %.6f",
+    flx, n | 0, sig || 0, scale));
+let P = new PixelMath;
+P.expression = format("$T*%.10f", scale);
+P.useSingleExpression = true;
+P.createNewImage = false;
+P.rescale = false;
+P.truncate = false;
+P.executeOn(view);
+"""
 
 
 @node(
     display="Post-Processed",
-    cache_key_narrow=_post_process_graxpert_narrow,
+    cache_key_narrow=_post_stack_calibrate_narrow,
+    resources={"PixInsight": 1},
     auto_memory=True,
 )
-def post_process_stack_graxpert(
+def post_stack_calibrate(
     stack: Stack, config: ProcessingConfig, master: ImageMetadata,
 ) -> WithSidecar[XisfFilePath]:
-    """GraXpert background/gradient correction of a stacked master.
+    """Post-stacking calibration: the WBPP master made merge-ready.
 
-    Contract-identical to `post_process_stack` — same args, same
-    `WithSidecar[XisfFilePath]` result, same `display="Post-Processed"` tap —
-    so every downstream op (merge_target_channel, place_image, the colour
-    tail) consumes it unchanged.
+    ONE persisted artifact per stack (Stylistic7, 2026-09-01 — no cached copy
+    whose only delta is a scalar divide): Gaia gain division (SPFC — the
+    pipeline's only externally ground-truthed step; gains BEFORE
+    backgrounds), then GraXpert background extraction (gated by
+    `config.background_extraction`), then the sky pinned to the shared
+    pedestal. Output = gain-true, gradient-corrected, pedestal-pinned —
+    and worth eyeballing under the Post-Processed tap.
 
-    The corrected pixels are written back into a COPY OF THE ORIGINAL XISF
-    rather than into GraXpert's own FITS output, so the master keeps its FITS
-    keywords and XISF metadata (FILTER, STBLHASH, the WCS `post_process_stack`
-    would otherwise have injected). Without that, `compute_image_metadata`
-    would find no plate solution on the output and re-solve it from scratch.
-    """
+    The SPFC certificate (scale, N stars, sigma, reference gauge) is
+    recorded in the output's sidecar. A master SPFC cannot calibrate
+    (too few matchable stars — clouds, starvation, bad pointing) is
+    REFUSED loudly: something is wrong with it, and known-bad data must
+    not merge; quarantine or reshoot.
+
+    Pixels are written back into a copy of the gain-true XISF so FITS
+    keywords and the astrometric solution survive (without that,
+    compute_image_metadata would re-solve from scratch)."""
     if master.plate_solution is None:
-        # Same invariant as post_process_stack: compute_image_metadata already
-        # raises when solve-field fails on a light frame, so a master with no
-        # solution reaching this op is an upstream bug. Fail loud.
+        # compute_image_metadata already raises when solve-field fails on
+        # a light frame, so a master with no solution here is an upstream
+        # bug. Fail loud.
         raise ValueError(
-            f"post_process_stack_graxpert: master {master.filename} has no "
-            f"plate_solution; cannot post-process"
+            f"post_stack_calibrate: master {master.filename} has no "
+            f"plate_solution; cannot inject WCS for SPFC"
         )
 
-    output_filename = post_process_stack_graxpert.filename_fn(
-        stack, config, master,
-    )
+    output_filename = post_stack_calibrate.filename_fn(stack, config, master)
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
+
+    mock = config.development_settings.mock_pixinsight
+    if mock:
+        _write_pixels_preserving_metadata(
+            Path(master.filename), Path(output_filename), None,
+        )
+        return WithSidecar(XisfFilePath(output_filename))
+
+    import re
 
     from file_io.conversion import convert_xisf_to_fits
     from file_io.generic import read_image
+    from file_io.sidecar import set_section
+    from pix.image import Image
+    from pix.recipe import PixInsightError, Step
+    from pix.tasks import (
+        SpectrophotometricFluxCalibration,
+        WriteAstrometricSolution,
+    )
 
-    mock = config.development_settings.mock_pixinsight
-    corrected = None
-    if not mock:
-        from graxpert_cli import run_background_extraction
-        with tempfile.TemporaryDirectory(prefix="graxpert_stack_") as td:
+    with tempfile.TemporaryDirectory(prefix="post_stack_calibrate_") as td:
+        gain_xisf = Path(td) / "gain_true.xisf"
+        img = Image.open(Path(master.filename), filter=stack.filter)
+        img = WriteAstrometricSolution(img, master.plate_solution.header)
+        img = SpectrophotometricFluxCalibration(img)
+        img.recipe.add_step(Step(
+            name="spfc gain",
+            javascript=_SPFC_GAIN_JS.format(
+                view_id=img.view_id, reference=_SPFC_REFERENCE_SCALE),
+        ))
+        try:
+            img.save_to(gain_xisf)
+        except PixInsightError as e:
+            if "Insufficient data" not in str(e):
+                raise
+            raise ValueError(
+                f"post_stack_calibrate: SPFC found too few calibratable "
+                f"stars on {stack.stable_hash} filter {stack.filter} "
+                f"({master.filename}). REFUSING to pass uncalibrated data "
+                f"downstream — quarantine or reshoot this panel."
+            ) from e
+
+        m = re.search(
+            r"spfc_cert scale ([\d.eE+-]+) n (\d+) sigma ([\d.eE+-]+)",
+            img.recipe.log or "")
+        cert = {
+            "scale": float(m.group(1)), "n_stars": int(m.group(2)),
+            "sigma": float(m.group(3)),
+            "reference": _SPFC_REFERENCE_SCALE,
+        } if m else None
+
+        corrected = None
+        if config.background_extraction:
+            from graxpert_cli import run_background_extraction
             as_fits = Path(td) / "in.fits"
             gx_out = Path(td) / "corrected.fits"
-            convert_xisf_to_fits(Path(master.filename), as_fits)
+            convert_xisf_to_fits(gain_xisf, as_fits)
             run_background_extraction(
                 as_fits, gx_out,
                 smoothing=GRAXPERT_SMOOTHING,
@@ -122,25 +210,37 @@ def post_process_stack_graxpert(
                 ai_version=GRAXPERT_AI_VERSION,
             )
             corrected = np.asarray(read_image(gx_out)).astype(np.float32)
-        # GraXpert may emit an (H, W, 1) cube for a mono master — flatten so
-        # the buffer matches the XISF we are writing it back into.
-        if corrected.ndim == 3 and corrected.shape[2] == 1:
-            corrected = corrected[:, :, 0]
+            # GraXpert may emit an (H, W, 1) cube for a mono master —
+            # flatten so the buffer matches the XISF it goes back into.
+            if corrected.ndim == 3 and corrected.shape[2] == 1:
+                corrected = corrected[:, :, 0]
 
-    _write_pixels_preserving_metadata(
-        Path(master.filename), Path(output_filename), corrected,
+        _write_pixels_preserving_metadata(
+            gain_xisf, Path(output_filename), corrected,
+        )
+
+    # Equalize the sky to the shared pedestal — adjacent mosaic panels
+    # must land on the same baseline or the seam shows.
+    from stacks.post_processing.background_pedestal import (
+        apply_background_pedestal_to_xisf,
+    )
+    apply_background_pedestal_to_xisf(
+        Path(output_filename), target=config.background_pedestal,
     )
 
-    # Equalize the sky to a known pedestal, exactly as post_process_stack does
-    # — adjacent mosaic panels must land on the same baseline or the seam shows.
-    if not mock:
-        from stacks.post_processing.background_pedestal import (
-            apply_background_pedestal_to_xisf,
-        )
-        apply_background_pedestal_to_xisf(
-            Path(output_filename), target=config.background_pedestal,
-        )
+    # Declare the gauge on the artifact itself: pixels are physical SPFC
+    # band flux scaled by PHOTREF. Any consumer can convert onward
+    # without asking us.
+    from file_io.xisf_file_io import update_xisf_header
+    update_xisf_header(Path(output_filename), {
+        "PHOTREF": float(_SPFC_REFERENCE_SCALE),
+    })
 
+    if cert:
+        set_section(Path(output_filename), "spfc_calibration", cert)
+        log.info("post_stack_calibrate complete", stack=stack.stable_hash,
+                 filter=stack.filter, gain=cert["reference"] / cert["scale"],
+                 n_stars=cert["n_stars"], output=str(output_filename))
     return WithSidecar(XisfFilePath(output_filename))
 
 

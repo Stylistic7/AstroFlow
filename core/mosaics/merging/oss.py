@@ -37,28 +37,14 @@ from mosaics.types import MosaicLike as Mosaic
 log = structlog.get_logger()
 
 
-def _solve_flux_scales(n: int, overlap_means: dict) -> np.ndarray:
-    """Per-image multiplicative scale factors minimizing pairwise overlap
-    discrepancies. For every overlapping pair (i, j) with overlap means
-    (mi, mj), we want `mi · scale_i ≈ mj · scale_j`. Solve in log space
-    with image 0 anchored at scale=1; clamp to [0.5, 2.0] to match the
-    sanity guard the old pairwise blend used."""
-    rows = [
-        (i, j, np.log(mj / mi))
-        for (i, j), (mi, mj) in overlap_means.items()
-        if mi and mj and mi > 0 and mj > 0
-    ]
-    if not rows:
-        return np.ones(n, dtype=np.float32)
-    A = np.zeros((len(rows) + 1, n), dtype=np.float32)
-    b = np.zeros(len(rows) + 1, dtype=np.float32)
-    for r, (i, j, k) in enumerate(rows):
-        A[r, i] = 1.0
-        A[r, j] = -1.0
-        b[r] = k
-    A[-1, 0] = 1.0
-    log_scales, *_ = np.linalg.lstsq(A, b, rcond=None)
-    return np.clip(np.exp(log_scales), 0.5, 2.0).astype(np.float32)
+# The overlap-based flux solve (`_solve_flux_scales` + `_signal_means`)
+# was DELETED 2026-09-01: gains are now calibrated absolutely, per master,
+# against Gaia (post_stack_calibrate, graxpert_stack.py) — the only
+# externally ground-truthed step in the pipeline — so panels arrive here
+# gain-true and an overlap estimator with no ground truth could only add
+# scene-dependent noise. Measured before deletion (run 20, 4x4 lab): with
+# SPFC upstream the solve found ~unity and the merge landed at the chroma
+# floor with or without it.
 
 
 def _panel_bbox(mask: np.ndarray) -> tuple[int, int, int, int] | None:
@@ -187,7 +173,7 @@ def _solve_level_offsets(n: int, pairs: list[tuple]) -> np.ndarray:
 def _apply_level_offsets(crops, masks, offsets, pedestal) -> "float | None":
     """Subtract each panel's solved offset, then ONE global shift to the
     shared pedestal — identical for every panel, so it cannot introduce a
-    seam. Returns the sky target for the flux solve (`_signal_means`)."""
+    seam."""
     from stacks.post_processing.background_pedestal import DEFAULT_PEDESTAL
     tiny = np.finfo(np.float32).tiny
     for crop, mask, off in zip(crops, masks, offsets):
@@ -217,28 +203,6 @@ def _apply_level_offsets(crops, masks, offsets, pedestal) -> "float | None":
               len(measured), float(np.max(offsets) - np.min(offsets)),
               float(shift), target))
     return target
-
-
-def _overlap_means(bboxes, masks, crops):
-    """Pass 1+2 of the blend: i-side and j-side overlap means per pair."""
-    n = len(crops)
-    means = {}
-    for i in range(n):
-        if bboxes[i] is None:
-            continue
-        for j in range(i):
-            if bboxes[j] is None:
-                continue
-            region = _intersect(bboxes[i], bboxes[j])
-            if region is None:
-                continue
-            both = _sub(masks[i], bboxes[i], region) & _sub(masks[j], bboxes[j], region)
-            if not both.any():
-                continue
-            mi = float(_sub(crops[i], bboxes[i], region)[both].mean())
-            mj = float(_sub(crops[j], bboxes[j], region)[both].mean())
-            means[(j, i)] = (mj, mi)
-    return means
 
 
 def _panel_sky(values: np.ndarray) -> "float | None":
@@ -290,22 +254,9 @@ def _equalize_sky(crops, masks, pedestal) -> "float | None":
     return target
 
 
-def _signal_means(overlap_means, sky_target):
-    """Overlap means with the shared pedestal removed, for the flux solve.
-
-    Floored just above zero: `_solve_flux_scales` works in log space, and a
-    faint overlap whose mean sits at or below the pedestal would otherwise
-    produce a non-finite constraint."""
-    if sky_target is None:
-        return overlap_means
-    def strip(v):
-        return None if v is None else max(v - sky_target, 1e-9)
-    return {k: (strip(a), strip(b)) for k, (a, b) in overlap_means.items()}
-
-
 def _blend_many(paths: list[Path], level_solve: "str | None" = None,
                 pedestal: "float | None" = _UNSET_PEDESTAL) -> np.ndarray:
-    """Variadic distance-weighted blend with least-squares flux solve.
+    """Variadic distance-weighted blend (gains arrive pre-calibrated).
 
     Streams every panel off disk one at a time and works per-panel in its
     on-disk BOUNDING BOX, not the full mosaic canvas: a placed panel fills only
@@ -386,29 +337,13 @@ def _blend_many(paths: list[Path], level_solve: "str | None" = None,
         # with no empty sky (see _overlap_offsets).
         pairs = _overlap_offsets(bboxes, masks, crops)
         offsets = _solve_level_offsets(n, pairs)
-        sky_target = _apply_level_offsets(crops, masks, offsets, pedestal)
+        _apply_level_offsets(crops, masks, offsets, pedestal)
     else:
-        sky_target = _equalize_sky(crops, masks, pedestal)
-
-    overlap_means = _overlap_means(bboxes, masks, crops)
-
-    # FLUX SCALING IS FOR FLUX, NOT FOR THE PEDESTAL. Both the solve and
-    # the application work on signal ABOVE the shared sky:
-    #
-    #   solve   on (mean - sky), so the scales match real signal rather
-    #           than signal+pedestal;
-    #   apply   as (panel - sky)*scale + sky, so a panel's sky comes out
-    #           exactly where the pedestal put it.
-    #
-    # Multiplying the whole panel instead moves its sky by (scale-1)*sky.
-    # Measured 2026-08-22: two panels with IDENTICAL 0.005 skies differing
-    # only in signal gain came out of the blend 6e-4 apart — five times the
-    # production quilt, and the reason every additive fix upstream of this
-    # point (level constants, planes, SPFC gain, merge-time equalization)
-    # was silently undone here.
-    scales = _solve_flux_scales(n, _signal_means(overlap_means, sky_target))
+        _equalize_sky(crops, masks, pedestal)
 
     # Pass 3: weighted sum, accumulated per-panel into its bbox slice.
+    # (No per-panel flux scaling: gains are calibrated upstream against
+    # Gaia by post_stack_calibrate — see the deletion note at the top.)
     numer = np.zeros(canvas_shape, dtype=np.float32)
     denom = np.zeros(canvas_shape, dtype=np.float32)
     for i in range(n):
@@ -417,13 +352,6 @@ def _blend_many(paths: list[Path], level_solve: "str | None" = None,
         r0, r1, c0, c1 = bboxes[i]
         weight = _edt_weight(masks[i], bboxes[i], canvas_shape)
         sub = crops[i]  # the retained crop, mutated in place (last use)
-        if sky_target is None:
-            sub *= scales[i]
-        else:
-            # (sub - t)*s + t, masked so no-data zeros stay exactly zero.
-            np.multiply(sub, scales[i], out=sub, where=masks[i])
-            np.add(sub, np.float32(sky_target * (1.0 - scales[i])),
-                   out=sub, where=masks[i])
         sub *= weight
         numer[r0:r1, c0:c1] += sub
         denom[r0:r1, c0:c1] += weight
@@ -461,7 +389,7 @@ def merge_images_oss(
                       # Merge-time sky equalization version. Bumping this
                       # line is the deliberate re-key for changes to the
                       # matching maths in the (unhashed) blend helpers.
-                      "SKYVER": "overlap-1"})
+                      "SKYVER": "overlap-2"})
 
     new_count = sum(_panel_count(inp) for inp in inputs)
     _set_panel_count(output_filename, new_count)

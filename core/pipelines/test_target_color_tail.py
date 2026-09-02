@@ -87,7 +87,7 @@ def test_tail_ops_accept_target():
 
 def test_target_tail_traces_with_target_taps(tmp_path, monkeypatch):
     """Trace `for_target`'s composition (fake channel sinks in place of
-    `_channels_for_target` — the stack backbone is PI Master's, proven
+    `channels_for_target` — the stack backbone is PI Master's, proven
     elsewhere): one presented merge per filter, the colour deliverables
     present, and EVERY tap routed to the Target."""
     import targets.target_channel as tc

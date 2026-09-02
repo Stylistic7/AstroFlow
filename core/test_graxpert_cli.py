@@ -7,7 +7,7 @@ The flags match GraXpert 3.2.0a2's actual `background-extraction -h`, which DOES
 accept -correction/-smoothing/-ai_version. (An earlier version of this file
 claimed 3.2 had dropped them; it hadn't. The mistake was invisible because the
 one test that checked only ever called the wrapper without them, so their
-absence proved nothing — `post_process_stack_graxpert` passes all three.)
+absence proved nothing — `post_stack_calibrate` passes all three.)
 """
 import subprocess
 from pathlib import Path
@@ -52,7 +52,7 @@ def test_builds_background_extraction_command(monkeypatch, tmp_path):
 
 
 def test_passes_tuning_flags_when_set(monkeypatch, tmp_path):
-    """The settings `post_process_stack_graxpert` pins must reach the CLI.
+    """The settings `post_stack_calibrate` pins must reach the CLI.
 
     Guards the mistake this file used to encode: asserting these flags are
     never passed. They are the entire reason GraXpert beats MGC here — model

@@ -29,7 +29,7 @@ import os
 from pathlib import Path
 
 #: Preconditions for the fast path. Verified across 240 sampled masters from
-#: stack_files / post_process_stack / post_process_stack_graxpert /
+#: stack_files / post_process_stack / post_stack_calibrate /
 #: merge_target_channel: 100% uncompressed, `attachment` location, default
 #: little-endian, single-channel Gray. Anything else falls back to the library's
 #: own decode — reading a compressed block as raw floats would yield plausible

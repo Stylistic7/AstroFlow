@@ -12,10 +12,8 @@ interior to the canvas; and a rect flush against the canvas edge).
 import numpy as np
 import edt
 
-from mosaics.merging.oss import _blend_many, _solve_flux_scales, _panel_bbox
-from mosaics.merging.oss import (
-    _equalize_sky, _UNSET_PEDESTAL, _signal_means,
-)
+from mosaics.merging.oss import _blend_many, _panel_bbox
+from mosaics.merging.oss import _equalize_sky, _UNSET_PEDESTAL
 from mosaics.placement.panel_io import write_placed_panel, read_placed_panel
 
 
@@ -38,36 +36,17 @@ def _blend_many_reference(paths):
     what keeps that claim about the REAL production path."""
     if len(paths) == 1:
         return _read_full_canvas(paths[0])
-    n = len(paths)
     canvases = [_read_full_canvas(p) for p in paths]
-    sky_target = _equalize_sky(canvases, [c > 0 for c in canvases],
-                               _UNSET_PEDESTAL)
-    masks, overlap_means = [], {}
-    for i, img in enumerate(canvases):
-        mask = img > 0
-        for j, mask_j in enumerate(masks):
-            both = mask & mask_j
-            if both.any():
-                overlap_means[(j, i)] = (None, float(img[both].mean()))
-        masks.append(mask)
-    for j, img in enumerate(canvases):
-        for (a, b), (_, mi) in list(overlap_means.items()):
-            if a != j:
-                continue
-            both = masks[a] & masks[b]
-            mj = float(img[both].mean()) if both.any() else 0.0
-            overlap_means[(a, b)] = (mj, mi)
-    scales = _solve_flux_scales(n, _signal_means(overlap_means, sky_target))
+    _equalize_sky(canvases, [c > 0 for c in canvases], _UNSET_PEDESTAL)
+    # (No flux solve: gains are calibrated upstream by post_stack_calibrate —
+    # the overlap flux solve was deleted 2026-09-01.)
+    masks = [img > 0 for img in canvases]
     numer = np.zeros(masks[0].shape, np.float32)
     denom = np.zeros(masks[0].shape, np.float32)
     for i, img in enumerate(canvases):
         weight = edt.edt(masks[i].astype(np.uint8),
                          black_border=False, parallel=0).astype(np.float32)
-        scaled = (img * scales[i] if sky_target is None
-                  else np.where(img > 0,
-                                img * scales[i] + sky_target * (1 - scales[i]),
-                                img))
-        numer += weight * scaled
+        numer += weight * img
         denom += weight
     denom[denom == 0] = 1.0
     return numer / denom

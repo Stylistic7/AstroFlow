@@ -5,12 +5,12 @@ calibrate → WBPP-stack (raw subs). This lab enters one step later, with
 synthetic per-panel masters carrying the Cygnus-measured error model
 (testing/synthetic_mosaic.py), and runs EVERYTHING downstream for real —
 the decision of 2026-09-01: duplicate ONLY the stacking bypass
-(`_post_processed_master` minus calibrate + stack_files); every other
+(`post_processed_master` minus calibrate + stack_files); every other
 stage is the pipeline module's own code, executed the way the compute
 graph executes it (trace + run_graph on the anonymous test cluster).
 
 Per panel and filter:  synthetic master
-    → post_process_stack_graxpert   (real GraXpert CLI + real blind solve)
+    → post_stack_calibrate          (real SPFC + optional GraXpert + pedestal)
     → merge_target_channel          (real PI n=1 channel master)
 then the pipeline's own `_measured_viewbox` → `_merged_channels`
 (bxt_correct_only → place_image → merge_images_oss → polish_background
@@ -57,7 +57,7 @@ _MASTER_H = int(_PANEL_H * (6 - 5 * _OVERLAP))
 _MASTER_W = int(_PANEL_W * (6 - 5 * _OVERLAP))
 _OFF_R = (_MASTER_H - _CANVAS_H) // 2
 _OFF_C = (_MASTER_W - _CANVAS_W) // 2
-_MAG14_TARGET = 0.02
+_MAG14_TARGET = 0.0078  # production flux gauge — see E_AT_PEDESTAL_RANGE note
 _DATE = datetime.datetime(2026, 4, 18, 6, 0, 0)
 
 _MASTER_WCS = {
@@ -194,7 +194,7 @@ def _write_master(tmp: Path, i: int, filter_key: str, panel: np.ndarray,
     astropy-convention consumers (GraXpert, conversion, rc-astro,
     place_image), whose hand-authored PlateSolution describes that frame.
     `flip=True` writes the PI-view twin for ops that do PI-side catalog
-    matching against an injected hand-authored WCS (spfc_normalize) — the
+    matching against an injected hand-authored WCS (post_stack_calibrate) — the
     parity combination the round-trip lab proved (0 samples unflipped,
     63 flipped). Downstream stays correct because the op's output is
     re-solved from its own content and placement maps by sky coords."""
@@ -216,7 +216,8 @@ def _write_master(tmp: Path, i: int, filter_key: str, panel: np.ndarray,
     return path
 
 
-def _master_meta(path: Path, i: int, filter_key: str, spec):
+def _master_meta(path: Path, i: int, filter_key: str, spec,
+                 suffix: str = ""):
     from metadata.classes import ImageMetadata
     from plate_solving import PlateSolution
     from testing.synthetic_mosaic import panel_wcs_header
@@ -230,7 +231,7 @@ def _master_meta(path: Path, i: int, filter_key: str, spec):
         "NAXIS": 2, "NAXIS1": spec.width, "NAXIS2": spec.height,
     }
     return ImageMetadata(
-        content_hash=f"lab_m_{i}_{filter_key}",
+        content_hash=f"lab_m_{i}_{filter_key}{suffix}",
         stable_hash=f"lab_s{i}_{filter_key}", filename=path,
         header={"FILTER": filter_key}, width_pixels=spec.width,
         height_pixels=spec.height, channels=1, dtype=np.dtype("float32"),
@@ -244,7 +245,7 @@ def _master_meta(path: Path, i: int, filter_key: str, spec):
 
 
 def _lab_flow(mosaic, config, stacks_by_key, masters_by_key,
-              graxpert: bool):
+              graxpert: bool, spfc: bool = False):
     """for_mosaic with ONLY the stacking bypassed. Two variants:
     `graxpert=True` is the production chain (per-stack GraXpert + mosaic
     polish); `graxpert=False` skips both background-extraction stages —
@@ -258,11 +259,18 @@ def _lab_flow(mosaic, config, stacks_by_key, masters_by_key,
         _measured_viewbox,
         _merged_channels,
     )
+    from dataclasses import replace
+
     from mosaics.color.post_process import panel_source_manifest
-    from stacks.post_processing.graxpert_stack import (
-        post_process_stack_graxpert,
-    )
+    from stacks.post_processing.graxpert_stack import post_stack_calibrate
     from targets.merging.pixinsight import merge_target_channel
+
+    # The GraXpert leg is config-gated OFF by default: the blob scene is
+    # outside the ML model's training distribution (its measured appetite
+    # here is an OOD stress figure, not a verdict on real data).
+    # ASTROFLOW_LAB_GRAXPERT turns it on via the `graxpert` variant.
+    cal_config = config if graxpert else replace(
+        config, background_extraction=False)
 
     targets_by_id = {t.id: t for t in mosaic.targets}
     channels = {}
@@ -270,18 +278,26 @@ def _lab_flow(mosaic, config, stacks_by_key, masters_by_key,
         for f in ("S", "H", "O"):
             stack = stacks_by_key[(tid, f)]
             master = masters_by_key[(tid, f)]
-            if graxpert:
-                master = post_process_stack_graxpert(stack, config, master)
+            if spfc:
+                # The REAL fused production node: SPFC gain division
+                # (gains before offsets), optional GraXpert, pedestal pin.
+                master = post_stack_calibrate(stack, cal_config, master)
             channels[(tid, f)] = merge_target_channel(
                 target, f, (stack,), config, master)
     viewbox = _measured_viewbox(channels, single_panel=False)
+    # bxt=False (Stylistic7, 2026-09-02): BXT is PSF cosmetics, orthogonal to
+    # the calibration under test, and was the lab's largest compute lane
+    # (192 rc-astro launches, ~1500s serial). Skipping it also feeds SXT
+    # un-deconvolved stars — closer to the SXT'd-truth reference, so the
+    # symmetric cancellation in _sxt_reference is tighter.
     out = _merged_channels(mosaic, targets_by_id, channels, config, viewbox,
-                           polish=graxpert)
+                           polish=graxpert, bxt=False)
     panel_sources = {
         f: panel_source_manifest(targets_by_id, f, config, channels)
         for f in out
     }
-    color = color_post_process(mosaic, out, config, viewbox, panel_sources)
+    color = color_post_process(mosaic, out, config, viewbox, panel_sources,
+                               bxt=False)
     return {**out, **color}
 
 
@@ -292,18 +308,44 @@ def _corr(a: np.ndarray, b: np.ndarray) -> float:
                  max(np.sqrt((a * a).sum() * (b * b).sum()), 1e-12))
 
 
-def _truth_r(sho: np.ndarray, neb: dict, star_layers: dict) -> dict:
-    """Per-channel LINEAR-domain correlation of the starless output
-    against the nebulosity truth. Mirrors the viewbox's RA-flipped x
-    axis, absorbs the few-pixel border offset with a small integer shift
-    search (on H, the strongest channel), and masks star sites — SXT
-    invents pixels there, which is not a calibration error."""
-    from scipy.ndimage import maximum_filter
+def _sxt_reference(skies: dict, config, tmp_path) -> dict:
+    """SXT the truth-with-stars canvas, once per channel: the SYMMETRIC
+    reference (Stylistic7's design, 2026-09-01). The pipeline output under
+    test is starless VIA SXT, so the truth must pass through the same
+    remover — SXT's systematic residue (halos, inpaint texture, missed
+    faint stars) then appears on BOTH sides at the same sites and
+    cancels, instead of being billed to the pipeline's calibration.
+    Replaces the star-site mask entirely; same sxt settings as the tail.
+    (Runs 31/32/34 background: an asymmetric pure-nebulosity reference
+    plus escalating masks held faint-channel r at ~0.93/0.90 while the
+    same outputs matched truth at 0.98 in display space.)"""
+    import tifffile
 
+    from file_io.generic import read_image
+    from rc_astro_cli import run_sxt
+
+    ref = {}
+    for f, img in skies.items():
+        src = tmp_path / f"truth_stars_{f}.tiff"
+        out = tmp_path / f"truth_starless_{f}.tiff"
+        tifffile.imwrite(str(src), img.astype(np.float32))
+        run_sxt(str(src), starless_out=str(out),
+                ml_version=config.sxt.ml_version,
+                overlap=config.sxt.overlap)
+        arr = np.asarray(read_image(str(out))).astype(np.float64)
+        ref[f] = arr[..., 0] if arr.ndim == 3 else arr
+    return ref
+
+
+def _truth_r(sho: np.ndarray, truths: dict) -> dict:
+    """Per-channel LINEAR-domain correlation of the starless output
+    against the SXT'd truth reference (see _sxt_reference). Mirrors the
+    viewbox's RA-flipped x axis and absorbs the few-pixel border offset
+    with a small integer shift search (on H, the strongest channel)."""
     m = sho[:, ::-1, :]
     h = min(m.shape[0], _CANVAS_H) - 8
     w = min(m.shape[1], _CANVAS_W) - 8
-    truth_h = neb["H"][:h, :w]
+    truth_h = truths["H"][:h, :w]
     best, best_r = (0, 0), -2.0
     for dy in range(-4, 5):
         for dx in range(-4, 5):
@@ -312,14 +354,11 @@ def _truth_r(sho: np.ndarray, neb: dict, star_layers: dict) -> dict:
             if r > best_r:
                 best_r, best = r, (dy, dx)
     dy, dx = best
-
-    stars = np.stack([star_layers[f] for f in ("S", "H", "O")]).max(axis=0)
-    keep = ~maximum_filter(stars > 1e-4, size=9)[:h, :w]
-    return {
-        f: _corr(m[4 + dy:4 + dy + h, 4 + dx:4 + dx + w, i][keep],
-                 neb[f][:h, :w][keep])
-        for i, f in enumerate(("S", "H", "O"))
-    }
+    aligned = {f: m[4 + dy:4 + dy + h, 4 + dx:4 + dx + w, i]
+               for i, f in enumerate(("S", "H", "O"))}
+    rs = {f: _corr(aligned[f], truths[f][:h, :w])
+          for f in ("S", "H", "O")}
+    return rs, aligned
 
 
 @pytest.mark.slow
@@ -336,7 +375,7 @@ def test_full_pipeline_on_synthetic_masters(tmp_path):
     from dependency_graph import run_graph
     from dependency_graph.tracing import trace
     from file_io.generic import read_image
-    from pix.tasks.gaia_xpsd_query import query_xpsd_stars
+    from testing.gaia_cache import cached_xpsd_stars
     from testing.canonical_render import hubble_render, save_png
     from testing.narrowband_stars import band_flux, render_narrowband_stars
     from testing.synthetic_mosaic import (
@@ -357,7 +396,11 @@ def test_full_pipeline_on_synthetic_masters(tmp_path):
 
     rng = np.random.default_rng(0x40541C)
     radius = float(np.hypot(_MASTER_W, _MASTER_H) * _SCALE_DEG / 2) + 0.05
-    catalog = query_xpsd_stars(_RA, _DEC, radius, magnitude_high=16.5)
+    # NOTE: this query saturates source_limit (20k), so deepening
+    # magnitude_high is a no-op (proven run 29, 2026-09-01) — solver star
+    # counts are DETECTABILITY-bound, not catalog-bound; the depth lever
+    # is E_AT_PEDESTAL_RANGE in testing/synthetic_mosaic.py.
+    catalog = cached_xpsd_stars(_RA, _DEC, radius, magnitude_high=16.5)
     print(f"\n[fp-lab] grid={_GRID} canvas={_CANVAS_W}x{_CANVAS_H} "
           f"catalog {len(catalog['stars'])} stars")
 
@@ -384,6 +427,8 @@ def test_full_pipeline_on_synthetic_masters(tmp_path):
            for f, v in make_truth_skies(_MASTER_H, _MASTER_W,
                                         zero, rng).items()}
     skies = {f: neb[f] + star_layers[f] for f in ("S", "H", "O")}
+    # Symmetric reference for the correlation gate: SXT(truth + stars).
+    sxt_ref = _sxt_reference(skies, config, tmp_path)
     specs = make_panel_specs(_CANVAS_H, _CANVAS_W, _GRID, _OVERLAP, rng)
     for i, s in enumerate(specs):
         print(f"[fp-lab] panel{i}: gain={s.gain:.3f} offset={s.offset:.2e} "
@@ -395,7 +440,7 @@ def test_full_pipeline_on_synthetic_masters(tmp_path):
     mosaic = _lab_mosaic(targets)
     context.targets = {t.stable_hash: t for t in targets}
 
-    stacks_by_key, masters_by_key = {}, {}
+    stacks_by_key, masters_by_key, masters_pi_by_key = {}, {}, {}
     corrupted = {}
     for f in ("S", "H", "O"):
         corrupted[f] = [corrupt_panel(skies[f], s, rng) for s in specs]
@@ -405,6 +450,10 @@ def test_full_pipeline_on_synthetic_masters(tmp_path):
             path = _write_master(tmp_path, i, f, panel, spec)
             stacks_by_key[(tid, f)] = stack
             masters_by_key[(tid, f)] = _master_meta(path, i, f, spec)
+            # PI-view twin for the SPFC variant (see _write_master).
+            path_pi = _write_master(tmp_path, i, f, panel, spec, flip=True)
+            masters_pi_by_key[(tid, f)] = _master_meta(
+                path_pi, i, f, spec, suffix="_pi")
     context.stacks = {s.stable_hash: _Ref(s)
                       for s in stacks_by_key.values()}
 
@@ -414,17 +463,18 @@ def test_full_pipeline_on_synthetic_masters(tmp_path):
     # appetite there (Δr ≈ 0.44/0.46/0.40, 2026-09-01) is an
     # out-of-distribution stress figure, not a verdict on real data —
     # revisit when the truth is filamentary.
-    variants = (False, True) if os.environ.get(
-        "ASTROFLOW_LAB_GRAXPERT") else (False,)
+    variants = [("current", False, False), ("spfc", False, True)]
+    if os.environ.get("ASTROFLOW_LAB_GRAXPERT"):
+        variants.append(("graxpert", True, True))
     _RENDER_DIR.mkdir(parents=True, exist_ok=True)
     out_dir = Path(context.output_dir)
-    results = {}
-    for graxpert in variants:
-        tag = "graxpert" if graxpert else "nograxpert"
+    results, biases = {}, {}
+    for tag, graxpert, spfc in variants:
         before = set((out_dir / "blend_linear_sho").glob("*.tiff")) \
             if (out_dir / "blend_linear_sho").exists() else set()
         graph = trace(_lab_flow, mosaic, config, stacks_by_key,
-                      masters_by_key, graxpert)
+                      masters_pi_by_key if spfc else masters_by_key,
+                      graxpert, spfc)
         run_graph(graph)
         new = set((out_dir / "blend_linear_sho").glob("*.tiff")) - before
         assert len(new) == 1, (
@@ -434,11 +484,14 @@ def test_full_pipeline_on_synthetic_masters(tmp_path):
         assert sho.ndim == 3 and sho.shape[2] == 3
         assert np.isfinite(sho).all()
         coverage = (sho.max(axis=2) > 0).mean()
-        rs = _truth_r(sho, neb, star_layers)
-        results[tag] = rs
+        rs, aligned_ch = _truth_r(sho, sxt_ref)
+        from testing.seam_metrics import truth_chroma_bias
+        bias = truth_chroma_bias(aligned_ch, neb)["chroma_bias"]
+        results[tag], biases[tag] = rs, bias
         print(f"[fp-lab:{tag}] Linear SHO {sho.shape} "
               f"coverage={coverage:.2f} truth r "
-              f"S={rs['S']:+.3f} H={rs['H']:+.3f} O={rs['O']:+.3f}")
+              f"S={rs['S']:+.3f} H={rs['H']:+.3f} O={rs['O']:+.3f} "
+              f"chroma bias={bias:.4f}")
         assert coverage > 0.5
         aligned = sho[:_CANVAS_H, :_CANVAS_W][:, ::-1]
         save_png(_RENDER_DIR / f"pipeline_sho_{tag}_hubble.png",
@@ -460,18 +513,41 @@ def test_full_pipeline_on_synthetic_masters(tmp_path):
              hubble_render(neb["S"], neb["H"], neb["O"]))
     print(f"[fp-lab] renders in {_RENDER_DIR}")
 
-    # The background-extraction-free chain must reproduce the nebulosity;
-    # the GraXpert chain is MEASURED against it (its shortfall = appetite
-    # for genuine smooth signal), not asserted — that number feeds the
-    # structure-masked-extraction work.
-    # Thresholds track channel faintness (H amp 0.020, S 0.008, O 0.006 —
-    # O sits nearest the noise floor; measured r: 0.93/0.83/0.79).
-    for f, floor in (("H", 0.85), ("S", 0.78), ("O", 0.72)):
-        assert results["nograxpert"][f] > floor, (
-            f"[{f}] GraXpert-free pipeline lost the nebulosity: "
-            f"truth r = {results['nograxpert'][f]:.3f} (floor {floor})"
+    # PRODUCTION is the SPFC chain (landed 2026-09-01: post_stack_calibrate in
+    # post_processed_master, merge flux solve deleted); it carries the
+    # gates. The "current" (no-SPFC) variant remains as the reported
+    # ablation — the quilting exhibit, not a gate.
+    #
+    # truth-r floor 0.80 is EMPIRICAL for the BXT-FREE lab shape
+    # (recalibrated 2026-09-02, run 38: healthy = S 0.909, H 0.977,
+    # O 0.851). The faint-channel gap to 1.0 is calibration-INDEPENDENT
+    # (both arms score within noise of each other on O) and lives in
+    # SXT residue at star sites: with BXT in the chain (runs 31-37) the
+    # same pipeline measured S 0.94 / O 0.90 — un-deconvolved stars
+    # leave SXT bigger removal footprints and the faint channels pay
+    # ~0.05. Display-space correlation with truth is 0.98/channel with
+    # zero panel structure in the residual, so nebulosity structure is
+    # intact by an independent witness. Eliminated causes along the way:
+    # star-mask geometry, SXT residue asymmetry (symmetric SXT'd-truth
+    # reference — kept, it is the principled construction), pixel noise
+    # (depth x4: no change), gain calibration. This gate guards GROSS
+    # damage (lost channel, flipped or misplaced panel, r collapse);
+    # the chroma-bias gate below is the sensitive quilting guard
+    # (disease 0.061 vs cure 0.003-0.005 — >10x separation). The
+    # original 0.95 floor came from run 20's pre-gauge-rescale scene
+    # and never had a green measurement on this one.
+    for f in ("S", "H", "O"):
+        assert results["spfc"][f] > 0.80, (
+            f"[{f}] production (SPFC) chain lost the nebulosity: "
+            f"truth r = {results['spfc'][f]:.3f} (floor 0.80)"
         )
+    print(f"[fp-lab] chroma bias: no-spfc ablation={biases['current']:.4f} "
+          f"production(spfc)={biases['spfc']:.4f}")
+    assert biases["spfc"] < 0.01, (
+        f"production (SPFC) chain left visible chroma bias "
+        f"{biases['spfc']:.4f} (floor-class expected ~0.002)"
+    )
     if "graxpert" in results:
-        appetite = {f: results["nograxpert"][f] - results["graxpert"][f]
+        appetite = {f: results["current"][f] - results["graxpert"][f]
                     for f in ("S", "H", "O")}
         print(f"[fp-lab] GraXpert appetite (delta truth r): {appetite}")

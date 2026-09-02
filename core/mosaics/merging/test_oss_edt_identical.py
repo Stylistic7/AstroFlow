@@ -36,8 +36,8 @@ class _ScipyEDT:
 
 def _write_synth_panels(d: Path) -> list[Path]:
     """Three overlapping gradient panels on a 100x140 canvas, leaving a
-    zero gap (no-coverage region). Gradients make the pairwise overlap
-    means differ so the flux solve is exercised."""
+    zero gap (no-coverage region). Gradients give the blend non-trivial
+    content across every overlap."""
     h, w = 100, 140
     yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
     grad = 1.0 + 0.15 * (xx / w) + 0.1 * (yy / h)  # smooth, all > 0

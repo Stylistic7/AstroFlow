@@ -47,7 +47,7 @@ _GRID = (4, 4)
 _OVERLAP = 0.25
 _CANVAS_H = int(_PANEL_H * (_GRID[0] - (_GRID[0] - 1) * _OVERLAP))
 _CANVAS_W = int(_PANEL_W * (_GRID[1] - (_GRID[1] - 1) * _OVERLAP))
-_MAG14_TARGET = 0.02                  # linear units, total flux of a G=14 star
+_MAG14_TARGET = 0.0078  # production flux gauge — see E_AT_PEDESTAL_RANGE note                  # linear units, total flux of a G=14 star
 
 # FITS-standard sky parity (CD1_1 < 0: RA grows leftward, det < 0) — the
 # representation every real frame has. PI's legacy WCS path MIRRORS the

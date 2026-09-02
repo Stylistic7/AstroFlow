@@ -69,7 +69,7 @@ def _stack_subframe(s):
     return subframe_channel(s)
 
 
-def _channels_for_target(target):
+def channels_for_target(target):
     """First stack's best frame per filter — same representative
     choice the legacy SUBFRAME path made."""
     return {
@@ -90,7 +90,7 @@ def for_stack(stack, config):
 def for_target(target, config):
     """Per-filter representative subframes for one target."""
     del config
-    return _channels_for_target(target)
+    return channels_for_target(target)
 
 
 @pipeline("Subframe", processes=Mosaic, listed=False)
@@ -102,7 +102,7 @@ def for_mosaic(mosaic, config):
     channels = {
         (target.id, filter): sink
         for target in mosaic.targets
-        for filter, sink in _channels_for_target(target).items()
+        for filter, sink in channels_for_target(target).items()
     }
 
     # ONE measured canvas for the whole object, shared across filters (see

@@ -37,7 +37,7 @@ _NAME = "Hybrid: OSS Stack + OSS Mosaic"
 
 
 @workflow_group
-def _post_processed_master(stack, config):
+def post_processed_master(stack, config):
     """Calibrate → OSS-stack → PI post-process.
 
     The OSS stacker reads its cal masters from disk, so calibration is
@@ -62,12 +62,12 @@ def _post_processed_master(stack, config):
 
 
 @workflow_group
-def _channels_for_target(target, config):
+def channels_for_target(target, config):
     """Per-filter HDR-combined channel masters. Same as PI Master."""
     channels = {}
     for filter in target.filters:
         stacks = target.stacks_for(filter)
-        masters = [_post_processed_master(s, config) for s in stacks]
+        masters = [post_processed_master(s, config) for s in stacks]
         channels[filter] = merge_target_channel(
             target, filter, stacks, config, *masters,
         )
@@ -77,13 +77,13 @@ def _channels_for_target(target, config):
 @pipeline(_NAME, processes=Stack)
 def for_stack(stack, config):
     """One stack's post-processed master — OSS-stacked."""
-    return _post_processed_master(stack, config)
+    return post_processed_master(stack, config)
 
 
 @pipeline(_NAME, processes=Target)
 def for_target(target, config):
     """Per-filter channel masters — OSS-stacked panels."""
-    return _channels_for_target(target, config)
+    return channels_for_target(target, config)
 
 
 @pipeline(_NAME, processes=Mosaic)
@@ -101,7 +101,7 @@ def for_mosaic(mosaic, config):
 
     channels = {}
     for target in mosaic.targets:
-        for filter, sink in _channels_for_target(target, config).items():
+        for filter, sink in channels_for_target(target, config).items():
             channels[(target.id, filter)] = sink
 
     # ONE measured canvas for the whole object, shared by every filter's

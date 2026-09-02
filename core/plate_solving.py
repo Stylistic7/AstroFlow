@@ -239,6 +239,50 @@ def _header_hints(header: Mapping[str, Any]) -> list[str]:
 
 
 @beartype
+def _solve_flattened(
+    filename: Path, args: list[str], debug: bool
+) -> PlateSolution | None:
+    """Solve a background-subtracted twin of `filename` (see rung 3 note
+    at the call site). Background = block-downsampled median (x4, size 9
+    ~ a 36 px kernel at full scale), bilinearly upsampled — O(n) even on
+    gigapixel blends, star-resistant where a plain Gaussian is not. The
+    twin is a temp FITS; ONLY the solve runs against it, so no sidecar or
+    cache state ever attaches to the temp path."""
+    import tempfile
+
+    import numpy as np
+    from scipy.ndimage import median_filter, zoom
+
+    try:
+        import astropy.io.fits as fits
+
+        from file_io.generic import read_image
+
+        img = np.asarray(read_image(filename)).astype(np.float32)
+        if img.ndim == 3:  # solve on luminance for color inputs
+            img = img.mean(axis=2)
+        bg_small = median_filter(img[::4, ::4], size=9)
+        bg = zoom(bg_small, 4, order=1)[: img.shape[0], : img.shape[1]]
+        if bg.shape != img.shape:  # dims not divisible by 4 — pad by edge
+            pad = np.pad(bg, ((0, img.shape[0] - bg.shape[0]),
+                              (0, img.shape[1] - bg.shape[1])), mode="edge")
+            bg = pad
+        flat = (img - bg + 0.01).astype(np.float32)
+        with tempfile.TemporaryDirectory(prefix="solve_flat_") as td:
+            twin = Path(td) / "flattened.fits"
+            fits.PrimaryHDU(flat).writeto(twin)
+            for downsample in ("2", "4"):
+                result = _solve_field(
+                    twin, args + ["--downsample", downsample], debug
+                )
+                if result is not None:
+                    return result
+    except Exception as e:
+        # A broken flatten must never mask the ladder's real verdict.
+        print(f"### flatten rung failed for {filename}: {e}")
+    return None
+
+
 def solve_field(
     filename: Path | str,
     debug: bool = False,
@@ -334,6 +378,20 @@ def solve_field(
                     print(f"### plate-solve rescued by --downsample "
                           f"{downsample}: {filename}")
                 break
+
+    if result is None:
+        # Rung 3 — background-FLATTENED twin, for fields whose dynamic
+        # range is dominated by smooth bright nebulosity (lab panel 15 Hα,
+        # 2026-09-01: unsolvable through every rung above, yet the same
+        # pixels minus a 33 px median background solved instantly with 267
+        # stars). Downsampling (rung 2) removes small knots but cannot
+        # remove LARGE-scale structure, which skews the extractor's
+        # thresholding until no coherent star set survives. The twin
+        # shares the original's pixel grid, so its WCS transfers verbatim.
+        result = _solve_flattened(filename, base + blind_scale, debug)
+        if result is not None:
+            print(f"### plate-solve rescued by background flatten: "
+                  f"{filename}")
 
     if result is None:
         print(f"Could not plate-solve file {filename} (all retry rungs)")

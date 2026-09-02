@@ -128,7 +128,7 @@ def test_pi_master_orion_op_counts(test_context):
 def _format_scope(scope: tuple) -> str:
     """Render one scope as `name#abcd/name#efgh`. The short hash
     suffix on each segment disambiguates instances of the same
-    lexical group (e.g. `_channels_for_target` is called once per
+    lexical group (e.g. `channels_for_target` is called once per
     target — without the suffix all four instances would render
     identically)."""
     if not scope:
@@ -217,15 +217,15 @@ def test_pi_master_orion_traced_group_structure(test_context):
 
     1. The 3 cal-master `stack_files` Nodes end up with
        `_group_path = ()` (top-level / no canonical home — they
-       were re-recorded inside multiple `_post_processed_master`
+       were re-recorded inside multiple `post_processed_master`
        calls). The render-time
        `duplicate_shared_into_consumer_scopes` transform decides
        where to actually display them.
     2. Each of the 4 light-master `stack_files` has scope
-       `(_channels_for_target, _post_processed_master)` — recorded
+       `(channels_for_target, post_processed_master)` — recorded
        once, never re-recorded.
-    3. One `_channels_for_target` instance per target (4 total),
-       with `merge_target_channel` at `(_channels_for_target,)`."""
+    3. One `channels_for_target` instance per target (4 total),
+       with `merge_target_channel` at `(channels_for_target,)`."""
     mosaic = _identify(test_context)
     config = _make_config()
 
@@ -259,19 +259,19 @@ def test_pi_master_orion_traced_group_structure(test_context):
     for n in light_stack_files:
         path = _path_of(n)
         assert len(path) == 2, path
-        assert path[0][0] == "_channels_for_target"
-        assert path[1][0] == "_post_processed_master"
+        assert path[0][0] == "channels_for_target"
+        assert path[1][0] == "post_processed_master"
         ppm_ids.add(path[1][1])
     assert len(ppm_ids) == 4, ppm_ids
 
-    # 3. One `_channels_for_target` instance per target, one
+    # 3. One `channels_for_target` instance per target, one
     #    merge_target_channel per instance.
     mtc = nodes_by_op["merge_target_channel"]
     assert len(mtc) == 4, mtc
     cft_ids = set()
     for n in mtc:
         path = _path_of(n)
-        assert len(path) == 1 and path[0][0] == "_channels_for_target", path
+        assert len(path) == 1 and path[0][0] == "channels_for_target", path
         cft_ids.add(path[0][1])
     assert len(cft_ids) == 4, cft_ids
 
@@ -279,7 +279,7 @@ def test_pi_master_orion_traced_group_structure(test_context):
 @pytest.mark.exhaustive
 def test_pi_master_orion_sanitized_duplicates_cal_masters(test_context):
     """After `sanitize_for_display`, the VisualGraph has cal-master
-    `stack_files` duplicated into each `_post_processed_master`
+    `stack_files` duplicated into each `post_processed_master`
     scope — that's the visual-duplication the user wants in the
     DAG viewer. Each canonical cal-master Node maps to 4
     VisualNodes (one per Orion target's stack)."""
@@ -304,13 +304,13 @@ def test_pi_master_orion_sanitized_duplicates_cal_masters(test_context):
         scopes = {c.scope for c in copies}
         assert len(scopes) == 4, (
             f"cal-master {canonical.task._function.__name__} should be "
-            f"duplicated into 4 _post_processed_master scopes; got "
+            f"duplicated into 4 post_processed_master scopes; got "
             f"{len(scopes)}: {scopes}"
         )
         for s in scopes:
             assert len(s) == 2
-            assert s[0][0] == "_channels_for_target"
-            assert s[1][0] == "_post_processed_master"
+            assert s[0][0] == "channels_for_target"
+            assert s[1][0] == "post_processed_master"
 
 
 # ---------------------------------------------------------------------------
@@ -604,9 +604,9 @@ def test_pi_master_filter_sliced_snapshot_shows_succeeded(test_context):
 @pytest.mark.exhaustive
 def test_pi_master_cal_masters_visually_duplicated_per_stack(test_context):
     """The viewer renders each cal-master `stack_files` Node ONCE
-    per consuming `_post_processed_master` scope — visual
+    per consuming `post_processed_master` scope — visual
     duplication eliminates the criss-cross fan-out from a single
-    top-level cal-master to all four `_channels_for_target`
+    top-level cal-master to all four `channels_for_target`
     groups. Underlying execution is unchanged; one Node, multiple
     rendered entries."""
     mosaic = _identify(test_context)

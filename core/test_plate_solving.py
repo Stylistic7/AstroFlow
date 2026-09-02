@@ -61,7 +61,11 @@ def test_all_rungs_fail_writes_tombstone_once(frame, monkeypatch):
         lambda filename, arguments, debug:
             attempts.append(_downsample_of(arguments)))
     assert plate_solving.solve_field(frame) is None
-    assert attempts == ["2", "4"]
+    # Full ladder: blind ds2/ds4 on the original, then ds2/ds4 on the
+    # background-FLATTENED twin (rung 3, 2026-09-01 — smooth bright
+    # nebulosity defeats the extractor; see _solve_flattened). The
+    # tombstone is still written exactly once, after the whole ladder.
+    assert attempts == ["2", "4", "2", "4"]
     ps = get_section(frame, "plate_solution")
     assert isinstance(ps, dict) and ps.get("data") is None, "tombstone expected"
 

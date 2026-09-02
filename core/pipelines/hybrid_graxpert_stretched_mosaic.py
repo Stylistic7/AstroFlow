@@ -39,7 +39,7 @@ from mosaics.viewbox_measured import compute_viewbox_measured
 from mosaics.types import Mosaic
 from stacks.calibration_selection import calibrate
 from stacks.composite_stack import Stack
-from stacks.post_processing.graxpert_stack import post_process_stack_graxpert
+from stacks.post_processing.graxpert_stack import post_stack_calibrate
 from stacks.stacking.pixinsight import stack_files
 from targets.merging.pixinsight import merge_target_channel
 from targets.types import Target
@@ -48,21 +48,21 @@ PIPELINE = "Hybrid: GraXpert + Stretched Mosaic"
 
 
 @workflow_group
-def _post_processed_master(stack, config):
+def post_processed_master(stack, config):
     """Calibrate → WBPP-stack → GraXpert. The ONE divergence from
     `hybrid_pi_oss_mosaic`, which calls `post_process_stack` here."""
     cal_masters = calibrate(stack, config)
     master = stack_files(stack, config, *cal_masters)
-    return post_process_stack_graxpert(stack, config, master)
+    return post_stack_calibrate(stack, config, master)
 
 
 @workflow_group
-def _channels_for_target(target, config):
+def channels_for_target(target, config):
     """Per-filter HDR-combined channel masters."""
     channels = {}
     for filter in target.filters:
         stacks = target.stacks_for(filter)
-        masters = [_post_processed_master(s, config) for s in stacks]
+        masters = [post_processed_master(s, config) for s in stacks]
         channels[filter] = merge_target_channel(
             target, filter, stacks, config, *masters,
         )
@@ -72,7 +72,7 @@ def _channels_for_target(target, config):
 @pipeline(PIPELINE, processes=Stack)
 def for_stack(stack, config):
     """One stack's GraXpert-corrected master."""
-    return _post_processed_master(stack, config)
+    return post_processed_master(stack, config)
 
 
 @pipeline(PIPELINE, processes=Target)
@@ -81,7 +81,7 @@ def for_target(target, config):
     single-panel mosaic, so it runs the same machinery `for_mosaic` does."""
     channels = {
         (target.id, filter): sink
-        for filter, sink in _channels_for_target(target, config).items()
+        for filter, sink in channels_for_target(target, config).items()
     }
     viewbox = _measured_viewbox(channels, single_panel=True)
     merged = _merged_channels(target, {target.id: target}, channels,
@@ -103,7 +103,7 @@ def for_mosaic(mosaic, config):
     targets_by_id = {t.id: t for t in mosaic.targets}
     channels = {}
     for target in mosaic.targets:
-        for filter, sink in _channels_for_target(target, config).items():
+        for filter, sink in channels_for_target(target, config).items():
             channels[(target.id, filter)] = sink
     viewbox = _measured_viewbox(channels,
                                 single_panel=len(targets_by_id) == 1)
