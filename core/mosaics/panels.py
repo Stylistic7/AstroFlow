@@ -157,9 +157,39 @@ def _rects_overlap(a: tuple, b: tuple) -> bool:
     return not (ax1 < bx0 or bx1 < ax0 or ay1 < by0 or by1 < ay0)
 
 
+# Crop dimensions sent to the rc-astro tools are quantized UP to
+# multiples of this (the "size ladder", Stylistic7 2026-09-02). Apple's ANE
+# runtime compiles and caches a model bundle PER INPUT SHAPE and never
+# prunes: arbitrary footprint-derived crop sizes minted 37k bundles /
+# 395 GB in ~/Library/Caches/rc-astro (found 2026-09-01). Rounding each
+# axis to a 512 rung bounds the shape set to a handful per mosaic, at a
+# worst-case cost of 511 extra px per axis (~5-10% area) — which the
+# feather design already treats as free (crops overlap by construction;
+# the taper eats the excess). 512 also matches the tools' internal tile
+# scale, so edge-remainder shapes inside the tools collapse too.
+RC_ASTRO_SIZE_QUANTUM = 512
+
+
+def _grow_to_rung(lo: int, hi: int) -> "tuple[int, int]":
+    """Grow [lo, hi) symmetrically to the next ladder rung — UNCLAMPED.
+    Rects may overhang the canvas (negative origin included): the crop
+    reader zero-fills the overhang and the feather blend clips it, and
+    the rc-astro tools are local sliding-window operators that already
+    digest exact-zero regions in every rim panel (place_image fills
+    uncovered canvas with 0.0). Not clamping keeps the shape set PURE
+    rungs — no canvas-dependent stragglers (Stylistic7, 2026-09-02).
+    (GraXpert is the one tool zeros poison — 14x over-subtraction — and
+    it never sees these crops; it runs upstream in post_stack_calibrate.)"""
+    span = hi - lo
+    target = int(np.ceil(span / RC_ASTRO_SIZE_QUANTUM)) * RC_ASTRO_SIZE_QUANTUM
+    lo -= (target - span) // 2
+    return lo, lo + target
+
+
 def panel_rect(panel, viewbox, pad: int) -> "tuple | None":
     """One panel's padded crop rect `(x0, y0, w, h)` in `viewbox` pixel space,
     clamped to the canvas — or None when the panel doesn't project finitely.
+    Both dimensions land on the RC_ASTRO_SIZE_QUANTUM ladder (see above).
 
     Computed at RUNTIME from whichever viewbox the op actually received, so
     the rect always lives on the same canvas as the merged image it crops —
@@ -181,6 +211,8 @@ def panel_rect(panel, viewbox, pad: int) -> "tuple | None":
     y1 = min(H, int(np.ceil(maxy)) + pad)
     if x1 <= x0 or y1 <= y0:
         return None
+    x0, x1 = _grow_to_rung(x0, x1)
+    y0, y1 = _grow_to_rung(y0, y1)
     return (x0, y0, x1 - x0, y1 - y0)
 
 
@@ -305,7 +337,8 @@ def blend_panels(mosaic: Mosaic, config: ProcessingConfig, viewbox: Viewbox,
     feather_blend_to_bigtiff(
         [tuple(r) for r in rects], [t.filename for t in tiles], out,
         taper_px=config.tiling.overlap_px, blend=config.tiling.blend,
-        metadata={"PIPELINE": "AstroFlow-OSS"})
+        metadata={"PIPELINE": "AstroFlow-OSS"},
+        canvas=(viewbox.num_pixels_x, viewbox.num_pixels_y))
     return WithSidecar(TiffFilePath(out))
 
 

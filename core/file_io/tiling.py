@@ -59,7 +59,18 @@ def crop_source_region(source_path: Path | str, rect: TileRect) -> np.ndarray:
     """
     x0, y0, w, h = rect
     img = pyvips.Image.new_from_file(str(source_path), unlimited=True)
-    return img.crop(x0, y0, w, h).numpy()
+    # Ladder rects (mosaics/panels.RC_ASTRO_SIZE_QUANTUM) may overhang the
+    # canvas on any side; the overhang reads as zeros — the same exact-0.0
+    # content every rim panel already carries (place_image fill_value=0).
+    ix0, iy0 = max(x0, 0), max(y0, 0)
+    ix1, iy1 = min(x0 + w, img.width), min(y0 + h, img.height)
+    if ix0 >= ix1 or iy0 >= iy1:
+        raise ValueError(f"rect {rect} lies entirely outside "
+                         f"{img.width}x{img.height} source {source_path}")
+    part = img.crop(ix0, iy0, ix1 - ix0, iy1 - iy0)
+    if (ix0, iy0, ix1, iy1) != (x0, y0, x0 + w, y0 + h):
+        part = part.embed(ix0 - x0, iy0 - y0, w, h, extend="black")
+    return part.numpy()
 
 
 def _cosine_ramp_1d(n: int, taper: int, flat_lo: bool, flat_hi: bool) -> np.ndarray:
@@ -89,6 +100,7 @@ def feather_blend_to_bigtiff(
     blend: str = "hann",
     metadata: dict | None = None,
     tile: tuple[int, int] | None = None,
+    canvas: "tuple[int, int] | None" = None,
 ) -> None:
     """Reassemble `tile_paths` (placed at `rects`) into one BigTIFF at `dest`,
     feathered so tile seams are invisible — fully streaming.
@@ -115,17 +127,26 @@ def feather_blend_to_bigtiff(
     if not rects:
         raise ValueError("no tiles to blend")
 
-    canvas_w = max(x + w for (x, y, w, h) in rects)
-    canvas_h = max(y + h for (x, y, w, h) in rects)
+    # `canvas` is the TRUE output size; without it, the union of the rects
+    # stands in (the pre-ladder behavior). Ladder rects (see
+    # mosaics/panels.RC_ASTRO_SIZE_QUANTUM) may overhang the canvas on any
+    # side — each tile's overhang (zero-filled at crop time, zero-weight
+    # sky at worst) is clipped away here, so the output never grows past
+    # the real mosaic.
+    if canvas is not None:
+        canvas_w, canvas_h = canvas
+    else:
+        canvas_w = max(x + w for (x, y, w, h) in rects)
+        canvas_h = max(y + h for (x, y, w, h) in rects)
 
     keepalive: list[np.ndarray] = []   # 1-D window buffers referenced by pyvips
     numer_terms: list[pyvips.Image] = []
     denom_terms: list[pyvips.Image] = []
     for (x0, y0, w, h), path in zip(rects, tile_paths):
         wx = _cosine_ramp_1d(w, max(1, min(taper_px, w)),
-                             flat_lo=(x0 == 0), flat_hi=(x0 + w >= canvas_w))
+                             flat_lo=(x0 <= 0), flat_hi=(x0 + w >= canvas_w))
         wy = _cosine_ramp_1d(h, max(1, min(taper_px, h)),
-                             flat_lo=(y0 == 0), flat_hi=(y0 + h >= canvas_h))
+                             flat_lo=(y0 <= 0), flat_hi=(y0 + h >= canvas_h))
         keepalive.extend((wx, wy))
         # Separable window as a lazy w×h image: row (w×1) tiled down, col (1×h)
         # tiled across, multiplied. The 1-D buffers are tiny (~KB) so holding
@@ -134,8 +155,19 @@ def feather_blend_to_bigtiff(
         col = pyvips.Image.new_from_memory(wy.data, 1, h, 1, "float").replicate(w, 1)
         weight = row * col
         tile_img = pyvips.Image.new_from_file(str(path), unlimited=True)
-        numer_terms.append((tile_img * weight).embed(x0, y0, canvas_w, canvas_h, extend="black"))
-        denom_terms.append(weight.embed(x0, y0, canvas_w, canvas_h, extend="black"))
+        # Clip the tile to the canvas before placing (embed cannot place at
+        # negative offsets, and right/bottom overhang must not grow the
+        # canvas). In-bounds rects reduce to the identity crop.
+        cx0, cy0 = max(x0, 0), max(y0, 0)
+        cx1, cy1 = min(x0 + w, canvas_w), min(y0 + h, canvas_h)
+        if cx0 >= cx1 or cy0 >= cy1:
+            continue  # tile entirely off-canvas — contributes nothing
+        cw, ch = cx1 - cx0, cy1 - cy0
+        if (cw, ch) != (w, h):
+            tile_img = tile_img.crop(cx0 - x0, cy0 - y0, cw, ch)
+            weight = weight.crop(cx0 - x0, cy0 - y0, cw, ch)
+        numer_terms.append((tile_img * weight).embed(cx0, cy0, canvas_w, canvas_h, extend="black"))
+        denom_terms.append(weight.embed(cx0, cy0, canvas_w, canvas_h, extend="black"))
 
     numer = reduce(operator.add, numer_terms)
     denom = reduce(operator.add, denom_terms)

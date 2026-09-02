@@ -15,6 +15,7 @@ round-trip lab — never convert them.
 from __future__ import annotations
 
 import json
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -89,27 +90,31 @@ def query_xpsd_stars(
     from pix.image import Image
     from pix.recipe import Step
 
+    # Cleaned in the finally below; a query killed mid-write strands the
+    # dir (155 MB of stars.json), which the janitor's gaia_xpsd spec reaps.
     tmp = Path(tempfile.mkdtemp(prefix="gaia_xpsd_"))
     anchor = tmp / "anchor.fits"
     fits.PrimaryHDU(data=np.zeros((16, 16), np.float32)).writeto(anchor)
     out_json = tmp / "stars.json"
 
-    img = Image.open(anchor)
-    img.recipe.add_step(Step(
-        name="gaia xpsd search",
-        javascript=_SEARCH_JS.format(
-            center_ra=float(center_ra_deg),
-            center_dec=float(center_dec_deg),
-            radius=float(radius_deg),
-            magnitude_low=float(magnitude_low),
-            magnitude_high=float(magnitude_high),
-            source_limit=int(source_limit),
-            output_path=out_json,
-        ),
-    ))
-    img.save_to(tmp / "anchor_out.xisf")
-
-    raw = json.loads(out_json.read_text())
+    try:
+        img = Image.open(anchor)
+        img.recipe.add_step(Step(
+            name="gaia xpsd search",
+            javascript=_SEARCH_JS.format(
+                center_ra=float(center_ra_deg),
+                center_dec=float(center_dec_deg),
+                radius=float(radius_deg),
+                magnitude_low=float(magnitude_low),
+                magnitude_high=float(magnitude_high),
+                source_limit=int(source_limit),
+                output_path=out_json,
+            ),
+        ))
+        img.save_to(tmp / "anchor_out.xisf")
+        raw = json.loads(out_json.read_text())
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
     if not raw["stars"]:
         raise RuntimeError(
             f"Gaia DR3/SP search returned no stars at "

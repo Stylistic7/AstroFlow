@@ -246,6 +246,17 @@ SPECS: tuple[DebrisSpec, ...] = (
         pattern="rcastro_*",
         min_age_s=6 * 3600,
     ),
+    # Gaia XPSD query scratch (155 MB of stars.json each). The query
+    # cleans up after itself (try/finally, 2026-09-02); this spec reaps
+    # dirs stranded by a query killed mid-write — observed live
+    # 2026-09-01: a died query left a 106 MB partial that survived until
+    # the next reboot. Long grace: a live query writes for ~10 minutes.
+    DebrisSpec(
+        name="gaia_xpsd_scratch",
+        dirs=_temp_dirs,
+        pattern="gaia_xpsd_*",
+        min_age_s=3600,
+    ),
 )
 
 
