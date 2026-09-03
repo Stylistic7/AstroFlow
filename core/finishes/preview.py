@@ -70,11 +70,19 @@ def _stf_values(arr: "np.ndarray", suffixes: "tuple[str, ...] | None",
     lum_f = lum[np.isfinite(lum) & (lum > 0)]
     sky_cut = float(np.percentile(lum_f, 60)) if lum_f.size > 100 else np.inf
     sky_mask = np.isfinite(lum) & (lum > 0) & (lum < sky_cut)
+    def _split(c):
+        """(finite values, sky values) for a mono (H,W) or pooled (H,W,3)
+        channel — the pooled case masks per-PIXEL then flattens bands."""
+        if c.ndim == 3:
+            fin = np.isfinite(c).all(axis=-1)
+            return c[fin].ravel(), c[sky_mask & fin].ravel()
+        fin = np.isfinite(c)
+        return c[fin], c[sky_mask & fin]
+
     out: dict = {}
     per = []
     for c in chans:
-        finite = c[np.isfinite(c)]
-        sky = c[sky_mask & np.isfinite(c)]
+        finite, sky = _split(c)
         if sky.size < 100:
             sky = finite
         med = float(np.median(sky)) if sky.size else 0.0
@@ -91,11 +99,12 @@ def _stf_values(arr: "np.ndarray", suffixes: "tuple[str, ...] | None",
     else:
         bp, wp, mid = per[0]
         out["blackpoint"], out["whitepoint"], out["midtones"] = bp, wp, mid
-    sky_min = min(float(np.median(c[sky_mask & np.isfinite(c)]))
-                  if (sky_mask & np.isfinite(c)).sum() >= 100
-                  else float(np.median(c[np.isfinite(c)])) if np.isfinite(c).any()
-                  else 0.0
-                  for c in chans)
+    def _sky_med(c):
+        finite, sky = _split(c)
+        v = sky if sky.size >= 100 else finite
+        return float(np.median(v)) if v.size else 0.0
+
+    sky_min = min(_sky_med(c) for c in chans)
     if sky_min > 0:
         out["trim_floor"] = 0.6 * sky_min
     return out
