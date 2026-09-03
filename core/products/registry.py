@@ -295,7 +295,7 @@ def _inherited_solver_hints(header, args) -> dict:
     written by external tools that drop them.
 
     rc-astro's BXT writes a TIFF with no RA/DEC/FOCALLEN/XPIXSZ, so
-    `bxt_correct_only` outputs faced the solver completely blind — and on a
+    `bxt_channel` outputs faced the solver completely blind — and on a
     field the blind ladder cannot crack (vdB15, 2026-08-22) that is a hard
     failure after two 600 s CPU rungs, repeated every drain. The panel is at
     the same place on the sky as its input, so the input's cards are exactly
@@ -479,7 +479,7 @@ def _pyramid_is_the_payload(source: Path) -> bool:
 
     True only for TIFF display taps. Two exclusions, both deliberate:
 
-      * NON-DISPLAY TIFFs (crop_panel, bxt_correct, sxt_starless, nxt, ...) get
+      * NON-DISPLAY TIFFs (crop_panel, bxt_channel, sxt_channel, nxt, ...) get
         no pyramid at all today, and giving them one would ADD ~156 GB of mip
         levels nobody reads. `needs_display_pyramid` already draws that line.
         It also keeps the rc-astro inputs planar: `crop_panel` feeds BXT/SXT/NXT

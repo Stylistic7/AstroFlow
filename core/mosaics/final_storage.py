@@ -15,7 +15,7 @@ from metadata.classes import ImageMetadata
     display="Subframe",
     final=True,
     resources={"fastest_storage": 0.001},
-    plate_solve=False,  # 8-bit autostretched preview — not a linear star field
+    plate_solve="none",  # 8-bit autostretched preview — not a linear star field
 )
 def store_mosaic_color_channel_subframe(
     mosaic: Mosaic, filter: str, input: ImageMetadata,
@@ -37,5 +37,5 @@ def store_mosaic_color_channel_subframe(
 
 # `store_mosaic_color_channel_oss` was deleted: it was a vestigial
 # `shutil.copy2` of `merge_images_oss`'s output. The OSS variadic merge IS the
-# finished channel, so `merge_images_oss` now carries `display="Mosaic",
+# finished channel, so `merge_images_oss` carries `display="Mosaic Starless",
 # final=True` directly and there is no separate store/copy step.

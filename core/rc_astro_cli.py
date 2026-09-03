@@ -187,7 +187,18 @@ def run_sxt(
         raise ValueError("run_sxt needs starless_out and/or stars_out")
     input_image = Path(input_image)
     with tempfile.TemporaryDirectory(prefix="rcastro_sxt_") as td:
-        args = ["sxt", str(input_image), "-o", td, "--depth", "32F", "--overwrite",
+        if stars_out is None:
+            # Single product: name it explicitly so the CLI writes the
+            # FORMAT the caller's extension requests (as run_bxt does).
+            # The directory form inherits the INPUT's format — an XISF
+            # input would smuggle XISF bytes into a .tiff-named artifact
+            # (sxt_channel with the lab's bxt=False chain, 2026-09-02).
+            out_arg = str(Path(td) /
+                          f"{input_image.stem}-sxt{Path(starless_out).suffix}")
+        else:
+            out_arg = td  # two products: directory mode, formats inherited
+        args = ["sxt", str(input_image), "-o", out_arg, "--depth", "32F",
+                "--overwrite",
                 "--ml-version", str(ml_version), "--overlap", str(overlap)]
         if stars_out is not None:
             args.append("--stars")

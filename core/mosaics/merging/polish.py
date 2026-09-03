@@ -33,7 +33,6 @@ import pyvips
 import structlog
 
 from decorators.decorators import node
-from file_io.tiff_file_io import write_tiff_image
 from file_io.types import TiffFilePath, WithSidecar
 from metadata.classes import ImageMetadata
 from mosaics.merging.pixinsight import _panel_count, _set_panel_count
@@ -105,14 +104,18 @@ def _lazy_polish(img: pyvips.Image, model_small: np.ndarray,
 # auto_memory dropped with the streaming rewrite (Stylistic7, 2026-09-02):
 # the op's peak RSS is now ~the 2k model, so a profiled reservation
 # would only re-teach the scheduler yesterday's ~3x-canvas appetite.
-@node(display="Mosaic", final=True, plate_solve=False)  # mosaic projection — non-square pixels
+@node(display="Mosaic Starless", final=True, plate_solve="none")  # mosaic projection — non-square pixels
 def polish_background(
     mosaic: Mosaic, filter: str, merged: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
     """The channel deliverable: `merged` minus its global background model,
-    sky restored to the house pedestal. Presented as the merge-polish
-    scope's terminal, so this op's output IS the "Mosaic" tap and its
-    source hash is what the colour tail's panel manifests fold in."""
+    sky restored to the house pedestal. `merged` is the STARLESS layer
+    merge (star removal is pre-placement since 2026-09-02) — GraXpert's
+    ideal input: no star flux to mistake for background. Presented as the
+    merge-polish scope's terminal, so this op's output IS the "Mosaic
+    Starless" tap and its source hash is what the colour tail's panel
+    manifests fold in. The stars layer is never polished (its background
+    is identically zero)."""
     from file_io.tiff_file_io import write_tiff_image_streaming
     from stacks.post_processing.background_pedestal import DEFAULT_PEDESTAL
 

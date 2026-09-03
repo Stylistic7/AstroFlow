@@ -49,7 +49,7 @@ def _stretch_nonzero(arr: "np.ndarray") -> "np.ndarray":
     return out
 
 
-@node(auto_memory=True, plate_solve=False)
+@node(auto_memory=True, plate_solve="none")
 def autostretch_panel(
     mosaic: Mosaic, target, filter: str, viewbox, config: ProcessingConfig,
     placed: ImageMetadata,
@@ -71,14 +71,17 @@ def autostretch_panel(
     return WithSidecar(TiffFilePath(out))
 
 
-@node(display="Mosaic", final=True, auto_memory=True, plate_solve=False)  # mosaic projection — non-square pixels
+@node(display="Mosaic Starless", final=True, auto_memory=True, plate_solve="none")  # mosaic projection — non-square pixels
 def merge_images_stretched(
     mosaic: Mosaic, filter: str, *inputs: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
     """The fused matched merge over AUTOSTRETCHED panels — level matching
     and feathering in display space, where the solver's objective equals
-    the viewer's. Thin twin of `merge_images_matched` (that op's body is
-    hash-frozen for the linear pipelines; this one owns the display tag)."""
+    the viewer's. Inputs are the placed STARLESS layers (star removal is
+    pre-placement since 2026-09-02; the stars layer merges linearly via
+    `merge_images_stars` and rides back in through the viewer's star_s).
+    Thin twin of `merge_images_matched` (that op's body is hash-frozen
+    for the linear pipelines; this one owns the display tag)."""
     from pathlib import Path
     from hashing import hash_list
     from mosaics.merging.oss import (

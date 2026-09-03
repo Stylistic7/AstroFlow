@@ -25,18 +25,16 @@ Three entry points, matching the PI Master pipeline:
 * `for_target(target, config)` → per-filter channel masters.
 * `for_mosaic(mosaic, config)` → per-filter mosaic outputs (headline).
 """
-from pathlib import Path
-
-from astroflow.pipeline import pipeline, record
-from dependency_graph.tracing import (
-    IdentityRef, present_terminal, workflow_group,
-)
-from mosaics.merging.oss import merge_images_oss, merge_scope
+from astroflow.pipeline import pipeline
+from dependency_graph.tracing import workflow_group
 from mosaics.viewbox_measured import compute_viewbox_measured
 from mosaics.color.post_process import (
-    bxt_correct_only, color_post_process, panel_source_manifest,
+    color_post_process, panel_source_manifest,
 )
-from mosaics.placement.astroflow import place_image
+# The layer-channel builder is SHARED wiring, not a divergence axis: the
+# pipelines separate upstream (post_process_stack vs post_stack_calibrate),
+# and every product keys on its input handles, so both arms stay distinct.
+from pipelines.hybrid_graxpert_oss_mosaic import _merged_channels
 from mosaics.types import Mosaic
 from stacks.calibration_selection import calibrate
 from stacks.composite_stack import Stack
@@ -90,16 +88,17 @@ def for_target(target, config):
         for filter, sink in channels_for_target(target, config).items()
     }
     viewbox = _measured_viewbox(channels, single_panel=True)
-    merged = _merged_channels(target, {target.id: target}, channels, config,
-                              viewbox)
+    starless, stars = _merged_channels(target, {target.id: target}, channels,
+                                       config, viewbox)
     # Per-panel pre-merge identity, so this pipeline's colour tail is distinct
     # from any other pipeline processing the SAME target (see panels.py).
     panel_sources = {
         f: panel_source_manifest({target.id: target}, f, config, channels)
-        for f in merged
+        for f in starless
     }
-    color = color_post_process(target, merged, config, viewbox, panel_sources)
-    return {**merged, **color}
+    color = color_post_process(target, starless, stars, config, viewbox,
+                               panel_sources)
+    return {**starless, **{f"{f} Stars": h for f, h in stars.items()}, **color}
 
 
 @pipeline("Hybrid: PI Master + OSS Mosaic", processes=Mosaic)
@@ -107,15 +106,13 @@ def for_mosaic(mosaic, config):
     """Build a mosaic with PI-stacked panels + OSS panel-blending, then turn
     the per-filter channels into named color images.
 
-    Returns `{filter: channel_handle, name: color_handle}` — the merged
-    per-filter channels (display="Mosaic") PLUS the color deliverables
-    ("Hubble"/"Foraxx" from the starless narrowband, "Stars" from the RGB
-    stars) via `color_post_process`. Identical color topology to the
-    OSS-stack hybrid, so both pipelines produce the same color images.
+    Returns the merged per-filter STARLESS layer channels
+    (display="Mosaic Starless") and stars layers ("Mosaic Stars") PLUS the
+    colour deliverables via `color_post_process`. Identical colour
+    topology to the OSS-stack hybrid, so both pipelines produce the same
+    colour images.
 
-    Missing panels are skipped (the pipeline merges what's present). Strips
-    are merged left-to-right first, then top-to-bottom — same topology as
-    PI Master, just with `merge_images_oss` swapped in for `merge_images`."""
+    Missing panels are skipped (the pipeline merges what's present)."""
     targets_by_id = {t.id: t for t in mosaic.targets}
 
     channels = {}
@@ -125,18 +122,16 @@ def for_mosaic(mosaic, config):
 
     viewbox = _measured_viewbox(channels,
                                 single_panel=len(targets_by_id) == 1)
-    out = _merged_channels(mosaic, targets_by_id, channels, config, viewbox)
+    starless, stars = _merged_channels(mosaic, targets_by_id, channels,
+                                       config, viewbox)
 
-    # Continue into color post-processing — the same pipeline-agnostic
-    # workflow group the OSS-stack hybrid uses, so both pipelines produce
-    # identical "Hubble"/"Foraxx"/"Stars" deliverables from the merged
-    # per-filter channels.
     panel_sources = {
         f: panel_source_manifest(targets_by_id, f, config, channels)
-        for f in out
+        for f in starless
     }
-    color = color_post_process(mosaic, out, config, viewbox, panel_sources)
-    return {**out, **color}
+    color = color_post_process(mosaic, starless, stars, config, viewbox,
+                               panel_sources)
+    return {**starless, **{f"{f} Stars": h for f, h in stars.items()}, **color}
 
 
 def _measured_viewbox(channels, single_panel: bool):
@@ -148,60 +143,3 @@ def _measured_viewbox(channels, single_panel: bool):
     return compute_viewbox_measured(
         "Master", single_panel,
         tuple(c.content_hash for c in ordered), *ordered)
-
-
-def _merged_channels(mosaic, targets_by_id, channels, config,
-                     viewbox) -> dict:
-    """Per-filter `{filter: merged-channel handle}` for any mosaic-like
-    entity — a real `Mosaic` or a `Target` acting as its own single-panel
-    mosaic (`Target.targets == (self,)`).
-
-    Croman two-pass: BXT Correct-Only on each PANEL (re-solved) before
-    placement — per-panel aberrations differ across the mosaic — then the
-    sharpening BXT runs on the assembled canvas (color_post_process). GPU
-    work stays OUTSIDE the scope below (cheap-to-recompute × big is what
-    qualifies for deletion; GPU minutes are not cheap).
-
-    The placements — multi-GB views whose ONLY consumer is the merge — live
-    inside a `{N× place_image → merge_images_oss}` subgraph with
-    delete_intermediates=True: deleted at scope conclusion, while the
-    variadic merge (one feather, one least-squares flux solve; N=1 for a
-    single-panel target) is the terminal and persists. The builder PRESENTS
-    the merge (builder ≡ terminal): identity + display + expected path
-    stamped from pure filename_fn arithmetic, so the "Mosaic" tap, its
-    version chain, and downstream keys are bit-identical to the inline
-    version."""
-    out = {}
-    for filter in mosaic.filters:
-        # STRIPS order, verbatim from the original inline block: the merge
-        # key folds the variadic placement ORDER, so changing iteration
-        # would re-key every existing mosaic channel.
-        corrected = {
-            tid: bxt_correct_only(targets_by_id[tid], filter, config,
-                                  channels[(tid, filter)])
-            for strip in mosaic.strips
-            for tid in strip
-            if (tid, filter) in channels
-        }
-        entries = [
-            (targets_by_id[tid], corrected[tid])
-            for strip in mosaic.strips
-            for tid in strip
-            if tid in corrected
-        ]
-        if not entries:
-            continue
-        placed_refs = [
-            IdentityRef(Path(place_image.filename_fn(
-                mosaic, target, filter, viewbox, config, channel)).stem)
-            for target, channel in entries
-        ]
-        merge_path = merge_images_oss.filename_fn(
-            mosaic, filter, *placed_refs)
-        handle = record(
-            merge_scope, mosaic, filter, viewbox, config,
-            tuple(target for target, _ in entries),
-            *[channel for _, channel in entries])
-        out[filter] = present_terminal(
-            handle, merge_images_oss, path=merge_path)
-    return out

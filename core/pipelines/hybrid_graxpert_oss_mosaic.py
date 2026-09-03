@@ -43,11 +43,13 @@ from astroflow.pipeline import pipeline, record
 from dependency_graph.tracing import (
     IdentityRef, present_terminal, workflow_group,
 )
-from mosaics.merging.oss import merge_images_oss, merge_scope
+from mosaics.merging.oss import (
+    merge_images_oss, merge_images_stars, merge_scope, merge_stars_scope,
+)
 from mosaics.merging.polish import polish_background
 from mosaics.viewbox_measured import compute_viewbox_measured
 from mosaics.color.post_process import (
-    bxt_correct_only, color_post_process, panel_source_manifest,
+    color_post_process, native_star_separation, panel_source_manifest,
 )
 from mosaics.placement.astroflow import place_image
 from mosaics.types import Mosaic
@@ -106,16 +108,17 @@ def for_target(target, config):
         for filter, sink in channels_for_target(target, config).items()
     }
     viewbox = _measured_viewbox(channels, single_panel=True)
-    merged = _merged_channels(target, {target.id: target}, channels, config,
-                              viewbox)
+    starless, stars = _merged_channels(target, {target.id: target}, channels,
+                                       config, viewbox)
     # Per-panel pre-merge identity — this is what keeps THIS pipeline's colour
     # tail distinct from the MGC pipeline's on the same target (see panels.py).
     panel_sources = {
         f: panel_source_manifest({target.id: target}, f, config, channels)
-        for f in merged
+        for f in starless
     }
-    color = color_post_process(target, merged, config, viewbox, panel_sources)
-    return {**merged, **color}
+    color = color_post_process(target, starless, stars, config, viewbox,
+                               panel_sources)
+    return {**starless, **{f"{f} Stars": h for f, h in stars.items()}, **color}
 
 
 @ray.remote(num_cpus=0.1)
@@ -150,7 +153,7 @@ def merge_polish_scope(mosaic, filter, viewbox, config, targets, *corrected,
 
 @pipeline(PIPELINE, processes=Mosaic)
 def for_mosaic(mosaic, config):
-    """Per-filter mosaic channels plus the colour deliverables."""
+    """Per-filter mosaic layer channels plus the colour deliverables."""
     targets_by_id = {t.id: t for t in mosaic.targets}
     channels = {}
     for target in mosaic.targets:
@@ -158,14 +161,16 @@ def for_mosaic(mosaic, config):
             channels[(target.id, filter)] = sink
     viewbox = _measured_viewbox(channels,
                                 single_panel=len(targets_by_id) == 1)
-    out = _merged_channels(mosaic, targets_by_id, channels, config, viewbox,
-                           polish=len(targets_by_id) > 1)
+    starless, stars = _merged_channels(mosaic, targets_by_id, channels,
+                                       config, viewbox,
+                                       polish=len(targets_by_id) > 1)
     panel_sources = {
         f: panel_source_manifest(targets_by_id, f, config, channels)
-        for f in out
+        for f in starless
     }
-    color = color_post_process(mosaic, out, config, viewbox, panel_sources)
-    return {**out, **color}
+    color = color_post_process(mosaic, starless, stars, config, viewbox,
+                               panel_sources)
+    return {**starless, **{f"{f} Stars": h for f, h in stars.items()}, **color}
 
 
 def _measured_viewbox(channels, single_panel: bool):
@@ -187,45 +192,53 @@ def _measured_viewbox(channels, single_panel: bool):
 
 def _merged_channels(mosaic, targets_by_id, channels, config,
                      viewbox, polish: bool = False,
-                     bxt: bool = True) -> dict:
-    """Per-filter `{filter: merged-channel handle}`.
+                     bxt: bool = True) -> tuple:
+    """Per-filter LAYER mosaics: `({filter: starless}, {filter: stars})`.
 
-    Follows `hybrid_pi_oss_mosaic._merged_channels` — including the STRIPS
-    iteration order, which the variadic merge key folds in, so changing it
-    would re-key every channel. The placements live inside the
-    `{N x place_image -> merge_images_oss}` scope; the merge is the terminal
-    and persists.
+    The native per-panel chain runs first, per (target, filter):
+    `bxt_channel` (full BXT) → `sxt_channel` (mono starless — SXT is
+    measured spotless on the native grid, donuts on the canvas) →
+    `stars_channel` (= channel − starless, exact). Both layers are then
+    placed and merged per filter: starless with the overlap level solve
+    (+ polish on multi-panel mosaics), stars with no matching at all
+    (`merge_stars_scope` — offsets cancel in the subtraction) and no
+    erosion (a stars layer is mostly zeros; the eroder reads zeros as
+    outside-footprint).
 
-    `viewbox` is the SHARED measured-geometry handle from
-    `_measured_viewbox` — one canvas across every filter, so the per-filter
-    merges land on one pixel grid (the colour tail combines them
-    pixel-by-pixel). It resolves at runtime inside `merge_scope`."""
-    out = {}
+    `bxt=False` (labs only) skips deconvolution — see
+    `native_star_separation`. Production always passes the default True.
+
+    Follows the STRIPS iteration order, which the variadic merge key folds
+    in, so changing it would re-key every channel. `viewbox` is the SHARED
+    measured-geometry handle from `_measured_viewbox` — one canvas across
+    every filter and layer, so the colour tail combines them
+    pixel-by-pixel. It resolves at runtime inside the scopes."""
+    import dataclasses
+    star_config = dataclasses.replace(config, edge_erosion_px=0)
+    starless_out, stars_out = {}, {}
     for filter in mosaic.filters:
-        # bxt=False (labs only): BXT is PSF cosmetics, orthogonal to the
-        # calibration the labs gate on, and its 96 rc-astro launches were
-        # the largest compute lane (Stylistic7, 2026-09-02). Production always
-        # passes the default True.
-        corrected = {
-            tid: (bxt_correct_only(targets_by_id[tid], filter, config,
-                                   channels[(tid, filter)])
-                  if bxt else channels[(tid, filter)])
+        layers = {
+            tid: native_star_separation(targets_by_id[tid], filter, config,
+                                        channels[(tid, filter)], bxt=bxt)
             for strip in mosaic.strips
             for tid in strip
             if (tid, filter) in channels
         }
         entries = [
-            (targets_by_id[tid], corrected[tid])
+            (targets_by_id[tid], *layers[tid])
             for strip in mosaic.strips
             for tid in strip
-            if tid in corrected
+            if tid in layers
         ]
         if not entries:
             continue
+        targets = tuple(t for t, _, _ in entries)
+
+        # ---- starless layer: place → merge(level solve) [→ polish] ----
         placed_refs = [
             IdentityRef(Path(place_image.filename_fn(
-                mosaic, target, filter, viewbox, config, channel)).stem)
-            for target, channel in entries
+                mosaic, target, filter, viewbox, config, starless)).stem)
+            for target, starless, _ in entries
         ]
         merge_path = merge_images_oss.filename_fn(
             mosaic, filter, *placed_refs)
@@ -237,15 +250,29 @@ def _merged_channels(mosaic, targets_by_id, channels, config,
                 mosaic, filter, IdentityRef(Path(merge_path).stem))
             handle = record(
                 merge_polish_scope, mosaic, filter, viewbox, config,
-                tuple(target for target, _ in entries),
-                *[channel for _, channel in entries])
-            out[filter] = present_terminal(
+                targets, *[starless for _, starless, _ in entries])
+            starless_out[filter] = present_terminal(
                 handle, polish_background, path=polish_path)
         else:
             handle = record(
                 merge_scope, mosaic, filter, viewbox, config,
-                tuple(target for target, _ in entries),
-                *[channel for _, channel in entries])
-            out[filter] = present_terminal(
+                targets, *[starless for _, starless, _ in entries])
+            starless_out[filter] = present_terminal(
                 handle, merge_images_oss, path=merge_path)
-    return out
+
+        # ---- stars layer: place(no erosion) → merge(no matching) ----
+        # The path arithmetic mirrors merge_stars_scope exactly, including
+        # the erosion-0 config (place_image's filename folds it).
+        star_placed_refs = [
+            IdentityRef(Path(place_image.filename_fn(
+                mosaic, target, filter, viewbox, star_config, stars)).stem)
+            for target, _, stars in entries
+        ]
+        stars_path = merge_images_stars.filename_fn(
+            mosaic, filter, *star_placed_refs)
+        handle = record(
+            merge_stars_scope, mosaic, filter, viewbox, config,
+            targets, *[stars for _, _, stars in entries])
+        stars_out[filter] = present_terminal(
+            handle, merge_images_stars, path=stars_path)
+    return starless_out, stars_out

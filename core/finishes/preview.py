@@ -87,7 +87,7 @@ def _resolve(object_type: str, object_id: str, pipeline: str, display: str,
     this function used to DROP it, and every preview consumer silently showed
     last-good generations as if current)."""
     from catalog import Product, resolve_product
-    filter_ = "L" if display == "Linear L" else "RGB"
+    filter_ = "L" if display.startswith("Linear L") else "RGB"
     path, status = resolve_product(
         Product(object_type, object_id, pipeline, display, filter_), ancestors)
     return (path, status) if status in ("live", "out_of_date") else None
@@ -128,7 +128,7 @@ def render_canonical_preview(object_type: str, object_id: str,
     pipeline = None
     for cand in candidates:
         if any(_resolve(object_type, object_id, cand, d, ancestors)
-               for d in ("Linear SHO", "Linear RGB",
+               for d in ("Linear SHO", "Linear RGB Starless",
                          "Linear Narrowband Starless")):
             pipeline = cand
             break
@@ -140,7 +140,7 @@ def render_canonical_preview(object_type: str, object_id: str,
     sho_path, sho_status = _split(_resolve(
         object_type, object_id, pipeline, "Linear SHO", ancestors))
     rgb_path, rgb_status = _split(_resolve(
-        object_type, object_id, pipeline, "Linear RGB", ancestors))
+        object_type, object_id, pipeline, "Linear RGB Starless", ancestors))
     nb_partial_path, nb_status = _split(_resolve(
         object_type, object_id, pipeline, "Linear Narrowband Starless",
         ancestors))
@@ -157,7 +157,8 @@ def render_canonical_preview(object_type: str, object_id: str,
             get_finish("Hubble", primary="Linear SHO"), sho_path, sho_status)
     elif rgb_path is not None:
         finish, primary_path, primary_status = (
-            get_finish("RGB", primary="Linear RGB"), rgb_path, rgb_status)
+            get_finish("RGB", primary="Linear RGB Starless"),
+            rgb_path, rgb_status)
     elif nb_partial_path is not None:
         finish = get_finish("Hubble", primary="Linear Narrowband Starless")
         primary_path, primary_status = nb_partial_path, nb_status
@@ -186,27 +187,24 @@ def render_canonical_preview(object_type: str, object_id: str,
     primary = read_pyramid_level(primary_path)
     if primary.shape[-1] < 3:
         primary = np.repeat(primary[..., :1], 3, axis=-1)
-    sources = [primary]
+    if stars_path is not None:
+        stars = read_pyramid_level(stars_path)
+        if stars.shape[:2] != primary.shape[:2]:
+            stars = cv2.resize(stars, (primary.shape[1], primary.shape[0]),
+                               interpolation=cv2.INTER_AREA)
+        if stars.ndim == 2:
+            stars = np.repeat(stars[..., None], 3, axis=-1)
+    else:
+        stars = np.zeros_like(primary)   # absent stars layer binds black
+    sources = [primary, stars]
     if finish.name == "Hubble":
-        if stars_path is not None:
-            stars = read_pyramid_level(stars_path)
-            if stars.shape[:2] != primary.shape[:2]:
-                stars = cv2.resize(stars, (primary.shape[1], primary.shape[0]),
-                                   interpolation=cv2.INTER_AREA)
-            if stars.ndim == 2:
-                stars = np.repeat(stars[..., None], 3, axis=-1)
-        else:
-            stars = np.zeros_like(primary)   # screen-with-black = identity
-        sources.append(stars)
         values = _stf_values(primary, ("S", "H", "O"), full_white=True)
         star_finite = stars[np.isfinite(stars)]
         if star_finite.size and float(star_finite.max()) > 0:
             values["star_mid"] = _stf_values(stars, None)["midtones"]
-    else:  # RGB
-        stars = np.zeros_like(primary)
-        sources.append(stars)
-        values = _stf_values(primary, None)
-        values["star_s"] = 1.0               # with-stars combine as-is
+    else:  # RGB: starless + star_s·stars — seed the stretch on the composite
+        values = _stf_values(primary + stars, None)
+        values["star_s"] = 1.0
 
     out = finish.bake(sources, values)
     ok, buf = cv2.imencode(".png", cv2.cvtColor(

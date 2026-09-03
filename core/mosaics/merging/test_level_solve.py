@@ -112,3 +112,27 @@ def test_no_overlap_falls_back_to_zero_offsets(tmp_path):
                       level_solve="overlap")
     # both panels present, both positive where data
     assert (out[50, 60] > 0) and (out[50, 240] > 0)
+
+
+def test_level_solve_none_leaves_panels_untouched(tmp_path):
+    """`level_solve=None` (the STARS-layer mode) must apply NO shifts at
+    all: exclusive regions keep their injected offsets verbatim — a stars
+    layer's panels already agree by construction (`channel − starless`
+    cancels additive terms), and any equalization would inject lifts."""
+    field, offs, paths = _three_offset_panels(tmp_path)
+    out = _blend_many(paths, level_solve=None)
+    regions = (np.s_[150:210, 20:150], np.s_[150:210, 240:320],
+               np.s_[30:210, 420:540])
+    resid = [float(np.median((out - field)[r])) for r in regions]
+    # Each exclusive region shows exactly its own panel's injected offset.
+    assert np.max(np.abs(np.array(resid) - np.array(offs))) < 2e-4, resid
+
+
+def test_unknown_level_solve_mode_raises(tmp_path):
+    canvas = (100, 300)
+    f = _sky_field(canvas)
+    a = _panel(f, 10, 90, 0, 200, 0.0)
+    b = _panel(f, 10, 90, 100, 300, 0.0)
+    with pytest.raises(AssertionError, match="level_solve"):
+        _blend_many([_write(tmp_path, "a", a), _write(tmp_path, "b", b)],
+                    level_solve="typo")

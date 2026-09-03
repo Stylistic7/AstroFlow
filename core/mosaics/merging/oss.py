@@ -25,9 +25,7 @@ from file_io.tiff_file_io import write_tiff_image
 from file_io.types import TiffFilePath, WithSidecar
 from hashing import hash_list
 from metadata.classes import ImageMetadata
-from mosaics.merging.pixinsight import (
-    MergedImage, _panel_count, _set_panel_count,
-)
+from mosaics.merging.pixinsight import _panel_count, _set_panel_count
 # MosaicLike bound as `Mosaic`: widens beartype to accept a Target acting as
 # its own single-panel mosaic WITHOUT touching the `mosaic: Mosaic`
 # annotations — those serialize into the op code hash, so editing them would
@@ -273,15 +271,16 @@ def _blend_many(paths: list[Path], level_solve: "str | None" = None,
     and `_edt_weight` reproduces the canvas EDT within the bbox. See
     `test_oss_blend.py`.
 
-    SKY EQUALIZATION runs first, on every merge: each panel is shifted so
+    SKY EQUALIZATION runs on matched merges: each panel is shifted so
     its OWN sky median lands on the shared pedestal. Panel masters all
-    leave post-processing at sky = 0.005 exactly, but `bxt_correct_only`
-    (deconvolution) then shifts each panel's background by a
-    content-dependent amount — measured 2026-08-22: masters spread
-    0.000000, BXT outputs spread 0.001247, merged panels 0.000120, which
-    IS the visible quilt. Equalizing here needs no solve, no gauge, and no
-    overlap gates: it is the direct form of "every panel's sky is the same
-    number", and it happens at the point the panels actually meet.
+    leave post-processing at sky = 0.005 exactly, but BXT (deconvolution,
+    now `bxt_channel`) and SXT each shift a panel's background by a
+    content-dependent amount — measured 2026-08-22 (BXT era): masters
+    spread 0.000000, BXT outputs spread 0.001247, merged panels 0.000120,
+    which IS the visible quilt. Equalizing here needs no solve, no gauge,
+    and no overlap gates: it is the direct form of "every panel's sky is
+    the same number", and it happens at the point the panels actually
+    meet.
 
     Panels are stored **bbox-on-disk** (bbox pixels + offset in the header; see
     `panel_io`), so each is read exactly ONCE as a small array — no full-canvas
@@ -289,12 +288,22 @@ def _blend_many(paths: list[Path], level_solve: "str | None" = None,
     old 3x re-read. The tight non-zero bbox is recomputed from the small array
     (it lies inside the stored bbox rectangle), keeping the math identical.
 
-    `level_solve="overlap"` replaces the absolute-quantile equalization with
-    constants derived from the pairwise overlap differences (one exact
-    global least-squares; see `_overlap_offsets`/`_solve_level_offsets`),
-    then one uniform shift to the pedestal. Plane fitting was measured and
-    retired: on nebulosity-filled fields the tilt is fit to scene, not sky
-    (A/B 2026-08-26, 8-15x worse block-sky-spread).
+    `level_solve` picks the panel-level matching mode:
+      * "overlap"  — constants derived from the pairwise overlap differences
+        (one exact global least-squares; see `_overlap_offsets`/
+        `_solve_level_offsets`), then one uniform shift to the pedestal.
+        Plane fitting was measured and retired: on nebulosity-filled fields
+        the tilt is fit to scene, not sky (A/B 2026-08-26, 8-15x worse
+        block-sky-spread).
+      * "quantile" — the absolute lower-quantile sky equalization
+        (`_equalize_sky`); scene-biased in fields with no empty sky, kept
+        for the Subframe previews.
+      * None       — no matching at all. For the STARS layer: additive
+        offsets cancel exactly in `stars = channel − starless`, and star
+        flux is multiplicatively calibrated upstream (SPFC), so panels
+        already agree; any equalization here would inject per-panel lifts
+        into a zero-background image (its "sky" estimator would read star
+        wings, not sky).
     """
     if len(paths) == 1:
         # No equalization: with one panel there is nothing to agree WITH,
@@ -331,15 +340,13 @@ def _blend_many(paths: list[Path], level_solve: "str | None" = None,
         crops.append(crop)
 
     if level_solve == "overlap":
-        # Constants from the overlap DIFFERENCES + one exact global solve;
-        # the absolute-quantile equalizer stays for callers that opt out
-        # (Subframe previews) — its estimator is scene-biased in fields
-        # with no empty sky (see _overlap_offsets).
         pairs = _overlap_offsets(bboxes, masks, crops)
         offsets = _solve_level_offsets(n, pairs)
         _apply_level_offsets(crops, masks, offsets, pedestal)
-    else:
+    elif level_solve == "quantile":
         _equalize_sky(crops, masks, pedestal)
+    else:
+        assert level_solve is None, f"unknown level_solve mode {level_solve!r}"
 
     # Pass 3: weighted sum, accumulated per-panel into its bbox slice.
     # (No per-panel flux scaling: gains are calibrated upstream against
@@ -360,36 +367,24 @@ def _blend_many(paths: list[Path], level_solve: "str | None" = None,
     return numer / denom
 
 
-@node(display="Mosaic", final=True, auto_memory=True, plate_solve=False)  # mosaic projection — non-square pixels
-def merge_images_oss(
-    mosaic: Mosaic, filter: str, *inputs: ImageMetadata,
-) -> WithSidecar[TiffFilePath]:
-    """Variadic distance-weighted OSS blend across every input panel.
-
-    This single variadic call IS the finished per-filter mosaic channel —
-    the OSS deliverable (`display="Mosaic"`, `final=True`). Unlike the PI
-    pairwise path (intermediate `merge_images` → separate flatten/finalize
-    `post_process_mosaic_color_channel`), the OSS blend needs no separate
-    finalize op, so there is no `store_*` step after it.
-
-    Pipeline-agnostic: PI Master and PI Downscaled hybrid variants both
-    call this with their own placed inputs. One call per mosaic per
-    filter; no row/strip decomposition (see `_blend_many` for why)."""
+def _merge_layer(op, mosaic: Mosaic, filter: str, inputs, level_solve, skyver):
+    """Shared body of the two layer merges: variadic distance-weighted blend
+    (`_blend_many`) + the house TIFF write with the layer's SKYVER stamp.
+    `skyver` is the merge-time matching version header — bumping a caller's
+    literal is the deliberate re-key for changes to the (unhashed) blend
+    helpers' matching maths."""
     assert len(inputs) >= 1
-    output_filename = merge_images_oss.filename_fn(mosaic, filter, *inputs)
+    output_filename = op.filename_fn(mosaic, filter, *inputs)
     Path(output_filename).parent.mkdir(parents=True, exist_ok=True)
 
     paths = [inp.filename.resolve(strict=True) for inp in inputs]
-    result = _blend_many(paths, level_solve="overlap")
+    result = _blend_many(paths, level_solve=level_solve)
 
     write_tiff_image(Path(output_filename), result.astype(np.float32),
                      {"FILTER": filter,
                       "STBLHASH": hash_list([inp.stable_hash for inp in inputs]),
                       "PIPELINE": "AstroFlow-OSS",
-                      # Merge-time sky equalization version. Bumping this
-                      # line is the deliberate re-key for changes to the
-                      # matching maths in the (unhashed) blend helpers.
-                      "SKYVER": "overlap-2"})
+                      "SKYVER": skyver})
 
     new_count = sum(_panel_count(inp) for inp in inputs)
     _set_panel_count(output_filename, new_count)
@@ -397,6 +392,45 @@ def merge_images_oss(
     log.info("OSS merge complete", output=str(output_filename),
              panel_count=new_count, n_inputs=len(inputs))
     return WithSidecar(output_filename)
+
+
+@node(display="Mosaic Starless", final=True, auto_memory=True, plate_solve="none")  # mosaic projection — non-square pixels
+def merge_images_oss(
+    mosaic: Mosaic, filter: str, *inputs: ImageMetadata,
+) -> WithSidecar[TiffFilePath]:
+    """Variadic distance-weighted OSS blend of the placed STARLESS panels.
+
+    This single variadic call IS the finished per-filter starless mosaic
+    channel (`display="Mosaic Starless"`, `final=True`; multi-panel
+    mosaics append `polish_background`, which then carries the tap).
+    Star removal runs pre-placement (`sxt_channel` — SXT is measured
+    spotless on the native grid and leaves halo donuts on the resampled
+    canvas, 2026-09-02), so every placed input here is a starless layer:
+    the overlap level solve reads pure sky + nebulosity, with no star
+    flux biasing the pair statistics.
+
+    Pipeline-agnostic: PI Master and PI Downscaled hybrid variants both
+    call this with their own placed inputs. One call per mosaic per
+    filter; no row/strip decomposition (see `_blend_many` for why)."""
+    return _merge_layer(merge_images_oss, mosaic, filter, inputs,
+                        level_solve="overlap", skyver="overlap-2")
+
+
+@node(display="Mosaic Stars", final=True, auto_memory=True, plate_solve="none")  # mosaic projection — non-square pixels
+def merge_images_stars(
+    mosaic: Mosaic, filter: str, *inputs: ImageMetadata,
+) -> WithSidecar[TiffFilePath]:
+    """The STARS-layer twin of `merge_images_oss`: same distance-weighted
+    blend, NO level matching (`level_solve=None`). A stars layer is
+    `channel − starless` — additive panel offsets cancel in the
+    subtraction, and star flux is multiplicatively calibrated upstream
+    (SPFC against Gaia) — so the panels already agree; equalizing on a
+    zero-background image would read star wings as "sky" and inject
+    per-panel lifts. With-stars views are never baked: the viewer's
+    finishes add `starless + star_s·stars` live, and placement/merging
+    are linear, so the layer sum reproduces the composite."""
+    return _merge_layer(merge_images_stars, mosaic, filter, inputs,
+                        level_solve=None, skyver="stars-none-1")
 
 
 @ray.remote(num_cpus=0.1)
@@ -437,10 +471,49 @@ def merge_scope(mosaic, filter, viewbox, config, targets, *corrected,
     return Graph(trace(_body))
 
 
+@ray.remote(num_cpus=0.1)
+def merge_stars_scope(mosaic, filter, viewbox, config, targets, *stars,
+                      dry_run=False):
+    """The STARS-layer twin of `merge_scope`:
+    `{N× place_image → merge_images_stars}`, placements ephemeral, the
+    stars mosaic the presented terminal. Two star-layer specifics:
+
+    * NO edge erosion (`edge_erosion_px=0`): `_erode_edges` reads
+      `image != 0` as the footprint, and a stars layer is mostly exact
+      zeros — erosion would shave every star blob (and erase stars
+      smaller than the erosion radius outright). The interpolation
+      rolloff erosion exists to cut lives at panel borders, where the
+      feathered overlap draws the same stars from neighbouring panels.
+    * NO polish ever: GraXpert has no business modelling a background
+      that is identically zero.
+    """
+    del dry_run
+    import dataclasses
+
+    from dependency_graph.classes import Graph
+    from dependency_graph.tracing import trace
+    from mosaics.placement.astroflow import place_image
+
+    print("### merge_stars_scope fold %s/%s: %s" % (
+        getattr(mosaic, "stable_hash", "?")[:12], filter,
+        " ".join(str(getattr(c, "content_hash", "?"))[:16] for c in stars)))
+
+    star_config = dataclasses.replace(config, edge_erosion_px=0)
+
+    def _body():
+        placed = [
+            place_image(mosaic, target, filter, viewbox, star_config, channel)
+            for target, channel in zip(targets, stars)
+        ]
+        return merge_images_stars(mosaic, filter, *placed)
+
+    return Graph(trace(_body))
+
+
 @node(
     display="Merged",
     resources={"fastest_storage": 0.001},
-    plate_solve=False,  # mosaic projection — non-square pixels, can't solve
+    plate_solve="none",  # mosaic projection — non-square pixels, can't solve
 )
 def merge_images_subframe(
     mosaic: Mosaic, filter: str, *inputs,
@@ -459,7 +532,7 @@ def merge_images_subframe(
     Path(output_filename).parent.mkdir(parents=True, exist_ok=True)
 
     paths = [i.filename.resolve(strict=True) for i in inputs]
-    acc = _blend_many(paths)
+    acc = _blend_many(paths, level_solve="quantile")
     assert not np.isnan(np.min(acc))
 
     stable_hash = hash_list([i.stable_hash for i in inputs])

@@ -70,7 +70,7 @@ def _assert_healthy_linear_master(data: np.ndarray) -> None:
 def test_post_process_stack_oss_delegates_plate_solving_to_decorator():
     """The op body must NOT call `solve_field` — plate-solving (and content-hash
     stamping) is owned by the `@node` decorator for EVERY image producer
-    (`plate_solve=True` by default, run via `compute_image_metadata`).
+    (`plate_solve="solve"` by default, run via `compute_image_metadata`).
 
     A manual solve in the body double-solves and, crucially, runs BEFORE the
     decorator stamps CONTHASH. That ordering let a master's on-disk
@@ -90,7 +90,7 @@ def test_post_process_stack_oss_delegates_plate_solving_to_decorator():
     ]
     assert not solves, (
         "post_process_stack_oss calls solve_field in its body; plate-solving "
-        "must be delegated to the @node decorator (plate_solve=True default)."
+        "must be delegated to the @node decorator (plate_solve='solve' default)."
     )
 
 

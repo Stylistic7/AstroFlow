@@ -58,7 +58,7 @@ def _post_process_target(
     resources={"PixInsight": 1},
     scheduling_strategy="SPREAD",
     auto_memory=True,
-    plate_solve=False,  # RGB/SHO channel combination — not a mono star field
+    plate_solve="none",  # RGB/SHO channel combination — not a mono star field
 )
 def post_process_target(
     target: Target,

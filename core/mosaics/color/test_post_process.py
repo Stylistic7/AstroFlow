@@ -118,69 +118,74 @@ def test_color_post_process_traces_and_runs(test_context, tmp_path):
     context.targets = {"a": _target("a", "target_a", _FOOTPRINT)}
     vb = mosaic.viewbox("Master")
     h, w = vb.num_pixels_y, vb.num_pixels_x
-    channels = {}
+    # The group consumes per-filter LAYER mosaics (star removal is
+    # pre-placement since 2026-09-02): starless carries scene + pedestal,
+    # stars is a sparse residual. 90/10 split keeps the layer algebra
+    # non-degenerate without rc-astro.
+    starless, stars = {}, {}
     for i, f in enumerate(("S", "H", "O", "R", "G", "B")):
-        p = tmp_path / f"chan_{f}.tiff"
-        _write_channel(p, i, h, w)
+        p_sl = tmp_path / f"sl_{f}.tiff"
+        _write_channel(p_sl, i, h, w)
+        arr = read_image(p_sl).astype(np.float32)
+        p_st = tmp_path / f"st_{f}.tiff"
+        write_tiff_image(p_st, (arr * (1.0 / 9.0)).astype(np.float32),
+                         {"PIPELINE": "AstroFlow-OSS"})
         # Construct the input metadata directly (compute_image_metadata is a
         # remote @node, callable only inside a graph); the ops only read
         # `.filename`, and `content_hash` keys the cache.
-        channels[f] = ImageMetadata(
-            content_hash=f"chan_{f}", stable_hash=f"chan_{f}", filename=p,
-            header={"FILTER": f}, width_pixels=w, height_pixels=h,
-            channels=1, dtype=np.dtype("float32"),
-        )
+        def _meta(path, tag):
+            return ImageMetadata(
+                content_hash=tag, stable_hash=tag, filename=path,
+                header={"FILTER": f}, width_pixels=w, height_pixels=h,
+                channels=1, dtype=np.dtype("float32"),
+            )
+        starless[f] = _meta(p_sl, f"sl_{f}")
+        stars[f] = _meta(p_st, f"st_{f}")
 
     config = ProcessingConfig(
         development_settings=DevelopmentSettings(mock_pixinsight=True),
         tiling=TilingSettings(),
     )
-    graph = trace(pp.color_post_process, mosaic, channels, config)
+    graph = trace(pp.color_post_process, mosaic, starless, stars, config)
     assert graph is not None
 
     counts = _count_by_op(graph)
-    # Every rc-astro op (BXT, SXT, NXT) runs via process_in_panels: each
-    # op-invocation fans into one (crop_panel -> op -> blend_panels) PER PANEL.
-    # This is a single-panel mosaic, so per-op node counts are the base counts.
-    assert counts.get("bxt_correct") == 6         # 6 channels, each BXT'd per panel
-    assert counts.get("sxt_starless") == 3        # H, O, S narrowband, each SXT'd per panel
-    assert counts.get("autostretch_channel") is None  # stretch is LIVE now (WGSL)
-    # Broadband stars: combine R+G+B into one linear RGB, then a SINGLE SXT pass
-    # (coherent stars) — not per-channel; the SXT is per-panel.
-    assert counts.get("combine_broadband_rgb") == 1
-    assert counts.get("sxt_stars_rgb") == 1       # single RGB SXT, per panel
-    assert counts.get("sxt_stars") is None       # old per-channel path removed
+    # Star work left the canvas entirely (native `bxt_channel`/`sxt_channel`
+    # run pre-placement; SXT donuts on the resampled canvas, 2026-09-02).
+    for gone in ("bxt_correct", "bxt_correct_only", "sxt_starless",
+                 "sxt_stars_rgb", "combine_broadband_rgb", "sxt_stars",
+                 "bxt_channel", "sxt_channel", "stars_channel",
+                 "linear_narrowband", "autostretch_channel"):
+        assert counts.get(gone) is None, f"canvas star op {gone} resurfaced"
     # NO baked palettes (2026-08-12): every look is assembled live in WGSL
     # from the linear scene formats. The formats themselves:
     for gone in ("combine_star_rgb", "hubble_image", "foraxx_image",
                  "hubble_starless", "foraxx_starless", "rgb_image",
                  "lrgb_image", "hargb_image", "halrgb_image"):
         assert counts.get(gone) is None, f"baked palette op {gone} resurfaced"
-    assert counts.get("linear_narrowband") == 1   # raw with-stars S/H/O
     assert counts.get("linear_narrowband_starless") is None  # full SHO set
+    assert counts.get("linear_narrowband_stars") == 1
+    assert counts.get("linear_rgb_starless") == 1
     assert counts.get("linear_rgb_stars") == 1
     assert counts.get("linear_lum") is None       # no L channel in this fixture
-    # The linear S/H/O viewer source: stack the 3 starless channels, then
-    # NoiseXTerminator via process_in_panels (crop_panel + nxt per panel), feathered
-    # into the deliverable. `linear_sho` is a traced helper, not a node.
+    # The linear S/H/O viewer source: stack the 3 starless layer channels,
+    # then NoiseXTerminator via process_in_panels (crop_panel + nxt per
+    # panel), feathered into the deliverable. `linear_sho` is a traced
+    # helper, not a node; NXT is the ONLY per-panel canvas op left.
     assert counts.get("linear_sho") is None
     assert counts.get("stack_sho_channels") == 1
     assert counts.get("blend_linear_sho") == 1        # the display="Linear SHO" deliverable (NXT's feather)
     assert counts.get("nxt") == 1                       # linear_sho NXT, per panel
-    # Intermediate feather blends: one per per-panel rc-astro op-invocation —
-    # 6 bxt_correct + 3 sxt_starless + 1 sxt_stars_rgb = 10 (NXT uses blend_linear_sho).
-    assert counts.get("blend_panels") == 10
+    assert counts.get("blend_panels") is None     # NXT blends via blend_linear_sho
     # crop_panel is INTERIOR to the per-panel `{crop → op}` subgraphs
-    # (delete_intermediates=True) — it no longer appears in the outer trace
-    # at all. The 11 per-panel stages above (6 bxt + 3 sxt_starless +
-    # 1 sxt_stars_rgb + 1 nxt) are presented builders, counted by their
-    # terminal op names.
+    # (delete_intermediates=True) — it never appears in the outer trace.
     assert counts.get("crop_panel") is None
 
     run_graph(graph)
 
     out = Path(context.output_dir)
-    for op, name in (("linear_narrowband", "Linear Narrowband"),
+    for op, name in (("linear_narrowband_stars", "Linear Narrowband Stars"),
+                     ("linear_rgb_starless", "Linear RGB Starless"),
                      ("linear_rgb_stars", "Linear RGB Stars")):
         files = list(out.rglob(f"{op}/*.tif")) + list(out.rglob(f"{op}/*.tiff"))
         assert files, f"no {name} output produced under {op}/"
@@ -189,12 +194,10 @@ def test_color_post_process_traces_and_runs(test_context, tmp_path):
         assert np.all(np.isfinite(img))
         assert img.min() >= 0.0 and img.max() <= 1.0001
 
-    # Linear SHO: a 3-band LINEAR BigTIFF master — no autostretch/palette. In the
-    # mock pass-through path each starless channel equals its raw input, and the
-    # tiled NXT + single-tile feather are identities, so the stacked master must
-    # equal the raw S/H/O bands (proving no stretch; the WebGPU shader finishes
-    # them live). The deliverable is now `blend_linear_sho` (TIFF), not the old
-    # single `linear_sho` XISF node.
+    # Linear SHO: a 3-band LINEAR BigTIFF master — no autostretch/palette.
+    # In the mock path the tiled NXT + single-tile feather are identities,
+    # so the stacked master must equal the starless S/H/O layers exactly
+    # (proving no stretch; the WebGPU shader finishes them live).
     lin_files = (list(out.rglob("blend_linear_sho/*.tiff"))
                  + list(out.rglob("blend_linear_sho/*.tif")))
     assert lin_files, "no Linear SHO output produced under blend_linear_sho/"
@@ -202,49 +205,84 @@ def test_color_post_process_traces_and_runs(test_context, tmp_path):
     assert lin.ndim == 3 and lin.shape[2] == 3, f"Linear SHO not 3-channel: {lin.shape}"
     assert np.all(np.isfinite(lin))
     for band, f in enumerate(("S", "H", "O")):
-        raw = read_image(channels[f].filename).astype(np.float32)
+        raw = read_image(starless[f].filename).astype(np.float32)
         assert np.allclose(lin[:, :, band], raw, atol=1e-5), \
-            f"Linear SHO band {f} differs from the linear channel (was it stretched?)"
+            f"Linear SHO band {f} differs from the starless layer (was it stretched?)"
+
+
+def test_stars_channel_is_the_exact_residual(test_context, tmp_path):
+    """`stars = channel − starless` clamped at 0, float32 — the identity the
+    viewer's `starless + star_s·stars` reconstruction (and the lab's
+    layer-linearity gate) relies on. Footprint zeros stay zero."""
+    h, w = 64, 80
+    rng = np.random.default_rng(7)
+    channel = (0.005 + rng.random((h, w)) * 0.5).astype(np.float32)
+    channel[:4] = 0.0                       # off-footprint border
+    starless = np.where(channel > 0, 0.005 + 0.9 * (channel - 0.005),
+                        np.float32(0)).astype(np.float32)
+    p_ch, p_sl = tmp_path / "ch.tiff", tmp_path / "sl.tiff"
+    write_tiff_image(p_ch, channel, {"FILTER": "H"})
+    write_tiff_image(p_sl, starless, {"FILTER": "H"})
+
+    def _meta(path, tag):
+        return ImageMetadata(
+            content_hash=tag, stable_hash=tag, filename=path, header={},
+            width_pixels=w, height_pixels=h, channels=1,
+            dtype=np.dtype("float32"))
+
+    t = _target("panel", "panel_ch", _FOOTPRINT)
+    # inspect.unwrap: the RAW body, below the plate-solve "inherit" wrap
+    # (which would demand a solved donor — covered by the decorator tests).
+    import inspect
+    out = inspect.unwrap(pp.stars_channel._function)(
+        t, "H", _meta(p_ch, "ch"), _meta(p_sl, "sl"))
+    stars = read_image(Path(str(out))).astype(np.float32)
+    if stars.ndim == 3:
+        stars = stars[..., 0]
+    assert stars.min() >= 0.0
+    assert np.allclose(starless + stars, channel, atol=1e-6)
+    assert np.all(stars[:4] == 0.0)         # zeros stay zeros
 
 
 def test_bxt_narrow_keys_on_bxt_settings_only():
-    """bxt_correct's cache key changes iff (mock, config.bxt) changes — the
-    _StackKey guarantee applied to the color tail: tuning BXT re-derives BXT and
-    its downstream, while an unrelated ProcessingConfig field never does."""
+    """bxt_channel's cache key changes iff (mock, config.bxt) changes — the
+    _StackKey guarantee applied to the native chain: tuning BXT re-derives BXT
+    and its downstream, while an unrelated ProcessingConfig field never does."""
     from dataclasses import replace
     base = ProcessingConfig()
-    m = SimpleNamespace(stable_hash="m")   # narrow routes on mosaic.stable_hash
-    args = (m, "H", base, "chan")
+    t = SimpleNamespace(stable_hash="t")
+    args = (t, "H", base, "chan")
 
     # Unrelated field (background_pedestal): identical projection → no re-derive.
     unrelated = replace(base, background_pedestal=base.background_pedestal + 0.1)
-    assert pp._bxt_correct_narrow(args, {}) == \
-        pp._bxt_correct_narrow((m, "H", unrelated, "chan"), {})
+    assert pp._bxt_channel_narrow(args, {}) == \
+        pp._bxt_channel_narrow((t, "H", unrelated, "chan"), {})
 
     # A BXT knob: different projection → proper invalidation.
     sharper = replace(base, bxt=replace(base.bxt, sharpen_stars=0.5))
-    assert pp._bxt_correct_narrow(args, {}) != \
-        pp._bxt_correct_narrow((m, "H", sharper, "chan"), {})
+    assert pp._bxt_channel_narrow(args, {}) != \
+        pp._bxt_channel_narrow((t, "H", sharper, "chan"), {})
 
     # The mock flag flows into the key (mock path produces a different image).
     mocked = replace(base, development_settings=replace(
         base.development_settings, mock_pixinsight=True))
-    assert pp._bxt_correct_narrow(args, {}) != \
-        pp._bxt_correct_narrow((m, "H", mocked, "chan"), {})
+    assert pp._bxt_channel_narrow(args, {}) != \
+        pp._bxt_channel_narrow((t, "H", mocked, "chan"), {})
 
 
 def test_sxt_narrow_keys_on_sxt_settings_only():
-    """sxt_* keys on (mock, config.sxt); a BXT-only change must NOT touch it."""
+    """sxt_channel keys on (mock, config.sxt); a BXT-only change must NOT
+    touch it (the BXT dependence rides in through `channel`, its input)."""
     from dataclasses import replace
     base = ProcessingConfig()
-    m = SimpleNamespace(stable_hash="m")   # narrow routes on mosaic.stable_hash
-    args = (m, "O", base, "chan")
+    t = SimpleNamespace(stable_hash="t")
+    args = (t, "O", base, "chan")
 
     bxt_only = replace(base, bxt=replace(base.bxt, sharpen_stars=0.5))
-    assert pp._sxt_narrow(args, {}) == \
-        pp._sxt_narrow((m, "O", bxt_only, "chan"), {})
+    assert pp._sxt_channel_narrow(args, {}) == \
+        pp._sxt_channel_narrow((t, "O", bxt_only, "chan"), {})
 
     changed = replace(base, sxt=replace(base.sxt, overlap=0.4))
-    assert pp._sxt_narrow(args, {}) != \
-        pp._sxt_narrow((m, "O", changed, "chan"), {})
+    assert pp._sxt_channel_narrow(args, {}) != \
+        pp._sxt_channel_narrow((t, "O", changed, "chan"), {})
 

@@ -13,9 +13,12 @@ Per panel and filter:  synthetic master
     → post_stack_calibrate          (real SPFC + optional GraXpert + pedestal)
     → merge_target_channel          (real PI n=1 channel master)
 then the pipeline's own `_measured_viewbox` → `_merged_channels`
-(bxt_correct_only → place_image → merge_images_oss → polish_background
-inside merge_polish_scope) → `color_post_process` (BXT/SXT/NXT GPU tail)
-→ Linear SHO and friends.
+(native `sxt_channel` starless + `stars_channel` residual → place both
+layers → starless merge with level solve [+ polish] and stars merge with
+none) → `color_post_process` (canvas combines + NXT) → Linear SHO and
+friends. Star removal is PRE-placement (2026-09-02): SXT is measured
+spotless on the native grid and leaves donuts on the resampled canvas —
+the donut gate below is that regression test.
 
 Artifacts: canonical Hubble renders (testing/canonical_render.py — the
 viewer's exact autostretch + palette math) of the NAIVE max composite and
@@ -290,15 +293,17 @@ def _lab_flow(mosaic, config, stacks_by_key, masters_by_key,
     # (192 rc-astro launches, ~1500s serial). Skipping it also feeds SXT
     # un-deconvolved stars — closer to the SXT'd-truth reference, so the
     # symmetric cancellation in _sxt_reference is tighter.
-    out = _merged_channels(mosaic, targets_by_id, channels, config, viewbox,
-                           polish=graxpert, bxt=False)
+    starless, stars = _merged_channels(mosaic, targets_by_id, channels,
+                                       config, viewbox,
+                                       polish=graxpert, bxt=False)
     panel_sources = {
         f: panel_source_manifest(targets_by_id, f, config, channels)
-        for f in out
+        for f in starless
     }
-    color = color_post_process(mosaic, out, config, viewbox, panel_sources,
-                               bxt=False)
-    return {**out, **color}
+    color = color_post_process(mosaic, starless, stars, config, viewbox,
+                               panel_sources)
+    return {**starless, **{f"{f} Stars": h for f, h in stars.items()},
+            **color}
 
 
 def _corr(a: np.ndarray, b: np.ndarray) -> float:
@@ -358,7 +363,57 @@ def _truth_r(sho: np.ndarray, truths: dict) -> dict:
                for i, f in enumerate(("S", "H", "O"))}
     rs = {f: _corr(aligned[f], truths[f][:h, :w])
           for f in ("S", "H", "O")}
-    return rs, aligned
+    return rs, aligned, (dy, dx)
+
+
+def _align_mono(img: np.ndarray, dy: int, dx: int, h: int, w: int) -> np.ndarray:
+    """Apply `_truth_r`'s solved alignment (mirror + integer shift) to a
+    mono canvas, mapping it into the truth frame `[:h, :w]`."""
+    m = img[:, ::-1]
+    return m[4 + dy:4 + dy + h, 4 + dx:4 + dx + w]
+
+
+def _star_site_gates(aligned: dict, truths: dict, star_layers: dict) -> dict:
+    """The two star-site gates on the starless composite, in the truth frame.
+
+    * DONUT ratio (per channel): RMS of the residual vs the SXT'd-truth
+      reference ON dilated star sites over RMS OFF them. Canvas-grid SXT
+      left a bright annulus at EVERY star (measured 2026-09-02) — that
+      disease concentrates residual power exactly on these sites, so it
+      shows here as a large ratio; native removal keeps it near 1.
+    * CONFETTI fraction: star sites whose positive residual is strongly
+      SINGLE-CHANNEL (one channel ≥ 5× its background RMS while the
+      others stay < 1.5×) — a marginal star removed in one channel but
+      missed in another renders as a pure-primary dot.
+    """
+    from scipy import ndimage
+
+    h, w = next(iter(aligned.values())).shape
+    star_any = np.maximum.reduce([star_layers[f][:h, :w]
+                                  for f in ("S", "H", "O")])
+    core = star_any > 1e-3
+    sites = ndimage.binary_dilation(core, iterations=6)
+    resid = {f: aligned[f] - truths[f][:h, :w] for f in ("S", "H", "O")}
+    bg_rms, ratio = {}, {}
+    for f in ("S", "H", "O"):
+        bg = resid[f][~sites]
+        st = resid[f][sites]
+        bg_rms[f] = float(np.sqrt(np.mean(bg ** 2)))
+        ratio[f] = float(np.sqrt(np.mean(st ** 2)) / max(bg_rms[f], 1e-12))
+
+    labels, n = ndimage.label(core)
+    confetti = 0
+    for peaks in zip(*[
+        ndimage.labeled_comprehension(
+            np.maximum(resid[f], 0.0), labels, np.arange(1, n + 1),
+            np.max, float, 0.0) / max(bg_rms[f], 1e-12)
+        for f in ("S", "H", "O")
+    ]):
+        p = sorted(peaks)
+        if p[2] >= 5.0 and p[1] < 1.5:
+            confetti += 1
+    return {"donut_ratio": ratio, "confetti_frac": confetti / max(n, 1),
+            "n_sites": n}
 
 
 @pytest.mark.slow
@@ -468,15 +523,25 @@ def test_full_pipeline_on_synthetic_masters(tmp_path):
         variants.append(("graxpert", True, True))
     _RENDER_DIR.mkdir(parents=True, exist_ok=True)
     out_dir = Path(context.output_dir)
-    results, biases = {}, {}
+
+    def _new_tiffs(op: str, before: set) -> set:
+        d = out_dir / op
+        return (set(d.glob("*.tiff")) - before) if d.exists() else set()
+
+    def _snapshot(op: str) -> set:
+        d = out_dir / op
+        return set(d.glob("*.tiff")) if d.exists() else set()
+
+    results, biases, gates, recon_rs = {}, {}, {}, {}
     for tag, graxpert, spfc in variants:
-        before = set((out_dir / "blend_linear_sho").glob("*.tiff")) \
-            if (out_dir / "blend_linear_sho").exists() else set()
+        before = _snapshot("blend_linear_sho")
+        before_sl = _snapshot("merge_images_oss")
+        before_st = _snapshot("merge_images_stars")
         graph = trace(_lab_flow, mosaic, config, stacks_by_key,
                       masters_pi_by_key if spfc else masters_by_key,
                       graxpert, spfc)
         run_graph(graph)
-        new = set((out_dir / "blend_linear_sho").glob("*.tiff")) - before
+        new = _new_tiffs("blend_linear_sho", before)
         assert len(new) == 1, (
             f"[{tag}] expected exactly one new Linear SHO, got {new}"
         )
@@ -484,15 +549,43 @@ def test_full_pipeline_on_synthetic_masters(tmp_path):
         assert sho.ndim == 3 and sho.shape[2] == 3
         assert np.isfinite(sho).all()
         coverage = (sho.max(axis=2) > 0).mean()
-        rs, aligned_ch = _truth_r(sho, sxt_ref)
+        rs, aligned_ch, (dy, dx) = _truth_r(sho, sxt_ref)
         from testing.seam_metrics import truth_chroma_bias
         bias = truth_chroma_bias(aligned_ch, neb)["chroma_bias"]
         results[tag], biases[tag] = rs, bias
+        gates[tag] = _star_site_gates(aligned_ch, sxt_ref, star_layers)
         print(f"[fp-lab:{tag}] Linear SHO {sho.shape} "
               f"coverage={coverage:.2f} truth r "
               f"S={rs['S']:+.3f} H={rs['H']:+.3f} O={rs['O']:+.3f} "
               f"chroma bias={bias:.4f}")
+        g = gates[tag]
+        print(f"[fp-lab:{tag}] donut ratio "
+              f"S={g['donut_ratio']['S']:.2f} H={g['donut_ratio']['H']:.2f} "
+              f"O={g['donut_ratio']['O']:.2f} confetti="
+              f"{g['confetti_frac']:.3f} ({g['n_sites']} sites)")
         assert coverage > 0.5
+
+        # LAYER LINEARITY: merged starless + merged stars must reproduce
+        # the WITH-STARS truth — the identity the viewer's shader addition
+        # (`starless + star_s·stars`) rests on. Uses the pre-NXT per-filter
+        # layer merges, matched by FILTER tag.
+        from file_io.tiff_file_io import read_tiff_header
+        h2, w2 = next(iter(aligned_ch.values())).shape
+        sl_by_f = {read_tiff_header(p).get("FILTER"): p
+                   for p in _new_tiffs("merge_images_oss", before_sl)}
+        st_by_f = {read_tiff_header(p).get("FILTER"): p
+                   for p in _new_tiffs("merge_images_stars", before_st)}
+        recon_rs[tag] = {}
+        for f in ("S", "H", "O"):
+            sl = np.asarray(read_image(sl_by_f[f])).astype(np.float64)
+            st = np.asarray(read_image(st_by_f[f])).astype(np.float64)
+            recon = _align_mono(sl + st, dy, dx, h2, w2)
+            recon_rs[tag][f] = _corr(recon[::4, ::4],
+                                     skies[f][:h2, :w2][::4, ::4])
+        rr = recon_rs[tag]
+        print(f"[fp-lab:{tag}] layer-sum truth r (with stars) "
+              f"S={rr['S']:+.3f} H={rr['H']:+.3f} O={rr['O']:+.3f}")
+
         aligned = sho[:_CANVAS_H, :_CANVAS_W][:, ::-1]
         save_png(_RENDER_DIR / f"pipeline_sho_{tag}_hubble.png",
                  hubble_render(aligned[..., 0], aligned[..., 1],
@@ -547,6 +640,40 @@ def test_full_pipeline_on_synthetic_masters(tmp_path):
         f"production (SPFC) chain left visible chroma bias "
         f"{biases['spfc']:.4f} (floor-class expected ~0.002)"
     )
+    # DONUT regression gate (the 2026-09-02 failure signature): canvas-grid
+    # SXT left residual halos at EVERY star — residual power concentrated
+    # on star sites. Native removal keeps star-site residual AT background
+    # (run 41 healthy: 0.99 on all three channels); the ceiling 3.0 gives
+    # 3x headroom while the disease — a bright annulus at every one of
+    # ~1900 sites — lands far above it.
+    for f in ("S", "H", "O"):
+        assert gates["spfc"]["donut_ratio"][f] < 3.0, (
+            f"[{f}] star-site residual {gates['spfc']['donut_ratio'][f]:.2f}x "
+            f"background — the canvas-SXT donut signature is back"
+        )
+    # CONFETTI gate — mono SXT's cross-channel star decisions: a star
+    # removed in one channel but missed in another is a pure-primary dot.
+    # If this fails on real data, the recorded fallback is registered
+    # native color (see the 2026-09-02 plan).
+    assert gates["spfc"]["confetti_frac"] < 0.05, (
+        f"confetti fraction {gates['spfc']['confetti_frac']:.3f} — "
+        f"per-channel star decisions diverged (mono-SXT coherence gate)"
+    )
+    # LAYER LINEARITY: the shader's `starless + stars` must reproduce the
+    # with-stars sky (placement and merging are linear; level offsets
+    # cancel in the stars layer). Floor 0.70 is EMPIRICAL (run 41,
+    # 2026-09-02: healthy = S 0.837, H 0.954, O 0.754). The O gap to 1.0
+    # is truth-FIDELITY noise, not non-linearity: the sum is exact by
+    # construction at native grid and both layers ride identical
+    # placement paths; O is the faintest band (weakest nebulosity,
+    # faintest stars), so star resampling/extraction noise dominates its
+    # with-stars variance. The same run's donut ratio 0.99 and confetti
+    # 0.000 witness the star layers themselves are clean.
+    for f in ("S", "H", "O"):
+        assert recon_rs["spfc"][f] > 0.70, (
+            f"[{f}] merged starless + merged stars diverged from the "
+            f"with-stars truth: r = {recon_rs['spfc'][f]:.3f} (floor 0.70)"
+        )
     if "graxpert" in results:
         appetite = {f: results["current"][f] - results["graxpert"][f]
                     for f in ("S", "H", "O")}

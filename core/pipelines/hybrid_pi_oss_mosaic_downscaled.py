@@ -19,9 +19,9 @@ Three entry points, matching the PI Downscaled pipeline.
 from astroflow.pipeline import pipeline
 from dependency_graph.tracing import workflow_group
 from mosaics.color.post_process import (
-    bxt_correct_only, color_post_process, panel_source_manifest,
+    color_post_process, native_star_separation, panel_source_manifest,
 )
-from mosaics.merging.oss import merge_images_oss
+from mosaics.merging.oss import merge_images_oss, merge_images_stars
 from mosaics.placement.astroflow import place_image
 from mosaics.viewbox_measured import compute_viewbox_measured
 from mosaics.types import Mosaic
@@ -81,14 +81,11 @@ def for_mosaic(mosaic, config):
     """Build an 8×-downscaled mosaic with PI-stacked panels + OSS
     panel-blending, then turn the per-filter channels into named color images.
 
-    Returns `{filter: channel_handle, name: color_handle}` — the merged
-    per-filter channels PLUS the color deliverables ("Hubble"/"Foraxx" from the
-    starless narrowband, "Stars" from the RGB stars) via `color_post_process`,
-    the same pipeline-agnostic workflow group the other hybrids use.
+    Returns the merged per-filter STARLESS layer channels and stars layers
+    PLUS the colour deliverables via `color_post_process`, the same
+    pipeline-agnostic workflow group the other hybrids use.
 
-    Missing panels are skipped (the pipeline merges what's present). Strips are
-    merged left-to-right first, then top-to-bottom — same topology as PI
-    Downscaled, just with `merge_images_oss` swapped in for `merge_images`."""
+    Missing panels are skipped (the pipeline merges what's present)."""
     targets_by_id = {t.id: t for t in mosaic.targets}
 
     channels = {}
@@ -105,47 +102,47 @@ def for_mosaic(mosaic, config):
         "Master", len(targets_by_id) == 1,
         tuple(c.content_hash for c in _ordered), *_ordered)
 
-    out = {}
+    # Native chain per panel (full BXT → SXT starless → stars residual;
+    # GPU work, kept on disk so incremental runs cache-hit), then each
+    # LAYER is placed and merged inline: `place_image` is ephemeral at the
+    # op level, `merge_images_oss`/`merge_images_stars` are the kept
+    # deliverables. Stars placements skip erosion (a stars layer is mostly
+    # zeros; the eroder reads zeros as outside-footprint) and their merge
+    # does no level matching (offsets cancel in `channel − starless`).
+    import dataclasses
+    star_config = dataclasses.replace(config, edge_erosion_px=0)
+    starless_out, stars_out = {}, {}
     for filter in mosaic.filters:
-
-        # Placed-panel images are multi-GB each (smaller here because of
-        # the 8× downscale, but still meaningful) and only feed the final
-        # OSS merge. `merge_images_oss` is variadic — every panel blends
-        # in a single global pass.
-        # merge_images_oss is final=True (exempt from the scope) — the kept
-        # "Mosaic" deliverable; placed panels are reclaimed after it consumes
-        # them.
-        # Croman two-pass mosaic: BXT Correct-Only on each PANEL (re-solved)
-        # before placement — per-panel aberrations differ across the mosaic —
-        # then the sharpening BXT runs on the assembled mosaic
-        # (color_post_process). GPU work → deliberately OUTSIDE the ephemeral
-        # scope (ephemeral = cheap-to-recompute × big; GPU minutes are not
-        # cheap): kept on disk so incremental runs cache-hit, superseded
-        # hashes collected by the orphan sweep.
-        corrected = {
-            tid: bxt_correct_only(targets_by_id[tid], filter, config,
-                                  channels[(tid, filter)])
+        layers = {
+            tid: native_star_separation(targets_by_id[tid], filter, config,
+                                        channels[(tid, filter)])
             for strip in mosaic.strips
             for tid in strip
             if (tid, filter) in channels
         }
-        placed = [
-            place_image(mosaic, targets_by_id[tid], filter, viewbox, config,
-                        corrected[tid])
-            for strip in mosaic.strips
-            for tid in strip
-            if tid in corrected
-        ]
-        if not placed:
+        order = [tid for strip in mosaic.strips for tid in strip
+                 if tid in layers]
+        if not order:
             continue
-        out[filter] = merge_images_oss(mosaic, filter, *placed)
+        starless_out[filter] = merge_images_oss(mosaic, filter, *[
+            place_image(mosaic, targets_by_id[tid], filter, viewbox, config,
+                        layers[tid][0])
+            for tid in order
+        ])
+        stars_out[filter] = merge_images_stars(mosaic, filter, *[
+            place_image(mosaic, targets_by_id[tid], filter, viewbox,
+                        star_config, layers[tid][1])
+            for tid in order
+        ])
 
     # Continue into color post-processing — same pipeline-agnostic workflow
-    # group as the other hybrids, so all three produce identical
-    # "Hubble"/"Foraxx"/"Stars" deliverables.
+    # group as the other hybrids, so all three produce identical colour
+    # deliverables.
     panel_sources = {
         f: panel_source_manifest(targets_by_id, f, config, channels)
-        for f in out
+        for f in starless_out
     }
-    color = color_post_process(mosaic, out, config, viewbox, panel_sources)
-    return {**out, **color}
+    color = color_post_process(mosaic, starless_out, stars_out, config,
+                               viewbox, panel_sources)
+    return {**starless_out,
+            **{f"{f} Stars": h for f, h in stars_out.items()}, **color}

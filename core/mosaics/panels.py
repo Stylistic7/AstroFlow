@@ -14,9 +14,9 @@ viewbox. Tiling on panels instead of an anonymous grid buys three things:
     re-run cost scales with what changed, not with mosaic size.
   * **Best-practice quality.** Panels are ≤100 Mpx (smaller than the old 100 Mpx
     grid tiles), so rc-astro never OOMs, and each tool sees a PSF/star-field
-    coherent unit (RC-Astro's mosaic guidance — see the Croman two-pass note in
-    the pipeline builder; the pre-placement `bxt_correct_only` is Round 1, this
-    is Round 2 on the assembled mosaic).
+    coherent unit. Since 2026-09-02 the only canvas rc-astro round is NXT on
+    the starless SHO composite — BXT/SXT run pre-placement at the native grid
+    (`bxt_channel`/`sxt_channel`), where SXT is measured spotless.
 
 A `PanelMosaic` pairs the merged image (pixels) with a per-panel MANIFEST — a
 `{panel_id: derived_hash}` map where each hash folds in every op applied so far
@@ -71,7 +71,7 @@ def base_panel_mosaic(mosaic: Mosaic, filter: str, merged,
     """Wrap a freshly-merged per-filter channel as the stage-0 `PanelMosaic`.
 
     Base manifest = `hash(panel_source, filter)` per panel, where `panel_source`
-    is that panel's PRE-MERGE product identity (`bxt_correct_only`'s output stem,
+    is that panel's PRE-MERGE product identity (`sxt_channel`'s output stem,
     built by `panel_source_manifest`). FILTER-specific so the H and O channels
     never collide, which raw `target.content_hash` — being all-filters — would
     allow.
@@ -279,7 +279,7 @@ def _crop_panel_narrow(args, kwargs):
 
 # ephemeral: a materialized VIEW of the merged raster, written only because
 # rc-astro needs a file path. Re-cropping is seconds; keeping it cost 235 GB.
-@node(cache_key_narrow=_crop_panel_narrow, auto_memory=True, plate_solve=False,
+@node(cache_key_narrow=_crop_panel_narrow, auto_memory=True, plate_solve="none",
       ephemeral=True)
 def crop_panel(mosaic: Mosaic, panel: Target, viewbox: Viewbox, pad: int,
                source: ImageMetadata,
@@ -319,7 +319,7 @@ def _blend_panels_narrow(args, kwargs):
 # It is consumed only by the next stage's crops inside the same pipeline graph,
 # so it is reclaimed when that graph concludes. Measured 2026-08-17: 181 GB,
 # 72 GB per compute-hour — the worst disk-for-compute trade in the tail.
-@node(cache_key_narrow=_blend_panels_narrow, auto_memory=True, plate_solve=False,
+@node(cache_key_narrow=_blend_panels_narrow, auto_memory=True, plate_solve="none",
       ephemeral=True)
 def blend_panels(mosaic: Mosaic, config: ProcessingConfig, viewbox: Viewbox,
                  panels: tuple,
@@ -377,7 +377,7 @@ def process_in_panels(op, *op_args, viewbox, blend=blend_panels) -> PanelMosaic:
     """Run `op` over each panel of a merged mosaic, then feather the results back.
 
     `op_args` are exactly what you'd pass `op` directly, with the SOURCE (a
-    `PanelMosaic`) last — e.g. `process_in_panels(bxt_correct, mosaic, cf, config,
+    `PanelMosaic`) last — e.g. `process_in_panels(nxt, mosaic, config,
     pm, viewbox=vb)`. For each panel: crop its padded bbox out of `pm.merged`
     (neighbours free), run `op` on the tile, and record the tile's new identity =
     `op.filename_fn(...).stem` into the output manifest. `blend` feathers the

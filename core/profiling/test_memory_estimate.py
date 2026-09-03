@@ -74,8 +74,9 @@ def test_dimensioned_object_wins_without_disk_read():
 
 
 def test_fixed_memory_ops_reserve_their_fixed_budget():
-    # Ops in _FIXED_MEMORY_BY_OP bypass profiling entirely: bxt_correct / sxt_*
-    # shell out to an rc-astro CLI child the worker-RSS profiler can't see, and
+    # Ops in _FIXED_MEMORY_BY_OP bypass profiling entirely: bxt_channel /
+    # sxt_channel shell out to an rc-astro CLI child the worker-RSS profiler
+    # can't see, and
     # compute_image_metadata is a roughly-constant op dispatched ~30k times that
     # we keep on a flat reservation. Each must reserve its fixed budget
     # regardless of profile samples / input pixel count.
@@ -125,10 +126,10 @@ def test_fixed_auto_memory_ops_keep_worker_reuse():
     def compute_image_metadata(x) -> int:   # fixed -> excluded from max_calls
         return x
     @node(auto_memory=True)
-    def bxt_correct(x) -> int:              # fixed -> excluded from max_calls
+    def bxt_channel(x) -> int:              # fixed -> excluded from max_calls
         return x
     assert _baked_max_calls(compute_image_metadata) is None
-    assert _baked_max_calls(bxt_correct) is None
+    assert _baked_max_calls(bxt_channel) is None
 
 
 def test_non_auto_memory_op_keeps_worker_reuse():

@@ -17,7 +17,7 @@ carries `final=True` and the displayed `"Mosaic"` tap.
 
 Why GradientCorrection (data-driven) and NOT MGC here, unlike
 `post_process_stack`: the assembled mosaic produced by `merge_images` has
-NO plate solution (its producer sets `plate_solve=False` — a reprojected
+NO plate solution (its producer sets `plate_solve="none"` — a reprojected
 stitch has non-square pixels and can't be solve-field'd), and MGC/SPFC
 both require a WCS (MARS lookup + catalog star matching by sky
 coordinates). The MARS correction has already been applied per panel; the
@@ -63,7 +63,7 @@ def _post_process_channel_narrow(args, kwargs):
     cache_key_narrow=_post_process_channel_narrow,
     resources={"PixInsight": 1},
     auto_memory=True,
-    plate_solve=False,  # full mosaic projection — non-square pixels, can't solve
+    plate_solve="none",  # full mosaic projection — non-square pixels, can't solve
 )
 def post_process_mosaic_color_channel(
     mosaic: Mosaic, filter: str, config: ProcessingConfig,

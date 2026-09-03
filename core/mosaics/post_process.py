@@ -51,7 +51,7 @@ def _post_process_mosaic(
     display="Combined",
     resources={"PixInsight": 1},
     auto_memory=True,
-    plate_solve=False,  # RGB/SHO channel combination — not a mono star field
+    plate_solve="none",  # RGB/SHO channel combination — not a mono star field
 )
 def post_process_mosaic(
     mosaic: Mosaic,

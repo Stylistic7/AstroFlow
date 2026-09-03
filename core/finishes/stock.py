@@ -7,9 +7,13 @@ Conventions that make the knobs pleasant:
   * stretch params named `blackpoint/whitepoint/midtones` (linked) or
     `blackS/whiteS/midS` … (per-channel) get image-adaptive starting values
     from the viewer's STF seeding — free, by name.
-  * `star_s` rides the WITH-STARS combine: `combine + (star_s − 1)·stars`
-    is the plain photo at 1, starless at 0, star reduction between.
-  * raw Hα is band `.g` of the zero-filled S,H,O narrowband layout.
+  * scene formats are STARLESS + STARS layer pairs (no with-stars format is
+    baked): `star_s` scales the stars layer added back onto the starless —
+    `starless + star_s·stars` is the plain photo at 1 (placement and merging
+    are linear, so the layer sum reproduces the composite exactly), starless
+    at 0, star reduction between. A missing stars format binds black, which
+    degrades gracefully to the starless view.
+  * Hα is band `.g` of the zero-filled S,H,O narrowband layout.
 """
 from __future__ import annotations
 
@@ -87,42 +91,47 @@ def foraxx(nb, stars,
     return screen(vec3(r, g, o), _stars_layer(stars, star_s, star_mid))
 
 
-@finish(name="RGB", inputs=("Linear RGB", "Linear RGB Stars"),
+@finish(name="RGB", inputs=("Linear RGB Starless", "Linear RGB Stars"),
         optional=("Linear RGB Stars",))
-def rgb(combine, stars,
+def rgb(starless, stars,
         star_s=Param(1.0, 0.0, 2.0, step=0.1, label="stars"),
         blackpoint=Param(0.002, 0.0, 0.1, step=0.03, label="black", scale="log"),
         whitepoint=Param(0.5, 0.02, 1.0, step=0.03, label="white", scale="log"),
         midtones=Param(0.15, 0.01, 0.95, step=0.015, label="mid", scale="log")):
-    """The broadband colour photo: star intensity on the with-stars combine
-    (1 = plain, 0 = starless), then a LINKED stretch — one curve for all
-    three channels, so the stretch never shifts hue."""
-    c = combine + (star_s - 1.0) * stars
+    """The broadband colour photo: stars added onto the starless layer
+    (1 = plain photo, 0 = starless), then a LINKED stretch — one curve
+    for all three channels, so the stretch never shifts hue."""
+    c = starless + star_s * stars
     return _stretch(c, blackpoint, whitepoint, midtones)
 
 
-@finish(name="LRGB", inputs=("Linear RGB", "Linear RGB Stars", "Linear L"),
-        optional=("Linear RGB Stars",))
-def lrgb(combine, stars, lum,
+@finish(name="LRGB",
+        inputs=("Linear RGB Starless", "Linear RGB Stars",
+                "Linear L Starless", "Linear L Stars"),
+        optional=("Linear RGB Stars", "Linear L Stars"))
+def lrgb(starless, stars, lum, lum_stars,
          star_s=Param(1.0, 0.0, 2.0, step=0.1, label="stars"),
          blackpoint=Param(0.002, 0.0, 0.1, step=0.03, label="black", scale="log"),
          whitepoint=Param(0.5, 0.02, 1.0, step=0.03, label="white", scale="log"),
          midtones=Param(0.15, 0.01, 0.95, step=0.015, label="mid", scale="log"),
          lum_mid=Param(0.15, 0.01, 0.95, step=0.015, label="L mid", scale="log"),
          chroma=Param(1.2, 0.0, 3.0, step=0.1, label="chroma")):
-    """LRGB combination: colour from the stretched RGB, lightness replaced
-    by the (separately stretched) luminance master in CIE Lab."""
-    c = _stretch(combine + (star_s - 1.0) * stars,
+    """LRGB combination: colour from the stretched RGB layers, lightness
+    replaced by the (separately stretched) luminance in CIE Lab. `star_s`
+    rides BOTH layer pairs, so stars keep their lightness in the L plane
+    exactly as they keep their chroma in RGB."""
+    c = _stretch(starless + star_s * stars,
                  blackpoint, whitepoint, midtones)
-    la = _stretch(lum.r, blackpoint, whitepoint, lum_mid)
+    la = _stretch(lum.r + star_s * lum_stars.r,
+                  blackpoint, whitepoint, lum_mid)
     return replace_lightness(c, la, chroma)
 
 
 @finish(name="HaLRGB",
-        inputs=("Linear RGB", "Linear RGB Stars", "Linear Narrowband",
-                "Linear L"),
+        inputs=("Linear RGB Starless", "Linear RGB Stars",
+                "Linear Narrowband Starless", "Linear L Starless"),
         optional=("Linear RGB Stars",))
-def halrgb(combine, stars, nb, lum,
+def halrgb(starless, stars, nb, lum,
            star_s=Param(1.0, 0.0, 2.0, step=0.1, label="stars"),
            ha_k=Param(0.4, 0.0, 2.0, step=0.1, label="Hα→R"),
            ha_q=Param(0.0, 0.0, 1.0, step=0.05, label="continuum"),
@@ -132,10 +141,16 @@ def halrgb(combine, stars, nb, lum,
            lum_mid=Param(0.15, 0.01, 0.95, step=0.015, label="L mid", scale="log"),
            chroma=Param(1.2, 0.0, 3.0, step=0.1, label="chroma")):
     """The galaxy special: Hα line flux into R with live continuum
-    subtraction (`ha_q`), sampling RAW narrowband — star removal never
-    touches the HII knots — then the LRGB combination."""
-    c = combine + (star_s - 1.0) * stars
+    subtraction (`ha_q`) from the starless narrowband, then the LRGB
+    combination. All four input slots are spent, so the L stars ride in
+    as a PROXY — the RGB stars' mean is added into the linear lightness
+    (L star flux ≈ broadband star flux; exact would need a fifth slot).
+    Compact HII knots that native SXT classifies as stars land in the
+    narrowband STARS layer and are excluded from the Hα injection — the
+    lab's confetti gate watches that boundary."""
+    c = starless + star_s * stars
     r2 = c.r + ha_k * maximum(nb.g - ha_q * c.r, 0.0)
     c = _stretch(vec3(r2, c.g, c.b), blackpoint, whitepoint, midtones)
-    la = _stretch(lum.r, blackpoint, whitepoint, lum_mid)
+    star_l = star_s * (stars.r + stars.g + stars.b) / 3.0
+    la = _stretch(lum.r + star_l, blackpoint, whitepoint, lum_mid)
     return replace_lightness(c, la, chroma)

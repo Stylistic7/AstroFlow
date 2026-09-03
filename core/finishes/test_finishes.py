@@ -19,7 +19,7 @@ def _srcs(n, seed=7, scale=0.05, size=16):
             for _ in range(n)]
 
 
-STOCK = [("RGB", 2), ("LRGB", 3), ("HaLRGB", 4), ("Hubble", 2), ("Foraxx", 2)]
+STOCK = [("RGB", 2), ("LRGB", 4), ("HaLRGB", 4), ("Hubble", 2), ("Foraxx", 2)]
 
 
 class TestParity:
@@ -127,16 +127,19 @@ class TestMathPins:
     """Ported invariants from the deleted display/test_ops.py."""
 
     def test_star_intensity_algebra(self):
+        """Layer semantics (2026-09-02): inputs are STARLESS + STARS;
+        star_s=1 reproduces the composite (starless + stars), star_s=0
+        the starless layer alone."""
         f = get_finish("RGB")
-        combine, stars = _srcs(2)
+        starless_src, stars = _srcs(2)
         v = f.defaults()
-        plain = f.bake([combine, stars], {**v, "star_s": 1.0})
-        starless = f.bake([combine, stars], {**v, "star_s": 0.0})
-        ref = _mtf_np(np.clip((combine - v["blackpoint"])
+        plain = f.bake([starless_src, stars], {**v, "star_s": 1.0})
+        starless = f.bake([starless_src, stars], {**v, "star_s": 0.0})
+        ref = _mtf_np(np.clip(((starless_src + stars) - v["blackpoint"])
                               / (v["whitepoint"] - v["blackpoint"]), 0, 1),
                       v["midtones"])
         assert np.abs(plain - ref).max() < 1e-6
-        ref0 = _mtf_np(np.clip(((combine - stars) - v["blackpoint"])
+        ref0 = _mtf_np(np.clip((starless_src - v["blackpoint"])
                                / (v["whitepoint"] - v["blackpoint"]), 0, 1),
                        v["midtones"])
         assert np.abs(starless - ref0).max() < 1e-6
@@ -187,7 +190,8 @@ class TestRegistry:
         (tmp_path / "AstroFlow" / "finishes").mkdir(parents=True)
         (tmp_path / "AstroFlow" / "finishes" / "mine.py").write_text(
             "from finishes import finish, Param, mtf, saturate\n"
-            "@finish(name='RGB', inputs=('Linear RGB', 'Linear RGB Stars'))\n"
+            "@finish(name='RGB', inputs=('Linear RGB Starless',"
+            " 'Linear RGB Stars'))\n"
             "def rgb(c, stars, mid=Param(0.3, 0.01, 0.95)):\n"
             "    return mtf(saturate(c), mid)\n"
         )
@@ -196,7 +200,7 @@ class TestRegistry:
         monkeypatch.setattr(reg.Path, "home", lambda: tmp_path)
         try:
             refresh_finishes()
-            f = get_finish("RGB", primary="Linear RGB")
+            f = get_finish("RGB", primary="Linear RGB Starless")
             authored = [p.name for p in f.params if not p.builtin]
             assert authored == ["mid"], \
                 "user file must OVERRIDE the stock RGB"

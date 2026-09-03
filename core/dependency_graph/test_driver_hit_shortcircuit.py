@@ -22,7 +22,7 @@ from dependency_graph._delete_intermediates_fixtures import (
 from file_io.types import FitsFilePath
 
 
-@node(plate_solve=False)
+@node(plate_solve="none")
 def _hit_probe_op(tag: str) -> FitsFilePath:
     """Plain cached op with a persistent output — the canonical "should be a
     free hit on rerun" shape."""

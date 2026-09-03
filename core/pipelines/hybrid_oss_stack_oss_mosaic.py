@@ -20,9 +20,9 @@ once they are all on disk.
 from astroflow.pipeline import pipeline
 from dependency_graph.tracing import workflow_group
 from mosaics.color.post_process import (
-    bxt_correct_only, color_post_process, panel_source_manifest,
+    color_post_process, native_star_separation, panel_source_manifest,
 )
-from mosaics.merging.oss import merge_images_oss
+from mosaics.merging.oss import merge_images_oss, merge_images_stars
 from mosaics.placement.astroflow import place_image
 from mosaics.viewbox_measured import compute_viewbox_measured
 from mosaics.types import Mosaic
@@ -91,11 +91,10 @@ def for_mosaic(mosaic, config):
     """Build a mosaic with OSS-stacked panels + OSS panel-blending, then turn
     the per-filter channels into named color images.
 
-    Returns `{filter: channel_handle, name: color_handle}` — the merged
-    per-filter channels (display="Mosaic") PLUS the color deliverables
-    ("Hubble"/"Foraxx"/"Stars") from `color_post_process`. Same channel
-    topology as the PI hybrid (place each panel, then one variadic OSS blend
-    per filter), now continued into color post-processing.
+    Returns the merged per-filter STARLESS layer channels and stars layers
+    PLUS the colour deliverables from `color_post_process`. Same channel
+    topology as the PI hybrid (native chain per panel, place each layer,
+    then one variadic OSS blend per filter and layer).
     """
     targets_by_id = {t.id: t for t in mosaic.targets}
 
@@ -112,38 +111,44 @@ def for_mosaic(mosaic, config):
         "Master", len(targets_by_id) == 1,
         tuple(c.content_hash for c in _ordered), *_ordered)
 
-    out = {}
+    # Native chain per panel (full BXT → SXT starless → stars residual;
+    # GPU work, kept on disk so incremental runs cache-hit), then each
+    # LAYER is placed and merged inline. Stars placements skip erosion
+    # (a stars layer is mostly zeros; the eroder reads zeros as
+    # outside-footprint) and their merge does no level matching (offsets
+    # cancel in `channel − starless`). Placed panels are multi-GB but
+    # CPU-cheap re-derivations — reclaimed once the merges consume them.
+    import dataclasses
+    star_config = dataclasses.replace(config, edge_erosion_px=0)
+    starless_out, stars_out = {}, {}
     for filter in mosaic.filters:
-        # Croman two-pass mosaic: BXT Correct-Only on each PANEL (re-solved)
-        # before placement — per-panel aberrations differ across the mosaic —
-        # then the sharpening BXT runs on the assembled mosaic
-        # (color_post_process). GPU work → deliberately OUTSIDE the ephemeral
-        # scope (ephemeral = cheap-to-recompute × big; GPU minutes are not
-        # cheap): kept on disk so incremental runs cache-hit, superseded
-        # hashes collected by the orphan sweep.
-        corrected = {
-            tid: bxt_correct_only(targets_by_id[tid], filter, config,
-                                  channels[(tid, filter)])
+        layers = {
+            tid: native_star_separation(targets_by_id[tid], filter, config,
+                                        channels[(tid, filter)])
             for strip in mosaic.strips
             for tid in strip
             if (tid, filter) in channels
         }
-        # Placed panels are multi-GB but CPU-cheap re-derivations — reclaimed
-        # once the merge consumes them.
-        placed = [
-            place_image(mosaic, targets_by_id[tid], filter, viewbox, config,
-                        corrected[tid])
-            for strip in mosaic.strips
-            for tid in strip
-            if tid in corrected
-        ]
-        if not placed:
+        order = [tid for strip in mosaic.strips for tid in strip
+                 if tid in layers]
+        if not order:
             continue
-        out[filter] = merge_images_oss(mosaic, filter, *placed)
+        starless_out[filter] = merge_images_oss(mosaic, filter, *[
+            place_image(mosaic, targets_by_id[tid], filter, viewbox, config,
+                        layers[tid][0])
+            for tid in order
+        ])
+        stars_out[filter] = merge_images_stars(mosaic, filter, *[
+            place_image(mosaic, targets_by_id[tid], filter, viewbox,
+                        star_config, layers[tid][1])
+            for tid in order
+        ])
 
     panel_sources = {
         f: panel_source_manifest(targets_by_id, f, config, channels)
-        for f in out
+        for f in starless_out
     }
-    color = color_post_process(mosaic, out, config, viewbox, panel_sources)
-    return {**out, **color}
+    color = color_post_process(mosaic, starless_out, stars_out, config,
+                               viewbox, panel_sources)
+    return {**starless_out,
+            **{f"{f} Stars": h for f, h in stars_out.items()}, **color}

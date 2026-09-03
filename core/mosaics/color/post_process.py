@@ -33,11 +33,11 @@ from file_io.generic import read_image
 from file_io.tiff_file_io import (write_tiff_image, _atomic_tiffsave,
                                   FAST_COMPRESSION, COMPATIBLE_COMPRESSION)
 from file_io.tiling import feather_blend_to_bigtiff, tile_size_for
-from file_io.types import TiffFilePath, WithSidecar, XisfFilePath
+from file_io.types import TiffFilePath, WithSidecar
 from file_io.xisf_file_io import write_xisf_image
 from metadata.classes import ImageMetadata
 from mosaics.panels import (
-    PanelMosaic, base_panel_mosaic, blend_panels, combine_panels, process_in_panels,
+    PanelMosaic, base_panel_mosaic, combine_panels, process_in_panels,
 )
 # MosaicLike bound as `Mosaic`: widens beartype to accept a Target acting as
 # its own single-panel mosaic WITHOUT touching the `mosaic: Mosaic`
@@ -164,43 +164,50 @@ def _save_color_vips(path: str, img: pyvips.Image, name: str,
     os.replace(tmp, path)
 
 
-# ---- per-channel intermediates (no display=; ephemeral) ----
+# ---- the native per-(target, filter) chain: BXT → SXT → stars ----
+#
+# Star removal runs at the NATIVE pixel grid, per mono channel, BEFORE
+# placement. Measured 2026-09-02: SXT is spotless on native masters and
+# leaves residual halo "donuts" at every star on the projection-resampled
+# canvas — canvas stars are feather-blends of independently-resampled,
+# Mercator-warped PSFs, outside the model's training distribution. This
+# also puts star removal where RC Astro's docs prescribe it ("right after
+# integration", linear, BXT first so its auto-PSF still sees stars). The
+# canvas keeps only the grid-insensitive, coherence-sensitive work: the
+# channel combines and NXT (which needs 3 co-registered channels —
+# per-channel denoising mints chroma noise; placement co-registers free).
 
-def _bxt_correct_narrow(args, kwargs):
-    """Cache-key hook: project `config` to (mock, config.bxt) — the only things a
-    BXT'd channel depends on. `channel` is the trailing data-dependency; `config`
-    sits just before it (as in place_image's _place_image_narrow)."""
-    mosaic, filter, config, channel = args
+def _bxt_channel_narrow(args, kwargs):
+    """Cache-key hook: project `config` to (mock, config.bxt) — the only
+    things a BXT'd channel depends on. `channel` is the trailing
+    data-dependency; `config` sits just before it."""
+    target, filter, config, channel = args
     mock = config.development_settings.mock_pixinsight
-    # Route on stable_hash, NOT the full mosaic (content_hash churns on ANY panel
-    # re-stack — that would re-run every panel's BXT tile on one new sub). The
-    # per-tile identity comes from `channel` (the crop), which is per-panel.
-    return (mosaic.stable_hash, filter, (mock, config.bxt), channel), kwargs
+    return (target, filter, (mock, config.bxt), channel), kwargs
 
 
-def _sxt_narrow(args, kwargs):
-    """Cache-key hook for sxt_starless: project `config` to
-    (mock, config.sxt). Shared by both ops — their differing bodies (starless vs
-    unscreened stars) already give them distinct call hashes via op identity."""
-    mosaic, filter, config, channel = args
+def _sxt_channel_narrow(args, kwargs):
+    """Cache-key hook: project `config` to (mock, config.sxt)."""
+    target, filter, config, channel = args
     mock = config.development_settings.mock_pixinsight
-    return (mosaic.stable_hash, filter, (mock, config.sxt), channel), kwargs   # stable_hash: no cross-panel churn
+    return (target, filter, (mock, config.sxt), channel), kwargs
 
 
-@node(cache_key_narrow=_bxt_correct_narrow, auto_memory=True, resources={"gpu_slots": 1}, plate_solve=False)  # derived from an already-solved channel
-def bxt_correct(
-    mosaic: Mosaic, filter: str, config: ProcessingConfig, channel: ImageMetadata,
+@node(cache_key_narrow=_bxt_channel_narrow, auto_memory=True, resources={"gpu_slots": 1}, plate_solve="solve")  # RE-SOLVE: deconvolution shifts geometry (Croman)
+def bxt_channel(
+    target: Target, filter: str, config: ProcessingConfig, channel: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
-    """BlurXTerminator a per-filter mosaic channel (linear deconvolution).
+    """Full BlurXTerminator (correct + sharpen, config.bxt) on a per-filter
+    channel master at its NATIVE grid — the one and only BXT pass.
 
-    Runs the normal sharpening deconvolution (config.bxt; defaults to the
-    PixInsight-GUI look), NOT --correct-only unless config.bxt.correct_only is set.
-    The cache key is narrowed to (mock, config.bxt), so tuning the BXT settings
-    re-derives BXT and its downstream, and nothing else.
-
-    XISF output: full-res channels exceed rc-astro's cfitsio FITS-writer limit
-    (2**31 px); XISF has none. See `rc_astro_cli`."""
-    out = bxt_correct.filename_fn(mosaic, filter, config, channel)
+    Native mono is where BXT belongs: each channel's PSF is physically its
+    own (per-filter seeing/focus), the pixels are camera PSFs rather than
+    resampled blends, and aberration correction per panel before assembly
+    is Croman's own mosaic guidance (a corner of one frame is the OPPOSITE
+    corner of the next, so canvas-level correction can't match both).
+    `plate_solve="solve"` RE-solves the output — correction shifts the
+    geometry, and `place_image` projects from this WCS."""
+    out = bxt_channel.filename_fn(target, filter, config, channel)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     if config.development_settings.mock_pixinsight:
         _write_mono_tiff(out, _mono(channel), filter)
@@ -215,55 +222,31 @@ def bxt_correct(
     return WithSidecar(TiffFilePath(out))
 
 
-def _bxt_correct_only_narrow(args, kwargs):
-    """Cache-key hook: project `config` to (mock, config.bxt). `correct_only` is
-    forced True in the body, so the sharpen fields don't affect the output, but
-    keying on config.bxt is harmless and matches bxt_correct."""
-    target, filter, config, channel = args
-    mock = config.development_settings.mock_pixinsight
-    return (target, filter, (mock, config.bxt), channel), kwargs
-
-
-@node(cache_key_narrow=_bxt_correct_only_narrow, auto_memory=True, resources={"gpu_slots": 1}, plate_solve=True)  # RE-SOLVE the corrected panel (Croman)
-def bxt_correct_only(
+@node(cache_key_narrow=_sxt_channel_narrow, auto_memory=True, resources={"gpu_slots": 1}, plate_solve="inherit")  # starless can't blind-solve; geometry ≡ input
+def sxt_channel(
     target: Target, filter: str, config: ProcessingConfig, channel: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
-    """BlurXTerminator Correct-Only on a mosaic PANEL, BEFORE assembly — the first
-    half of Croman's recommended two-pass mosaic workflow.
+    """StarXTerminator the BXT'd native mono channel; keep the starless
+    body (linear, 32F). The STARLESS layer's per-panel source.
 
-    Correct-Only fixes each frame's optical aberrations (coma, tilt, chromatic,
-    guiding-elongation) WITHOUT sharpening. Aberrations differ between panels — a
-    corner of one frame is the OPPOSITE corner of the next, so they don't match —
-    which is why correcting them per-panel, before merging, is more accurate than
-    only correcting the assembled mosaic. `plate_solve=True` RE-solves the
-    corrected panel (also per Croman: aberration correction shifts the geometry),
-    which `place_image` requires (it asserts a plate solution and projects from
-    that WCS). The SHARPENING BXT pass runs later, on the assembled mosaic
-    (`bxt_correct` in `color_post_process`)."""
-    out = bxt_correct_only.filename_fn(target, filter, config, channel)
+    `plate_solve="inherit"`: a starless image has nothing to solve
+    against, but SXT moves no pixels, so the output adopts `channel`'s
+    solution (written into its sidecar) — which `place_image` requires.
+
+    The mock skims 10% of the flux above the pedestal (footprint zeros
+    stay zero): dimensionally a star removal — background preserved, some
+    signal moved to the stars layer — so layer algebra, placement
+    footprints, and merge level statistics all exercise realistically
+    without rc-astro."""
+    out = sxt_channel.filename_fn(target, filter, config, channel)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     if config.development_settings.mock_pixinsight:
-        _write_mono_tiff(out, _mono(channel), filter)
-    else:
-        from rc_astro_cli import run_bxt
-        run_bxt(channel.filename, out, correct_only=True,
-                ml_version=config.bxt.ml_version, overlap=config.bxt.overlap)
-    return WithSidecar(TiffFilePath(out))
-
-
-@node(cache_key_narrow=_sxt_narrow, auto_memory=True, resources={"gpu_slots": 1}, plate_solve=False)  # starless: no stars to solve against
-def sxt_starless(
-    mosaic: Mosaic, filter: str, config: ProcessingConfig, channel: ImageMetadata,
-) -> WithSidecar[TiffFilePath]:
-    """StarXTerminator a narrowband channel; keep the starless body (linear).
-
-    Cache key narrowed to (mock, config.sxt). XISF output (its FITS writer
-    overflows on full-res channels; `channel` is the XISF BXT output, so rc-astro
-    reads and writes XISF here)."""
-    out = sxt_starless.filename_fn(mosaic, filter, config, channel)
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    if config.development_settings.mock_pixinsight:
-        _write_mono_tiff(out, _mono(channel), filter)
+        from stacks.post_processing.background_pedestal import DEFAULT_PEDESTAL
+        arr = _mono(channel)
+        mock = np.where(arr > 0,
+                        DEFAULT_PEDESTAL + 0.9 * (arr - DEFAULT_PEDESTAL),
+                        np.float32(0)).astype(np.float32)
+        _write_mono_tiff(out, mock, filter)
     else:
         from rc_astro_cli import run_sxt
         run_sxt(channel.filename, starless_out=out,
@@ -271,76 +254,75 @@ def sxt_starless(
     return WithSidecar(TiffFilePath(out))
 
 
-def _sxt_rgb_narrow(args, kwargs):
-    """Cache-key hook for sxt_stars_rgb: project `config` to (mock, config.sxt)."""
-    mosaic, config, rgb = args
-    mock = config.development_settings.mock_pixinsight
-    return (mosaic.stable_hash, (mock, config.sxt), rgb), kwargs   # stable_hash: no cross-panel churn
-
-
-# display="Linear RGB" makes the ALREADY-MATERIALIZED linear combine a served
-# scene tap (live-finish source format 3). Decorator kwargs are STRIPPED from
-# the structural op hash, so stamping the display re-keys NOTHING — every
-# cached combine keeps its key and gains a tap.
-@node(display="Linear RGB", filter="RGB", auto_memory=True, plate_solve=False)  # pure bandjoin, no PixInsight
-def combine_broadband_rgb(
-    mosaic: Mosaic, r: ImageMetadata, g: ImageMetadata, b: ImageMetadata,
+@node(auto_memory=True, plate_solve="inherit")  # pure subtraction; geometry ≡ input
+def stars_channel(
+    target: Target, filter: str, channel: ImageMetadata, starless: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
-    """Combine the three LINEAR BXT'd broadband channels into one linear RGB
-    XISF so StarXTerminator can extract stars from all channels AT ONCE.
-
-    Extracting per-channel (the old path) let SXT catch a different set of
-    marginal stars in each of R/G/B — a faint star found in R but missed in
-    G/B became a pure-red dot, giving 'confetti' stars of impossible primary
-    colours. Seeing the combined image, SXT's star decision is identical across
-    channels. XISF keeps rc-astro happy at gigapixel sizes."""
-    out = combine_broadband_rgb.filename_fn(mosaic, r, g, b)
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    # Streaming bandjoin (the stack_sho_channels pattern): three lazy mono
-    # opens, joined and pulled through the tiled writer stripe-by-stripe.
-    # The previous np.stack held 3 full gigapixel monos PLUS the 3-band
-    # stack (~54 GB peak) — the worst full-array op in the fleet.
-    monos = [_open_mono_vips(m) for m in (r, g, b)]
-    rgb = monos[0].bandjoin([monos[1], monos[2]]).copy()
-    rgb.set_type(pyvips.GValue.gstr_type, "image-description",
-                 json.dumps({"PIPELINE": "AstroFlow-OSS"}))
-    _atomic_tiffsave(rgb, Path(out),
-                     tile=tile_size_for(rgb.width, rgb.height))
+    """The STARS layer: `channel − starless`, clamped at 0 — exactly
+    rc-astro's own definition of the stars image on linear data (simple
+    subtraction; `--unscreen` is for stretched data). Streaming vips
+    subtract, no GPU, no config (pure arithmetic — in mock mode the
+    layer algebra still holds because the mock starless is a scaled
+    channel). Mostly zeros, so it compresses to almost nothing; the
+    with-stars views are reassembled live in the viewer's finishes as
+    `starless + star_s·stars`."""
+    out = stars_channel.filename_fn(target, filter, channel, starless)
+    diff = _open_mono_vips(channel) - _open_mono_vips(starless)
+    stars = (diff < 0).ifthenelse(0.0, diff).cast("float")
+    _save_mono_vips(out, stars, filter)
     return WithSidecar(TiffFilePath(out))
 
 
-@node(cache_key_narrow=_sxt_rgb_narrow, auto_memory=True, resources={"gpu_slots": 1}, plate_solve=False)  # coherent RGB stars
-def sxt_stars_rgb(
-    mosaic: Mosaic, config: ProcessingConfig, rgb: ImageMetadata,
+@workflow_group
+def native_star_separation(target, filter, config, channel, bxt=True):
+    """The per-(target, filter) native chain as one legible graph group:
+    `bxt_channel → sxt_channel → stars_channel`, returning the
+    `(starless, stars)` layer pair the pipelines place and merge.
+    `bxt=False` (labs only) skips deconvolution — BXT is PSF cosmetics,
+    orthogonal to what the labs gate on, and its rc-astro launches were
+    the largest lab compute lane (Stylistic7, 2026-09-02)."""
+    corrected = (bxt_channel(target, filter, config, channel)
+                 if bxt else channel)
+    starless = sxt_channel(target, filter, config, corrected)
+    return starless, stars_channel(target, filter, corrected, starless)
+
+
+def _rgb_join(r: ImageMetadata, g: ImageMetadata, b: ImageMetadata) -> pyvips.Image:
+    """Streaming bandjoin of three mono layer mosaics: three lazy opens,
+    pulled through the tiled writer stripe-by-stripe (never ~54 GB of
+    numpy stacks)."""
+    monos = [_open_mono_vips(m) for m in (r, g, b)]
+    return monos[0].bandjoin([monos[1], monos[2]])
+
+
+@node(display="Linear RGB Starless", filter="RGB", final=True, auto_memory=True, plate_solve="none")  # pure bandjoin
+def linear_rgb_starless(
+    mosaic: Mosaic, r: ImageMetadata, g: ImageMetadata, b: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
-    """StarXTerminator the combined linear RGB; keep the RGB stars (simple
-    subtraction). One SXT pass over the RGB (not one per channel) makes the
-    extracted stars coherent across R/G/B, so the star image has natural colours
-    instead of per-channel primary-colour confetti.
+    """Scene format: the linear STARLESS RGB — bandjoin of the three
+    starless channel layer mosaics. Star coherence across R/G/B is a
+    property of the LAYERS now (each channel's stars were removed at the
+    native grid and the residue subtracted exactly), so no canvas SXT
+    pass exists; the with-stars RGB is never baked — the shader adds
+    `starless + star_s·stars` live."""
+    out = linear_rgb_starless.filename_fn(mosaic, r, g, b)
+    _save_color_vips(out, _rgb_join(r, g, b), "Linear RGB Starless")
+    return WithSidecar(TiffFilePath(out))
 
-    `unscreen=False` on purpose: rc-astro's `--unscreen` mode is for NONLINEAR
-    (stretched) data — it inverts a screen blend to make "screen-ready" stars.
-    Our input here is LINEAR (combine_broadband_rgb), where stars combine
-    additively, so simple subtraction is the correct extraction and gives the
-    best star colour (per RC-Astro's StarXTerminator usage notes).
 
-    The mono stars this op once emitted were NOT an rc-astro artifact (a synthetic
-    3-band → SXT → 3-band repro cleared it): under the OLD arbitrary-grid tiling
-    the crop handed here was a mono nebula crop, because the crop cache key dropped
-    the source's identity and every tiled source sharing a mosaic/rect collided
-    onto one crop. Panels-as-tiles (`mosaics.panels`) keys each crop on its panel's
-    manifest hash, so the RGB-star crop can never collide with a nebula crop;
-    downstream consumers (the Linear RGB Stars tap) would surface it as grey
-    stars if it ever regressed to mono."""
-    out = sxt_stars_rgb.filename_fn(mosaic, config, rgb)
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    if config.development_settings.mock_pixinsight:
-        write_tiff_image(Path(out), read_image(Path(rgb.filename)).astype(np.float32),
-                         {"PIPELINE": "AstroFlow-OSS"})
-    else:
-        from rc_astro_cli import run_sxt
-        run_sxt(rgb.filename, stars_out=out, unscreen=False,
-                ml_version=config.sxt.ml_version, overlap=config.sxt.overlap)
+@node(display="Linear RGB Stars", filter="RGB", final=True, auto_memory=True, plate_solve="none")  # pure bandjoin
+def linear_rgb_stars(
+    mosaic: Mosaic, r: ImageMetadata, g: ImageMetadata, b: ImageMetadata,
+) -> WithSidecar[TiffFilePath]:
+    """Scene format: the linear RGB STARS — bandjoin of the three stars
+    layer mosaics (each exactly `channel − starless` per panel, merged
+    without level matching). Coherent star colours come from the shared
+    native SXT star decision per panel; a channel's marginal-star misses
+    surface in the lab's confetti gate, not as canvas artifacts.
+    Overwhelmingly zeros, so the deflate tap costs almost nothing; live
+    finishes use it for star intensity (`starless + s·stars`)."""
+    out = linear_rgb_stars.filename_fn(mosaic, r, g, b)
+    _save_color_vips(out, _rgb_join(r, g, b), "Linear RGB Stars")
     return WithSidecar(TiffFilePath(out))
 
 
@@ -372,7 +354,7 @@ def _blend_sho_narrow(args, kwargs):
             tuple(p.stable_hash for p in panels), *tiles), kwargs   # stable_hash: no cross-panel churn
 
 
-@node(auto_memory=True, plate_solve=False)  # streaming bandjoin of the 3 starless channels
+@node(auto_memory=True, plate_solve="none")  # streaming bandjoin of the 3 starless channels
 def stack_sho_channels(
     mosaic: Mosaic, sii: ImageMetadata, ha: ImageMetadata, oiii: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
@@ -393,7 +375,7 @@ def stack_sho_channels(
     return WithSidecar(TiffFilePath(out))
 
 
-@node(cache_key_narrow=_nxt_narrow, auto_memory=True, resources={"gpu_slots": 1}, plate_solve=False)  # NXT on an image (whole OR one tile)
+@node(cache_key_narrow=_nxt_narrow, auto_memory=True, resources={"gpu_slots": 1}, plate_solve="none")  # NXT on an image (whole OR one tile)
 def nxt(
     mosaic: Mosaic, config: ProcessingConfig, image: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
@@ -422,7 +404,7 @@ def nxt(
     return WithSidecar(TiffFilePath(out))
 
 
-@node(cache_key_narrow=_blend_sho_narrow, display=LINEAR_SHO_DISPLAY, filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-channel LINEAR, NXT-denoised
+@node(cache_key_narrow=_blend_sho_narrow, display=LINEAR_SHO_DISPLAY, filter="RGB", final=True, auto_memory=True, plate_solve="none")  # 3-channel LINEAR, NXT-denoised
 def blend_linear_sho(
     mosaic: Mosaic, config: ProcessingConfig, viewbox, panels: tuple,
     *tiles: ImageMetadata,
@@ -473,12 +455,11 @@ def linear_sho(
 
 
 # ---- linear scene formats: the ≤3-band basis the live WebGPU finishes
-# ---- sample. Formats 1/2 are always 3 bands in canonical S,H,O order with
-# ---- absent bands ZERO-FILLED (uniform texture shape, zeros deflate to
-# ---- nothing) and the REAL band list in the TIFF description; format 3 is
-# ---- the display-stamped combine above; starless RGB is NOT baked (the
-# ---- shader derives it exactly as combine − stars); nobody wants
-# ---- narrowband-stars-only, so it does not exist.
+# ---- sample. Everything is served as STARLESS + STARS layer pairs (the
+# ---- with-stars views are shader sums, never baked). Narrowband formats
+# ---- are always 3 bands in canonical S,H,O order with absent bands
+# ---- ZERO-FILLED (uniform texture shape, zeros deflate to nothing) and
+# ---- the REAL band list in the TIFF description.
 
 _NB_ORDER = ("S", "H", "O")
 
@@ -495,58 +476,55 @@ def _nb_threeband(channels: dict) -> pyvips.Image:
     return bands[0].bandjoin(bands[1:])
 
 
-@node(display="Linear Narrowband", filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-band linear
-def linear_narrowband(
-    mosaic: Mosaic, filters: tuple, *channels: ImageMetadata,
-) -> WithSidecar[TiffFilePath]:
-    """Scene format 1: the WITH-STARS narrowband combination, linear —
-    BXT'd but never SXT'd, so compact HII knots that star removal would
-    eat survive intact. This is the raw-Hα source the galaxy finishes
-    sample (live continuum subtraction: Hα − q·R), and the native-star
-    source for narrowband-only images. `filters` lists the real bands in
-    S,H,O order; missing bands are zero-filled."""
-    out = linear_narrowband.filename_fn(mosaic, filters, *channels)
-    img = _nb_threeband(dict(zip(filters, channels)))
-    _save_color_vips(out, img, "Linear Narrowband", bands=filters)
-    return WithSidecar(TiffFilePath(out))
-
-
-@node(display="Linear Narrowband Starless", filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-band linear
+@node(display="Linear Narrowband Starless", filter="RGB", final=True, auto_memory=True, plate_solve="none")  # 3-band linear
 def linear_narrowband_starless(
     mosaic: Mosaic, filters: tuple, *channels: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
-    """Scene format 2 for PARTIAL narrowband sets (an Hα-only galaxy, an
-    HOO dual-band OSC): the starless combination, zero-filled to S,H,O.
-    Full-SHO images don't get this — "Linear SHO" (NXT-denoised) already
-    serves that role."""
+    """Scene format for PARTIAL narrowband sets (an Hα-only galaxy, an
+    HOO dual-band OSC): the starless layer combination, zero-filled to
+    S,H,O. Full-SHO images don't get this — "Linear SHO" (NXT-denoised)
+    already serves that role. The raw-Hα galaxy finishes (continuum
+    subtraction Hα − q·R) sample this plus the stars format — the layer
+    sum IS the old with-stars combine, exactly."""
     out = linear_narrowband_starless.filename_fn(mosaic, filters, *channels)
     img = _nb_threeband(dict(zip(filters, channels)))
     _save_color_vips(out, img, "Linear Narrowband Starless", bands=filters)
     return WithSidecar(TiffFilePath(out))
 
 
-@node(display="Linear RGB Stars", filter="RGB", final=True, auto_memory=True, plate_solve=False)  # 3-band linear
-def linear_rgb_stars(
-    mosaic: Mosaic, stars: ImageMetadata,
+@node(display="Linear Narrowband Stars", filter="RGB", final=True, auto_memory=True, plate_solve="none")  # 3-band linear
+def linear_narrowband_stars(
+    mosaic: Mosaic, filters: tuple, *channels: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
-    """Scene format 5: the LINEAR coherent RGB stars (the SXT extraction,
-    pre-stretch — the stretched version is the "Stars" deliverable). A
-    star image is overwhelmingly zeros, so the deflate tap costs almost
-    nothing on disk; live finishes use it for star intensity/reduction
-    (`starless + s·stars`) and to derive starless RGB as combine − stars."""
-    out = linear_rgb_stars.filename_fn(mosaic, stars)
-    _save_color_vips(out, _open_gig_vips(stars.filename), "Linear RGB Stars")
+    """Scene format: the narrowband STARS layers, zero-filled to S,H,O —
+    the star companion of "Linear SHO"/"Linear Narrowband Starless" that
+    the shader adds back live (`starless + star_s·stars`). Built for
+    EVERY narrowband set, full SHO included."""
+    out = linear_narrowband_stars.filename_fn(mosaic, filters, *channels)
+    img = _nb_threeband(dict(zip(filters, channels)))
+    _save_color_vips(out, img, "Linear Narrowband Stars", bands=filters)
     return WithSidecar(TiffFilePath(out))
 
 
-@node(display="Linear L", filter="L", final=True, auto_memory=True, plate_solve=False)  # mono linear
+@node(display="Linear L Starless", filter="L", final=True, auto_memory=True, plate_solve="none")  # mono linear
 def linear_lum(
     mosaic: Mosaic, lum: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
-    """Scene format 6: the BXT'd luminance master as a served mono tap —
-    the lightness source for live LRGB/HaLRGB finishing."""
+    """The starless luminance layer mosaic as a served mono tap — the
+    lightness source for live LRGB/HaLRGB finishing."""
     out = linear_lum.filename_fn(mosaic, lum)
     _save_mono_vips(out, _open_mono_vips(lum), "L")
+    return WithSidecar(TiffFilePath(out))
+
+
+@node(display="Linear L Stars", filter="L", final=True, auto_memory=True, plate_solve="none")  # mono linear
+def linear_lum_stars(
+    mosaic: Mosaic, stars: ImageMetadata,
+) -> WithSidecar[TiffFilePath]:
+    """The luminance STARS layer as a served mono tap — added back into
+    the LRGB lightness live by the shader."""
+    out = linear_lum_stars.filename_fn(mosaic, stars)
+    _save_mono_vips(out, _open_mono_vips(stars), "L")
     return WithSidecar(TiffFilePath(out))
 
 
@@ -554,9 +532,11 @@ def panel_source_manifest(targets_by_id: dict, filter: str, config,
                           channels: dict) -> dict:
     """`{panel_id: pre-merge identity}` for `color_post_process(panel_sources=)`.
 
-    The identity is `bxt_correct_only`'s output stem for that panel — the same
-    `op.filename_fn(...).stem` trick `place_image` refs use, so it is the real
-    product identity rather than a re-derivation that could drift from it.
+    The identity is `sxt_channel`'s output stem for that panel — the terminal
+    of the native per-panel chain (BXT folds in via its input), computed with
+    the same `op.filename_fn(...)` + `IdentityRef` arithmetic `place_image`
+    refs use, so it is the real product identity rather than a re-derivation
+    that could drift from it.
 
     This is what makes two pipelines processing ONE target produce distinct
     colour tails: `channels[(tid, filter)]` is the per-filter merged channel,
@@ -565,112 +545,88 @@ def panel_source_manifest(targets_by_id: dict, filter: str, config,
 
     `channels` is the `{(target_id, filter): channel}` map the pipelines build;
     entries for other filters and unknown targets are ignored."""
-    return {
-        tid: Path(bxt_correct_only.filename_fn(
-            targets_by_id[tid], filter, config, channel)).stem
-        for (tid, f), channel in channels.items()
-        if f == filter and tid in targets_by_id
-    }
+    from dependency_graph.tracing import IdentityRef
+    out = {}
+    for (tid, f), channel in channels.items():
+        if f != filter or tid not in targets_by_id:
+            continue
+        target = targets_by_id[tid]
+        bxt_stem = Path(bxt_channel.filename_fn(
+            target, filter, config, channel)).stem
+        out[tid] = Path(sxt_channel.filename_fn(
+            target, filter, config, IdentityRef(bxt_stem))).stem
+    return out
 
 
 @workflow_group
-def color_post_process(mosaic: Mosaic, channels: dict, config, viewbox=None,
-                       panel_sources: dict | None = None,
-                       bxt: bool = True) -> dict:
-    """Turn merged per-filter channels into the LINEAR SCENE FORMATS — the
-    orthogonal ≤3-band basis every colour look is assembled from, LIVE, in
-    the viewer's WGSL finishes (finishes/stock.py + ~/AstroFlow/finishes/).
+def color_post_process(mosaic: Mosaic, starless: dict, stars: dict, config,
+                       viewbox=None,
+                       panel_sources: dict | None = None) -> dict:
+    """Turn the per-filter LAYER mosaics into the LINEAR SCENE FORMATS —
+    the orthogonal ≤3-band basis every colour look is assembled from,
+    LIVE, in the viewer's WGSL finishes (finishes/stock.py +
+    ~/AstroFlow/finishes/).
 
-    No palette is baked here (2026-08-12): a Hubble or LRGB image is a
-    per-pixel function of these formats, and materializing it burned
-    ~40-50 GB per look per mosaic re-storing data the formats already hold.
-    This group's colour output is exactly: Linear SHO (NXT'd starless
-    narrowband), Linear Narrowband (raw, with stars — HII detail SXT never
-    touched), Linear Narrowband Starless (partial sets), Linear RGB (the
-    with-stars combine, display-stamped on `combine_broadband_rgb`),
-    Linear RGB Stars, and Linear L.
+    All rc-astro star work already happened at the NATIVE grid
+    (`bxt_channel` → `sxt_channel` → `stars_channel`, before placement —
+    see the chain comment above); this group is the CANVAS tail: pure
+    layer combines plus the one op that genuinely wants co-registered
+    3-channel input, NXT (per-channel denoising mints chroma noise;
+    placement co-registers the channels for free). No palette is baked
+    (2026-08-12), and neither is any with-stars view — both are per-pixel
+    functions of these formats, assembled in-shader
+    (`starless + star_s·stars`).
 
-    `channels` is `{filter: merged-channel handle}` from `for_mosaic`. BXT
-    every channel; SXT the narrowband to starless and the broadband to
-    coherent RGB stars; band-join the formats.
+    Output formats: Linear SHO (NXT'd starless SHO composite), Linear
+    Narrowband Starless (partial sets) + Linear Narrowband Stars, Linear
+    RGB Starless + Linear RGB Stars, Linear L Starless + Linear L Stars.
 
-    `viewbox` gives the trace-time canvas dims for the tiled ops
-    (`linear_sho`); each pipeline passes its quality-specific viewbox.
-    Defaults to the Master viewbox for callers (e.g. tests) that don't tile
-    at another quality.
+    `starless` / `stars` are `{filter: merged layer handle}` from the
+    pipelines' `_merged_channels`. `viewbox` gives the trace-time canvas
+    dims for the tiled NXT round (`linear_sho`); defaults to the Master
+    viewbox for callers (e.g. tests) that don't tile at another quality.
     """
     if viewbox is None:
         viewbox = mosaic.viewbox("Master")
-    by_class = {normalize_filter(f): ch for f, ch in channels.items()}
-    # Normalized the same way as `channels`, so the lookup below can't miss on
-    # a filter-name spelling ("Ha" vs "H") and silently fall back to the
+    # Normalized the same way throughout, so no lookup can miss on a
+    # filter-name spelling ("Ha" vs "H") and silently fall back to the
     # colliding content_hash manifest.
+    sl = {normalize_filter(f): ch for f, ch in starless.items()}
+    st = {normalize_filter(f): ch for f, ch in stars.items()}
     panels_by_class = {normalize_filter(f): p
                        for f, p in (panel_sources or {}).items()}
 
-    # Ephemeral = cheap-to-recompute × big-on-disk. The GPU stages (BXT/SXT
-    # tiles + their blends) are deliberately OUTSIDE every scope: reclaiming
-    # them made each incremental run repay hours of GPU work re-deriving
-    # unchanged tiles (the 619-redo autopsy, 2026-08-05). They persist;
-    # superseded hashes are collected by the orphan sweep. Only the genuinely
-    # cheap intermediates (stage-0 wrap, stretches, band-joins) stay ephemeral.
-    starless_nb: dict[str, object] = {}
-    corrected_nb: dict[str, object] = {}
-    bxt_bb: dict[str, object] = {}
-    bxt_l = None
-    for cf, channel in by_class.items():
-        # Wrap the merged channel as the stage-0 PanelMosaic (merged image +
-        # per-panel base manifest); every rc-astro op then tiles by PANEL.
-        pm = base_panel_mosaic(mosaic, cf, channel, panels_by_class.get(cf))
-        if cf in _NARROWBAND:
-            # bxt=False (labs only) skips deconvolution — see
-            # _merged_channels; production always passes the default True.
-            corrected = (process_in_panels(bxt_correct, mosaic, cf, config,
-                                           pm, viewbox=viewbox)
-                         if bxt else pm)
-            starless = process_in_panels(sxt_starless, mosaic, cf, config, corrected, viewbox=viewbox)
-            corrected_nb[cf] = corrected  # with stars — scene format 1
-            starless_nb[cf] = starless  # PanelMosaic — linear source for the Linear SHO tap
-        elif cf in _BROADBAND:
-            bxt_bb[cf] = process_in_panels(bxt_correct, mosaic, cf, config, pm, viewbox=viewbox)
-        elif cf == "L" and _BROADBAND <= set(by_class):
-            # Luminance: BXT'd like the broadband, stretched later as the
-            # LRGB lightness. Never enters the RGB combine; skipped entirely
-            # unless full R/G/B exists to give it chrominance.
-            bxt_l = process_in_panels(bxt_correct, mosaic, cf, config, pm, viewbox=viewbox)
-
-    # Broadband stars: combine the linear BXT'd channels into one RGB, then
-    # SXT ONCE on that RGB so the extracted stars are coherent across R/G/B
-    # (no per-channel primary-colour confetti). `combine_panels` threads the
-    # R/G/B manifests into the RGB source so the SXT crops key per-panel.
-    rgb_star_lin = None
-    rgb_lin = None
-    if _BROADBAND <= set(bxt_bb):
-        rgb_lin = combine_panels(combine_broadband_rgb, mosaic, bxt_bb["R"], bxt_bb["G"], bxt_bb["B"])
-        rgb_star_lin = process_in_panels(sxt_stars_rgb, mosaic, config, rgb_lin, viewbox=viewbox)
-
     out: dict[str, object] = {}
-    if _NARROWBAND <= set(starless_nb):
-        # The linear S/H/O viewer source: stacked + NXT-denoised, finished
-        # live in the WebGPU shader (Hubble/Foraxx and friends).
+    if _NARROWBAND <= set(sl):
+        # The linear S/H/O viewer source: starless layers stacked +
+        # NXT-denoised per panel, finished live in the WebGPU shader
+        # (Hubble/Foraxx and friends). base_panel_mosaic wraps each merged
+        # layer with its per-panel manifest so the NXT crops key per-panel.
+        pms = {
+            f: base_panel_mosaic(mosaic, f, sl[f], panels_by_class.get(f))
+            for f in _NARROWBAND
+        }
         out["Linear SHO"] = linear_sho(
-            mosaic, starless_nb["S"], starless_nb["H"], starless_nb["O"], config, viewbox)
+            mosaic, pms["S"], pms["H"], pms["O"], config, viewbox)
 
-    # Linear scene formats — the ≤3-band basis the live WebGPU finishes
-    # sample ("Linear RGB" is the display-stamped combine, already in the
-    # graph above; starless RGB is derived in-shader as combine − stars).
-    nb_present = tuple(f for f in _NB_ORDER if f in corrected_nb)
+    nb_present = tuple(f for f in _NB_ORDER if f in sl)
     if nb_present:
-        out["Linear Narrowband"] = linear_narrowband(
-            mosaic, nb_present, *[corrected_nb[f].merged for f in nb_present])
-        if not (_NARROWBAND <= set(starless_nb)):
+        if not (_NARROWBAND <= set(sl)):
             # Partial sets only — full SHO's starless role is the
             # NXT-denoised "Linear SHO" tap.
             out["Linear Narrowband Starless"] = linear_narrowband_starless(
-                mosaic, nb_present,
-                *[starless_nb[f].merged for f in nb_present])
-    if rgb_star_lin is not None:
-        out["Linear RGB Stars"] = linear_rgb_stars(mosaic, rgb_star_lin.merged)
-    if bxt_l is not None:
-        out["Linear L"] = linear_lum(mosaic, bxt_l.merged)
+                mosaic, nb_present, *[sl[f] for f in nb_present])
+        out["Linear Narrowband Stars"] = linear_narrowband_stars(
+            mosaic, nb_present, *[st[f] for f in nb_present])
+
+    if _BROADBAND <= set(sl):
+        out["Linear RGB Starless"] = linear_rgb_starless(
+            mosaic, sl["R"], sl["G"], sl["B"])
+        out["Linear RGB Stars"] = linear_rgb_stars(
+            mosaic, st["R"], st["G"], st["B"])
+        if "L" in sl:
+            # Luminance serves as the LRGB lightness; skipped entirely
+            # unless full R/G/B exists to give it chrominance.
+            out["Linear L Starless"] = linear_lum(mosaic, sl["L"])
+            out["Linear L Stars"] = linear_lum_stars(mosaic, st["L"])
     return out

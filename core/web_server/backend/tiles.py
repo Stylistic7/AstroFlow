@@ -75,8 +75,10 @@ LINEAR_FINISH_DISPLAYS = frozenset({"Linear SHO"})
 # viewer offers data-driven finishes instead of baked pass-through; they get
 # the same channelStats seeding as linear-sho.
 LINEAR_SCENE_DISPLAYS = frozenset({
-    "Linear RGB", "Linear RGB Stars", "Linear Narrowband",
-    "Linear Narrowband Starless", "Linear L",
+    "Linear RGB Starless", "Linear RGB Stars",
+    "Linear Narrowband Starless", "Linear Narrowband Stars",
+    "Linear L Starless", "Linear L Stars",
+    "Mosaic Starless", "Mosaic Stars",
 })
 
 

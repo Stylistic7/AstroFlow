@@ -72,10 +72,8 @@ _DEFAULT_MEMORY_UNKNOWN = 16 * _GB
 # machine to that node's real capacity. The macOS memory-pressure veto backstops
 # any per-tile spike the 5 GB estimate misses.
 _FIXED_MEMORY_BY_OP = {
-    "bxt_correct":      5 * _GB,
-    "bxt_correct_only": 5 * _GB,  # BXT Correct-Only on a panel before assembly (Croman two-pass)
-    "sxt_starless":     5 * _GB,
-    "sxt_stars_rgb":    5 * _GB,  # StarXTerminator on the combined 3-band RGB
+    "bxt_channel":      5 * _GB,  # full BXT on a native channel master (pre-placement)
+    "sxt_channel":      5 * _GB,  # SXT starless on the BXT'd native channel
     "nxt":              5 * _GB,  # NoiseXTerminator on a panel — same rc-astro CLI path
     # Other fixed-memory panel ops (process_in_panels), NOT rc-astro: pyvips/numpy,
     # each memory-BOUNDED to one <=100 Mpx panel. Fixed (not auto) so they keep worker

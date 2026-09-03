@@ -13,7 +13,6 @@ import numpy as np
 import edt
 
 from mosaics.merging.oss import _blend_many, _panel_bbox
-from mosaics.merging.oss import _equalize_sky, _UNSET_PEDESTAL
 from mosaics.placement.panel_io import write_placed_panel, read_placed_panel
 
 
@@ -30,14 +29,13 @@ def _blend_many_reference(paths):
     """The pre-bbox full-canvas implementation, verbatim, as the golden ref —
     now reading the full canvas back from the bbox-on-disk panels.
 
-    Carries the same merge-time SKY EQUALIZATION the production blend
-    applies (see `_equalize_sky`): the equivalence these tests pin is
-    "bbox math == full-canvas math", and holding the pre-step in both is
-    what keeps that claim about the REAL production path."""
+    Pure blend math, no level matching on either side (`level_solve=None`
+    default since 2026-09-02): the equivalence these tests pin is "bbox
+    math == full-canvas math", and the matching modes are orthogonal
+    pre-steps with their own lab (test_level_solve.py)."""
     if len(paths) == 1:
         return _read_full_canvas(paths[0])
     canvases = [_read_full_canvas(p) for p in paths]
-    _equalize_sky(canvases, [c > 0 for c in canvases], _UNSET_PEDESTAL)
     # (No flux solve: gains are calibrated upstream by post_stack_calibrate —
     # the overlap flux solve was deleted 2026-09-01.)
     masks = [img > 0 for img in canvases]

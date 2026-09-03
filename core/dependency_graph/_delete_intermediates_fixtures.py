@@ -62,7 +62,7 @@ def _write_small_fits(path, seed) -> None:
 
 
 # Also interior to the scope, and also disposable.
-@node(plate_solve=False, ephemeral=True)
+@node(plate_solve="none", ephemeral=True)
 def _di_source(seed: int) -> FitsFilePath:
     _note_execution("_di_source")
     out = _di_source.filename_fn(seed)
@@ -73,7 +73,7 @@ def _di_source(seed: int) -> FitsFilePath:
 
 # The interior of the scope: declares itself disposable, so the runtime
 # reclaims it when the subgraph concludes.
-@node(plate_solve=False, ephemeral=True)
+@node(plate_solve="none", ephemeral=True)
 def _di_middle(config: str, source) -> FitsFilePath:
     _note_execution("_di_middle")
     out = _di_middle.filename_fn(config, source)
@@ -82,7 +82,7 @@ def _di_middle(config: str, source) -> FitsFilePath:
     return FitsFilePath(out)
 
 
-@node(plate_solve=False)
+@node(plate_solve="none")
 def _di_terminal(config: str, middle) -> FitsFilePath:
     _note_execution("_di_terminal")
     out = _di_terminal.filename_fn(config, middle)
