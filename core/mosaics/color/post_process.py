@@ -455,9 +455,11 @@ def linear_sho(
 
 
 # ---- linear scene formats: the ≤3-band basis the live WebGPU finishes
-# ---- sample. Everything is served as STARLESS + STARS layer pairs (the
-# ---- with-stars views are shader sums, never baked). Narrowband formats
-# ---- are always 3 bands in canonical S,H,O order with absent bands
+# ---- sample. Served as STARLESS + STARS layer pairs (with-stars views
+# ---- are shader sums, never baked) — except narrowband, which gets no
+# ---- stars combine: star colour rides "Linear RGB Stars", and a format
+# ---- no finish reads is disk spent on nothing. Narrowband formats are
+# ---- always 3 bands in canonical S,H,O order with absent bands
 # ---- ZERO-FILLED (uniform texture shape, zeros deflate to nothing) and
 # ---- the REAL band list in the TIFF description.
 
@@ -483,26 +485,12 @@ def linear_narrowband_starless(
     """Scene format for PARTIAL narrowband sets (an Hα-only galaxy, an
     HOO dual-band OSC): the starless layer combination, zero-filled to
     S,H,O. Full-SHO images don't get this — "Linear SHO" (NXT-denoised)
-    already serves that role. The raw-Hα galaxy finishes (continuum
-    subtraction Hα − q·R) sample this plus the stars format — the layer
-    sum IS the old with-stars combine, exactly."""
+    already serves that role. The galaxy finishes (continuum subtraction
+    Hα − q·R) sample this directly — starless Hα is the cleaner line
+    source (star continuum never enters the injection)."""
     out = linear_narrowband_starless.filename_fn(mosaic, filters, *channels)
     img = _nb_threeband(dict(zip(filters, channels)))
     _save_color_vips(out, img, "Linear Narrowband Starless", bands=filters)
-    return WithSidecar(TiffFilePath(out))
-
-
-@node(display="Linear Narrowband Stars", filter="RGB", final=True, auto_memory=True, plate_solve="none")  # 3-band linear
-def linear_narrowband_stars(
-    mosaic: Mosaic, filters: tuple, *channels: ImageMetadata,
-) -> WithSidecar[TiffFilePath]:
-    """Scene format: the narrowband STARS layers, zero-filled to S,H,O —
-    the star companion of "Linear SHO"/"Linear Narrowband Starless" that
-    the shader adds back live (`starless + star_s·stars`). Built for
-    EVERY narrowband set, full SHO included."""
-    out = linear_narrowband_stars.filename_fn(mosaic, filters, *channels)
-    img = _nb_threeband(dict(zip(filters, channels)))
-    _save_color_vips(out, img, "Linear Narrowband Stars", bands=filters)
     return WithSidecar(TiffFilePath(out))
 
 
@@ -578,8 +566,9 @@ def color_post_process(mosaic: Mosaic, starless: dict, stars: dict, config,
     (`starless + star_s·stars`).
 
     Output formats: Linear SHO (NXT'd starless SHO composite), Linear
-    Narrowband Starless (partial sets) + Linear Narrowband Stars, Linear
-    RGB Starless + Linear RGB Stars, Linear L Starless + Linear L Stars.
+    Narrowband Starless (partial sets), Linear RGB Starless + Linear RGB
+    Stars, Linear L Starless + Linear L Stars. No narrowband-stars
+    combine exists — no finish samples one (see the note below).
 
     `starless` / `stars` are `{filter: merged layer handle}` from the
     pipelines' `_merged_channels`. `viewbox` gives the trace-time canvas
@@ -610,14 +599,16 @@ def color_post_process(mosaic: Mosaic, starless: dict, stars: dict, config,
             mosaic, pms["S"], pms["H"], pms["O"], config, viewbox)
 
     nb_present = tuple(f for f in _NB_ORDER if f in sl)
-    if nb_present:
-        if not (_NARROWBAND <= set(sl)):
-            # Partial sets only — full SHO's starless role is the
-            # NXT-denoised "Linear SHO" tap.
-            out["Linear Narrowband Starless"] = linear_narrowband_starless(
-                mosaic, nb_present, *[sl[f] for f in nb_present])
-        out["Linear Narrowband Stars"] = linear_narrowband_stars(
-            mosaic, nb_present, *[st[f] for f in nb_present])
+    if nb_present and not (_NARROWBAND <= set(sl)):
+        # Partial sets only — full SHO's starless role is the
+        # NXT-denoised "Linear SHO" tap. NO narrowband-stars combine is
+        # baked: no finish samples one (narrowband star colour comes
+        # from "Linear RGB Stars"; the per-filter star layers are served
+        # as the "Mosaic Stars" taps) — a scene format nothing reads is
+        # disk spent on nothing. If a finish ever wants it, re-add the
+        # combine over `st` and give that finish the input.
+        out["Linear Narrowband Starless"] = linear_narrowband_starless(
+            mosaic, nb_present, *[sl[f] for f in nb_present])
 
     if _BROADBAND <= set(sl):
         out["Linear RGB Starless"] = linear_rgb_starless(

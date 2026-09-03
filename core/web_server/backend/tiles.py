@@ -76,7 +76,7 @@ LINEAR_FINISH_DISPLAYS = frozenset({"Linear SHO"})
 # the same channelStats seeding as linear-sho.
 LINEAR_SCENE_DISPLAYS = frozenset({
     "Linear RGB Starless", "Linear RGB Stars",
-    "Linear Narrowband Starless", "Linear Narrowband Stars",
+    "Linear Narrowband Starless",
     "Linear L Starless", "Linear L Stars",
     "Mosaic Starless", "Mosaic Stars",
 })

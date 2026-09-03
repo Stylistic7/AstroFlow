@@ -164,7 +164,7 @@ def test_color_post_process_traces_and_runs(test_context, tmp_path):
                  "lrgb_image", "hargb_image", "halrgb_image"):
         assert counts.get(gone) is None, f"baked palette op {gone} resurfaced"
     assert counts.get("linear_narrowband_starless") is None  # full SHO set
-    assert counts.get("linear_narrowband_stars") == 1
+    assert counts.get("linear_narrowband_stars") is None  # no consumer — never baked
     assert counts.get("linear_rgb_starless") == 1
     assert counts.get("linear_rgb_stars") == 1
     assert counts.get("linear_lum") is None       # no L channel in this fixture
@@ -184,8 +184,7 @@ def test_color_post_process_traces_and_runs(test_context, tmp_path):
     run_graph(graph)
 
     out = Path(context.output_dir)
-    for op, name in (("linear_narrowband_stars", "Linear Narrowband Stars"),
-                     ("linear_rgb_starless", "Linear RGB Starless"),
+    for op, name in (("linear_rgb_starless", "Linear RGB Starless"),
                      ("linear_rgb_stars", "Linear RGB Stars")):
         files = list(out.rglob(f"{op}/*.tif")) + list(out.rglob(f"{op}/*.tiff"))
         assert files, f"no {name} output produced under {op}/"

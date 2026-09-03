@@ -72,7 +72,7 @@ def test_tail_ops_accept_target():
         (panels, "combine_panels"),
         (oss, "merge_images_oss"), (oss, "merge_images_stars"),
         (placement, "place_image"),
-        (pp, "linear_narrowband_stars"), (pp, "linear_rgb_stars"),
+        (pp, "linear_narrowband_starless"), (pp, "linear_rgb_stars"),
         (pp, "linear_rgb_starless"), (pp, "blend_linear_sho"),
     ]:
         fn = getattr(mod, name)
@@ -148,16 +148,17 @@ def test_target_tail_traces_with_target_taps(tmp_path, monkeypatch):
     # layer pairs, no baked palettes and no baked with-stars views
     # (2026-09-02; looks are assembled live in WGSL, finishes/stock.py).
     assert {"Mosaic Starless", "Mosaic Stars", "Linear SHO",
-            "Linear Narrowband Stars", "Linear RGB Starless",
-            "Linear RGB Stars"} <= displays, (
+            "Linear RGB Starless", "Linear RGB Stars"} <= displays, (
         f"scene formats missing from taps: {displays}")
     assert not ({"Hubble", "Foraxx", "Hubble Starless", "Foraxx Starless",
                  "Stars", "RGB", "LRGB", "HaRGB", "HaLRGB"} & displays), (
         f"baked palette tap resurfaced: {displays}")
-    # No baked with-stars formats; full SHO set → no partial-set starless
-    # variant; no Lum → no L taps.
+    # No baked with-stars formats; no narrowband-stars combine (nothing
+    # samples one); full SHO set → no partial-set starless variant; no
+    # Lum → no L taps.
     assert not ({"Mosaic", "Linear RGB", "Linear Narrowband",
-                 "Linear Narrowband Starless", "Linear L",
+                 "Linear Narrowband Starless", "Linear Narrowband Stars",
+                 "Linear L",
                  "Linear L Starless", "Linear L Stars"} & displays), displays
 
 
@@ -200,11 +201,12 @@ def test_galaxy_target_traces_ha_blend_taps(tmp_path, monkeypatch):
 
     from compute_graph.compute_graph import extract_pipeline_taps
     displays = {d for _, (_, _, d, _) in extract_pipeline_taps(graph)}
-    assert {"Linear Narrowband Starless", "Linear Narrowband Stars",
+    assert {"Linear Narrowband Starless",
             "Linear RGB Starless", "Linear RGB Stars", "Linear L Starless",
             "Linear L Stars", "Mosaic Starless",
             "Mosaic Stars"} <= displays, displays
     assert not ({"Stars", "RGB", "LRGB", "HaRGB", "HaLRGB", "Hubble",
                  "Foraxx", "Linear SHO", "Linear Narrowband",
+                 "Linear Narrowband Stars",
                  "Linear RGB", "Linear L"} & displays), (
         f"baked palette tap resurfaced: {displays}")
