@@ -50,25 +50,39 @@ def read_pyramid_level(path, min_px: int = _PREVIEW_MIN_PX) -> "np.ndarray":
 def _stf_values(arr: "np.ndarray", suffixes: "tuple[str, ...] | None",
                 target: float = 0.15, full_white: bool = False) -> dict:
     """Image-adaptive stretch params — the Python twin of the viewer's
-    stfSeed recipe (finish_seed.js): per channel, black = median − 2.8σ
-    (σ = 1.4826·MAD), white = p99, midtones solved so the median lands on
-    the target grey. `suffixes=('S','H','O')` emits per-channel keys;
-    None emits the linked keys from pooled stats. `full_white=True` uses
-    white = 1.0 (the classic autostretch recipe — the narrowband Hubble
-    preview matches the proven baked-palette look with it; p99 crushes the
-    faint S/O channels relative to Hα)."""
+    stfSeed recipe (finish_seed.js, 2026-09-03 recalibration):
+    per channel, black + midtones anchor on the SKY subset (pixels below
+    the luminance p60 — so each channel's displayed sky lands on the same
+    target grey and the background renders neutral), white = p99 with a
+    GAUGE-AWARE floor (relative to the sky level, not the old absolute
+    1e-3 that overrode faint-channel data on the pinned 0.005 gauge).
+    Callers pass the COMPOSITE (starless + stars) — the stretch is a
+    property of the original image, not of the layer viewed.
+    `suffixes=('S','H','O')` emits per-channel keys; None emits the
+    linked keys from pooled stats. `full_white=True` uses white = 1.0
+    (the classic autostretch recipe — the narrowband Hubble preview
+    matches the proven baked-palette look with it; p99 crushes the faint
+    S/O channels relative to Hα)."""
     from mosaics.color.palettes import _solve_midtones
     chans = [arr[..., i] for i in range(arr.shape[-1])] if suffixes else [arr]
+    # Shared sky subset from composite luminance, as in the backend stats.
+    lum = arr.mean(axis=-1) if arr.ndim == 3 else arr
+    lum_f = lum[np.isfinite(lum) & (lum > 0)]
+    sky_cut = float(np.percentile(lum_f, 60)) if lum_f.size > 100 else np.inf
+    sky_mask = np.isfinite(lum) & (lum > 0) & (lum < sky_cut)
     out: dict = {}
     per = []
     for c in chans:
         finite = c[np.isfinite(c)]
-        med = float(np.median(finite)) if finite.size else 0.0
-        sigma = 1.4826 * float(np.median(np.abs(finite - med))) if finite.size else 1e-6
+        sky = c[sky_mask & np.isfinite(c)]
+        if sky.size < 100:
+            sky = finite
+        med = float(np.median(sky)) if sky.size else 0.0
+        sigma = 1.4826 * float(np.median(np.abs(sky - med))) if sky.size else 1e-6
         p99 = 1.0 if full_white else (
             float(np.percentile(finite, 99)) if finite.size else 1.0)
         bp = max(0.0, med - 2.8 * max(sigma, 1e-6))
-        wp = max(p99, bp + 1e-3)
+        wp = max(p99, bp + max(0.02 * med, 1e-6))
         x0 = (med - bp) / max(wp - bp, 1e-6)
         per.append((bp, wp, _solve_midtones(max(x0, 1e-6), target)))
     if suffixes:
@@ -77,6 +91,13 @@ def _stf_values(arr: "np.ndarray", suffixes: "tuple[str, ...] | None",
     else:
         bp, wp, mid = per[0]
         out["blackpoint"], out["whitepoint"], out["midtones"] = bp, wp, mid
+    sky_min = min(float(np.median(c[sky_mask & np.isfinite(c)]))
+                  if (sky_mask & np.isfinite(c)).sum() >= 100
+                  else float(np.median(c[np.isfinite(c)])) if np.isfinite(c).any()
+                  else 0.0
+                  for c in chans)
+    if sky_min > 0:
+        out["trim_floor"] = 0.6 * sky_min
     return out
 
 
@@ -197,12 +218,14 @@ def render_canonical_preview(object_type: str, object_id: str,
     else:
         stars = np.zeros_like(primary)   # absent stars layer binds black
     sources = [primary, stars]
+    # Seed from the COMPOSITE in both branches — the stretch is a property
+    # of the original image (starless + stars), never of the layer viewed.
     if finish.name == "Hubble":
-        values = _stf_values(primary, ("S", "H", "O"), full_white=True)
+        values = _stf_values(primary + stars, ("S", "H", "O"), full_white=True)
         star_finite = stars[np.isfinite(stars)]
         if star_finite.size and float(star_finite.max()) > 0:
             values["star_mid"] = _stf_values(stars, None)["midtones"]
-    else:  # RGB: starless + star_s·stars — seed the stretch on the composite
+    else:  # RGB
         values = _stf_values(primary + stars, None)
         values["star_s"] = 1.0
 

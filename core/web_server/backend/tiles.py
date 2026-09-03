@@ -181,11 +181,61 @@ def tile_metadata_tap(
     backend_port: int = None,
 ):
     from catalog import resolve_product, Product
+    ancestors = _request_ancestors()
     p, status = resolve_product(
         Product(object_type, object_id, pipeline, display, filter),
-        ancestors=_request_ancestors())
+        ancestors=ancestors)
     path = str(p) if p is not None else None
-    return _tile_metadata_response(path, backend_port, display, status=status)
+    star_paths = _sibling_star_paths(
+        object_type, object_id, pipeline, display, filter, ancestors)
+    return _tile_metadata_response(path, backend_port, display, status=status,
+                                   star_paths=star_paths)
+
+
+# Starless display → its stars-layer sibling(s), for COMPOSITE-derived
+# display stats (the autostretch must see the ORIGINAL image — Stylistic7's
+# 2026-09-03 rule: the stretch is a property of the image, and seeding
+# from a starless layer alone made it wildly star-sensitive). A scalar
+# entry pairs the same-filter sibling; a "per-band" entry maps each of
+# the 3-band S,H,O slots to that filter's mono "Mosaic Stars" tap (no
+# narrowband stars combine is baked — nothing else samples one).
+_STARS_SIBLING = {
+    "Linear RGB Starless": "Linear RGB Stars",
+    "Linear L Starless": "Linear L Stars",
+    "Mosaic Starless": "Mosaic Stars",
+    "Linear SHO": "per-band",
+    "Linear Narrowband Starless": "per-band",
+}
+
+
+def _sibling_star_paths(object_type, object_id, pipeline, display, filter,
+                        ancestors):
+    """Stars-layer path(s) matching `display`'s bands, or None.
+
+    Returns a single path (same band layout as the primary) or a 3-list
+    of per-band paths (S,H,O order; None where that filter has no stars
+    tap). Best-effort by design: any resolution failure degrades to
+    primary-only stats, never to an error — metadata must always serve."""
+    sibling = _STARS_SIBLING.get(display)
+    if sibling is None:
+        return None
+    from catalog import resolve_product, Product
+    try:
+        if sibling != "per-band":
+            p, status = resolve_product(
+                Product(object_type, object_id, pipeline, sibling, filter),
+                ancestors=ancestors)
+            return str(p) if p is not None and status in ("live", "out_of_date") else None
+        paths = []
+        for f in ("S", "H", "O"):
+            p, status = resolve_product(
+                Product(object_type, object_id, pipeline, "Mosaic Stars", f),
+                ancestors=ancestors)
+            paths.append(str(p) if p is not None
+                         and status in ("live", "out_of_date") else None)
+        return paths if any(paths) else None
+    except Exception:
+        return None
 
 
 # Stats memo: computing them pulls a ~16 Mpx page (~190 MB) and runs per-band
@@ -228,24 +278,46 @@ def _stats_sample(img) -> "np.ndarray | None":
     return None
 
 
-def _per_channel_linear_stats(path):
+def _per_channel_linear_stats(path, star_paths=None):
+    def _mt(q):
+        try:
+            return os.path.getmtime(os.fspath(q))
+        except OSError:
+            return 0
     p = os.fspath(path)
-    try:
-        mtime = os.path.getmtime(p)
-    except OSError:
-        mtime = 0
-    key = (p, mtime)
+    star_key = (tuple((os.fspath(s) if s else None, _mt(s) if s else 0)
+                      for s in star_paths)
+                if isinstance(star_paths, list)
+                else (os.fspath(star_paths), _mt(star_paths))
+                if star_paths else None)
+    key = (p, _mt(p), star_key)
     with _stats_lock:
         cached = _stats_cache.get(key)
         if cached is None:
-            cached = _per_channel_linear_stats_uncached(p)
+            cached = _per_channel_linear_stats_uncached(p, star_paths)
             _stats_cache[key] = cached
             if len(_stats_cache) > 64:            # a handful of taps in play
                 _stats_cache.pop(next(iter(_stats_cache)))
     return cached
 
 
-def _per_channel_linear_stats_uncached(path):
+def _star_sample_for(page_img, star_path):
+    """The stars-layer sample matching `page_img`'s pyramid page, as a
+    flat (N,) mono array — or None on any mismatch (dims must agree
+    exactly; a stars mosaic shares its starless twin's canvas, so its
+    pyramid has an identical page ladder)."""
+    try:
+        for p_idx in range(_pyramid_levels(star_path)):
+            s = _get_vips_page(os.fspath(star_path), p_idx)
+            if (s.width, s.height) == (page_img.width, page_img.height):
+                a = _stats_sample(s)
+                return None if a is None else a[:, 0]
+    except Exception:
+        pass
+    return None
+
+
+def _per_channel_linear_stats_uncached(path, star_paths=None):
     """Per-band (background median, bright-signal anchor) for the shader's
     (c-m)/(p-m) normalise.
 
@@ -256,7 +328,20 @@ def _per_channel_linear_stats_uncached(path):
     the nebula down toward the sky pedestal and collapses the gap; (2) anchor on
     p99.9 (nebula cores/filaments) with a wide σ floor so the gap stays large
     relative to the noise even for a faint channel. Approximate but stable; the
-    user fine-tunes via the sliders."""
+    user fine-tunes via the sliders.
+
+    `star_paths` (a stars-layer sibling path, or a per-band [S,H,O] list)
+    makes the stats COMPOSITE-derived: each band is sampled as
+    starless + stars, so the seeds describe the ORIGINAL image and never
+    change character with the layer viewed (2026-09-03; a starless tap's
+    razor-thin σ made the autostretch amplify ~1e-6 residuals into paint).
+
+    Also ships per-band SKY-subset stats (`skyMedian`/`skySigma`): pixels
+    below the composite-luminance p60 — empty sky, star-poor by
+    construction. Seeding black/midtones from these pins each channel's
+    DISPLAYED sky to the same target grey, which is what makes the
+    background render neutral gray instead of carrying a channel-slope
+    colour cast (the uniform-magenta finding, 2026-09-03)."""
     levels = _pyramid_levels(path)
     # Finest page still cheap to pull to numpy (~16 Mpx ≈ 190 MB at 3×float).
     page = levels - 1
@@ -272,6 +357,27 @@ def _per_channel_linear_stats_uncached(path):
               f"({img.width}x{img.height}) — serving without channelStats",
               flush=True)
         return []
+    nb = min(3, img.bands)
+    arr = arr[:, :nb].astype(np.float32, copy=True)
+    coverage = np.all(np.isfinite(arr), axis=1) & np.all(arr > 0.0, axis=1)
+    if star_paths is not None:
+        per_band = star_paths if isinstance(star_paths, list) else [star_paths] * nb
+        for b in range(nb):
+            if b < len(per_band) and per_band[b]:
+                s = _star_sample_for(img, per_band[b])
+                if s is not None and s.shape[0] == arr.shape[0]:
+                    arr[:, b] = arr[:, b] + np.maximum(
+                        np.nan_to_num(s, nan=0.0), 0.0)
+    # Sky subset: covered pixels whose composite luminance sits below p60 —
+    # background, largely star-free (stars are bright). Falls back to the
+    # full covered set when coverage is tiny.
+    sky_mask = coverage.copy()
+    if coverage.sum() > 100:
+        lum = arr[coverage].mean(axis=1)
+        cut = np.percentile(lum, 60)
+        idx = np.where(coverage)[0]
+        sky_mask = np.zeros_like(coverage)
+        sky_mask[idx[lum < cut]] = True
     # GENERIC per-channel statistics (median, robust σ/MAD, min/max, percentiles).
     # Finish-agnostic: the frontend's display finishes compute their own starting
     # values from these (e.g. the STF/MTF seed = median − 2.8σ, p99, midtones-to-
@@ -279,9 +385,10 @@ def _per_channel_linear_stats_uncached(path):
     # channels differ wildly in SNR (Hα ~13σ, SII ~2σ, OIII <1σ), so everything is
     # per-channel.
     stats = []
-    for b in range(min(3, img.bands)):
+    for b in range(nb):
         c = arr[:, b]
-        c = c[np.isfinite(c) & (c > 0.0)]
+        good = np.isfinite(c) & (c > 0.0)
+        c = c[good]
         if c.size == 0:
             stats.append({"median": 0.0, "mad": 0.0, "sigma": 1.0, "min": 0.0,
                           "max": 1.0, "p1": 0.0, "p95": 1.0, "p99": 1.0,
@@ -291,10 +398,15 @@ def _per_channel_linear_stats_uncached(path):
         mad = float(np.median(np.abs(c - med)))
         sigma = 1.4826 * mad if mad > 0 else max(med * 1e-3, 1e-6)
         p1, p95, p99, p999 = (float(np.percentile(c, q)) for q in (1, 95, 99, 99.9))
+        sky = arr[:, b][sky_mask & good] if (sky_mask & good).any() else c
+        sky_med = float(np.median(sky))
+        sky_mad = float(np.median(np.abs(sky - sky_med)))
         stats.append({
             "median": med, "mad": mad, "sigma": sigma,
             "min": float(c.min()), "max": float(c.max()),
             "p1": p1, "p95": p95, "p99": p99, "p999": p999,
+            "skyMedian": sky_med,
+            "skySigma": 1.4826 * sky_mad if sky_mad > 0 else sigma,
             # Legacy HIGH anchor the built-in GHS finish reads: p99.9 floored at
             # median + 60σ so the gap stays wide relative to noise for a faint
             # channel.
@@ -303,7 +415,8 @@ def _per_channel_linear_stats_uncached(path):
     return stats
 
 
-def _tile_metadata_response(path, backend_port, display=None, status=None):
+def _tile_metadata_response(path, backend_port, display=None, status=None,
+                            star_paths=None):
     if path is None:
         return abort(404)
     base = _get_vips_page(path, 0)
@@ -336,7 +449,7 @@ def _tile_metadata_response(path, backend_port, display=None, status=None):
     else:
         meta["colorspace"] = "display"
     if meta["colorspace"] != "display":
-        stats = _per_channel_linear_stats(path)
+        stats = _per_channel_linear_stats(path, star_paths=star_paths)
         # Rich generic per-channel stats — frontend finishes seed from these.
         meta["channelStats"] = stats
         # Legacy arrays the built-in GHS finish still reads (median / σ / high).

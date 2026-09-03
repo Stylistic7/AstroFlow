@@ -190,6 +190,18 @@ TRIM_RAGGED = Param(
     name="trim_ragged", builtin=True, kind="toggle",
 )
 
+# Coverage floor for the ragged-edge trim, in LINEAR data units. 0.0
+# reproduces the historical exact-zero test (uncovered canvas is exactly
+# zero). The viewer seeds it to ~60% of the sky level (finish_seed.js):
+# partial-coverage rolloff pixels — the boundary ramp between zero and the
+# pedestal that pyramid downsampling manufactures by mixing no-data zeros
+# with sky — then render as no-data instead of as a bright colored rim the
+# moment a seeded black point drops below the pedestal (2026-09-03).
+TRIM_FLOOR = Param(
+    0.0, 0.0, 1.0, step=0.001, label="Coverage floor",
+    name="trim_floor", builtin=True,
+)
+
 
 def _with_common_first_pass(fn, inputs: tuple, optional: tuple):
     """Compose the framework's common first pass in front of an author's
@@ -224,12 +236,13 @@ def _with_common_first_pass(fn, inputs: tuple, optional: tuple):
 
     def guarded(*srcs, **kwargs):
         trim = kwargs.pop(TRIM_RAGGED.name, TRIM_RAGGED.default)
+        floor = kwargs.pop(TRIM_FLOOR.name, TRIM_FLOOR.default)
         out = fn(*srcs, **kwargs)
         for i in required:
             if i >= len(srcs):
                 continue
             s = srcs[i]
-            covered = minimum(minimum(s.r, s.g), s.b) > 0.0
+            covered = minimum(minimum(s.r, s.g), s.b) > floor
             # `out * 0.0` rather than a literal vec3: both operands of a
             # traced `select` must themselves be traced, and a vec3 of plain
             # floats is a numpy value the tracer refuses to mix in.
@@ -248,6 +261,9 @@ def _with_common_first_pass(fn, inputs: tuple, optional: tuple):
         inspect.Parameter(TRIM_RAGGED.name,
                           inspect.Parameter.KEYWORD_ONLY,
                           default=TRIM_RAGGED),
+        inspect.Parameter(TRIM_FLOOR.name,
+                          inspect.Parameter.KEYWORD_ONLY,
+                          default=TRIM_FLOOR),
     ])
     return guarded
 

@@ -207,7 +207,8 @@ class TestRegistry:
             # A user-authored finish goes through the SAME composition as a
             # stock one — the framework's common first pass is injected here
             # too, so both run the identical traced path.
-            assert [p.name for p in f.params if p.builtin] == ["trim_ragged"]
+            assert [p.name for p in f.params if p.builtin] == [
+                "trim_ragged", "trim_floor"]
             assert get_finish("Hubble") is not None, \
                 "a broken sibling file must not abort discovery"
         finally:
@@ -228,11 +229,13 @@ class TestCommonFirstPass:
         discover_finishes()
         for s in finish_specs():
             builtin = [p for p in s["params"] if p.get("builtin")]
-            assert [p["name"] for p in builtin] == ["trim_ragged"], s["name"]
+            assert [p["name"] for p in builtin] == [
+                "trim_ragged", "trim_floor"], s["name"]
             assert builtin[0]["kind"] == "toggle", s["name"]
             # LAST, so author param order — and therefore the uniform packing
             # index every author already depends on — is untouched.
-            assert s["params"][-1]["name"] == "trim_ragged", s["name"]
+            assert s["params"][-1]["name"] == "trim_floor", s["name"]
+            assert s["params"][-2]["name"] == "trim_ragged", s["name"]
 
     def test_zeroes_pixels_missing_a_required_band(self):
         import numpy as np
@@ -270,4 +273,29 @@ class TestCommonFirstPass:
         the shader template — so WGSL and numpy come from one source."""
         f = self._hubble()
         assert "trim_ragged: f32" in f.wgsl
+        assert "trim_floor: f32" in f.wgsl
         assert "select(" in f.wgsl
+
+    def test_trim_floor_zeroes_the_coverage_ramp(self):
+        """`trim_floor` extends the exact-zero coverage test to a level:
+        partial-coverage rolloff pixels (between no-data zero and the sky
+        pedestal — pyramid downsampling manufactures them at the mosaic
+        boundary) render as no-data once the floor is seeded, so a black
+        point below the pedestal never exposes a bright colored rim
+        (2026-09-03). Default 0.0 keeps the historical behavior."""
+        import numpy as np
+        f = self._hubble()
+        # NOTE width 4, not 3: a width-3 image's channel slices have
+        # last-dim 3 and _rewrap would treat them as colour vectors.
+        # Values sit ABOVE the finish's default black points so the
+        # stretch itself never blanks them — only the floor may.
+        nb = np.array([[[0.02] * 3, [0.006] * 3,
+                        [0.0] * 3, [0.02] * 3]], dtype=np.float32)
+        stars = np.zeros_like(nb)
+        seeded = f.bake([nb, stars], {"trim_ragged": 1.0, "trim_floor": 0.01})[0]
+        assert seeded[0].max() > 0, "sky must survive the floor"
+        assert np.all(seeded[1] == 0), "ramp pixels must render as no-data"
+        assert np.all(seeded[2] == 0)
+        assert seeded[3].max() > 0
+        legacy = f.bake([nb, stars], {"trim_ragged": 1.0})[0]
+        assert legacy[1].max() > 0, "default floor 0.0 = historical behavior"
