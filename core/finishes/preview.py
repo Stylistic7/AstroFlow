@@ -195,10 +195,11 @@ def render_canonical_preview(object_type: str, object_id: str,
             return 0
 
     dc = get_durable_cache()
-    # The literal 2 versions the SEEDING RECIPE (full-white narrowband
-    # stretch) — bump it when the value derivation changes, since the
-    # finish_hash only covers the finish definition.
-    key = ("finish_preview", 2, object_type, object_id, pipeline,
+    # The literal 3 versions the SEEDING RECIPE (v3: composite-anchored,
+    # sky-subset black/mid, gauge-aware white floor, 2026-09-03) — bump it
+    # when the value derivation changes, since the finish_hash only covers
+    # the finish definition.
+    key = ("finish_preview", 3, object_type, object_id, pipeline,
            finish.name, finish.finish_hash,
            _mtime(primary_path), _mtime(stars_path) if stars_path else 0)
     cached = dc.get(key)

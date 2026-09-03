@@ -293,7 +293,10 @@ def finish(name: str, inputs: tuple, alt_primaries: tuple = (),
         # so changing it invalidates every served spec exactly once.
         h = xxhash.xxh64(
             structural_source_hash(fn) + "|" + name + "|" + ",".join(inputs)
-            + "|common1"
+            # common2: trim_floor added to the common pass (2026-09-03) —
+            # bumping the tag is what invalidates every served spec and
+            # cached preview exactly once when the shared pass changes.
+            + "|common2"
         ).hexdigest()
         f = Finish(name=name, inputs=tuple(inputs), optional=tuple(optional),
                    params=params, wgsl=wgsl, fn=composed, finish_hash=h,
