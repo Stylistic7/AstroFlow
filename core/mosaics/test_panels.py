@@ -296,8 +296,12 @@ def test_only_overlapping_tiles_rekey_on_panel_change():
         rect, scope = next((r, s) for p, r, s in tiles if p == pid)
         return _key(m, by_id[pid], vb, None, _scope_hashes(manifest, scope))
 
-    # A's tile re-keys (its own hash changed); B's tile re-keys (A ∈ B's scope);
-    # C's tile is UNCHANGED (A ∉ C's scope) -> a genuine cache hit.
+    # SCOPE ALGEBRA IN ISOLATION (merged held fixed at None): A's tile
+    # re-keys (its own hash changed); B's re-keys (A ∈ B's scope); C's is
+    # unchanged (A ∉ C's scope). In the REAL pipeline a panel change also
+    # re-merges, and the manifest's merged-content term then re-keys C too
+    # (test_merged_content_change_rekeys_every_tile) — this test pins only
+    # the per-panel scoping that gives tiles their identity.
     assert key_for("A", before) != key_for("A", after)
     assert key_for("B", before) != key_for("B", after)
     assert key_for("C", before) == key_for("C", after)
@@ -311,9 +315,9 @@ def test_only_overlapping_tiles_rekey_on_panel_change():
 # The merge term — arms must not share tails                                   #
 # --------------------------------------------------------------------------- #
 
-def _merged_from(op_source):
+def _merged_from(op_source, content="MERGED"):
     """A duck merged-handle the way `present_terminal` stamps one."""
-    return SimpleNamespace(content_hash="MERGED", _op_source=op_source)
+    return SimpleNamespace(content_hash=content, _op_source=op_source)
 
 
 def test_different_merge_ops_produce_disjoint_manifests():
@@ -330,13 +334,25 @@ def test_different_merge_ops_produce_disjoint_manifests():
 
 
 def test_same_merge_op_produces_identical_manifests():
-    """The term is the ALGORITHM's identity, not the raster's content hash —
-    same op, same manifests, so a panel re-stack still re-keys only its own
-    tile plus the feather ring (the O(change) property)."""
+    """Same algorithm AND same raster content → identical manifests: an
+    unchanged mosaic cache-hits its whole tail."""
     m = _overlapping_mosaic()
     a = base_panel_mosaic(m, "H", _merged_from("src_oss")).manifest
     b = base_panel_mosaic(m, "H", _merged_from("src_oss")).manifest
     assert a == b
+
+
+def test_merged_content_change_rekeys_every_tile():
+    """The correctness term (Stylistic7's ruling, 2026-09-03): the level solve
+    is GLOBAL — one panel's new subs move every panel's offset, so after a
+    re-merge no pixel of the raster is unchanged and EVERY tile must
+    re-key. Before this term, distant tiles kept serving crops cut from
+    the previous raster (a bounded approximation, retired)."""
+    m = _overlapping_mosaic()
+    before = base_panel_mosaic(m, "H", _merged_from("src", "raster_v1")).manifest
+    after = base_panel_mosaic(m, "H", _merged_from("src", "raster_v2")).manifest
+    for pid in ("A", "B", "C"):
+        assert before[pid] != after[pid]
 
 
 def test_merge_source_edit_rekeys_the_tail():

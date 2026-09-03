@@ -375,7 +375,7 @@ def stack_sho_channels(
     return WithSidecar(TiffFilePath(out))
 
 
-@node(cache_key_narrow=_nxt_narrow, auto_memory=True, resources={"gpu_slots": 1}, plate_solve="none")  # NXT on an image (whole OR one tile)
+@node(cache_key_narrow=_nxt_narrow, auto_memory=True, resources={"gpu_slots": 1}, plate_solve="none", ephemeral=True)  # NXT on an image (whole OR one tile)
 def nxt(
     mosaic: Mosaic, config: ProcessingConfig, image: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
@@ -384,7 +384,15 @@ def nxt(
     transform: the deliverable identity lives on the blend passed to
     process_in_panels. rc-astro reads `image` directly (crop_panel writes it
     strip-based; rc-astro rejects tiled TIFF); its forced-XISF output is converted
-    to the node's BigTIFF artifact."""
+    to the node's BigTIFF artifact.
+
+    `ephemeral=True` (2026-09-03, with the merge-content manifest term):
+    tile keys now fold the merged raster's identity, and the level solve
+    is global — so ANY panel change invalidates EVERY tile. GPU outputs
+    normally persist for incremental cache hits, but a cache no upstream
+    change can ever hit again is pure disk; when nothing changed, the
+    blend itself cache-hits and the tiles never re-run at all. Stylistic7's
+    ruling: correctness over compute — a re-merge re-NXTs the mosaic."""
     out = nxt.filename_fn(mosaic, config, image)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     if config.development_settings.mock_pixinsight:
@@ -446,8 +454,11 @@ def linear_sho(
     `viewbox` supplies the trace-time canvas geometry (the panel grid is built
     before any node runs); it's the mosaic viewbox at the pipeline's quality
     (`mosaic.viewbox("Master")` / `"DownscaledMaster"`)."""
-    # The SHO band-join is cheap × big — ephemeral. The NXT tiles are GPU
-    # work — kept (outside the scope), so incremental runs cache-hit them.
+    # The SHO band-join is cheap × big — ephemeral. The NXT tiles are
+    # ephemeral too (2026-09-03): their keys fold the merged raster's
+    # identity, so any re-merge invalidates all of them — persistence
+    # bought nothing, and a no-change run cache-hits the blend without
+    # ever re-running a tile.
     source = combine_panels(stack_sho_channels, mosaic, sii, ha, oiii)
     result = process_in_panels(
         nxt, mosaic, config, source, viewbox=viewbox, blend=blend_linear_sho)
@@ -529,7 +540,8 @@ def panel_source_manifest(targets_by_id: dict, filter: str, config,
     This is what makes two pipelines processing ONE target produce distinct
     colour tails: `channels[(tid, filter)]` is the per-filter merged channel,
     which already differs between pipelines, so the stem does too. Keyed per
-    panel, so it keeps the O(change) re-run property (see mosaics/panels.py).
+    panel for tile IDENTITY (which panel's pixels a tile carries — see
+    mosaics/panels.py; the merged raster's content term governs staleness).
 
     `channels` is the `{(target_id, filter): channel}` map the pipelines build;
     entries for other filters and unknown targets are ignored."""

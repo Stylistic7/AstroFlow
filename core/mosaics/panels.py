@@ -9,9 +9,12 @@ viewbox. Tiling on panels instead of an anonymous grid buys three things:
     panel's hash, threaded through every op via the manifest below), so two
     derived products that share a mosaic/rect — BXT vs SXT, S vs O, stars vs
     nebula — never resolve to one crop. The mono-stars bug class is gone.
-  * **O(change) re-runs.** A panel that re-stacks re-runs only its own tile plus
-    the tiles it overlaps (the feather "ring"), never the whole tail — the
-    re-run cost scales with what changed, not with mosaic size.
+  * **Correct staleness.** Every tile also folds the MERGED raster's content
+    identity (2026-09-03): the level solve is global, so any panel change
+    re-merges every pixel — and therefore re-keys every tile. Tiles are
+    working values that a re-merge invalidates wholesale; what stays
+    per-panel is the identity (which panel's pixels these are), not an
+    incremental-recompute promise.
   * **Best-practice quality.** Panels are ≤100 Mpx (smaller than the old 100 Mpx
     grid tiles), so rc-astro never OOMs, and each tool sees a PSF/star-field
     coherent unit. Since 2026-09-02 the only canvas rc-astro round is NXT on
@@ -19,11 +22,11 @@ viewbox. Tiling on panels instead of an anonymous grid buys three things:
     (`bxt_channel`/`sxt_channel`), where SXT is measured spotless.
 
 A `PanelMosaic` pairs the merged image (pixels) with a per-panel MANIFEST — a
-`{panel_id: derived_hash}` map where each hash folds in every op applied so far
-but ONLY the local panels, so a distant panel's re-stack never moves it. The
-derived hash is literally the processing op's own output identity
-(`op.filename_fn(...).stem`), so it drifts from the real cache key by
-construction-impossibility. `process_in_panels` crops each panel's padded bbox
+`{panel_id: derived_hash}` map where each hash folds every op applied so far,
+the LOCAL panels' identities, and the merged raster's content identity (the
+2026-09-03 correctness term). The derived hash is literally the processing
+op's own output identity (`op.filename_fn(...).stem`), so it drifts from the
+real cache key by construction-impossibility. `process_in_panels` crops each panel's padded bbox
 from the merged image (neighbours come free from the already-merged raster), runs
 the op, feathers the results back, and threads an updated manifest. Crops key on
 the manifest — never on the merged image's whole-image `content_hash` (which
@@ -86,12 +89,12 @@ def base_panel_mosaic(mosaic: Mosaic, filter: str, merged,
     so the two pipelines rendered pixel-identical images. The pre-merge stem
     folds in whatever produced those pixels, so pipelines separate.
 
-    It stays PER-PANEL, which is the property that matters: each entry depends
-    only on its own panel, so a panel re-stack still moves only its own tile
-    plus the feather ring. Folding in the MERGED channel's whole-image hash
-    would also separate the pipelines, but every panel would churn whenever any
-    panel moved — the exact anti-pattern this module exists to avoid (see the
-    module docstring and `crop_panel`).
+    It stays PER-PANEL, which is the property that matters: each entry names
+    WHICH panel's pixels a tile carries, so two panels' products can never
+    collide onto one crop. (Until 2026-09-03 per-panel keying also promised
+    O(change) re-runs; the merged raster's content term — see THE MERGE
+    TERMS below — retired that promise for correctness: a re-merge moves
+    every pixel, so it must re-key every tile.)
 
     `panel_sources` is `{panel_id: identity}`; a panel absent from it falls back
     to `target.content_hash` (the pre-2026-08-15 value) so callers that never
@@ -99,24 +102,34 @@ def base_panel_mosaic(mosaic: Mosaic, filter: str, merged,
     production pipeline passes it; a pipeline that forgets will silently share
     the tail with any other pipeline on the same target.
 
-    THE MERGE TERM (2026-08-26): the base also folds `merged._op_source` —
-    the SOURCE HASH of the op that composited the raster the crops cut from,
-    stamped by `present_terminal` (so no pipeline can omit it). A panel
-    crop's pixels are a function of (its panel, its overlap ring, the stage
-    op, AND the merge algorithm); the first three were keyed, the fourth was
-    invisible — so two pipelines sharing channels but differing only at the
-    merge (WBPP-constants vs Montage-planes, found 2026-08-26) collided
-    their entire colour tails onto one set of cached products, and editing
-    the merge op left every tail serving pixels derived from the PREVIOUS
-    algorithm. The term is constant per pipeline, so per-panel
-    incrementality is untouched. KNOWN BOUNDARY: two pipelines using the
-    SAME merge op with different merge CONFIG would still collide — no such
-    pair exists (the merge ops take no distinguishing config); fold the
-    config here the day one does."""
+    THE MERGE TERMS. Two of them, each closing a real collision:
+
+    * `merged._op_source` (2026-08-26) — the SOURCE HASH of the op that
+      composited the raster, stamped by `present_terminal`. Two pipelines
+      sharing channels but differing only at the merge (WBPP-constants vs
+      Montage-planes) collided their entire colour tails without it.
+    * `merged` ITSELF (2026-09-03, Stylistic7's correctness ruling) — the
+      raster's CONTENT identity (`hash_list` resolves the handle's
+      `content_hash`: the presented terminal's stem, or a traced handle's
+      pure-Merkle predicted hash). The level solve is GLOBAL: one panel's
+      new subs move EVERY panel's offset, and the polish model shifts
+      with them — after any re-merge, no pixel of the raster is the same,
+      so every tile cut from it is stale. The old manifest deliberately
+      excluded this term to buy O(change) re-runs; that bought a bounded
+      APPROXIMATION (ring tiles from the new raster feathered against
+      distant tiles from the old one). Correctness over compute: a
+      re-merge now re-keys every tile, and the per-panel terms remain so
+      two panels' tiles never collide with each other (the identity
+      property panels-as-tiles exists for).
+
+    A handle with NO content identity fails the determinism guard inside
+    `hash_list` — loudly, by design: a pipeline must hand this the real
+    merged raster handle, never a bare stand-in."""
     sources = panel_sources or {}
     merge_tag = getattr(merged, "_op_source", "")
     manifest = {
-        t.id: hash_list([sources.get(t.id, t.content_hash), filter, merge_tag])
+        t.id: hash_list([sources.get(t.id, t.content_hash), filter,
+                         merge_tag, merged])
         for t in mosaic.targets
     }
     return PanelMosaic(merged=merged, manifest=manifest, mosaic=mosaic)
@@ -384,8 +397,10 @@ def process_in_panels(op, *op_args, viewbox, blend=blend_panels) -> PanelMosaic:
     tiles into a new merged image (pass a display-carrying blend for a
     deliverable). Returns a new `PanelMosaic` (merged image + threaded manifest).
 
-    The crop keys on the SOURCE manifest's scoped hashes, never on `pm.merged`'s
-    whole-image hash, so a distant panel's re-stack re-runs nothing here."""
+    The crop keys on the SOURCE manifest's scoped hashes — which since
+    2026-09-03 fold the merged raster's content identity (a re-merge
+    re-keys every tile; see `base_panel_mosaic`), while remaining
+    per-panel so two panels' tiles can never collide."""
     mosaic, source, lead = op_args[0], op_args[-1], op_args[:-1]
     config = next(a for a in op_args if isinstance(a, ProcessingConfig))
     if not isinstance(source, PanelMosaic):
