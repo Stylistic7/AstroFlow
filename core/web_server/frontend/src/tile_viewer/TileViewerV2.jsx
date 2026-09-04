@@ -480,11 +480,23 @@ export default function TileViewerV2({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [primaryView?.display, view?.display, objectType, imageHash, ancestors]);
 
+    // Re-seed ONLY when the seed's CONTENT changes: a finish switch, or
+    // stats that are genuinely new (a rebuilt product landed). The metadata
+    // fetch above re-runs on every computeGraphStatus change by design, and
+    // each response is a fresh channelStats array OBJECT with identical
+    // values — keying this effect on object identity re-seeded on every
+    // poll and snapped the user's sliders back mid-adjustment whenever the
+    // compute graph was busy (2026-09-03).
+    const seedKeyRef = useRef(null);
     useEffect(() => {
         if (!activeFinish) return;
+        const stats = primaryStats ?? tileMeta?.channelStats;
+        const seedKey = `${finishName}|${JSON.stringify(stats ?? null)}`;
+        if (seedKeyRef.current === seedKey) return;   // same content — keep user values
+        seedKeyRef.current = seedKey;
         const init = {};
         for (const p of activeFinish.params) init[p.name] = p.default;
-        const seed = stfSeed(primaryStats ?? tileMeta?.channelStats);
+        const seed = stfSeed(stats);
         if (seed) {
             for (const p of activeFinish.params) {
                 if (p.name in seed) init[p.name] = Math.min(p.hi, Math.max(p.lo, seed[p.name]));
