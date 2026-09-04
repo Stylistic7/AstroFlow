@@ -48,7 +48,7 @@ def read_pyramid_level(path, min_px: int = _PREVIEW_MIN_PX) -> "np.ndarray":
 
 
 def _stf_values(arr: "np.ndarray", suffixes: "tuple[str, ...] | None",
-                target: float = 0.15, full_white: bool = False) -> dict:
+                target: float = 0.04, full_white: bool = False) -> dict:
     """Image-adaptive stretch params — the Python twin of the viewer's
     stfSeed recipe (finish_seed.js, 2026-09-03 recalibration):
     per channel, black + midtones anchor on the SKY subset (pixels below
@@ -63,8 +63,13 @@ def _stf_values(arr: "np.ndarray", suffixes: "tuple[str, ...] | None",
     display-normalized images, wrong on the pinned 0.005 gauge).
     Callers pass the COMPOSITE (starless + stars) — the stretch is a
     property of the original image, not of the layer viewed.
-    `suffixes=('S','H','O')` emits per-channel keys; None emits the
-    linked keys from pooled stats. `full_white=True` uses white = 1.0
+    `target` is where the BACKGROUND lands in display units — 0.04, the
+    twin of finish_seed.js: the gauge is pinned (sky = 0.005) and the
+    finishes' defaults are tuned for it (nominal background 0.034), so
+    seeding to the classic 0.15 made every view jump ~5x brighter the
+    moment stats arrived. `suffixes=('S','H','O')` emits per-channel
+    keys; None emits the linked keys from pooled stats.
+    `full_white=True` uses white = 1.0
     (the classic autostretch recipe — the narrowband Hubble preview
     matches the proven baked-palette look with it; p99 crushes the faint
     S/O channels relative to Hα)."""
@@ -219,11 +224,12 @@ def render_canonical_preview(object_type: str, object_id: str,
             return 0
 
     dc = get_durable_cache()
-    # The literal 4 versions the SEEDING RECIPE (v4: composite-anchored,
-    # sky-subset black/mid, BRIGHT `high` white anchor, 2026-09-03) — bump
-    # it when the value derivation changes, since the finish_hash only
-    # covers the finish definition.
-    key = ("finish_preview", 4, object_type, object_id, pipeline,
+    # The literal 5 versions the SEEDING RECIPE (v5: composite-anchored,
+    # sky-subset black/mid, BRIGHT `high` white anchor, background target
+    # 0.04 to match the finish defaults, 2026-09-03) — bump it when the
+    # value derivation changes, since the finish_hash only covers the
+    # finish definition.
+    key = ("finish_preview", 5, object_type, object_id, pipeline,
            finish.name, finish.finish_hash,
            _mtime(primary_path), _mtime(stars_path) if stars_path else 0)
     cached = dc.get(key)

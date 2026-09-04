@@ -59,7 +59,16 @@ const _CH = ['S', 'H', 'O'];   // matches the MTF finish's per-channel param suf
  * (`blackS/whiteS/midS`, …) PLUS combined keys (`blackpoint/whitepoint/midtones`
  * = the mean) so a linked finish still seeds; the frontend applies whichever keys
  * a finish's params actually use. `target` = the background grey. */
-export function stfSeed(channelStats, target = 0.15) {
+// `target` = where the BACKGROUND lands in display units. 0.04, not the
+// classic 0.15/0.25 STF convention, because AstroFlow's data is already
+// photometrically pinned (sky = 0.005) and the finishes' own defaults are
+// hand-tuned for that gauge — they render a nominal frame's background at
+// 0.034. Seeding to 0.15 made the view JUMP ~5x brighter the moment stats
+// arrived (measured 2026-09-03: first paint bg 0.034 -> seeded 0.166,
+// "epic contrast to washed out"). Matching the defaults means the adaptive
+// pass REFINES the stretch — correcting black/white for this image — with
+// no visible pop.
+export function stfSeed(channelStats, target = 0.04) {
     if (!channelStats || !channelStats.length) return null;
     const seed = {};
     const per = channelStats.map((c) => channelStf(c, target));
