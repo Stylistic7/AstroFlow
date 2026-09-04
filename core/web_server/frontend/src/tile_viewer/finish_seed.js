@@ -30,17 +30,22 @@ const mean = (a) => a.reduce((s, x) => s + x, 0) / Math.max(a.length, 1);
 //     on the COMPOSITE = starless + stars). Every channel's displayed
 //     sky then lands on the same target grey, so the background renders
 //     neutral instead of carrying a per-channel-slope colour cast.
-//   * GAUGE-AWARE white floor — the old `bp + 1e-3` was an absolute
-//     constant calibrated for display-normalized images (sky ~0.1). On
-//     the photometrically pinned gauge (sky = 0.005, faint-channel
-//     signal ~1e-4) it overrode the data's p99 and parked the white 10x
-//     above any real signal. Relative to the sky level it preserves the
-//     old behavior on normalized images and goes data-driven on ours.
+//   * BRIGHT white anchor — `high` (= max(p99.9, median + 60σ), shipped
+//     in channelStats). NOT p99: an astro frame is ~99% background, so
+//     p99 sits a few sigma above sky, the span collapses, and everything
+//     brighter than sky+noise blows out (measured 2026-09-03: 1.3% of a
+//     broadband target saturated, background lifted to 0.17 — the
+//     "washed out" pop when the seed landed). The gauge-relative floor
+//     stays as the degenerate guard for a channel with no bright pixels
+//     at all; the old absolute `bp + 1e-3` was calibrated for
+//     display-normalized images (sky ~0.1) and is wrong on the pinned
+//     0.005 gauge.
 function channelStf(c, target) {
     const med = c.skyMedian ?? c.median;
     const sig = c.skySigma ?? c.sigma;
     const bp = Math.max(0, med - 2.8 * sig);
-    const wp = Math.max(c.p99, bp + Math.max(0.02 * med, 1e-6));
+    const bright = c.high ?? c.p999 ?? c.p99;
+    const wp = Math.max(bright, bp + Math.max(0.02 * med, 1e-6));
     const x0 = (med - bp) / Math.max(wp - bp, 1e-6);
     return { bp, wp, mid: solveMidtones(x0, target) };
 }

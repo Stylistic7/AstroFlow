@@ -53,9 +53,14 @@ def _stf_values(arr: "np.ndarray", suffixes: "tuple[str, ...] | None",
     stfSeed recipe (finish_seed.js, 2026-09-03 recalibration):
     per channel, black + midtones anchor on the SKY subset (pixels below
     the luminance p60 — so each channel's displayed sky lands on the same
-    target grey and the background renders neutral), white = p99 with a
-    GAUGE-AWARE floor (relative to the sky level, not the old absolute
-    1e-3 that overrode faint-channel data on the pinned 0.005 gauge).
+    target grey and the background renders neutral), white on a BRIGHT
+    anchor `max(p99.9, median + 60σ)` — the same `high` the backend ships
+    and the GHS finish reads. NOT p99: an astro frame is ~99% background,
+    so p99 sits a few σ above sky and the span collapses (measured
+    2026-09-03: 1.3% saturated, background lifted to 0.17 — visibly
+    washed out). The gauge-relative floor remains only as the degenerate
+    guard, replacing the old absolute 1e-3 (calibrated for
+    display-normalized images, wrong on the pinned 0.005 gauge).
     Callers pass the COMPOSITE (starless + stars) — the stretch is a
     property of the original image, not of the layer viewed.
     `suffixes=('S','H','O')` emits per-channel keys; None emits the
@@ -87,10 +92,20 @@ def _stf_values(arr: "np.ndarray", suffixes: "tuple[str, ...] | None",
             sky = finite
         med = float(np.median(sky)) if sky.size else 0.0
         sigma = 1.4826 * float(np.median(np.abs(sky - med))) if sky.size else 1e-6
-        p99 = 1.0 if full_white else (
-            float(np.percentile(finite, 99)) if finite.size else 1.0)
+        if full_white:
+            bright = 1.0
+        elif finite.size:
+            # `high`, computed exactly as the backend's channelStats does:
+            # a genuinely BRIGHT level, floored well clear of the noise.
+            all_med = float(np.median(finite))
+            all_mad = float(np.median(np.abs(finite - all_med)))
+            all_sig = 1.4826 * all_mad if all_mad > 0 else max(all_med * 1e-3, 1e-6)
+            bright = max(float(np.percentile(finite, 99.9)),
+                         all_med + 60.0 * all_sig)
+        else:
+            bright = 1.0
         bp = max(0.0, med - 2.8 * max(sigma, 1e-6))
-        wp = max(p99, bp + max(0.02 * med, 1e-6))
+        wp = max(bright, bp + max(0.02 * med, 1e-6))
         x0 = (med - bp) / max(wp - bp, 1e-6)
         per.append((bp, wp, _solve_midtones(max(x0, 1e-6), target)))
     if suffixes:
@@ -204,11 +219,11 @@ def render_canonical_preview(object_type: str, object_id: str,
             return 0
 
     dc = get_durable_cache()
-    # The literal 3 versions the SEEDING RECIPE (v3: composite-anchored,
-    # sky-subset black/mid, gauge-aware white floor, 2026-09-03) — bump it
-    # when the value derivation changes, since the finish_hash only covers
-    # the finish definition.
-    key = ("finish_preview", 3, object_type, object_id, pipeline,
+    # The literal 4 versions the SEEDING RECIPE (v4: composite-anchored,
+    # sky-subset black/mid, BRIGHT `high` white anchor, 2026-09-03) — bump
+    # it when the value derivation changes, since the finish_hash only
+    # covers the finish definition.
+    key = ("finish_preview", 4, object_type, object_id, pipeline,
            finish.name, finish.finish_hash,
            _mtime(primary_path), _mtime(stars_path) if stars_path else 0)
     cached = dc.get(key)

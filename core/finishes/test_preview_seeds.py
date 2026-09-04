@@ -34,20 +34,40 @@ def test_linked_path_accepts_a_3band_array():
     assert v["whitepoint"] > v["blackpoint"]
 
 
-def test_sky_anchoring_and_gauge_floor():
+def test_sky_anchoring_and_bright_white():
     a = _composite()
     v = _stf_values(a, ("S", "H", "O"))
     for s in "SHO":
         bp, wp = v[f"black{s}"], v[f"white{s}"]
         # black anchors just below the SKY level, not dragged by signal
         assert PED - 3e-4 < bp < PED
-        # white is data-driven: below the old absolute bp+1e-3 floor
-        # (which would have overridden p99 on this gauge), yet clearly
-        # above sky — the scene holds it up
-        assert wp < bp + 1e-3
-        assert wp > PED + 2e-4
+        # white is a BRIGHT anchor — far above sky, so the background's
+        # own noise cannot fill the display range
+        assert wp > PED * 2
     # trim_floor lands below sky, above zero — the coverage-ramp cut
     assert 0 < v["trim_floor"] < PED
+
+
+def test_white_does_not_collapse_on_a_sparse_field():
+    """The 2026-09-03 regression: an astro frame is ~99% background, so a
+    p99 white anchor sits a few sigma above sky, the span collapses, and
+    everything brighter blows out (1.3% of a real broadband target
+    saturated; the display 'popped' washed-out the moment the seed
+    landed). The bright anchor must stay clear of the noise even when
+    only a fraction of a percent of pixels carry signal."""
+    rng = np.random.default_rng(11)
+    h, w = 200, 200
+    a = np.full((h, w, 3), PED, np.float32)
+    a += rng.normal(0, 2e-5, a.shape).astype(np.float32)
+    n_bright = int(0.002 * h * w)                 # 0.2% of the frame
+    ys = rng.integers(0, h, n_bright); xs = rng.integers(0, w, n_bright)
+    a[ys, xs, :] = 0.4
+    v = _stf_values(a, None)
+    sky_sigma = 1.4826 * float(np.median(np.abs(a - np.median(a))))
+    assert v["whitepoint"] > np.median(a) + 20 * sky_sigma, (
+        f"white {v['whitepoint']:.6f} collapsed onto the noise floor")
+    # and the stretch must not be so tight that the background saturates
+    assert v["whitepoint"] - v["blackpoint"] > 30 * sky_sigma
 
 
 def test_full_white_keeps_white_at_one():
