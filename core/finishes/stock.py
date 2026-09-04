@@ -37,15 +37,15 @@ def _stars_layer(stars, star_s, star_mid):
         alt_primaries=("Linear Narrowband Starless",),
         optional=("Linear RGB Stars",))
 def hubble(nb, stars,
-           blackS=Param(0.004, 0.0, 0.05, step=0.03, label="black S", scale="log"),
-           whiteS=Param(0.03, 0.002, 0.3, step=0.03, label="white S", scale="log"),
-           midS=Param(0.25, 0.05, 0.95, step=0.015, label="mid S", scale="log"),
-           blackH=Param(0.004, 0.0, 0.05, step=0.03, label="black H", scale="log"),
-           whiteH=Param(0.03, 0.002, 0.3, step=0.03, label="white H", scale="log"),
-           midH=Param(0.25, 0.05, 0.95, step=0.015, label="mid H", scale="log"),
-           blackO=Param(0.004, 0.0, 0.05, step=0.03, label="black O", scale="log"),
-           whiteO=Param(0.03, 0.002, 0.3, step=0.03, label="white O", scale="log"),
-           midO=Param(0.25, 0.05, 0.95, step=0.015, label="mid O", scale="log"),
+           blackS=Param(0.00496, 0.0, 0.05, step=0.03, label="black S", scale="log"),
+           whiteS=Param(0.0089, 0.002, 0.3, step=0.03, label="white S", scale="log"),
+           midS=Param(0.088, 0.05, 0.95, step=0.015, label="mid S", scale="log"),
+           blackH=Param(0.00496, 0.0, 0.05, step=0.03, label="black H", scale="log"),
+           whiteH=Param(0.0089, 0.002, 0.3, step=0.03, label="white H", scale="log"),
+           midH=Param(0.088, 0.05, 0.95, step=0.015, label="mid H", scale="log"),
+           blackO=Param(0.00496, 0.0, 0.05, step=0.03, label="black O", scale="log"),
+           whiteO=Param(0.0089, 0.002, 0.3, step=0.03, label="white O", scale="log"),
+           midO=Param(0.088, 0.05, 0.95, step=0.015, label="mid O", scale="log"),
            star_s=Param(1.0, 0.0, 2.0, step=0.1, label="stars"),
            star_mid=Param(0.25, 0.05, 0.95, step=0.03, label="star mid", scale="log"),
            scnr=Param(0.9, 0.0, 1.0, step=0.1, label="green→gold")):
@@ -64,15 +64,15 @@ def hubble(nb, stars,
         alt_primaries=("Linear Narrowband Starless",),
         optional=("Linear RGB Stars",))
 def foraxx(nb, stars,
-           blackS=Param(0.004, 0.0, 0.05, step=0.03, label="black S", scale="log"),
-           whiteS=Param(0.03, 0.002, 0.3, step=0.03, label="white S", scale="log"),
-           midS=Param(0.25, 0.05, 0.95, step=0.015, label="mid S", scale="log"),
-           blackH=Param(0.004, 0.0, 0.05, step=0.03, label="black H", scale="log"),
-           whiteH=Param(0.03, 0.002, 0.3, step=0.03, label="white H", scale="log"),
-           midH=Param(0.25, 0.05, 0.95, step=0.015, label="mid H", scale="log"),
-           blackO=Param(0.004, 0.0, 0.05, step=0.03, label="black O", scale="log"),
-           whiteO=Param(0.03, 0.002, 0.3, step=0.03, label="white O", scale="log"),
-           midO=Param(0.25, 0.05, 0.95, step=0.015, label="mid O", scale="log"),
+           blackS=Param(0.00496, 0.0, 0.05, step=0.03, label="black S", scale="log"),
+           whiteS=Param(0.0089, 0.002, 0.3, step=0.03, label="white S", scale="log"),
+           midS=Param(0.088, 0.05, 0.95, step=0.015, label="mid S", scale="log"),
+           blackH=Param(0.00496, 0.0, 0.05, step=0.03, label="black H", scale="log"),
+           whiteH=Param(0.0089, 0.002, 0.3, step=0.03, label="white H", scale="log"),
+           midH=Param(0.088, 0.05, 0.95, step=0.015, label="mid H", scale="log"),
+           blackO=Param(0.00496, 0.0, 0.05, step=0.03, label="black O", scale="log"),
+           whiteO=Param(0.0089, 0.002, 0.3, step=0.03, label="white O", scale="log"),
+           midO=Param(0.088, 0.05, 0.95, step=0.015, label="mid O", scale="log"),
            star_s=Param(1.0, 0.0, 2.0, step=0.1, label="stars"),
            star_mid=Param(0.25, 0.05, 0.95, step=0.03, label="star mid", scale="log"),
            scnr=Param(0.9, 0.0, 1.0, step=0.1, label="green→gold")):
@@ -95,9 +95,9 @@ def foraxx(nb, stars,
         optional=("Linear RGB Stars",))
 def rgb(starless, stars,
         star_s=Param(1.0, 0.0, 2.0, step=0.1, label="stars"),
-        blackpoint=Param(0.002, 0.0, 0.1, step=0.03, label="black", scale="log"),
-        whitepoint=Param(0.5, 0.002, 1.0, step=0.03, label="white", scale="log"),
-        midtones=Param(0.15, 0.01, 0.95, step=0.015, label="mid", scale="log")):
+        blackpoint=Param(0.00496, 0.0, 0.1, step=0.03, label="black", scale="log"),
+        whitepoint=Param(0.0089, 0.002, 1.0, step=0.03, label="white", scale="log"),
+        midtones=Param(0.088, 0.01, 0.95, step=0.015, label="mid", scale="log")):
     """The broadband colour photo: stars added onto the starless layer
     (1 = plain photo, 0 = starless), then a LINKED stretch — one curve
     for all three channels, so the stretch never shifts hue."""
@@ -111,10 +111,10 @@ def rgb(starless, stars,
         optional=("Linear RGB Stars", "Linear L Stars"))
 def lrgb(starless, stars, lum, lum_stars,
          star_s=Param(1.0, 0.0, 2.0, step=0.1, label="stars"),
-         blackpoint=Param(0.002, 0.0, 0.1, step=0.03, label="black", scale="log"),
-         whitepoint=Param(0.5, 0.002, 1.0, step=0.03, label="white", scale="log"),
-         midtones=Param(0.15, 0.01, 0.95, step=0.015, label="mid", scale="log"),
-         lum_mid=Param(0.15, 0.01, 0.95, step=0.015, label="L mid", scale="log"),
+         blackpoint=Param(0.00496, 0.0, 0.1, step=0.03, label="black", scale="log"),
+         whitepoint=Param(0.0089, 0.002, 1.0, step=0.03, label="white", scale="log"),
+         midtones=Param(0.088, 0.01, 0.95, step=0.015, label="mid", scale="log"),
+         lum_mid=Param(0.088, 0.01, 0.95, step=0.015, label="L mid", scale="log"),
          chroma=Param(1.2, 0.0, 3.0, step=0.1, label="chroma")):
     """LRGB combination: colour from the stretched RGB layers, lightness
     replaced by the (separately stretched) luminance in CIE Lab. `star_s`
@@ -135,10 +135,10 @@ def halrgb(starless, stars, nb, lum,
            star_s=Param(1.0, 0.0, 2.0, step=0.1, label="stars"),
            ha_k=Param(0.4, 0.0, 2.0, step=0.1, label="Hα→R"),
            ha_q=Param(0.0, 0.0, 1.0, step=0.05, label="continuum"),
-           blackpoint=Param(0.002, 0.0, 0.1, step=0.03, label="black", scale="log"),
-           whitepoint=Param(0.5, 0.002, 1.0, step=0.03, label="white", scale="log"),
-           midtones=Param(0.15, 0.01, 0.95, step=0.015, label="mid", scale="log"),
-           lum_mid=Param(0.15, 0.01, 0.95, step=0.015, label="L mid", scale="log"),
+           blackpoint=Param(0.00496, 0.0, 0.1, step=0.03, label="black", scale="log"),
+           whitepoint=Param(0.0089, 0.002, 1.0, step=0.03, label="white", scale="log"),
+           midtones=Param(0.088, 0.01, 0.95, step=0.015, label="mid", scale="log"),
+           lum_mid=Param(0.088, 0.01, 0.95, step=0.015, label="L mid", scale="log"),
            chroma=Param(1.2, 0.0, 3.0, step=0.1, label="chroma")):
     """The galaxy special: Hα line flux into R with live continuum
     subtraction (`ha_q`) from the starless narrowband, then the LRGB

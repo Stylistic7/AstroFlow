@@ -48,7 +48,7 @@ def read_pyramid_level(path, min_px: int = _PREVIEW_MIN_PX) -> "np.ndarray":
 
 
 def _stf_values(arr: "np.ndarray", suffixes: "tuple[str, ...] | None",
-                target: float = 0.04, full_white: bool = False) -> dict:
+                target: float = 0.10, full_white: bool = False) -> dict:
     """Image-adaptive stretch params — the Python twin of the viewer's
     stfSeed recipe (finish_seed.js, 2026-09-03 recalibration):
     per channel, black + midtones anchor on the SKY subset (pixels below
@@ -63,11 +63,11 @@ def _stf_values(arr: "np.ndarray", suffixes: "tuple[str, ...] | None",
     display-normalized images, wrong on the pinned 0.005 gauge).
     Callers pass the COMPOSITE (starless + stars) — the stretch is a
     property of the original image, not of the layer viewed.
-    `target` is where the BACKGROUND lands in display units — 0.04, the
-    twin of finish_seed.js: the gauge is pinned (sky = 0.005) and the
-    finishes' defaults are tuned for it (nominal background 0.034), so
-    seeding to the classic 0.15 made every view jump ~5x brighter the
-    moment stats arrived. `suffixes=('S','H','O')` emits per-channel
+    `target` is where the BACKGROUND lands in display units — 0.18, the
+    twin of finish_seed.js: measured to put a real broadband frame's
+    background at 0.197 with p99 at 0.629, i.e. actually using the
+    display range. Darker targets render a ~99%-background frame as
+    nearly black. `suffixes=('S','H','O')` emits per-channel
     keys; None emits the linked keys from pooled stats.
     `full_white=True` uses white = 1.0
     (the classic autostretch recipe — the narrowband Hubble preview

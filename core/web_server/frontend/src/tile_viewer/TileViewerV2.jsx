@@ -505,6 +505,18 @@ export default function TileViewerV2({
     // values — keying this effect on object identity re-seeded on every
     // poll and snapped the user's sliders back mid-adjustment whenever the
     // compute graph was busy (2026-09-03).
+    // `seedReady`: the adaptive seed has been applied, so the canvas may
+    // paint. `seedLate`: stats took too long (or this tap ships none) —
+    // render with defaults rather than staring at an empty canvas.
+    const [seedReady, setSeedReady] = useState(false);
+    const [seedLate, setSeedLate] = useState(false);
+    useEffect(() => {
+        setSeedReady(false);
+        setSeedLate(false);
+        const t = setTimeout(() => setSeedLate(true), 2500);
+        return () => clearTimeout(t);
+    }, [finishName, view?.display, view?.filter, objectType, imageHash]);
+
     const seedKeyRef = useRef(null);
     useEffect(() => {
         if (!activeFinish) return;
@@ -525,6 +537,7 @@ export default function TileViewerV2({
             for (const p of activeFinish.params) {
                 if (p.name in seed) init[p.name] = Math.min(p.hi, Math.max(p.lo, seed[p.name]));
             }
+            setSeedReady(true);   // release the first paint (see the tile effect)
         }
         setGenericValues(init);
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -783,6 +796,17 @@ export default function TileViewerV2({
     // our own rAF on top.
     useEffect(() => {
         if (!renderer.isReady || !tileMeta || !view || !viewport) return;
+        // Don't paint the first frame with the finish's STATIC DEFAULTS when
+        // an image-adaptive seed is on its way: the seed is the real look, and
+        // a frame drawn before it lands then re-drawn after is the "pop"
+        // (2026-09-03). Matching the defaults to the seed can't fix this —
+        // the background maps through (sky − black)/(white − black), whose
+        // numerator is ~4e-5 against a ~4e-3 denominator, so a 0.7% shift in
+        // an image's sky level moves the rendered background ~50%. Waiting is
+        // free: channelStats is fetched in parallel with the tiles and
+        // normally lands first. `seedLate` is the escape hatch so a tap that
+        // never ships stats still renders.
+        if (genericMode && !seedReady && !seedLate) return;
         const apply = (s) => {
             renderer.setViewport({
                 tx: s.tx, ty: s.ty, scale: s.scale,
@@ -799,6 +823,9 @@ export default function TileViewerV2({
         return unsub;
     }, [renderer.isReady, tileMeta, view?.pipeline, view?.display, view?.filter,
         viewport, objectType, imageHash, ancestors, primaryView?.display,
+        // seedReady/seedLate RELEASE the gate above — without them here the
+        // effect never re-runs once the seed lands and nothing ever paints.
+        seedReady, seedLate, genericMode,
         sourceViews?.map((sv) => sv?.display ?? '-').join('|') ?? '']);
 
     // ── 3×3 taste-grid handlers ─────────────────────────────────────────
