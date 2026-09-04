@@ -514,7 +514,13 @@ export default function TileViewerV2({
         seedKeyRef.current = seedKey;
         const init = {};
         for (const p of activeFinish.params) init[p.name] = p.default;
-        const seed = stfSeed(stats);
+        // Hand the finish's declared ranges to the seeder so it solves the
+        // midtones from values that will SURVIVE the clamp below — otherwise
+        // a param whose range excludes this gauge silently renders the
+        // background at the wrong level (see finish_seed.js channelStf).
+        const pb = new Map(activeFinish.params.map(
+            (p) => [p.name, { lo: p.lo, hi: p.hi }]));
+        const seed = stfSeed(stats, undefined, (n) => pb.get(n) ?? null);
         if (seed) {
             for (const p of activeFinish.params) {
                 if (p.name in seed) init[p.name] = Math.min(p.hi, Math.max(p.lo, seed[p.name]));

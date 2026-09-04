@@ -40,12 +40,25 @@ const mean = (a) => a.reduce((s, x) => s + x, 0) / Math.max(a.length, 1);
 //     at all; the old absolute `bp + 1e-3` was calibrated for
 //     display-normalized images (sky ~0.1) and is wrong on the pinned
 //     0.005 gauge.
-function channelStf(c, target) {
+function clampTo(v, b) {
+    return b ? Math.min(b.hi, Math.max(b.lo, v)) : v;
+}
+
+// `bpB`/`wpB` are the finish's DECLARED ranges for this channel's black and
+// white params. Clamping here — before solving midtones — is load-bearing:
+// the viewer clamps whatever it applies, so a midtones solved for an
+// out-of-range span renders the background at the wrong level. Measured
+// 2026-09-03: the RGB finish declared whitepoint lo = 0.02 while the pinned
+// gauge's natural white is 0.0088, so the applied white was 2.3x the solved
+// one and the background rendered at 0.009 instead of 0.040 — near-black,
+// and invisible to any test that didn't replay the clamp.
+function channelStf(c, target, bpB, wpB) {
     const med = c.skyMedian ?? c.median;
     const sig = c.skySigma ?? c.sigma;
-    const bp = Math.max(0, med - 2.8 * sig);
     const bright = c.high ?? c.p999 ?? c.p99;
-    const wp = Math.max(bright, bp + Math.max(0.02 * med, 1e-6));
+    const bp = clampTo(Math.max(0, med - 2.8 * sig), bpB);
+    let wp = clampTo(Math.max(bright, bp + Math.max(0.02 * med, 1e-6)), wpB);
+    if (wp <= bp) wp = bp + 1e-6;
     const x0 = (med - bp) / Math.max(wp - bp, 1e-6);
     return { bp, wp, mid: solveMidtones(x0, target) };
 }
@@ -68,17 +81,30 @@ const _CH = ['S', 'H', 'O'];   // matches the MTF finish's per-channel param suf
 // "epic contrast to washed out"). Matching the defaults means the adaptive
 // pass REFINES the stretch — correcting black/white for this image — with
 // no visible pop.
-export function stfSeed(channelStats, target = 0.04) {
+export function stfSeed(channelStats, target = 0.04, boundsFor = null) {
     if (!channelStats || !channelStats.length) return null;
+    const b = (name) => (boundsFor ? boundsFor(name) : null);
     const seed = {};
-    const per = channelStats.map((c) => channelStf(c, target));
+    const per = channelStats.map((c, i) => {
+        const s = _CH[i] ?? String(i);
+        return channelStf(c, target, b(`black${s}`), b(`white${s}`));
+    });
     per.forEach((p, i) => {
         const s = _CH[i] ?? String(i);
         seed[`black${s}`] = p.bp; seed[`white${s}`] = p.wp; seed[`mid${s}`] = p.mid;
     });
-    seed.blackpoint = mean(per.map((p) => p.bp));
-    seed.whitepoint = mean(per.map((p) => p.wp));
-    seed.midtones = mean(per.map((p) => p.mid));
+    // LINKED keys are solved from POOLED stats under the LINKED params' own
+    // ranges — not the mean of three separately-solved midtones, which is
+    // only self-consistent when every channel shares a span.
+    const pooled = {
+        skyMedian: mean(channelStats.map((c) => c.skyMedian ?? c.median)),
+        skySigma: mean(channelStats.map((c) => c.skySigma ?? c.sigma)),
+        high: mean(channelStats.map((c) => c.high ?? c.p999 ?? c.p99)),
+    };
+    const linked = channelStf(pooled, target, b('blackpoint'), b('whitepoint'));
+    seed.blackpoint = linked.bp;
+    seed.whitepoint = linked.wp;
+    seed.midtones = linked.mid;
     // Coverage floor for the framework's ragged-edge trim: partial-coverage
     // rolloff pixels (between no-data zero and the sky pedestal) render as
     // no-data. 60% of the faintest channel's sky level — comfortably above
