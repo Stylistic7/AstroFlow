@@ -28,9 +28,20 @@ def _stretch(x, bp, wp, mid):
     return mtf(saturate((x - bp) / maximum(wp - bp, 1e-6)), mid)
 
 
-def _stars_layer(stars, star_s, star_mid):
-    """Stretched, intensity-scaled RGB stars ready to screen over a palette."""
-    return saturate(star_s * mtf(saturate(stars), star_mid))
+def _stars_layer(stars, star_s, star_mid, star_white):
+    """Stretched, intensity-scaled RGB stars ready to screen over a palette.
+
+    `star_white` NORMALIZES before the midtones curve, and is the whole
+    reason stars are visible: the layer is LINEAR data on the pinned
+    photometric gauge (sky 0.005, star pixels ~0.005-0.5), not a 0-1
+    display image. Curving raw values crushed them — measured
+    2026-09-03: a p99.9 star at 0.005 came out of `mtf(0.25, ·)` at
+    0.0149, so even star_s=2 screened a 3% brightening over the palette
+    and the slider looked dead. Dividing by the bright anchor (`high`
+    from channelStats, ~0.0089) maps a bright star to 1.0 first, so the
+    curve then does what it was written to do."""
+    return saturate(star_s * mtf(saturate(stars / maximum(star_white, 1e-6)),
+                                 star_mid))
 
 
 @finish(name="Hubble", inputs=("Linear SHO", "Linear RGB Stars"),
@@ -48,6 +59,7 @@ def hubble(nb, stars,
            midO=Param(0.088, 0.05, 0.95, step=0.015, label="mid O", scale="log"),
            star_s=Param(1.0, 0.0, 2.0, step=0.1, label="stars"),
            star_mid=Param(0.25, 0.05, 0.95, step=0.03, label="star mid", scale="log"),
+           star_white=Param(0.0089, 0.001, 0.5, step=0.03, label="star white", scale="log"),
            scnr=Param(0.9, 0.0, 1.0, step=0.1, label="green→gold")):
     """Classic Hubble palette: R=SII, G=Hα, B=OIII, per-channel stretch,
     RGB stars screened back in."""
@@ -57,7 +69,7 @@ def hubble(nb, stars,
     # SCNR (average-neutral): green → gold, the classic SHO move —
     # without it Hα's dominance renders the whole palette green.
     h = minimum(h, (1.0 - scnr) * h + scnr * 0.5 * (s + o))
-    return screen(vec3(s, h, o), _stars_layer(stars, star_s, star_mid))
+    return screen(vec3(s, h, o), _stars_layer(stars, star_s, star_mid, star_white))
 
 
 @finish(name="Foraxx", inputs=("Linear SHO", "Linear RGB Stars"),
@@ -75,6 +87,7 @@ def foraxx(nb, stars,
            midO=Param(0.088, 0.05, 0.95, step=0.015, label="mid O", scale="log"),
            star_s=Param(1.0, 0.0, 2.0, step=0.1, label="stars"),
            star_mid=Param(0.25, 0.05, 0.95, step=0.03, label="star mid", scale="log"),
+           star_white=Param(0.0089, 0.001, 0.5, step=0.03, label="star white", scale="log"),
            scnr=Param(0.9, 0.0, 1.0, step=0.1, label="green→gold")):
     """Foraxx dynamic palette: per-pixel data-dependent narrowband weights
     (`~x = 1−x`): R = (O^~O)·S + ~(O^~O)·H; G blends H/O by (O·H)^~(O·H);
@@ -88,7 +101,7 @@ def foraxx(nb, stars,
     wg = m ** (1.0 - m)
     g = wg * h + (1.0 - wg) * o
     g = minimum(g, (1.0 - scnr) * g + scnr * 0.5 * (r + o))
-    return screen(vec3(r, g, o), _stars_layer(stars, star_s, star_mid))
+    return screen(vec3(r, g, o), _stars_layer(stars, star_s, star_mid, star_white))
 
 
 @finish(name="RGB", inputs=("Linear RGB Starless", "Linear RGB Stars"),

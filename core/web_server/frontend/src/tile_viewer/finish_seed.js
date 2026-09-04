@@ -109,5 +109,11 @@ export function stfSeed(channelStats, target = 0.10, boundsFor = null) {
     // any ramp, comfortably below real sky.
     const skyMin = Math.min(...channelStats.map((c) => c.skyMedian ?? c.median));
     if (skyMin > 0) seed.trim_floor = 0.6 * skyMin;
+    // `star_white` normalises the STARS layer before its midtones curve.
+    // Same bright anchor as the image white: the stats are composite-derived,
+    // so `high` already sits at the bright-star level. Without a data-derived
+    // value the curve saw raw linear star pixels (~0.005) and screened a 3%
+    // brightening — the "stars invisible at star_s=2" report (2026-09-03).
+    seed.star_white = pooled.high;
     return seed;
 }

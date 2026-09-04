@@ -127,6 +127,10 @@ def _stf_values(arr: "np.ndarray", suffixes: "tuple[str, ...] | None",
     sky_min = min(_sky_med(c) for c in chans)
     if sky_min > 0:
         out["trim_floor"] = 0.6 * sky_min
+    # Twin of finish_seed.js: normalise the stars layer by the same bright
+    # anchor the image white uses, else the stars curve crushes raw linear
+    # star pixels to invisibility.
+    out["star_white"] = float(np.mean([wp for _, wp, _ in per]))
     return out
 
 

@@ -1065,6 +1065,34 @@ export default function TileViewerV2({
                             <MenuItem key={f.name} value={f.name}>{f.name}</MenuItem>
                         ))}
                     </Select>
+                    {/* WHICH TAPS this finish is actually reading. A finish
+                        reads its OWN inputs regardless of the tap named in the
+                        URL, so a page titled "Linear RGB Starless" can be
+                        rendering "Linear SHO" through Hubble — which cost
+                        hours of misdiagnosis on 2026-09-03 because nothing on
+                        screen said so. Primary first, then each extra input
+                        with whether it actually bound. */}
+                    {genericMode && activeFinish && (
+                        <Typography variant="caption" sx={{
+                            display: 'block', mb: 1, lineHeight: 1.4,
+                            color: 'rgba(255,255,255,0.62)',
+                        }}>
+                            reading&nbsp;
+                            <b>{activeFinish.inputs?.[0] ?? '—'}</b>
+                            {(activeFinish.inputs || []).slice(1).map((d, i) => (
+                                <span key={d}>
+                                    {' + '}{d}
+                                    <span style={{
+                                        color: sourceViews?.[i]
+                                            ? 'rgba(140,220,150,0.9)'
+                                            : 'rgba(240,160,140,0.9)',
+                                    }}>
+                                        {sourceViews?.[i] ? '' : ' (absent)'}
+                                    </span>
+                                </span>
+                            ))}
+                        </Typography>
+                    )}
                     {/* Palette is a GHS-finish knob; hidden for data-driven finishes. */}
                     {!genericMode && (
                         <Select
