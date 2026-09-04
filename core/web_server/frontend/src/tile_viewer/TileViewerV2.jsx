@@ -398,10 +398,28 @@ export default function TileViewerV2({
     const primaryView = genericMode && view && activeFinish.inputs?.length
         ? viewFor(activeFinish.inputs[0])
         : view;
-    const sourceViews = genericMode && view && (activeFinish.inputs?.length ?? 1) > 1
+    // DEBUG KILL-SWITCH: `?nostars=1` binds BLACK for every extra finish
+    // input, so the page renders its primary tap alone. Isolates "does the
+    // second texture cause this look?" without touching data or finishes.
+    const debugNoSources = typeof window !== 'undefined'
+        && new URLSearchParams(window.location.search).get('nostars') === '1';
+    const sourceViews = !debugNoSources
+        && genericMode && view && (activeFinish.inputs?.length ?? 1) > 1
         ? activeFinish.inputs.slice(1).map(
             (d) => (availableTaps.has(d) ? viewFor(d) : null))
         : null;
+    // A declared input that binds black degrades silently by design; say so
+    // in the console, since "finish renders but one layer is missing" is
+    // otherwise invisible.
+    const extraInputSig = genericMode && activeFinish
+        ? (activeFinish.inputs || []).slice(1).map(
+            (d, i) => `${d}=${sourceViews?.[i] ? 'bound' : 'BLACK'}`).join(',')
+        : '';
+    useEffect(() => {
+        if (!extraInputSig) return;
+        console.info(`[finish] ${activeFinish?.name}: ${extraInputSig}`
+            + (debugNoSources ? ' (nostars=1 debug)' : ''));
+    }, [extraInputSig, activeFinish?.name, debugNoSources]);
 
 
 
