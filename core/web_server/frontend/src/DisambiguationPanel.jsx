@@ -8,7 +8,19 @@ import MosaicCard from "./MosaicCard.jsx";
 import CalibrationStackCard from "./CalibrationStackCard.jsx";
 
 export default function DisambiguationPanel({ items_in }) {
-	const { stacks, targets, mosaics } = useContext(AstroFlowContext);
+	const { stacks, targets, mosaics, calibrationStacks } = useContext(AstroFlowContext);
+
+	// Most recent first: search results and long card lists are usually
+	// hunted for the newest data (e.g. last night's flats).
+	const newestDate = (item) => {
+		const [type, id] = item.split(",");
+		const collection = {
+			stack: stacks, target: targets, mosaic: mosaics,
+			calibration_stack: calibrationStacks,
+		}[type];
+		const t = Date.parse(collection?.[id]?.newest_date);
+		return Number.isNaN(t) ? 0 : t;
+	};
 
 	// const params = useParams();
 	let { items } = useParams();
@@ -38,7 +50,7 @@ export default function DisambiguationPanel({ items_in }) {
 				gridColumnGap: "1em",
 				gridRowGap: "1em",
 			}}>
-				{items.split(";").map(item => {
+				{items.split(";").sort((a, b) => newestDate(b) - newestDate(a)).map(item => {
 					let [type, id] = item.split(",");
 					if (type === "stack") {
 						return <StackCard
