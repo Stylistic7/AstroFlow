@@ -1,17 +1,15 @@
-import numpy as np
 from numpy import fabs, sin, cos, arctan2, sqrt
 from beartype import beartype
 
+from units import Degrees, Radians
+
 
 # TODO: Name this better.
-# TODO: Use strongly-typed physical units (e.g. degrees).
 @beartype
-def distance(
-    ra_1: float, dec_1: float, ra_2: float, dec_2: float, degrees: bool = True
-) -> float:
-    if degrees:
-        ra_1, dec_1 = np.radians(ra_1), np.radians(dec_1)
-        ra_2, dec_2 = np.radians(ra_2), np.radians(dec_2)
+def distance(ra_1: Degrees, dec_1: Degrees, ra_2: Degrees, dec_2: Degrees) -> Degrees:
+    """Great-circle distance between two sky positions (Vincenty formula)."""
+    ra_1, dec_1 = ra_1.to_radians(), dec_1.to_radians()
+    ra_2, dec_2 = ra_2.to_radians(), dec_2.to_radians()
 
     # lambda is ra, sigma is dec
     ra_diff = fabs(ra_1 - ra_2)
@@ -22,9 +20,4 @@ def distance(
 
     denominator = sin(dec_1) * sin(dec_2) + cos(dec_1) * cos(dec_2) * cos(ra_diff)
 
-    result = arctan2(numerator, denominator)
-
-    if degrees:
-        return np.degrees(result)
-    else:
-        return result
+    return Radians(arctan2(numerator, denominator)).to_degrees()

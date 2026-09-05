@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 
 import catalogs.ngc2000_catalog as ngc2000_catalog
+from units import Degrees
 from beartype import beartype
 
 
@@ -19,7 +20,7 @@ def ra_dec_string(ra: float, dec: float) -> str:
 def canonical_target_string(position: Sequence[float]) -> str:
     ra, dec = position
 
-    _, entry = ngc2000_catalog.find_best_object(ra, dec)
+    _, entry = ngc2000_catalog.find_best_object(Degrees(ra), Degrees(dec))
     if entry and entry["name"]:
         return entry["name"]
     else:
