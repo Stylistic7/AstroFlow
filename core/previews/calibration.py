@@ -20,58 +20,65 @@ def calibrate_image(
     flat_image: np.ndarray | None,
     rotate: bool,
 ) -> np.ndarray:
+    """Preview-grade calibration: apply WHATEVER components are present.
+
+    This used to require bias AND dark AND flat, silently returning the
+    raw light otherwise. The unified CALIBRATION_TOPOLOGY (2026-06) gives
+    lights `("dark", "flat")` and NEVER a bias (Landmann §8.2 — the dark
+    carries the bias signal), so after that change the all-or-nothing
+    guard made every flat-corrected Run preview serve the raw frame:
+    byte-identical carousel entries for every candidate flat, a no-op
+    picker that looked like a working one (found 2026-09-04).
+
+    Semantics per component, preview-grade (thumbnails choose FLATS —
+    vignetting and dust — not photometry):
+      * bias absent: treated as zero; the dark then carries bias+current,
+        correct for exposure-MATCHED darks. Exposure scaling of a
+        bias-inclusive dark is approximate; fine at preview scale.
+      * dark absent: no dark subtraction (and no dark term in the flat).
+      * flat absent: no division — the honest "uncorrected" preview.
+    """
     assert light_image is not None
 
-    if bias_image is None or dark_image is None or flat_image is None:
-        if rotate:
-            light_image = np.rot90(light_image, 2)
-        return light_image
-
-    assert (
-        light_metadata is not None
-        and dark_metadata is not None
-        and flat_metadata is not None
-    )
-    assert light_image is not None and dark_image is not None and flat_image is not None
-
-    assert "EXPOSURE" in light_metadata.header, (
-        f"### file {light_metadata.filename} does not have EXPOSURE tag"
-    )
-    assert "EXPOSURE" in dark_metadata.header, (
-        f"### file {dark_metadata.filename} does not have EXPOSURE tag"
-    )
-    assert "EXPOSURE" in flat_metadata.header, (
-        f"### file {flat_metadata.filename} does not have EXPOSURE tag"
-    )
-
+    frames = [f for f in (light_image, bias_image, dark_image, flat_image)
+              if f is not None]
     # Independent resize-to-width can leave light and cal frames with
     # heights that differ by ±1 row when their native heights straddle an
     # integer-truncation boundary (e.g. a sensor crop of 2 rows pushes
     # 6388 → 6386 native, which rounds to 1365 vs. 1366 at width 2048).
     # Crop everything to the minimum common shape — this is a thumbnail
     # preview, sub-pixel registration is irrelevant.
-    h = min(light_image.shape[0], bias_image.shape[0],
-            dark_image.shape[0], flat_image.shape[0])
-    w = min(light_image.shape[1], bias_image.shape[1],
-            dark_image.shape[1], flat_image.shape[1])
-    light_image = light_image[:h, :w]
-    bias_image = bias_image[:h, :w]
-    dark_image = dark_image[:h, :w]
-    flat_image = flat_image[:h, :w]
+    h = min(f.shape[0] for f in frames)
+    w = min(f.shape[1] for f in frames)
+    light = light_image[:h, :w].astype(np.float32)
+    bias = bias_image[:h, :w] if bias_image is not None else np.float32(0.0)
+    dark = dark_image[:h, :w] if dark_image is not None else None
+    flat = flat_image[:h, :w] if flat_image is not None else None
 
-    light_dark_scale = (
-        light_metadata.header["EXPOSURE"] / dark_metadata.header["EXPOSURE"]
-    )
-    flat_dark_scale = (
-        flat_metadata.header["EXPOSURE"] / dark_metadata.header["EXPOSURE"]
-    )
+    def _exposure(md):
+        assert md is not None and "EXPOSURE" in md.header, (
+            f"### file {md and md.filename} does not have EXPOSURE tag"
+        )
+        return md.header["EXPOSURE"]
 
-    image = (light_image - bias_image) - light_dark_scale * (dark_image - bias_image)
-    flat_image = (flat_image - bias_image) - flat_dark_scale * (dark_image - bias_image)
-    assert flat_image is not None
-    image = np.divide(
-        image, flat_image, out=np.zeros_like(image), where=flat_image != 0
-    )
+    image = light - bias
+    if dark is not None:
+        scale = _exposure(light_metadata) / _exposure(dark_metadata)
+        image = image - scale * (dark - bias)
+
+    if flat is not None:
+        flat_signal = flat - bias
+        if dark is not None:
+            scale = _exposure(flat_metadata) / _exposure(dark_metadata)
+            flat_signal = flat_signal - scale * (dark - bias)
+        # Normalize so division rescales SHAPE (vignetting/dust) without
+        # moving the preview's overall level.
+        med = float(np.median(flat_signal[flat_signal > 0])) if np.any(flat_signal > 0) else 1.0
+        flat_signal = flat_signal / max(med, 1e-6)
+        image = np.divide(
+            image, flat_signal, out=np.zeros_like(image),
+            where=flat_signal != 0,
+        )
 
     if rotate:
         image = np.rot90(image, 2)

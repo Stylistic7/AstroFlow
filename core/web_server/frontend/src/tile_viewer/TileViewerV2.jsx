@@ -510,6 +510,9 @@ export default function TileViewerV2({
     // render with defaults rather than staring at an empty canvas.
     const [seedReady, setSeedReady] = useState(false);
     const [seedLate, setSeedLate] = useState(false);
+    // The values the SEED produced. Slider ranges centre on these; using the
+    // live values instead would make the track move under the user's finger.
+    const [seedValues, setSeedValues] = useState({});
     useEffect(() => {
         setSeedReady(false);
         setSeedLate(false);
@@ -537,6 +540,7 @@ export default function TileViewerV2({
             for (const p of activeFinish.params) {
                 if (p.name in seed) init[p.name] = Math.min(p.hi, Math.max(p.lo, seed[p.name]));
             }
+            setSeedValues(init);
             setSeedReady(true);   // release the first paint (see the tile effect)
         }
         setGenericValues(init);
@@ -629,6 +633,11 @@ export default function TileViewerV2({
     function renderFinishParams(params) {
         const builtin = params.filter((p) => p.builtin);
         const authored = params.filter((p) => !p.builtin);
+        // Stretch values on the pinned gauge are ~0.005: toFixed(3) rendered
+        // every black/white point as "0.005" / "0.009" and the readout never
+        // moved. Show significant figures instead of fixed decimals.
+        const fmtParam = (v) => (Math.abs(v) < 0.1 && v !== 0
+            ? Number(v).toPrecision(3) : Number(v).toFixed(3));
         const control = (p) => (p.kind === 'toggle' ? (
             <FormControlLabel
                 key={p.name}
@@ -646,16 +655,95 @@ export default function TileViewerV2({
         ) : (
             <Box key={p.name}>
                 <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
-                    {p.label} — {(genericValues[p.name] ?? p.default).toFixed(3)}
+                    {p.label} — {fmtParam(genericValues[p.name] ?? p.default)}
                 </Typography>
-                <Slider
-                    size="small"
-                    value={genericValues[p.name] ?? p.default}
-                    min={p.lo} max={p.hi}
-                    step={Math.max((p.hi - p.lo) / 200, 1e-4)}
-                    onChange={(_, v) => setGenericValues((s) => ({ ...s, [p.name]: v }))}
-                    sx={{ color: '#fff' }}
-                />
+                {/* LOG-SCALED where the param says so. The Params have declared
+                    `scale: "log"` all along and this slider ignored it, running
+                    linear from lo to hi: on the pinned gauge (sky 0.005) a
+                    blackpoint track of 0..0.1 stepped 5e-4 — 10% of sky per
+                    step — so one nudge destroyed the image (2026-09-03).
+                    In log space each step is a fixed RATIO, which is what
+                    stretch controls want. `lo` is floored off zero (log(0) is
+                    undefined) at hi/1000, still far below any real sky. */}
+                {(() => {
+                    // STRETCH SLIDERS ARE +/-3 SIGMA WINDOWS around the seeded
+                    // point (Stylistic7, 2026-09-03). A black point lives within a
+                    // few sigma of the sky median, so (sky - black) is ~4e-5 on
+                    // the pinned gauge: any track scaled to the parameter's
+                    // DECLARED range (0..0.05) stepped tens of sigma and the
+                    // image died on the smallest drag. Bounding exploration by
+                    // the image's own noise makes every step a fraction of a
+                    // sigma, at any depth, and keeps the control meaningful
+                    // rather than nominal. Non-stretch params keep their
+                    // declared range (log where they ask for it).
+                    const SIGMA_SPAN = 3;
+                    const st = primaryStats ?? tileMeta?.channelStats;
+                    const chIdx = { S: 0, H: 1, O: 2 }[p.name.slice(-1)];
+                    const sigmaOf = () => {
+                        if (!st || !st.length) return null;
+                        const c = (chIdx != null && st[chIdx]) ? st[chIdx] : null;
+                        if (c) return c.skySigma ?? c.sigma;
+                        return st.reduce((a, x) => a + (x.skySigma ?? x.sigma), 0) / st.length;
+                    };
+                    const anchor = seedValues[p.name];
+                    // BLACK is a NOISE-scale control: it lives within a few
+                    // sigma of the sky median, so +/-3 sigma is the whole
+                    // useful world. WHITE is a SIGNAL-scale control: the
+                    // bright anchor sits ~250 sigma above sky and the useful
+                    // range runs from just-above-sky to the brightest star, so
+                    // a +/-3 sigma window moves it 0.9% and does visibly
+                    // nothing (Stylistic7, 2026-09-04). White therefore gets a
+                    // GEOMETRIC window around its seed instead.
+                    const isBlack = /^black/.test(p.name);
+                    const isWhite = /^white/.test(p.name) || /white$/.test(p.name);
+                    const sig = isBlack ? sigmaOf() : null;
+                    if (anchor != null && isWhite) {
+                        const lo = Math.max(p.lo, anchor / 4);
+                        const hi = Math.min(p.hi, anchor * 6);
+                        const toL = (v) => Math.log(Math.min(hi, Math.max(lo, v)));
+                        return (
+                            <Slider
+                                size="small"
+                                value={toL(genericValues[p.name] ?? p.default)}
+                                min={toL(lo)} max={toL(hi)}
+                                step={(toL(hi) - toL(lo)) / 200}
+                                onChange={(_, q) => setGenericValues(
+                                    (stt) => ({ ...stt, [p.name]: Math.exp(q) }))}
+                                sx={{ color: '#fff' }}
+                            />
+                        );
+                    }
+                    if (anchor != null && sig) {
+                        const lo = Math.max(p.lo, anchor - SIGMA_SPAN * sig);
+                        const hi = Math.min(p.hi, anchor + SIGMA_SPAN * sig);
+                        return (
+                            <Slider
+                                size="small"
+                                value={Math.min(hi, Math.max(lo, genericValues[p.name] ?? p.default))}
+                                min={lo} max={hi} step={(hi - lo) / 200}
+                                onChange={(_, v) => setGenericValues(
+                                    (stt) => ({ ...stt, [p.name]: v }))}
+                                sx={{ color: '#fff' }}
+                            />
+                        );
+                    }
+                    const useLog = p.scale === 'log' && p.hi > 0;
+                    const lo = useLog ? Math.max(p.lo, p.hi / 1000) : p.lo;
+                    const toPos = (v) => (useLog
+                        ? Math.log(Math.min(p.hi, Math.max(lo, v))) : v);
+                    const fromPos = (q) => (useLog ? Math.exp(q) : q);
+                    return (
+                        <Slider
+                            size="small"
+                            value={toPos(genericValues[p.name] ?? p.default)}
+                            min={toPos(lo)} max={toPos(p.hi)}
+                            step={(toPos(p.hi) - toPos(lo)) / 200}
+                            onChange={(_, q) => setGenericValues(
+                                (stt) => ({ ...stt, [p.name]: fromPos(q) }))}
+                            sx={{ color: '#fff' }}
+                        />
+                    );
+                })()}
             </Box>
         ));
         return (<>

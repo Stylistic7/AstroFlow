@@ -38,11 +38,20 @@ def _cache_key(args: tuple) -> str:
     return "_".join(parts)
 
 
+# Versions the RENDER RECIPE behind every cached thumbnail. Bump when the
+# pixel math changes so stale renders regenerate lazily — v2: calibrate_image
+# applies partial calibration (2026-09-04; the all-or-nothing guard had every
+# flat-corrected Run preview serving the raw light, cached byte-identical
+# for every candidate flat).
+_THUMBNAIL_VERSION = 2
+
+
 def _presentation_cache_key(entity, args: tuple, op_name: str) -> tuple:
     """Cache key for a presentation (thumbnail) of an entity produced
     by op `op_name`. Embeds `type(entity).__name__` so distinct kinds
     don't alias."""
-    return ("Thumbnail", type(entity).__name__, op_name, _cache_key(args))
+    return ("Thumbnail", _THUMBNAIL_VERSION, type(entity).__name__, op_name,
+            _cache_key(args))
 
 
 def _regenerate_thumbnail_for_producer(producer, args: tuple):
