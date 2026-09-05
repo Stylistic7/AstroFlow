@@ -258,7 +258,24 @@ def _run_asiair_download_and_maybe_restart() -> None:
     from file_io.find_image_files import find_image_files
     from asiair.download_asiair import download_from_asiair
 
-    devices = context.asiair_devices or []
+    devices = list(context.asiair_devices or [])
+
+    # mDNS discovery MISSES a second unit when both announce the same
+    # generic name (firmware 14.39 names every device "asiair.local"):
+    # 2026-09-05, FLT156 was live and serving but held no discovery
+    # record while RC71 owned the only one. Union in every host that
+    # answers the imager port so a discovery miss can never skip a
+    # rig's download.
+    from asiair.network_hosts import find_hosts_with_open_port
+    known_ips = {d.get("ip") for d in devices}
+    try:
+        for ip in find_hosts_with_open_port(4700):
+            if ip not in known_ips:
+                print(f"### download poller: port-scan found undiscovered ASIAir at {ip}")
+                devices.append({"ip": ip, "hostname": ""})
+    except Exception as e:
+        print(f"### download poller: port scan failed (non-fatal): {e}")
+
     if not devices:
         return
 

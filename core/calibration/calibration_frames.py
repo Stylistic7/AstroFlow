@@ -108,6 +108,20 @@ def identify_calibration_stacks(
         }
 
     frames_for_image_type = group_by_header(metadata.values(), "IMAGETYP", "")
+
+    # RULE (user decision 2026-09-05): all frames of one calibration stack
+    # come from a SINGLE directory. Two rigs shooting flats simultaneously
+    # land in different per-rig download folders, so this guarantees their
+    # frames can never pool into one stack even when neither carries a
+    # camera fingerprint (same sensor model = same geometry key). Light
+    # stacks legitimately span directories; calibration runs never do —
+    # a session's calibration frames share one astronomical-night folder.
+    import os
+    frames_for_dir: dict[str, set[FrameHash]] = {}
+    for h, m in metadata.items():
+        frames_for_dir.setdefault(
+            os.path.dirname(m.filename), set()
+        ).add(FrameHash(h))
     # `camera_key` here is the synthetic tuple `(sensor_key, consensus_tuple)`
     # where `consensus_tuple` is empty for biases / low-defect frames that
     # cannot be fingerprinted. Frames sharing the same camera_key are from
@@ -147,11 +161,13 @@ def identify_calibration_stacks(
             return
         stacks[StackHash(stack.stable_hash)] = stack
 
-    for camera_key in frames_for_camera:
+    for camera_key, dir_frames in itertools.product(
+        frames_for_camera, frames_for_dir.values()
+    ):
         consensus = consensus_for_camera[camera_key]
         bias_frames = frames_for_image_type.get(
             "bias", set()
-        ) & frames_for_camera.get(camera_key, set())
+        ) & frames_for_camera.get(camera_key, set()) & dir_frames
         for run in get_runs(bias_frames):
             add_stack(run, consensus)
 
@@ -160,6 +176,7 @@ def identify_calibration_stacks(
                 frames_for_image_type.get("dark", set())
                 & frames_for_camera.get(camera_key, set())
                 & frames_for_exposure.get(exposure, set())
+                & dir_frames
             )
             for run in get_runs(dark_frames):
                 add_stack(run, consensus)
@@ -169,6 +186,7 @@ def identify_calibration_stacks(
                 frames_for_image_type.get("flat", set())
                 & frames_for_camera.get(camera_key, set())
                 & frames_for_filter.get(filter, set())
+                & dir_frames
             )
             for run in get_runs(flat_frames):
                 add_stack(run, consensus)

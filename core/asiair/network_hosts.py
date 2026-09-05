@@ -8,7 +8,6 @@ import itertools
 
 
 def check_socket(host, port):
-    print(f"checking host {host} port {port}")
     with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
         sock.settimeout(0.5)
         return sock.connect_ex((host, port)) == 0
