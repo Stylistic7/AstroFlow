@@ -129,14 +129,31 @@ def identify_calibration_stacks(
         return CalibrationStack.from_run(run, camera_consensus=camera_consensus)
 
     stacks = CalibrationStacksDict()
+
+    def add_stack(frames: list[FrameHash], consensus: tuple[int, ...]) -> None:
+        # One malformed run — e.g. a flat sequence captured with per-frame
+        # auto-exposure drift (unsupported, decision 2026-09-05) — must not
+        # block calibration identification for every other camera and
+        # filter: the ice-flat O run did exactly that for a full day.
+        try:
+            stack = new_stack(frames, consensus)
+        except Exception as e:
+            log.error(
+                "Skipping unstackable calibration run",
+                n_frames=len(frames),
+                first_frame=metadata[frames[0]].filename if frames else None,
+                error=str(e).splitlines()[-1] if str(e) else repr(e),
+            )
+            return
+        stacks[StackHash(stack.stable_hash)] = stack
+
     for camera_key in frames_for_camera:
         consensus = consensus_for_camera[camera_key]
         bias_frames = frames_for_image_type.get(
             "bias", set()
         ) & frames_for_camera.get(camera_key, set())
         for run in get_runs(bias_frames):
-            stack = new_stack(run, consensus)
-            stacks[StackHash(stack.stable_hash)] = stack
+            add_stack(run, consensus)
 
         for exposure in frames_for_exposure:
             dark_frames = (
@@ -145,8 +162,7 @@ def identify_calibration_stacks(
                 & frames_for_exposure.get(exposure, set())
             )
             for run in get_runs(dark_frames):
-                stack = new_stack(run, consensus)
-                stacks[StackHash(stack.stable_hash)] = stack
+                add_stack(run, consensus)
 
         for filter in frames_for_filter:
             flat_frames = (
@@ -155,8 +171,7 @@ def identify_calibration_stacks(
                 & frames_for_filter.get(filter, set())
             )
             for run in get_runs(flat_frames):
-                stack = new_stack(run, consensus)
-                stacks[StackHash(stack.stable_hash)] = stack
+                add_stack(run, consensus)
 
     log.info("Calibration stacks identified", keys=list(stacks.keys()))
     return stacks

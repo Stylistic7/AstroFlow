@@ -94,20 +94,16 @@ def test_imaging_from_frames():
     assert abs(attrs.mean_temperature - Celsius(-19.0)) < 0.01
 
 
-def test_aggregate_exposure_flats_tolerate_spread():
-    """Flats are shot with auto-exposure chasing a changing sky, and
-    calibration identification pools a flat run across EXPOSURE — a
-    spread must aggregate to the mean instead of asserting. Regression:
-    a 9.96..10.34s sky-flat run killed identify_calibration_stacks
-    wholesale (2026-09-05). Non-flats keep the strict contract."""
+def test_aggregate_exposure_rejects_drift():
+    """A sequence whose exposure drifts (per-frame auto-exposure, a
+    capture misconfiguration — decision 2026-09-05: unsupported, for
+    flats too) must fail loudly; identify_calibration_stacks contains
+    the failure to that one run. Uniform-with-jitter passes."""
     import pytest
     from attributes.imaging_attributes import _aggregate_exposure
 
-    drifting = [9.96, 10.01, 10.07, 10.17, 10.34]
-    assert _aggregate_exposure(drifting, strict=False) == pytest.approx(10.11)
-
     with pytest.raises(AssertionError):
-        _aggregate_exposure(drifting, strict=True)
+        _aggregate_exposure([9.96, 10.01, 10.07, 10.17, 10.34])
 
-    # Uniform-with-jitter still passes strict (the common light/dark case).
-    assert _aggregate_exposure([300.0, 300.0001], strict=True) == pytest.approx(300.0)
+    assert _aggregate_exposure([300.0, 300.0001]) == pytest.approx(300.0)
+    assert _aggregate_exposure([]) == 0.0
