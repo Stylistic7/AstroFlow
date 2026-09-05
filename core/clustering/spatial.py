@@ -70,11 +70,17 @@ def cluster_by_image_center(
     overlap_fraction: float,
     min_component_members: int,
 ) -> list[tuple[str, ...]]:
-    """Cluster light frames by sky position, adaptive to each focal length.
+    """Cluster light frames by sky position, adaptive to each sensor and
+    focal length.
 
-    First groups frames by image scale (proxy for focal length), then
-    spatially clusters within each scale group using a cosine similarity
-    threshold derived from the group's FOV and the requested overlap fraction.
+    Frames are partitioned by sensor geometry first — different pixel counts
+    mean different cameras, whose frames can never share a stack, so they are
+    never compared for grouping at all. (Before this rule, one small-chip
+    frame in a same-arcsec/px group shrank the offset budget for every
+    full-frame pair: a 5.5 arcmin meridian-flip re-center split one pointing
+    into two stacks.) Within a sensor group, frames split by image scale
+    (proxy for focal length), then cluster spatially; each frame carries a
+    cosine threshold from its own FOV and a pair must satisfy the stricter.
     """
     metadata = metadata_ref.get()
 
@@ -86,37 +92,51 @@ def cluster_by_image_center(
         and type(i.plate_solution) is plate_solving.PlateSolution
     }
 
-    # Split by image scale first so each spatial group has uniform FOV.
-    scale_items = [(h, i.plate_solution.image_scale) for h, i in plate_solved.items()]
-    scale_groups = cluster_continuous(scale_items, epsilon=0.2)
-    log.info("Scale groups", num_groups=len(scale_groups), sizes=[len(g) for g in scale_groups])
+    by_sensor: dict[tuple[int, int], list[str]] = {}
+    for h, i in plate_solved.items():
+        by_sensor.setdefault((i.width_pixels, i.height_pixels), []).append(h)
+    log.info(
+        "Sensor groups",
+        sizes={f"{w}x{h}": len(hs) for (w, h), hs in sorted(by_sensor.items())},
+    )
 
     def get_centroid(center: Sequence[float]) -> np.ndarray:
         return np.asarray(footprints.radec_to_vector(*center))
 
+    def cos_threshold(h: str) -> float:
+        max_offset_deg = (1.0 - overlap_fraction) * _min_fov_deg(metadata, h) / 2.0
+        return math.cos(math.radians(min(max_offset_deg, 2.0)))
+
+    def comparison_fn(a, b):
+        (va, ta), (vb, tb) = a, b
+        return bool(np.dot(va, vb) > max(ta, tb))
+
     all_spatial_groups: list[tuple[str, ...]] = []
-    for scale_group in scale_groups:
-        frame_hashes = [h for h, _ in scale_group]
-        values = {h: get_centroid(plate_solved[h].plate_solution.center) for h in frame_hashes}
+    for dims, sensor_hashes in sorted(by_sensor.items()):
+        scale_items = [
+            (h, plate_solved[h].plate_solution.image_scale) for h in sensor_hashes
+        ]
+        scale_groups = cluster_continuous(scale_items, epsilon=0.2)
 
-        min_fov = _min_fov_deg(metadata, frame_hashes[0])
-        max_offset_deg = (1.0 - overlap_fraction) * min_fov / 2.0
-        max_offset_deg = min(max_offset_deg, 2.0)
-        threshold = math.cos(math.radians(max_offset_deg))
+        for scale_group in scale_groups:
+            frame_hashes = [h for h, _ in scale_group]
+            values = {
+                h: (
+                    get_centroid(plate_solved[h].plate_solution.center),
+                    cos_threshold(h),
+                )
+                for h in frame_hashes
+            }
 
-        log.info(
-            "Spatial clustering for scale group",
-            num_frames=len(frame_hashes),
-            min_fov_deg=round(min_fov, 3),
-            max_offset_deg=round(max_offset_deg, 4),
-            threshold=round(threshold, 8),
-        )
+            log.info(
+                "Spatial clustering",
+                sensor=dims,
+                num_frames=len(frame_hashes),
+                min_fov_deg=round(min(_min_fov_deg(metadata, h) for h in frame_hashes), 3),
+            )
 
-        def comparison_fn(a, b, t=threshold):
-            return bool(np.dot(a, b) > t)
-
-        groups = find_groups(values, comparison_fn, min_component_members)
-        all_spatial_groups.extend(tuple(sorted(g)) for g in groups)
+            groups = find_groups(values, comparison_fn, min_component_members)
+            all_spatial_groups.extend(tuple(sorted(g)) for g in groups)
 
     log.info("Total spatial groups", num_groups=len(all_spatial_groups))
     return all_spatial_groups

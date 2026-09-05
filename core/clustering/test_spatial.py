@@ -314,3 +314,44 @@ def test_sadr_pano(test_context) -> None:
         (hash_for_filename["Pane 5.fits"],),
     ]
     assert sorted(groups) == sorted(expected_groups)
+
+
+def test_mixed_sensor_sizes(test_context) -> None:
+    """Frames from different sensor geometries are never compared for
+    grouping: different pixel counts mean different cameras, whose frames
+    cannot share a stack. Regression: a small-chip frame in a same-arcsec/px
+    group shrank the offset budget for full-frame pairs, splitting a
+    5.5-arcmin meridian-flip re-center into two stacks (SH2-132,
+    2026-09-05)."""
+    input_dir = context.input_dirs[0]
+
+    # Big chip (720 px short edge at 1"/px -> 0.2 deg min FOV -> 0.02 deg
+    # offset budget): two pointings 0.015 deg apart MUST merge.
+    make_synthetic_frames(
+        ids=[f"big_a {i}.fits" for i in range(3)],
+        ra=100, dec=50.0, dither=0, dest_dir=input_dir,
+    )
+    make_synthetic_frames(
+        ids=[f"big_b {i}.fits" for i in range(3)],
+        ra=100, dec=50.015, dither=0, dest_dir=input_dir,
+    )
+    # Small chip pointed at the SAME field: a different sensor geometry is a
+    # different camera, so these frames form their own group even though they
+    # sit dead-centre on the big-chip pointing — and their tighter FOV budget
+    # must not influence the big-chip pair.
+    make_synthetic_frames(
+        ids=[f"small {i}.fits" for i in range(3)],
+        ra=100, dec=50.0, width_pixels=360, height_pixels=240,
+        dither=0, dest_dir=input_dir,
+    )
+
+    graph, captured = compute_graph_fragment()
+    run_graph(graph)
+    groups = captured[_run_cluster]
+
+    hash_for_filename = compute_hash_for_filename()
+    big = tuple(sorted(
+        hash_for_filename[f"big_{s} {i}.fits"] for s in "ab" for i in range(3)
+    ))
+    small = tuple(sorted(hash_for_filename[f"small {i}.fits"] for i in range(3)))
+    assert sorted(groups) == sorted([big, small])
