@@ -27,6 +27,33 @@ _SEARCH_DEFS = [
     },
 ]
 
+# Rig nicknames keyed by FOCALLEN (mm, rounded) read from the frames
+# themselves — the one identity signal that survives firmware updates,
+# DHCP shuffles, extender MAC translation and mDNS boot-order renaming.
+# The ASIAIR's own nickname stopped being queryable at firmware 14.39
+# (get_device_state no longer answers; see asiair/rpc_client.py).
+# Update when a camera moves to a different scope.
+RIG_NAMES_BY_FOCAL_LENGTH = {351: "RC71", 1234: "FLT156"}
+
+
+def _rig_name_for_group(fits_files: list[str], fallback: str) -> str:
+    """Nickname for the rig that shot these frames, from the first
+    readable FOCALLEN. Frames in one group all come from one device's
+    card, so one header speaks for the group."""
+    for f in fits_files:
+        try:
+            focal = float(
+                file_io.fits_file_io.read_fits_header(f)["FOCALLEN"]
+            )
+        except Exception:
+            continue
+        name = RIG_NAMES_BY_FOCAL_LENGTH.get(round(focal))
+        if name:
+            return name
+        print(f"### unmapped FOCALLEN {focal} — filing under '{fallback}'")
+        return fallback
+    return fallback
+
 
 def ping(ip: str) -> bool:
     return (
@@ -203,7 +230,7 @@ def _download_group(
 
 def _download_from_rig_grouped_by_date(
     path: str, dest_path: str, rig: str, default_filter: str
-) -> datetime.datetime | None:
+) -> tuple[datetime.datetime, str] | None:
     fits_files = [str(f) for f in list(Path(path).rglob("*.fit"))]
     print(f"Found {len(fits_files)} FITS files from rig {rig} in path {path}")
     if not fits_files:
@@ -213,23 +240,32 @@ def _download_from_rig_grouped_by_date(
     if not dates:
         print(f"No readable FITS frames from rig {rig} in path {path}")
         return None
+    rig_name = rig
     for fits_files, date in zip(groups, dates):
-        date_dir = _make_dest_dir_for_date(dest_path, date)
+        # Each observing date gets one subfolder per rig, named by the
+        # nickname derived from the frames' FOCALLEN:
+        # <dest>/<YYYY-MM-DD>/<RC71|FLT156>/...
+        rig_name = _rig_name_for_group(fits_files, rig)
+        date_dir = os.path.join(
+            _make_dest_dir_for_date(dest_path, date), rig_name
+        )
+        os.makedirs(date_dir, exist_ok=True)
         print(
-            f"Downloading {len(fits_files)} frames from rig {rig} "
+            f"Downloading {len(fits_files)} frames from rig {rig_name} "
             f"for date {date} to dir {date_dir}"
         )
-        _download_group(fits_files, date_dir, rig, default_filter)
+        _download_group(fits_files, date_dir, rig_name, default_filter)
 
-    return min(dates)
+    return min(dates), rig_name
 
 
-def _download_logs_from_rig(rig: str, log_dir: str, dest_dir: str) -> bool:
+def _download_logs_from_rig(log_dir: str, dest_dir: str) -> bool:
+    """Copy the device's log tree into <date>/<rig>/logs."""
     if not os.path.exists(log_dir):
         print(f"Could not find log dir '{log_dir}'")
         return False
 
-    dest_dir = os.path.join(dest_dir, f"{rig}_log")
+    dest_dir = os.path.join(dest_dir, "logs")
     print(f"Copying logs from '{log_dir}' to '{dest_dir}'")
     return subprocess.run(["rsync", "-zar", log_dir, dest_dir]).returncode == 0
 
@@ -256,14 +292,16 @@ def download_from_asiair(
                 )
 
                 total_min_date = None
+                rig_name = rig
                 for fits_path in search_def["fits_paths"]:
                     path = os.path.join(mount_point, fits_path)
                     print(f"Copying FITS files from path {path}")
-                    min_date = _download_from_rig_grouped_by_date(
+                    result = _download_from_rig_grouped_by_date(
                         path, dest_path, rig, default_filter
                     )
-                    if min_date is None:
+                    if result is None:
                         continue
+                    min_date, rig_name = result
                     total_min_date = (
                         min_date if total_min_date is None
                         else min(total_min_date, min_date)
@@ -271,11 +309,15 @@ def download_from_asiair(
 
                 if total_min_date:
                     log_dir = os.path.join(mount_point, search_def["log_dir"])
-                    date_dir = _make_dest_dir_for_date(dest_path, total_min_date)
+                    date_dir = os.path.join(
+                        _make_dest_dir_for_date(dest_path, total_min_date),
+                        rig_name,
+                    )
+                    os.makedirs(date_dir, exist_ok=True)
                     print(
                         f"Copying logs from source log_dir {log_dir} "
                         f"to date_dir {date_dir}"
                     )
-                    _download_logs_from_rig(rig, log_dir, date_dir)
+                    _download_logs_from_rig(log_dir, date_dir)
 
 

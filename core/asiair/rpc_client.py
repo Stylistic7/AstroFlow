@@ -31,7 +31,10 @@ from typing import Any
 log = structlog.get_logger()
 
 
-_BANNER_PREFIX = b'{"Event":"Version"'
+# Any Event push, not just the connect-time Version banner: firmware
+# 14.39 interleaves unsolicited PiStatus (and likely other) events on
+# the imager port, and treating one as the reply poisoned snapshots.
+_BANNER_PREFIX = b'{"Event":'
 _DEFAULT_TIMEOUT_S = 2.0
 _READ_CHUNK = 16384
 

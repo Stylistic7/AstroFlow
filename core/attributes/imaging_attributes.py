@@ -48,19 +48,27 @@ def _camera_label(values: Iterable[Any]) -> str:
     return min(counts, key=lambda n: (-counts[n], n))
 
 
-def _aggregate_exposure(values: list[float]) -> Seconds:
+def _aggregate_exposure(values: list[float], strict: bool = True) -> Seconds:
     """Reduce per-frame EXPOSURE to one value for a stack/run.
 
     Bias frames may lack EXPOSURE entirely; callers default missing to
     0.0 before passing in, so an all-zeros list (a bias run) returns 0.
     Tolerates small float jitter; asserts loud on real mismatch.
+
+    `strict=False` is for FLATS: they are shot with auto-exposure chasing
+    a changing sky, and calibration identification deliberately pools a
+    flat run across EXPOSURE — a spread is expected there, and the mean
+    is informational (stacking normalizes flats). A sky-flat run with
+    9.96..10.34s exposures killed identify_calibration_stacks wholesale
+    on 2026-09-05 until this exemption.
     """
     if not values:
         return Seconds(0.0)
     spread = max(values) - min(values)
-    assert spread < EXPOSURE_TOLERANCE_SECONDS, (
-        f"non-uniform exposure: spread={spread:.4f}s, values={sorted(set(values))}"
-    )
+    if strict:
+        assert spread < EXPOSURE_TOLERANCE_SECONDS, (
+            f"non-uniform exposure: spread={spread:.4f}s, values={sorted(set(values))}"
+        )
     return Seconds(float(np.mean(values)))
 
 
@@ -159,7 +167,9 @@ class ImagingAttributes:
         exposures = [
             float(i.header.get("EXPOSURE", 0.0)) for i in metadata_list
         ]
-        exposure = _aggregate_exposure(exposures)
+        exposure = _aggregate_exposure(
+            exposures, strict="flat" not in str(image_type).lower()
+        )
         integration = Seconds(sum(exposures))
 
         mean_temperature = Celsius(np.mean(
@@ -185,7 +195,10 @@ class ImagingAttributes:
         camera = _camera_label(o.camera for o in objects)
         filter = list(set(o.filter for o in objects))
         mean_temperature = Celsius(np.mean([o.mean_temperature for o in objects]))
-        exposure = _aggregate_exposure([float(o.exposure) for o in objects])
+        exposure = _aggregate_exposure(
+            [float(o.exposure) for o in objects],
+            strict="flat" not in str(image_type).lower(),
+        )
         integration = Seconds(np.sum([o.integration for o in objects]))
         width_pixels = get_unique_quality([o.width_pixels for o in objects])
         height_pixels = get_unique_quality([o.height_pixels for o in objects])

@@ -154,6 +154,10 @@ def process_calibration_stacks_for_ui(cal_stacks: dict) -> dict:
     def prepare_stack(stack):
         result = convert_to_dict(stack, [["contents", "*", "metadata"]])
         result["filenames"] = [m.filename for m in stack.all_metadata().values()]
+        result["camera_id_hash"] = stack.camera_id_hash
+        result["camera_id_short"] = (
+            stack.camera_id_hash[:8] if stack.camera_id_hash else None
+        )
 
         return result
 

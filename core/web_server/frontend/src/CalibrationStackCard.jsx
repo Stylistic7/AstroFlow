@@ -28,10 +28,19 @@ export default function CalibrationStackCard({ stack_id }) {
                         />
                     }
                     <Typography gutterBottom variant="h5" component="div">
-                        Calibration Stack {stack.image_type}
+                        Calibration Stack {stack.image_type} {stack.filter}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                        {stack.camera} {stack.filter}
+                        {stack.camera}
+                        {stack.camera_id_short && ` · cam ${stack.camera_id_short}`}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                        {stack.filenames?.length ?? '?'} frames
+                        {' · '}
+                        {stack.oldest_date && new Date(stack.oldest_date).toLocaleString(
+                            undefined,
+                            { year: 'numeric', month: 'short', day: 'numeric',
+                              hour: '2-digit', minute: '2-digit' })}
                     </Typography>
                 </CardContent>
             </CardActionArea>

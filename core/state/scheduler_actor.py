@@ -271,7 +271,14 @@ def _run_asiair_download_and_maybe_restart() -> None:
     # Fan out one Ray task per device so downloads parallelize across
     # whichever cluster nodes have a path to the ASIAir.
     refs = [
-        download_from_asiair.remote("foo", dev["ip"], dest, "H")
+        # The first arg is only a FALLBACK label: the downloader names
+        # the per-rig folder from the frames' FOCALLEN (see
+        # RIG_NAMES_BY_FOCAL_LENGTH); the mDNS hostname stands in when
+        # a frame has no mapped focal length.
+        download_from_asiair.remote(
+            (dev.get("hostname") or dev["ip"]).rstrip(".").removesuffix(".local"),
+            dev["ip"], dest, "H",
+        )
         for dev in devices
     ]
     ray.get(refs)
