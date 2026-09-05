@@ -10,15 +10,19 @@ import CalibrationStackCard from "./CalibrationStackCard.jsx";
 export default function DisambiguationPanel({ items_in }) {
 	const { stacks, targets, mosaics, calibrationStacks } = useContext(AstroFlowContext);
 
-	// Most recent first: search results and long card lists are usually
-	// hunted for the newest data (e.g. last night's flats).
-	const newestDate = (item) => {
+	const lookup = (item) => {
 		const [type, id] = item.split(",");
 		const collection = {
 			stack: stacks, target: targets, mosaic: mosaics,
 			calibration_stack: calibrationStacks,
 		}[type];
-		const t = Date.parse(collection?.[id]?.newest_date);
+		return collection?.[id];
+	};
+
+	// Most recent first: search results and long card lists are usually
+	// hunted for the newest data (e.g. last night's flats).
+	const newestDate = (item) => {
+		const t = Date.parse(lookup(item)?.newest_date);
 		return Number.isNaN(t) ? 0 : t;
 	};
 
@@ -40,8 +44,22 @@ export default function DisambiguationPanel({ items_in }) {
 		);
 	}
 
+	// A disambiguation URL is a snapshot: objects in it can vanish as
+	// identification evolves (deleted frames, re-keyed stacks). Render
+	// what still exists and say how many links went stale, instead of
+	// letting a card crash on a missing object.
+	const allItems = items.split(";");
+	const presentItems = allItems.filter(item => lookup(item) !== undefined);
+	const missingCount = allItems.length - presentItems.length;
+
 	return (
 		<>
+			{missingCount > 0 && (
+				<div style={{ margin: "1em", color: "#999", fontStyle: "italic" }}>
+					{missingCount} result{missingCount === 1 ? "" : "s"} from this
+					search link no longer exist{missingCount === 1 ? "s" : ""}.
+				</div>
+			)}
 			<div style={{
 				marginLeft: "1em",
 				marginRight: "1em",
@@ -50,7 +68,7 @@ export default function DisambiguationPanel({ items_in }) {
 				gridColumnGap: "1em",
 				gridRowGap: "1em",
 			}}>
-				{items.split(";").sort((a, b) => newestDate(b) - newestDate(a)).map(item => {
+				{presentItems.sort((a, b) => newestDate(b) - newestDate(a)).map(item => {
 					let [type, id] = item.split(",");
 					if (type === "stack") {
 						return <StackCard
