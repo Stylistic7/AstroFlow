@@ -4,6 +4,7 @@ from functools import cache
 from pathlib import Path
 from typing import Any
 
+from catalogs.messier import read_messier_aliases, read_messier_entries
 from catalogs.vizier_catalogs import read_vizier_catalogs
 from geometry.distance import distance
 from units import Degrees
@@ -87,6 +88,7 @@ def _read_ngc2000_catalog(names: dict[str, str]) -> list[dict[str, Any]]:
             entry["comment"] = line[46:].strip()
 
             canonical_id = _normalize_ngc2000_id(entry["id"])
+            entry["designation"] = canonical_id
             entry["named"] = canonical_id in names
             entry["name"] = names.get(canonical_id, canonical_id)
 
@@ -97,11 +99,32 @@ def _read_ngc2000_catalog(names: dict[str, str]) -> list[dict[str, Any]]:
 
 @cache
 def _all_entries() -> list[dict[str, Any]]:
-    """All catalog entries (NGC/IC + the VizieR catalogs), sorted by
-    descending radius. Cached: pure function of the static catalog files."""
+    """All catalog entries (NGC/IC + the VizieR catalogs + NGC-less Messier
+    objects), sorted by descending radius. Cached: pure function of the
+    static catalog files."""
     names = _read_names_catalog()
-    entries = _read_ngc2000_catalog(names) + read_vizier_catalogs(names)
+    entries = (
+        _read_ngc2000_catalog(names)
+        + read_vizier_catalogs(names)
+        + read_messier_entries()
+    )
     return sorted(entries, key=lambda x: x["radius"], reverse=True)
+
+
+@cache
+def designation_pairs() -> list[tuple[str, str]]:
+    """(designation, canonical name) for every designation the user might
+    type — every entry's own designation plus Messier aliases. The payload
+    behind /api/catalog/entries; lets search resolve "SH2 132" or "M31" to
+    the name objects are actually stored under."""
+    aliases = read_messier_aliases()
+    pairs = []
+    for entry in _all_entries():
+        pairs.append((entry["designation"], entry["name"]))
+        messier = aliases.get(entry["designation"])
+        if messier:
+            pairs.append((messier, entry["name"]))
+    return pairs
 
 
 DistanceAndEntry = tuple[Degrees, dict[str, Any] | None]

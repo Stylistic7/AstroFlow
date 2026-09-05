@@ -1,4 +1,4 @@
-import React, { useContext } from 'react';
+import React, { useContext, useMemo } from 'react';
 import { Box, Typography, IconButton, Paper, Chip } from '@mui/material';
 import { OpenInNew } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
@@ -14,8 +14,18 @@ const StackHeader = ({
   stack_type, stack, stack_id, pipeline,
   pipelineOutputs, hierarchy, display, filter,
 }) => {
-  const { isQuarantined } = useContext(AstroFlowContext);
+  const { isQuarantined, catalogEntries } = useContext(AstroFlowContext);
   const navigate = useNavigate();
+
+  // Catalog designations behind this object's canonical name, e.g.
+  // "Lion Nebula" -> "Sh2-132", "Andromeda Galaxy" -> "NGC224 · M31".
+  // Self-named entries (name === designation) carry no extra information.
+  const catalogDesignations = useMemo(() => {
+    const designations = (catalogEntries || [])
+      .filter(([designation, name]) => name === stack.name && designation !== name)
+      .map(([designation]) => designation);
+    return designations.slice(0, 3).join(' · ');
+  }, [catalogEntries, stack.name]);
   const handleOpenStack = async () => {
     // Pass the CURRENT pipeline so the backend traces the right stacker's
     // master (e.g. WBPP `stack_files` for "Hybrid: PI Master + OSS Mosaic").
@@ -49,6 +59,7 @@ const StackHeader = ({
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Box>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 4, rowGap: 1 }}>
+            {catalogDesignations && <MetadataItem label="Catalog" value={catalogDesignations} />}
             {(stack_type === 'stack') && <MetadataItem label="RA" value={ra_to_hms(stack.center[0])} />}
             {(stack_type === 'stack') && <MetadataItem label="Dec" value={dec_to_dms(stack.center[1])} />}
             {(stack_type === 'stack') && <MetadataItem label="Scale" value={`${stack.image_scale.toFixed(3)}"/px`} />}

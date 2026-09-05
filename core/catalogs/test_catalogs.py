@@ -2,7 +2,8 @@ import numpy as np
 import pytest
 from beartype.roar import BeartypeCallHintParamViolation
 
-from catalogs.ngc2000_catalog import _all_entries, find_best_object
+from catalogs.messier import read_messier_aliases, read_messier_entries
+from catalogs.ngc2000_catalog import _all_entries, designation_pairs, find_best_object
 from catalogs.position_string import canonical_target_string
 from geometry.distance import distance
 from units import Degrees
@@ -75,3 +76,27 @@ def test_find_best_object_far_from_everything():
 
 def test_canonical_target_string_accepts_plain_floats():
     assert canonical_target_string([334.70, 56.14]) == "Lion Nebula"
+
+
+def test_messier():
+    aliases = read_messier_aliases()
+    entries = read_messier_entries()
+    assert len(aliases) + len(entries) == 110
+    assert aliases["NGC224"] == "M31"
+    assert aliases["NGC1976"] == "M42"
+    # Only the objects with no NGC/IC identity become entries of their own.
+    assert {e["id"] for e in entries} == {"M40", "M45"}
+
+    # M45 has no NGC number, so before this entry existed the Pleiades
+    # field could only name as one of its member nebulae.
+    _, entry = find_best_object(Degrees(56.75), Degrees(24.12))
+    assert entry["name"] == "Pleiades"
+
+
+def test_designation_pairs():
+    pairs = set(designation_pairs())
+    assert ("Sh2-132", "Lion Nebula") in pairs
+    assert ("NGC7000", "North America Nebula") in pairs
+    assert ("M31", "Andromeda Galaxy") in pairs  # Messier alias of NGC224
+    assert ("M45", "Pleiades") in pairs
+    assert ("B33", "Horsehead Nebula") in pairs

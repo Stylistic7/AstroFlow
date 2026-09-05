@@ -274,7 +274,7 @@ export function VerticalDivider({ height = 24, color = 'grey.400', marginX = 2 }
 }
 
 export default function PrimarySearchAppBar() {
-  const { stacks, targets, mosaics, calibrationStacks, showQuarantined, toggleShowQuarantined, quarantineCount, asiairDevices } = useContext(AstroFlowContext);
+  const { stacks, targets, mosaics, calibrationStacks, catalogEntries, showQuarantined, toggleShowQuarantined, quarantineCount, asiairDevices } = useContext(AstroFlowContext);
 
   // Hide the ASIAir chip + its divider entirely when no ASIAir is
   // currently reachable on the network. Reduces toolbar noise when
@@ -308,6 +308,18 @@ export default function PrimarySearchAppBar() {
     return idx;
   }, [stacks, targets, mosaics, calibrationStacks]);
 
+  // Catalog designation -> canonical object name ("sh2132" -> "Lion Nebula",
+  // "m31" -> "Andromeda Galaxy"), keyed case/space/dash-insensitively so
+  // "SH2 132", "Sh2-132" and "sh2132" all resolve.
+  const normalizeDesignation = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const designationMap = useMemo(() => {
+    const map = new Map();
+    for (const [designation, name] of catalogEntries) {
+      map.set(normalizeDesignation(designation), name);
+    }
+    return map;
+  }, [catalogEntries]);
+
   function smartSearch(query) {
     const tokens = query.trim().split(/\s+/);
     const knownTypes = new Set(["stack", "target", "mosaic", "calibration_stack"]);
@@ -322,10 +334,26 @@ export default function PrimarySearchAppBar() {
       }
     }
 
-    const searchResults = index.search(terms.join(" "), { enrich: true });
+    let docs = index.search(terms.join(" "), { enrich: true })
+      .flatMap(group => group.result);
 
-    // Flatten results from all fields
-    let docs = searchResults.flatMap(group => group.result);
+    // A query that is a catalog designation also searches the canonical
+    // name it resolves to, so "SH2 132" finds the "Lion Nebula" objects.
+    const resolvedName = designationMap.get(normalizeDesignation(terms.join("")));
+    if (resolvedName) {
+      docs = docs.concat(
+        index.search(resolvedName, { enrich: true }).flatMap(group => group.result)
+      );
+    }
+
+    // Dedupe (a doc can match several fields, or both query forms).
+    const seen = new Set();
+    docs = docs.filter(doc => {
+      const key = `${doc.doc.type},${doc.doc.stable_hash}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 
     // Filter by type if specified
     if (typeFilter) {

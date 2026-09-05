@@ -98,6 +98,7 @@ def read_vizier_catalogs(names: dict[str, str]) -> list[dict[str, Any]]:
             entries.append(
                 {
                     "id": display_id,
+                    "designation": display_id,
                     "ra_degrees": Degrees(float(row["_RAJ2000"])),
                     "dec_degrees": Degrees(float(row["_DEJ2000"])),
                     "radius": Degrees(radius),

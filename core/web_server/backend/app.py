@@ -298,6 +298,17 @@ def stacks():
     return _cached_json(context.ui_stacks or {})
 
 
+@app.route("/api/catalog/entries")
+def catalog_entries():
+    """[designation, canonical name] for every catalog designation
+    (NGC/IC/Sh2/LBN/LDN/B/vdB + Messier aliases). Lets the frontend
+    resolve designation queries ("SH2 132", "M31") to the names that
+    stacks/targets/mosaics are actually stored under."""
+    from catalogs.ngc2000_catalog import designation_pairs
+
+    return _cached_json(designation_pairs(), max_age=3600)
+
+
 @app.route("/api/decision_overrides")
 def decision_overrides():
     """Return all decision overrides for the frontend to resolve locally."""
