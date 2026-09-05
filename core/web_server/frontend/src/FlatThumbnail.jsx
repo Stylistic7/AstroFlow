@@ -57,6 +57,15 @@ const FlatThumbnail = ({ stack, run, flatStack, selected, quarantined, onSelect,
       )}
       <Typography align="center" sx={{ py: 1 }}>
         {stable_hash}
+        {flatStack?.oldest_date && (
+          // Capture date — the first thing that separates candidate flats
+          // (a years-stale flat from another optical train renders a
+          // dramatic "correction" that has nothing to do with this light;
+          // 2026-09-04). Same toDateString() style as the Run header above.
+          <Typography component="span" sx={{ color: 'text.secondary', ml: 1 }}>
+            — {new Date(flatStack.oldest_date).toDateString()}
+          </Typography>
+        )}
       </Typography>
     </Box>
   );
