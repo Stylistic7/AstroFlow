@@ -61,6 +61,17 @@ const RunsTab = ({ stack }) => {
 
   const runs = Object.entries((detail || stack)?.contents || {}).map(([id, run]) => ({ id, ...run }));
 
+  // Chronological carousel: the flat candidates read as a timeline
+  // (oldest at the left, last night's at the right). The API returns
+  // them in arbitrary server order.
+  const flatCaptureTime = (id) => {
+    const ms = Date.parse(calibrationStacks[id]?.oldest_date);
+    return Number.isNaN(ms) ? 0 : ms;
+  };
+  const sortedFlatIds = [...flatIds].sort(
+    (a, b) => flatCaptureTime(a) - flatCaptureTime(b)
+  );
+
   const handleSelectFlat = (runId, flatId) => {
     setSelectedFlatsByRun(prev => ({ ...prev, [runId]: flatId }));
     fetch('/api/settings/stack', {
@@ -192,7 +203,7 @@ const RunsTab = ({ stack }) => {
                 selected={selectedFlatId === undefined}
                 onSelect={() => handleSelectFlat(run.id, undefined)}
               />
-              {flatIds.map((flatId) => (
+              {sortedFlatIds.map((flatId) => (
                 <FlatThumbnail
                   key={flatId}
                   stack={stack}
