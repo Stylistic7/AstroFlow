@@ -27,23 +27,16 @@ _SEARCH_DEFS = [
     },
 ]
 
-# Rig nicknames keyed by FOCALLEN (mm, rounded) read from the frames
-# themselves — the one identity signal that survives firmware updates,
-# DHCP shuffles, extender MAC translation and mDNS boot-order renaming.
-# The ASIAIR's own nickname stopped being queryable at firmware 14.39
-# (get_device_state no longer answers; see asiair/rpc_client.py).
-# Update when a camera moves to a different scope.
-RIG_NAMES_BY_FOCAL_LENGTH = {351: "RC71", 1234: "FLT156"}
-
-
 def _rig_name_for_group(fits_files: list[str], fallback: str) -> str:
-    """Nickname for the rig that shot these frames, from the first
-    readable FOCALLEN. Frames in one group all come from one device's
-    card, so one header speaks for the group.
-
-    Tolerance-matched (2%), same rule as flat association: the scope
-    profile drifts by a millimeter (2026-09-05: FLT156 reported 1233
-    against the map's 1234 and a night's lights filed under the IP)."""
+    """Per-rig folder name from the frames' own FOCALLEN, rounded to the
+    nearest 10 mm — e.g. "1230mm", "350mm" (user decision 2026-09-05:
+    no nicknames; the ASIAIR's nickname stopped being queryable at
+    firmware 14.39, and a nickname map needs maintenance while the
+    focal length is self-describing and drift-proof by rounding).
+    Frames in one group all come from one device's card, so one header
+    speaks for the group. FOCALLEN is the one identity signal that
+    survives firmware updates, DHCP shuffles, extender MAC translation
+    and mDNS boot-order renaming."""
     for f in fits_files:
         try:
             focal = float(
@@ -51,11 +44,7 @@ def _rig_name_for_group(fits_files: list[str], fallback: str) -> str:
             )
         except Exception:
             continue
-        for known, name in RIG_NAMES_BY_FOCAL_LENGTH.items():
-            if abs(focal - known) <= 0.02 * max(focal, known):
-                return name
-        print(f"### unmapped FOCALLEN {focal} — filing under '{fallback}'")
-        return fallback
+        return f"{int(round(focal / 10.0) * 10)}mm"
     return fallback
 
 
