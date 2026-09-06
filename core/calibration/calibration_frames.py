@@ -3,7 +3,7 @@ import numpy as np
 import operator
 import itertools
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from decorators.decorators import node
@@ -13,6 +13,7 @@ from stacks.run import calibration_run_from_frames
 from stacks.composite_stack import CalibrationStack, CalibrationStacksDict
 import clustering
 from clustering.fingerprint import sensor_key
+from clustering.quiesce import is_quiesced
 from cache.context_ref import ContextRef
 from metadata.classes import MetadataDict
 from metadata.image_types import is_master
@@ -64,6 +65,8 @@ def identify_calibration_stacks(
     max_run_gap,
     min_frames_in_stack: int,
     fingerprint_map_ref,
+    frontier: datetime | None = None,
+    quiesce_gate=None,
 ) -> CalibrationStacksDict:
     log.info("Identifying calibration stacks")
     metadata = metadata_ref.get()
@@ -86,6 +89,15 @@ def identify_calibration_stacks(
         result = clustering.cluster_continuous(
             items, epsilon=max_run_gap
         )
+        # Run-quiesce gate: a calibration run still being captured (or
+        # still downloading) stays out until the library frontier proves
+        # it finished — a half-downloaded flat run must not mint a stack
+        # (2026-09-05: a truncated morning flat run minted as "aborted").
+        gate = quiesce_gate or timedelta(minutes=15)
+        result = [
+            r for r in result
+            if is_quiesced(max(t for _, t in r), frontier, gate)
+        ]
         # A run of fewer than min_frames_in_stack frames is not actually
         # stackable — typically a lone straggler frame, or an externally
         # pre-stacked master that slipped past `find_image_files` because

@@ -250,13 +250,52 @@ class SchedulerActor:
                 pass
 
 
+_last_dawn_kick_date = None
+
+
+def _morning_kick_due() -> bool:
+    """One extra drain shortly after astronomical dawn, once per day.
+
+    By then every rig is done shooting, the newest frame on disk is
+    already older than the quiesce gate, and the builder's frontier
+    nudge closes the night's final runs — this kick is what turns the
+    accumulated night into the morning bake. Detected at poll
+    granularity, so it fires 0-15 min after the sun crosses -18 deg.
+    """
+    global _last_dawn_kick_date
+    import datetime as dt
+    now_local = dt.datetime.now()
+    if now_local.hour >= 12 or _last_dawn_kick_date == now_local.date():
+        return False
+    try:
+        import astropy.units as u
+        from astropy.coordinates import AltAz, EarthLocation, get_sun
+        from astropy.time import Time
+        from context import context
+        lat, lon, elev = context.settings.observer_location
+        t = Time.now()
+        loc = EarthLocation(lat=lat * u.deg, lon=lon * u.deg, height=elev * u.m)
+        alt = get_sun(t).transform_to(AltAz(obstime=t, location=loc)).alt.deg
+    except Exception as e:
+        print(f"### morning kick: sun altitude failed (non-fatal): {e}")
+        return False
+    if alt > -18.0:
+        _last_dawn_kick_date = now_local.date()
+        return True
+    return False
+
+
 def _run_asiair_download_and_maybe_restart() -> None:
     """Download from all ASIAir devices in parallel; if any new files
-    landed on disk, ask the StateActor to drain and restart the
-    compute graph so they get processed."""
+    landed on disk — or the once-a-day astronomical-dawn kick is due —
+    ask the StateActor to drain and restart the compute graph."""
     from context import context
     from file_io.find_image_files import find_image_files
     from asiair.download_asiair import download_from_asiair
+
+    # Checked before the device early-returns: the kick must fire even
+    # with every rig powered off and unplugged (the usual morning state).
+    kick = _morning_kick_due()
 
     devices = list(context.asiair_devices or [])
 
@@ -276,45 +315,53 @@ def _run_asiair_download_and_maybe_restart() -> None:
     except Exception as e:
         print(f"### download poller: port scan failed (non-fatal): {e}")
 
-    if not devices:
+    if not devices and not kick:
         return
 
     input_dirs = context.input_dirs or []
     if not input_dirs:
         return
-    dest = input_dirs[0]
-    files_before = sum(len(find_image_files(str(d))) for d in input_dirs)
 
-    # Fan out one Ray task per device so downloads parallelize across
-    # whichever cluster nodes have a path to the ASIAir.
-    refs = [
-        # The first arg is only a FALLBACK label: the downloader names
-        # the per-rig folder from the frames' FOCALLEN (see
-        # RIG_NAMES_BY_FOCAL_LENGTH); the mDNS hostname stands in when
-        # a frame has no mapped focal length.
-        download_from_asiair.remote(
-            (dev.get("hostname") or dev["ip"]).rstrip(".").removesuffix(".local"),
-            dev["ip"], dest, "H",
-        )
-        for dev in devices
-    ]
-    ray.get(refs)
+    new_files = 0
+    if devices:
+        dest = input_dirs[0]
+        files_before = sum(len(find_image_files(str(d))) for d in input_dirs)
 
-    # Tell connected web clients to refetch the ASIAir panel — the
-    # newest-file mtime / active-state dot are derived from on-disk
-    # Stack state, so any newly downloaded frames may shift the
-    # rendering. Fires even when no new files arrived, so the panel
-    # can show the dot dimming when the cycle completes without
-    # producing anything new.
-    try:
-        from web_server.backend.announcer import announce
-        announce("asiair_devices")
-    except Exception as e:
-        print(f"### scheduler_actor: asiair_devices announce failed: {e}")
+        # Fan out one Ray task per device so downloads parallelize across
+        # whichever cluster nodes have a path to the ASIAir.
+        refs = [
+            # The first arg is only a FALLBACK label: the downloader names
+            # the per-rig folder from the frames' FOCALLEN (see
+            # RIG_NAMES_BY_FOCAL_LENGTH); the mDNS hostname stands in when
+            # a frame has no mapped focal length.
+            download_from_asiair.remote(
+                (dev.get("hostname") or dev["ip"]).rstrip(".").removesuffix(".local"),
+                dev["ip"], dest, "H",
+            )
+            for dev in devices
+        ]
+        ray.get(refs)
 
-    files_after = sum(len(find_image_files(str(d))) for d in input_dirs)
-    if files_after > files_before:
+        # Tell connected web clients to refetch the ASIAir panel — the
+        # newest-file mtime / active-state dot are derived from on-disk
+        # Stack state, so any newly downloaded frames may shift the
+        # rendering. Fires even when no new files arrived, so the panel
+        # can show the dot dimming when the cycle completes without
+        # producing anything new.
+        try:
+            from web_server.backend.announcer import announce
+            announce("asiair_devices")
+        except Exception as e:
+            print(f"### scheduler_actor: asiair_devices announce failed: {e}")
+
+        files_after = sum(len(find_image_files(str(d))) for d in input_dirs)
         new_files = files_after - files_before
-        print(f"### ASIAir download found {new_files} new files, draining graph")
+
+    if new_files > 0 or kick:
+        reason = (
+            f"{new_files} new files" if new_files > 0
+            else "astronomical-dawn kick"
+        )
+        print(f"### ASIAir poller draining graph: {reason}")
         state = ray.get_actor("state", namespace=_get_namespace())
         ray.get(state.drain_and_restart.remote())

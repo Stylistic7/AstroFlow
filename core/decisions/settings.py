@@ -17,6 +17,14 @@ class ClusteringSettings:
     angular_tolerance: Radians = field(default_factory=lambda: Radians(math.radians(10.0)))
     max_run_gap: datetime.timedelta = field(default_factory=lambda: datetime.timedelta(hours=8))
     min_frames_in_stack: int = 5
+    # Run-quiesce gate: a run enters identification only when the library
+    # frontier (newest capture anywhere) is at least this far past the
+    # run's newest frame — i.e. the data itself proves the run finished.
+    # Longer than any in-run pause (autofocus, meridian flip ~5-10 min),
+    # shorter than the gap between a run and the next night.
+    run_quiesce_gate: datetime.timedelta = field(
+        default_factory=lambda: datetime.timedelta(minutes=15)
+    )
     # Minimum cluster size for the fingerprint-based camera identifier
     # to count a cluster as a real camera (and not fold it into the
     # no-fingerprint bucket). Default 20 was validated on a 16k-frame

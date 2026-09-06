@@ -1,3 +1,4 @@
+import datetime
 import math
 import os
 import structlog
@@ -9,6 +10,7 @@ from frozendict import frozendict
 from typing import Iterator
 import clustering
 from clustering.fingerprint import FingerprintMap, sensor_key
+from clustering.quiesce import admit_quiesced_frames
 from stacks.composite_stack import Stack, StacksDict
 from metadata.classes import DefectsDict, FrameHash, MetadataDict
 from metadata.image_types import is_light_frame
@@ -176,6 +178,8 @@ def identify_stacks(
     min_frames_in_stack: int,
     max_run_gap,
     fingerprint_map_ref: ContextRef[FingerprintMap],
+    frontier: datetime.datetime | None = None,
+    quiesce_gate: datetime.timedelta = datetime.timedelta(minutes=15),
 ) -> StacksDict:
     log.info("Identifying stacks", num_frames=len(light_frames))
     metadata_in = metadata_ref.get()
@@ -297,6 +301,14 @@ def identify_stacks(
             for rotation_frames in rotation_clusters(camera_frames):
                 for filter_frames in filter_clusters(rotation_frames):
                     for exposure_frames in exposure_clusters(filter_frames):
+                        # Run-quiesce gate: a run still being captured
+                        # stays out, so the stack's membership (and every
+                        # downstream key) is stable across mid-night
+                        # drains and moves exactly once per finished run.
+                        exposure_frames = admit_quiesced_frames(
+                            exposure_frames, metadata, frontier,
+                            quiesce_gate, max_run_gap,
+                        )
                         if len(exposure_frames) >= min_frames_in_stack:
                             new_stack = Stack.from_frames(
                                 exposure_frames,

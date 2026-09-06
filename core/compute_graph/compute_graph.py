@@ -183,12 +183,39 @@ def scatter_spatial_groups(
 
     graph = Graph({})
 
+    # Library frontier for run-quiesce gating. This is the @ray.remote
+    # builder — the sanctioned impure layer — so the one wall-clock
+    # judgment lives here. Normally the frontier is the newest capture
+    # time on disk (a pure data proxy for "now"): identification admits
+    # only runs the data itself proves finished, so mid-night drains
+    # re-derive identical stacks and cost minutes. Once the newest frame
+    # is itself older than the gate (session over, downloads quiet), the
+    # frontier is nudged past it so the final runs of the night close
+    # too — the morning kick then bakes everything.
+    import datetime as _dt
+    from clustering.quiesce import _utc
+    gate = clustering_settings.run_quiesce_gate
+    capture_times = [
+        _utc(m.header["DATE-OBS"])
+        for m in metadata_ref.get().values()
+        if m.header.get("DATE-OBS") is not None
+    ]
+    frontier = max(capture_times) if capture_times else None
+    if (
+        frontier is not None
+        and _dt.datetime.now(_dt.timezone.utc) - frontier >= gate
+    ):
+        frontier = frontier + gate
+    print(f"### quiesce frontier={frontier} gate={gate}")
+
     identify_cal_stacks_task = (
         identify_calibration_stacks,
         metadata_ref,
         clustering_settings.max_run_gap,
         clustering_settings.min_frames_in_stack,
         fingerprint_map_ref,
+        frontier,
+        gate,
     )
 
     # Cal-to-cal association runs through the same decision framework as light
@@ -213,6 +240,8 @@ def scatter_spatial_groups(
             clustering_settings.min_frames_in_stack,
             clustering_settings.max_run_gap,
             fingerprint_map_ref,
+            frontier,
+            gate,
         )
 
         target_task = Node(identify_targets, clustering_settings.angular_tolerance, name=str(i))
