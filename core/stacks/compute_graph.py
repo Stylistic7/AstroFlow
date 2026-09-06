@@ -38,7 +38,6 @@ def _my_transform(v):
 
 
 
-@node
 def _focal_length_of(stack) -> int | None:
     focal = next(
         (m.header.get("FOCALLEN") for m in stack.all_metadata().values()
@@ -48,6 +47,7 @@ def _focal_length_of(stack) -> int | None:
     return round(float(focal)) if focal is not None else None
 
 
+@node
 def prepare_stack_for_ui(
     stack: Stack,
     cal_stacks: CalibrationStacksDict,
