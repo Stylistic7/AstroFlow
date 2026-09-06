@@ -193,15 +193,27 @@ def identify_calibration_stacks(
             for run in get_runs(dark_frames):
                 add_stack(run, consensus)
 
+        # Flats group by EXPOSURE too, exactly like darks: a filter shot
+        # twice at different metered exposures (aborted-then-reshot sky
+        # flats, or dusk vs dawn) is two distinct sequences, each
+        # internally uniform. Without the exposure key an 8h run pooled
+        # them into one non-uniform run that _aggregate_exposure rejected
+        # wholesale — losing both (2026-09-05 FLT156 R: 15.0s x10 and
+        # 13.8s x10, 8 min apart, both dropped). A truly drifting
+        # per-frame sequence still fragments below min_frames (correct —
+        # unsupported). EXPOSURE is discrete-keyed, so a locked sequence
+        # (all frames one value) stays one run.
         for filter in frames_for_filter:
-            flat_frames = (
-                frames_for_image_type.get("flat", set())
-                & frames_for_camera.get(camera_key, set())
-                & frames_for_filter.get(filter, set())
-                & dir_frames
-            )
-            for run in get_runs(flat_frames):
-                add_stack(run, consensus)
+            for exposure in frames_for_exposure:
+                flat_frames = (
+                    frames_for_image_type.get("flat", set())
+                    & frames_for_camera.get(camera_key, set())
+                    & frames_for_filter.get(filter, set())
+                    & frames_for_exposure.get(exposure, set())
+                    & dir_frames
+                )
+                for run in get_runs(flat_frames):
+                    add_stack(run, consensus)
 
     log.info("Calibration stacks identified", keys=list(stacks.keys()))
     return stacks

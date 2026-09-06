@@ -491,6 +491,37 @@ def test_stack_calibration_frames(test_context) -> None:
 
 
 @pytest.mark.exhaustive
+def test_same_filter_flats_split_by_exposure(test_context) -> None:
+    """Two H flat sequences at different metered exposures (aborted-then-
+    reshot sky flats) are two distinct runs and each must mint its own
+    master. Regression: an 8h run pooled them into one non-uniform run
+    that _aggregate_exposure rejected wholesale, losing both (2026-09-05
+    FLT156 R). Both are shot the same morning, minutes apart."""
+    copy_testdata_frames(target_name="NGC7635", dest_dir=context.input_dirs[0])
+    base = datetime.datetime(2023, 10, 4, 22, 0, 0)
+    make_synthetic_frames(
+        number=6, image_type="Flat", filter="H", exposure=15,
+        start_datetime=base, fill_value=50,
+        instrument="ZWO ASI6200MM Pro", width_pixels=9576, height_pixels=6388,
+        temperature=-10, dest_dir=context.input_dirs[0],
+    )
+    make_synthetic_frames(
+        number=6, image_type="Flat", filter="H", exposure=13,
+        start_datetime=base + datetime.timedelta(minutes=8), fill_value=50,
+        instrument="ZWO ASI6200MM Pro", width_pixels=9576, height_pixels=6388,
+        temperature=-10, dest_dir=context.input_dirs[0],
+    )
+
+    run_graph(build_compute_graph())
+
+    flats = [
+        s for s in context.calibration_stacks.values()
+        if s.image_type == "flat"
+    ]
+    assert len(flats) == 2, f"expected two flat masters, got {len(flats)}"
+    assert {round(f.exposure) for f in flats} == {15, 13}
+
+
 def test_multiple_filters_for_flats(test_context) -> None:
     # Only one run of flat frames applies to the light frames, which use
     # the H filter.
