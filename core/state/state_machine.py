@@ -611,7 +611,12 @@ def _schedule_download_from_asiairs(
 
     scheduler = ray.get_actor("scheduler", namespace=_get_namespace())
     scheduler.start_asiair_download_poller.remote(
-        interval_s=15 * 60,
+        # Hourly, not 15 min (2026-09-06 00:30): identification re-keys
+        # on the full metadata value every drain (~25 min of work), so a
+        # 15-min cadence never reached WBPP — the pass restarted forever.
+        # Revert toward 15 min after identify tasks key on per-group
+        # metadata slices instead of the whole library.
+        interval_s=60 * 60,
         start_delay_s=30,
     )
     scheduler.start_asiair_live_poller.remote(
