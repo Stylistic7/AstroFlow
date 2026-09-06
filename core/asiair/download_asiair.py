@@ -39,7 +39,11 @@ RIG_NAMES_BY_FOCAL_LENGTH = {351: "RC71", 1234: "FLT156"}
 def _rig_name_for_group(fits_files: list[str], fallback: str) -> str:
     """Nickname for the rig that shot these frames, from the first
     readable FOCALLEN. Frames in one group all come from one device's
-    card, so one header speaks for the group."""
+    card, so one header speaks for the group.
+
+    Tolerance-matched (2%), same rule as flat association: the scope
+    profile drifts by a millimeter (2026-09-05: FLT156 reported 1233
+    against the map's 1234 and a night's lights filed under the IP)."""
     for f in fits_files:
         try:
             focal = float(
@@ -47,9 +51,9 @@ def _rig_name_for_group(fits_files: list[str], fallback: str) -> str:
             )
         except Exception:
             continue
-        name = RIG_NAMES_BY_FOCAL_LENGTH.get(round(focal))
-        if name:
-            return name
+        for known, name in RIG_NAMES_BY_FOCAL_LENGTH.items():
+            if abs(focal - known) <= 0.02 * max(focal, known):
+                return name
         print(f"### unmapped FOCALLEN {focal} — filing under '{fallback}'")
         return fallback
     return fallback
