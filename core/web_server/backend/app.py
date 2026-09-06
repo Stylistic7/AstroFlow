@@ -398,19 +398,29 @@ def recent():
 def flats_for_sensor_and_filter(width, height, filter):
     """Flats the user may pick from for a stack of this sensor and filter.
 
-    Keyed on sensor GEOMETRY, matching what `resolve_calibration` considers
-    automatically — this list is the manual-override path for the same
-    decision, so offering a different candidate set than the automatic
-    matcher would be its own bug. It was keyed on the INSTRUME string, which
-    silently returned nothing whenever a driver had renamed the camera.
+    Keyed on sensor GEOMETRY *and*, when the caller passes `?focal_length=`,
+    the optical train — matching what `resolve_calibration` considers
+    automatically (geometry bucket, then FOCALLEN refusal within 2%). This
+    list is the manual-override path for the same decision, so offering a
+    different candidate set than the automatic matcher would be its own bug:
+    the two same-geometry rigs differ only by focal length, and a flat from
+    the wrong train must not even appear as a tie-breaking option. Absent
+    focal_length (or a candidate with none) is a wildcard, as in the matcher.
+    It was keyed on the INSTRUME string, which silently returned nothing
+    whenever a driver had renamed the camera.
     """
+    from calibration.calibration_frames import focal_length_of, same_optical_train
+
     sensor = (int(width), int(height))
+    raw = request.args.get("focal_length")
+    target_focal = float(raw) if raw not in (None, "", "null") else None
     return [
         k
         for k, s in context.calibration_stacks.items()
         if s.image_type == "flat"
         and (s.width_pixels, s.height_pixels) == sensor
         and s.filter == filter  # calibration_stacks holds real Run objects
+        and same_optical_train(target_focal, focal_length_of(s))
     ]
 
 

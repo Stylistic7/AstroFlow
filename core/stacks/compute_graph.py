@@ -39,6 +39,15 @@ def _my_transform(v):
 
 
 @node
+def _focal_length_of(stack) -> int | None:
+    focal = next(
+        (m.header.get("FOCALLEN") for m in stack.all_metadata().values()
+         if m.header.get("FOCALLEN") is not None),
+        None,
+    )
+    return round(float(focal)) if focal is not None else None
+
+
 def prepare_stack_for_ui(
     stack: Stack,
     cal_stacks: CalibrationStacksDict,
@@ -78,6 +87,9 @@ def prepare_stack_for_ui(
         "rotation_angle": stack.rotation_angle,
         "width_pixels": stack.width_pixels,
         "height_pixels": stack.height_pixels,
+        # Optical train, so the flat carousel can restrict candidates to
+        # the same rig (same-geometry rigs differ only by focal length).
+        "focal_length": _focal_length_of(stack),
         "center": list(stack.center) if stack.center else None,
         "oldest_date": str(stack.oldest_date) if stack.oldest_date else None,
         "newest_date": str(stack.newest_date) if stack.newest_date else None,
@@ -161,12 +173,7 @@ def process_calibration_stacks_for_ui(cal_stacks: dict) -> dict:
         )
         # Focal length distinguishes the two same-model rigs on the cards
         # (flats separate by it); None when the header lacks it.
-        focal = next(
-            (m.header.get("FOCALLEN") for m in metas
-             if m.header.get("FOCALLEN") is not None),
-            None,
-        )
-        result["focal_length"] = round(float(focal)) if focal is not None else None
+        result["focal_length"] = _focal_length_of(stack)
 
         return result
 

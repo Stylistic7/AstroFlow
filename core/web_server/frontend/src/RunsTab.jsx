@@ -23,7 +23,11 @@ const RunsTab = ({ stack }) => {
   useEffect(() => {
     const fetchFlats = async () => {
       try {
-        const res = await fetch(`/api/flats/${stack.width_pixels}/${stack.height_pixels}/${stack.filter}`);
+        // Pass the stack's focal length so the carousel only offers flats
+        // from the same optical train (same-geometry rigs differ only by
+        // focal length) — the manual picker must match the auto-matcher.
+        const focalQuery = stack.focal_length ? `?focal_length=${stack.focal_length}` : '';
+        const res = await fetch(`/api/flats/${stack.width_pixels}/${stack.height_pixels}/${stack.filter}${focalQuery}`);
         const json = await res.json();
         setFlatIds(json);
       } catch (err) {
@@ -31,7 +35,7 @@ const RunsTab = ({ stack }) => {
       }
     };
     fetchFlats();
-  }, [stack.width_pixels, stack.height_pixels, stack.filter]);
+  }, [stack.width_pixels, stack.height_pixels, stack.filter, stack.focal_length]);
 
   useEffect(() => {
     const fetchDecisions = async () => {
