@@ -254,6 +254,37 @@ def _download_from_rig_grouped_by_date(
     if not fits_files:
         return None
 
+    # Never copy a file the camera is still writing: it lands truncated
+    # and --ignore-existing then refuses to repair it forever (lost a
+    # Pane 11 H sub 2026-09-05). Data-relative rule — skip anything
+    # within 60s of the CARD'S newest mtime — so device clock skew is
+    # irrelevant, and once imaging stops nothing is fresh relative to
+    # the newest file and the final frame always copies.
+    mtimes = {}
+    for f in fits_files:
+        try:
+            mtimes[f] = os.path.getmtime(f)
+        except OSError:
+            print(f"### skipping unstattable file {f}")
+    if not mtimes:
+        return None
+    newest_mtime = max(mtimes.values())
+    # The newest file is 0s from itself, so the data-relative test alone
+    # would defer the final frame forever; the wall-clock backstop (5 min,
+    # far beyond any write duration or sane device clock skew) copies it
+    # once the card has been quiet.
+    now = time.time()
+    settled = [
+        f for f, t in mtimes.items()
+        if newest_mtime - t >= 60.0 or now - t >= 300.0
+    ]
+    skipped = len(fits_files) - len(settled)
+    if skipped:
+        print(f"### deferring {skipped} still-writing file(s) to the next poll")
+    fits_files = settled
+    if not fits_files:
+        return None
+
     groups, dates = _group_subs_by_date(fits_files)
     if not dates:
         print(f"No readable FITS frames from rig {rig} in path {path}")

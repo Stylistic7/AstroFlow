@@ -57,6 +57,21 @@ def test_final_run_closes_via_frontier_nudge():
     assert is_quiesced(newest, newest + GATE, GATE)       # nudge closes it
 
 
+def test_effective_frontier_stabilizes_quiesced_subsets():
+    """A subset with no hot frames gets frontier=None — a STABLE cache
+    key across drains. Only subsets with hot frames carry the live
+    frontier. (Passing the raw frontier re-keyed all identification on
+    every drain: the livelock reborn, 2026-09-05 night.)"""
+    from clustering.quiesce import effective_frontier
+    frontier = datetime.datetime(2026, 9, 6, 5, 0, tzinfo=UTC)
+    old = frontier - datetime.timedelta(hours=2)
+    hot = frontier - datetime.timedelta(minutes=5)
+    assert effective_frontier(old, frontier, GATE) is None
+    assert effective_frontier(hot, frontier, GATE) == frontier
+    assert effective_frontier(None, frontier, GATE) is None
+    assert effective_frontier(old, None, GATE) is None
+
+
 def test_no_frontier_admits_everything():
     t0 = datetime.datetime(2026, 9, 5, 22, 0, tzinfo=UTC)
     times = {f"f{i}": t0 for i in range(3)}

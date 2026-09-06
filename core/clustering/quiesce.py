@@ -39,6 +39,29 @@ def is_quiesced(
 
 
 @beartype
+def effective_frontier(
+    subset_newest: datetime.datetime | None,
+    frontier: datetime.datetime | None,
+    gate: datetime.timedelta,
+) -> datetime.datetime | None:
+    """The frontier a task actually needs in its cache key.
+
+    Once everything a task can see is provably quiesced (the subset's
+    newest frame is a full gate behind the frontier), the gate cannot
+    change that task's output — so pass None and keep its key STABLE
+    across drains. Passing the raw, ever-advancing frontier re-keyed
+    every identify task on every drain and re-ran full identification
+    each 15-minute cycle (2026-09-05 night — the livelock reborn).
+    Only tasks with hot frames carry the live frontier, re-keying
+    exactly until their runs close."""
+    if frontier is None or subset_newest is None:
+        return None
+    if _utc(frontier) - _utc(subset_newest) >= gate:
+        return None
+    return frontier
+
+
+@beartype
 def admit_quiesced_frames(
     frames: tuple[str, ...],
     metadata: Mapping,

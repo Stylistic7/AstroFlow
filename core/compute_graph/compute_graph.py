@@ -193,11 +193,12 @@ def scatter_spatial_groups(
     # frontier is nudged past it so the final runs of the night close
     # too — the morning kick then bakes everything.
     import datetime as _dt
-    from clustering.quiesce import _utc
+    from clustering.quiesce import _utc, effective_frontier
     gate = clustering_settings.run_quiesce_gate
+    metadata = metadata_ref.get()
     capture_times = [
         _utc(m.header["DATE-OBS"])
-        for m in metadata_ref.get().values()
+        for m in metadata.values()
         if m.header.get("DATE-OBS") is not None
     ]
     frontier = max(capture_times) if capture_times else None
@@ -206,7 +207,24 @@ def scatter_spatial_groups(
         and _dt.datetime.now(_dt.timezone.utc) - frontier >= gate
     ):
         frontier = frontier + gate
-    print(f"### quiesce frontier={frontier} gate={gate}")
+
+    def _newest_of(hashes) -> _dt.datetime | None:
+        times = [
+            _utc(metadata[h].header["DATE-OBS"])
+            for h in hashes
+            if h in metadata and metadata[h].header.get("DATE-OBS") is not None
+        ]
+        return max(times) if times else None
+
+    # Calibration frames get their own subset frontier: light frames
+    # streaming in must not re-key calibration identification (a ~10 min
+    # recompute) every drain when no calibration frame is hot.
+    cal_newest = _newest_of(
+        h for h, m in metadata.items()
+        if str(m.header.get("IMAGETYP", "")).lower() in ("bias", "dark", "flat")
+    )
+    cal_frontier = effective_frontier(cal_newest, frontier, gate)
+    print(f"### quiesce frontier={frontier} cal_frontier={cal_frontier} gate={gate}")
 
     identify_cal_stacks_task = (
         identify_calibration_stacks,
@@ -214,7 +232,7 @@ def scatter_spatial_groups(
         clustering_settings.max_run_gap,
         clustering_settings.min_frames_in_stack,
         fingerprint_map_ref,
-        frontier,
+        cal_frontier,
         gate,
     )
 
@@ -232,6 +250,10 @@ def scatter_spatial_groups(
     stack_tasks = []
     target_tasks = []
     for i, g in enumerate(spatial_groups):
+        # Per-group effective frontier: a spatial group with no hot
+        # frames gets None, keeping its identify key STABLE across
+        # drains — only the group actively being shot re-keys.
+        group_frontier = effective_frontier(_newest_of(g), frontier, gate)
         stack_task = (
             identify_stacks,
             metadata_ref,
@@ -240,7 +262,7 @@ def scatter_spatial_groups(
             clustering_settings.min_frames_in_stack,
             clustering_settings.max_run_gap,
             fingerprint_map_ref,
-            frontier,
+            group_frontier,
             gate,
         )
 
