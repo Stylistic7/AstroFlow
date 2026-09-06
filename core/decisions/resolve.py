@@ -184,6 +184,7 @@ def resolve_calibration(
     """
     from calibration.calibration_frames import (
         _build_cal_index, _midpoint_s, sensor_of,
+        focal_length_of, same_optical_train,
     )
     from calibration.directory_affinity import find_external_master
     from calibration.topology import CALIBRATION_TOPOLOGY
@@ -236,12 +237,20 @@ def resolve_calibration(
         cand = flat_by_sensor_filter.get((sensor_of(run), run.filter))
         if not cand:
             return None
-        cand = [c for c in cand if c[2] not in quarantined_flat_ids]
+        cand = [c for c in cand if c[3] not in quarantined_flat_ids]
+        # A flat from a different optical train (FOCALLEN mismatch beyond
+        # tolerance) is REFUSED outright: its vignetting profile is wrong
+        # under any interpretation, and with two same-sensor rigs shooting
+        # same-night flats, chronology alone would pick between them at
+        # random. No candidate at all (concern raised downstream) beats a
+        # wrong-train flat. Unknown FOCALLEN on either side still matches.
+        run_focal = focal_length_of(run)
+        cand = [c for c in cand if same_optical_train(run_focal, c[2])]
         if not cand:
             return None
         cand = _prefer_same_camera(cand, cam_id, lambda x: x[1])
         mid = _midpoint_s(run.oldest_date, run.newest_date)
-        return min(cand, key=lambda x: abs(x[0] - mid))[2]
+        return min(cand, key=lambda x: abs(x[0] - mid))[3]
 
     chronological = {
         "bias": _chronological_bias,

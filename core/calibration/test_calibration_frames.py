@@ -299,6 +299,9 @@ def test_flats_from_different_camera(test_context) -> None:
         width_pixels=6248,
         height_pixels=4176,
         temperature=-20,
+        # The M42 testdata lights are FOCALLEN=540mm; their flats must
+        # share the optical train.
+        focal_length_m=0.54,
         dest_dir=context.input_dirs[0],
     )
 

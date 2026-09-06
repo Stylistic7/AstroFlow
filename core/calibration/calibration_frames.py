@@ -200,6 +200,36 @@ def _midpoint_s(a: datetime, b: datetime) -> float:
     return (a.timestamp() + b.timestamp()) * 0.5
 
 
+def focal_length_of(s) -> float | None:
+    """FOCALLEN (mm) from the first frame header that carries one, or None.
+
+    A flat only corrects the optical train it was shot through, and
+    FOCALLEN is that train's signature in every ASIAir header. None
+    (external pre-stacked masters, stripped headers) acts as a wildcard
+    downstream — refusal is only for a PROVEN mismatch; refusing on
+    unknown would strand runs the way requiring camera identity once did.
+    """
+    metadata = s.all_metadata() if hasattr(s, "all_metadata") else s.metadata
+    for m in metadata.values():
+        v = m.header.get("FOCALLEN")
+        if v is None:
+            continue
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def same_optical_train(a: float | None, b: float | None) -> bool:
+    """FOCALLEN match within 2% — absorbs scope-profile rounding
+    (350 vs 351) while cleanly separating real trains (351 vs 1234).
+    Unknown on either side matches: refuse on proven difference only."""
+    if a is None or b is None:
+        return True
+    return abs(a - b) <= 0.02 * max(a, b)
+
+
 def sensor_of(s) -> tuple[int, int]:
     """The physical sensor bucket for calibration matching: pixel dimensions.
 
@@ -252,7 +282,7 @@ def _build_cal_index(cal_stacks: dict[StackHash, CalibrationStack]):
             )
         elif s.image_type == "flat":
             flat_by_sensor_filter.setdefault((sensor, s.filter), []).append(
-                (mid, cam, sid)
+                (mid, cam, focal_length_of(s), sid)
             )
 
     # Sort each bucket by midpoint; helps cache locality, not required for

@@ -179,7 +179,11 @@ def make_synthetic_frames(
     dec: float = 45,
     centers: list[tuple[float, float]] | None = None,
     dither: float = 0.01,
-    focal_length_m: float = 0.35,
+    # Default matches the NGC7635 testdata frames (FOCALLEN=2066mm) — the
+    # dominant fixture — so synthetic flats associate with testdata lights
+    # under the same-optical-train (FOCALLEN) constraint. The M42 testdata
+    # is 540mm; tests pairing flats with it pass focal_length_m=0.54.
+    focal_length_m: float = 2.066,
     pixel_pitch_um: float = 3.76,
     instrument: str = "ZWO ASI6200MM Pro",
     n_hot_pixels: int = 1200,
@@ -332,7 +336,8 @@ def make_synthetic_frames(
             "NAXIS2": height_pixels,
             "IMAGEW": width_pixels,
             "IMAGEH": height_pixels,
-            "FOCALLEN": focal_length_m,
+            # FITS convention (and the real ASIAir) writes FOCALLEN in mm.
+            "FOCALLEN": focal_length_m * 1000.0,
             "XPIXSZ": pixel_pitch_um,
             "YPIXSZ": pixel_pitch_um,
             # Synthetic frames contain only noise (or a flat gradient) — mark
