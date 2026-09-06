@@ -59,7 +59,27 @@ def ping(ip: str) -> bool:
     )
 
 
+def _unmount_stale_share(ip: str, volume: str) -> None:
+    """Sweep any existing mount of this share before mounting fresh.
+
+    A pull interrupted mid-mount (deploy restart, crash) leaves the
+    share attached to a dead temp dir; macOS then refuses to mount the
+    same share again ("File exists") and the pass scans an empty
+    directory, reporting a healthy rig as having 0 files (2026-09-05:
+    RC71's whole night looked absent)."""
+    out = subprocess.run(["mount"], capture_output=True, text=True).stdout
+    needle = f"@{ip}/{volume} on "
+    for line in out.splitlines():
+        if needle not in line:
+            continue
+        mount_point = line.split(" on ", 1)[1].split(" (")[0]
+        print(f"### unmounting stale share {ip}/{volume} at {mount_point}")
+        if subprocess.run(["umount", mount_point]).returncode != 0:
+            subprocess.run(["umount", "-f", mount_point])
+
+
 def _mount_volume(ip: str, volume: str, mount_point: str) -> bool:
+    _unmount_stale_share(ip, volume)
     ret = subprocess.run(
         ["mount", "-t", "smbfs", f"//guest@{ip}/{volume}", mount_point]
     ).returncode
@@ -160,16 +180,21 @@ def _copy_fits_files(fits_files: list[str], dest_dir: str) -> list[str] | None:
 class MountContextManager:
     def __init__(self, rig: str, ip: str, volume: str, mount_point: str) -> None:
         self.rig, self.ip, self.volume, self.mount_point = rig, ip, volume, mount_point
+        self.mounted = False
 
-    def __enter__(self) -> None:
+    def __enter__(self) -> "MountContextManager":
         print(f"Mounting volume '{self.volume}' from rig '{self.rig}'")
-        if not _mount_volume(self.ip, self.volume, self.mount_point):
+        self.mounted = _mount_volume(self.ip, self.volume, self.mount_point)
+        if not self.mounted:
             print(f"Could not mount '{self.volume}' from rig '{self.rig}'")
+        return self
 
     def __exit__(self, exc_type: Any, exc_value: Any, exc_tb: Any) -> None:
         if exc_type:
             print("Exception info:", exc_type, exc_value, exc_tb, sep="\n")
 
+        if not self.mounted:
+            return
         print(f"Unmounting '{self.volume}' from rig '{self.rig}'")
         if not _unmount_volume(self.mount_point):
             print(f"Could not unmount volume '{self.volume}' from '{self.rig}'")
@@ -278,7 +303,15 @@ def download_from_asiair(
 
     for search_def in search_defs:
         with tempfile.TemporaryDirectory() as mount_point:
-            with MountContextManager(rig, ip, search_def["volume"], mount_point):
+            with MountContextManager(rig, ip, search_def["volume"], mount_point) as mcm:
+                if not mcm.mounted:
+                    # Scanning an unmounted temp dir "finds" 0 files and
+                    # reports a healthy rig as empty — skip loudly instead.
+                    print(
+                        f"Skipping volume {search_def['volume']} on rig "
+                        f"{rig} ({ip}) — mount failed"
+                    )
+                    continue
                 print(
                     f"Successfully mounted rig {rig} ({ip}) "
                     f"at mount point {mount_point}"
