@@ -410,7 +410,11 @@ def _read_and_analyze_pixels(
 
 
 
-@node(num_cpus=0.25)
+# Head-pinned (diskcache is the head-only resource): this op reads every
+# sidecar in the dir listing, and on a worker those reads traverse the
+# network mount — measured 565s vs 83s on the head for the same 33k-file
+# listing (2026-09-05 night, placement was luck-of-the-scheduler).
+@node(num_cpus=0.25, resources={"diskcache": 0.001})
 def build_dir_library(
     dir: str, fingerprint: str, listing: tuple,
 ) -> tuple:
