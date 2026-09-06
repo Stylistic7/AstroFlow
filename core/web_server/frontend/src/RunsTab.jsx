@@ -77,12 +77,25 @@ const RunsTab = ({ stack }) => {
 
   const handleSelectFlat = (runId, flatId) => {
     setSelectedFlatsByRun(prev => ({ ...prev, [runId]: flatId }));
-    fetch('/api/settings/stack', {
+    // The decisions API is the single source of truth for calibration
+    // overrides — the old /api/settings/stack route died in the
+    // quarantine unification (d84b00ce) and this save silently 404'd
+    // for months. choice=null (the "none" tile) clears the override
+    // and reverts the run to auto-selection. The server drains and
+    // restarts the compute graph to apply the choice.
+    fetch('/api/decisions/override', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stack_id: stack.stable_hash, run_id: runId, dependencies: { 'flat': flatId } }),
+      body: JSON.stringify({
+        key: {
+          decision_type: 'calibration_flat',
+          object_type: 'stack',
+          parent_stack_id: stack.stable_hash,
+          subject_id: runId,
+        },
+        choice: flatId ?? null,
+      }),
     });
-
   };
 
 
