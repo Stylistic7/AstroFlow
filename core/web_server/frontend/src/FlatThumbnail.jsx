@@ -1,5 +1,6 @@
 
-import { Box, Typography } from '@mui/material';
+import { Box, Typography, IconButton, Tooltip } from '@mui/material';
+import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import QuarantineToggle from './QuarantineToggle.jsx';
 
 const FlatThumbnail = ({ stack, run, flatStack, selected, quarantined, onSelect, onNavigate }) => {
@@ -29,26 +30,34 @@ const FlatThumbnail = ({ stack, run, flatStack, selected, quarantined, onSelect,
         src={thumbnailUrl}
         loading="lazy"
         alt={`Flat correction thumbnail for ${stable_hash}`}
-        onClick={(e) => {
-          if (onNavigate && flatStack) {
-            e.stopPropagation();
-            onNavigate(flatStack.stable_hash);
-          }
-        }}
         sx={{
           width: 750,
           height: 450,
           objectFit: 'cover',
           borderRadius: 1,
           backgroundColor: '#111',
-          cursor: onNavigate && flatStack ? 'zoom-in' : 'pointer',
+          // The whole thumbnail selects this flat (visual tie-breaking).
+          // Inspecting the flat in detail is the zoom icon below, so the
+          // primary click is never hijacked by navigation.
+          cursor: 'pointer',
         }}
       />
       {flatStack && (
         <Box
           onClick={(e) => e.stopPropagation()}
-          sx={{ position: 'absolute', top: 8, right: 8 }}
+          sx={{ position: 'absolute', top: 8, right: 8, display: 'flex', gap: 0.5 }}
         >
+          {onNavigate && (
+            <Tooltip title="Open this flat stack">
+              <IconButton
+                size="small"
+                sx={{ bgcolor: 'rgba(0,0,0,0.5)' }}
+                onClick={(e) => { e.stopPropagation(); onNavigate(flatStack.stable_hash); }}
+              >
+                <ZoomInIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
           <QuarantineToggle
             objectType="stack"
             objectId={flatStack.stable_hash}

@@ -232,7 +232,7 @@ const RunsTab = ({ stack }) => {
                   selected={selectedFlatId === flatId}
                   quarantined={isQuarantined("stack", flatId)}
                   onSelect={() => handleSelectFlat(run.id, flatId)}
-                  onNavigate={(id) => navigate(`${location.pathname}/calibration_stack/${id}`)}
+                  onNavigate={(id) => navigate(`/calibration_stack/${id}`)}
                 />
               ))}
             </Box>
