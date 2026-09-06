@@ -32,6 +32,7 @@ export default function CalibrationStackCard({ stack_id }) {
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
                         {stack.camera}
+                        {stack.focal_length && ` · ${stack.focal_length}mm`}
                         {stack.camera_id_short && ` · cam ${stack.camera_id_short}`}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">

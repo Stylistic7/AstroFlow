@@ -153,11 +153,20 @@ def process_calibration_stacks_for_ui(cal_stacks: dict) -> dict:
 
     def prepare_stack(stack):
         result = convert_to_dict(stack, [["contents", "*", "metadata"]])
-        result["filenames"] = [m.filename for m in stack.all_metadata().values()]
+        metas = list(stack.all_metadata().values())
+        result["filenames"] = [m.filename for m in metas]
         result["camera_id_hash"] = stack.camera_id_hash
         result["camera_id_short"] = (
             stack.camera_id_hash[:8] if stack.camera_id_hash else None
         )
+        # Focal length distinguishes the two same-model rigs on the cards
+        # (flats separate by it); None when the header lacks it.
+        focal = next(
+            (m.header.get("FOCALLEN") for m in metas
+             if m.header.get("FOCALLEN") is not None),
+            None,
+        )
+        result["focal_length"] = round(float(focal)) if focal is not None else None
 
         return result
 
