@@ -59,17 +59,20 @@ const RunsTab = ({ stack }) => {
       (d.decision_type === 'rotation_outlier' || d.decision_type === 'quarantine')
     );
 
-  const runs = Object.entries((detail || stack)?.contents || {}).map(([id, run]) => ({ id, ...run }));
+  // Most recent first, top to bottom: the run you just shot is the one
+  // you came to inspect.
+  const runs = Object.entries((detail || stack)?.contents || {})
+    .map(([id, run]) => ({ id, ...run }))
+    .sort((a, b) => (Date.parse(b.newest_date) || 0) - (Date.parse(a.newest_date) || 0));
 
-  // Chronological carousel: the flat candidates read as a timeline
-  // (oldest at the left, last night's at the right). The API returns
-  // them in arbitrary server order.
+  // Most recent first, left to right: the flats worth considering are
+  // almost always the newest ones. The API returns arbitrary server order.
   const flatCaptureTime = (id) => {
     const ms = Date.parse(calibrationStacks[id]?.oldest_date);
     return Number.isNaN(ms) ? 0 : ms;
   };
   const sortedFlatIds = [...flatIds].sort(
-    (a, b) => flatCaptureTime(a) - flatCaptureTime(b)
+    (a, b) => flatCaptureTime(b) - flatCaptureTime(a)
   );
 
   const handleSelectFlat = (runId, flatId) => {
