@@ -42,7 +42,7 @@ from file_io.generic import read_header
 from file_io.sidecar import get_section, set_section
 from file_io.types import WithSidecar, XisfFilePath
 from hashing import hash_list, hash_list_int
-from metadata.classes import FrameHash, MetadataDict
+from metadata.classes import FrameHash, ImageMetadata, MetadataDict
 from metadata.image_types import is_light_frame, is_master
 from metadata.star_photometry import SCHEMA as PHOTOMETRY_SCHEMA
 from stacks.composite_stack import CalibrationStack, CalibrationStacksDict, _camera_id_hash_from
@@ -296,11 +296,12 @@ def gate(candidates: StarFlatCandidates, master_paths, *, min_subs: int, min_spl
 
 @node
 def mint_star_flats(candidates: StarFlatCandidates, min_subs: int, min_split_half: float,
-                    max_uncertainty: float, *masters: WithSidecar) -> StarFlats:
+                    max_uncertainty: float, *masters: ImageMetadata) -> StarFlats:
     """The thresholds are arguments (not module constants read inside) so
     that tightening the rule re-keys this node by itself; the masters stay
-    cached."""
-    return gate(candidates, [m.path for m in masters], min_subs=min_subs,
+    cached. A producer's output reaches its consumers as the written file's
+    ImageMetadata (boot 59 failed here with a WithSidecar hint)."""
+    return gate(candidates, [Path(m.filename) for m in masters], min_subs=min_subs,
                 min_split_half=min_split_half, max_uncertainty=max_uncertainty)
 
 

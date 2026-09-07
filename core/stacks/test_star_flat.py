@@ -1,6 +1,7 @@
 """Star flats as calibration masters: identity, grouping, the adaptive solve
 and quality gate, the master written for WBPP, the calibrate dispatch, and
 the decision default. Pure — no Ray, no context."""
+import dataclasses
 import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -168,6 +169,11 @@ def test_gate_keeps_only_good_masters(tmp_path):
     kept = gate(cands, [tmp_path / "good.xisf", tmp_path / "bad.xisf"], **rule)
     assert isinstance(kept, StarFlats) and list(kept) == ["good"]
     assert list(gate(cands, [tmp_path / "good.xisf"], **{**rule, "max_uncertainty": 0.0001})) == []
+    # the graph's collector receives each built master as its ImageMetadata
+    from stacks.star_flat import mint_star_flats
+    masters = [dataclasses.replace(_meta(0, image_type="Master Flat"), filename=tmp_path / n) for n in ("good.xisf", "bad.xisf")]
+    minted = mint_star_flats._function(cands, MIN_SUBS, MIN_SPLIT_HALF, GATE_UNCERTAINTY_MAX, *masters)
+    assert list(minted) == ["good"]
 
 
 def test_gate_rule_needs_subs_agreement_and_low_noise():
