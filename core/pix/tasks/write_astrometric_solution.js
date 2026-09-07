@@ -95,9 +95,45 @@ kw.push(new FITSKeyword("EQUINOX", "2000.0", "ICRS J2000.0"));
 kw.push(new FITSKeyword("RADESYS", "'ICRS'", "Reference frame"));
 win.keywords = kw;
 
-// --- 2. Drive PI's own ImageMetadata class to extract the WCS we just
-// wrote and emit the canonical representation: refreshed FITS keywords
-// (UpdateBasicKeywords + UpdateWCSKeywords) plus the binary
+// --- 2. Discard any solution the view already carries. ExtractMetadata
+// prefers an existing PCL:AstrometricSolution:LinearTransformationMatrix
+// property over the keywords (WCSmetadata.jsh, `fromFITS`), and PI's FITS
+// loader builds one on load from WCS keywords embedded in the file — so
+// on such frames the keywords written above were silently ignored and
+// SPFC ran on the loader's solution (mirrored for half the camera
+// orientations; found 2026-09-07).
+var stale = view.properties.filter(function(id) {
+   return id.indexOf("PCL:AstrometricSolution:") === 0 ||
+          id.indexOf("Transformation_ImageToProjection") === 0;
+});
+view.beginProcess(UndoFlag_AstrometricSolution);
+stale.forEach(function(id) { view.deleteProperty(id); });
+if (stale.length > 0)
+   console.writeln("WriteAstrometricSolution: discarded " + stale.length +
+                   " pre-existing astrometric solution properties");
+
+// --- 3. Hand ExtractMetadata the solution as PI's own properties, not as
+// keywords. A keyword-sourced solution goes through a bottom-up guess
+// (`fromFITS`: the sign of a CDELT2 estimated from the CD matrix's
+// rotation branch decides whether the rows are flipped) and that guess
+// is invariant to how the WCS is written, so for det>0 matrices it
+// mirrors the solution for half the camera orientations (every +90°
+// frame; 2026-09-07). A property-sourced solution is used verbatim:
+// image->gnomonic matrix = CD, reference pixel = CRPIX in PI's 0-based
+// image coordinates (rows in file order, no flip — verified on -90°/+90°
+// frames against solve-field's own catalogue positions).
+var props = PropertyAttribute_Storable | PropertyAttribute_Permanent;
+view.setPropertyValue("PCL:AstrometricSolution:LinearTransformationMatrix",
+                      new Matrix([cd1_1, cd1_2, cd2_1, cd2_2], 2, 2), PropertyType_F64Matrix, props);
+view.setPropertyValue("PCL:AstrometricSolution:ReferenceImageCoordinates",
+                      new Vector([crpix1 - 0.5, crpix2 - 0.5]), PropertyType_F64Vector, props);
+view.setPropertyValue("PCL:AstrometricSolution:ReferenceCelestialCoordinates",
+                      new Vector([crval1, crval2]), PropertyType_F64Vector, props);
+view.endProcess();
+
+// --- 4. Drive PI's own ImageMetadata class to extract that solution and
+// emit the canonical representation: refreshed FITS keywords
+// (UpdateBasicKeywords + UpdateWCSKeywords) plus the full set of
 // PCL:AstrometricSolution:* XISF properties that SPCC/MGC consume.
 var metadata = new ImageMetadata("WriteAstrometricSolution");
 metadata.ExtractMetadata(win);

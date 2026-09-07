@@ -16,7 +16,7 @@ for i, p in enumerate(subs):
             a = np.genfromtxt(os.path.join(d, "SPFC-data-0.csv"), delimiter=",", names=True).reshape(-1)
             tab = np.column_stack([a["x"], a["y"], a["alpha"], a["delta"], a["mag_G"], a["mag_BP"], a["mag_RP"], (a["img_fwhmx"] + a["img_fwhmy"]) / 2, a["img_signal"], a["scale"]])
         else:
-            tab = harvest_sub(p, d, search_tolerance_px=tol)
+            tab, _ = harvest_sub(p, d, search_tolerance_px=tol)
         rows.append(np.column_stack([tab, np.full(len(tab), i)])); done.append((i, p, len(tab)))
     except Exception as e:
         done.append((i, p, 0)); print(f"  {i} FAILED {str(e)[:70]}", flush=True)

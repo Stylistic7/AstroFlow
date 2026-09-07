@@ -38,12 +38,15 @@ Conventions that were each learned the hard way:
 """
 from __future__ import annotations
 
-import json
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 from scipy.ndimage import gaussian_filter, zoom
+
+from file_io.generic import read_image_geometry
+from file_io.sidecar import get_section
 
 # Column order of a harvested star table (float64 rows).
 STAR_COLUMNS = ("x", "y", "ra", "dec", "G", "BP", "RP", "fwhm", "signal", "scale", "sub")
@@ -51,22 +54,14 @@ MASTER_FLAT_NAME = "masterFlat_BIN-1_{w}x{h}_FILTER-{f}_mono.xisf"
 
 
 # --------------------------------------------------------------------- harvest
-def harvest_sub(path: str, out_dir: str, *, filter: str = "H",
-                search_tolerance_px: float = 12.0) -> np.ndarray:
-    """Run SPFC on one plate-solved raw sub with per-star text export.
-
-    Returns an (n, 10) array in STAR_COLUMNS order (without `sub`). The WCS
-    comes from the sub's sidecar; SPFC writes `SPFC-data-0.csv` into
-    `out_dir`. The XISF SPFC writes is removed (it is only the vehicle for
-    execution). Tolerance 12 px recovers the true pairs on an accurate WCS
-    (a ~4 px systematic offset sits right at the 4 px default) and produced
-    0.0% gross outliers on such subs; on an inaccurate WCS it produces
-    mismatches, which `solve_star_flat` detects and drops per sub.
-    """
+def _run_spfc(path: str, out_dir: str, hdr: dict, filter: str | None,
+              search_tolerance_px: float) -> np.ndarray:
+    """SPFC on `path` under the WCS `hdr`, per-star text export parsed into an
+    (n, 10) array in STAR_COLUMNS order (without `sub`). The XISF SPFC writes
+    is removed (it is only the vehicle for execution)."""
     from pix.image import Image
     from pix.tasks import SpectrophotometricFluxCalibration, WriteAstrometricSolution
 
-    hdr = json.load(open(path + ".json"))["astroflow"]["plate_solution"]["data"]["header"]
     os.makedirs(out_dir, exist_ok=True)
     img = WriteAstrometricSolution(Image.open(path, filter=filter), hdr)
     SpectrophotometricFluxCalibration(
@@ -82,6 +77,61 @@ def harvest_sub(path: str, out_dir: str, *, filter: str = "H",
         a["x"], a["y"], a["alpha"], a["delta"], a["mag_G"], a["mag_BP"], a["mag_RP"],
         (a["img_fwhmx"] + a["img_fwhmy"]) / 2, a["img_signal"], a["scale"],
     ])
+
+
+def _match_quality(stars: np.ndarray, mag_window=(8.0, 12.0)) -> tuple[int, float, float]:
+    """(n in window, robust log-scale scatter, gross-outlier fraction). A
+    wrong WCS pairs stars with the wrong catalogue entries: scatter jumps
+    from ~0.04 to ~0.5+ and most pairs are off by > 0.3 in log. On 805
+    real subs the two populations did not overlap (good: gross p99 0.009;
+    bad: p10 0.62) — 2026-09-07."""
+    G, s = stars[:, 4], stars[:, 9]
+    m = (G >= mag_window[0]) & (G <= mag_window[1]) & np.isfinite(s) & (s > 0)
+    if m.sum() < 5:
+        return int(m.sum()), float("nan"), 1.0
+    g = np.log(s[m])
+    med = np.median(g)
+    return int(m.sum()), float(1.4826 * np.median(np.abs(g - med))), float(np.mean(np.abs(g - med) > 0.3))
+
+
+_MIN_WINDOW_STARS = 20
+_MAX_GROSS_FRACTION = 0.2
+
+
+def harvest_sub(path: str, out_dir: str, *, filter: str | None = "H",
+                search_tolerance_px: float = 12.0) -> tuple[np.ndarray, dict]:
+    """Run SPFC on one plate-solved raw sub → (stars, info).
+
+    `stars` is the (n, 10) table; `info` the pairing quality (`n_window`,
+    `scatter`, `gross`) and `good` — false for a clouded-out sub (too few
+    usable stars) or a wrong WCS (a stale sidecar solution), which the
+    caller must not store. Tolerance 12 px recovers the true pairs on an
+    accurate WCS (a ~4 px systematic offset sits right at the 4 px
+    default) with 0.0% gross outliers; `solve_star_flat`'s contamination
+    filter is the last line.
+    """
+    hdr = get_section(Path(path), "plate_solution")["data"]["header"]
+    stars = _run_spfc(path, out_dir, hdr, filter, search_tolerance_px)
+    n, scatter, gross = _match_quality(stars)
+    return stars, {"n_window": n, "scatter": scatter, "gross": gross,
+                   "good": n >= _MIN_WINDOW_STARS and gross < _MAX_GROSS_FRACTION}
+
+
+def gather_star_photometry(paths) -> np.ndarray:
+    """Stack the sidecar photometry of `paths` into `solve_star_flat`'s
+    (n, 11) layout (STAR_COLUMNS); `sub` is the position in `paths`, so
+    subs without a section simply leave their index unused. The colour
+    rides in the BP slot with RP = 0 (the solve uses BP − RP)."""
+    from metadata.star_photometry import read_star_photometry
+    rows = []
+    for i, p in enumerate(paths):
+        t = read_star_photometry(Path(p))
+        if t is None or len(t) == 0:
+            continue
+        z = np.zeros(len(t))
+        rows.append(np.column_stack([t[:, 0], t[:, 1], z, z, t[:, 2], t[:, 3], z,
+                                     t[:, 4], t[:, 5], t[:, 6], np.full(len(t), i)]))
+    return np.vstack(rows) if rows else np.empty((0, len(STAR_COLUMNS)))
 
 
 # ----------------------------------------------------------------------- solve

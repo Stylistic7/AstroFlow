@@ -10,6 +10,7 @@ from file_io.master_integration import read_master_integration_seconds
 from calibration.sensor_fingerprint import extract_defects
 import metadata.image_types as image_types
 from metadata.classes import ImageMetadata, MetadataDict, DefectsDict
+from metadata import star_photometry
 import plate_solving
 from dependency_graph import Graph
 from context import context
@@ -351,6 +352,18 @@ def compute_image_metadata(
     # `identify_camera_fingerprints`) don't pay the ~1.8 GB deserialize
     # cost in their worker heaps. See `metadata/classes.py:DefectsDict`.
     write_defect_candidates(filename, defect_candidates)
+
+    if plate_solve is None and plate_solution is not None:
+        # Raw subframe, solved: harvest its Gaia star photometry (SPFC) into
+        # its own sidecar section — the star flat's data. Best-effort and
+        # AFTER the metadata is banked: a PixInsight slot timeout must not
+        # cost the frame its sidecar; the section stays absent and the
+        # backfill sweep (`metadata/star_photometry_backfill.py`) retries.
+        try:
+            star_photometry.compute_star_photometry(filename)
+        except Exception as e:
+            log.warning("star photometry failed; the sweep will retry",
+                        filename=str(filename), error=str(e))
     return result
 
 

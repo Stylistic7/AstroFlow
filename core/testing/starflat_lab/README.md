@@ -39,3 +39,14 @@ numbers: memory `superflat-etalon-derived`.
   component (the etalon amplitude); the panel flat removes nothing.
 * Density: 1 star / 318 px², corners ~93% of centre; 128 px cells are
   S/N ~3.5 at the full library, 64 px needs the ±90° fix + übercal.
+
+## 2026-09-07 — v2 from the sidecar backfill
+
+Per-sub SPFC photometry now lives in every raw sub's sidecar (`star_photometry`
+section, written by `compute_image_metadata` after the plate solve; backfill with
+`python -m metadata.star_photometry_backfill`). `build_starflat.py` gathers every
+harvested 6200MM@350mm H sub, solves at 256/128/64 px cells, judges on held-out
+subs and writes the response/etalon FITS + master-flat XISF. `sky_texture.py`
+judges WBPP masters by nebula-poor sky texture in the etalon band — the judge
+that decides cell size (the 64 px map's own per-cell noise prints into a master;
+128 px won: 0.395% none → 0.338% v1 → 0.299% v2 at 256 px cells).
