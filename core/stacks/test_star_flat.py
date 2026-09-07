@@ -274,3 +274,12 @@ def test_override_serializer_passes_the_pinned_none_through():
     from web_server.backend.decisions import _serialize_choice
     assert _serialize_choice(NO_FLAT) == "none" and _serialize_choice("sf1") == "sf1"
     assert _serialize_choice(BinaryChoice.EXCLUDE) == BinaryChoice.EXCLUDE.value
+
+
+def test_build_refuses_unreadable_members_instead_of_minting_a_blank(tmp_path, monkeypatch):
+    """A worker whose share is still cold sees the member subs as missing;
+    that must fail the task (retried elsewhere), never build a 0-sub master."""
+    from stacks.star_flat import build_star_flat
+    sf = _star_flat(member_files=(str(tmp_path / "gone.fit"),))
+    with pytest.raises(FileNotFoundError, match="unreadable"):
+        build_star_flat._function(sf, CELLS, MAG_WINDOW)

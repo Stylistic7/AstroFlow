@@ -254,11 +254,20 @@ def solve_and_write(star_flat: StarFlatStack, dest, *, cells=CELLS, mag_window=M
     return quality
 
 
-@node(num_cpus=4)
+@node(num_cpus=4, resources={"diskcache": 0.001})
 def build_star_flat(star_flat: StarFlatStack, cells: tuple, mag_window: tuple) -> WithSidecar[XisfFilePath]:
     """The group's master flat (see `solve_and_write`). The solve settings
     are arguments so they sit in the cache key: a new cell size or window
-    rebuilds every master by itself."""
+    rebuilds every master by itself.
+
+    Head-pinned (`diskcache`): the build reads ~1,000 member sidecars, and a
+    freshly joined worker's share reports existing files as missing for a
+    while — boot 58 (2026-09-07) built 37 groups on the MBP with
+    subs_with_photometry=0. A missing member is an error here, never "no
+    photometry": the task fails and is retried instead of minting a blank."""
+    missing = [p for p in star_flat.member_files if not Path(p).exists()]
+    if missing:
+        raise FileNotFoundError(f"{len(missing)} of {star_flat.n_subs} member subs unreadable here, e.g. {missing[0]}")
     dest = build_star_flat.filename_fn(star_flat, cells, mag_window)
     solve_and_write(star_flat, dest, cells=cells, mag_window=mag_window)
     return WithSidecar(XisfFilePath(dest))
