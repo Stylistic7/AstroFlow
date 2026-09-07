@@ -22,8 +22,8 @@ from metadata.star_photometry import SCHEMA as PHOTOMETRY_SCHEMA, write_star_pho
 from plate_solving import PlateSolution
 from stacks.run import RunsDict
 from stacks.star_flat import (
-    MIN_SUBS, StarFlatCandidates, StarFlatStack, StarFlats, _focal_clusters, gate,
-    solve_adaptive, solve_and_write, star_flat_candidates,
+    CELLS, GATE_UNCERTAINTY_MAX, MAG_WINDOW, MIN_SPLIT_HALF, MIN_SUBS, StarFlatCandidates, StarFlatStack,
+    StarFlats, _focal_clusters, gate, passes_gate, solve_adaptive, solve_and_write, star_flat_candidates,
 )
 from stacks.test_starflat import H, W, _synth, _truth
 from stacks.types import StackHash, StackIdDependency
@@ -122,20 +122,22 @@ def _write_synthetic_subs(tmp_path, n_subs):
 
 def test_solve_adaptive_picks_the_finest_cell_within_the_noise_budget():
     stars, _ = _synth(seed=0, n_subs=24, stars_per_sub=1200, contaminated=())
-    sol, cell, r_raw, r_blob = solve_adaptive(stars, (H, W))
     # 24 x 1200 stars at 3% scatter: 128 px cells sit under the 0.15% budget, 64 px do not
+    sol, cell, r_raw, r_blob = solve_adaptive(stars, (H, W), cells=(256, 128, 64))
     assert cell == 128 and r_raw > 0.8
     sparse, _ = _synth(seed=0, n_subs=24, stars_per_sub=40, contaminated=())
-    sol2, cell2, _, _ = solve_adaptive(sparse, (H, W))
+    sol2, cell2, _, _ = solve_adaptive(sparse, (H, W), cells=(256, 128, 64))
     assert cell2 == 256                                           # too noisy for anything finer
+    assert CELLS == (256,)                                        # production: the user's call (2026-09-07)
 
 
 def test_solve_and_write_makes_a_wbpp_master_and_passes_the_gate(tmp_path):
     paths = _write_synthetic_subs(tmp_path, 30)
     sf = _star_flat(members=[Path(p).stem for p in paths], member_files=tuple(paths), width_pixels=W, height_pixels=H)
     dest = tmp_path / "out" / "flat.xisf"
-    q = solve_and_write(sf, dest)
-    assert q["good"] and q["n_subs"] == 30 and q["cell"] in (64, 128, 256)
+    # the synthetic detector holds only 12 cells at 256 px — too few for the split-half
+    q = solve_and_write(sf, dest, cells=(128,))
+    assert q["good"] and q["n_subs"] == 30 and q["cell"] == 128 and q["per_cell_uncertainty"] < GATE_UNCERTAINTY_MAX
     hdr = read_header(dest)
     assert str(hdr["STBLHASH"]) == sf.stable_hash and "master flat" in str(hdr["IMAGETYP"]).lower() and hdr["FILTER"] == "H"
     assert get_section(dest, sfm.SECTION)["good"] is True
@@ -160,10 +162,22 @@ def test_gate_keeps_only_good_masters(tmp_path):
     good = _write_synthetic_subs(tmp_path / "g", 30); bad = _write_synthetic_subs(tmp_path / "b", 5)
     sf_good = _star_flat(members=[Path(p).stem for p in good], member_files=tuple(good), width_pixels=W, height_pixels=H, stable_hash="good")
     sf_bad = _star_flat(members=[Path(p).stem for p in bad], member_files=tuple(bad), width_pixels=W, height_pixels=H, stable_hash="bad")
-    solve_and_write(sf_good, tmp_path / "good.xisf"); solve_and_write(sf_bad, tmp_path / "bad.xisf")
+    solve_and_write(sf_good, tmp_path / "good.xisf", cells=(128,)); solve_and_write(sf_bad, tmp_path / "bad.xisf")
     cands = StarFlatCandidates({StackHash("good"): sf_good, StackHash("bad"): sf_bad})
-    kept = gate(cands, [tmp_path / "good.xisf", tmp_path / "bad.xisf"])
+    rule = dict(min_subs=MIN_SUBS, min_split_half=MIN_SPLIT_HALF, max_uncertainty=GATE_UNCERTAINTY_MAX)
+    kept = gate(cands, [tmp_path / "good.xisf", tmp_path / "bad.xisf"], **rule)
     assert isinstance(kept, StarFlats) and list(kept) == ["good"]
+    assert list(gate(cands, [tmp_path / "good.xisf"], **{**rule, "max_uncertainty": 0.0001})) == []
+
+
+def test_gate_rule_needs_subs_agreement_and_low_noise():
+    ok = dict(n_subs=30, split_half_r=0.9, per_cell_uncertainty=0.001)
+    rule = dict(min_subs=25, min_split_half=0.8, max_uncertainty=0.005)
+    assert passes_gate(ok, **rule)
+    assert not passes_gate({**ok, "n_subs": 3}, **rule)                     # a 3-sub flat slipped through on 2026-09-07
+    assert not passes_gate({**ok, "split_half_r": float("nan")}, **rule)    # too few cells to judge
+    assert not passes_gate({**ok, "per_cell_uncertainty": 0.011}, **rule)   # long-FL groups: 0.6-1.1%
+    assert not passes_gate({"n_subs": 0, "reason": "too few subs with photometry"}, **rule)
 
 
 # ---------------------------------------------------------------- integration seams
@@ -175,11 +189,11 @@ def test_calibrate_dispatches_the_star_flat_producer(monkeypatch):
     calls = []
     monkeypatch.setattr(sel, "resolve_calibration", lambda s, c, d: s)
     monkeypatch.setattr(sel, "stack_files", lambda s, config, *m: calls.append(("wbpp", s.stable_hash)) or f"master:{s.stable_hash}")
-    monkeypatch.setattr(sfm, "build_star_flat", lambda s: calls.append(("star", s.stable_hash)) or f"master:{s.stable_hash}")
+    monkeypatch.setattr(sfm, "build_star_flat", lambda s, cells, window: calls.append(("star", s.stable_hash, cells)) or f"master:{s.stable_hash}")
     config = SimpleNamespace(get_calibration_stacks=lambda: {"dark1": dark, "sf1": sf}, decisions={})
     masters = sel.calibrate(light, config)
     assert masters == ["master:dark1", "master:sf1"]
-    assert ("star", "sf1") in calls and ("wbpp", "dark1") in calls and ("wbpp", "sf1") not in calls
+    assert ("star", "sf1", CELLS) in calls and ("wbpp", "dark1") in calls and ("wbpp", "sf1") not in calls
 
 
 def test_focal_length_and_index_treat_star_flats_specially():
@@ -241,9 +255,10 @@ def test_scatter_builds_one_master_per_candidate_then_gates_in_order():
     a, b = _star_flat(stable_hash="a"), _star_flat(stable_hash="b", members=("x", "y"))
     cands = StarFlatCandidates({StackHash("b"): b, StackHash("a"): a})
     graph = scatter_star_flats._function(cands)
-    builds = [(build_star_flat, a), (build_star_flat, b)]
+    builds = [(build_star_flat, a, CELLS, MAG_WINDOW), (build_star_flat, b, CELLS, MAG_WINDOW)]
     assert len(graph) == 3 and all(graph[t] == {} for t in builds)
-    assert graph[(mint_star_flats, cands)] == builds                    # ordered: a value-consuming collector
+    # ordered: a value-consuming collector; the rule's thresholds sit in its key
+    assert graph[(mint_star_flats, cands, MIN_SUBS, MIN_SPLIT_HALF, GATE_UNCERTAINTY_MAX)] == builds
 
 
 def test_merge_adds_the_gated_star_flats_to_the_calibration_stacks():

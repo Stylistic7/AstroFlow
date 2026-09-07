@@ -108,14 +108,14 @@ def calibrate(
 
     Returns the masters for `stack`'s OWN dependencies (sorted id order)
     — the exact set `_run_wbpp_stacking` will match by STBLHASH."""
-    from stacks.star_flat import StarFlatStack, build_star_flat
+    from stacks.star_flat import StarFlatStack, build_args, build_star_flat
     steps, top_ids = calibration_plan(stack, config)
     masters: dict[str, WithSidecar] = {}
     for cs, dep_ids in steps:
         if isinstance(cs, StarFlatStack):
             # Solved from photometry, not integrated: its own producer, keyed
             # on the group's membership (content_hash), no cal deps of its own.
-            masters[str(cs.stable_hash)] = build_star_flat(cs)
+            masters[str(cs.stable_hash)] = build_star_flat(*build_args(cs))
         else:
             masters[str(cs.stable_hash)] = stack_files(
                 cs, config, *(masters[i] for i in dep_ids),

@@ -55,11 +55,18 @@ from units import Celsius, Seconds
 
 log = structlog.get_logger()
 
-MIN_SUBS = 25                 # fewer solved lights than this: no candidate at all
+MIN_SUBS = 25                 # fewer solved lights than this: no candidate at all; fewer KEPT by
+                              # the solve: built but not offered (the user's sparse-group rule)
 MIN_SPLIT_HALF = 0.8          # odd/even-sub map agreement below this: built but not offered
 CELL_UNCERTAINTY_MAX = 0.0015 # log units; the finest cell whose per-cell noise stays under 0.15%
-CELLS = (256, 128, 64)        # 64 px won on held-out stars but printed its noise into masters
-                              # at 0.24%/cell (2026-09-07) — the uncertainty rule decides
+GATE_UNCERTAINTY_MAX = 0.005  # log units; noisier than 0.5% per cell (even at 256 px) prints its
+                              # cells into every stack — long-focal-length groups with few stars
+                              # per sub sat at 0.6–1.1% on 2026-09-07; they fall back to the old
+                              # defaults until more subs arrive
+CELLS = (256,)                # coarse-to-fine candidates; the finest under CELL_UNCERTAINTY_MAX wins.
+                              # 256 px only — the user's call from the convergence video (2026-09-07):
+                              # smooth, converges fast, no cell noise. Held-out stars preferred 128 px
+                              # (0.365% vs 0.453% residual) and 64 px printed noise into masters.
 MAG_WINDOW = (8.0, 13.5)      # forced photometry has no faint-star selection bias; SNR-weighted
 SECTION = "star_flat"         # the master's sidecar section: quality metrics for the gate
 
@@ -187,13 +194,13 @@ def identify_star_flats(
     return candidates
 
 
-def solve_adaptive(stars: np.ndarray, shape: tuple[int, int]) -> tuple:
-    """Solve at CELLS from coarse to fine and keep the finest cell whose
+def solve_adaptive(stars: np.ndarray, shape: tuple[int, int], cells=CELLS, mag_window=MAG_WINDOW) -> tuple:
+    """Solve at `cells` from coarse to fine and keep the finest cell whose
     median per-cell uncertainty stays under CELL_UNCERTAINTY_MAX.
     Returns (solution, cell, r_raw, r_blob)."""
     best = None
-    for cell in CELLS:
-        sol = solve_star_flat(stars, shape, cell=cell, mag_window=MAG_WINDOW)
+    for cell in cells:
+        sol = solve_star_flat(stars, shape, cell=cell, mag_window=mag_window)
         unc = float(np.nanmedian(sol.uncertainty)) if np.isfinite(sol.uncertainty).any() else float("inf")
         if best is None or unc <= CELL_UNCERTAINTY_MAX:
             best = (sol, cell)
@@ -204,23 +211,38 @@ def solve_adaptive(stars: np.ndarray, shape: tuple[int, int]) -> tuple:
     return sol, cell, r_raw, r_blob
 
 
-def solve_and_write(star_flat: StarFlatStack, dest) -> dict:
+def passes_gate(quality: dict, *, min_subs: int, min_split_half: float, max_uncertainty: float) -> bool:
+    """The rule a built master must meet to be offered as the default flat."""
+    return (int(quality.get("n_subs", 0)) >= min_subs
+            and float(quality.get("split_half_r", float("nan"))) >= min_split_half
+            and float(quality.get("per_cell_uncertainty", float("inf"))) <= max_uncertainty)
+
+
+def _passes(quality: dict) -> bool:
+    return passes_gate(quality, min_subs=MIN_SUBS, min_split_half=MIN_SPLIT_HALF,
+                       max_uncertainty=GATE_UNCERTAINTY_MAX)
+
+
+def solve_and_write(star_flat: StarFlatStack, dest, *, cells=CELLS, mag_window=MAG_WINDOW) -> dict:
     """Solve the group, write `dest` as a WBPP-ready Master Flat XISF
     carrying the star flat's STBLHASH, and record the quality metrics in
-    its sidecar (`SECTION`) for the gate. Returns the metrics."""
+    its sidecar (`SECTION`); `good` there is informational (UI, logs) — the
+    gate itself is applied in `mint_star_flats`, whose thresholds sit in its
+    cache key. Returns the metrics."""
     stars = gather_star_photometry([Path(p) for p in star_flat.member_files])
     n_with = int(len(np.unique(stars[:, 10]))) if len(stars) else 0
     shape = (star_flat.height_pixels, star_flat.width_pixels)
     log.info("building star flat", stack=str(star_flat), subs_with_photometry=n_with, stars=len(stars))
     if n_with < MIN_SUBS:
         response = np.ones(shape, np.float32)
-        quality = {"n_subs": n_with, "good": False, "reason": "too few subs with photometry"}
+        quality = {"n_subs": n_with, "reason": "too few subs with photometry"}
     else:
-        sol, cell, r_raw, r_blob = solve_adaptive(stars, shape)
+        sol, cell, r_raw, r_blob = solve_adaptive(stars, shape, cells, mag_window)
         response = response_image(sol, smooth_sigma_cells=0.7)
         quality = {"n_subs": len(sol.kept_subs), "cell": cell, "split_half_r": r_raw, "split_half_blob": r_blob,
                    "per_cell_uncertainty": float(np.nanmedian(sol.uncertainty)), "colour_term": sol.colour_term,
-                   "residual_scatter": sol.residual_scatter, "good": bool(np.isfinite(r_raw) and r_raw >= MIN_SPLIT_HALF)}
+                   "residual_scatter": sol.residual_scatter}
+    quality["good"] = _passes(quality)
     Path(dest).parent.mkdir(parents=True, exist_ok=True)
     write_master_flat(response, dest, {
         "IMAGETYP": "Master Flat", "FILTER": star_flat.filter or "", "INSTRUME": star_flat.camera,
@@ -233,20 +255,30 @@ def solve_and_write(star_flat: StarFlatStack, dest) -> dict:
 
 
 @node(num_cpus=4)
-def build_star_flat(star_flat: StarFlatStack) -> WithSidecar[XisfFilePath]:
-    """The group's master flat (see `solve_and_write`)."""
-    dest = build_star_flat.filename_fn(star_flat)
-    solve_and_write(star_flat, dest)
+def build_star_flat(star_flat: StarFlatStack, cells: tuple, mag_window: tuple) -> WithSidecar[XisfFilePath]:
+    """The group's master flat (see `solve_and_write`). The solve settings
+    are arguments so they sit in the cache key: a new cell size or window
+    rebuilds every master by itself."""
+    dest = build_star_flat.filename_fn(star_flat, cells, mag_window)
+    solve_and_write(star_flat, dest, cells=cells, mag_window=mag_window)
     return WithSidecar(XisfFilePath(dest))
 
 
-def gate(candidates: StarFlatCandidates, master_paths) -> StarFlats:
-    """The candidates whose built master passed the gate."""
+def build_args(star_flat: StarFlatStack) -> tuple:
+    """`build_star_flat`'s full argument tuple for this star flat — every
+    caller (graph, calibrate, previews) must key the same way."""
+    return (star_flat, CELLS, MAG_WINDOW)
+
+
+def gate(candidates: StarFlatCandidates, master_paths, *, min_subs: int, min_split_half: float,
+         max_uncertainty: float) -> StarFlats:
+    """The candidates whose built master's recorded metrics pass the rule."""
     out = StarFlats()
     for path in master_paths:
         sid = StackHash(str(read_header(Path(path))["STBLHASH"]))
         q = get_section(Path(path), SECTION) or {}
-        if sid in candidates and q.get("good"):
+        if sid in candidates and passes_gate(q, min_subs=min_subs, min_split_half=min_split_half,
+                                             max_uncertainty=max_uncertainty):
             out[sid] = candidates[sid]
         else:
             log.info("star flat not offered", stack=sid, quality=q)
@@ -254,17 +286,23 @@ def gate(candidates: StarFlatCandidates, master_paths) -> StarFlats:
 
 
 @node
-def mint_star_flats(candidates: StarFlatCandidates, *masters: WithSidecar) -> StarFlats:
-    return gate(candidates, [m.path for m in masters])
+def mint_star_flats(candidates: StarFlatCandidates, min_subs: int, min_split_half: float,
+                    max_uncertainty: float, *masters: WithSidecar) -> StarFlats:
+    """The thresholds are arguments (not module constants read inside) so
+    that tightening the rule re-keys this node by itself; the masters stay
+    cached."""
+    return gate(candidates, [m.path for m in masters], min_subs=min_subs,
+                min_split_half=min_split_half, max_uncertainty=max_uncertainty)
 
 
 @ray.remote(num_cpus=0.1)
 def scatter_star_flats(candidates: StarFlatCandidates) -> Graph:
     """One build per candidate, then the gate. The subgraph's result (the
     StarFlats) flows on to the spatial-group scatter as an ancestor."""
-    builds = [(build_star_flat, candidates[k]) for k in sorted(candidates)]
+    builds = [(build_star_flat, *build_args(candidates[k])) for k in sorted(candidates)]
     graph = Graph({b: {} for b in builds})
-    graph[(mint_star_flats, candidates)] = builds        # ordered: value-consuming collector
+    collector = (mint_star_flats, candidates, MIN_SUBS, MIN_SPLIT_HALF, GATE_UNCERTAINTY_MAX)
+    graph[collector] = builds                            # ordered: value-consuming collector
     return graph
 
 
@@ -278,5 +316,5 @@ def merge_star_flats(star_flats: StarFlats, cal_stacks: CalibrationStacksDict) -
 def star_flat_master_path(star_flat: StarFlatStack) -> Path | None:
     """The built master's path when it exists in the cache, else None
     (previews must never trigger a build)."""
-    hit, value = build_star_flat.cached_value(star_flat)
+    hit, value = build_star_flat.cached_value(*build_args(star_flat))
     return Path(value.path) if hit and value is not None else None

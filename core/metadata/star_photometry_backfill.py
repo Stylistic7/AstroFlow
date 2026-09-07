@@ -22,6 +22,7 @@ from pathlib import Path
 
 import structlog
 
+from metadata.image_types import is_light_frame, is_master
 from metadata.star_photometry import SCHEMA, SECTION, compute_star_photometry
 
 log = structlog.get_logger()
@@ -32,21 +33,23 @@ def _pending(roots: list[Path]) -> list[Path]:
     """Solved raw lights without a current section, in priority order."""
     todo = []
     for root in roots:
-        for sidecar in root.rglob("Light*.fit.json"):
+        for sidecar in root.rglob("*.json"):
             sub = sidecar.with_suffix("")
-            if not sub.exists():
+            if sub.suffix.lower() not in (".fit", ".fits", ".xisf") or not sub.exists():
                 continue
             try:
                 sc = json.load(open(sidecar)).get("astroflow", {})
             except (OSError, ValueError):
                 continue
+            h = (sc.get("image_metadata") or {}).get("header", {})
+            if not is_light_frame(h) or is_master(h):     # by header, not by file name: the
+                continue                                   # Starbase/QHY lights are not "Light_*"
             done = sc.get(SECTION) or {}
             if done.get("schema") == SCHEMA and (done.get("data") is not None
                                                  or done.get("reason") != "no_plate_solution"):
                 continue
             if not (sc.get("plate_solution") or {}).get("data"):
                 continue
-            h = (sc.get("image_metadata") or {}).get("header", {})
             cam = str(h.get("INSTRUME", "")); fl = float(h.get("FOCALLEN", 0) or 0)
             f = str(h.get("FILTER", "")).strip().upper()[:1]
             todo.append(((0 if "6200" in cam else 1, 0 if 340 <= fl <= 360 else 1,
