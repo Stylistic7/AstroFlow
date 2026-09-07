@@ -388,3 +388,37 @@ def test_lazy_thumbnails_regenerate_on_miss(client, with_orion_mosaic):
             break
 
     assert saw_stack and saw_run, "did not exercise both regen shapes"
+
+
+def test_flats_route_offers_star_flats_first(client):
+    """The manual flat picker: the group's star flat(s) leftmost, then the
+    explicit masters, all restricted to this sensor, filter and optical
+    train — the same candidate set `resolve_calibration` considers."""
+    import datetime
+    from frozendict import frozendict
+    from context import context
+    from stacks.composite_stack import CalibrationStack, CalibrationStacksDict
+    from stacks.run import RunsDict
+    from stacks.star_flat import StarFlatStack
+    from stacks.types import StackHash
+    from units import Celsius, Seconds
+
+    def _flat(cls, sid, **kw):
+        fields = dict(content_hash=sid, image_type="flat", camera="cam", filter="H", mean_temperature=Celsius(-10.0),
+                      exposure=Seconds(1.0), integration=Seconds(0.0), width_pixels=1080, height_pixels=720,
+                      stable_hash=sid, oldest_date=datetime.datetime(2026, 1, 1), newest_date=datetime.datetime(2026, 1, 2),
+                      state=frozendict(), contents=RunsDict(), camera_id_hash=None)
+        fields.update(kw)
+        return cls(**fields)
+
+    context.calibration_stacks = CalibrationStacksDict({
+        StackHash("explicit"): _flat(CalibrationStack, "explicit"),                      # no FOCALLEN: wildcard
+        StackHash("star350"): _flat(StarFlatStack, "star350", focal_length=350.0, member_files=("/a", "/b")),
+        StackHash("star1230"): _flat(StarFlatStack, "star1230", focal_length=1230.0, member_files=("/c", "/d")),
+        StackHash("starS"): _flat(StarFlatStack, "starS", filter="S", focal_length=350.0, member_files=("/e", "/f")),
+        StackHash("other"): _flat(CalibrationStack, "other", width_pixels=6248, height_pixels=4176),
+    })
+    assert client.get("/api/flats/1080/720/H?focal_length=351").get_json() == ["star350", "explicit"]
+    assert client.get("/api/flats/1080/720/H").get_json() == ["star350", "star1230", "explicit"]
+    assert client.get("/api/flats/1080/720/S?focal_length=350").get_json() == ["starS"]
+    assert client.get("/api/flats/1080/720/O").get_json() == []

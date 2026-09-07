@@ -312,11 +312,13 @@ def catalog_entries():
 @app.route("/api/decision_overrides")
 def decision_overrides():
     """Return all decision overrides for the frontend to resolve locally."""
-    from web_server.backend.decisions import _serialize_key
+    from web_server.backend.decisions import _serialize_key, _serialize_choice
     overrides = context.settings.decision_overrides or {}
     return {
         "overrides": [
-            {"key": _serialize_key(k), "choice": v.choice.value}
+            # Calibration choices are plain strings (a stack hash, a path,
+            # or "none"); only the binary decisions carry an enum.
+            {"key": _serialize_key(k), "choice": _serialize_choice(v.choice)}
             for k, v in overrides.items()
         ]
     }
@@ -414,14 +416,17 @@ def flats_for_sensor_and_filter(width, height, filter):
     sensor = (int(width), int(height))
     raw = request.args.get("focal_length")
     target_focal = float(raw) if raw not in (None, "", "null") else None
-    return [
-        k
+    matching = [
+        (k, s)
         for k, s in context.calibration_stacks.items()
         if s.image_type == "flat"
         and (s.width_pixels, s.height_pixels) == sensor
         and s.filter == filter  # calibration_stacks holds real Run objects
         and same_optical_train(target_focal, focal_length_of(s))
     ]
+    # Star flats first (the default), then the explicit masters.
+    return ([k for k, s in matching if getattr(s, "kind", None) == "star"]
+            + [k for k, s in matching if getattr(s, "kind", None) != "star"])
 
 
 @app.route("/api/ray/status")

@@ -29,8 +29,8 @@ def _synth(seed=0, n_subs=24, stars_per_sub=1200, contaminated=(5,)):
             bad = rng.random(stars_per_sub) < 0.5
             scale[bad] *= rng.uniform(0.3, 3.0, bad.sum())
         fwhm = 1.6 + rng.normal(0, 0.15, stars_per_sub)        # realistic scatter; a constant FWHM once broke the 97th-pct cut
-        rows.append(np.column_stack([x, y, x * 0, y * 0, G, col, col * 0, fwhm,
-                                     scale * 1e4, scale, np.full(stars_per_sub, s)]))
+        rows.append(np.column_stack([x, y, x * 0, y * 0, G, col, fwhm,
+                                     scale * 1e4, scale, np.full(stars_per_sub, 100.0), np.full(stars_per_sub, s)]))
     return np.vstack(rows), c_true
 
 

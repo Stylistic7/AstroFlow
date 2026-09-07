@@ -1,23 +1,23 @@
 """Backfill `star_photometry` sidecar sections for every plate-solved raw
-subframe that lacks one. Serial on the local PixInsight slot (~5-15 s per
-sub); resume-safe — a section already present is skipped, so a killed run
-just picks up where it stopped.
+subframe that lacks a current one. The engine is PixInsight-free forced
+photometry (`photometry.harvest`), ~0.4 s per sub and embarrassingly
+parallel: a worker pool over subs, each worker holding the Gaia catalogue.
+Resume-safe — a section already present is skipped.
 
 Priority order banks the most star-flat value first: the ASI6200MM at
 350 mm, H → S → O → L → R → G → B, then everything else.
 
-    .venv/bin/python -m metadata.star_photometry_backfill [ROOT ...] [--limit N] [--dry-run]
+    .venv/bin/python -m metadata.star_photometry_backfill [ROOT ...] [--workers N (default: every core)] [--limit N] [--dry-run]
 """
-import os
-# SPFC runs are serialized behind one slot; the default 300 s acquire timeout
-# is for the app's mixed workload, not a night-long queue of one caller.
-os.environ.setdefault("ASTROFLOW_PIX_SLOT_ACQUIRE_TIMEOUT", "3600")
-
 import argparse
-import hashlib
+import os
+# One numpy thread per worker: the pool already fills every core, and each
+# worker's own BLAS/Accelerate pool on top of that is pure oversubscription.
+for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+    os.environ.setdefault(_v, "1")
 import json
-import signal
 import time
+from multiprocessing import Pool
 from pathlib import Path
 
 import structlog
@@ -55,55 +55,47 @@ def _pending(roots: list[Path]) -> list[Path]:
     return [sub for _, sub in todo]
 
 
+def _one(sub: Path) -> tuple[str, int, str]:
+    t0 = time.time()
+    try:
+        t = compute_star_photometry(sub)
+        return sub.name, 0 if t is None else len(t), f"{time.time() - t0:.2f}s"
+    except Exception as e:
+        return sub.name, -1, str(e)[:200]
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("roots", nargs="*", default=["/Volumes/AstroRaw/Raw"])
+    ap.add_argument("--workers", type=int, default=os.cpu_count())
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--dry-run", action="store_true")
-    ap.add_argument("--shard", default="0/1", help="k/n: this machine's share of the subs (by path hash), "
-                    "so machines with their own PixInsight work disjoint sets")
     args = ap.parse_args()
 
-    k, n = (int(v) for v in args.shard.split("/"))
-    subs = [s for s in _pending([Path(r) for r in args.roots])
-            if int(hashlib.sha1(str(s).encode()).hexdigest(), 16) % n == k]
+    subs = _pending([Path(r) for r in args.roots])
     if args.limit:
         subs = subs[:args.limit]
-    log.info("star photometry backfill", pending=len(subs))
+    log.info("star photometry backfill", pending=len(subs), workers=args.workers)
     if args.dry_run:
         for s in subs[:20]:
             print(s)
         return
 
-    # SIGUSR1 toggles a pause BETWEEN subs (never mid-SPFC), lending the
-    # PixInsight slot to another caller: this run holds it for hours and
-    # re-acquires within milliseconds, starving anyone else.
-    paused = [False]
-    signal.signal(signal.SIGUSR1, lambda *_: paused.__setitem__(0, not paused[0]))
-
     done = failed = 0
     t_start = time.time()
-    for i, sub in enumerate(subs, 1):
-        if paused[0]:
-            log.info("paused (SIGUSR1); slot released until the next SIGUSR1")
-            while paused[0]:
-                time.sleep(1)
-            log.info("resumed")
-        t0 = time.time()
-        try:
-            t = compute_star_photometry(sub)
-            done += 1
-            log.info("backfilled", i=i, of=len(subs), n=0 if t is None else len(t),
-                     secs=round(time.time() - t0, 1), sub=sub.name)
-        except Exception as e:
-            failed += 1
-            log.warning("backfill failed (will retry next run)", i=i, sub=str(sub), error=str(e)[:200])
-        if i % 50 == 0:
-            rate = (time.time() - t_start) / i
-            log.info("progress", done=done, failed=failed, remaining=len(subs) - i,
-                     secs_per_sub=round(rate, 1), eta_h=round(rate * (len(subs) - i) / 3600, 1))
+    with Pool(args.workers) as pool:
+        for i, (name, n, note) in enumerate(pool.imap_unordered(_one, subs, chunksize=4), 1):
+            if n < 0:
+                failed += 1
+                log.warning("backfill failed (will retry next run)", sub=name, error=note)
+            else:
+                done += 1
+            if i % 200 == 0 or i == len(subs):
+                rate = (time.time() - t_start) / i
+                log.info("progress", done=done, failed=failed, remaining=len(subs) - i,
+                         secs_per_sub=round(rate, 2), eta_min=round(rate * (len(subs) - i) / 60, 1))
     log.info("star photometry backfill finished", done=done, failed=failed,
-             hours=round((time.time() - t_start) / 3600, 2))
+             minutes=round((time.time() - t_start) / 60, 1))
 
 
 if __name__ == "__main__":

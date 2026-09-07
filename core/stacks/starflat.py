@@ -38,90 +38,55 @@ Conventions that were each learned the hard way:
 """
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 from scipy.ndimage import gaussian_filter, zoom
 
-from file_io.generic import read_image_geometry
-from file_io.sidecar import get_section
 
 # Column order of a harvested star table (float64 rows).
-STAR_COLUMNS = ("x", "y", "ra", "dec", "G", "BP", "RP", "fwhm", "signal", "scale", "sub")
+STAR_COLUMNS = ("x", "y", "ra", "dec", "G", "colour", "fwhm", "signal", "scale", "snr", "sub")
+# Per-star noise model for the joint solve: an astrophysical/systematic floor
+# plus photon noise (log units ~ 1/SNR). Faint stars from a deep catalogue then
+# add information in proportion instead of diluting the bright ones.
+SIGMA_FLOOR = 0.03
 MASTER_FLAT_NAME = "masterFlat_BIN-1_{w}x{h}_FILTER-{f}_mono.xisf"
 
 
-# --------------------------------------------------------------------- harvest
-def _run_spfc(path: str, out_dir: str, hdr: dict, filter: str | None,
-              search_tolerance_px: float) -> np.ndarray:
-    """SPFC on `path` under the WCS `hdr`, per-star text export parsed into an
-    (n, 10) array in STAR_COLUMNS order (without `sub`). The XISF SPFC writes
-    is removed (it is only the vehicle for execution)."""
-    from pix.image import Image
-    from pix.tasks import SpectrophotometricFluxCalibration, WriteAstrometricSolution
-
-    os.makedirs(out_dir, exist_ok=True)
-    img = WriteAstrometricSolution(Image.open(path, filter=filter), hdr)
-    SpectrophotometricFluxCalibration(
-        img, generateTextFiles=True, outputDirectory=out_dir,
-        psfSearchTolerance=search_tolerance_px,
-    ).save_to(os.path.join(out_dir, "out.xisf"))
-    try:
-        os.remove(os.path.join(out_dir, "out.xisf"))
-    except OSError:
-        pass
-    a = np.genfromtxt(os.path.join(out_dir, "SPFC-data-0.csv"), delimiter=",", names=True).reshape(-1)
-    return np.column_stack([
-        a["x"], a["y"], a["alpha"], a["delta"], a["mag_G"], a["mag_BP"], a["mag_RP"],
-        (a["img_fwhmx"] + a["img_fwhmy"]) / 2, a["img_signal"], a["scale"],
-    ])
-
-
-def _match_quality(stars: np.ndarray, mag_window=(8.0, 12.0)) -> tuple[int, float, float]:
-    """(n in window, robust log-scale scatter, gross-outlier fraction). A
-    wrong WCS pairs stars with the wrong catalogue entries: scatter jumps
-    from ~0.04 to ~0.5+ and most pairs are off by > 0.3 in log. On 805
-    real subs the two populations did not overlap (good: gross p99 0.009;
-    bad: p10 0.62) — 2026-09-07."""
-    G, s = stars[:, 4], stars[:, 9]
-    m = (G >= mag_window[0]) & (G <= mag_window[1]) & np.isfinite(s) & (s > 0)
+# ----------------------------------------------------------------- harvested data
+def _match_quality(stars: np.ndarray, mag_window=(8.0, 13.5)) -> tuple[int, float, float]:
+    """(n in window, robust log-scale scatter, gross-outlier fraction), the
+    scatter and gross fraction about a linear colour term, over the stored
+    magnitude range (a 300 s broadband frame saturates everything brighter
+    than G~11, so a gate on 8-12 alone starves). A wrong WCS measures noise
+    at every position: scatter jumps from ~0.04 to 0.5+. On 805 real subs
+    the two populations did not overlap — 2026-09-07."""
+    G, col, s = stars[:, 4], stars[:, 5], stars[:, 8]
+    m = (G >= mag_window[0]) & (G <= mag_window[1]) & np.isfinite(s) & (s > 0) & np.isfinite(col)
     if m.sum() < 5:
         return int(m.sum()), float("nan"), 1.0
-    g = np.log(s[m])
-    med = np.median(g)
-    return int(m.sum()), float(1.4826 * np.median(np.abs(g - med))), float(np.mean(np.abs(g - med) > 0.3))
+    # judge the residual about a linear colour term: a broadband passband that
+    # mismatches the real one (PI's flat "ideal QE" L) spreads the scales by
+    # colour, which is not a pairing error
+    g = np.log(s[m]); c = col[m]
+    a, b = np.polyfit(c, g, 1)
+    r = g - (a * c + b)
+    med = np.median(r)
+    return int(m.sum()), float(1.4826 * np.median(np.abs(r - med))), float(np.mean(np.abs(r - med) > 0.3))
 
 
 _MIN_WINDOW_STARS = 20
-_MAX_GROSS_FRACTION = 0.2
-
-
-def harvest_sub(path: str, out_dir: str, *, filter: str | None = "H",
-                search_tolerance_px: float = 12.0) -> tuple[np.ndarray, dict]:
-    """Run SPFC on one plate-solved raw sub → (stars, info).
-
-    `stars` is the (n, 10) table; `info` the pairing quality (`n_window`,
-    `scatter`, `gross`) and `good` — false for a clouded-out sub (too few
-    usable stars) or a wrong WCS (a stale sidecar solution), which the
-    caller must not store. Tolerance 12 px recovers the true pairs on an
-    accurate WCS (a ~4 px systematic offset sits right at the 4 px
-    default) with 0.0% gross outliers; `solve_star_flat`'s contamination
-    filter is the last line.
-    """
-    hdr = get_section(Path(path), "plate_solution")["data"]["header"]
-    stars = _run_spfc(path, out_dir, hdr, filter, search_tolerance_px)
-    n, scatter, gross = _match_quality(stars)
-    return stars, {"n_window": n, "scatter": scatter, "gross": gross,
-                   "good": n >= _MIN_WINDOW_STARS and gross < _MAX_GROSS_FRACTION}
+# Forced photometry has no partially-wrong pairing: a bad WCS makes EVERY star
+# garbage (scatter 0.5-1.3 in log), a good sub sits at 0.03-0.06 and a long
+# focal length with 8-10 px PSFs at ~0.1-0.2. Gate on the scatter itself.
+_MAX_SCATTER = 0.25
 
 
 def gather_star_photometry(paths) -> np.ndarray:
     """Stack the sidecar photometry of `paths` into `solve_star_flat`'s
     (n, 11) layout (STAR_COLUMNS); `sub` is the position in `paths`, so
-    subs without a section simply leave their index unused. The colour
-    rides in the BP slot with RP = 0 (the solve uses BP − RP)."""
+    subs without a section simply leave their index unused."""
     from metadata.star_photometry import read_star_photometry
     rows = []
     for i, p in enumerate(paths):
@@ -129,8 +94,8 @@ def gather_star_photometry(paths) -> np.ndarray:
         if t is None or len(t) == 0:
             continue
         z = np.zeros(len(t))
-        rows.append(np.column_stack([t[:, 0], t[:, 1], z, z, t[:, 2], t[:, 3], z,
-                                     t[:, 4], t[:, 5], t[:, 6], np.full(len(t), i)]))
+        rows.append(np.column_stack([t[:, 0], t[:, 1], z, z, t[:, 2], t[:, 3],
+                                     t[:, 4], t[:, 5], t[:, 6], t[:, 7], np.full(len(t), i)]))
     return np.vstack(rows) if rows else np.empty((0, len(STAR_COLUMNS)))
 
 
@@ -150,71 +115,69 @@ class StarFlatSolution:
     n_stars: int = 0
 
 
-def _rmean(v: np.ndarray, w: np.ndarray) -> float:
-    m = np.median(v)
-    s = 1.4826 * np.median(np.abs(v - m)) + 1e-9
-    hw = w * np.minimum(1.0, 1.5 * s / (np.abs(v - m) + 1e-12))
-    return float(np.sum(hw * v) / np.sum(hw))
+def _wmean_by(idx: np.ndarray, v: np.ndarray, w: np.ndarray, n: int) -> np.ndarray:
+    """Weighted mean of v per index (0..n-1); 0 where a group has no weight."""
+    den = np.bincount(idx, weights=w, minlength=n)
+    num = np.bincount(idx, weights=w * v, minlength=n)
+    return np.where(den > 0, num / np.where(den > 0, den, 1.0), 0.0)
 
 
 def solve_star_flat(stars: np.ndarray, shape: tuple[int, int], *, cell: int = 256,
                     mag_window: tuple[float, float] = (8.0, 12.0), min_stars_per_sub: int = 100,
                     contamination_fraction: float = 0.05, iterations: int = 8) -> StarFlatSolution:
-    """Joint solve  log(scale) = F(cell) + K[sub] + c * (BP-RP)  by robust alternation.
+    """Joint solve  log(scale) = F(cell) + K[sub] + c * colour  by robust alternation.
 
-    Huber weights, hard rejection of |residual| > 5 sigma (catalog mismatches
-    are x2-x4 off), then any sub with more than `contamination_fraction`
-    gross outliers is dropped entirely and the solve is repeated on the clean
-    set. `stars` is an (n, 11) array in STAR_COLUMNS order.
+    Noise weights 1 / (SIGMA_FLOOR^2 + 1/SNR^2) times Huber weights on the
+    global residual scale, hard rejection of |residual| > 5 sigma (catalog
+    mismatches are x2-x4 off), then any sub with more than
+    `contamination_fraction` gross outliers is dropped entirely and the solve
+    is repeated on the clean set. Every group statistic is a `bincount`, so
+    the cost is O(stars) per iteration whatever the cell size. `stars` is an
+    (n, 11) array in STAR_COLUMNS order.
     """
     H, W = shape
-    x, y, G, BP, RP, fwhm, sc, sid = (stars[:, i] for i in (0, 1, 4, 5, 6, 7, 9, 10))
+    x, y, G, col, fwhm, sc, snr, sid = (stars[:, i] for i in (0, 1, 4, 5, 6, 8, 9, 10))
     sid = sid.astype(int)
-    col = BP - RP
+    w0 = 1.0 / (SIGMA_FLOOR ** 2 + 1.0 / np.maximum(np.nan_to_num(snr), 1.0) ** 2)
+    w0 = w0 / w0.max()
     t = np.log(np.where(sc > 0, sc, np.nan))
-    n_of = {int(s): int((sid == s).sum()) for s in np.unique(sid)}
+    n_of = np.bincount(sid)
     # `<=`: a strict `<` on a degenerate (constant) FWHM distribution rejects EVERY star.
     ok = (np.isfinite(t) & (col > -0.5) & (col < 3.5) & (fwhm <= np.nanpercentile(fwhm, 97))
-          & (G >= mag_window[0]) & (G <= mag_window[1])
-          & np.array([n_of[int(s)] >= min_stars_per_sub for s in sid]))
-    x, y, col, t, sid = x[ok], y[ok], col[ok], t[ok], sid[ok]
+          & (G >= mag_window[0]) & (G <= mag_window[1]) & (n_of[sid] >= min_stars_per_sub))
+    x, y, col, t, sid, w0 = x[ok], y[ok], col[ok], t[ok], sid[ok], w0[ok]
     nx, ny = W // cell + 1, H // cell + 1
     cells = (np.clip(y.astype(int), 0, H - 1) // cell) * nx + (np.clip(x.astype(int), 0, W - 1) // cell)
 
-    def _solve(x, col, t, sid, cells, iters):
-        subs = np.unique(sid)
-        K = {int(s): float(np.median(t[sid == s])) for s in subs}
-        c, w, f = 0.0, np.ones_like(t), np.zeros(nx * ny)
-        res, sr = t, 1.0
+    def _solve(col, t, sid, cells, w0, iters):
+        usub, sidx = np.unique(sid, return_inverse=True)
+        nsub = len(usub)
+        K = _wmean_by(sidx, t, np.ones_like(t), nsub)
+        c, w = 0.0, w0.copy()
         for _ in range(iters):
-            r = t - np.array([K[int(s)] for s in sid]) - c * col
-            for ci in np.unique(cells):
-                m = cells == ci
-                f[ci] = _rmean(r[m], w[m])
-            A = np.vstack([col, np.ones_like(col)]).T
-            c = float(np.linalg.lstsq(A * w[:, None], (t - f[cells] - np.array([K[int(s)] for s in sid])) * w, rcond=None)[0][0])
-            for s in subs:
-                m = sid == s
-                K[int(s)] = _rmean(t[m] - f[cells[m]] - c * col[m], w[m])
-            res = t - f[cells] - np.array([K[int(s)] for s in sid]) - c * col
+            f = _wmean_by(cells, t - K[sidx] - c * col, w, nx * ny)
+            r = t - f[cells] - K[sidx]
+            cm = np.sum(w * col) / np.sum(w); rm = np.sum(w * r) / np.sum(w)
+            c = float(np.sum(w * (col - cm) * (r - rm)) / max(np.sum(w * (col - cm) ** 2), 1e-12))
+            K = _wmean_by(sidx, t - f[cells] - c * col, w, nsub)
+            res = t - f[cells] - K[sidx] - c * col
             sr = 1.4826 * float(np.median(np.abs(res)))
-            w = np.minimum(1.0, 2.5 * sr / (np.abs(res) + 1e-12))
+            w = w0 * np.minimum(1.0, 2.5 * sr / (np.abs(res) + 1e-12))
             w[np.abs(res) > 5 * sr] = 0.0
-        return K, c, f, res, sr
+        return {int(s): float(k) for s, k in zip(usub, K)}, c, f, res, sr, w
 
-    K, c, f, res, sr = _solve(x, col, t, sid, cells, iterations)
+    K, c, f, res, sr, w = _solve(col, t, sid, cells, w0, iterations)
     gross = np.abs(res) > 5 * sr
-    dropped = sorted(int(s) for s in np.unique(sid) if gross[sid == s].mean() > contamination_fraction)
+    usub, sidx = np.unique(sid, return_inverse=True)
+    gross_frac = np.bincount(sidx, weights=gross.astype(float)) / np.bincount(sidx)
+    dropped = sorted(int(s) for s in usub[gross_frac > contamination_fraction])
     keep = ~gross & ~np.isin(sid, dropped)
-    x, col, t, sid, cells = x[keep], col[keep], t[keep], sid[keep], cells[keep]
-    K, c, f, res, sr = _solve(x, col, t, sid, cells, 3)
+    x, y, col, t, sid, cells, w0 = x[keep], y[keep], col[keep], t[keep], sid[keep], cells[keep], w0[keep]
+    K, c, f, res, sr, w = _solve(col, t, sid, cells, w0, 3)
 
-    rr = t - np.array([K[int(s)] for s in sid]) - c * col
-    F, N = np.full(nx * ny, np.nan), np.zeros(nx * ny)
-    for ci in np.unique(cells):
-        m = cells == ci
-        if m.sum() >= 3:
-            F[ci], N[ci] = np.median(rr[m]), m.sum()
+    rr = t - np.array([K[int(s)] for s in np.unique(sid)])[np.unique(sid, return_inverse=True)[1]] - c * col
+    N = np.bincount(cells, minlength=nx * ny).astype(float)
+    F = np.where(N >= 3, _wmean_by(cells, rr, w, nx * ny), np.nan)
     F, N = F.reshape(ny, nx), N.reshape(ny, nx)
     unc = np.where(N > 0, sr / np.sqrt(np.maximum(N, 1)), np.nan)
     return StarFlatSolution(cell=cell, shape=shape, log_gain=F, counts=N, uncertainty=unc,
@@ -232,25 +195,22 @@ def split_half(stars: np.ndarray, sol: StarFlatSolution) -> tuple[float, float]:
     N = residual/sqrt(stars per cell) predicts it well.
     """
     H, W = sol.shape
-    x, y, BP, RP, sc, sid = (stars[:, i] for i in (0, 1, 5, 6, 9, 10))
+    x, y, col, sc, sid = (stars[:, i] for i in (0, 1, 5, 8, 10))
     sid = sid.astype(int)
     keep = np.isin(sid, sol.kept_subs) & (sc > 0)
-    x, y, col, t, sid = x[keep], y[keep], (BP - RP)[keep], np.log(sc[keep]), sid[keep]
+    x, y, col, t, sid = x[keep], y[keep], col[keep], np.log(sc[keep]), sid[keep]
     nx, ny = W // sol.cell + 1, H // sol.cell + 1
     cells = (np.clip(y.astype(int), 0, H - 1) // sol.cell) * nx + (np.clip(x.astype(int), 0, W - 1) // sol.cell)
     rr = t - np.array([sol.zero_points.get(int(s), 0.0) for s in sid]) - sol.colour_term * col
 
     def cmap(mask):
-        M = np.full(nx * ny, np.nan)
-        for ci in np.unique(cells[mask]):
-            m = mask & (cells == ci)
-            if m.sum() >= 5:
-                M[ci] = np.median(rr[m])
+        n = np.bincount(cells[mask], minlength=nx * ny)
+        M = np.where(n >= 5, _wmean_by(cells[mask], rr[mask], np.ones(mask.sum()), nx * ny), np.nan)
         return M.reshape(ny, nx)
 
     A, B = cmap(sid % 2 == 1), cmap(sid % 2 == 0)
     both = np.isfinite(A) & np.isfinite(B)
-    if both.sum() < 50:
+    if both.sum() < 20:                  # a correlation over fewer cells than this means nothing
         return float("nan"), float("nan")
 
     def corr(a, b):
@@ -299,6 +259,25 @@ def etalon_only(response: np.ndarray, *, large_scale_px: float = 1000.0) -> np.n
     large = np.kron(gaussian_filter(d4, large_scale_px / 10.0), np.ones((4, 4)))[:H, :W]
     out = (response / large).astype(np.float32)
     return out / np.median(out)
+
+
+def write_master_flat(response: np.ndarray, out_path, keywords: dict) -> None:
+    """Write `response` as a WBPP-ready Master Flat XISF from scratch.
+
+    WBPP recognises a pre-built master by its IMAGETYP ('Master Flat') and
+    applies it directly (no integration, no 3-frame minimum — the same
+    detection that makes `write_master_flat_xisf`'s template clones work,
+    2026-09-06). The response is scaled to a median of 0.5 so a float32
+    image stays inside PixInsight's nominal [0, 1]; ImageCalibration's flat
+    scaling divides by the flat's own mean, so the level is immaterial.
+    `keywords` are FITS keywords (name -> value); None values are skipped.
+    """
+    from xisf import XISF
+    r = np.asarray(response, dtype=np.float32)
+    r = r / float(np.median(r)) * 0.5
+    fits_keywords = {k: [{"value": str(v), "comment": ""}] for k, v in keywords.items() if v is not None}
+    XISF.write(str(out_path), r[..., None].astype(np.float32), creator_app="AstroFlow star flat",
+               image_metadata={"FITSKeywords": fits_keywords, "XISFProperties": {}})
 
 
 def write_master_flat_xisf(response: np.ndarray, template_master_flat: str, out_path: str) -> None:

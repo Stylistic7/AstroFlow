@@ -232,7 +232,11 @@ def focal_length_of(s) -> float | None:
     (external pre-stacked masters, stripped headers) acts as a wildcard
     downstream — refusal is only for a PROVEN mismatch; refusing on
     unknown would strand runs the way requiring camera identity once did.
+    A star flat carries its group's focal length as an attribute (it has no
+    frames of its own).
     """
+    if getattr(s, "focal_length", None) is not None:
+        return float(s.focal_length)
     metadata = s.all_metadata() if hasattr(s, "all_metadata") else s.metadata
     for m in metadata.values():
         v = m.header.get("FOCALLEN")
@@ -293,6 +297,8 @@ def _build_cal_index(cal_stacks: dict[StackHash, CalibrationStack]):
     ] = {}
 
     for sid, s in cal_stacks.items():
+        if getattr(s, "kind", None) == "star":
+            continue   # star flats are the DEFAULT, resolved ahead of chronology
         mid = _midpoint_s(s.oldest_date, s.newest_date)
         sensor = sensor_of(s)
         cam = s.camera_id_hash

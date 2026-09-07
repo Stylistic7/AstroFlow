@@ -95,6 +95,17 @@ def get_subframe_for_calibration_stack(
 
     stack = context.calibration_stacks[stack_id]
     assert stack is not None
+    if getattr(stack, "kind", None) == "star":
+        # A star flat has no frames: preview with its built master (never
+        # trigger the build from a preview; no master yet -> no flat).
+        from stacks.star_flat import star_flat_master_path
+        from metadata.sidecar_io import read_image_metadata
+        path = star_flat_master_path(stack)
+        if path is None:
+            return None, None
+        frame = read_image_metadata(path)
+        image = resize_array(read_image(path), width).astype(np.float32)
+        return frame, image
     frame = stack.all_metadata()[stack.all_frames()[0]]
     image = resize_array(read_image(frame.filename), width).astype(np.float32)
 

@@ -346,3 +346,49 @@ def test_no_decisions_for_uniform_rotation(test_context):
         if v.decision_type == DecisionType.ROTATION_OUTLIER
     }
     assert len(rotation_decisions) == 0, "No rotation decisions expected for uniform rotation"
+
+
+def test_star_flat_is_the_default_flat_and_none_is_a_pinned_choice(test_context, monkeypatch):
+    """`resolve_calibration` on a stack from a real graph run (which also
+    exercises the star-flat tasks wired above the spatial split — with no
+    plate solutions there are no candidates, and the graph must still run):
+    the group's star flat is the default flat; an override of NO_FLAT drops
+    the flat WITHOUT the missing-master concern; an explicit flat override
+    beats the star flat."""
+    import concerns
+    from decisions.resolve import NO_FLAT, resolve_calibration
+    from stacks.composite_stack import CalibrationStack, CalibrationStacksDict
+    from stacks.run import RunsDict
+    from stacks.star_flat import StarFlatStack
+    from stacks.types import StackHash, StackIdDependency
+    from units import Celsius, Seconds
+
+    make_synthetic_frames(number=10, dest_dir=context.input_dirs[0],
+                          start_datetime=datetime.datetime(2023, 12, 1, 20, 0, 0))
+    run_graph(build_compute_graph())
+    stack = next(iter(context.stacks.values())).get()
+    (run_hash, run), = stack.contents.items()
+
+    def _flat(cls, sid, **kw):
+        fields = dict(content_hash=sid, image_type="flat", camera="cam", filter=run.filter, mean_temperature=Celsius(-10.0),
+                      exposure=Seconds(1.0), integration=Seconds(0.0), width_pixels=run.width_pixels,
+                      height_pixels=run.height_pixels, stable_hash=sid, oldest_date=datetime.datetime(2026, 1, 1),
+                      newest_date=datetime.datetime(2026, 1, 2), state=frozendict(), contents=RunsDict(), camera_id_hash=None)
+        fields.update(kw)
+        return cls(**fields)
+
+    cal = CalibrationStacksDict({
+        StackHash("star"): _flat(StarFlatStack, "star", focal_length=2066.0, member_files=("/a", "/b")),
+        StackHash("explicit"): _flat(CalibrationStack, "explicit"),
+    })
+    warned = []
+    monkeypatch.setattr(concerns, "warn", lambda title, detail="", **f: warned.append(f.get("missing", {})))
+    key = DecisionKey.calibration("flat", stack.stable_hash, run_hash)
+
+    resolved = resolve_calibration(stack, cal, frozendict())
+    assert resolved.contents[run_hash].dependencies["flat"] == StackIdDependency(stack_id="star")
+    resolved = resolve_calibration(stack, cal, frozendict({key: DecisionOverride(choice=NO_FLAT)}))
+    assert "flat" not in resolved.contents[run_hash].dependencies
+    resolved = resolve_calibration(stack, cal, frozendict({key: DecisionOverride(choice="explicit")}))
+    assert resolved.contents[run_hash].dependencies["flat"] == StackIdDependency(stack_id="explicit")
+    assert warned and all("flat" not in m for m in warned)      # darks are missing (a concern); "none" never is

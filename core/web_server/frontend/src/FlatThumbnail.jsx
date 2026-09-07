@@ -8,8 +8,9 @@ const FlatThumbnail = ({ stack, run, flatStack, selected, quarantined, onSelect,
     ? `/thumbnail/run/${stack.stable_hash}/${run.stable_hash}/${flatStack.stable_hash}`
     : `/thumbnail/run/${stack.stable_hash}/${run.stable_hash}`;
 
+  const isStar = flatStack?.kind === 'star';
   const stable_hash = flatStack
-    ? flatStack.stable_hash
+    ? (isStar ? `Star flat — ${flatStack.n_subs} subs` : flatStack.stable_hash)
     : 'none';
 
   return (
@@ -42,7 +43,7 @@ const FlatThumbnail = ({ stack, run, flatStack, selected, quarantined, onSelect,
           cursor: 'pointer',
         }}
       />
-      {flatStack && (
+      {flatStack && !isStar && (
         <Box
           onClick={(e) => e.stopPropagation()}
           sx={{ position: 'absolute', top: 8, right: 8, display: 'flex', gap: 0.5 }}

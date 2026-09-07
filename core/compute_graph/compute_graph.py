@@ -169,13 +169,17 @@ def scatter_spatial_groups(
     *ancestor_results,
 ) -> Graph:
     from cache.context_ref import ContextRef
+    from stacks.star_flat import StarFlats, merge_star_flats
 
-    # Two ancestor results in non-deterministic order:
+    # Three ancestor results in non-deterministic order:
     #   - cluster_by_image_center returns list[tuple[str, ...]]
     #   - identify_camera_fingerprints returns ContextRef[FingerprintMap]
+    #   - the star-flat subgraph returns StarFlats (gated, keyed by stable_hash)
     # Discriminate by type.
+    star_flats = next(r for r in ancestor_results if isinstance(r, StarFlats))
     spatial_groups = next(
-        r for r in ancestor_results if not isinstance(r, ContextRef)
+        r for r in ancestor_results
+        if not isinstance(r, (ContextRef, StarFlats))
     )
     fingerprint_map_ref = next(
         r for r in ancestor_results if isinstance(r, ContextRef)
@@ -236,10 +240,16 @@ def scatter_spatial_groups(
         gate,
     )
 
+    # Star flats join the calibration stacks first, so every association
+    # below (cal-to-cal here, light↔flat in every resolve_calibration
+    # caller) sees them as flat masters.
+    merge_star_flats_task = (merge_star_flats, star_flats)
+    graph[merge_star_flats_task] = [identify_cal_stacks_task]
+
     # Cal-to-cal association runs through the same decision framework as light
     # calibration (`resolve_calibration`), so it takes the decision overrides.
     associate_cal_task = (associate_calibration_stacks, decision_overrides)
-    graph[associate_cal_task] = {identify_cal_stacks_task}
+    graph[associate_cal_task] = {merge_star_flats_task}
     graph[store_calibration_stacks] = {associate_cal_task}
     graph[process_calibration_stacks_for_ui] = {associate_cal_task}
     graph[store_ui_calibration_stacks] = {process_calibration_stacks_for_ui}
@@ -327,6 +337,7 @@ def build_regroup_graph(
     # are in context. `metadata_ref` flows in as our positional ancestor;
     # `defects_ref` is read from context.
     from stacks.identification import identify_camera_fingerprints
+    from stacks.star_flat import identify_star_flats, scatter_star_flats
 
     defects_ref: ContextRef[DefectsDict] = context["defects_ref"]
 
@@ -342,6 +353,11 @@ def build_regroup_graph(
         defects_ref,
         clustering_settings.fingerprint_min_anchor_size,
     )
+    # Star flats: candidates per (camera, focal length, filter) need the
+    # camera fingerprints; every candidate's master is then built in its own
+    # task (parallel across groups) and gated, BEFORE any light↔flat
+    # association below — the star flat is the default flat.
+    star_flat_candidates_task = (identify_star_flats, metadata_ref)
     scatter_task = (
         scatter_spatial_groups,
         metadata_ref,
@@ -353,9 +369,11 @@ def build_regroup_graph(
         {
             cluster_task: {},
             fingerprint_task: {},
-            # Ordered: scatter_spatial_groups consumes both results via
+            star_flat_candidates_task: [fingerprint_task],
+            scatter_star_flats: [star_flat_candidates_task],
+            # Ordered: scatter_spatial_groups consumes the results via
             # *ancestor_results, so dep order is part of its call hash.
-            scatter_task: [cluster_task, fingerprint_task],
+            scatter_task: [cluster_task, fingerprint_task, scatter_star_flats],
         }
     )
 

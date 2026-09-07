@@ -149,6 +149,29 @@ _UNCALIBRATED_SYMPTOM = {
     "flat": "leaves vignetting and dust shadows uncorrected",
 }
 
+# The user's explicit "no flat" — a pinned choice, distinct from "no
+# override" (which now means the star flat). Deliberate, so no concern.
+NO_FLAT = "none"
+
+
+def _star_flat_for(run, cal_stacks, cam_id) -> str | None:
+    """The group's star flat for this run, or None: same sensor geometry,
+    same filter, same optical train (2% FOCALLEN), preferring the same
+    camera fingerprint; among several, the one solved from the most subs."""
+    from calibration.calibration_frames import focal_length_of, same_optical_train, sensor_of
+    run_focal = focal_length_of(run)
+    cands = [
+        (sid, s) for sid, s in cal_stacks.items()
+        if getattr(s, "kind", None) == "star"
+        and s.filter == run.filter
+        and sensor_of(s) == sensor_of(run)
+        and same_optical_train(run_focal, s.focal_length)
+    ]
+    if not cands:
+        return None
+    cands = _prefer_same_camera(cands, cam_id, lambda c: c[1].camera_id_hash)
+    return max(cands, key=lambda c: (c[1].n_subs, c[0]))[0]
+
 
 def _prefer_same_camera(cands: list, cam_id: str | None, cam_of) -> list:
     """Narrow candidates to the SAME physical camera, where that is knowable.
@@ -259,14 +282,24 @@ def resolve_calibration(
     }
 
     def _default_choice(cal_type: str, run: Run) -> str | None:
-        """Try directory-affinity first; fall back to chronological.
+        """Flats: the group's star flat first. Then directory-affinity; then
+        chronological.
 
+        A star flat (`stacks/star_flat.py`) is solved from the photometry of
+        every light shot through the run's (camera, focal length, filter)
+        and corrects vignetting AND the narrowband etalon a panel cannot;
+        it exists only where the group passed the quality gate, so a sparse
+        train falls through to the older defaults below.
         Directory-affinity returns an absolute path to a pre-stacked external
         master sitting in an ancestor directory of the run's frames (typically
         a `Calibration Masters/MasterDark*.fit` file under the target's tree).
         Chronological returns a StackHash of an AstroFlow-stacked calibration
         stack. Disambiguated downstream by whether the choice starts with "/".
         """
+        if cal_type == "flat":
+            star = _star_flat_for(run, cal_stacks, cam_id)
+            if star is not None:
+                return star
         path = find_external_master(
             (m.filename for m in run.metadata.values()),
             kind=cal_type,
@@ -299,6 +332,8 @@ def resolve_calibration(
                 default=lambda c=cal_type, r=run: _default_choice(c, r),
             )
 
+            if choice == NO_FLAT:
+                continue   # the user pinned "no flat": deliberate, no concern
             if choice is None:
                 # Nothing matched. Proceeding is deliberate — plenty of
                 # people never shoot flats and failing their data outright

@@ -354,11 +354,11 @@ def compute_image_metadata(
     write_defect_candidates(filename, defect_candidates)
 
     if plate_solve is None and plate_solution is not None:
-        # Raw subframe, solved: harvest its Gaia star photometry (SPFC) into
-        # its own sidecar section — the star flat's data. Best-effort and
-        # AFTER the metadata is banked: a PixInsight slot timeout must not
-        # cost the frame its sidecar; the section stays absent and the
-        # backfill sweep (`metadata/star_photometry_backfill.py`) retries.
+        # Raw subframe, solved: measure its Gaia star photometry into its
+        # own sidecar section — the star flat's data. Best-effort and AFTER
+        # the metadata is banked: a missing catalogue or unreadable file
+        # must not cost the frame its sidecar; the section stays absent and
+        # the backfill sweep (`metadata/star_photometry_backfill.py`) retries.
         try:
             star_photometry.compute_star_photometry(filename)
         except Exception as e:

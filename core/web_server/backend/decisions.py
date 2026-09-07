@@ -88,7 +88,8 @@ def _deserialize_choice(choice, decision_type: DecisionType):
     }
     if decision_type in binary_types:
         return BinaryChoice(choice)
-    # Calibration and other decisions: raw string (stack hash or path).
+    # Calibration and other decisions: raw string (stack hash, path, or the
+    # pinned "none" — `decisions.resolve.NO_FLAT`).
     return choice
 
 
@@ -99,7 +100,8 @@ def override_decision():
     Body: {"key": [...], "choice": <value>|null}
     Pass choice=null to clear the override and revert to default.
     For binary decisions, choice is "include" or "exclude".
-    For calibration decisions, choice is a stack hash or filesystem path.
+    For calibration decisions, choice is a stack hash, a filesystem path,
+    or "none" (a pinned no-flat, distinct from clearing the override).
     """
     data = request.get_json()
     key = _deserialize_key(data["key"])

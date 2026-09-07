@@ -69,24 +69,30 @@ const RunsTab = ({ stack }) => {
     .map(([id, run]) => ({ id, ...run }))
     .sort((a, b) => (Date.parse(b.newest_date) || 0) - (Date.parse(a.newest_date) || 0));
 
-  // Most recent first, left to right: the flats worth considering are
-  // almost always the newest ones. The API returns arbitrary server order.
+  // Carousel order: the star flat (the default) leftmost, then "none",
+  // then the explicit masters, most recent first — the flats worth
+  // considering are almost always the newest ones.
   const flatCaptureTime = (id) => {
     const ms = Date.parse(calibrationStacks[id]?.oldest_date);
     return Number.isNaN(ms) ? 0 : ms;
   };
-  const sortedFlatIds = [...flatIds].sort(
-    (a, b) => flatCaptureTime(b) - flatCaptureTime(a)
-  );
+  const starFlatIds = flatIds.filter((id) => calibrationStacks[id]?.kind === 'star');
+  const sortedFlatIds = flatIds
+    .filter((id) => calibrationStacks[id]?.kind !== 'star')
+    .sort((a, b) => flatCaptureTime(b) - flatCaptureTime(a));
+
+  // "none" is a PINNED choice (the run stacks without a flat), distinct
+  // from clearing the override — with a star flat as the default, an
+  // absent override means "use the star flat".
+  const NO_FLAT = 'none';
 
   const handleSelectFlat = (runId, flatId) => {
     setSelectedFlatsByRun(prev => ({ ...prev, [runId]: flatId }));
     // The decisions API is the single source of truth for calibration
     // overrides — the old /api/settings/stack route died in the
     // quarantine unification (d84b00ce) and this save silently 404'd
-    // for months. choice=null (the "none" tile) clears the override
-    // and reverts the run to auto-selection. The server drains and
-    // restarts the compute graph to apply the choice.
+    // for months. The server drains and restarts the compute graph to
+    // apply the choice.
     fetch('/api/decisions/override', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -97,7 +103,7 @@ const RunsTab = ({ stack }) => {
           parent_stack_id: stack.stable_hash,
           subject_id: runId,
         },
-        choice: flatId ?? null,
+        choice: flatId,
       }),
     });
   };
@@ -126,18 +132,19 @@ const RunsTab = ({ stack }) => {
   };
 
   const getSelectedFlatByRun = run => {
-    // Key presence, not truthiness: clicking "none" stores `undefined` as
-    // the user's explicit choice. A truthy check would treat that as "no
-    // selection" and fall through to the server-side default.
+    // A local click wins until the server-resolved detail refreshes; the
+    // resolved dependency (star flat by default, an explicit master, or
+    // absent = "none") is the truth otherwise.
     if (run.id in selectedFlatsByRun) {
       return selectedFlatsByRun[run.id];
     } else if ('flat' in run.dependencies) {
       if ('stack_id' in run.dependencies['flat']) {
         return run.dependencies['flat']['stack_id'];
       }
+      // TODO: Handle calibration stacks that specified by filename.
+      return undefined;
     }
-
-    // TODO: Handle calibration stacks that specified by filename.
+    return NO_FLAT;
   }
 
   const onSelectFile = (type, filename, runId, applyToAll) => {
@@ -215,13 +222,23 @@ const RunsTab = ({ stack }) => {
             </Box>
 
             <Box sx={{ display: 'flex', overflowX: 'auto', gap: 2, py: 2 }}>
+              {starFlatIds.map((flatId) => (
+                <FlatThumbnail
+                  key={flatId}
+                  stack={stack}
+                  run={run}
+                  flatStack={calibrationStacks[flatId]}
+                  selected={selectedFlatId === flatId}
+                  onSelect={() => handleSelectFlat(run.id, flatId)}
+                />
+              ))}
               <FlatThumbnail
                 key='none'
                 stack={stack}
                 run={run}
                 flatStack={undefined}
-                selected={selectedFlatId === undefined}
-                onSelect={() => handleSelectFlat(run.id, undefined)}
+                selected={selectedFlatId === NO_FLAT}
+                onSelect={() => handleSelectFlat(run.id, NO_FLAT)}
               />
               {sortedFlatIds.map((flatId) => (
                 <FlatThumbnail
