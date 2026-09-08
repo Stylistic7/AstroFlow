@@ -14,7 +14,7 @@ from file_io.xisf_file_io import read_xisf_total_exposure_time
 from stacks.run import Run
 from stacks.types import StackIdDependency, FilenameDependency
 from stacks.composite_stack import BaseStack, Stack
-from pix.tasks import run_wbpp
+from pix.tasks import run_wbpp, solver_geometry
 from metadata.classes import ImageMetadata, MetadataDict
 from decorators import node
 from decisions.settings import ProcessingConfig, DevelopmentSettings
@@ -304,8 +304,14 @@ def _run_wbpp_stacking(
                 "WBPP would produce one master per exposure."
             )
 
-        log.info("Running WBPP", stack=str(stack))
-        run_wbpp(Path(tmp_dir), Path(tmp_dir))
+        # Tell WBPP's image solver the camera's real geometry. Left to its
+        # defaults it assumes a 5.4 um pixel and writes that back into the
+        # master's XPIXSZ/FOCALLEN (see `solver_geometry`).
+        geometry = solver_geometry(
+            [m.header for m in stack.all_metadata().values()]
+        )
+        log.info("Running WBPP", stack=str(stack), **geometry)
+        run_wbpp(Path(tmp_dir), Path(tmp_dir), **geometry)
         result = _copy_wbpp_result(tmp_dir, dest_filename, metadata)
 
     _check_integration_time(stack, dest_filename)

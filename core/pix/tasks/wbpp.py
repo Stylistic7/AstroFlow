@@ -5,6 +5,7 @@ rather than open views, and produces output files with unpredictable names.
 It doesn't fit the lazy Image model, so it's exposed as a direct execution
 function that runs a script-based Step immediately.
 """
+import statistics
 import re
 from pathlib import Path
 from typing import Any
@@ -39,6 +40,51 @@ _DEFAULT_PARAMETERS = {
     # this flag (audited across the WBPP source).
     "autoIntegrationMode": "false",
 }
+
+
+def solver_geometry(headers) -> dict[str, float]:
+    """The camera geometry WBPP's built-in image solver should assume.
+
+    WBPP defaults to `imageSolverPixelSize: 5.4` and `imageSolverFocalLength:
+    750.0` (BPP-Global.js). It measures the true plate scale from the star
+    field regardless, so a solve never fails and nothing looks wrong, but it
+    writes the result back DECOMPOSED against those assumptions: every master
+    we had produced carried XPIXSZ 5.4 and FOCALLEN = the real one x 5.4/3.76
+    = 1.436 (49 of 53 masters audited, 2026-09-08). The WCS is correct and
+    association never reads a master's header, so the damage is confined to
+    those two keywords -- but `plate_solving._header_hints` builds the
+    solver's scale window from exactly that pair, so a re-solve of such a
+    master can hint a scale that cannot match.
+
+    Returns {} when the frames don't carry both keywords, or when they are
+    binned: XPIXSZ means the physical pixel on some capture programs and the
+    binned pixel on others, and guessing wrong would be worse than WBPP's
+    own default. Empty simply leaves today's behaviour in place.
+    """
+    pixel_sizes: list[float] = []
+    focal_lengths: list[float] = []
+    for header in headers:
+        try:
+            if float(header.get("XBINNING", 1) or 1) != 1.0:
+                return {}
+        except (TypeError, ValueError):
+            return {}
+        for key, out in (("XPIXSZ", pixel_sizes), ("FOCALLEN", focal_lengths)):
+            value = header.get(key)
+            if value is None:
+                continue
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                continue
+            if value > 0:
+                out.append(value)
+    if not pixel_sizes or not focal_lengths:
+        return {}
+    return {
+        "imageSolverPixelSize": statistics.median(pixel_sizes),
+        "imageSolverFocalLength": statistics.median(focal_lengths),
+    }
 
 
 def run_wbpp(

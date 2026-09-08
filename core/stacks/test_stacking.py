@@ -89,3 +89,34 @@ def test_orion_pane(test_context):
     workflow_graph_ref = wf.get(("stack", stack_id))
     workflow_graph = workflow_graph_ref.get() if workflow_graph_ref is not None else None
     print(f"### stack workflow graph {workflow_graph}")
+
+
+# ---------------------------------------------------------------- WBPP solver geometry
+def test_wbpp_solver_geometry_uses_the_cameras_real_pixel_size():
+    """WBPP's image solver defaults to a 5.4 um pixel and a 750 mm focal
+    length (BPP-Global.js). It still measures the true plate scale from the
+    stars, but writes it back decomposed against those assumptions, which is
+    why every master carried XPIXSZ 5.4 and FOCALLEN = the real one x 1.436
+    (49 of 53 masters, 2026-09-08). Pass the frames' own geometry instead."""
+    from pix.tasks.wbpp import solver_geometry
+
+    asi6200 = [{"XPIXSZ": 3.76, "FOCALLEN": 351, "XBINNING": 1}] * 3
+    assert solver_geometry(asi6200) == {
+        "imageSolverPixelSize": 3.76, "imageSolverFocalLength": 351.0,
+    }
+    # FITS keywords arrive as strings from some readers; several frames vote
+    assert solver_geometry([{"XPIXSZ": "9", "FOCALLEN": "1655"}]) == {
+        "imageSolverPixelSize": 9.0, "imageSolverFocalLength": 1655.0,
+    }
+    assert solver_geometry(
+        [{"XPIXSZ": 3.76, "FOCALLEN": f} for f in (350, 351, 352)]
+    )["imageSolverFocalLength"] == 351.0
+
+    # Fall back to WBPP's own default rather than guess: XPIXSZ means the
+    # physical pixel on some capture programs and the binned pixel on others.
+    assert solver_geometry([{"XPIXSZ": 3.76, "FOCALLEN": 351, "XBINNING": 2}]) == {}
+    # Nothing to say without both keywords, or with unparseable ones.
+    assert solver_geometry([{"FOCALLEN": 351}]) == {}
+    assert solver_geometry([{"XPIXSZ": 3.76}]) == {}
+    assert solver_geometry([{"XPIXSZ": "abc", "FOCALLEN": "x"}]) == {}
+    assert solver_geometry([]) == {}
