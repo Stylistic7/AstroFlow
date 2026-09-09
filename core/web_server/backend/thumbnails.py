@@ -4,9 +4,10 @@ import threading
 from pathlib import Path
 
 import flask
-from flask import Blueprint, abort
+from flask import Blueprint, abort, request
 
 from context import local_context as context
+from decisions.resolve import resolve_calibration
 from products.registry import _make_thumbnail, producers_for
 from web_server.backend._route import tap_route
 
@@ -62,7 +63,7 @@ def _regenerate_thumbnail_for_producer(producer, args: tuple):
       points at an on-disk file we read + downsample.
     - Selection-backed (subframe thumbnails): the filename_fn returns
       an absolute path to a raw input frame.
-    - Compute-backed (flat-correction Run thumbnails): no
+    - Compute-backed (Run calibration previews): no
       filename_fn — invoke the producer directly to compute an
       ndarray on the fly. Cheap enough; the _is_task guard prevents
       a heavy @node from being re-run as a side effect.
@@ -131,9 +132,9 @@ def _producer_accepts(producer, nargs: int) -> bool:
     """Whether `producer` can be invoked with exactly `nargs` positional args.
 
     Producers registered for one entity type can have different arities — a
-    Run has both `uncorrected_run_thumbnail(stack, substack)` (2 args) and
-    `flat_corrected_stack(stack, substack, flat_stack)` (3 args) — and only the
-    one whose signature matches the URL's arg count is the intended producer.
+    Stack has both `stack_files(stack, config)` (2 args) and
+    `calibrated_run_preview(stack, run, flat, dark, bias)` (5 args) — and only
+    the one whose signature matches the URL's arg count is the intended one.
     Without this filter `get_thumbnail` also invokes the mismatched producer,
     which raises `TypeError` (caught, but it prints a noisy traceback). A
     variadic (`*args`) or un-introspectable producer accepts any count."""
@@ -291,7 +292,7 @@ def get_thumbnail(entity, *extra_args):
 
     If no producer has written anything, fall back to the compute-on-
     miss path: walk the non-file-backed producers (typically the cheap
-    ndarray-returning ones like flat-correction Run thumbnails) and
+    ndarray-returning ones like Run calibration previews) and
     invoke the first that succeeds."""
     args = (entity,) + extra_args
 
@@ -497,18 +498,46 @@ def calibration_stack_thumbnail(stack_id: str):
     return get_thumbnail(stack)
 
 
-@thumbnails_bp.route("/thumbnail/run/<stack_id>/<substack_id>")
-def uncorrected_run_thumbnail_route(stack_id: str, substack_id: str):
-    stack = context.stacks[stack_id].get()
-    substack = stack.contents[substack_id]
-    return get_thumbnail(stack, substack)
+@thumbnails_bp.route("/thumbnail/run/<stack_id>/<run_id>")
+def run_thumbnail(stack_id: str, run_id: str):
+    """Preview of one run's best subframe, calibrated as the query says.
 
+        /thumbnail/run/<stack>/<run>?flat=<id>&dark=<id>&bias=<id>
 
-@thumbnails_bp.route("/thumbnail/run/<stack_id>/<substack_id>/<flat_stack_id>")
-def run_thumbnail(stack_id: str, substack_id: str, flat_stack_id: str):
+    Every calibration input is NAMED, and what is not named is not applied,
+    so the URL alone says what the picture is. `flat=none` pins "no flat"
+    explicitly, which is a different statement from omitting it.
+
+    Omitted `dark`/`bias` fall back to what `resolve_calibration` picks for
+    this run, NOT to nothing. The positional form this replaced read the
+    UNRESOLVED stack, whose run dependencies are always empty, so every
+    flat-correction preview divided a frame that still carried its ~87%
+    bias+dark pedestal by the flat -- stamping the flat's own pattern onto
+    that pedestal at several times the signal amplitude and washing the
+    picture out (2026-09-08). Naming the inputs makes that class of bug
+    impossible to reintroduce silently.
+    """
     stack = context.stacks[stack_id].get()
-    substack = stack.contents[substack_id]
-    flat_stack = context.calibration_stacks[flat_stack_id]
-    return get_thumbnail(stack, substack, flat_stack)
+    resolved = resolve_calibration(
+        stack, context.calibration_stacks, context.settings.decision_overrides,
+    )
+    run = resolved.contents[run_id]
+
+    calibration_stacks = context.calibration_stacks
+
+    def pick(kind: str) -> str | None:
+        """Query value wins; else the resolved dependency; `none` means none."""
+        arg = request.args.get(kind)
+        if arg == "none":
+            return None
+        if arg:
+            if arg not in calibration_stacks:
+                abort(404, f"{kind}={arg} is not a calibration stack")
+            return arg
+        return getattr(run.dependencies.get(kind), "stack_id", None)
+
+    return get_thumbnail(
+        resolved, run, pick("flat"), pick("dark"), pick("bias"),
+    )
 
 

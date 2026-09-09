@@ -1,20 +1,20 @@
 """The thumbnail dispatcher must only invoke a producer whose arity matches the
-URL's positional-arg count. A Run registers both a 2-arg uncorrected producer
-and a 3-arg flat-corrected producer; invoking the mismatched one raised a noisy
-(caught) `TypeError: flat_corrected_stack() missing 1 required positional
-argument: 'flat_stack'` for every plain Run-thumbnail request.
+URL's positional-arg count. Producers registered under `Stack` have several
+different arities, and invoking a mismatched one raises a noisy (caught)
+`TypeError` on every request.
 """
 from web_server.backend.thumbnails import _producer_accepts
-from previews.flat_correction import flat_corrected_stack, uncorrected_run_thumbnail
+from previews.flat_correction import calibrated_run_preview
 
 
 def test_matches_real_producer_arities():
-    # uncorrected_run_thumbnail(stack, substack) → 2
-    assert _producer_accepts(uncorrected_run_thumbnail, 2)
-    assert not _producer_accepts(uncorrected_run_thumbnail, 3)
-    # flat_corrected_stack(stack, substack, flat_stack) → 3
-    assert _producer_accepts(flat_corrected_stack, 3)
-    assert not _producer_accepts(flat_corrected_stack, 2)
+    # calibrated_run_preview(stack, run, flat_id, dark_id, bias_id) → 5.
+    # Every calibration input is REQUIRED (pass None to skip one), so the
+    # arity is exact and no shorter Stack producer can be invoked by a
+    # Run-preview URL, nor this one by a bare /thumbnail/stack/<id>.
+    assert _producer_accepts(calibrated_run_preview, 5)
+    assert not _producer_accepts(calibrated_run_preview, 4)
+    assert not _producer_accepts(calibrated_run_preview, 2)
 
 
 def test_variadic_and_uninspectable_accept_any_count():

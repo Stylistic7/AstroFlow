@@ -2,66 +2,46 @@ import numpy as np
 from frozendict import frozendict
 
 from previews.calibration import calibrate_subframe
-from previews.operations import autostretch
-from decorators import node, measure_performance
-from stacks.composite_stack import Stack, CalibrationStack
+from decorators import measure_performance
+from stacks.composite_stack import Stack
 from decisions.subframe_selection import get_light_frames_sorted_by_stars
 from stacks.run import Run
 from stacks.types import StackHash, StackIdDependency
 from products.registry import image_producer
 
+
 @image_producer()
 @measure_performance
-def flat_corrected_stack(
-    stack: Stack, substack: Run, flat_stack: Run,
-) -> np.ndarray:
-    light_frames_by_stars = get_light_frames_sorted_by_stars(stack)
-    best_in_run = next(l for l in light_frames_by_stars if l in substack.frames)
-    light_frame = stack.all_metadata()[best_in_run]
-
-    dependencies = frozendict(
-        {
-            **substack.dependencies,
-            "flat": StackIdDependency(
-                stack_id=StackHash(flat_stack.stable_hash)
-            ),
-        }
-    )
-
-    return calibrate_subframe(light_frame, dependencies)
-
-@image_producer()
-def uncorrected_run_thumbnail(
-    stack: Stack, substack: Run,
-) -> np.ndarray:
-    light_frames_by_stars = get_light_frames_sorted_by_stars(stack)
-    best_in_run = next(l for l in light_frames_by_stars if l in substack.frames)
-    light_frame = stack.all_metadata()[best_in_run]
-
-    # `substack.dependencies` has an auto-picked flat from resolve_calibration.
-    # Strip it so this thumbnail is genuinely uncorrected — otherwise it looks
-    # identical to the default "corrected" option in the UI.
-    dependencies = frozendict(
-        {k: v for k, v in substack.dependencies.items() if k != "flat"}
-    )
-    return calibrate_subframe(light_frame, dependencies)
-
-@node
-def create_flat_correction_thumbnails(
+def calibrated_run_preview(
     stack: Stack,
-    matching_flat_stacks: tuple[CalibrationStack, ...],
-) -> None:
-    """Render an "uncorrected" thumbnail plus one per matching flat for each
-    substack of `stack`.
+    substack: Run,
+    flat_id: str | None,
+    dark_id: str | None,
+    bias_id: str | None,
+) -> np.ndarray:
+    """One run's best subframe, calibrated with EXACTLY the stacks named here.
 
-    `stack` is expected to already be calibration-resolved (bias / dark
-    populated on each substack's dependencies). `matching_flat_stacks` is
-    pre-filtered at the scatter level to only the flats that match this
-    stack's camera + filter. Narrow inputs let the cache key invalidate
-    only when something this function actually uses changes — not on
-    every unrelated calibration-stack add elsewhere in the catalog.
+    Every calibration input is an explicit argument. Reading them off
+    `substack.dependencies` is what broke this before: the route handed in an
+    UNRESOLVED stack, whose run dependencies are always empty, so the flat
+    divided a frame that still carried its ~87% bias+dark pedestal. That
+    stamps the flat's own pattern onto the pedestal at several times the
+    signal amplitude, which is the washed-out preview (2026-09-08).
+
+    Naming them also puts them in the cache key, so two previews that differ
+    only in their dark are two products rather than one stale one. `None`
+    means "do not apply this kind", which is how the uncorrected view is
+    spelled — one producer covers both, so they can never disagree.
     """
-    for substack in stack.contents.values():
-        uncorrected_run_thumbnail(stack, substack)
-        for flat_stack in matching_flat_stacks:
-            flat_corrected_stack(stack, substack, flat_stack)
+    light_frames_by_stars = get_light_frames_sorted_by_stars(stack)
+    best_in_run = next(l for l in light_frames_by_stars if l in substack.frames)
+    light_frame = stack.all_metadata()[best_in_run]
+
+    deps = {
+        kind: StackIdDependency(stack_id=StackHash(cal_id))
+        for kind, cal_id in (
+            ("flat", flat_id), ("dark", dark_id), ("bias", bias_id),
+        )
+        if cal_id is not None
+    }
+    return calibrate_subframe(light_frame, frozendict(deps))

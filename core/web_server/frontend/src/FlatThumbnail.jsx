@@ -4,9 +4,19 @@ import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import QuarantineToggle from './QuarantineToggle.jsx';
 
 const FlatThumbnail = ({ stack, run, flatStack, selected, quarantined, onSelect, onNavigate }) => {
-  const thumbnailUrl = flatStack
-    ? `/thumbnail/run/${stack.stable_hash}/${run.stable_hash}/${flatStack.stable_hash}`
-    : `/thumbnail/run/${stack.stable_hash}/${run.stable_hash}`;
+  // Name every calibration input in the URL, so what the picture shows is
+  // readable from the link alone and a shared link keeps its meaning.
+  // `flat=none` is the explicit "no flat" statement; the dark and bias are
+  // whatever this run actually resolved to, so the uncorrected card and the
+  // corrected cards differ ONLY in the flat.
+  const params = new URLSearchParams();
+  params.set('flat', flatStack ? flatStack.stable_hash : 'none');
+  for (const kind of ['dark', 'bias']) {
+    const id = run.dependencies?.[kind]?.stack_id;
+    if (id) params.set(kind, id);
+  }
+  const thumbnailUrl =
+    `/thumbnail/run/${stack.stable_hash}/${run.stable_hash}?${params}`;
 
   const isStar = flatStack?.kind === 'star';
   const stable_hash = flatStack

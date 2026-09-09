@@ -355,9 +355,9 @@ def test_metadata_route_with_pipeline_returns_200(client, with_orion_mosaic):
 @pytest.mark.exhaustive
 def test_lazy_thumbnails_regenerate_on_miss(client, with_orion_mosaic):
     """Thumbnails are no longer eagerly generated; the web server must
-    rebuild them on first request. Proves all three regen shapes:
-    file-backed (stack master/subframe) and compute-backed (the
-    flat-correction Run thumbnails, which have no on-disk source)."""
+    rebuild them on first request. Proves both regen shapes:
+    file-backed (stack master/subframe) and compute-backed (the Run
+    calibration previews, which have no on-disk source)."""
     from context import local_context as ctx
 
     stacks = ctx.stacks or {}
@@ -373,15 +373,17 @@ def test_lazy_thumbnails_regenerate_on_miss(client, with_orion_mosaic):
         assert r.mimetype == "image/png" and len(r.data) > 0
         saw_stack = True
 
-        # Compute-backed: the uncorrected Run thumbnail has NO on-disk
-        # source — it can only come from invoking the producer on miss.
+        # Compute-backed: a Run calibration preview has NO on-disk source
+        # — it can only come from invoking the producer on miss. Both the
+        # resolved view and the explicit `flat=none` view take that path.
         for sub_id in stack.contents:
-            r = client.get(f"/thumbnail/run/{sid}/{sub_id}")
-            assert r.status_code == 200, (
-                f"/thumbnail/run/{sid}/{sub_id}: {r.status_code} "
-                f"(compute-on-miss regen failed)"
-            )
-            assert r.mimetype == "image/png" and len(r.data) > 0
+            for query in ("", "?flat=none"):
+                url = f"/thumbnail/run/{sid}/{sub_id}{query}"
+                r = client.get(url)
+                assert r.status_code == 200, (
+                    f"{url}: {r.status_code} (compute-on-miss regen failed)"
+                )
+                assert r.mimetype == "image/png" and len(r.data) > 0
             saw_run = True
             break  # one substack is enough to exercise the path
         if saw_stack and saw_run:
@@ -422,3 +424,79 @@ def test_flats_route_offers_star_flats_first(client):
     assert client.get("/api/flats/1080/720/H").get_json() == ["star350", "star1230", "explicit"]
     assert client.get("/api/flats/1080/720/S?focal_length=350").get_json() == ["starS"]
     assert client.get("/api/flats/1080/720/O").get_json() == []
+
+
+@pytest.mark.exhaustive
+def test_run_preview_url_names_every_calibration_input(
+    client, with_orion_mosaic, monkeypatch,
+):
+    """`/thumbnail/run/<stack>/<run>` takes its calibration by NAME.
+
+    The contract, which the positional URL it replaced could not express:
+
+    * an omitted kind falls back to what `resolve_calibration` picks for
+      this run — NOT to nothing. The old route read the UNRESOLVED stack,
+      whose run dependencies are always empty, so every flat-correction
+      preview divided a frame still carrying its bias+dark pedestal and
+      came out washed out (2026-09-08);
+    * `<kind>=none` is an explicit "do not apply this kind", which is a
+      different statement from omitting it;
+    * an id that is not a calibration stack is a 404, never a silent
+      fallback to some other frame.
+    """
+    import flask
+    import web_server.backend.thumbnails as thumbnails
+    from context import local_context as ctx
+    from decisions.resolve import resolve_calibration
+
+    sid, stack_ref = next(iter((ctx.stacks or {}).items()))
+    stack = stack_ref.get()
+    resolved = resolve_calibration(
+        stack, ctx.calibration_stacks, ctx.settings.decision_overrides,
+    )
+    run_id, run = next(iter(resolved.contents.items()))
+    resolved_ids = {
+        kind: getattr(run.dependencies.get(kind), "stack_id", None)
+        for kind in ("flat", "dark", "bias")
+    }
+
+    captured = {}
+
+    def fake_get_thumbnail(entity, *extra_args):
+        captured["args"] = extra_args
+        return flask.Response(b"", mimetype="image/png")
+
+    monkeypatch.setattr(thumbnails, "get_thumbnail", fake_get_thumbnail)
+
+    # Nothing named: every kind comes from the resolved run.
+    assert client.get(f"/thumbnail/run/{sid}/{run_id}").status_code == 200
+    _, flat, dark, bias = captured["args"]
+    assert (flat, dark, bias) == (
+        resolved_ids["flat"], resolved_ids["dark"], resolved_ids["bias"],
+    )
+
+    # `flat=none` drops ONLY the flat — the dark still comes from the run,
+    # which is exactly what the washed-out preview was missing.
+    assert client.get(
+        f"/thumbnail/run/{sid}/{run_id}?flat=none"
+    ).status_code == 200
+    _, flat, dark, bias = captured["args"]
+    assert flat is None
+    assert (dark, bias) == (resolved_ids["dark"], resolved_ids["bias"])
+
+    # A named calibration stack wins over the resolved one.
+    other = next(
+        (c for c in ctx.calibration_stacks
+         if c != resolved_ids["flat"]),
+        None,
+    )
+    if other is not None:
+        assert client.get(
+            f"/thumbnail/run/{sid}/{run_id}?flat={other}"
+        ).status_code == 200
+        assert captured["args"][1] == other
+
+    # An unknown id is a 404, not a silent substitution.
+    assert client.get(
+        f"/thumbnail/run/{sid}/{run_id}?flat=nosuchstack"
+    ).status_code == 404

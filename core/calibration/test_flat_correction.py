@@ -86,8 +86,8 @@ def test_one_perfect_stack(test_context) -> None:
     assert context.get_matching(("Thumbnail",)) == {}
     from products.registry import producers_for
     from stacks.composite_stack import Stack
-    # Both flat_corrected_stack and uncorrected_run_thumbnail take
-    # `stack: Stack` as their first param — they're registered under Stack.
+    # `calibrated_run_preview` takes `stack: Stack` as its first param, so
+    # it is registered under Stack. One producer serves both the corrected
+    # and the uncorrected view (flat_id=None) — they cannot drift apart.
     ops = {p.__name__ for p in producers_for(Stack)}
-    assert "flat_corrected_stack" in ops
-    assert "uncorrected_run_thumbnail" in ops
+    assert "calibrated_run_preview" in ops

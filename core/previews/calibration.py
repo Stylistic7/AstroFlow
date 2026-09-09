@@ -67,8 +67,15 @@ def calibrate_image(
         image = image - scale * (dark - bias)
 
     if flat is not None:
-        flat_signal = flat - bias
-        if dark is not None:
+        # A STAR flat is a synthetic multiplicative response (median 0.5), not
+        # an exposed frame: it contains no bias and no dark current, so
+        # subtracting either would bend the response. Panel/sky flats are real
+        # exposures and still need it. `SFLATCEL` is written only by
+        # `write_master_flat`, so it is the honest discriminator.
+        synthetic = bool(flat_metadata is not None
+                         and "SFLATCEL" in (flat_metadata.header or {}))
+        flat_signal = flat if synthetic else flat - bias
+        if dark is not None and not synthetic:
             scale = _exposure(flat_metadata) / _exposure(dark_metadata)
             flat_signal = flat_signal - scale * (dark - bias)
         # Normalize so division rescales SHAPE (vignetting/dust) without
