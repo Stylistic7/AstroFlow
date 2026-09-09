@@ -289,3 +289,31 @@ def test_build_refuses_unreadable_members_instead_of_minting_a_blank(tmp_path, m
     sf = _star_flat(member_files=(str(tmp_path / "gone.fit"),))
     with pytest.raises(FileNotFoundError, match="unreadable"):
         build_star_flat._function(sf, CELLS, MAG_WINDOW)
+
+
+def test_master_path_reads_the_written_files_metadata(tmp_path, monkeypatch):
+    """`star_flat_master_path` unwraps a CACHED build.
+
+    A producer node's cached value is the written file's `ImageMetadata`,
+    not the `WithSidecar` the body returned — so the path is `.filename`.
+    Reading `.path` raised AttributeError on every cache HIT while a MISS
+    quietly returned None, so a star-flat preview either 500'd or served an
+    uncorrected frame with no sign that anything went wrong (2026-09-08).
+    """
+    dest = tmp_path / "flat.xisf"
+    sf = _star_flat()
+    # Exactly the shape a producer node hands its consumers: the written
+    # file's ImageMetadata, whose path lives in `filename`.
+    written = ImageMetadata(
+        content_hash="f0", stable_hash="f0", filename=dest, header={},
+        width_pixels=W, height_pixels=H, channels=1, dtype=np.dtype("float32"),
+    )
+
+    monkeypatch.setattr(sfm, "build_star_flat",
+                        SimpleNamespace(cached_value=lambda *a: (True, written)))
+    assert sfm.star_flat_master_path(sf) == Path(dest)
+
+    # A miss is "no master yet" — never a build triggered from a preview.
+    monkeypatch.setattr(sfm, "build_star_flat",
+                        SimpleNamespace(cached_value=lambda *a: (False, None)))
+    assert sfm.star_flat_master_path(sf) is None

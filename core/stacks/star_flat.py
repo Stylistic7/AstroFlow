@@ -327,4 +327,10 @@ def star_flat_master_path(star_flat: StarFlatStack) -> Path | None:
     """The built master's path when it exists in the cache, else None
     (previews must never trigger a build)."""
     hit, value = build_star_flat.cached_value(*build_args(star_flat))
-    return Path(value.path) if hit and value is not None else None
+    if not hit or value is None:
+        return None
+    # A producer's cached value is the written file's ImageMetadata, not the
+    # WithSidecar it returned; `.path` raised AttributeError on every cache
+    # HIT while a MISS silently returned None, so the preview either 500'd or
+    # quietly served an uncalibrated frame (2026-09-08).
+    return Path(value.filename)
