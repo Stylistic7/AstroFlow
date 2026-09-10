@@ -14,6 +14,8 @@ which then triggered the next sweep. The graph never settled.
 import json
 from pathlib import Path
 
+import pytest
+
 import asiair.download_asiair as dl
 
 
@@ -61,3 +63,49 @@ def test_no_header_overlay_is_written_anywhere():
     import inspect
     assert "header_overlay" not in inspect.getsource(dl)
     assert not hasattr(dl, "_save_fits_overlay")
+
+
+def test_search_defs_cannot_be_passed_positionally():
+    """`search_defs` sat fourth positionally, behind `default_filter: str`.
+    When `default_filter` was deleted with the header-overlay removal, the
+    scheduler's call site kept passing its `"H"` — which slid silently into
+    `search_defs`, iterated as the single character "H", and died on
+    `search_def["volume"]`. Every ASIAir download failed; and because the
+    poller `ray.get`s those refs BEFORE its drain-and-restart, the compute
+    graph never got kicked either (boot 67, 2026-09-09).
+
+    Keyword-only turns a stray positional into a loud TypeError on the
+    driver instead of a string that happens to be iterable.
+    """
+    import inspect
+
+    sig = inspect.signature(dl.download_from_asiair._function)
+    assert sig.parameters["search_defs"].kind is inspect.Parameter.KEYWORD_ONLY
+
+    sig.bind("rig", "10.0.0.28", "/dest")                    # the real call
+    with pytest.raises(TypeError):
+        sig.bind("rig", "10.0.0.28", "/dest", "H")           # the bug
+
+
+def test_the_download_poller_calls_the_downloader_correctly():
+    """Pin the actual call site, not just the signature — the signature was
+    fine on its own; it was the caller that went stale."""
+    import ast
+    import inspect
+
+    from state import scheduler_actor
+
+    src = inspect.getsource(scheduler_actor)
+    calls = [
+        n for n in ast.walk(ast.parse(src))
+        if isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Attribute) and n.func.attr == "remote"
+        and isinstance(n.func.value, ast.Name)
+        and n.func.value.id == "download_from_asiair"
+    ]
+    assert calls, "no download_from_asiair.remote(...) call found"
+    for c in calls:
+        assert len(c.args) == 3, (
+            f"download_from_asiair.remote takes 3 positional args "
+            f"(rig, ip, dest_path); call site passes {len(c.args)}"
+        )

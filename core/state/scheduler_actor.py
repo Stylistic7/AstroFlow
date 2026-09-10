@@ -336,7 +336,7 @@ def _run_asiair_download_and_maybe_restart() -> None:
             # a frame has no mapped focal length.
             download_from_asiair.remote(
                 (dev.get("hostname") or dev["ip"]).rstrip(".").removesuffix(".local"),
-                dev["ip"], dest, "H",
+                dev["ip"], dest,
             )
             for dev in devices
         ]

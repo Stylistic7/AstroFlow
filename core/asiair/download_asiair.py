@@ -278,8 +278,20 @@ def download_from_asiair(
     rig: str,
     ip: str,
     dest_path: str,
+    *,
     search_defs: list[dict[str, str]] = _SEARCH_DEFS,
 ) -> None:
+    """Download one rig's frames. `search_defs` is KEYWORD-ONLY on purpose.
+
+    It used to sit fourth positionally behind `default_filter: str`. When
+    `default_filter` was deleted (the header-overlay removal), the scheduler's
+    call site kept passing its `"H"` — which slid silently into `search_defs`,
+    iterated as the single character "H", and died on `search_def["volume"]`.
+    Every ASIAir download failed, and because the poller does `ray.get(refs)`
+    before its drain-and-restart, the COMPUTE GRAPH never got kicked either
+    (boot 67, 2026-09-09). Keyword-only makes a stray positional a loud
+    TypeError on the driver instead of a string that looks iterable.
+    """
     print(f"Pinging rig '{rig}' ({ip})")
     if not ping(ip):
         print(f"Rig '{rig}' ({ip}) is not responding.")
