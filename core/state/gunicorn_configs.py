@@ -5,7 +5,7 @@ def guincorn_configs() -> list[GunicornConfig]:
     return {
         "static_server": GunicornConfig(
             name="static_server",
-            config_file=None,
+            config_file="web_server/backend/gunicorn_app_config.py",
             module="web_server.backend.app:app",
             worker_type="sync",
             num_servers=1,
@@ -34,7 +34,7 @@ def guincorn_configs() -> list[GunicornConfig]:
         ),
         "tile_server": GunicornConfig(
             name="tile_server",
-            config_file=None,
+            config_file="web_server/backend/gunicorn_app_config.py",
             module="web_server.backend.app:app",
             worker_type="sync",
             num_servers=4,
