@@ -392,3 +392,89 @@ def test_star_flat_is_the_default_flat_and_none_is_a_pinned_choice(test_context,
     resolved = resolve_calibration(stack, cal, frozendict({key: DecisionOverride(choice="explicit")}))
     assert resolved.contents[run_hash].dependencies["flat"] == StackIdDependency(stack_id="explicit")
     assert warned and all("flat" not in m for m in warned)      # darks are missing (a concern); "none" never is
+
+
+def test_bias_selection_ignores_temperature(test_context, monkeypatch):
+    """A bias is offset + read noise — temperature-independent on CMOS, unlike
+    a dark, where matching temperature is the whole point.
+
+    `_chronological_bias` used to filter candidates through `abs(T - T_run) <
+    10.0` before picking the nearest in time. Panel flats are shot at ambient
+    (+20 C) while every bias in the library is at the cooled setpoint, so the
+    window emptied the candidate list, returned None, and raised thousands of
+    "Stacking with no bias master" concerns (2026-09-07). Nearest-in-time now
+    wins outright.
+    """
+    import concerns
+    from dataclasses import replace
+    from decisions.resolve import resolve_calibration
+    from stacks.composite_stack import CalibrationStack, CalibrationStacksDict
+    from stacks.run import CalibrationRun, RunsDict
+    from stacks.types import StackHash, StackIdDependency
+    from metadata.classes import MetadataDict
+    from units import Celsius, Seconds
+
+    SENSOR = dict(width_pixels=9576, height_pixels=6388)
+
+    def _bias(sid, temperature, when):
+        return CalibrationStack(
+            content_hash=sid, stable_hash=StackHash(sid), image_type="bias",
+            camera="cam", filter=None, mean_temperature=Celsius(temperature),
+            exposure=Seconds(0.0), integration=Seconds(0.0),
+            oldest_date=when, newest_date=when,
+            state=frozendict(), contents=RunsDict(), camera_id_hash=None,
+            **SENSOR,
+        )
+
+    # A warm panel flat: +20 C ambient, 30 C away from every cooled bias.
+    flat_run = CalibrationRun(
+        content_hash="flatrun", stable_hash=StackHash("flatrun"),
+        image_type="flat", camera="cam", filter="Ha",
+        mean_temperature=Celsius(20.0), exposure=Seconds(2.0),
+        integration=Seconds(40.0),
+        oldest_date=datetime.datetime(2026, 1, 10),
+        newest_date=datetime.datetime(2026, 1, 10),
+        state=frozendict(), frames=(), metadata=MetadataDict(),
+        dependencies=frozendict(), **SENSOR,
+    )
+    flat_stack = CalibrationStack(
+        content_hash="flatstack", stable_hash=StackHash("flatstack"),
+        image_type="flat", camera="cam", filter="Ha",
+        mean_temperature=Celsius(20.0), exposure=Seconds(2.0),
+        integration=Seconds(40.0),
+        oldest_date=flat_run.oldest_date, newest_date=flat_run.newest_date,
+        state=frozendict(), contents=RunsDict({"flatrun": flat_run}),
+        camera_id_hash=None, **SENSOR,
+    )
+
+    warned = []
+    monkeypatch.setattr(concerns, "warn",
+                        lambda title, detail="", **f: warned.append(title))
+
+    # Nearest in time wins even though it is 30 C from the flat, over a
+    # candidate whose temperature matches exactly but is a year older.
+    cal = CalibrationStacksDict({
+        StackHash("near"): _bias("near", -10.0, datetime.datetime(2026, 1, 11)),
+        StackHash("far"): _bias("far", 20.0, datetime.datetime(2025, 1, 1)),
+    })
+    resolved = resolve_calibration(flat_stack, cal, frozendict())
+    assert resolved.contents["flatrun"].dependencies["bias"] == \
+        StackIdDependency(stack_id="near")
+
+    # And the once-fatal case: the ONLY bias is far outside the old window.
+    cal = CalibrationStacksDict(
+        {StackHash("cold"): _bias("cold", -10.0, datetime.datetime(2026, 1, 11))})
+    resolved = resolve_calibration(
+        replace(flat_stack, stable_hash=StackHash("flatstack2")),
+        cal, frozendict())
+    assert resolved.contents["flatrun"].dependencies["bias"] == \
+        StackIdDependency(stack_id="cold")
+    assert not warned, f"a bias master was available but concerns fired: {warned}"
+
+    # Guard the neighbour: the DARK matcher must keep its temperature window.
+    import inspect
+    from decisions import resolve
+    dark = inspect.getsource(resolve)
+    dark = dark[dark.index("def _chronological_dark"):]
+    assert "abs(c[1] - T) < 10.0" in dark[:900], \
+        "the dark matcher lost its temperature window"

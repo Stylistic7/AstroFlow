@@ -224,12 +224,17 @@ def resolve_calibration(
         if not cand:
             return None
         cand = _prefer_same_camera(cand, cam_id, lambda x: x[2])
+        # NO temperature window. A bias is offset + read noise, which on
+        # CMOS (IMX455/571) does not vary with sensor temperature — unlike a
+        # dark, where it is the whole point. The old `abs(c[1] - T) < 10.0`
+        # filter starved every warm flat of a bias master and raised
+        # thousands of "Stacking with no bias master" concerns (2026-09-07).
+        # Candidates are already bucketed by sensor geometry and narrowed by
+        # camera fingerprint, so the nearest in TIME is the right pick.
+        # (Gain/offset matching would be better still, but `_build_cal_index`
+        # does not carry them — a follow-up, not a blocker.)
         mid = _midpoint_s(run.oldest_date, run.newest_date)
-        T = run.mean_temperature
-        filtered = [c for c in cand if abs(c[1] - T) < 10.0]
-        if not filtered:
-            return None
-        return min(filtered, key=lambda x: abs(x[0] - mid))[3]
+        return min(cand, key=lambda x: abs(x[0] - mid))[3]
 
     def _chronological_dark(run: Run):
         cand = dark_by_sensor.get(sensor_of(run))
