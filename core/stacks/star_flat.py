@@ -254,7 +254,15 @@ def solve_and_write(star_flat: StarFlatStack, dest, *, cells=CELLS, mag_window=M
     return quality
 
 
-@node(num_cpus=4, resources={"diskcache": 0.001})
+# `display=` is what makes this a user-facing PRODUCT rather than an
+# intermediate: it sets `makes_tiff`, so `_publish_with_presentations`
+# writes the tile-pyramid sibling every other master gets (stack_files
+# declares display="Master"). Without it a star flat was stamped and
+# nothing else, so its detail page had no pyramid to serve and the
+# 61 MP primary was refused by the thumbnail budget -> silent 404
+# (2026-09-09). Decorator lists are stripped from the structural hash,
+# so adding this does NOT re-key the 91 existing masters.
+@node(num_cpus=4, display="Star Flat", resources={"diskcache": 0.001})
 def build_star_flat(star_flat: StarFlatStack, cells: tuple, mag_window: tuple) -> WithSidecar[XisfFilePath]:
     """The group's master flat (see `solve_and_write`). The solve settings
     are arguments so they sit in the cache key: a new cell size or window

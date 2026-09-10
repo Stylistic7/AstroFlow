@@ -317,3 +317,21 @@ def test_master_path_reads_the_written_files_metadata(tmp_path, monkeypatch):
     monkeypatch.setattr(sfm, "build_star_flat",
                         SimpleNamespace(cached_value=lambda *a: (False, None)))
     assert sfm.star_flat_master_path(sf) is None
+
+
+def test_star_flat_master_is_a_display_product_like_every_other_master():
+    """`display=` is what makes an op build its tile-pyramid sibling.
+
+    Regression for 2026-09-09: `build_star_flat` declared no `display=`, so
+    `makes_tiff` was False, `_publish_with_presentations` never ran, and the
+    master shipped without a pyramid. The thumbnail path then had nothing
+    cheap to serve and refused the 61 MP primary on the budget gate, so every
+    star flat's detail page 404'd. Ordinary calibration masters come from
+    `stack_files`, which declares `display="Master"` — star flats were the
+    odd one out.
+    """
+    from stacks.star_flat import build_star_flat
+    from stacks.stacking.pixinsight import stack_files
+    assert getattr(build_star_flat, "_display", None) == "Star Flat"
+    # the analogue: ordinary masters are display products too
+    assert getattr(stack_files, "_display", None) is not None
