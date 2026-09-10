@@ -285,3 +285,36 @@ def test_sxt_narrow_keys_on_sxt_settings_only():
     assert pp._sxt_channel_narrow(args, {}) != \
         pp._sxt_channel_narrow((t, "O", changed, "chan"), {})
 
+
+
+def test_mono_layer_outputs_say_which_layer_they_are(tmp_path, monkeypatch):
+    """`_save_mono_vips` writes the starless/stars mono deliverables, and its
+    header carried only FILTER + PIPELINE — so a stars mosaic and its starless
+    twin were indistinguishable outside the op's output directory. Both halves
+    are pinned: the writer stamps LAYER, and each caller declares its own."""
+    import inspect
+
+    import pyvips
+    from file_io.tiff_file_io import read_tiff_header
+
+    out = tmp_path / "mono.tiff"
+    img = pyvips.Image.black(64, 48).cast("float") + 1.0
+    pp._save_mono_vips(str(out), img, "Ha", layer="stars")
+    assert read_tiff_header(out)["LAYER"] == "stars"
+
+    pp._save_mono_vips(str(out), img, "Ha")
+    assert "LAYER" not in read_tiff_header(out)
+
+    seen = []
+    monkeypatch.setattr(pp, "_open_mono_vips", lambda meta: img)
+    monkeypatch.setattr(pp, "_save_mono_vips",
+                        lambda path, i, f, layer=None: seen.append(layer))
+    for op in (pp.linear_lum, pp.linear_lum_stars):
+        # filename_fn resolves the output dir through context; the layer
+        # literal is what is under test, so stub the naming out
+        monkeypatch.setattr(op, "filename_fn", lambda *a: str(out))
+        # past beartype — these bodies only pick a filename and forward
+        inspect.unwrap(op._function)(None, None)
+    monkeypatch.setattr(pp.stars_channel, "filename_fn", lambda *a: str(out))
+    inspect.unwrap(pp.stars_channel._function)(None, "Ha", None, None)
+    assert seen == ["starless", "stars", "stars"]

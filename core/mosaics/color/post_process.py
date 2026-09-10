@@ -88,14 +88,23 @@ def _open_mono_vips(meta: ImageMetadata) -> pyvips.Image:
     )
 
 
-def _save_mono_vips(path: str, img: pyvips.Image, filter: str) -> None:
+# The physical layer an image IS: "starless" or "stars". Layer identity used
+# to ride only in the op's output directory name plus SKYVER ("overlap-2" vs
+# "stars-none-1") — recoverable, but not self-describing, so a file lifted out
+# of the tree could not be told apart from its twin. Colour deliverables carry
+# it already in PALETTE ("Linear RGB Stars"); the mono writers below did not.
+def _save_mono_vips(path: str, img: pyvips.Image, filter: str,
+                    layer: str | None = None) -> None:
     """Streaming sink twin of `_write_mono_tiff`: same tags, same codec, but
     the writer pulls the lazy vips pipeline stripe-by-stripe instead of being
-    handed a full numpy array."""
+    handed a full numpy array. `layer` stamps the LAYER tag (see above)."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     img = img.copy()
+    desc = {"FILTER": filter, "PIPELINE": "AstroFlow-OSS"}
+    if layer is not None:
+        desc["LAYER"] = layer
     img.set_type(pyvips.GValue.gstr_type, "image-description",
-                 json.dumps({"FILTER": filter, "PIPELINE": "AstroFlow-OSS"}))
+                 json.dumps(desc))
     _atomic_tiffsave(img, Path(path),
                      tile=tile_size_for(img.width, img.height),
                      compression=FAST_COMPRESSION)
@@ -269,7 +278,7 @@ def stars_channel(
     out = stars_channel.filename_fn(target, filter, channel, starless)
     diff = _open_mono_vips(channel) - _open_mono_vips(starless)
     stars = (diff < 0).ifthenelse(0.0, diff).cast("float")
-    _save_mono_vips(out, stars, filter)
+    _save_mono_vips(out, stars, filter, layer="stars")
     return WithSidecar(TiffFilePath(out))
 
 
@@ -512,7 +521,7 @@ def linear_lum(
     """The starless luminance layer mosaic as a served mono tap — the
     lightness source for live LRGB/HaLRGB finishing."""
     out = linear_lum.filename_fn(mosaic, lum)
-    _save_mono_vips(out, _open_mono_vips(lum), "L")
+    _save_mono_vips(out, _open_mono_vips(lum), "L", layer="starless")
     return WithSidecar(TiffFilePath(out))
 
 
@@ -523,7 +532,7 @@ def linear_lum_stars(
     """The luminance STARS layer as a served mono tap — added back into
     the LRGB lightness live by the shader."""
     out = linear_lum_stars.filename_fn(mosaic, stars)
-    _save_mono_vips(out, _open_mono_vips(stars), "L")
+    _save_mono_vips(out, _open_mono_vips(stars), "L", layer="stars")
     return WithSidecar(TiffFilePath(out))
 
 
