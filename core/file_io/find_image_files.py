@@ -1,6 +1,13 @@
 from pathlib import Path
 
 
+def is_external_master_name(name: str) -> bool:
+    """The naming convention for a user-supplied pre-stacked master
+    (`MasterBias*.fit`). One definition, so every consumer draws the same
+    line between a raw subframe and someone's finished master."""
+    return name.lower().startswith("master")
+
+
 def find_image_files(
     path: str, pattern: str = "*", *, include_masters: bool = False,
 ) -> list:
@@ -26,7 +33,7 @@ def find_image_files(
             str(p.absolute())
             for p in Path(path).rglob(pattern)
             if p.suffix.lower() in [".fit", ".fits"]
-            and (include_masters or not p.name.lower().startswith("master"))
+            and (include_masters or not is_external_master_name(p.name))
             and not any(part.startswith(".") for part in p.parts)
         ]
     )

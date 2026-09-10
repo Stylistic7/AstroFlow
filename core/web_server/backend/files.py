@@ -5,7 +5,7 @@ import subprocess
 
 from context import local_context as context
 from file_io.generic import read_header
-from file_io.find_image_files import find_image_files
+from file_io.find_image_files import is_external_master_name
 from file_io.sidecar import get_section
 from metadata.image_types import is_light_frame
 from web_server.backend.announcer import announce
@@ -250,30 +250,52 @@ def open_stack_master(stack_id, pipeline):
 
 
 def _find_unsolved_light_frames():
-    """Scan input dirs for light frames whose plate-solving failed."""
+    """Light frames whose plate solve was ATTEMPTED and FAILED.
+
+    Narrowed against the in-memory library FIRST. The old scan walked every
+    input dir and called `get_section` per file, and `get_section` json-parses
+    the WHOLE sidecar — `defect_candidates` and all — to reach one small
+    section: ~10 GB of parsing across 32k frames, plus a FITS open apiece for
+    the header, on every dialog open. The library already holds each frame's
+    header and plate solution, so the solved majority is discarded for free.
+
+    A sidecar read survives, for the handful that reach it, because the
+    library cannot tell the two failure modes apart: `plate_solution is None`
+    means EITHER the solve failed (a tombstone section, `data: null`) or it
+    was never attempted (no section at all). Only the first may be offered
+    for deletion.
+    """
+    ref = context["metadata_ref"]
+    if ref is None:
+        return []
+
     results = []
-    for input_dir in context.input_dirs or []:
-        for fits_path in find_image_files(str(input_dir)):
-            sidecar = get_section(Path(fits_path), "plate_solution")
-            if sidecar is None:
-                continue
-            if sidecar.get("data") is not None:
-                continue
-            try:
-                header = read_header(Path(fits_path))
-            except Exception:
-                continue
-            if not is_light_frame(header):
-                continue
-            results.append({
-                "filename": str(fits_path),
-                "size_bytes": os.path.getsize(fits_path),
-                "date_obs": header.get("DATE-OBS"),
-                "filter": header.get("FILTER"),
-                "exposure": header.get("EXPTIME") or header.get("EXPOSURE"),
-                "target": header.get("OBJECT"),
-            })
-    return results
+    for meta in ref.get().values():
+        if meta.plate_solution is not None:
+            continue
+        if is_external_master_name(Path(meta.filename).name):
+            continue      # someone's finished master, never ours to trash
+        if not is_light_frame(meta.header):
+            continue
+        section = get_section(Path(meta.filename), "plate_solution")
+        if section is None:
+            continue      # never attempted
+        if section.get("data") is not None:
+            continue      # solved since the library was built
+        try:
+            size_bytes = os.path.getsize(meta.filename)
+        except OSError:
+            continue      # gone from disk, or its volume is unplugged
+        results.append({
+            "filename": str(meta.filename),
+            "size_bytes": size_bytes,
+            "date_obs": meta.header.get("DATE-OBS"),
+            "filter": meta.header.get("FILTER"),
+            "exposure": (meta.header.get("EXPTIME")
+                         or meta.header.get("EXPOSURE")),
+            "target": meta.header.get("OBJECT"),
+        })
+    return sorted(results, key=lambda f: f["filename"])
 
 
 @files_bp.route("/api/unsolved_frames")
