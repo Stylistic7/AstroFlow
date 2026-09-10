@@ -109,3 +109,42 @@ def test_blend_single_panel_passthrough(tmp_path):
     img = np.zeros((100, 120), np.float32); img[10:90, 20:100] = 4.0
     p = _write(tmp_path, "solo", img)
     assert np.array_equal(_blend_many([p]), _read_full_canvas(p))
+
+
+def test_merge_writes_the_physical_layer_into_the_header(tmp_path):
+    """A merged mosaic must SAY which layer it is. Layer identity used to be
+    legible only from the op's output directory plus SKYVER ("overlap-2" vs
+    "stars-none-1"), so a starless and a stars mosaic lifted out of the tree
+    were indistinguishable — and they are the two halves of every view."""
+    from types import SimpleNamespace
+
+    from file_io.tiff_file_io import read_tiff_header
+    from mosaics.merging.oss import _merge_layer
+
+    img = np.zeros((60, 80), np.float32)
+    img[10:50, 10:70] = 3.0
+    src = _write(tmp_path, "panel", img)
+    inp = SimpleNamespace(filename=src, stable_hash="abc")
+    out = tmp_path / "merged.tiff"
+    op = SimpleNamespace(filename_fn=lambda *a: str(out))
+
+    _merge_layer(op, None, "Ha", (inp,), level_solve=None, skyver="v",
+                 layer="stars")
+    assert read_tiff_header(out)["LAYER"] == "stars"
+
+
+def test_the_two_merge_ops_declare_opposite_layers(monkeypatch):
+    """The shared `_merge_layer` body stamps whatever it is handed, so the
+    thing worth pinning is that the two callers hand it opposite values."""
+    import inspect
+
+    from mosaics.merging import oss
+
+    seen = []
+    monkeypatch.setattr(
+        oss, "_merge_layer",
+        lambda op, mosaic, filter, inputs, **kw: seen.append(kw["layer"]))
+    for op in (oss.merge_images_oss, oss.merge_images_stars):
+        # past beartype: the bodies only forward, so a real Mosaic is noise
+        inspect.unwrap(op._function)(None, "Ha")
+    assert seen == ["starless", "stars"]

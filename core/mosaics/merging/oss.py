@@ -367,12 +367,15 @@ def _blend_many(paths: list[Path], level_solve: "str | None" = None,
     return numer / denom
 
 
-def _merge_layer(op, mosaic: Mosaic, filter: str, inputs, level_solve, skyver):
+def _merge_layer(op, mosaic: Mosaic, filter: str, inputs, level_solve, skyver,
+                 layer):
     """Shared body of the two layer merges: variadic distance-weighted blend
     (`_blend_many`) + the house TIFF write with the layer's SKYVER stamp.
     `skyver` is the merge-time matching version header — bumping a caller's
     literal is the deliberate re-key for changes to the (unhashed) blend
-    helpers' matching maths."""
+    helpers' matching maths. `layer` stamps which PHYSICAL layer this is
+    ("starless"/"stars"), which until now was legible only from the op's
+    output directory name plus SKYVER."""
     assert len(inputs) >= 1
     output_filename = op.filename_fn(mosaic, filter, *inputs)
     Path(output_filename).parent.mkdir(parents=True, exist_ok=True)
@@ -384,6 +387,7 @@ def _merge_layer(op, mosaic: Mosaic, filter: str, inputs, level_solve, skyver):
                      {"FILTER": filter,
                       "STBLHASH": hash_list([inp.stable_hash for inp in inputs]),
                       "PIPELINE": "AstroFlow-OSS",
+                      "LAYER": layer,
                       "SKYVER": skyver})
 
     new_count = sum(_panel_count(inp) for inp in inputs)
@@ -413,7 +417,8 @@ def merge_images_oss(
     call this with their own placed inputs. One call per mosaic per
     filter; no row/strip decomposition (see `_blend_many` for why)."""
     return _merge_layer(merge_images_oss, mosaic, filter, inputs,
-                        level_solve="overlap", skyver="overlap-2")
+                        level_solve="overlap", skyver="overlap-2",
+                        layer="starless")
 
 
 @node(display="Mosaic Stars", final=True, auto_memory=True, plate_solve="none")  # mosaic projection — non-square pixels
@@ -430,7 +435,8 @@ def merge_images_stars(
     finishes add `starless + star_s·stars` live, and placement/merging
     are linear, so the layer sum reproduces the composite."""
     return _merge_layer(merge_images_stars, mosaic, filter, inputs,
-                        level_solve=None, skyver="stars-none-1")
+                        level_solve=None, skyver="stars-none-1",
+                        layer="stars")
 
 
 @ray.remote(num_cpus=0.1)

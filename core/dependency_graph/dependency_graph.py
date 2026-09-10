@@ -872,8 +872,29 @@ def _report_pass_end(rt: "GraphRuntime") -> None:
                    else "READY")
             groups[key] += 1
             sample.setdefault(key, node)
+        # A node that RAN AND FAILED is not NeverRun, so it never entered
+        # `groups`. Reporting only never-run nodes meant a pass that died in a
+        # failure cascade printed the same "every node ran" line as a clean
+        # one — which misread as success twice on 2026-09-09 (438 permission
+        # errors on a worker with dead mounts, then a self-inflicted churn
+        # loop). Count failures separately and say so.
+        failed: Counter = Counter()
+        fail_sample: dict = {}
+        for node in rt._graph:
+            res = rt.results.get(node, NeverRun)
+            if isinstance(res, Exception):
+                k = (op_of(node), type(res).__name__)
+                failed[k] += 1
+                fail_sample.setdefault(k, res)
+        if failed:
+            nf = sum(failed.values())
+            print(f"### pass_end: {nf} node(s) FAILED; by (op, error):")
+            for (op, err), cnt in failed.most_common(20):
+                print(f"### pass_end failed op={op} n={cnt} error={err}: "
+                      f"{str(fail_sample[(op, err)])[:160]}")
         if not groups:
-            print("### pass_end: every node in the graph ran")
+            print("### pass_end: every node in the graph ran"
+                  + (f" ({sum(failed.values())} FAILED)" if failed else ""))
             return
         total = sum(groups.values())
         print(f"### pass_end: {total} node(s) never ran; frontier by (op, blocker):")

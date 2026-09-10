@@ -104,9 +104,19 @@ def _make_dest_dir_for_date(dest_dir: str, date: datetime.datetime) -> str:
     return dest_dir
 
 
-def _copy_fits_files(fits_files: list[str], dest_dir: str) -> list[str] | None:
+def _copy_fits_files(fits_files: list[str], dest_dir: str) -> bool:
+    """rsync the candidates into `dest_dir`; True if rsync succeeded.
+
+    Deliberately does NOT report which files it copied. `--ignore-existing`
+    means the copied set is a subset of the candidates that only rsync knows,
+    and the old return — the candidate list, restated with the destination
+    prefix — was that subset's plausible-looking impostor. Its one consumer
+    fed it to a sidecar rewrite that bumped 171 mtimes per sweep and spun the
+    graph forever (2026-09-09). Nothing needs the list: the library scan
+    discovers what landed, from the disk.
+    """
     if not fits_files:
-        return []
+        return True
 
     print(f"Using rsync to copy {len(fits_files)} FITS files to '{dest_dir}'...")
     ret = subprocess.run(
@@ -123,10 +133,10 @@ def _copy_fits_files(fits_files: list[str], dest_dir: str) -> list[str] | None:
     ).returncode
     if ret != 0:
         print("Could not rsync FITS files")
-        return None
+        return False
 
     print("rsync is done")
-    return [os.path.join(dest_dir, os.path.basename(f)) for f in fits_files]
+    return True
 
 
 class MountContextManager:
@@ -190,10 +200,6 @@ def _group_subs_by_date(
     return groups, dates
 
 
-def _download_group(fits_files: list[str], dest_dir: str) -> None:
-    assert _copy_fits_files(fits_files, dest_dir) is not None
-
-
 def _download_from_rig_grouped_by_date(
     path: str, dest_path: str, rig: str
 ) -> tuple[datetime.datetime, str] | None:
@@ -251,7 +257,7 @@ def _download_from_rig_grouped_by_date(
             f"Downloading {len(fits_files)} frames from rig {rig_name} "
             f"for date {date} to dir {date_dir}"
         )
-        _download_group(fits_files, date_dir)
+        assert _copy_fits_files(fits_files, date_dir)
 
     return min(dates), rig_name
 

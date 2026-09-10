@@ -165,6 +165,7 @@ def polish_background(
                                {"FILTER": filter,
                                 "STBLHASH": str(merged.stable_hash),
                                 "PIPELINE": "AstroFlow-OSS",
+                                "LAYER": "starless",
                                 "POLISHVER": "gx-mono-3-covnorm"})
     _set_panel_count(output_filename, _panel_count(merged))
 

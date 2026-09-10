@@ -135,11 +135,14 @@ class ContextRef(Generic[T]):
         return NotImplemented
 
     @classmethod
-    def store(cls, cache_key: Any, obj: T) -> "ContextRef[T]":
+    def store(cls, cache_key: Any, obj: T,
+              content_hash: str | None = None) -> "ContextRef[T]":
         """Store obj in context (diskcache) and the Ray object store.
 
         Uses obj.content_hash if the object already carries one (i.e. it is a
         ContentHashed dataclass), otherwise derives the hash from the object.
+        `content_hash` overrides both — for callers whose identity is wider
+        than what hashing the object alone can see (see `store_large`).
 
         Verifies the write landed in the durable cache by reading back. In
         multi-machine setups we hit a silent-drop race: 278 concurrent set
@@ -182,10 +185,11 @@ class ContextRef(Generic[T]):
                 )
             time.sleep(0.05 * attempts)
 
-        if hasattr(obj, "content_hash") and obj.content_hash:
-            content_hash = obj.content_hash
-        else:
-            content_hash = hash_list([obj])
+        if content_hash is None:
+            if hasattr(obj, "content_hash") and obj.content_hash:
+                content_hash = obj.content_hash
+            else:
+                content_hash = hash_list([obj])
 
         return cls(
             cache_key=cache_key,
@@ -195,14 +199,24 @@ class ContextRef(Generic[T]):
         )
 
     @classmethod
-    def store_large(cls, obj: Any) -> "ContextRef":
+    def store_large(cls, obj: Any, identity: Any = None) -> "ContextRef":
         """Store a large object, using its content hash as the diskcache key.
 
         Drop-in replacement for LargeObject(obj). The cache key is
         ("large_object", content_hash), mirroring the old LargeObject convention.
+
+        `identity`, when given, is hashed IN PLACE OF `obj` to derive that
+        hash. Needed because hashing a container collapses each element to
+        its own `content_hash`, and content hashes are deliberately
+        path-independent: a `MetadataDict` therefore hashes IDENTICALLY
+        after the library moves to another volume, so every consumer keyed
+        on the ref cache-hits and goes on serving paths that no longer
+        exist. Pass an identity that names what the caller actually depends
+        on (for the library, `(content_hash, filename)` pairs).
         """
-        content_hash = hash_list([obj])
-        return cls.store(("large_object", content_hash), obj)
+        content_hash = hash_list([obj if identity is None else identity])
+        return cls.store(("large_object", content_hash), obj,
+                         content_hash=content_hash)
 
 
 # --- Step B: Ray-context fast path -----------------------------------

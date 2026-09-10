@@ -190,11 +190,25 @@ class ContextActor:
 
 
 class Context:
-    def get(self, key: Key, default_value: Any = None) -> Any:
+    def _actor(self):
+        """The context actor, connecting to Ray first if this process has not
+        yet. `get`/`set` did this; the other seven methods called
+        `ray.get_actor` directly, so a fresh gunicorn worker whose FIRST Ray
+        call was one of them (e.g. `/api/stacks/<id>/detail` ->
+        resolve_decision -> or_equals) died with RaySystemError "Ray has not
+        been started yet" (boot 60, 2026-09-07). One helper, used by all.
+
+        ALWAYS bind the result to a local before calling a method on it.
+        `ray.get_actor` returns a WEAK handle, and an ActorMethod holds only
+        a weakref back to it — so `self._actor().get.remote(...)` drops the
+        handle at the attribute access and raises "Lost reference to actor"
+        before `.remote` ever runs."""
         if not ray.is_initialized():
             connect_to_ray_cluster()
+        return ray.get_actor("context", namespace=_get_namespace())
 
-        actor = ray.get_actor("context", namespace=_get_namespace())
+    def get(self, key: Key, default_value: Any = None) -> Any:
+        actor = self._actor()
         return ray.get(actor.get.remote(key, default_value))
 
     def __getattr__(self, key: Key) -> Any:
@@ -211,14 +225,11 @@ class Context:
         return self.get(key)
 
     def get_matching(self, key_fragment: Key) -> Any:
-        actor = ray.get_actor("context", namespace=_get_namespace())
+        actor = self._actor()
         return ray.get(actor.get_matching.remote(key_fragment))
 
     def set(self, key: Key, value: Any) -> Any:
-        if not ray.is_initialized():
-            connect_to_ray_cluster()
-
-        actor = ray.get_actor("context", namespace=_get_namespace())
+        actor = self._actor()
         return ray.get(actor.set.remote(key, value))
 
     def __setattr__(self, key: Key, value: Any) -> Any:
@@ -230,31 +241,31 @@ class Context:
     def and_equals(
         self, key: Key, value: Any, length_limit: int | None = None
     ) -> Any:
-        actor = ray.get_actor("context", namespace=_get_namespace())
+        actor = self._actor()
         return ray.get(actor.and_equals.remote(key, value, length_limit))
 
     def or_equals(self, key: Key, value: dict) -> None:
-        actor = ray.get_actor("context", namespace=_get_namespace())
+        actor = self._actor()
         return ray.get(actor.or_equals.remote(key, value))
 
     def __contains__(self, key: Key) -> bool:
-        actor = ray.get_actor("context", namespace=_get_namespace())
+        actor = self._actor()
         return ray.get(actor.contains.remote(key))
 
     def delete(self, key: Key) -> None:
-        actor = ray.get_actor("context", namespace=_get_namespace())
+        actor = self._actor()
         ray.get(actor.delete.remote(key))
 
     def set_many(self, items: dict) -> None:
-        actor = ray.get_actor("context", namespace=_get_namespace())
+        actor = self._actor()
         ray.get(actor.set_many.remote(items))
 
     def clear(self) -> None:
-        actor = ray.get_actor("context", namespace=_get_namespace())
+        actor = self._actor()
         ray.get(actor.clear.remote())
 
     def get_cache_keys(self) -> list[str]:
-        actor = ray.get_actor("context", namespace=_get_namespace())
+        actor = self._actor()
         return ray.get(actor.get_cache_keys.remote())
 
 

@@ -427,6 +427,26 @@ def _read_and_analyze_pixels(
 # sidecar in the dir listing, and on a worker those reads traverse the
 # network mount — measured 565s vs 83s on the head for the same 33k-file
 # listing (2026-09-05 night, placement was luck-of-the-scheduler).
+def _library_identity(metadata: dict) -> tuple:
+    """What a consumer of the library dict actually depends on: WHICH frames
+    (content hash) and WHERE they are (absolute path).
+
+    `hash_list([metadata])` sees only the first half — `make_hashable`
+    collapses each `ImageMetadata` to its own `content_hash`, which is
+    content-addressed and therefore path-INDEPENDENT by design. So moving
+    the library (Astro/Astro2 -> AstroRaw, 2026-08-18) changed no ref hash,
+    invalidated nothing, and every cached Run went on serving paths that no
+    longer existed: every WBPP stack died on FileNotFoundError and it took
+    three rounds of manual eviction to clear. With paths in the identity a
+    relocated library self-heals — `identify_stacks` /
+    `identify_calibration_stacks` take the ref as an argument, so they
+    re-run once and rebuild Runs with live paths, while `stack_files`
+    (keyed on path-independent content hashes) keeps its key and not one
+    master rebuilds.
+    """
+    return tuple(sorted((h, str(m.filename)) for h, m in metadata.items()))
+
+
 @node(num_cpus=0.25, resources={"diskcache": 0.001})
 def build_dir_library(
     dir: str, fingerprint: str, listing: tuple,
@@ -480,7 +500,8 @@ def build_dir_library(
         "library piece built", dir=dir,
         entries=len(metadata), with_defects=len(defects),
     )
-    return (ContextRef.store_large(metadata), ContextRef.store_large(defects))
+    return (ContextRef.store_large(metadata, _library_identity(metadata)),
+            ContextRef.store_large(defects))
 
 
 @node(num_cpus=0.25)
@@ -526,7 +547,8 @@ def build_library_dicts(quarantined: tuple, *pieces: tuple) -> tuple:
     log.info(
         "library dicts built", entries=len(metadata), defects=len(defects),
     )
-    return (ContextRef.store_large(metadata), ContextRef.store_large(defects))
+    return (ContextRef.store_large(metadata, _library_identity(metadata)),
+            ContextRef.store_large(defects))
 
 
 @ray.remote(num_cpus=0.1)

@@ -14,12 +14,18 @@ from pix.image import Image
 from pix.tasks.js import Enum
 from pix.tasks.process import make_process_task
 
-# Narrowband emission-line filters: Chroma 3 nm. FITS FILTER -> line center
-# (nm). Ha = 656.3, OIII = 500.7, SII = 671.6 (standard rest wavelengths).
+# Narrowband emission-line filters: Chroma 3 nm. FITS FILTER -> the centre of
+# the GLASS (nm), which is what the passband integral needs — not always the
+# rest wavelength of the line the filter is named for. Shared with the Gaia XP
+# engine (photometry/gaia_catalog.py), so both integrate the same band.
 _NARROWBAND_LINE_NM = {
     "H": 656.3,  # H-alpha
     "O": 500.7,  # OIII
-    "S": 671.6,  # SII
+    "S": 672.0,  # SII — Chroma centres the 3 nm filter at 672.0 to straddle
+                 # the [S II] 6716/6731 doublet; 671.6 is the 6716 REST
+                 # wavelength, which is not what the glass does. Worth 0.24%
+                 # globally (cancels in the per-sub zero point) plus 0.225%
+                 # star-to-star, measured on 1,500 XP spectra 2026-09-09.
 }
 _CHROMA_BANDWIDTH_NM = 3.0
 
