@@ -24,6 +24,7 @@ quality gate, and `merge_star_flats` adds them to the calibration stacks
 BEFORE any light↔flat association. Groups that fail the gate simply have no
 star flat, and the run falls back to today's chronological/explicit default.
 """
+import math
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -36,6 +37,7 @@ from frozendict import frozendict
 from attributes import ChronologyAttributes
 from attributes.imaging_attributes import _camera_label
 from cache.context_ref import ContextRef
+from clustering.continuous import cluster_continuous
 from decorators import node
 from dependency_graph import Graph
 from file_io.generic import read_header
@@ -118,15 +120,28 @@ class StarFlatCandidates(StarFlats):
 
 def _focal_clusters(values) -> list[list[int]]:
     """Indices grouped by FOCALLEN within the matcher's 2% tolerance
-    (`same_optical_train`), greedily along the sorted values."""
-    order = sorted(range(len(values)), key=lambda i: values[i])
-    clusters: list[list[int]] = []
-    for i in order:
-        if clusters and values[i] <= 1.02 * values[clusters[-1][0]]:
-            clusters[-1].append(i)
-        else:
-            clusters.append([i])
-    return clusters
+    (`same_optical_train`), via the shared `cluster_continuous`.
+
+    This was a hand-rolled copy of that clusterer which differed in one
+    detail: it compared each value to the cluster's FIRST element rather
+    than to the PREVIOUS one, so it was not single-link and its output
+    depended on where a cluster happened to start. Real FOCALLEN values are
+    a continuum, not discrete levels — one 350 mm rig in this library reports
+    346, 347, 348, 349, 350, 351 and 352 — and single-link is what keeps such
+    a run together.
+
+    2% is a RELATIVE tolerance and `cluster_continuous` takes an absolute
+    epsilon, so cluster in LOG space: a gap of log(1.02) between consecutive
+    sorted values is exactly a 2% step.
+    """
+    return [
+        [i for i, _ in cluster]
+        for cluster in cluster_continuous(
+            list(enumerate(values)),
+            epsilon=math.log(1.02),
+            key=lambda item: math.log(item[1]),
+        )
+    ]
 
 
 def star_flat_candidates(metadata: MetadataDict, fingerprints: dict) -> StarFlatCandidates:
@@ -147,6 +162,8 @@ def star_flat_candidates(metadata: MetadataDict, fingerprints: dict) -> StarFlat
             focal = float(focal)
         except (TypeError, ValueError):
             continue
+        if focal <= 0:
+            continue        # bad metadata; also keeps _focal_clusters' log() defined
         cam = _camera_id_hash_from(m, fingerprints.get(FrameHash(h), ())) or f"{m.width_pixels}x{m.height_pixels}"
         groups.setdefault((cam, filt), []).append((focal, FrameHash(h)))
 
