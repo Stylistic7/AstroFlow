@@ -134,3 +134,47 @@ def test_a_real_flat_still_gets_its_bias_and_dark_term():
     signal = flat - (3.0 / 300.0) * dark
     expected = (light - dark) / (signal / np.median(signal))
     assert np.allclose(out, expected, rtol=1e-5)
+
+
+def test_star_flat_thumbnail_resolves_its_built_master(tmp_path, monkeypatch):
+    """A star flat's picture is its built master, not a member frame.
+
+    Regression for 2026-09-09: `get_first_frame` did `stack.all_frames()[0]`,
+    but a star flat's members are light subs read for photometry, so `contents`
+    is empty and that raised IndexError. `get_thumbnail` swallowed it, no other
+    registered producer matched a 1-arg call (`build_star_flat` needs three, to
+    carry the solve settings in its cache key), and every star flat detail page
+    404'd.
+    """
+    from types import SimpleNamespace
+    import previews.stack_thumbnails as st
+    import stacks.star_flat as sfm
+
+    master = tmp_path / "flat.xisf"
+    master.write_bytes(b"not really xisf")
+    stack = SimpleNamespace(kind="star", stable_hash="sf1",
+                            all_frames=lambda: [], all_metadata=lambda: {})
+
+    monkeypatch.setattr(sfm, "star_flat_master_path", lambda s: master)
+    assert str(st.get_first_frame(stack).path) == str(master)
+
+    # An unbuilt flat has no thumbnail yet -- and must never trigger a build.
+    monkeypatch.setattr(sfm, "star_flat_master_path", lambda s: None)
+    try:
+        st.get_first_frame(stack)
+    except FileNotFoundError:
+        pass
+    else:
+        raise AssertionError("expected FileNotFoundError for an unbuilt star flat")
+
+
+def test_ordinary_calibration_stack_still_uses_its_first_frame(monkeypatch):
+    """The star-flat branch must not change panel/sky flats, which do have
+    frames to integrate."""
+    from types import SimpleNamespace
+    import previews.stack_thumbnails as st
+
+    md = {"h1": SimpleNamespace(filename="/raw/flat_0001.fit")}
+    stack = SimpleNamespace(kind=None, stable_hash="cf1",
+                            all_frames=lambda: ["h1"], all_metadata=lambda: md)
+    assert str(st.get_first_frame(stack).path) == "/raw/flat_0001.fit"

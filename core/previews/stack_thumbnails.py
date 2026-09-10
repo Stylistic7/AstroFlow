@@ -14,7 +14,7 @@ from decorators import (
 from previews.operations import resize_array
 from frozendict import frozendict
 from previews.calibration import calibrate_subframe
-from file_io.types import FitsFilePath, WithSidecar
+from file_io.types import FitsFilePath, WithSidecar, XisfFilePath
 from stacks.run import Run
 from stacks.composite_stack import CalibrationStack, CalibrationStacksDict, StacksDict
 from cache.context_ref import ContextRef
@@ -85,6 +85,22 @@ def scatter_stack_thumbnails(
     return Graph({gather_stack_thumbnails: tasks})
 
 def get_first_frame(stack: CalibrationStack) -> WithSidecar:
+    # A STAR flat has no frames to integrate: its members are the light subs
+    # whose sidecar photometry the solve reads, so `contents` is empty and
+    # `all_frames()[0]` raises IndexError. `get_thumbnail` swallows that and
+    # falls through to 404, which left every star flat's detail page blank
+    # (2026-09-09). Its picture is the built master itself — the same source
+    # `previews.calibration.get_subframe_for_calibration_stack` already uses
+    # for the Run carousel. Never trigger a build from a preview: an unbuilt
+    # flat simply has no thumbnail yet.
+    if getattr(stack, "kind", None) == "star":
+        from stacks.star_flat import star_flat_master_path
+        master = star_flat_master_path(stack)
+        if master is None:
+            raise FileNotFoundError(
+                f"star flat {stack.stable_hash} has no built master yet"
+            )
+        return WithSidecar(XisfFilePath(str(master)))
     # Use a sidecar file to avoid ever modifying the user's raw data files.
     metadata = stack.all_metadata()
     first_frame = stack.all_frames()[0]
