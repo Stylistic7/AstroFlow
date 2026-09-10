@@ -77,7 +77,7 @@ def collect_results_as_dict(filenames, fn, prev_result, parallel=True):
     return result
 
 
-def download(save_dir, default_filter):
+def download(save_dir):
     print("Downloading files...")
     # TODO: Put these into the config file, filled in by the web UI.
     #
@@ -122,7 +122,7 @@ def download(save_dir, default_filter):
     # though.
     for rig in rigs:
         download_asiair.run(
-            rig["name"], rig["ip"], search_defs, save_dir, default_filter
+            rig["name"], rig["ip"], search_defs, save_dir
         )
 
 

@@ -8,13 +8,10 @@ import time
 import datetime
 import itertools
 import os
-import astropy.io.fits as pyfits  # type: ignore
 from typing import Any
 
 import file_io
 import file_io.fits_file_io
-from file_io.sidecar import update_sidecar
-import time_util
 
 # TODO: Improve / strengthen all the types in this file.
 
@@ -107,51 +104,6 @@ def _make_dest_dir_for_date(dest_dir: str, date: datetime.datetime) -> str:
     return dest_dir
 
 
-# TODO: Remove `rig` or somehow bring it up through the UI?
-def _save_fits_overlay(
-    fits_files: list[str], rig: str, default_filter: str
-) -> list[str]:
-    """
-    Read raw FITS headers and persist an AstroFlow header overlay into the sidecar.
-    The FITS files themselves are never modified.
-    """
-    print(f"Recording FITS header overlay for {len(fits_files)} files...")
-
-    for filename in fits_files:
-        path = Path(filename)
-        assert path.exists()
-
-        # Read-only: inspect raw header.
-        with pyfits.open(path, mode="readonly", memmap=True) as fits:
-            hdr = fits[0].header
-            date_obs = hdr.get("DATE-OBS")
-            has_filter = "FILTER" in hdr
-
-        if not date_obs:
-            raise KeyError(f"{path}: missing DATE-OBS")
-
-        dt = time_util.parse_utc_datetime(date_obs)
-
-        def _upd(root: dict) -> None:
-            astroflow = root.setdefault("astroflow", {})
-            overlay = astroflow.setdefault("header_overlay", {})
-
-            overlay["RIG"] = rig
-            overlay["DATE"] = dt.strftime("%Y-%m-%d")
-
-            if not has_filter:
-                assert default_filter, "--default-filter must be specified"
-                overlay["FILTER"] = default_filter
-            else:
-                # If raw FITS has FILTER, do not override it via overlay.
-                overlay.pop("FILTER", None)
-
-        update_sidecar(path, _upd)
-
-    print("Done recording FITS header overlay")
-    return fits_files
-
-
 def _copy_fits_files(fits_files: list[str], dest_dir: str) -> list[str] | None:
     if not fits_files:
         return []
@@ -238,16 +190,12 @@ def _group_subs_by_date(
     return groups, dates
 
 
-def _download_group(
-    fits_files: list[str], dest_dir: str, rig: str, default_filter: str
-) -> None:
-    copied_fits_files = _copy_fits_files(fits_files, dest_dir)
-    assert copied_fits_files is not None
-    _save_fits_overlay(copied_fits_files, rig, default_filter)
+def _download_group(fits_files: list[str], dest_dir: str) -> None:
+    assert _copy_fits_files(fits_files, dest_dir) is not None
 
 
 def _download_from_rig_grouped_by_date(
-    path: str, dest_path: str, rig: str, default_filter: str
+    path: str, dest_path: str, rig: str
 ) -> tuple[datetime.datetime, str] | None:
     fits_files = [str(f) for f in list(Path(path).rglob("*.fit"))]
     print(f"Found {len(fits_files)} FITS files from rig {rig} in path {path}")
@@ -303,7 +251,7 @@ def _download_from_rig_grouped_by_date(
             f"Downloading {len(fits_files)} frames from rig {rig_name} "
             f"for date {date} to dir {date_dir}"
         )
-        _download_group(fits_files, date_dir, rig_name, default_filter)
+        _download_group(fits_files, date_dir)
 
     return min(dates), rig_name
 
@@ -324,7 +272,6 @@ def download_from_asiair(
     rig: str,
     ip: str,
     dest_path: str,
-    default_filter: str,
     search_defs: list[dict[str, str]] = _SEARCH_DEFS,
 ) -> None:
     print(f"Pinging rig '{rig}' ({ip})")
@@ -354,7 +301,7 @@ def download_from_asiair(
                     path = os.path.join(mount_point, fits_path)
                     print(f"Copying FITS files from path {path}")
                     result = _download_from_rig_grouped_by_date(
-                        path, dest_path, rig, default_filter
+                        path, dest_path, rig
                     )
                     if result is None:
                         continue
