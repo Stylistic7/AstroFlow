@@ -186,9 +186,12 @@ def test_spfc_scale_is_linear_in_image_brightness():
 
 def test_spfc_scale_agrees_with_the_per_star_scale_column():
     """`spfc_scale` aggregates exactly the ratio `harvest_sub_xp` stores per
-    star, so the frame number must sit on the median of that column."""
+    star, CONVERTED to PI's units — the frame number must sit on the median
+    of that column times the passband's conversion. The conversion is what
+    makes `SPFC_REFERENCE_SCALE / scale` a gain near 1 instead of ~1e-16
+    (2026-09-11: omitting it zeroed 151 masters)."""
     from photometry.forced_photometry import measure
-    from photometry.harvest import MIN_SNR, spfc_scale
+    from photometry.harvest import _XP_TO_PI_SCALE, MIN_SNR, spfc_scale
 
     rng = np.random.default_rng(4)
     image, w, Catalogue = _synthetic_field(rng)
@@ -200,8 +203,24 @@ def test_spfc_scale_agrees_with_the_per_star_scale_column():
     ok = m["ok"] & (st["catalog_flux"] > 0) & (m["snr"] >= MIN_SNR)
     per_star = m["signal"][ok] / st["catalog_flux"][ok]
     win = (st["G"][ok] >= 8.0) & (st["G"][ok] <= 13.5)
-    assert scale == pytest.approx(float(np.median(per_star[win])), rel=1e-6)
+    assert scale == pytest.approx(
+        float(np.median(per_star[win])) * _XP_TO_PI_SCALE["H"], rel=1e-6
+    )
     assert sigma > 0 and n == int(win.sum())
+
+
+def test_spfc_scale_refuses_a_passband_with_no_measured_conversion():
+    """The PI-unit conversion is MEASURED per passband, not derived — R
+    matches its bandwidth ratio to 1.4% but G misses by 15%. An unmeasured
+    filter must raise rather than silently land that channel on the wrong
+    photometric gauge."""
+    from photometry.harvest import _XP_TO_PI_SCALE, spfc_scale
+
+    rng = np.random.default_rng(7)
+    image, w, Catalogue = _synthetic_field(rng)
+    assert "Z" not in _XP_TO_PI_SCALE
+    with pytest.raises(ValueError, match="no measured PI-unit conversion"):
+        spfc_scale(image, w, filter="Z", cat=Catalogue())
 
 
 def test_spfc_scale_refuses_a_wrong_wcs():

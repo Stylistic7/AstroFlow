@@ -68,6 +68,35 @@ def harvest_sub_xp(path: str | Path, *, filter: str | None, cat: GaiaCatalog | N
                    "good": n >= _MIN_WINDOW_STARS and np.isfinite(scatter) and scatter < _MAX_SCATTER}
 
 
+# PI-SPFC ScaleFactor per unit of THIS engine's raw ratio. Our catalogue
+# flux is the XP passband integral in W m^-2 nm^-1 (gaia_catalog.py); PI's
+# is in its own internal units, and the two differ by a per-passband factor
+# — the narrowband box is 3 nm while a broadband curve integrates ~90 nm,
+# so the raw ratios are ~33x apart between H and R. Any global factor
+# cancels in the star flat's per-sub zero points, which is why this never
+# mattered until `post_stack_calibrate` started dividing the PI-unit
+# SPFC_REFERENCE_SCALE by a raw ratio: gain came out ~1e-16 and 151 masters
+# were scaled to numerically zero (2026-09-11).
+#
+# MEASURED head-to-head against PixInsight on production WBPP masters
+# (2026-09-11): run SPFC on the master, read `PCL:SPFC:ScaleFactors`, divide
+# by this engine's raw ratio on the same pixels. Reproducible per filter
+# across DIFFERENT masters — R 2.931/2.891e-15 (1.4%), G 2.451/2.459e-15
+# (0.35%) — and H agrees with a surviving PI-era production certificate
+# (8.752e-17) to 1.5%. NOT derivable from bandwidth alone: R matches
+# width/3.0 to 1.4% but G misses by 15% and L by 2.3x, so these are
+# measurements, not a formula. A new filter needs a new measurement.
+_XP_TO_PI_SCALE: dict[str, float] = {
+    "H": 8.880e-17,
+    "S": 8.667e-17,
+    "O": 1.1672e-16,
+    "R": 2.911e-15,
+    "G": 2.455e-15,
+    "B": 3.553e-15,
+    "L": 3.185e-14,
+}
+
+
 def spfc_scale(
     image: np.ndarray, wcs: WCS, *, filter: str | None,
     cat: GaiaCatalog | None = None,
@@ -75,12 +104,13 @@ def spfc_scale(
     """PI SPFC's `ScaleFactors` for an already-plate-solved image, computed
     here instead of in PixInsight: `(scale, n_stars, sigma)`.
 
-    `scale` is the robust image/catalogue flux ratio over matched stars —
-    numerically the same quantity PI publishes as
-    `PCL:SPFC:ScaleFactors`, so `SPFC_REFERENCE_SCALE / scale` is the gain
-    that lands pixels on the house photometric gauge (`units.py`). It is
-    the SAME ratio `harvest_sub_xp` stores per star as the `scale` column;
-    this aggregates it to one number for a whole frame.
+    `scale` is the robust image/catalogue flux ratio over matched stars,
+    CONVERTED to PI's units via `_XP_TO_PI_SCALE`, so it is numerically the
+    quantity PI publishes as `PCL:SPFC:ScaleFactors` and
+    `SPFC_REFERENCE_SCALE / scale` is the gain that lands pixels on the
+    house photometric gauge (`units.py`). `harvest_sub_xp`'s per-star
+    `scale` column is the same ratio UNCONVERTED — correct there, because
+    the star flat only ever compares sub to sub within one passband.
 
     `image` must already be in the [0, 1] convention PI uses — raw 16-bit
     subs divide by 65535 (as `harvest_sub_xp` does), a float XISF master is
@@ -94,9 +124,17 @@ def spfc_scale(
 
     if filter is None:
         raise ValueError("spfc_scale: no FITS FILTER; cannot pick a catalogue passband")
+    key = filter.strip().upper()[:1]
+    if key not in _XP_TO_PI_SCALE:
+        raise ValueError(
+            f"spfc_scale: no measured PI-unit conversion for filter {filter!r} "
+            f"(key {key!r}); have {sorted(_XP_TO_PI_SCALE)}. Measure it against "
+            f"PixInsight before calibrating this passband — guessing the "
+            f"conversion puts the channel on the wrong photometric gauge."
+        )
     cat = cat or catalog()
     H, W = image.shape
-    st = cat.stars_in_field(wcs, W, H, filter.strip().upper()[:1])
+    st = cat.stars_in_field(wcs, W, H, key)
     st = {k: v[st["G"] <= MAX_G] for k, v in st.items()}
     m = measure(image, st["x"], st["y"])
     ok = m["ok"] & (st["catalog_flux"] > 0) & (m["snr"] >= MIN_SNR)
@@ -117,7 +155,7 @@ def spfc_scale(
     # flat solves for), so the frame-level number is its robust centre.
     G, ratio = stars[:, 4], stars[:, 8]
     win = (G >= 8.0) & (G <= MAX_G) & np.isfinite(ratio) & (ratio > 0)
-    r = ratio[win]
+    r = ratio[win] * _XP_TO_PI_SCALE[key]
     scale = float(np.median(r))
     sigma = float(np.median(np.abs(r - scale)) * 1.4826)
     return scale, int(win.sum()), sigma

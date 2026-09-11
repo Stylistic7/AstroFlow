@@ -78,6 +78,21 @@ from units import SPFC_REFERENCE_SCALE, SpfcScale  # noqa: E402
 
 _SPFC_REFERENCE_SCALE: SpfcScale = SpfcScale(SPFC_REFERENCE_SCALE)
 
+# Fail-fast band for the applied gain. It is NOT a quality filter — it
+# catches a UNITS mismatch between the reference and the measured scale.
+# 2026-09-11: a rewrite divided the PI-unit reference by this engine's raw
+# W m^-2 nm^-1 ratio, yielding gain ~1e-16; 151 masters were multiplied to
+# numerically zero and written out as a constant 0.005 pedestal field, and
+# nothing downstream noticed. Fourteen orders of magnitude is not a bad
+# image, it is a bug — so refuse, never scale.
+#
+# Measured head-to-head with PixInsight the same day: narrowband gains run
+# 0.46-0.90, broadband 0.05-0.09, and L 0.004 (a wide passband collects far
+# more signal per unit catalogue flux, so the gauge scales it down hard).
+# The floor sits two decades under L — wide enough that a real master never
+# trips it, still twelve orders clear of a units error.
+_SANE_GAIN = (1e-4, 1e4)
+
 # Reads the SPFC solution off the live view (PI 1.9.4 publishes it as the
 # PCL:SPFC:* properties, NOT the old PSFFLX00 keyword), prints the
 # certificate for the sidecar, and applies the gain in-session.
@@ -165,6 +180,15 @@ def post_stack_calibrate(
             f"reshoot this panel."
         ) from e
     gain = float(_SPFC_REFERENCE_SCALE) / scale
+    if not _SANE_GAIN[0] <= gain <= _SANE_GAIN[1]:
+        raise ValueError(
+            f"post_stack_calibrate: gain {gain:.3e} is outside the sane band "
+            f"{_SANE_GAIN} (scale={scale:.6g}, reference="
+            f"{float(_SPFC_REFERENCE_SCALE):.6g}, filter={stack.filter}, "
+            f"{master.filename}). A gain this far from 1 means the reference "
+            f"and the measured scale are in DIFFERENT UNITS, not that the "
+            f"image is unusual. REFUSING to scale pixels by it."
+        )
     cert = {"scale": scale, "n_stars": n_stars, "sigma": sigma,
             "reference": float(_SPFC_REFERENCE_SCALE), "engine": "astroflow-xp"}
 
