@@ -189,7 +189,7 @@ def tile_metadata_tap(
     star_paths = _sibling_star_paths(
         object_type, object_id, pipeline, display, filter, ancestors)
     return _tile_metadata_response(path, backend_port, display, status=status,
-                                   star_paths=star_paths)
+                                   star_paths=star_paths, object_type=object_type)
 
 
 # Starless display → its stars-layer sibling(s), for COMPOSITE-derived
@@ -415,8 +415,52 @@ def _per_channel_linear_stats_uncached(path, star_paths=None):
     return stats
 
 
+def _declared_colorspace(base) -> "str | None":
+    """The COLORSPC the PRODUCER stamped into this payload, or None.
+
+    Everything this app computes and serves is LINEAR — the non-linear step
+    lives in the frontend WebGPU shaders. The one deliberate exception is
+    `mosaics/merging/stretched.py`, which equalizes panels in stretched space
+    because photometry is intentionally broken there (decision 2026-08-21),
+    and which stamps its output `COLORSPC: "display"` precisely so the viewer
+    "applies taste, not a second autostretch".
+
+    That tag is the authority, and it is written into the TIFF
+    `image-description` JSON alongside PIPELINE / FILTER (file_io/planar.py).
+    Classifying by DISPLAY NAME instead got both directions wrong, because a
+    name is not identity: `merge_images_stretched` and `polish_background`
+    BOTH tap `display="Mosaic Starless"`, so the stretched deliverable was
+    being marked `linear-scene` and stretched twice, while every stack tap
+    (`Master`, `Post-Processed`) fell to the `display` default and was served
+    raw linear — near-black, since a master sits at sky ~0.005 (live
+    2026-09-11, stack 6d5b69676e23fdd9).
+    """
+    import json
+    try:
+        desc = base.get("image-description")
+    except Exception:
+        return None
+    try:
+        return (json.loads(desc) or {}).get("COLORSPC")
+    except Exception:
+        return None
+
+
+def _is_display_referred(base) -> bool:
+    """True only for a payload that says it is already display-referred.
+
+    Linear is the DEFAULT — an untagged payload is linear scene data, which is
+    what nearly everything is. An 8-bit payload is display-ready by its own
+    encoding (the Subframe previews, which the tile route's uchar branch
+    rescales /255) and must not be stretched a second time.
+    """
+    if str(getattr(base, "format", "")) in ("uchar", "char"):
+        return True
+    return _declared_colorspace(base) == "display"
+
+
 def _tile_metadata_response(path, backend_port, display=None, status=None,
-                            star_paths=None):
+                            star_paths=None, object_type=None):
     if path is None:
         return abort(404)
     base = _get_vips_page(path, 0)
@@ -442,12 +486,19 @@ def _tile_metadata_response(path, backend_port, display=None, status=None,
     #   "linear-scene" → a linear scene format (any band count) feeding the
     #                    multi-source live finishes;
     #   "display"      → baked RGB deliverable, shader passes it through.
-    if display in LINEAR_FINISH_DISPLAYS and base.bands >= 3:
+    declared = _declared_colorspace(base)
+    if declared == "linear-sho" or (
+            display in LINEAR_FINISH_DISPLAYS and base.bands >= 3):
         meta["colorspace"] = "linear-sho"
-    elif display in LINEAR_SCENE_DISPLAYS:
-        meta["colorspace"] = "linear-scene"
-    else:
+    elif _is_display_referred(base):
         meta["colorspace"] = "display"
+    else:
+        # LINEAR BY DEFAULT. Everything the app computes is linear; only a
+        # payload that stamped itself display-referred opts out (see
+        # `_declared_colorspace`). An unrecognised or brand-new tap therefore
+        # gets stretched, which is right far more often than passing raw
+        # linear data through to the shader.
+        meta["colorspace"] = "linear-scene"
     if meta["colorspace"] != "display":
         stats = _per_channel_linear_stats(path, star_paths=star_paths)
         # Rich generic per-channel stats — frontend finishes seed from these.
