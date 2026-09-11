@@ -86,10 +86,6 @@ const StackViewer = () => {
         stack={stack}
         stack_id={unified_stack_id}
         pipeline={pipeline}
-        pipelineOutputs={pipelineOutputs}
-        hierarchy={hierarchy}
-        display={display}
-        filter={filter}
       />
       <StackTabs
         stack_type={stack_type}
