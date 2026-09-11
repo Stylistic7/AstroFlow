@@ -275,17 +275,36 @@ class StateActor:
 
 
 class State:
+    def _actor(self):
+        """The state actor, connecting to Ray first if this process has not
+        yet. A fresh gunicorn worker whose FIRST Ray call landed here died
+        with RaySystemError "Ray has not been started yet" — every
+        cart/archive button 500'd (2026-09-10: archiving 35 cart items
+        returned 500 on all 35, though the cart mutation had already
+        happened, so only the graph restart was lost). Same fix, and same
+        reason, as `Context._actor`.
+
+        Bind the result to a LOCAL before calling a method on it:
+        `ray.get_actor` returns a WEAK handle and an ActorMethod holds only
+        a weakref back to it, so `self._actor().enqueue.remote(...)` drops
+        the handle at the attribute access and raises "Lost reference to
+        actor" before `.remote` ever runs."""
+        from ray_infra.ray_init import connect_to_ray_cluster
+        if not ray.is_initialized():
+            connect_to_ray_cluster()
+        return ray.get_actor("state", namespace=_get_namespace())
+
     def enqueue(self, action: Action) -> int:
-        actor = ray.get_actor("state", namespace=_get_namespace())
+        actor = self._actor()
         return ray.get(actor.enqueue.remote(action))
 
     def drain_and_restart(self) -> None:
         """Stop starting new tasks; let in-flight finish; then restart."""
-        actor = ray.get_actor("state", namespace=_get_namespace())
+        actor = self._actor()
         ray.get(actor.drain_and_restart.remote())
 
     def is_busy(self) -> bool:
-        actor = ray.get_actor("state", namespace=_get_namespace())
+        actor = self._actor()
         return ray.get(actor.is_busy.remote())
 
 
