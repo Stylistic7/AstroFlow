@@ -129,3 +129,98 @@ def test_harvest_gate_accepts_a_correct_wcs_and_rejects_a_wrong_one(tmp_path):
                                                                                 # (noise-limited: 3.8% at G 10.5)
     _, wrong = harvest.harvest_sub_xp(p, filter="H", cat=Catalogue(8.0))
     assert not wrong["good"]
+
+
+def _synthetic_field(rng, H=600, W=800, n=300, fwhm=2.5):
+    """A jittered grid of unblended stars with known total flux, plus a
+    stand-in catalogue that reports those fluxes. Shared by the spfc_scale
+    tests below."""
+    sigma = fwhm / 2.355
+    col, row = np.meshgrid(np.arange(20), np.arange(15))
+    x = (col.ravel() + 0.5) * 40 + rng.uniform(-8, 8, n)
+    y = (row.ravel() + 0.5) * 40 + rng.uniform(-8, 8, n)
+    G = rng.uniform(8.5, 13.0, n)
+    flux = 0.3 * 10 ** (-0.4 * (G - 8.0))
+    yy, xx = np.mgrid[:H, :W]
+    image = np.full((H, W), 0.02) + rng.normal(0, 1e-4, (H, W))
+    for xi, yi, fi in zip(x, y, flux):
+        sl = (slice(int(yi) - 8, int(yi) + 9), slice(int(xi) - 8, int(xi) + 9))
+        image[sl] += fi / (2 * np.pi * sigma**2) * np.exp(
+            -((xx[sl] - xi) ** 2 + (yy[sl] - yi) ** 2) / (2 * sigma**2))
+    w = WCS(naxis=2)
+    w.wcs.crpix, w.wcs.cdelt = [W / 2, H / 2], [-1 / 3600, 1 / 3600]
+    w.wcs.crval, w.wcs.ctype = [100, 45], ["RA---TAN", "DEC--TAN"]
+    colour = rng.uniform(0.5, 1.5, n)
+
+    class Catalogue:
+        def __init__(self, dx=0.0):
+            self.dx = dx
+
+        def stars_in_field(self, wcs, width, height, key):
+            return {"source_id": np.arange(n), "x": x + self.dx, "y": y,
+                    "ra": x, "dec": y, "G": G, "colour": colour,
+                    "catalog_flux": flux}
+
+    return image.astype(np.float32), w, Catalogue
+
+
+def test_spfc_scale_is_linear_in_image_brightness():
+    """THE property the gain depends on. `post_stack_calibrate` multiplies by
+    `SPFC_REFERENCE_SCALE / scale`, so a master that is k times brighter must
+    report k times the scale — otherwise the gain does not cancel it and every
+    panel lands on a different photometric gauge."""
+    from photometry.harvest import spfc_scale
+
+    rng = np.random.default_rng(3)
+    image, w, Catalogue = _synthetic_field(rng)
+    s1, n1, _ = spfc_scale(image, w, filter="H", cat=Catalogue())
+    s2, n2, _ = spfc_scale(image * 2.0, w, filter="H", cat=Catalogue())
+    assert n1 > 100 and n2 > 100
+    assert s2 / s1 == pytest.approx(2.0, rel=0.02)
+
+    # and therefore the gain-corrected pixels are invariant
+    from units import SPFC_REFERENCE_SCALE
+    assert (image * (SPFC_REFERENCE_SCALE / s1)).mean() == pytest.approx(
+        (image * 2.0 * (SPFC_REFERENCE_SCALE / s2)).mean(), rel=0.02)
+
+
+def test_spfc_scale_agrees_with_the_per_star_scale_column():
+    """`spfc_scale` aggregates exactly the ratio `harvest_sub_xp` stores per
+    star, so the frame number must sit on the median of that column."""
+    from photometry.forced_photometry import measure
+    from photometry.harvest import MIN_SNR, spfc_scale
+
+    rng = np.random.default_rng(4)
+    image, w, Catalogue = _synthetic_field(rng)
+    cat = Catalogue()
+    scale, n, sigma = spfc_scale(image, w, filter="H", cat=cat)
+
+    st = cat.stars_in_field(w, image.shape[1], image.shape[0], "H")
+    m = measure(image, st["x"], st["y"])
+    ok = m["ok"] & (st["catalog_flux"] > 0) & (m["snr"] >= MIN_SNR)
+    per_star = m["signal"][ok] / st["catalog_flux"][ok]
+    win = (st["G"][ok] >= 8.0) & (st["G"][ok] <= 13.5)
+    assert scale == pytest.approx(float(np.median(per_star[win])), rel=1e-6)
+    assert sigma > 0 and n == int(win.sum())
+
+
+def test_spfc_scale_refuses_a_wrong_wcs():
+    """A wrong plate solution measures noise at every catalogue position. That
+    must RAISE, not return a plausible number — an uncalibrated master passed
+    downstream is the failure this guards (PI's "Insufficient data" did the
+    same job)."""
+    from photometry.harvest import spfc_scale
+
+    rng = np.random.default_rng(5)
+    image, w, Catalogue = _synthetic_field(rng)
+    with pytest.raises(ValueError, match="too few calibratable stars"):
+        spfc_scale(image, w, filter="H", cat=Catalogue(dx=8.0))
+
+
+def test_spfc_scale_needs_a_filter():
+    from photometry.harvest import spfc_scale
+
+    rng = np.random.default_rng(6)
+    image, w, Catalogue = _synthetic_field(rng)
+    with pytest.raises(ValueError, match="no FITS FILTER"):
+        spfc_scale(image, w, filter=None, cat=Catalogue())

@@ -83,34 +83,9 @@ _SPFC_REFERENCE_SCALE: SpfcScale = SpfcScale(SPFC_REFERENCE_SCALE)
 # certificate for the sidecar, and applies the gain in-session.
 # rescale/truncate stay OFF: the correction must be purely linear, and
 # star cores above 1.0 are legitimate in float.
-_SPFC_GAIN_JS = """
-let view = View.viewById("{view_id}");
-function first(v) {{
-    return (typeof v == "number") ? v : (v && (v.at ? v.at(0) : v[0]));
-}}
-let flx = first(view.propertyValue("PCL:SPFC:ScaleFactors"));
-let n = first(view.propertyValue("PCL:SPFC:Counts"));
-let sig = first(view.propertyValue("PCL:SPFC:Sigmas"));
-if (flx == null || !isFinite(flx) || flx <= 0)
-    throw new Error("post_stack_calibrate: no SPFC scale after SFC");
-let scale = {reference} / flx;
-console.writeln(format(
-    "ASTROFLOW: spfc_cert scale %.8e n %d sigma %.8e gain %.6f",
-    flx, n | 0, sig || 0, scale));
-let P = new PixelMath;
-P.expression = format("$T*%.10f", scale);
-P.useSingleExpression = true;
-P.createNewImage = false;
-P.rescale = false;
-P.truncate = false;
-P.executeOn(view);
-"""
-
-
 @node(
     display="Post-Processed",
     cache_key_narrow=_post_stack_calibrate_narrow,
-    resources={"PixInsight": 1},
     auto_memory=True,
 )
 def post_stack_calibrate(
@@ -123,8 +98,18 @@ def post_stack_calibrate(
     pipeline's only externally ground-truthed step; gains BEFORE
     backgrounds), then GraXpert background extraction (gated by
     `config.background_extraction`), then the sky pinned to the shared
-    pedestal. Output = gain-true, gradient-corrected, pedestal-pinned —
-    and worth eyeballing under the Post-Processed tap.
+    pedestal.
+
+    TAKES NO PIXINSIGHT SLOT. The SPFC scale is computed by the in-house
+    Gaia XP engine (`photometry.harvest.spfc_scale`) rather than by PI's
+    SpectrophotometricFluxCalibration, and the gain is a numpy multiply, so
+    `WriteAstrometricSolution` (which existed only to hand PI a WCS it
+    would accept) is gone too. PI is the cluster's scarce resource — 2
+    slots against three PI ops per panel — and this op was queueing behind
+    WBPP for one it did not need.
+
+    Output = gain-true, gradient-corrected, pedestal-pinned — and worth
+    eyeballing under the Post-Processed tap.
 
     The SPFC certificate (scale, N stars, sigma, reference gauge) is
     recorded in the output's sidecar. A master SPFC cannot calibrate
@@ -141,7 +126,7 @@ def post_stack_calibrate(
         # bug. Fail loud.
         raise ValueError(
             f"post_stack_calibrate: master {master.filename} has no "
-            f"plate_solution; cannot inject WCS for SPFC"
+            f"plate_solution; SPFC cannot match catalogue stars without a WCS"
         )
 
     output_filename = post_stack_calibrate.filename_fn(stack, config, master)
@@ -154,48 +139,44 @@ def post_stack_calibrate(
         )
         return WithSidecar(XisfFilePath(output_filename))
 
-    import re
+    from astropy.io import fits as pyfits
+    from astropy.wcs import WCS
 
     from file_io.conversion import convert_xisf_to_fits
     from file_io.generic import read_image
     from file_io.sidecar import set_section
-    from pix.image import Image
-    from pix.recipe import PixInsightError, Step
-    from pix.tasks import (
-        SpectrophotometricFluxCalibration,
-        WriteAstrometricSolution,
-    )
+    from photometry.harvest import spfc_scale
+
+    image = np.asarray(read_image(Path(master.filename))).astype(np.float32)
+    if image.ndim == 3:
+        image = image[:, :, 0]
+    hdr = master.plate_solution.header
+    wcs = WCS(pyfits.Header({
+        k: v for k, v in hdr.items()
+        if isinstance(v, (int, float, str)) and k not in ("COMMENT", "HISTORY")
+    }))
+    try:
+        scale, n_stars, sigma = spfc_scale(image, wcs, filter=stack.filter)
+    except ValueError as e:
+        raise ValueError(
+            f"post_stack_calibrate: too few calibratable stars on "
+            f"{stack.stable_hash} filter {stack.filter} ({master.filename}). "
+            f"REFUSING to pass uncalibrated data downstream — quarantine or "
+            f"reshoot this panel."
+        ) from e
+    gain = float(_SPFC_REFERENCE_SCALE) / scale
+    cert = {"scale": scale, "n_stars": n_stars, "sigma": sigma,
+            "reference": float(_SPFC_REFERENCE_SCALE), "engine": "astroflow-xp"}
 
     with tempfile.TemporaryDirectory(prefix="post_stack_calibrate_") as td:
         gain_xisf = Path(td) / "gain_true.xisf"
-        img = Image.open(Path(master.filename), filter=stack.filter)
-        img = WriteAstrometricSolution(img, master.plate_solution.header)
-        img = SpectrophotometricFluxCalibration(img)
-        img.recipe.add_step(Step(
-            name="spfc gain",
-            javascript=_SPFC_GAIN_JS.format(
-                view_id=img.view_id, reference=_SPFC_REFERENCE_SCALE),
-        ))
-        try:
-            img.save_to(gain_xisf)
-        except PixInsightError as e:
-            if "Insufficient data" not in str(e):
-                raise
-            raise ValueError(
-                f"post_stack_calibrate: SPFC found too few calibratable "
-                f"stars on {stack.stable_hash} filter {stack.filter} "
-                f"({master.filename}). REFUSING to pass uncalibrated data "
-                f"downstream — quarantine or reshoot this panel."
-            ) from e
-
-        m = re.search(
-            r"spfc_cert scale ([\d.eE+-]+) n (\d+) sigma ([\d.eE+-]+)",
-            img.recipe.log or "")
-        cert = {
-            "scale": float(m.group(1)), "n_stars": int(m.group(2)),
-            "sigma": float(m.group(3)),
-            "reference": _SPFC_REFERENCE_SCALE,
-        } if m else None
+        # Gain-true pixels, written through the master's own XISF so FITS
+        # keywords and the astrometric solution survive (same contract the
+        # PI recipe had).
+        _write_pixels_preserving_metadata(
+            Path(master.filename), gain_xisf, image * np.float32(gain),
+        )
+        del image
 
         corrected = None
         if config.background_extraction:
