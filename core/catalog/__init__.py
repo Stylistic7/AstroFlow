@@ -3,13 +3,15 @@
 `(object × pipeline × tap × filter) → Product → path → exists?`, all pure reads
 over the pipeline registry, the trace, and disk. See `catalog.queries`.
 """
-from products.product import Product, object_class
+from products.product import Product, object_class, url_type_of
 from catalog.queries import (
     products_for,
     existing_for,
     default_product_for,
     default_pipeline_for,
     predict_path,
+    master_path,
+    product_taps,
     viewable_path,
     resolve_product,
     viewable_from_master,
@@ -23,11 +25,14 @@ from catalog.queries import (
 __all__ = [
     "Product",
     "object_class",
+    "url_type_of",
     "products_for",
     "existing_for",
     "default_product_for",
     "default_pipeline_for",
     "predict_path",
+    "master_path",
+    "product_taps",
     "viewable_path",
     "resolve_product",
     "viewable_from_master",

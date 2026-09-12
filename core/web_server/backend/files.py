@@ -89,21 +89,22 @@ def stacking_report(stack_id):
       display  (default: `catalog.default_display_for`)
     """
     from stacks.stacking_report import read_stacking_report
-    from web_server.backend.metadata import available_tap_path
-    from catalog import default_pipeline_for, default_display_for
+    from catalog import (
+        Product, default_pipeline_for, default_display_for, master_path)
 
     if stack_id not in (context.stacks or {}):
         return jsonify({"error": "stack not found"}), 404
 
     pipeline = request.args.get("pipeline") or default_pipeline_for("stack", stack_id)
     display = request.args.get("display") or default_display_for("stack")
+    stack = context.stacks[stack_id].get()
 
-    master_path = available_tap_path(pipeline, display, "stack", stack_id, None)
-    if not master_path or not Path(master_path).exists():
+    path = master_path(Product("stack", stack_id, pipeline, display, stack.filter))
+    if path is None:
         return jsonify(None)
 
     try:
-        return jsonify(read_stacking_report(master_path).to_json())
+        return jsonify(read_stacking_report(str(path)).to_json())
     except Exception as e:
         return jsonify({"error": f"failed to read report: {e}"}), 500
 
@@ -217,26 +218,22 @@ def invalidate_stack(stack_id):
 def open_stack_master(stack_id, pipeline):
     """Open the stack's Master file in PixInsight.
 
-    Resolves the on-disk master through the SAME tap system the stack page
-    uses to DISPLAY it (`available_tap_path`, existence-gated) — so open stays in
-    lockstep with what's shown, and works for any stacker backend (WBPP
-    `stack_files`, OSS `stack_files_oss`, downscaled, ...). The old
-    `traced_path_for(..., "stack_files", stack=...)` path was broken: the
-    trace's stack_files entries carry an empty `identity`, so it never
-    matched. `pipeline` (URL-encoded) selects which pipeline's master; the
-    caller passes the pipeline it is currently viewing, or omits it to open
-    the catalog's default (`catalog.default_pipeline_for`).
+    Resolves the on-disk master through the SAME catalog the stack page uses
+    to DISPLAY it (`catalog.master_path`) — so open stays in lockstep with
+    what's shown, and works for any stacker backend (WBPP `stack_files`, OSS
+    `stack_files_oss`, downscaled, ...). `pipeline` (URL-encoded) selects
+    which pipeline's master; the caller passes the pipeline it is currently
+    viewing, or omits it to open the catalog's default
+    (`catalog.default_pipeline_for`).
     """
-    from web_server.backend.metadata import available_tap_path
-    from catalog import default_pipeline_for
+    from catalog import Product, default_pipeline_for, master_path
     if stack_id not in (context.stacks or {}):
         return Response(status=404)
     if pipeline is None:
         pipeline = default_pipeline_for("stack", stack_id)
     stack = context.stacks[stack_id].get()
-    filename = available_tap_path(
-        pipeline, "Master", "stack", stack_id, getattr(stack, "filter", None),
-    )
+    filename = master_path(
+        Product("stack", stack_id, pipeline, "Master", stack.filter))
     if filename is None:
         return Response(status=404)
     print(f"### opening filename {filename}", flush=True)
@@ -363,15 +360,14 @@ def open_image(filename):
 @tap_route(files_bp, "/api/open_mosaic_master", hierarchy=("mosaic_id",))
 def open_mosaic_master(mosaic_id, pipeline, display, filter):
     """Open a specific (pipeline, tap) of a mosaic+filter in PixInsight.
-    Path resolution goes through the cached pipeline trace + disk
-    (`available_tap_path`)."""
-    from web_server.backend.metadata import available_tap_path
+    Path resolution goes through the catalog (`master_path`)."""
+    from catalog import Product, master_path
 
     mosaics = context.mosaics or {}
     if mosaic_id not in mosaics:
         return jsonify({"error": "mosaic not found"}), 404
 
-    path = available_tap_path(pipeline, display, "mosaic", mosaic_id, filter)
+    path = master_path(Product("mosaic", mosaic_id, pipeline, display, filter))
     if path is None:
         return jsonify({"error": "no image available to open"}), 404
 
@@ -390,14 +386,14 @@ def open_target_masters(target_id, pipeline):
     """Open every channel master of a target in PixInsight, each view named
     for its filter.
 
-    Paths come from the pipeline trace (`available_tap_path` at the
-    "Channel" tap that `merge_target_channel` declares), never from a
-    filesystem scan. Scanning for a master by stable_hash matches
-    superseded generations as readily as current ones, and a stale master
-    opened by hand is indistinguishable from live output once it is on
-    screen — which is the whole reason this button exists.
+    Paths come from the catalog (`master_path` at the "Channel" tap that
+    `merge_target_channel` declares), never from a filesystem scan. Scanning
+    for a master by stable_hash matches superseded generations as readily as
+    current ones, and a stale master opened by hand is indistinguishable
+    from live output once it is on screen — which is the whole reason this
+    button exists.
     """
-    from web_server.backend.metadata import available_tap_path
+    from catalog import Product, master_path
     from file_io.planar import reconstruct_planar_tiff
     from pix.runner import open_in_gui
 
@@ -411,8 +407,8 @@ def open_target_masters(target_id, pipeline):
     missing: list[str] = []
     for stack_id in target.stack_ids:
         filter = stacks[stack_id].get().filter
-        path = available_tap_path(
-            pipeline, "Channel", "target", target_id, filter)
+        path = master_path(
+            Product("target", target_id, pipeline, "Channel", filter))
         if path is None:
             missing.append(filter)
             continue

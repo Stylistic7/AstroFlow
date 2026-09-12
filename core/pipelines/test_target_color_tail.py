@@ -140,10 +140,10 @@ def test_target_tail_traces_with_target_taps(tmp_path, monkeypatch):
     from compute_graph.compute_graph import extract_pipeline_taps
     taps = list(extract_pipeline_taps(graph))
     assert taps, "no taps extracted from the target tail"
-    routed = {(object_type, object_id) for _, (object_type, object_id, _, _) in taps}
-    assert routed == {("Target", t.stable_hash)}, (
+    routed = {(tap["object_type"], tap["object_id"]) for _, tap in taps}
+    assert routed == {("target", t.stable_hash)}, (
         f"taps must route to the TARGET, got {routed}")
-    displays = {display for _, (_, _, display, _) in taps}
+    displays = {tap["display"] for _, tap in taps}
     # The colour output is the LINEAR SCENE FORMATS only — starless + stars
     # layer pairs, no baked palettes and no baked with-stars views
     # (2026-09-02; looks are assembled live in WGSL, finishes/stock.py).
@@ -174,7 +174,7 @@ def test_lrgb_target_traces_rgb_and_lrgb(tmp_path, monkeypatch):
     graph = trace(_tail, t, channels, _CONFIG)
 
     from compute_graph.compute_graph import extract_pipeline_taps
-    displays = {d for _, (_, _, d, _) in extract_pipeline_taps(graph)}
+    displays = {tap["display"] for _, tap in extract_pipeline_taps(graph)}
     assert {"Mosaic Starless", "Mosaic Stars", "Linear RGB Starless",
             "Linear RGB Stars", "Linear L Starless",
             "Linear L Stars"} <= displays, (
@@ -200,7 +200,7 @@ def test_galaxy_target_traces_ha_blend_taps(tmp_path, monkeypatch):
     graph = trace(_tail, t, channels, _CONFIG)
 
     from compute_graph.compute_graph import extract_pipeline_taps
-    displays = {d for _, (_, _, d, _) in extract_pipeline_taps(graph)}
+    displays = {tap["display"] for _, tap in extract_pipeline_taps(graph)}
     assert {"Linear Narrowband Starless",
             "Linear RGB Starless", "Linear RGB Stars", "Linear L Starless",
             "Linear L Stars", "Mosaic Starless",

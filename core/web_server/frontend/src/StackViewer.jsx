@@ -5,7 +5,7 @@ import AstroFlowContext from './AstroFlowContext.jsx';
 import StackHeader from './StackHeader.jsx';
 import StackTabs from './StackTabs.jsx';
 import { useVersionsMatrix } from './useVersions.js';
-import { buildUrl, ancestorsFromParams } from './urls.js';
+import { buildUrl } from './urls.js';
 
 const StackViewer = () => {
   const { stacks, calibrationStacks, computeGraphStatus } = useContext(AstroFlowContext);
@@ -33,12 +33,8 @@ const StackViewer = () => {
     throw new Error("Neither stack_id nor calibration_stack_id was provided.");
   }
 
-  // A stack under a target/mosaic has no tap snapshot of its own — its taps live
-  // in the cart-item ancestor's snapshot. Pass the ancestor chain so the backend
-  // resolves the pill matrix + default view for it (empty for a standalone stack).
-  const ancestors = ancestorsFromParams(params, stack_type, unified_stack_id);
   const pipelineOutputs = useVersionsMatrix(
-    stack_type, unified_stack_id, computeGraphStatus, ancestors);
+    stack_type, unified_stack_id, computeGraphStatus);
 
   if (!stacks || Object.keys(stacks).length === 0) {
     return (
@@ -72,12 +68,11 @@ const StackViewer = () => {
   // display) so the click renders AND the URL is shareable. The preference now
   // lives solely in the backend catalog — the frontend just follows.
   const haveView = pipeline && display && filter;
-  // Not gated on `stack_type`: a calibration stack has a real master (WBPP
-  // for flat/dark/bias, `build_star_flat` for a star flat) and the backend
-  // now computes a default view for it, so it redirects like a light stack.
-  // Gating this on `'stack'` was one of two reasons every calibration stack
-  // page stayed blank (2026-09-12).
-  if (!haveView && stack.filter) {
+  // Not gated on the stack's type or filter: a calibration stack has a real
+  // master (WBPP for flat/dark/bias, `build_star_flat` for a star flat), and
+  // a filterless one (a dark) lands on `/Master/None` — the backend's default
+  // view carries the filter as the string the URL grammar needs.
+  if (!haveView) {
     if (pipelineOutputs == null) {
       return (
         <Box sx={{ p: 3, display: 'flex', alignItems: 'center', gap: 2 }}>

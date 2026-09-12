@@ -17,20 +17,24 @@ read — the web dashboard, tiles, the catalog — is then a ~0.1 ms
 `context.get` of that snapshot (`_read_tap_snapshot`): no Ray, no trace.
 
 A read that misses the snapshot means the object×pipeline was never built.
-`recompute=False` callers (the viewer / catalog — see `tap_outputs_for`)
-take the miss as "nothing on disk to show" and return `[]` rather than
-tracing on an HTTP request. Only head-driver callers that legitimately need
-a trace for something NOT in the current graph — `scripts.sweep_orphans`
-(live set) and `state.archive` (cart→archive) — pass `recompute=True`, and
-for them the miss recomputes the trace INLINE (pure, in-process). There is
-deliberately no persistent trace cache beyond the build-time snapshot: the
-trace is authoritative and cheap-to-recompute, so a second (diskcache) copy
-would only add a consistency surface, head-pinning, and stale-read bugs to
-keep in sync — see `feedback_avoid_derived_state`.
+`recompute=False` callers take the miss as "nothing on disk to show" and
+return `[]` rather than tracing on an HTTP request. Only head-driver callers
+that legitimately need a trace for something NOT in the current graph —
+`scripts.sweep_orphans` (live set) and `state.archive` (cart→archive) — pass
+`recompute=True`, and for them the miss recomputes the trace INLINE (pure,
+in-process). There is deliberately no persistent trace cache beyond the
+build-time snapshot: the trace is authoritative and cheap-to-recompute, so a
+second (diskcache) copy would only add a consistency surface, head-pinning,
+and stale-read bugs to keep in sync — see `feedback_avoid_derived_state`.
+
+The VIEWER never reads the cart-item snapshot at all. The same build step
+files each display tap under the entity it routes to (`product_taps_key`,
+written by `compute_graph._store_product_taps`, read by
+`catalog.product_taps`), so a stack, target or calibration stack that is only
+an interior node of a mosaic's trace is looked up by its own `(type, id)` —
+no URL ancestor, no scan.
 """
 from __future__ import annotations
-
-import functools
 
 import inspect
 from dataclasses import dataclass
@@ -112,21 +116,16 @@ def paths_for_cart_item(
 def traced_paths_for(
     item: tuple[str, str, str],
     recompute: bool = True,
-    ancestors: tuple[tuple[str, str], ...] = (),
     strict: bool = False,
 ) -> list[dict]:
     """Return the raw trace result for `item`: one dict per
     filename_fn-resolvable node, with keys `path`, `op_name`,
-    `identity`, `is_final`.
+    `identity`, `is_final`, and for display taps `object_type`,
+    `object_id`, `content_hash`, `display`, `filter`.
 
     A ~0.1 ms snapshot read per call (no Ray on the read path). Use this
     when you need to look up multiple paths from the same cart item —
     hoist it out of any loop, iterate the returned list in pure Python.
-
-    `paths_for_cart_item` and `traced_path_for` are thin convenience
-    wrappers; prefer this helper directly when you're doing per-entity
-    lookups within a single request (e.g. the web server iterating
-    over a mosaic's targets).
 
     Returns `[]` if the entity isn't in context, the pipeline isn't
     registered, or the trace itself fails.
@@ -135,51 +134,17 @@ def traced_paths_for(
     persisted this exact `(source, stable, content, pipeline)` at graph-build
     time — which it does for every cart entry — return that directly (a
     `context.get`). A MISS means the object×pipeline was never built:
-    `recompute=False` (the viewer / catalog) returns `[]`; `recompute=True`
-    (sweep / archive on the head driver) recomputes the pure trace inline.
+    `recompute=False` returns `[]`; `recompute=True` (sweep / archive on the
+    head driver) recomputes the pure trace inline.
     """
     snapshot = _read_tap_snapshot(item)
     if snapshot is not None:
         return snapshot
 
-    # Leaf has no snapshot of its own — but a cart-item ANCESTOR named in the URL
-    # hierarchy does, and its shared-graph trace already holds this leaf's taps (a
-    # target's snapshot carries every child stack's `Master` tap). Read the
-    # ancestor's snapshot (a 0.1ms `context.get`) and return it whole; the
-    # caller's `_routes_to_item` filter scopes it to the leaf. Only ONE ancestor
-    # is the cart item, so the first hit is authoritative. The URL says which
-    # snapshot holds the data — no scan, no index (feedback_avoid_derived_state).
-    # ALL named ancestors, not the first that has a snapshot. A URL hierarchy
-    # names exactly one cart item, so "first hit" was equivalent — but a
-    # calibration stack is resolved through EVERY cart/archive owner as a
-    # synthetic ancestor (`pipeline_outputs`), and a shared star flat may sit
-    # only in the fifth owner's snapshot while the first owner's exists and
-    # doesn't route to it. Union them; `_routes_to_item` scopes the result to
-    _, _, pipeline = item
-    # the leaf, and an identical tap (same routing entity, display, filter and
-    # path) appearing in two owners' snapshots is one file, so exact
-    # duplicates are dropped — on the WHOLE identity, never on `path` alone:
-    # entries without a path are distinct taps, not one.
-    merged: list[dict] = []
-    seen: set = set()
-    for anc_type, anc_id in ancestors:
-        anc_snapshot = _read_tap_snapshot((anc_type, anc_id, pipeline))
-        if anc_snapshot is None:
-            continue
-        for e in anc_snapshot:
-            key = (e.get("object_type"), e.get("object_id"), e.get("display"),
-                   str(e.get("filter")), e.get("path"))
-            if key in seen:
-                continue
-            seen.add(key)
-            merged.append(e)
-    if merged:
-        return merged
-
     if not recompute:
-        # Read-only caller (viewer / catalog): a snapshot miss (own AND every
-        # named ancestor) means this object×pipeline was never built — nothing on
-        # disk to show. Never trace on an HTTP request; just report "no taps".
+        # Read-only caller: a snapshot miss means this object×pipeline was
+        # never built — nothing on disk to show. Never trace on an HTTP
+        # request; just report "no paths".
         return []
 
     # Genuine on-demand miss on the head driver (sweep / archive of an item not
@@ -243,62 +208,6 @@ def traced_path_for(
     return None
 
 
-@functools.lru_cache(maxsize=None)
-def _accepted_class_names(object_type: str) -> "frozenset[str] | None":
-    """The runtime class names a tap may carry for a URL/cart object type —
-    the type's class AND EVERY SUBCLASS, lowercased — or None when the type
-    resolves to no class we know (the caller then falls back to plain name
-    equality, the historical behaviour).
-
-    A tap records `type(entity).__name__` verbatim (`extract_pipeline_taps`),
-    and the URL grammar assumed that name IS the type. That held until a
-    subclass existed: `StarFlatStack(CalibrationStack)` is routed by the URL as
-    `calibration_stack`, but its taps say `StarFlatStack`, so name equality
-    rejected every star flat's `Star Flat` tap and its detail page resolved
-    nothing — while a plain dark, whose class is exactly `CalibrationStack`,
-    resolved through the identical ancestor chain (measured 2026-09-12).
-    `object_class` deliberately omits `calibration_stack` (it feeds the cart
-    dispatcher's `get_pipeline(processes=...)`, and nothing processes one), so
-    the class is resolved locally here."""
-    from products.product import object_class
-    cls = object_class(object_type)
-    if cls is None and str(object_type).lower() == "calibration_stack":
-        from stacks.composite_stack import CalibrationStack
-        import stacks.star_flat  # noqa: F401  — makes StarFlatStack a known subclass
-        cls = CalibrationStack
-    if cls is None:
-        return None
-    names, todo = set(), [cls]
-    while todo:
-        c = todo.pop()
-        names.add(c.__name__.lower())
-        todo.extend(c.__subclasses__())
-    return frozenset(names)
-
-
-def _routes_to_item(entry: dict, object_type: str, object_id: str) -> bool:
-    """Whether a traced tap belongs to the queried entity. A pipeline's trace
-    contains taps routing to OTHER entities (a mosaic's trace has per-panel
-    `Master` taps routing to stacks, per-target `Channel` taps routing to
-    targets); only those routing to `(object_type, object_id)` belong on this
-    entity's page.
-
-    Match BOTH type and id: first-subframe-based `stable_hash` collides across
-    a single-panel mosaic / its target / its stack, so id alone is ambiguous.
-    `object_type` is the URL/cart form (`calibration_stack`); the tap carries
-    the routing entity's class name — which may be a SUBCLASS
-    (`StarFlatStack`), see `_accepted_class_names`."""
-    if entry.get("object_id") != object_id:
-        return False
-    cls = entry.get("object_type")
-    if not cls:
-        return False
-    accepted = _accepted_class_names(object_type)
-    if accepted is not None:
-        return cls.lower() in accepted
-    return object_type.replace("_", "").lower() == cls.lower()
-
-
 def pipeline_source_version(fn) -> str:
     """The cache-key version component for a pipeline's trace + tap snapshot:
     the pipeline function's own source hash combined with the DEPLOYED CODE
@@ -331,28 +240,32 @@ def _snapshot_key(item: tuple[str, str, str]) -> "tuple | None":
     Returns None when the entity isn't in context or the pipeline isn't
     registered."""
     from pipelines.registry import get_pipeline
-    from products.product import object_class
+    from products.product import object_class, resolve_entity
 
     object_type, object_id, pipeline = item
-    type_to_dict = {
-        "stack": context.stacks or {},
-        "target": context.targets or {},
-        "mosaic": context.mosaics or {},
-    }
     cls = object_class(object_type)
-    if cls is None:
+    entity = resolve_entity(object_type, object_id)
+    if cls is None or entity is None:
         return None
-    # Lowercase: the tap URL grammar sends PascalCase class names; the
-    # context dicts key lowercase (see products.object_class).
-    entity_ref = type_to_dict[str(object_type).lower()].get(object_id)
-    if entity_ref is None:
-        return None
-    entity = entity_ref.get() if hasattr(entity_ref, "get") else entity_ref
     try:
         fn = get_pipeline(pipeline, processes=cls)._function
     except KeyError:
         return None
     return (pipeline_source_version(fn), entity.stable_hash, entity.content_hash, pipeline)
+
+
+def product_taps_key(object_type: str, object_id: str, content_hash: str,
+                     pipeline: str) -> tuple:
+    """The durable-store key under which `compute_graph._store_product_taps`
+    files one entity's display taps for one pipeline, and `catalog.product_taps`
+    reads them: `("tap_snapshots", "product", deployed code version, URL type,
+    stable hash, content hash, pipeline)`. Content-addressed the same way as
+    the cart-item snapshot — the deployed code version covers every source
+    edit (`state.code_version`), the entity's `content_hash` covers its
+    membership — so a stale entry is never read, only orphaned."""
+    from state.code_version import deployed_code_version
+    return ("tap_snapshots", "product", deployed_code_version(),
+            object_type, object_id, content_hash, pipeline)
 
 
 def _read_tap_snapshot(item: tuple[str, str, str]) -> "list[dict] | None":
@@ -403,58 +316,6 @@ def invalidate_tap_snapshot(item: tuple[str, str, str]) -> bool:
     return True
 
 
-def tap_outputs_for(
-    item: tuple[str, str, str],
-    recompute: bool = True,
-    ancestors: tuple[tuple[str, str], ...] = (),
-) -> list[dict]:
-    """The user-facing taps for `item`'s pipeline that belong to `item`'s
-    entity: every `display=` tap routing to `(object_type, object_id)`. Sourced
-    from the build-time snapshot (Ray-free via `traced_paths_for`); the dashboard
-    groups by `display` + checks `os.path.exists` per filter. Replaces the old
-    stateful PipelineOutputIndex `for_object` (keyed by object type+id likewise),
-    but from a complete single-shot trace, not a two-phase recorder.
-
-    `ancestors` lets a child object (a stack under a target) resolve its taps
-    from the ancestor's snapshot; the `_routes_to_item` filter below then keeps
-    only the taps that route to THIS leaf, so the shared ancestor trace is
-    correctly scoped."""
-    object_type, object_id, _pipeline = item
-    return [
-        e for e in traced_paths_for(item, recompute=recompute, ancestors=ancestors)
-        if e.get("display") is not None
-        and _routes_to_item(e, object_type, object_id)
-    ]
-
-
-def tap_path_for(
-    item: tuple[str, str, str], display: str, filter: str | None,
-    ancestors: tuple[tuple[str, str], ...] = (),
-) -> "Path | None":
-    """The on-disk primary path of one tap `(display, filter)` belonging to
-    `item`'s entity, or None on miss. From the build-time snapshot (Ray-free);
-    the file may or may not exist yet — callers check `os.path.exists`.
-
-    `ancestors` (a child's cart-item chain) lets a leaf without its own snapshot
-    resolve from the ancestor's; `_routes_to_item` scopes the shared trace."""
-    object_type, object_id, _pipeline = item
-    f = str(filter)
-    # `recompute=False` to match this function's contract ("From the build-time
-    # snapshot (Ray-free)") — it was omitted, so the DEFAULT True re-executed the
-    # pipeline inside whatever process asked, which for the preview/tile routes
-    # is a web worker. Same defect, same cost as the pipeline_outputs endpoint:
-    # one `PixInsight Master` thumbnail measured 32 s. `catalog.products_for`
-    # already passes it; this is the call site that didn't.
-    for e in traced_paths_for(item, recompute=False, ancestors=ancestors):
-        if (
-            e.get("display") == display
-            and str(e.get("filter")) == f
-            and _routes_to_item(e, object_type, object_id)
-        ):
-            return Path(e["path"])
-    return None
-
-
 def _resolve_pipeline_call(
     item: tuple[str, str, str],
 ) -> tuple[Any, Any, Any]:
@@ -467,26 +328,14 @@ def _resolve_pipeline_call(
     object_type, object_id, pipeline_name = item
 
     from pipelines.registry import get_pipeline
-    from products.product import object_class
+    from products.product import object_class, resolve_entity
     from cache.context_ref import ContextRef
     from decisions.settings import ProcessingConfig
 
-    type_to_dict = {
-        "stack": context.stacks or {},
-        "target": context.targets or {},
-        "mosaic": context.mosaics or {},
-    }
-
     cls = object_class(object_type)
-    if cls is None:
+    entity = resolve_entity(object_type, object_id)
+    if cls is None or entity is None:
         return None, None, None
-
-    # Lowercase: the tap URL grammar sends PascalCase class names; the
-    # context dicts key lowercase (see products.object_class).
-    entity_ref = type_to_dict[str(object_type).lower()].get(object_id)
-    if entity_ref is None:
-        return None, None, None
-    entity = entity_ref.get() if hasattr(entity_ref, "get") else entity_ref
 
     try:
         runner = get_pipeline(pipeline_name, processes=cls)
@@ -597,6 +446,11 @@ def _walk_and_resolve_filenames_tagged(graph) -> list[dict]:
             "op_name": str,        # producer's __name__ (e.g. "stack_files")
             "identity": dict,      # {field_name: stable_hash_of_arg}
             "is_final": bool,      # producer's `_final` attribute
+            "display": str|None,   # the tap's `display=`; None = not a tap
+            "filter": ...,
+            "object_type": str|None,   # URL type of the ROUTING entity
+            "object_id": str|None,     # its stable hash
+            "content_hash": str|None,  # its content hash
         }
     Identity is what makes `traced_path_for(item, "stack_files",
     stack=H)`-style lookups possible: callers can pick out a specific
@@ -604,25 +458,19 @@ def _walk_and_resolve_filenames_tagged(graph) -> list[dict]:
     re-tracing.
     """
     # User-facing tap metadata per Node, so a single traced-paths result serves
-    # the dashboard/tiles (which key on the tap's routing entity + display +
-    # filter) as well as sweep/archive (op_name+identity). The routing entity
-    # (object_type/object_id) matters: a mosaic's trace contains per-panel
-    # `Master` taps that route to STACKS and per-target `Channel` taps that
-    # route to TARGETS — those belong on the stack/target views, not the
-    # mosaic's. Non-display intermediates (e.g. place_image) aren't taps → all
-    # four stay None.
+    # sweep/archive (op_name+identity), the polygon overlays, AND the per-entity
+    # product filing (`_store_product_taps`). The routing entity matters: a
+    # mosaic's trace contains per-panel `Master` taps that route to STACKS and
+    # per-target `Channel` taps that route to TARGETS — those are that stack's
+    # / target's products, not the mosaic's. Non-display intermediates (e.g.
+    # place_image) aren't taps → their tap fields stay None.
     from compute_graph.compute_graph import extract_pipeline_taps
-    taps_by_node: dict[Any, tuple] = {
-        node: (object_type, object_id, display, filter_value)
-        for node, (object_type, object_id, display, filter_value)
-        in extract_pipeline_taps(graph)
-    }
+    taps_by_node: dict[Any, dict] = dict(extract_pipeline_taps(graph))
+    no_tap = {"display": None, "filter": None, "object_type": None,
+              "object_id": None, "content_hash": None}
 
     out: list[dict] = []
     for n, path in resolve_output_paths(graph).items():
-        tap_object_type, tap_object_id, display, filter_value = (
-            taps_by_node.get(n, (None, None, None, None))
-        )
         out.append({
             "path": path,
             "op_name": _op_name_for_node(n),
@@ -631,10 +479,7 @@ def _walk_and_resolve_filenames_tagged(graph) -> list[dict]:
             # TERMINAL's finality (see `present_terminal`).
             "is_final": bool(getattr(n, "_final", False)
                              or getattr(n.task, "_final", False)),
-            "display": display,
-            "filter": filter_value,
-            "object_type": tap_object_type,
-            "object_id": tap_object_id,
+            **taps_by_node.get(n, no_tap),
         })
     return out
 

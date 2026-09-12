@@ -112,6 +112,7 @@ class _FakeEntity:
 
     def __init__(self, stable_hash: str, filter: str):
         self.stable_hash = stable_hash
+        self.content_hash = "c-" + stable_hash
         self.filter = filter
 
 
@@ -160,95 +161,12 @@ def test_walk_tags_tap_node_with_display_and_filter():
     assert by_op["helper"]["display"] is None
     assert by_op["helper"]["filter"] is None
     assert by_op["helper"]["is_final"] is False
-    # The walk also carries the tap's routing entity, so the dashboard can
-    # scope taps to the queried object (see test_routes_to_item_*).
-    assert by_op["tapop"]["object_type"] == "_FakeEntity"
+    # The walk also carries the tap's ROUTING entity — URL type, stable hash
+    # and content hash — which is what `_store_product_taps` files it under.
+    assert by_op["tapop"]["object_type"] == "_fakeentity"
     assert by_op["tapop"]["object_id"] == "st1"
-
-
-def test_routes_to_item_scopes_taps_by_type_AND_id():
-    """A mosaic's trace contains per-panel `Master` taps that route to STACKS
-    and per-target `Channel` taps that route to TARGETS; only the taps routing
-    to the queried `(object_type, object_id)` belong on that entity's page.
-
-    The match must check BOTH type and id: first-subframe-based `stable_hash`
-    collides across a single-panel mosaic / its target / its stack, so id alone
-    would wrongly surface a stack's `Master` on the mosaic page. This was the
-    `/mosaic/<id>` regression (450 mixed taps showing instead of the mosaic's
-    own)."""
-    from dependency_graph.trace_paths import _routes_to_item
-
-    mid = "75a1da6463e118e6"
-    # The mosaic's own deliverable — kept.
-    assert _routes_to_item({"object_type": "Mosaic", "object_id": mid}, "mosaic", mid)
-    # A per-panel Master routing to a different stack — excluded.
-    assert not _routes_to_item({"object_type": "Stack", "object_id": "other"}, "mosaic", mid)
-    # The collision case: a Stack / Target SHARING the mosaic's id — excluded
-    # by TYPE (id alone would have matched).
-    assert not _routes_to_item({"object_type": "Stack", "object_id": mid}, "mosaic", mid)
-    assert not _routes_to_item({"object_type": "Target", "object_id": mid}, "mosaic", mid)
-    # snake_case URL/cart type vs PascalCase routing class name.
-    assert _routes_to_item(
-        {"object_type": "CalibrationStack", "object_id": "z"}, "calibration_stack", "z"
-    )
-    # A non-tap entry (no routing entity) is never claimed by any page.
-    assert not _routes_to_item({"object_type": None, "object_id": None}, "mosaic", mid)
-
-
-def test_tap_outputs_for_scopes_to_queried_entity(monkeypatch):
-    """End-to-end guard for the `/mosaic/<id>` regression: `tap_outputs_for`
-    (the helper the dashboard endpoint calls) must return ONLY the taps routing
-    to the queried `(object_type, object_id)`. A mosaic's trace also contains
-    per-panel `Master` taps (route to stacks) and per-target `Channel` taps
-    (route to targets) — those belong on the stack/target pages, not here.
-
-    The existing exhaustive endpoint test checked tap *structure* but not this
-    scoping, which is why the regression shipped — so this is a focused unit
-    test of the actual function, including the stable_hash collision."""
-    import dependency_graph.trace_paths as tp
-
-    mid = "m1"
-    entries = [
-        {"display": "Mosaic", "filter": "H", "object_type": "Mosaic",
-         "object_id": mid, "path": "/out/mosaic.fits"},
-        {"display": "Master", "filter": "H", "object_type": "Stack",
-         "object_id": mid, "path": "/out/master.fits"},      # collides on id!
-        {"display": "Channel", "filter": "H", "object_type": "Target",
-         "object_id": "t9", "path": "/out/channel.fits"},
-        {"display": None, "filter": None, "object_type": None,
-         "object_id": None, "path": "/out/place.tiff"},      # non-tap intermediate
-    ]
-    monkeypatch.setattr(tp, "traced_paths_for",
-                        lambda item, recompute=True, ancestors=(): entries)
-
-    # Queried as the mosaic → only the Mosaic tap (the colliding Stack Master
-    # is excluded by TYPE despite sharing the id).
-    out = tp.tap_outputs_for(("mosaic", mid, "Hybrid: PI Master + OSS Mosaic"))
-    assert [e["display"] for e in out] == ["Mosaic"]
-
-    # Same trace, queried as the stack → the stack's Master (Mosaic excluded).
-    out_stack = tp.tap_outputs_for(("stack", mid, "Hybrid: PI Master + OSS Mosaic"))
-    assert [e["display"] for e in out_stack] == ["Master"]
-
-
-def test_tap_path_for_scopes_to_queried_entity(monkeypatch):
-    """`tap_path_for` resolves a tap's path only within the queried entity, so a
-    colliding Stack `Master` is never served as the mosaic's path."""
-    import dependency_graph.trace_paths as tp
-
-    mid = "m1"
-    entries = [
-        {"display": "Mosaic", "filter": "H", "object_type": "Mosaic",
-         "object_id": mid, "path": "/out/mosaic.fits"},
-        {"display": "Master", "filter": "H", "object_type": "Stack",
-         "object_id": mid, "path": "/out/master.fits"},
-    ]
-    monkeypatch.setattr(tp, "traced_paths_for",
-                        lambda item, recompute=True, ancestors=(): entries)
-
-    assert str(tp.tap_path_for(("mosaic", mid, "P"), "Mosaic", "H")) == "/out/mosaic.fits"
-    # The mosaic owns no "Master" tap — the colliding stack's must not leak in.
-    assert tp.tap_path_for(("mosaic", mid, "P"), "Master", "H") is None
+    assert by_op["tapop"]["content_hash"] == "c-st1"
+    assert by_op["helper"]["object_type"] is None
 
 
 def test_traced_paths_for_snapshot_miss_recompute_false_returns_empty(monkeypatch):
@@ -304,57 +222,6 @@ def test_traced_paths_for_recompute_true_unresolvable_returns_empty(monkeypatch)
     assert tp.traced_paths_for(("stack", "gone", "P"), recompute=True) == []
 
 
-def test_traced_paths_for_falls_back_to_ancestor_snapshot(monkeypatch):
-    """A child leaf with no snapshot of its own resolves from a named cart-item
-    ANCESTOR's snapshot (the shared-graph trace holding its taps). The URL says
-    which ancestor — no scan. The full ancestor list is returned; the caller's
-    `_routes_to_item` filter scopes it to the leaf."""
-    import dependency_graph.trace_paths as tp
-
-    parent_entries = [
-        {"object_type": "Stack", "object_id": "child", "display": "Master"},
-        {"object_type": "Target", "object_id": "parent", "display": "Channel"},
-    ]
-
-    def _snap(item):
-        # Only the TARGET (parent) has a snapshot; the child stack has none.
-        return parent_entries if item == ("target", "parent", "P") else None
-    monkeypatch.setattr(tp, "_read_tap_snapshot", _snap)
-
-    result = tp.traced_paths_for(
-        ("stack", "child", "P"), ancestors=(("target", "parent"),))
-    assert result == parent_entries   # whole ancestor trace; caller filters
-
-
-def test_traced_paths_for_ancestor_miss_then_recompute_false_empty(monkeypatch):
-    """No own snapshot and no ancestor snapshot → read-only caller gets `[]`
-    (never traces), even with ancestors named."""
-    import dependency_graph.trace_paths as tp
-    monkeypatch.setattr(tp, "_read_tap_snapshot", lambda item: None)
-    assert tp.traced_paths_for(
-        ("stack", "child", "P"), recompute=False,
-        ancestors=(("target", "parent"),)) == []
-
-
-def test_tap_outputs_for_scopes_ancestor_trace_to_leaf(monkeypatch):
-    """`tap_outputs_for` on a child, given an ancestor, keeps only the display
-    taps routing to the LEAF — the sibling target's own taps are dropped."""
-    import dependency_graph.trace_paths as tp
-    parent_entries = [
-        {"object_type": "Stack", "object_id": "child",
-         "display": "Master", "filter": "H", "path": "/o/child"},
-        {"object_type": "Target", "object_id": "parent",
-         "display": "Channel", "filter": "H", "path": "/o/parent"},
-    ]
-    monkeypatch.setattr(
-        tp, "_read_tap_snapshot",
-        lambda item: parent_entries if item == ("target", "parent", "P") else None)
-
-    out = tp.tap_outputs_for(
-        ("stack", "child", "P"), ancestors=(("target", "parent"),))
-    assert [e["path"] for e in out] == ["/o/child"]   # sibling's Channel dropped
-
-
 # --------------------------------------------------------------------------- #
 # Web-facing reads must NEVER live-trace (2026-08-16)                          #
 # --------------------------------------------------------------------------- #
@@ -365,42 +232,9 @@ def test_tap_outputs_for_scopes_ancestor_trace_to_leaf(monkeypatch):
 # calibrate -> resolve_calibration -> find_external_master walking calibration
 # directories with is_dir(), measured at 31 s per /api/pipeline_outputs request
 # on the Heart target (n=325, max 43 s) and 32 s for one thumbnail — while
-# TargetPanel refires on every SSE tick, piling ~18 deep.
-#
-# `tap_path_for` documents itself as snapshot-only but omitted the flag. These
-# pin the contract from both sides so it cannot silently regress.
-
-def test_tap_path_for_never_live_traces_on_a_miss(monkeypatch):
-    """A snapshot miss must be a fast None, never a pipeline re-execution."""
-    import dependency_graph.trace_paths as tp
-
-    monkeypatch.setattr(tp, "_read_tap_snapshot", lambda item: None)
-
-    def _boom(*args, **kwargs):
-        raise AssertionError(
-            "tap_path_for live-traced on a snapshot miss — it is called from "
-            "web workers (preview/tile routes) and must stay snapshot-only")
-
-    monkeypatch.setattr(tp, "_resolve_pipeline_call", _boom)
-
-    assert tp.tap_path_for(
-        ("target", "abc", "Some Pipeline"), "Linear SHO", "RGB") is None
-
-
-def test_tap_outputs_for_recompute_false_never_live_traces(monkeypatch):
-    """The same guarantee for the /api/pipeline_outputs read path."""
-    import dependency_graph.trace_paths as tp
-
-    monkeypatch.setattr(tp, "_read_tap_snapshot", lambda item: None)
-
-    def _boom(*args, **kwargs):
-        raise AssertionError("live trace attempted with recompute=False")
-
-    monkeypatch.setattr(tp, "_resolve_pipeline_call", _boom)
-
-    assert tp.tap_outputs_for(
-        ("target", "abc", "Some Pipeline"), recompute=False) == []
-
+# TargetPanel refires on every SSE tick, piling ~18 deep. The viewer's reads
+# now go through `catalog.product_taps`, which cannot trace at all; this pins
+# the driver-side contract from the other side.
 
 def test_recompute_true_still_traces(monkeypatch):
     """The DRIVER-side path must keep tracing on demand — the sweep and archive
@@ -419,3 +253,66 @@ def test_recompute_true_still_traces(monkeypatch):
 
     assert tp.traced_paths_for(("target", "abc", "P"), recompute=True) == []
     assert calls == [("target", "abc", "P")]
+
+
+# --------------------------------------------------------------------------- #
+# Per-entity product filing (the viewer's ONE lookup)                          #
+# --------------------------------------------------------------------------- #
+
+def test_product_taps_key_is_content_addressed_per_routed_entity(monkeypatch):
+    """The key the writer files under and the reader asks for: deployed code
+    version + the ROUTED entity's own identity (URL type, stable hash, content
+    hash) + pipeline. A code edit or new frames move it; nothing else does."""
+    import dependency_graph.trace_paths as tp
+    import state.code_version as cv
+
+    monkeypatch.setattr(cv, "deployed_code_version", lambda: "sha-1")
+    k = tp.product_taps_key("calibration_stack", "b82f", "c0ff", "P")
+    assert k == ("tap_snapshots", "product", "sha-1",
+                 "calibration_stack", "b82f", "c0ff", "P")
+    monkeypatch.setattr(cv, "deployed_code_version", lambda: "sha-2")
+    assert tp.product_taps_key("calibration_stack", "b82f", "c0ff", "P") != k
+
+
+def test_store_product_taps_files_each_tap_under_its_routed_entity(monkeypatch):
+    """A mosaic's trace holds the mosaic's own tap, a per-panel stack Master and
+    a star flat — three different entities. Each is filed under ITS key, with
+    only display/filter/path, and non-tap intermediates are dropped."""
+    import compute_graph.compute_graph as cg
+    import state.code_version as cv
+
+    monkeypatch.setattr(cv, "deployed_code_version", lambda: "v")
+    written = {}
+    # Class-level: the actor-backed context routes instance `setattr` to Ray.
+    monkeypatch.setattr(type(cg.context), "set_many",
+                        lambda self, items: written.update(items))
+
+    entries = [
+        {"object_type": "mosaic", "object_id": "m", "content_hash": "cm",
+         "display": "Mosaic", "filter": "H", "path": "/o/mosaic", "op_name": "merge"},
+        {"object_type": "stack", "object_id": "s", "content_hash": "cs",
+         "display": "Master", "filter": "H", "path": "/o/master", "op_name": "stack_files"},
+        {"object_type": "calibration_stack", "object_id": "f", "content_hash": "cf",
+         "display": "Star Flat", "filter": "S", "path": "/o/flat", "op_name": "build_star_flat"},
+        {"object_type": None, "object_id": None, "content_hash": None,
+         "display": None, "filter": None, "path": "/o/place", "op_name": "place_image"},
+    ]
+    cg._store_product_taps("P", entries)
+
+    assert written == {
+        ("tap_snapshots", "product", "v", "mosaic", "m", "cm", "P"):
+            [{"display": "Mosaic", "filter": "H", "path": "/o/mosaic"}],
+        ("tap_snapshots", "product", "v", "stack", "s", "cs", "P"):
+            [{"display": "Master", "filter": "H", "path": "/o/master"}],
+        ("tap_snapshots", "product", "v", "calibration_stack", "f", "cf", "P"):
+            [{"display": "Star Flat", "filter": "S", "path": "/o/flat"}],
+    }
+
+
+def test_store_product_taps_writes_nothing_for_a_tapless_trace(monkeypatch):
+    import compute_graph.compute_graph as cg
+    calls = []
+    monkeypatch.setattr(type(cg.context), "set_many",
+                        lambda self, items: calls.append(items))
+    cg._store_product_taps("P", [{"display": None, "path": "/o/x"}])
+    assert calls == []

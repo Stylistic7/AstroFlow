@@ -169,37 +169,6 @@ def _is_pyramidal(path) -> bool:
         return False
 
 
-def _ancestor_chains(entity) -> list[tuple]:
-    """Candidate cart-item ancestor chains for a child leaf, root→leaf —
-    the same `(type, id)` tuples `parse_ancestors` produces from a URL.
-
-    A Stack/Target has no tap snapshot of its own; only cart items (mosaics,
-    standalone targets) do, and `_routes_to_item` filters the ancestor's
-    snapshot down to the leaf. The frontend derives ancestors from the URL
-    hierarchy; a bare `/thumbnail/<type>/<id>` has no URL to read, but the
-    containment is in context. Chains are tried in order until one resolves,
-    longest (most specific) first; `()` last so a top-level entity still
-    resolves from its own snapshot."""
-    sid = getattr(entity, "stable_hash", None)
-    kind = type(entity).__name__
-    chains: list[tuple] = []
-    if kind == "Stack" and sid:
-        for tid, tref in sorted((context.targets or {}).items()):
-            target = tref.get()
-            if sid not in target.stack_ids:
-                continue
-            for mid, mref in sorted((context.mosaics or {}).items()):
-                if tid in mref.get().target_ids:
-                    chains.append((("mosaic", mid), ("target", tid)))
-            chains.append((("target", tid),))
-    elif kind == "Target" and sid:
-        for mid, mref in sorted((context.mosaics or {}).items()):
-            if sid in mref.get().target_ids:
-                chains.append((("mosaic", mid),))
-    chains.append(())
-    return chains
-
-
 def _catalog_thumbnail(entity, args: tuple, extra_args: tuple):
     """Thumbnail via the CATALOG — tap snapshots + version-log last-good —
     the app's own answer to "what file shows this object right now".
@@ -232,20 +201,12 @@ def _catalog_thumbnail(entity, args: tuple, extra_args: tuple):
         if thumbnail:
             return thumbnail
 
-        from catalog.queries import default_product_for, viewable_path
-        path = None
-        for ancestors in _ancestor_chains(entity):
-            product = default_product_for(
-                type(entity).__name__, sid,
-                filter=extra_args[0] if extra_args else None,
-                ancestors=ancestors)
-            if product is None:
-                continue
-            candidate = viewable_path(product, ancestors)
-            if candidate is not None and os.path.exists(candidate):
-                path = candidate
-                break
-        if path is None:
+        from catalog import default_product_for, url_type_of, viewable_path
+        product = default_product_for(
+            url_type_of(entity), sid,
+            filter=extra_args[0] if extra_args else None)
+        path = viewable_path(product) if product is not None else None
+        if path is None or not os.path.exists(path):
             return None
 
         png = None

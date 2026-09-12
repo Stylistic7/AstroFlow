@@ -156,8 +156,8 @@ def test_pipeline_outputs_exists_is_backed_by_trace_and_disk(client, with_orion_
 
     Every `exists` flag the dashboard endpoint reports MUST agree with an
     INDEPENDENT re-derivation: predict the tap's primary path straight from
-    the cached pipeline trace (`tap_path_for`) and ask the filesystem. There
-    is no stateful tap→path index in between, so:
+    the build-time filing (`catalog.predict_path`) and ask the filesystem.
+    There is no other tap→path index in between, so:
 
       * `exists=True`  ⟺ a real file sits at the trace-predicted path, and
       * `exists=False` ⟺ no file is there (real absence, never a stale
@@ -168,7 +168,7 @@ def test_pipeline_outputs_exists_is_backed_by_trace_and_disk(client, with_orion_
     existing, proving the previously-"pending" taps now show.
     """
     import os
-    from dependency_graph.trace_paths import tap_path_for
+    from catalog import Product, predict_path
 
     mosaics = client.get("/api/mosaics").get_json()
     mosaic_id = next(iter(mosaics.keys()))
@@ -185,9 +185,8 @@ def test_pipeline_outputs_exists_is_backed_by_trace_and_disk(client, with_orion_
                 # Independent path prediction from the cached trace — the
                 # same source the endpoint uses, recomputed here so a stale
                 # or divergent result would surface as a mismatch.
-                predicted = tap_path_for(
-                    ("mosaic", mosaic_id, name), display, o["filter"],
-                )
+                predicted = predict_path(
+                    Product("mosaic", mosaic_id, name, display, o["filter"]))
                 on_disk = predicted is not None and os.path.exists(predicted)
                 assert o["exists"] == on_disk, (
                     f"{name}/{display}/{o['filter']}: endpoint exists="

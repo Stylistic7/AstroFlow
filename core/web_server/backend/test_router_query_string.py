@@ -1,18 +1,12 @@
 """The shard redirect must carry the query string.
 
-A tap read addressed at a bare leaf (a child stack) has no tap snapshot of
-its own — only the cart item ancestor has one — so the frontend passes
-`?ancestors=type:id,...` and the backend filters the ancestor's snapshot down
-to the leaf (`_route.parse_ancestors`). `stateful_route` 307s the request to
-a sharded backend chosen by `sharding_key`, and if that redirect is built
-from `request.path` the param is silently dropped: the shard sees a bare leaf,
-cannot resolve it, and 404s.
-
-Measured live 2026-09-11 on stack 6d5b69676e23fdd9 under mosaic
-75a1da6463e118e6 — the SAME shard returned 200 with `ancestors` and 404
-without. Every stack- and target-level tap view was blank; mosaic views kept
-working because a mosaic IS the cart item and needs no ancestors, which is
-exactly what hid the bug.
+`stateful_route` 307s a request to a sharded backend chosen by
+`sharding_key`; a redirect built from `request.path` alone silently drops
+the caller's query parameters, so the shard answers a DIFFERENT request.
+Measured live 2026-09-11, when tap reads carried a resolution parameter
+there: the SAME shard returned 200 with it and 404 without, and every
+stack- and target-level view was blank while mosaic views (which needed no
+parameter) kept working — exactly what hid the bug.
 """
 from flask import Flask
 

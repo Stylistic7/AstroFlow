@@ -45,7 +45,7 @@ import TextOverlay from './TextOverlay.jsx';
 import { computeAutoStretchParams } from '../auto_stretch.js';
 import { computeMaxEntropyLut } from './auto_stretch_maxent.js';
 import { computeGhsLut } from './auto_stretch_ghs.js';
-import { buildApiUrl, buildUrl, inheritView, ancestorsFromParams } from '../urls.js';
+import { buildApiUrl, buildUrl, inheritView } from '../urls.js';
 
 
 /** Supported stretch modes. Numeric value is what the shader's
@@ -84,8 +84,7 @@ function pointInPolygon(x, y, points) {
  * level renders at world coords scaled by `2^(maxZoom - z)`.
  */
 function computeVisibleTiles({ viewport, meta, view, objectType, imageHash,
-                              primaryView = null, sourceViews = null,
-                              ancestors = '' }) {
+                              primaryView = null, sourceViews = null }) {
     const { tx, ty, scale, screenW, screenH } = viewport;
     const { maxZoom, width: imageW, height: imageH, port, mtime } = meta;
 
@@ -137,7 +136,6 @@ function computeVisibleTiles({ viewport, meta, view, objectType, imageHash,
                 [{ type: objectType, id: imageHash }],
                 primaryView ?? view,
                 `/${z}/${tx_}/${ty_}.f32`,
-                { ancestors },
             );
             const url = new URL(rel, `${origin}:${port}`);
             if (mtime) url.searchParams.set('v', mtime);
@@ -154,7 +152,6 @@ function computeVisibleTiles({ viewport, meta, view, objectType, imageHash,
                         [{ type: objectType, id: imageHash }],
                         sv,
                         `/${z}/${tx_}/${ty_}.f32`,
-                        { ancestors },
                     );
                     return new URL(r, `${origin}:${port}`).href;
                 });
@@ -206,11 +203,6 @@ export default function TileViewerV2({
 
     const navigate = useNavigate();
     const params = useParams();
-    // Cart-item ANCESTOR chain (root→leaf, minus this leaf) for tap resolution:
-    // a child stack has no snapshot of its own, so tile/metadata reads must name
-    // its target/mosaic so the backend can filter their snapshot down to it. ''
-    // for a cart item viewed directly (a mosaic). A stable string → safe in deps.
-    const ancestors = ancestorsFromParams(params, objectType, imageHash);
     const { mosaics, stacks, targets, showQuarantined, isQuarantined, computeGraphStatus }
         = useContext(AstroFlowContext);
     const filter = filterProp ?? routeParams.filter;
@@ -301,7 +293,7 @@ export default function TileViewerV2({
     // Which taps this object actually has built — the finish picker's
     // real gate (a finish needs ALL its inputs, from any page).
     const objectOutputs = useVersionsMatrix(
-        objectType, imageHash, computeGraphStatus, ancestors);
+        objectType, imageHash, computeGraphStatus);
     const [finishName, setFinishName] = useState('ghs');
     // Current values of the selected data-driven finish's params, keyed by name
     // (seeded from each param's default when the finish is picked).
@@ -457,11 +449,11 @@ export default function TileViewerV2({
         const url = buildApiUrl(
             '/tap/tile_metadata',
             [{ type: objectType, id: imageHash }],
-            view, '', { ancestors },
+            view,
         );
         fetch(url).then((r) => r.ok ? r.json() : null).then(setTileMeta);
     }, [objectType, imageHash, view?.pipeline, view?.display, view?.filter,
-        ancestors, computeGraphStatus]);
+        computeGraphStatus]);
 
     // Fetch ImageMetadata (statistics) so we can drive auto-stretch.
     useEffect(() => {
@@ -469,12 +461,12 @@ export default function TileViewerV2({
         const url = buildApiUrl(
             '/api/metadata',
             [{ type: objectType, id: imageHash }],
-            view, '', { ancestors },
+            view,
         );
         fetch(url).then((r) => r.ok ? r.json() : null).then((m) => {
             if (m) setMetadata(m);
         });
-    }, [objectType, imageHash, view?.pipeline, view?.display, view?.filter, ancestors]);
+    }, [objectType, imageHash, view?.pipeline, view?.display, view?.filter]);
 
     // Fetch the data-driven display-finish registry once (served from the
     // Python FINISHES). Relative URL resolves against the page origin, which is
@@ -499,14 +491,14 @@ export default function TileViewerV2({
         setPrimaryStats(null);
         if (!primaryView || !view || primaryView.display === view.display) return;
         const url = buildApiUrl('/tap/tile_metadata',
-            [{ type: objectType, id: imageHash }], primaryView, '', { ancestors });
+            [{ type: objectType, id: imageHash }], primaryView);
         let cancelled = false;
         fetch(url).then((r) => (r.ok ? r.json() : null)).then((m) => {
             if (!cancelled) setPrimaryStats(m?.channelStats ?? null);
         }).catch(() => {});
         return () => { cancelled = true; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [primaryView?.display, view?.display, objectType, imageHash, ancestors]);
+    }, [primaryView?.display, view?.display, objectType, imageHash]);
 
     // Re-seed ONLY when the seed's CONTENT changes: a finish switch, or
     // stats that are genuinely new (a rebuilt product landed). The metadata
@@ -912,7 +904,7 @@ export default function TileViewerV2({
             });
             const wanted = computeVisibleTiles({
                 viewport: s, meta: tileMeta, view, objectType, imageHash,
-                primaryView, sourceViews, ancestors,
+                primaryView, sourceViews,
             });
             renderer.setTileUrls(wanted);
         };
@@ -920,7 +912,7 @@ export default function TileViewerV2({
         apply(viewport.get());
         return unsub;
     }, [renderer.isReady, tileMeta, view?.pipeline, view?.display, view?.filter,
-        viewport, objectType, imageHash, ancestors, primaryView?.display,
+        viewport, objectType, imageHash, primaryView?.display,
         // seedReady/seedLate RELEASE the gate above — without them here the
         // effect never re-runs once the seed lands and nothing ever paints.
         seedReady, seedLate, genericMode,

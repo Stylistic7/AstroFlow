@@ -34,7 +34,7 @@ from werkzeug.exceptions import HTTPException
 
 from previews.create_tile_pyramid import context_map_path_for
 from web_server.backend.router import stateful_route
-from web_server.backend._route import tap_route, parse_ancestors
+from web_server.backend._route import tap_route
 
 
 _TILE_SIZE = 256
@@ -147,29 +147,17 @@ def _pyramid_levels(path: str) -> int:
 
 def _tile_pyramid_path_for_tap(
     object_type: str, object_id: str, pipeline: str, display: str,
-    filter: str | None, ancestors: tuple[tuple[str, str], ...] = (),
+    filter: str | None,
 ):
     """The display tile pyramid (or a directly-servable master tiff) for a tap
-    — the ONE "viewable" definition, now owned by the catalog. Gates on the
+    — the ONE "viewable" definition, owned by the catalog. Gates on the
     pyramid's existence, so a tile request still resolves when the primary
     FITS/XISF/TIFF master was reclaimed by ephemeral cleanup; already-display-
     ready uint8 tiffs (e.g. Subframe previews) that have no separate pyramid
-    fall back to the master.
-
-    `ancestors` (a child leaf's cart-item chain, from the `ancestors` query
-    param) lets a stack under a target resolve its tile path from the target's
-    snapshot — the stack has none of its own."""
+    fall back to the master."""
     from catalog import viewable_path, Product
-    p = viewable_path(
-        Product(object_type, object_id, pipeline, display, filter),
-        ancestors=ancestors,
-    )
+    p = viewable_path(Product(object_type, object_id, pipeline, display, filter))
     return str(p) if p is not None else None
-
-
-def _request_ancestors() -> tuple[tuple[str, str], ...]:
-    """The `ancestors` query param for the current tile request, parsed."""
-    return parse_ancestors(request.args.get("ancestors"))
 
 
 @stateful_route(
@@ -181,13 +169,11 @@ def tile_metadata_tap(
     backend_port: int = None,
 ):
     from catalog import resolve_product, Product
-    ancestors = _request_ancestors()
     p, status = resolve_product(
-        Product(object_type, object_id, pipeline, display, filter),
-        ancestors=ancestors)
+        Product(object_type, object_id, pipeline, display, filter))
     path = str(p) if p is not None else None
     star_paths = _sibling_star_paths(
-        object_type, object_id, pipeline, display, filter, ancestors)
+        object_type, object_id, pipeline, display, filter)
     return _tile_metadata_response(path, backend_port, display, status=status,
                                    star_paths=star_paths, object_type=object_type)
 
@@ -221,8 +207,7 @@ _STARS_SIBLING = {
 }
 
 
-def _sibling_star_paths(object_type, object_id, pipeline, display, filter,
-                        ancestors):
+def _sibling_star_paths(object_type, object_id, pipeline, display, filter):
     """Stars-layer path(s) matching `display`'s bands, or None.
 
     Returns a single path (same band layout as the primary) or a 3-list
@@ -236,14 +221,12 @@ def _sibling_star_paths(object_type, object_id, pipeline, display, filter,
     try:
         if sibling != "per-band":
             p, status = resolve_product(
-                Product(object_type, object_id, pipeline, sibling, filter),
-                ancestors=ancestors)
+                Product(object_type, object_id, pipeline, sibling, filter))
             return str(p) if p is not None and status in ("live", "out_of_date") else None
         paths = []
         for f in ("S", "H", "O"):
             p, status = resolve_product(
-                Product(object_type, object_id, pipeline, "Mosaic Stars", f),
-                ancestors=ancestors)
+                Product(object_type, object_id, pipeline, "Mosaic Stars", f))
             paths.append(str(p) if p is not None
                          and status in ("live", "out_of_date") else None)
         return paths if any(paths) else None
@@ -542,7 +525,7 @@ def serve_tile_tap(
     z: int, x: int, y: int,
 ):
     path = _tile_pyramid_path_for_tap(
-        object_type, object_id, pipeline, display, filter, _request_ancestors())
+        object_type, object_id, pipeline, display, filter)
     return _serve_tile_response(path, object_type, object_id, x, y, z)
 
 
@@ -661,8 +644,7 @@ def serve_context_map_tap(
     that size).
     """
     pyramid_path = _tile_pyramid_path_for_tap(
-        object_type, object_id, pipeline, display, filter, _request_ancestors(),
-    )
+        object_type, object_id, pipeline, display, filter)
     if pyramid_path is None:
         return abort(404)
     from pathlib import Path

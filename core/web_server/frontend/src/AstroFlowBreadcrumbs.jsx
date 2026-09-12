@@ -22,11 +22,7 @@ import Chevron from './Chevron.jsx';
 import QuarantineToggle from './QuarantineToggle.jsx';
 import ShoppingCartMenu from './ShoppingCartMenu.jsx';
 import SuggestionBadge from './suggestions/SuggestionBadge.jsx';
-import {
-    useVersionsMatrix,
-    usePipelines,
-    pipelineOptions,
-} from './useVersions.js';
+import { useVersionsMatrix } from './useVersions.js';
 import { defaultDisplayFor } from './urls.js';
 import { filterLabel } from './filters.js';
 
@@ -149,22 +145,29 @@ export default function AstroFlowBreadcrumbs() {
         cal_stack_url += `/stack/${params.stack_id}`;
     }
     if (params.calibration_stack_id) {
-        cal_stack_url += `/calibration_stack/${params.stack_id}`;
+        cal_stack_url += `/calibration_stack/${params.calibration_stack_id}`;
     }
 
-    // Pick the deepest object that the URL identifies — that's the one
-    // whose version matrix drives the pill crumbs. Stack viewer pages
-    // (even when nested under a mosaic) show stack versions; the bare
-    // mosaic viewer page shows mosaic versions. Target / calibration
-    // stack pages don't render an image, so they don't get pills.
+    // The DEEPEST object the URL names is the one being viewed, and its
+    // matrix drives the pill crumbs: a calibration stack under a stack, a
+    // stack under a target, a target under a mosaic, the mosaic itself.
+    // Every one of them renders an image and resolves by its own (type, id).
     let viewerObjectType = null;
     let viewerObjectId = null;
     let viewerPathPrefix = "";
-    if (params.stack_id) {
+    if (params.calibration_stack_id) {
+        viewerObjectType = "calibration_stack";
+        viewerObjectId = params.calibration_stack_id;
+        viewerPathPrefix = cal_stack_url;
+    } else if (params.stack_id) {
         viewerObjectType = "stack";
         viewerObjectId = params.stack_id;
         viewerPathPrefix = stack_url;
-    } else if (params.mosaic_id && pipeline) {
+    } else if (params.target_id) {
+        viewerObjectType = "target";
+        viewerObjectId = params.target_id;
+        viewerPathPrefix = target_url;
+    } else if (params.mosaic_id) {
         viewerObjectType = "mosaic";
         viewerObjectId = params.mosaic_id;
         viewerPathPrefix = mosaic_url;
@@ -177,8 +180,10 @@ export default function AstroFlowBreadcrumbs() {
     const versionsData = useVersionsMatrix(
         viewerObjectType, viewerObjectId, computeGraphStatus,
     ) || { filters: [], pipelines: [] };  // null until the first fetch lands
-    const availablePipelines = usePipelines();
-    const implementations = pipelineOptions(versionsData.pipelines, availablePipelines);
+    // The pipeline pill offers what this OBJECT has: the pipelines whose
+    // trace produced a tap for it (the same matrix the tap pill and the
+    // viewer read), not the registry of everything the cart could queue.
+    const implementations = versionsData.pipelines.map((p) => p.name);
     const filters = versionsData.filters || [];
 
     // Displays the current pipeline emits (the tap-point labels:
@@ -391,7 +396,7 @@ export default function AstroFlowBreadcrumbs() {
                     (carrying the current display label across, falling
                     back to a sensible default for the object type if
                     none was set). */}
-                {pipeline && implementations.length > 0 && (
+                {pipeline && (
                     <PillCrumb
                         icon={<AccountTreeIcon sx={{ marginRight: '0.5em' }} />}
                         options={implementations}

@@ -37,32 +37,13 @@ export function buildUrl({ hierarchy, view }) {
   return hierarchyPath(hierarchy) + viewPath(view);
 }
 
-export function buildApiUrl(prefix, hierarchy, view, suffix = '', query = null) {
+export function buildApiUrl(prefix, hierarchy, view, suffix = '') {
   // `suffix` is for sub-resources of a tap (e.g. tile coords
   // `/z/x/y.png`). Always appended AFTER the view triple so the URL
-  // stays global → local. `query` (e.g. `{ancestors}`) is appended as a
-  // query string; empty/nullish values are skipped so a cart-item view
-  // (no ancestors) stays clean.
-  let url = prefix + hierarchyPath(hierarchy) + viewPath(view) + suffix;
-  const pairs = Object.entries(query || {}).filter(([, v]) => v != null && v !== '');
-  if (pairs.length) {
-    url += (url.includes('?') ? '&' : '?')
-      + new URLSearchParams(Object.fromEntries(pairs)).toString();
-  }
-  return url;
-}
-
-// The cart-item ANCESTOR chain for a leaf, as the `ancestors` query-param value
-// (`type:id,type:id`, root→leaf, EXCLUDING the leaf), built from route params. A
-// child stack's taps live in its target/mosaic snapshot; the backend reads this
-// to find them. '' for a cart item viewed directly (a mosaic).
-export function ancestorsFromParams(params, leafType, leafId) {
-  return [
-    params.mosaic_id && `mosaic:${params.mosaic_id}`,
-    params.target_id && `target:${params.target_id}`,
-    params.stack_id && `stack:${params.stack_id}`,
-    params.calibration_stack_id && `calibration_stack:${params.calibration_stack_id}`,
-  ].filter(Boolean).filter((s) => s !== `${leafType}:${leafId}`).join(',');
+  // stays global → local. An API read names only the LEAF object: the
+  // backend resolves any object by its own (type, id), whatever it is
+  // nested under in the page URL.
+  return prefix + hierarchyPath(hierarchy) + viewPath(view) + suffix;
 }
 
 export function inheritView(parentView, childObjectType) {

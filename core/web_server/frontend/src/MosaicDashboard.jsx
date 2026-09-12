@@ -25,7 +25,7 @@
 // annotations, so user pipelines surface here automatically — and classify
 // themselves, since the split above is derived from the outputs, not a
 // hardcoded list of display names.
-import React, { useContext, useEffect, useState } from "react";
+import React, { useContext, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Box, Paper, Typography, Divider, Button } from "@mui/material";
 import DeleteSweepIcon from "@mui/icons-material/DeleteSweep";
@@ -33,6 +33,7 @@ import DeleteSweepIcon from "@mui/icons-material/DeleteSweep";
 import AstroFlowContext from "./AstroFlowContext.jsx";
 import DiscardResultsDialog from "./DiscardResultsDialog.jsx";
 import { buildUrl, buildApiUrl } from "./urls.js";
+import { useVersionsMatrix } from "./useVersions.js";
 import PreviewImage from "./PreviewImage.jsx";
 
 
@@ -297,16 +298,9 @@ export function PipelineSection({ objectType, objectId, pipeline }) {
 export default function MosaicDashboard() {
     const { mosaic_id } = useParams();
     const { mosaics, computeGraphStatus } = useContext(AstroFlowContext);
-    const [data, setData] = useState(null);
+    const data = useVersionsMatrix("mosaic", mosaic_id, computeGraphStatus);
 
     const mosaic = mosaics?.[mosaic_id];
-
-    useEffect(() => {
-        fetch(`/api/pipeline_outputs/mosaic/${mosaic_id}`)
-            .then((res) => res.ok ? res.json() : null)
-            .then(setData)
-            .catch(() => setData(null));
-    }, [mosaic_id, computeGraphStatus]);
 
     if (!mosaic) {
         return <Typography sx={{ p: 3 }}>Loading…</Typography>;

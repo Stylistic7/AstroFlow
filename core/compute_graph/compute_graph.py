@@ -508,11 +508,9 @@ def _version_supersede_map(pipeline_name: str, graph) -> dict:
     generations piled up on disk."""
     from products import version_log
     return {
-        node: version_log.key(object_type, object_id, pipeline_name,
-                              display, filter_value)
-        for node, (object_type, object_id, display, filter_value)
-        in extract_pipeline_taps(graph)
-        if display is not None
+        node: version_log.key(tap["object_type"], tap["object_id"],
+                              pipeline_name, tap["display"], tap["filter"])
+        for node, tap in extract_pipeline_taps(graph)
     }
 
 
@@ -539,13 +537,12 @@ def _store_tap_snapshot(pipeline_fn, pipeline_name: str, entity, graph) -> None:
     # is cheap (~0.5 s) but this makes a warm restart free, and the expensive
     # part (the ~25 s trace) was already a `trace_pipeline` @node cache hit.
     #
-    # NOTE: this stores ONLY the cart item's key — but that one snapshot holds
-    # EVERY descendant's taps too (a target's snapshot contains its stacks'
-    # `Master` taps; a mosaic's contains its targets' `Channel` taps), because
-    # the shared graph produced them. A child view is surfaced by reading THIS
-    # (the ancestor's) snapshot and filtering to the child via `_routes_to_item`
-    # — the reader supplies the ancestor from the URL hierarchy. No separate
-    # child key, no re-key, no closure to maintain.
+    # This cart-item snapshot is the COMPLETE trace (every filename node) for
+    # the sweep, archive, discard and polygon readers. The display taps in it
+    # are ALSO filed per ROUTED entity by `_store_product_taps` below — a
+    # mosaic's trace holds its stacks' `Master` taps, its targets' `Channel`
+    # taps and its calibration stacks' masters, and each of those objects is
+    # viewed by its own URL, which names no cart item.
     #
     # `pipeline_source_version` folds the deployed code SHA into the source
     # component so an op edit re-keys the snapshot (the reader `_snapshot_key`
@@ -568,12 +565,35 @@ def _store_tap_snapshot(pipeline_fn, pipeline_name: str, entity, graph) -> None:
         return
     ref = ContextRef.store(("tap_snapshots", str(key)), entries)
     context.or_equals("tap_snapshots", {key: ref})
+    _store_product_taps(pipeline_name, entries)
 
     # Phase 1b: the version log is written ONLY at runtime landings
     # (`_mark_done` → `version_log.supersede` with the node's actual result
     # path). The prediction-time `record()` that lived here wrote predicted
     # paths into the log — the ledger entries that diverged from what the
     # runtime actually built, pinning phantoms and orphaning real files.
+
+
+def _store_product_taps(pipeline_name: str, entries: list[dict]) -> None:
+    """File every display tap of a trace under the entity it ROUTES to, so
+    "the images of object X in pipeline P" is one `context.get` for ANY
+    object — a mosaic, or a stack / target / calibration stack that is only
+    ever an interior node of some cart item's trace and has no cart entry of
+    its own. Same content-addressing as the cart snapshot (deployed code
+    version + the routed entity's own `content_hash`), so a code change or
+    new frames re-key it and the reader misses until the re-trace lands —
+    never a stale answer. One `set_many` per cart item × pipeline."""
+    from dependency_graph.trace_paths import product_taps_key
+    by_entity: dict[tuple, list[dict]] = {}
+    for e in entries:
+        if e.get("display") is None:
+            continue
+        key = product_taps_key(e["object_type"], e["object_id"],
+                               e["content_hash"], pipeline_name)
+        by_entity.setdefault(key, []).append(
+            {"display": e["display"], "filter": e["filter"], "path": e["path"]})
+    if by_entity:
+        context.set_many(by_entity)
 
 
 @ray.remote(num_cpus=0.1)
@@ -671,8 +691,10 @@ def _find_identity_arg(graph, node):
 
 
 def extract_pipeline_taps(graph):
-    """Pure walk of a traced `graph` yielding `(node, (object_type_name,
-    object_id, display, filter))` per @makes_image tap.
+    """Pure walk of a traced `graph` yielding `(node, tap)` per @makes_image
+    tap, where `tap` is `{object_type, object_id, content_hash, display,
+    filter}` — the ROUTING entity (URL type + stable hash + content hash)
+    and the tap's display/filter.
 
     "Tap" = any Node whose task has a `_display` attribute (set by
     `@makes_image(display=...)`). Same-key collisions inside a single
@@ -685,6 +707,7 @@ def extract_pipeline_taps(graph):
     """
     from dependency_graph.classes import Node
     from dependency_graph.node_introspection import filter_of
+    from products.product import url_type_of
 
     if graph is None:
         return
@@ -721,22 +744,24 @@ def extract_pipeline_taps(graph):
         entity = _find_identity_arg(graph, n)
         if entity is None:
             continue
-        # Routing string = the entity's runtime class name, as-is
-        # (PascalCase). No identity-class indirection; no lowercase
-        # translation. The URL grammar matches the class name.
-        object_type_name = type(entity).__name__
-        object_id_value = entity.stable_hash
+        # The routing entity is stamped in URL/cart form (`url_type_of`: a
+        # `StarFlatStack` files as "calibration_stack"), so a reader keyed
+        # by URL never has to know which class produced the tap.
+        object_type = url_type_of(entity)
+        object_id = entity.stable_hash
         # Filter precedence: explicit `filter=` literal param wins (mosaic
         # ops take it as a literal arg), else the entity's intrinsic filter
         # (every Stack has exactly one). Centralized in `filter_of`.
         filter_value = filter_of(n, list(n.args) + [entity])
-        key = (object_type_name, object_id_value, base_display, filter_value)
+        key = (object_type, object_id, base_display, filter_value)
         seq[key] = seq.get(key, 0) + 1
         display = (
             base_display if seq[key] == 1
             else f"{base_display} {seq[key]}"
         )
-        yield n, (object_type_name, object_id_value, display, filter_value)
+        yield n, {"object_type": object_type, "object_id": object_id,
+                  "content_hash": getattr(entity, "content_hash", ""),
+                  "display": display, "filter": filter_value}
 
 
 # Pin to the head node. trace_pipeline is orchestration, not compute: its

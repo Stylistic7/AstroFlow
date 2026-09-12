@@ -1,29 +1,27 @@
 """Queries over the catalog — the lazy product `(object × pipeline × tap × filter)`.
 
 Every function here is a PURE READ derived from three sources the catalog does
-not own: the pipeline registry (which pipelines process which object class), the
-trace (where a product's file lands — a static function of content + config),
-and disk (what's actually there). It never writes; materializing products is the
-compute graph's job, and the cart merely selects which products to materialize.
+not own: the pipeline registry (the pipeline names), the build-time trace (where
+a product's file lands — a static function of content + config, filed per
+ROUTED entity by `compute_graph._store_product_taps`), and disk (what's
+actually there). It never writes; materializing products is the compute
+graph's job, and the cart merely selects which products to materialize.
 
-The whole point: "what can I show for this object?" is answered by *slicing the
-product by the object and asking disk what exists* — not by reconstructing
-engagement from the cart or snapshots. See `products.product.Product`.
+The whole point: "what can I show for this object?" is ONE lookup keyed by the
+object's own `(type, stable_hash)` — a stack inside a mosaic, a target, a
+calibration stack whose master was built inside some light stack's trace —
+followed by asking disk what exists. No URL ancestry, no scan of other
+objects' traces. See `products.product.Product`.
 """
 import os
 from pathlib import Path
 from typing import Iterator
 
 from context import local_context as context
-from dependency_graph.trace_paths import tap_outputs_for, tap_path_for
+from dependency_graph.trace_paths import product_taps_key
 from pipelines.registry import registered_pipelines
 from previews.create_tile_pyramid import needs_display_pyramid, pyramid_path_for
-from products.product import Product, object_class
-
-# A child's cart-item ancestor chain (root→leaf `(object_type, object_id)`),
-# passed down from the URL hierarchy so a leaf without its own tap snapshot
-# resolves from an ancestor's. `()` for a cart item viewed directly.
-Ancestors = tuple[tuple[str, str], ...]
+from products.product import Product, resolve_entity  # noqa: F401 — re-exported
 
 
 # ── canonical display per object type (was duplicated in urls.js + useVersions.js
@@ -57,24 +55,6 @@ def _pipeline_rank(name: str) -> int:
         return _PIPELINE_PREFERENCE.index(name)
     except ValueError:
         return len(_PIPELINE_PREFERENCE)
-
-
-# ── entity + filters (the canonical home; web/backend re-points here in step 2) ─
-def resolve_entity(object_type: str, object_id: str):
-    """The in-context entity (Stack / CalibrationStack / Target / Mosaic) for an
-    `(object_type, object_id)`, or None if not present."""
-    if object_type == "stack":
-        s = (context.stacks or {}).get(object_id)
-        return s.get() if s else None
-    if object_type == "calibration_stack":
-        return (context.calibration_stacks or {}).get(object_id)
-    if object_type == "target":
-        t = (context.targets or {}).get(object_id)
-        return t.get() if t else None
-    if object_type == "mosaic":
-        m = (context.mosaics or {}).get(object_id)
-        return m.get() if m else None
-    return None
 
 
 _FILTER_ORDER = ("L", "H", "S", "O", "R", "G", "B")
@@ -130,25 +110,43 @@ def filters_for(object_type: str, object_id: str) -> list[str]:
 
 
 # ── the queries ──────────────────────────────────────────────────────────────
-def pipelines_for(object_type: str, object_id: str) -> list[str]:
-    """Every registered pipeline that PROCESSES this object's class (has a
-    `for_<type>` entry point) — the class-slice of the product. Deliberately NOT
-    scoped to the cart/snapshots: whether a product was actually computed is
-    answered by `exists`, never by engagement."""
-    cls = object_class(object_type)
-    if cls is None:
+def product_taps(object_type: str, object_id: str, pipeline: str) -> list[dict]:
+    """The display taps `pipeline`'s build-time trace routed to this object —
+    `[{display, filter, path}, ...]`, existence-agnostic — or `[]` when the
+    object is unknown or that pipeline never traced it. ONE durable-store read
+    (`product_taps_key`, filed per routed entity by
+    `compute_graph._store_product_taps`); never a trace on a request."""
+    entity = resolve_entity(object_type, object_id)
+    if entity is None:
         return []
-    return sorted({name for (name, c) in registered_pipelines() if c == cls})
+    return context.get(product_taps_key(
+        object_type, object_id, entity.content_hash, pipeline)) or []
 
 
-def predict_path(product: Product, ancestors: Ancestors = ()) -> "Path | None":
+def pipelines_for(object_type: str, object_id: str) -> list[str]:
+    """Every registered pipeline whose trace routed a display tap to this
+    object — a mosaic pipeline counts for the stacks, targets and calibration
+    stacks inside it. Whether a product is actually on disk is `exists`."""
+    names = sorted({name for (name, _cls) in registered_pipelines()})
+    return [n for n in names if product_taps(object_type, object_id, n)]
+
+
+def predict_path(product: Product) -> "Path | None":
     """The product's predicted on-disk primary path from the (cached) trace —
-    existence-AGNOSTIC. None when the trace has no such tap for the object.
-    `ancestors` resolves a child leaf from its cart-item ancestor's snapshot."""
-    return tap_path_for(
-        (product.object_type, product.object_id, product.pipeline),
-        product.display, product.filter, ancestors=ancestors,
-    )
+    existence-AGNOSTIC. None when the trace has no such tap for the object."""
+    f = str(product.filter)
+    for e in product_taps(product.object_type, product.object_id, product.pipeline):
+        if e["display"] == product.display and str(e["filter"]) == f:
+            return Path(e["path"])
+    return None
+
+
+def master_path(product: Product) -> "Path | None":
+    """The product's PRIMARY file if it is on disk, else None — for downloads
+    and opening in PixInsight, which want the deliverable itself rather than
+    whatever serves tiles (`viewable_path`)."""
+    p = predict_path(product)
+    return p if p is not None and os.path.exists(p) else None
 
 
 def viewable_from_master(master: "str | Path | None") -> "Path | None":
@@ -158,7 +156,7 @@ def viewable_from_master(master: "str | Path | None") -> "Path | None":
     to the master only when it is itself a servable tiff. This is the ONE
     "exists = viewable" definition — the tile server gates on it, and now the
     dashboard/pill/default view do too (the master-vs-pyramid divergence).
-    Callers holding the path already (e.g. from `tap_outputs_for`) use this so
+    Callers holding the path already (e.g. from `product_taps`) use this so
     they don't re-trace per product."""
     if master is None:
         return None
@@ -197,9 +195,7 @@ def viewable_from_master(master: "str | Path | None") -> "Path | None":
     return None
 
 
-def resolve_product(
-    product: Product, ancestors: Ancestors = (),
-) -> "tuple[Path | None, str]":
+def resolve_product(product: Product) -> "tuple[Path | None, str]":
     """The servable path for a product AND whether it's current — the version-
     aware resolver behind graceful N/N-1 versioning. Returns `(path, status)`:
 
@@ -215,7 +211,7 @@ def resolve_product(
     at all (e.g. removed from the cart), so a removed object never shows a stale
     image. Reuses `viewable_from_master` for the serve logic (pyramid-vs-master).
     """
-    master = predict_path(product, ancestors)
+    master = predict_path(product)
     cur = viewable_from_master(master)
     if cur is not None:
         # SNAPSHOT-LAG GUARD (2026-08-31): `predict_path` reads the build-time
@@ -250,56 +246,44 @@ def resolve_product(
     return None, "absent"
 
 
-def viewable_path(product: Product, ancestors: Ancestors = ()) -> "Path | None":
+def viewable_path(product: Product) -> "Path | None":
     """The servable path for a product (path-only; last-good fallback included).
     Use `resolve_product` when you also need the live/out-of-date status."""
-    return resolve_product(product, ancestors)[0]
+    return resolve_product(product)[0]
 
 
-def exists(product: Product, ancestors: Ancestors = ()) -> bool:
+def exists(product: Product) -> bool:
     """Whether the product is on disk and viewable."""
-    return viewable_path(product, ancestors) is not None
+    return viewable_path(product) is not None
 
 
-def products_for(
-    object_type: str, object_id: str, ancestors: Ancestors = (),
-) -> Iterator[Product]:
-    """Every product in the catalog for this object — the class-slice: each
-    applicable pipeline × each of its display taps × filter. Lazy; existence is
-    NOT checked here (use `existing_for`).
-
-    Reads are `recompute=False` (snapshot-only): a pipeline the build never ran
-    for this object yields nothing (a 0.1ms miss), so iterating the whole
-    class-slice never triggers a live trace on a request — produced pipelines
-    hit their per-object snapshot, un-run ones skip. `ancestors` lets a child
-    leaf resolve from its cart-item ancestor's snapshot."""
+def products_for(object_type: str, object_id: str) -> Iterator[Product]:
+    """Every product in the catalog for this object: each pipeline that traced
+    it × each of its display taps × filter. Lazy; existence is NOT checked here
+    (use `existing_for`). Snapshot-only reads — never a trace on a request."""
     for pipeline in pipelines_for(object_type, object_id):
-        for e in tap_outputs_for((object_type, object_id, pipeline),
-                                 recompute=False, ancestors=ancestors):
+        for e in product_taps(object_type, object_id, pipeline):
             yield Product(object_type, object_id, pipeline,
                           e["display"], e["filter"])
 
 
-def existing_for(
-    object_type: str, object_id: str, ancestors: Ancestors = (),
-) -> Iterator[Product]:
+def existing_for(object_type: str, object_id: str) -> Iterator[Product]:
     """The products for this object that are on disk and viewable — the viewer's
     slice of the catalog."""
-    for product in products_for(object_type, object_id, ancestors):
-        if exists(product, ancestors):
+    for product in products_for(object_type, object_id):
+        if exists(product):
             yield product
 
 
 def default_product_for(
     object_type: str, object_id: str, filter: "str | None" = None,
-    ancestors: Ancestors = (),
 ) -> "Product | None":
     """The product to show for a bare object URL: the highest-preference pipeline
     that actually produced a viewable tap, on the object type's default display
     where available, else any existing tap in preference order. Optionally pinned
     to one `filter`. None when nothing is on disk yet."""
     want = default_display_for(object_type)
-    existing = [p for p in existing_for(object_type, object_id, ancestors)
+    existing = [p for p in existing_for(object_type, object_id)
                 if filter is None or str(p.filter) == str(filter)]
     if not existing:
         return None

@@ -18,8 +18,10 @@ from dependency_graph.trace_paths import (
 
 
 class Mosaic:
-    """Type NAME is load-bearing: tap routing uses `type(entity).__name__`."""
+    """Not a real Mosaic: `url_type_of` falls back to the lowercased class
+    name for an unknown class, so the tap routes as "mosaic" all the same."""
     stable_hash = "m0sa1c"
+    content_hash = "c0ntent"
 
 
 def _builder_fn(mosaic, filter):
@@ -47,10 +49,11 @@ def test_presented_builder_registers_its_terminals_tap():
     from compute_graph.compute_graph import extract_pipeline_taps
     taps = list(extract_pipeline_taps(Graph({_presented_node(): []})))
     assert len(taps) == 1
-    node, (object_type, object_id, display, filter_value) = taps[0]
-    assert (object_type, object_id) == ("Mosaic", "m0sa1c")
-    assert display == "Mosaic"
-    assert filter_value == "H"
+    node, tap = taps[0]
+    assert (tap["object_type"], tap["object_id"]) == ("mosaic", "m0sa1c")
+    assert tap["content_hash"] == "c0ntent"
+    assert tap["display"] == "Mosaic"
+    assert tap["filter"] == "H"
     # Control: the same builder UNPRESENTED registers nothing.
     bare = Node(_FakeRemote(_builder_fn), Mosaic(), "H", name="scope1")
     assert list(extract_pipeline_taps(Graph({bare: []}))) == []

@@ -41,20 +41,19 @@ def key(object_type: str, object_id: str, pipeline: str, display: str,
         filter):
     """The durable log key for one display product — the full Product identity
     (`object_type` included: `object_id`/stable_hash collides across a
-    panel/target/stack, per `trace_paths._routes_to_item`).
+    panel/target/stack — the type disambiguates).
 
     `filter` is normalized to `str(filter)` so the write side (raw trace
     `filter`, possibly `None`) and every read side (the tile URL string, the
     dashboard's `str(filter)` columns, a `Product.filter`) all resolve to the
     SAME key — including the filterless case (`None` → `"None"`).
 
-    `object_type` is normalized to the CLASS-NAME case ("Mosaic") the write
-    side uses (extract_pipeline_taps emits `type(entity).__name__` verbatim):
-    legacy routes pass URL-lowercase ("mosaic"), and the mismatch silently
-    disabled the endpoint-side N-1 fallback — every reader missed every
-    stored entry (2026-08-10, the "not yet built" dashboard). First-letter
-    upper maps both spellings onto the form already durably stored, so no
-    migration."""
+    `object_type` is first-letter-uppercased: both sides pass the URL word
+    ("mosaic") now, but the durable log was written for years under the
+    class-name spelling ("Mosaic") — and once the old files are swept those
+    entries cannot be recreated (2026-08-10: a spelling mismatch silently
+    disabled the whole N-1 fallback). Mapping every spelling onto the stored
+    form keeps them readable with no migration."""
     object_type = str(object_type)[:1].upper() + str(object_type)[1:]
     return (_NS, object_type, object_id, pipeline, display, str(filter))
 

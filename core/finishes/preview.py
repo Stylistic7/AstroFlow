@@ -134,8 +134,8 @@ def _stf_values(arr: "np.ndarray", suffixes: "tuple[str, ...] | None",
     return out
 
 
-def _resolve(object_type: str, object_id: str, pipeline: str, display: str,
-             ancestors=()) -> "tuple[Path, str] | None":
+def _resolve(object_type: str, object_id: str, pipeline: str, display: str
+             ) -> "tuple[Path, str] | None":
     """(path, status) for a servable scene format, or None. Status is
     "live" | "out_of_date" — callers must surface it (the 2026-08-31 lesson:
     this function used to DROP it, and every preview consumer silently showed
@@ -143,12 +143,12 @@ def _resolve(object_type: str, object_id: str, pipeline: str, display: str,
     from catalog import Product, resolve_product
     filter_ = "L" if display.startswith("Linear L") else "RGB"
     path, status = resolve_product(
-        Product(object_type, object_id, pipeline, display, filter_), ancestors)
+        Product(object_type, object_id, pipeline, display, filter_))
     return (path, status) if status in ("live", "out_of_date") else None
 
 
 def render_canonical_preview(object_type: str, object_id: str,
-                             ancestors=(), pipeline: "str | None" = None,
+                             pipeline: "str | None" = None,
                              ) -> "tuple[bytes, str] | None":
     """(PNG bytes, status) of the canonical look, or None when no scene
     format is servable yet. Status is the PRIMARY source's freshness
@@ -181,7 +181,7 @@ def render_canonical_preview(object_type: str, object_id: str,
                                   if p != default]
     pipeline = None
     for cand in candidates:
-        if any(_resolve(object_type, object_id, cand, d, ancestors)
+        if any(_resolve(object_type, object_id, cand, d)
                for d in ("Linear SHO", "Linear RGB Starless",
                          "Linear Narrowband Starless")):
             pipeline = cand
@@ -192,14 +192,13 @@ def render_canonical_preview(object_type: str, object_id: str,
     def _split(r):
         return r if r is not None else (None, None)
     sho_path, sho_status = _split(_resolve(
-        object_type, object_id, pipeline, "Linear SHO", ancestors))
+        object_type, object_id, pipeline, "Linear SHO"))
     rgb_path, rgb_status = _split(_resolve(
-        object_type, object_id, pipeline, "Linear RGB Starless", ancestors))
+        object_type, object_id, pipeline, "Linear RGB Starless"))
     nb_partial_path, nb_status = _split(_resolve(
-        object_type, object_id, pipeline, "Linear Narrowband Starless",
-        ancestors))
+        object_type, object_id, pipeline, "Linear Narrowband Starless"))
     stars_path, _stars_status = _split(_resolve(
-        object_type, object_id, pipeline, "Linear RGB Stars", ancestors))
+        object_type, object_id, pipeline, "Linear RGB Stars"))
 
     # Ladder: full-SHO Hubble is THE canonical look; a partial narrowband
     # set (an Hα-only galaxy) would render Hubble as a monochrome tint

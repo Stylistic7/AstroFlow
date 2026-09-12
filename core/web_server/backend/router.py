@@ -58,15 +58,10 @@ def stateful_route(
                     os.environ.get("ASTROFLOW_ADVERTISED_HOST")
                     or request.headers.get("X-Forwarded-Host", request.host)
                 ).split(":")[0]
-                # CARRY THE QUERY STRING. `request.path` drops it, and the
-                # shard then sees a bare leaf with no `ancestors=` — which is
-                # the ONE thing that lets it resolve a child stack's tap out
-                # of its cart-item ancestor's snapshot (see
-                # `_route.parse_ancestors`). Measured 2026-09-11: the same
-                # shard returns 200 with the param and 404 without it, so
-                # EVERY stack- and target-level tap view 404'd while mosaic
-                # views — the cart items, which need no ancestors — worked,
-                # hiding it.
+                # Carry the query string: `request.path` drops it, and a
+                # redirect that loses the caller's parameters is a different
+                # request (measured 2026-09-11, when a resolution parameter
+                # rode there and every shard read 404'd without it).
                 query = request.query_string.decode()
                 return redirect(
                     f"http://{host}:{port}{request.path}"

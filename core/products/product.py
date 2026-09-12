@@ -13,33 +13,55 @@ one.
 `filter` is `None` for a filterless entity (a calibration_stack), and may be a
 trace-derived *sentinel* (e.g. a colour composite's `"RGB"`, which isn't one of
 the object's real filters) — the catalog treats it as just another filter value.
+
+The ONE spelling of an object type is the URL/cart word: `"stack"`,
+`"calibration_stack"`, `"target"`, `"mosaic"`. `url_type_of` maps a live
+entity to it (a `StarFlatStack` is a `"calibration_stack"`), `object_class`
+maps it back to the class the pipeline registry dispatches on, and
+`resolve_entity` maps `(type, stable_hash)` to the in-context object. This is
+a leaf module so every layer — trace, catalog, compute graph, web — can import
+it without a cycle; the entity imports are local for the same reason.
 """
 from dataclasses import dataclass
 
 
 def object_class(object_type: str) -> "type | None":
-    """The entity class for a URL/cart object-type string, or None if unknown.
-
-    The single home for the `{stack: Stack, target: Target, mosaic: Mosaic}`
-    map that was redeclared across `trace_paths`, `compute_graph`, and
-    `catalog.queries`. Lives here — a leaf module — so every one of those can
-    import it without an import cycle (`catalog` imports `trace_paths`, so the
-    map could not live in `catalog`). Imports are local for the same reason:
-    the entity modules never import this one, but keeping them lazy makes that
-    invariant impossible to break by accident."""
+    """The class the pipeline registry dispatches on for a URL/cart object
+    type, or None. `calibration_stack` has none: no pipeline processes a
+    calibration stack — its master is built INSIDE a light stack's trace."""
     from stacks.composite_stack import Stack
     from targets.types import Target
     from mosaics.types import Mosaic
-    # Case-insensitive: the tap URL grammar carries the entity's runtime
-    # CLASS name as-is ("Mosaic" — extract_pipeline_taps does no lowercase
-    # translation by design), while cart items and legacy routes use
-    # lowercase. This map is the single home for the string→class decision,
-    # so it accepts both — a PascalCase lookup returning None here made
-    # every /tap/* resolve "absent" for mosaics, which disabled the entire
-    # graceful N/N-1 fallback during regenerations ("not yet built" pages,
-    # 2026-08-10).
-    return {"stack": Stack, "target": Target, "mosaic": Mosaic}.get(
-        str(object_type).lower())
+    return {"stack": Stack, "target": Target, "mosaic": Mosaic}.get(object_type)
+
+
+def url_type_of(entity) -> str:
+    """The URL/cart object type of a live entity — by CLASS, walking the MRO so
+    a subclass routes as its base: `StarFlatStack` → `"calibration_stack"`.
+    A tap is stamped with this at trace time, so a reader never has to know
+    which subclass produced it. Unknown classes fall back to the lowercased
+    class name."""
+    from stacks.composite_stack import CalibrationStack, Stack
+    from targets.types import Target
+    from mosaics.types import Mosaic
+    words = {Stack: "stack", CalibrationStack: "calibration_stack",
+             Target: "target", Mosaic: "mosaic"}
+    for cls in type(entity).__mro__:
+        if cls in words:
+            return words[cls]
+    return type(entity).__name__.lower()
+
+
+def resolve_entity(object_type: str, object_id: str):
+    """The in-context entity (Stack / CalibrationStack / Target / Mosaic) for
+    an `(object_type, stable_hash)`, or None if not present."""
+    from context import local_context as context
+    if object_type == "calibration_stack":
+        return (context.calibration_stacks or {}).get(object_id)
+    table = {"stack": context.stacks, "target": context.targets,
+             "mosaic": context.mosaics}.get(object_type)
+    ref = (table or {}).get(object_id)
+    return ref.get() if ref is not None else None
 
 
 @dataclass(frozen=True)
@@ -51,6 +73,9 @@ class Product:
     filter: str | None        # a filter, a sentinel like "RGB", or None
 
     def as_view(self) -> dict:
-        """The `{pipeline, display, filter}` triple the URL grammar uses."""
+        """The `{pipeline, display, filter}` triple the URL grammar uses. The
+        filter travels as the string the URL carries — a filterless product
+        (a dark's master) is `/Master/None`, which the catalog matches back
+        by `str(filter)` — so every product has a URL, not only filtered ones."""
         return {"pipeline": self.pipeline, "display": self.display,
-                "filter": self.filter}
+                "filter": str(self.filter)}
