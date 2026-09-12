@@ -55,7 +55,10 @@ export default function MosaicViewer() {
 	const [showDepth, setShowDepth] = useState(false);
 	const [telescopiusOpen, setTelescopiusOpen] = useState(false);
 	const hdrCapable = useHdrCapability();
-	const [hdrEnabled, setHdrEnabled] = useState(false);
+	// Default ON where the display can actually show it. `useHdrCapability` is
+	// a `(dynamic-range: high)` match, so this only self-enables on a screen
+	// that has the headroom; an SDR display still sees peak forced to 1.0.
+	const [hdrEnabled, setHdrEnabled] = useState(hdrCapable);
 	const [peakBrightness, setPeakBrightness] = useState(2.0);
 	const [stretchMode, setStretchMode] = useState('stf');
 	// True once the viewer reports the current tap is a baked-stretch
@@ -160,14 +163,26 @@ export default function MosaicViewer() {
 						handleChange={() => setShowDepth((v) => !v)}
 					/>
 				</>}
+				{/* HDR is NOT gated on band count. Peak brightness is a tone
+				    concern that applies to every colorspace — the generic
+				    finish shader ends in `rgb * globals.peakBrightness`, so an
+				    SHO + RGB-stars composite runs the same multiply a mono
+				    channel does. It used to sit inside `!isColor` alongside the
+				    MONO STRETCH controls (which genuinely don't apply to
+				    colour), which meant `hdrEnabled` stayed at its `false`
+				    default with no control able to flip it: peak was pinned to
+				    1.0 on exactly the deliverable the HDR path exists for.
+				    `HdrControls` already self-gates on real display capability
+				    (`if (!hdrCapable) return null`, a `(dynamic-range: high)`
+				    matchMedia), so that outer wrapper was redundant too. */}
+				<HdrControls
+					hdrCapable={hdrCapable}
+					hdrEnabled={hdrEnabled}
+					setHdrEnabled={setHdrEnabled}
+					peakBrightness={peakBrightness}
+					setPeakBrightness={setPeakBrightness}
+				/>
 				{!isColor && (<>
-					<HdrControls
-						hdrCapable={hdrCapable}
-						hdrEnabled={hdrEnabled}
-						setHdrEnabled={setHdrEnabled}
-						peakBrightness={peakBrightness}
-						setPeakBrightness={setPeakBrightness}
-					/>
 					<Tooltip title="Stretch mode">
 						<Select
 							size="small"

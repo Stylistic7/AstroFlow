@@ -205,6 +205,19 @@ _STARS_SIBLING = {
     "Mosaic Starless": "Mosaic Stars",
     "Linear SHO": "per-band",
     "Linear Narrowband Starless": "per-band",
+    # ...and the REVERSE, for the same reason. A stars layer's background is
+    # identically ZERO by construction (`channel - starless`, clamped;
+    # `polish_background` skips it for that reason), so seeding from it alone
+    # hands the autostretch a median of ~3e-6 that is a zero floor, not a sky
+    # level. The solved midtone comes out ~1.7e-5 and the image renders white
+    # (measured 2026-09-11 on mosaic 75a1da64 "Mosaic Stars"/H: median
+    # 3.02e-06, p95 1.23e-04 -> 0.88, p99 6.00e-04 -> 0.97). Pairing it back
+    # with its starless twin makes the seed composite-derived in BOTH
+    # directions, which is the 2026-09-03 rule: the stretch is a property of
+    # the IMAGE, not of the layer you happen to be viewing.
+    "Mosaic Stars": "Mosaic Starless",
+    "Linear RGB Stars": "Linear RGB Starless",
+    "Linear L Stars": "Linear L Starless",
 }
 
 
@@ -359,7 +372,6 @@ def _per_channel_linear_stats_uncached(path, star_paths=None):
         return []
     nb = min(3, img.bands)
     arr = arr[:, :nb].astype(np.float32, copy=True)
-    coverage = np.all(np.isfinite(arr), axis=1) & np.all(arr > 0.0, axis=1)
     if star_paths is not None:
         per_band = star_paths if isinstance(star_paths, list) else [star_paths] * nb
         for b in range(nb):
@@ -368,6 +380,13 @@ def _per_channel_linear_stats_uncached(path, star_paths=None):
                 if s is not None and s.shape[0] == arr.shape[0]:
                     arr[:, b] = arr[:, b] + np.maximum(
                         np.nan_to_num(s, nan=0.0), 0.0)
+    # COVERAGE COMES FROM THE COMPOSITE, not the primary. "Uncovered canvas is
+    # exactly zero" holds for a starless layer, whose in-footprint sky sits on
+    # the pedestal — but a STARS layer is zero everywhere except the stars, so
+    # testing the primary would call almost the whole mosaic uncovered and
+    # leave the stats to a handful of star pixels. The composite carries the
+    # pedestal across the footprint either way round.
+    coverage = np.all(np.isfinite(arr), axis=1) & np.all(arr > 0.0, axis=1)
     # Sky subset: covered pixels whose composite luminance sits below p60 —
     # background, largely star-free (stars are bright). Falls back to the
     # full covered set when coverage is tiny.
