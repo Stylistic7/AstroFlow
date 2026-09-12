@@ -275,7 +275,19 @@ function App() {
                     <StackViewer />
                   </AppLayout>
                 } />
+                <Route path="/stack/:stack_id/calibration_stack/:calibration_stack_id/:pipeline/:display/:filter" element={
+                  dataIsAvailable &&
+                  <AppLayout>
+                    <StackViewer />
+                  </AppLayout>
+                } />
                 <Route path="/stack/:stack_id/calibration_stack/:calibration_stack_id" element={
+                  dataIsAvailable &&
+                  <AppLayout>
+                    <StackViewer />
+                  </AppLayout>
+                } />
+                <Route path="/calibration_stack/:calibration_stack_id/:pipeline/:display/:filter" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <StackViewer />
@@ -325,6 +337,12 @@ function App() {
                     <StackViewer />
                   </AppLayout>
                 } />
+                <Route path="/target/:target_id/stack/:stack_id/calibration_stack/:calibration_stack_id/:pipeline/:display/:filter" element={
+                  dataIsAvailable &&
+                  <AppLayout>
+                    <StackViewer />
+                  </AppLayout>
+                } />
                 <Route path="/target/:target_id/stack/:stack_id/calibration_stack/:calibration_stack_id" element={
                   dataIsAvailable &&
                   <AppLayout>
@@ -350,6 +368,12 @@ function App() {
                   </AppLayout>
                 } />
                 <Route path="/mosaic/:mosaic_id/target/:target_id/stack/:stack_id/:pipeline/:display/:filter" element={
+                  dataIsAvailable &&
+                  <AppLayout>
+                    <StackViewer />
+                  </AppLayout>
+                } />
+                <Route path="/mosaic/:mosaic_id/target/:target_id/stack/:stack_id/calibration_stack/:calibration_stack_id/:pipeline/:display/:filter" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <StackViewer />

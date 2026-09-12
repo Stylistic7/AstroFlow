@@ -307,6 +307,34 @@ def _resolve_entity(object_type: str, object_id: str):
     return resolve_entity(object_type, object_id)
 
 
+def _default_from_matrix(pipelines: list, object_type: str) -> "dict | None":
+    """The landing view derived from the tap matrix this route already built.
+
+    `catalog.default_product_for` walks `pipelines_for`, which is CLASS
+    registration — every pipeline that `processes=` the object's class. No
+    pipeline processes a CalibrationStack (its master is built INSIDE a light
+    stack's trace by `calibrate()`), so that path yields None for every
+    calibration stack even when its taps resolve — measured 2026-09-12 on a
+    dark whose `Master` tap was live through the ancestor chain. The matrix
+    was built from the snapshots that actually hold this leaf, so it is the
+    authoritative "what is on disk for this object"; choose from it with the
+    catalog's own preference: pipeline rank, then the type's default display,
+    then any existing tap. Pure — no context, no I/O."""
+    from catalog.queries import _pipeline_rank, default_display_for
+    want = default_display_for(object_type)
+    best = None
+    for p in pipelines:
+        for t in p.get("taps") or []:
+            for o in t.get("outputs") or []:
+                if not o.get("exists"):
+                    continue
+                key = (_pipeline_rank(p["name"]), 0 if t["display"] == want else 1)
+                if best is None or key < best[0]:
+                    best = (key, {"pipeline": p["name"], "display": t["display"],
+                                  "filter": str(o["filter"])})
+    return best[1] if best else None
+
+
 @metadata_bp.route("/api/pipeline_outputs/<object_type>/<object_id>")
 def pipeline_outputs(object_type: str, object_id: str):
     """Per-pipeline tap-point matrix for the object dashboard.
@@ -349,6 +377,29 @@ def pipeline_outputs(object_type: str, object_id: str):
         return abort(404)
 
     ancestors = parse_ancestors(request.args.get("ancestors"))
+
+    # A CALIBRATION STACK is never a cart item, so no snapshot is keyed on it,
+    # and a bare `/calibration_stack/<id>` names no ancestor to look through —
+    # yet its master is a real tap inside every cart item whose light stacks
+    # resolved it (`calibrate()` runs inside `post_processed_master`, so the
+    # flat/dark/bias/star-flat masters are INTERIOR nodes of a light stack's
+    # trace, recorded under the mosaic's snapshot as `CalibrationStack` /
+    # `StarFlatStack` taps). The cart and archive — archived items are traced
+    # identically, only not scheduled — ARE the list of snapshot owners, so
+    # every one becomes a synthetic ancestor and `_routes_to_item` keeps only
+    # the taps that route to this leaf. A few dozen entries; no index (see
+    # feedback_avoid_derived_state). Measured 2026-09-12: bare URL → `[]`,
+    # same star flat through its owning mosaic → resolved.
+    if object_type == "calibration_stack":
+        owners = [
+            (str(e[0]), str(e[1]))
+            for e in list(context.shopping_cart or []) + list(context.archive or [])
+            if len(e) >= 2
+        ]
+        have = set(ancestors)
+        ancestors = tuple(ancestors) + tuple(
+            o for o in dict.fromkeys(owners) if o not in have
+        )
 
     iter_filters = cat.filters_for(object_type, object_id) or [None]
     entity_filter_strs = {str(f) for f in iter_filters}
@@ -473,10 +524,12 @@ def pipeline_outputs(object_type: str, object_id: str):
     # list — one source of truth (see feedback_avoid_derived_state). None when
     # nothing is on disk yet.
     default = cat.default_product_for(object_type, object_id, ancestors=ancestors)
+    default_view = (default.as_view() if default
+                    else _default_from_matrix(pipelines, object_type))
     return jsonify({
         "filters": columns,
         "pipelines": pipelines,
-        "default": default.as_view() if default else None,
+        "default": default_view,
     })
 
 

@@ -16,14 +16,19 @@ const StackViewer = () => {
   let stack;
   let unified_stack_id;
 
-  if (stack_id) {
-    stack_type = "stack";
-    stack = stacks?.[stack_id];
-    unified_stack_id = stack_id;
-  } else if (calibration_stack_id) {
+  // The LEAF is whichever object the route names LAST. A nested route
+  // (/mosaic/…/stack/:stack_id/calibration_stack/:calibration_stack_id)
+  // carries BOTH ids, and checking `stack_id` first made every such page
+  // believe it was the light stack — so the calibration stack's own view
+  // was unreachable through the hierarchy (2026-09-12).
+  if (calibration_stack_id) {
     stack_type = "calibration_stack";
     stack = calibrationStacks?.[calibration_stack_id];
     unified_stack_id = calibration_stack_id;
+  } else if (stack_id) {
+    stack_type = "stack";
+    stack = stacks?.[stack_id];
+    unified_stack_id = stack_id;
   } else {
     throw new Error("Neither stack_id nor calibration_stack_id was provided.");
   }
@@ -53,6 +58,11 @@ const StackViewer = () => {
   const hierarchy = [];
   if (params.mosaic_id) hierarchy.push({ type: 'mosaic', id: params.mosaic_id });
   if (params.target_id) hierarchy.push({ type: 'target', id: params.target_id });
+  // A calibration stack nested under a light stack keeps that stack in the
+  // path, so the built URL matches the nested route it came from.
+  if (stack_type === 'calibration_stack' && params.stack_id) {
+    hierarchy.push({ type: 'stack', id: params.stack_id });
+  }
   hierarchy.push({ type: stack_type, id: unified_stack_id });
 
   // A bare hierarchy URL carries no chosen pipeline/display/filter — historically
@@ -62,7 +72,12 @@ const StackViewer = () => {
   // display) so the click renders AND the URL is shareable. The preference now
   // lives solely in the backend catalog — the frontend just follows.
   const haveView = pipeline && display && filter;
-  if (!haveView && stack_type === 'stack' && stack.filter) {
+  // Not gated on `stack_type`: a calibration stack has a real master (WBPP
+  // for flat/dark/bias, `build_star_flat` for a star flat) and the backend
+  // now computes a default view for it, so it redirects like a light stack.
+  // Gating this on `'stack'` was one of two reasons every calibration stack
+  // page stayed blank (2026-09-12).
+  if (!haveView && stack.filter) {
     if (pipelineOutputs == null) {
       return (
         <Box sx={{ p: 3, display: 'flex', alignItems: 'center', gap: 2 }}>

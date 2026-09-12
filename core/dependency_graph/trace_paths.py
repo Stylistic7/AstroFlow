@@ -30,6 +30,8 @@ keep in sync — see `feedback_avoid_derived_state`.
 """
 from __future__ import annotations
 
+import functools
+
 import inspect
 from dataclasses import dataclass
 from graphlib import TopologicalSorter
@@ -147,11 +149,32 @@ def traced_paths_for(
     # caller's `_routes_to_item` filter scopes it to the leaf. Only ONE ancestor
     # is the cart item, so the first hit is authoritative. The URL says which
     # snapshot holds the data — no scan, no index (feedback_avoid_derived_state).
+    # ALL named ancestors, not the first that has a snapshot. A URL hierarchy
+    # names exactly one cart item, so "first hit" was equivalent — but a
+    # calibration stack is resolved through EVERY cart/archive owner as a
+    # synthetic ancestor (`pipeline_outputs`), and a shared star flat may sit
+    # only in the fifth owner's snapshot while the first owner's exists and
+    # doesn't route to it. Union them; `_routes_to_item` scopes the result to
     _, _, pipeline = item
+    # the leaf, and an identical tap (same routing entity, display, filter and
+    # path) appearing in two owners' snapshots is one file, so exact
+    # duplicates are dropped — on the WHOLE identity, never on `path` alone:
+    # entries without a path are distinct taps, not one.
+    merged: list[dict] = []
+    seen: set = set()
     for anc_type, anc_id in ancestors:
         anc_snapshot = _read_tap_snapshot((anc_type, anc_id, pipeline))
-        if anc_snapshot is not None:
-            return anc_snapshot
+        if anc_snapshot is None:
+            continue
+        for e in anc_snapshot:
+            key = (e.get("object_type"), e.get("object_id"), e.get("display"),
+                   str(e.get("filter")), e.get("path"))
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(e)
+    if merged:
+        return merged
 
     if not recompute:
         # Read-only caller (viewer / catalog): a snapshot miss (own AND every
@@ -220,6 +243,39 @@ def traced_path_for(
     return None
 
 
+@functools.lru_cache(maxsize=None)
+def _accepted_class_names(object_type: str) -> "frozenset[str] | None":
+    """The runtime class names a tap may carry for a URL/cart object type —
+    the type's class AND EVERY SUBCLASS, lowercased — or None when the type
+    resolves to no class we know (the caller then falls back to plain name
+    equality, the historical behaviour).
+
+    A tap records `type(entity).__name__` verbatim (`extract_pipeline_taps`),
+    and the URL grammar assumed that name IS the type. That held until a
+    subclass existed: `StarFlatStack(CalibrationStack)` is routed by the URL as
+    `calibration_stack`, but its taps say `StarFlatStack`, so name equality
+    rejected every star flat's `Star Flat` tap and its detail page resolved
+    nothing — while a plain dark, whose class is exactly `CalibrationStack`,
+    resolved through the identical ancestor chain (measured 2026-09-12).
+    `object_class` deliberately omits `calibration_stack` (it feeds the cart
+    dispatcher's `get_pipeline(processes=...)`, and nothing processes one), so
+    the class is resolved locally here."""
+    from products.product import object_class
+    cls = object_class(object_type)
+    if cls is None and str(object_type).lower() == "calibration_stack":
+        from stacks.composite_stack import CalibrationStack
+        import stacks.star_flat  # noqa: F401  — makes StarFlatStack a known subclass
+        cls = CalibrationStack
+    if cls is None:
+        return None
+    names, todo = set(), [cls]
+    while todo:
+        c = todo.pop()
+        names.add(c.__name__.lower())
+        todo.extend(c.__subclasses__())
+    return frozenset(names)
+
+
 def _routes_to_item(entry: dict, object_type: str, object_id: str) -> bool:
     """Whether a traced tap belongs to the queried entity. A pipeline's trace
     contains taps routing to OTHER entities (a mosaic's trace has per-panel
@@ -230,13 +286,17 @@ def _routes_to_item(entry: dict, object_type: str, object_id: str) -> bool:
     Match BOTH type and id: first-subframe-based `stable_hash` collides across
     a single-panel mosaic / its target / its stack, so id alone is ambiguous.
     `object_type` is the URL/cart form (`calibration_stack`); the tap carries
-    the routing entity's class name (`CalibrationStack`)."""
+    the routing entity's class name — which may be a SUBCLASS
+    (`StarFlatStack`), see `_accepted_class_names`."""
+    if entry.get("object_id") != object_id:
+        return False
     cls = entry.get("object_type")
-    return (
-        entry.get("object_id") == object_id
-        and bool(cls)
-        and object_type.replace("_", "").lower() == cls.lower()
-    )
+    if not cls:
+        return False
+    accepted = _accepted_class_names(object_type)
+    if accepted is not None:
+        return cls.lower() in accepted
+    return object_type.replace("_", "").lower() == cls.lower()
 
 
 def pipeline_source_version(fn) -> str:
