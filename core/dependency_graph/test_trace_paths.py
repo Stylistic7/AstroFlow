@@ -316,3 +316,21 @@ def test_store_product_taps_writes_nothing_for_a_tapless_trace(monkeypatch):
                         lambda self, items: calls.append(items))
     cg._store_product_taps("P", [{"display": None, "path": "/o/x"}])
     assert calls == []
+
+
+def test_the_default_never_traces(monkeypatch):
+    """`traced_paths_for(item)` with no flag is what the web workers call
+    (`_get_polygons`, suggestions, discard). On a snapshot miss it must answer
+    `[]`, not re-execute the pipeline in the request thread: measured
+    2026-09-12, one `/api/metadata` on a mosaic took 32.6 s of `calibrate()`
+    inside gunicorn, and the first hour after every deploy (snapshots re-keyed
+    on the new SHA) wedged the web server."""
+    import dependency_graph.trace_paths as tp
+
+    monkeypatch.setattr(tp, "_read_tap_snapshot", lambda item: None)
+
+    def _boom(*args, **kwargs):
+        raise AssertionError("the default traced_paths_for must not trace")
+    monkeypatch.setattr(tp, "_resolve_pipeline_call", _boom)
+
+    assert tp.traced_paths_for(("mosaic", "m", "P")) == []

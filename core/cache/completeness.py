@@ -36,7 +36,7 @@ def missing_products(ctx) -> dict[tuple, list[dict]]:
     missing: dict[tuple, list[dict]] = {}
     for item in _cart_items(ctx):
         try:
-            entries = traced_paths_for(item, strict=True)
+            entries = traced_paths_for(item, recompute=True, strict=True)
         except TraceResolutionError as e:
             missing[item] = [{"path": f"<unresolvable: {e}>", "op_name": "<trace>"}]
             continue

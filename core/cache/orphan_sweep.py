@@ -164,7 +164,7 @@ def live_set(ctx) -> set[str]:
     primaries: set[str] = set()
     for item in _cart_items(ctx):
         # strict=True: raises TraceResolutionError rather than returning [].
-        for entry in traced_paths_for(item, strict=True):
+        for entry in traced_paths_for(item, recompute=True, strict=True):
             p = entry.get("path")
             if p:
                 primaries.add(str(p))

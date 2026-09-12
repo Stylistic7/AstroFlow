@@ -106,16 +106,17 @@ def paths_for_cart_item(
     "no outputs". A successful-but-empty trace still returns `[]`.
 
     Reads the build-time snapshot (Ray-free, ~0.1 ms, via
-    `traced_paths_for`); on a snapshot miss, `recompute=True` recomputes
-    the trace inline.
+    `traced_paths_for`); on a snapshot miss, recomputes the trace inline —
+    this is a HEAD-DRIVER helper (archive), never a web read.
     """
-    return [Path(e["path"]) for e in traced_paths_for(item, strict=strict)
+    return [Path(e["path"])
+            for e in traced_paths_for(item, recompute=True, strict=strict)
             if not finals_only or e["is_final"]]
 
 
 def traced_paths_for(
     item: tuple[str, str, str],
-    recompute: bool = True,
+    recompute: bool = False,
     strict: bool = False,
 ) -> list[dict]:
     """Return the raw trace result for `item`: one dict per
@@ -133,9 +134,17 @@ def traced_paths_for(
     **Snapshot-first (Ray-free):** if `compute_graph._store_tap_snapshot`
     persisted this exact `(source, stable, content, pipeline)` at graph-build
     time — which it does for every cart entry — return that directly (a
-    `context.get`). A MISS means the object×pipeline was never built:
-    `recompute=False` returns `[]`; `recompute=True` (sweep / archive on the
-    head driver) recomputes the pure trace inline.
+    `context.get`). A MISS means the object×pipeline was never built (or not
+    yet re-traced on this code version): the DEFAULT `recompute=False`
+    returns `[]`, and only the head-driver callers that must know the whole
+    live set before a destructive step — the orphan sweep, cart→archive,
+    completeness — pass `recompute=True` to trace inline.
+
+    The default is False because a web worker MUST never trace: a mosaic
+    trace is ~30 s of `calibrate()` in the request thread, and after every
+    deploy the snapshots are re-keyed until the graph re-traces, so a
+    default of True turned the first hour after each restart into a wedged
+    web server (2026-08-16, again 2026-09-12 via `_get_polygons`).
     """
     snapshot = _read_tap_snapshot(item)
     if snapshot is not None:
@@ -181,31 +190,6 @@ def traced_paths_for(
             )
         return []
     return _walk_and_resolve_filenames_tagged(graph)
-
-
-def traced_path_for(
-    item: tuple[str, str, str],
-    op_name: str,
-    **identity_kwargs: str,
-) -> "Path | None":
-    """Find the single path produced by `op_name` for a specific entity
-    in `item`'s traced pipeline.
-
-    `identity_kwargs` are stable-hash values for the op's identity
-    fields — e.g. `traced_path_for(item, "stack_files",
-    stack=active_stack.stable_hash)`.
-
-    Returns the first matching path, or None on miss. Convenience
-    wrapper for one-shot lookups; if you're doing multiple lookups
-    from the same cart item, call `traced_paths_for(item)` once and
-    iterate.
-    """
-    for e in traced_paths_for(item):
-        if e["op_name"] != op_name:
-            continue
-        if all(e["identity"].get(k) == v for k, v in identity_kwargs.items()):
-            return Path(e["path"])
-    return None
 
 
 def pipeline_source_version(fn) -> str:
@@ -452,10 +436,8 @@ def _walk_and_resolve_filenames_tagged(graph) -> list[dict]:
             "object_id": str|None,     # its stable hash
             "content_hash": str|None,  # its content hash
         }
-    Identity is what makes `traced_path_for(item, "stack_files",
-    stack=H)`-style lookups possible: callers can pick out a specific
-    (op, entity) combination from the trace without rehashing or
-    re-tracing.
+    Identity is what lets a caller pick out a specific (op, entity)
+    combination from the trace without rehashing or re-tracing.
     """
     # User-facing tap metadata per Node, so a single traced-paths result serves
     # sweep/archive (op_name+identity), the polygon overlays, AND the per-entity
@@ -486,7 +468,7 @@ def _walk_and_resolve_filenames_tagged(graph) -> list[dict]:
 
 def _op_name_for_node(n) -> str:
     # A presented builder answers with its TERMINAL's op name, so
-    # `traced_path_for(item, "merge_images_oss", ...)`-style lookups
+    # `op_name`-keyed lookups over `traced_paths_for` (e.g. `merge_images_oss`)
     # (archive, sweep) keep working across the subgraph boundary.
     presented = getattr(n, "_op_name", None)
     if presented:
