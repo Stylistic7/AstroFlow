@@ -378,13 +378,23 @@ export default function TileViewerV2({
     const gridAxes = genericMode ? axesFromParams(activeFinish.params) : null;
     const paramOrder = genericMode ? activeFinish.params.map((p) => p.name) : null;
 
-    // A linear-scene tap has no built-in fallback — auto-pick the first
-    // applicable finish when 'ghs' (the narrowband built-in) is selected.
+    // Auto-pick a colour finish only where the built-in CANNOT serve: a
+    // MULTI-BAND linear-scene tap (Linear RGB Starless and friends), whose
+    // three bands have no meaningful mono rendering.
+    //
+    // A 1-BAND linear-scene tap must keep 'ghs'. Mosaic Starless/H is a real
+    // mono channel (bands=1), and 'ghs' leaves `activeFinish` null, so
+    // `genericMode` is false and `primaryView` stays the tap named in the URL
+    // — exactly the single channel you navigated to. Auto-switching it to a
+    // colour finish overrode `primaryView` to that finish's own first input at
+    // filter RGB, so every per-channel page repainted as the full-colour
+    // composite and the menu offered no way back (2026-09-12).
     useEffect(() => {
-        if (isLinearScene && finishName === 'ghs' && applicableFinishes.length) {
+        if (isLinearScene && isColor && finishName === 'ghs'
+                && applicableFinishes.length) {
             setFinishName(applicableFinishes[0].name);
         }
-    }, [isLinearScene, finishName, applicableFinishes.length]);
+    }, [isLinearScene, isColor, finishName, applicableFinishes.length]);
 
     // A finish reads its OWN taps: inputs[0] is the primary texture (src0) and
     // inputs[1..] the extra bindings — regardless of which tap's page we're
@@ -1146,8 +1156,19 @@ export default function TileViewerV2({
                         onChange={(e) => { if (gridActive) exitGrid(false); setFinishName(e.target.value); }}
                         sx={{ ...selectSx, mb: 1 }}
                     >
+                        {/* The built-in, offered on every tap it can serve —
+                            not just narrowband. On a 1-band linear-scene tap
+                            it IS the single-channel view: `activeFinish` goes
+                            null, `genericMode` false, and `primaryView` stays
+                            the tap in the URL. Without this entry a per-channel
+                            mosaic page had no way back from a colour finish, so
+                            the filter dropdown offered H/S/O/R/G/B while the
+                            render never changed. */}
                         {isNarrowband && (
                             <MenuItem value="ghs">Narrowband GHS (per-channel)</MenuItem>
+                        )}
+                        {isLinearScene && !isColor && (
+                            <MenuItem value="ghs">Single channel (mono)</MenuItem>
                         )}
                         {applicableFinishes.map((f) => (
                             <MenuItem key={f.name} value={f.name}>{f.name}</MenuItem>
