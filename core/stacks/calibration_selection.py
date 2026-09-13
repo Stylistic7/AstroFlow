@@ -19,6 +19,12 @@ WBPP, never wrong pixels.
 
 * `calibration_plan(stack, config)` — the build recipe: topologically
   ordered `(cal_stack, its_dep_ids)` steps plus `stack`'s own dep ids.
+* `calibration_master(cs, config, dep_masters)` — one step of that recipe:
+  the producer a calibration stack is built by (solved from photometry for
+  a star flat, integrated from frames for everything else).
+* `master_for(stack, cs, master, dark)` — the master `stack` is actually
+  calibrated with: a star flat is re-scaled to the stack's own sky first
+  (`scale_star_flat`, ephemeral, per light stack); anything else as built.
 * `calibrate(stack, config)` — common case, no per-stack transform.
 """
 from file_io.types import WithSidecar
@@ -98,6 +104,33 @@ def calibration_plan(
     )
 
 
+def calibration_master(
+    cs: CalibrationStack, config: ProcessingConfig, dep_masters: list[WithSidecar],
+) -> WithSidecar:
+    """One calibration stack's master. A star flat is SOLVED from its members'
+    star photometry — its own producer, keyed on the group's membership, no
+    cal deps of its own; every other kind is INTEGRATED from its frames with
+    the masters of its own dependencies."""
+    from stacks.star_flat import StarFlatStack, build_args, build_star_flat
+    if isinstance(cs, StarFlatStack):
+        return build_star_flat(*build_args(cs))
+    return stack_files(cs, config, *dep_masters)
+
+
+def master_for(
+    stack: BaseStack, cs: CalibrationStack, master: WithSidecar, dark: WithSidecar | None,
+) -> WithSidecar:
+    """The master `stack` divides by. A star flat's pattern has the right shape
+    for every stack in its group but its own amplitude for each one (the
+    stack's sky sees the sensor's etalon at its own contrast), so the group's
+    flat is re-scaled to this stack before WBPP sees it; an integrated master
+    is used as built. `dark` lets the fit remove the pedestal first."""
+    from stacks.star_flat import StarFlatStack, gain_args, scale_star_flat
+    if isinstance(cs, StarFlatStack):
+        return scale_star_flat(*gain_args(stack, master, dark))
+    return master
+
+
 def calibrate(
     stack: BaseStack, config: ProcessingConfig,
 ) -> list[WithSidecar]:
@@ -108,16 +141,12 @@ def calibrate(
 
     Returns the masters for `stack`'s OWN dependencies (sorted id order)
     — the exact set `_run_wbpp_stacking` will match by STBLHASH."""
-    from stacks.star_flat import StarFlatStack, build_args, build_star_flat
     steps, top_ids = calibration_plan(stack, config)
+    cal_stacks: dict[str, CalibrationStack] = {}
     masters: dict[str, WithSidecar] = {}
     for cs, dep_ids in steps:
-        if isinstance(cs, StarFlatStack):
-            # Solved from photometry, not integrated: its own producer, keyed
-            # on the group's membership (content_hash), no cal deps of its own.
-            masters[str(cs.stable_hash)] = build_star_flat(*build_args(cs))
-        else:
-            masters[str(cs.stable_hash)] = stack_files(
-                cs, config, *(masters[i] for i in dep_ids),
-            )
-    return [masters[i] for i in top_ids]
+        cal_stacks[str(cs.stable_hash)] = cs
+        masters[str(cs.stable_hash)] = calibration_master(
+            cs, config, [masters[i] for i in dep_ids])
+    dark = next((masters[i] for i in top_ids if getattr(cal_stacks[i], "image_type", None) == "dark"), None)
+    return [master_for(stack, cal_stacks[i], masters[i], dark) for i in top_ids]

@@ -129,7 +129,7 @@ def test_solve_adaptive_picks_the_finest_cell_within_the_noise_budget():
     sparse, _ = _synth(seed=0, n_subs=24, stars_per_sub=40, contaminated=())
     sol2, cell2, _, _ = solve_adaptive(sparse, (H, W), cells=(256, 128, 64))
     assert cell2 == 256                                           # too noisy for anything finer
-    assert CELLS == (256,)                                        # production: the user's call (2026-09-07)
+    assert CELLS == (256, 128)                                    # production: 128 re-admitted 2026-09-12 (Cygnus sweep)
 
 
 def test_solve_and_write_makes_a_wbpp_master_and_passes_the_gate(tmp_path):
@@ -188,18 +188,38 @@ def test_gate_rule_needs_subs_agreement_and_low_noise():
 
 # ---------------------------------------------------------------- integration seams
 def test_calibrate_dispatches_the_star_flat_producer(monkeypatch):
+    """A star flat is solved (never WBPP-integrated) and then RE-SCALED to the
+    light stack that divides by it, with the stack's dark master handed to
+    the fit; the dark itself is integrated and passed through as built."""
     sf = _star_flat(stable_hash="sf1")
     light = SimpleNamespace(stable_hash="light1", contents={"run0": SimpleNamespace(
         dependencies={"dark": StackIdDependency(stack_id="dark1"), "flat": StackIdDependency(stack_id="sf1")})})
-    dark = SimpleNamespace(stable_hash="dark1", contents={"run0": SimpleNamespace(dependencies={})})
+    dark = SimpleNamespace(stable_hash="dark1", image_type="dark", contents={"run0": SimpleNamespace(dependencies={})})
     calls = []
     monkeypatch.setattr(sel, "resolve_calibration", lambda s, c, d: s)
     monkeypatch.setattr(sel, "stack_files", lambda s, config, *m: calls.append(("wbpp", s.stable_hash)) or f"master:{s.stable_hash}")
     monkeypatch.setattr(sfm, "build_star_flat", lambda s, cells, window: calls.append(("star", s.stable_hash, cells)) or f"master:{s.stable_hash}")
+    monkeypatch.setattr(sfm, "scale_star_flat",
+                        lambda stack, master, dark_, *settings: calls.append(("scale", stack.stable_hash, master, dark_)) or f"scaled:{master}")
     config = SimpleNamespace(get_calibration_stacks=lambda: {"dark1": dark, "sf1": sf}, decisions={})
     masters = sel.calibrate(light, config)
-    assert masters == ["master:dark1", "master:sf1"]
+    assert masters == ["master:dark1", "scaled:master:sf1"]
     assert ("star", "sf1", CELLS) in calls and ("wbpp", "dark1") in calls and ("wbpp", "sf1") not in calls
+    assert ("scale", "light1", "master:sf1", "master:dark1") in calls
+
+
+def test_calibrate_scales_without_a_dark_when_the_stack_has_none(monkeypatch):
+    sf = _star_flat(stable_hash="sf1")
+    light = SimpleNamespace(stable_hash="light1", contents={"run0": SimpleNamespace(
+        dependencies={"flat": StackIdDependency(stack_id="sf1")})})
+    calls = []
+    monkeypatch.setattr(sel, "resolve_calibration", lambda s, c, d: s)
+    monkeypatch.setattr(sfm, "build_star_flat", lambda s, cells, window: f"master:{s.stable_hash}")
+    monkeypatch.setattr(sfm, "scale_star_flat",
+                        lambda stack, master, dark_, *settings: calls.append(dark_) or f"scaled:{master}")
+    config = SimpleNamespace(get_calibration_stacks=lambda: {"sf1": sf}, decisions={})
+    assert sel.calibrate(light, config) == ["scaled:master:sf1"]
+    assert calls == [None]
 
 
 def test_focal_length_and_index_treat_star_flats_specially():
