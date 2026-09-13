@@ -137,7 +137,16 @@ class ContextRef(Generic[T]):
     @classmethod
     def store(cls, cache_key: Any, obj: T,
               content_hash: str | None = None) -> "ContextRef[T]":
-        """Store obj in context (diskcache) and the Ray object store.
+        """Store obj in the Ray object store, owned by the ContextActor, and
+        through the actor in the diskcache.
+
+        The actor owns the plasma copy, not this process: a Ray worker that
+        owns live objects declines the idle-exit request (Ray's own words:
+        "it doesn't have objects it owns"), so worker-owned puts pinned every
+        worker that ever ran an identification task — 104 of them holding
+        50 GB of dead heap on 2026-09-13, which put the head into swap. The
+        actor outlives the job and keeps the ref (`ContextActor.set_owned`),
+        so the worker is a plain borrower and goes when idle.
 
         Uses obj.content_hash if the object already carries one (i.e. it is a
         ContentHashed dataclass), otherwise derives the hash from the object.
@@ -154,20 +163,14 @@ class ContextRef(Generic[T]):
         from context import context
         import time
 
-        # Web/gunicorn workers connect to Ray lazily (same idiom as Context.get):
-        # a fresh worker whose FIRST Ray touch is this ray.put — e.g. the
-        # stack-level tile_metadata path, which store_large's the calibration
-        # stacks before any Context.get has run — would otherwise raise "Ray has
-        # not been started yet". Ensure the connection first.
-        if not ray.is_initialized():
-            from ray_infra.ray_init import connect_to_ray_cluster
-            connect_to_ray_cluster()
-
-        ref = ray.put(obj)
+        actor = context._actor()        # connects this process to Ray if needed
+        ref = ray.put(obj, _owner=actor)
 
         attempts = 0
         while True:
-            context[cache_key] = obj
+            # Nested in a list so the actor receives the ref itself, not the
+            # value Ray would resolve a top-level ObjectRef argument into.
+            ray.get(actor.set_owned.remote(cache_key, [ref]))
             attempts += 1
             # Read back through the same RPC path the consumer will use.
             if context[cache_key] is not None:

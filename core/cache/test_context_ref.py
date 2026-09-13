@@ -1,8 +1,11 @@
 import gc
+import os
 import pickle
+import time
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
 import pytest
 import ray
 
@@ -399,3 +402,65 @@ def test_scatter_gather_consume_no_object_bloat(empty_context):
     assert after - before <= TOTAL_ITEMS + 20, (
         f"Object store grew by {after - before}, expected at most {TOTAL_ITEMS + 20}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Ownership — the ContextActor owns what store() puts, so the creator can exit
+# ---------------------------------------------------------------------------
+
+
+@ray.remote(max_calls=1)
+def _store_then_exit(key: str, value: dict) -> tuple:
+    """Stores from a worker Ray retires right after this one call."""
+    return os.getpid(), ContextRef.store(key, value)
+
+
+def _wait_for_exit(pid: int, timeout: float = 30.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return
+        time.sleep(0.2)
+    raise AssertionError(f"worker {pid} still alive after {timeout}s")
+
+
+def test_the_object_outlives_the_worker_that_stored_it(empty_context):
+    """`store` puts with the ContextActor as owner. A worker that owned its
+    puts could never take Ray's idle exit — "it doesn't have objects it
+    owns" is Ray's condition — which pinned every worker that ever ran an
+    identification task. With the actor owning, the creator is a borrower:
+    here Ray retires it (max_calls=1) and the plasma copy is still served."""
+    pid, ref = ray.get(_store_then_exit.remote("owned_key", {"answer": 42}))
+    assert ref.ref is not None
+    _wait_for_exit(pid)
+    assert ray.get(ref.ref, timeout=10) == {"answer": 42}    # the fast path, creator gone
+    assert ref.get() == {"answer": 42}
+
+
+def test_the_actor_pins_a_bounded_set_of_owned_objects(init_ray):
+    """The actor keeps a ref to each object it owns (that is what lets the
+    creator exit) but only up to a byte budget, oldest released first; a
+    released object lives on while any borrower holds it. Overwriting a
+    key releases the key's previous object."""
+    from context.context import ContextActor
+    actor = ContextActor.remote(held_bytes=500_000)
+    ray.get(actor.held.remote())      # up: a put owned by a not-yet-started actor aborts the caller (RAY_CHECK)
+
+    def put(key, seed):
+        ref = ray.put(np.full(50_000, seed, np.float32), _owner=actor)   # 200 KB: a plasma object
+        ray.get(actor.set_owned.remote(("owned_budget", key), [ref]))
+        return ref
+
+    a = put("a", 1); put("b", 2)
+    held = ray.get(actor.held.remote())
+    assert [k[1] for k in held["keys"]] == ["a", "b"] and 400_000 <= held["bytes"] < 420_000, held
+    put("c", 3)                                                      # over budget: a released
+    assert [k[1] for k in ray.get(actor.held.remote())["keys"]] == ["b", "c"]
+    put("b", 4)                                                      # overwrite: b's old object released
+    held = ray.get(actor.held.remote())
+    assert [k[1] for k in held["keys"]] == ["c", "b"] and held["bytes"] < 420_000, held
+    assert ray.get(a)[0] == 1                                        # still alive: this driver borrows it
+    ray.get(actor.delete.remote(("owned_budget", "c")))
+    assert [k[1] for k in ray.get(actor.held.remote())["keys"]] == ["b"]

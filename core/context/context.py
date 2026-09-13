@@ -1,6 +1,8 @@
 import ray
 import os
+import threading
 
+from collections import OrderedDict
 from typing import Any
 from context.cache import get_cache, get_durable_cache, is_durable_key
 from ray_infra.ray_init import connect_to_ray_cluster
@@ -50,6 +52,14 @@ def starts_with(big_tuple, small_tuple):
 
 _MAX_CONCURRENCY = 64
 
+# How much of the object store the actor pins for the fast path. It owns every
+# object `ContextRef.store` puts (so the worker that put it may exit) and keeps
+# the ref; beyond this budget the oldest are released. A released object lives
+# on while any borrower holds it, and a consumer whose ref is gone reads the
+# diskcache. The head's store is 2 GiB; kept full, the raylet spills and
+# broadcasts gc.collect() to every worker on the node.
+_HELD_BUDGET_BYTES = 1 << 30
+
 
 @ray.remote(
     resources={"diskcache": 0.001},
@@ -58,9 +68,13 @@ _MAX_CONCURRENCY = 64
     max_concurrency=_MAX_CONCURRENCY,
 )
 class ContextActor:
-    def __init__(self) -> None:
+    def __init__(self, held_bytes: int = _HELD_BUDGET_BYTES) -> None:
         self.cache = get_cache()
         self.durable = get_durable_cache()
+        self._held: OrderedDict[Key, tuple[ray.ObjectRef, int]] = OrderedDict()
+        self._held_bytes = 0
+        self._held_budget = held_bytes
+        self._held_lock = threading.Lock()
         self._inflight = 0
         self._peak_inflight = 0
         self._total_calls = 0
@@ -136,8 +150,48 @@ class ContextActor:
         try:
             from cache.context_ref import strip_refs
             self._c(key)[key] = strip_refs(value)
+            self._release(key)
         finally:
             self._exit()
+
+    def set_owned(self, key: Key, refs: list) -> None:
+        """Write the object behind `refs[0]` — put by the caller with this
+        actor as `_owner` — and keep the ref, so the caller may exit: the
+        owner must hold a reference before the creator goes, or the object
+        goes with it. Nested in a list so Ray delivers the ref, not the
+        value."""
+        (ref,) = refs
+        self._enter()
+        try:
+            from cache.context_ref import strip_refs
+            self._c(key)[key] = strip_refs(ray.get(ref))
+            self._hold(key, ref)
+        finally:
+            self._exit()
+
+    def _hold(self, key: Key, ref: ray.ObjectRef) -> None:
+        location = ray.experimental.get_object_locations([ref], timeout_ms=10_000).get(ref) or {}
+        size = location.get("object_size") or 0
+        with self._held_lock:
+            self._drop(key)
+            self._held[key] = (ref, size)
+            self._held_bytes += size
+            while self._held_bytes > self._held_budget and len(self._held) > 1:
+                self._drop(next(iter(self._held)))
+
+    def _drop(self, key: Key) -> None:
+        held = self._held.pop(key, None)
+        if held is not None:
+            self._held_bytes -= held[1]
+
+    def _release(self, key: Key) -> None:
+        """The key's value changed or went: its pinned object, if any, goes."""
+        with self._held_lock:
+            self._drop(key)
+
+    def held(self) -> dict:
+        with self._held_lock:
+            return {"keys": list(self._held), "bytes": self._held_bytes}
 
     def contains(self, key: Key) -> bool:
         return key in self._c(key)
@@ -146,6 +200,7 @@ class ContextActor:
         c = self._c(key)
         if key in c:
             del c[key]
+        self._release(key)
 
     def and_equals(
         self, key: Key, value: Any, length_limit: int | None
@@ -159,6 +214,7 @@ class ContextActor:
             if length_limit is not None:
                 new_value = new_value[-length_limit:]
             c[key] = strip_refs(new_value)
+        self._release(key)
 
     def or_equals(self, key: Key, value: dict) -> None:
         """Merge value into a dict stored at key (dict |= value)."""
@@ -171,6 +227,7 @@ class ContextActor:
                 if not isinstance(old_value, dict):
                     old_value = {}
                 c[key] = strip_refs({**old_value, **value})
+            self._release(key)
         finally:
             self._exit()
 
@@ -178,12 +235,16 @@ class ContextActor:
         from cache.context_ref import strip_refs
         for key, value in items.items():
             self._c(key)[key] = strip_refs(value)
+            self._release(key)
 
     def clear(self) -> None:
         # Explicit full reset clears BOTH stores. Durability protects
         # against eviction, not against a deliberate wipe.
         self.cache.clear()
         self.durable.clear()
+        with self._held_lock:
+            self._held.clear()
+            self._held_bytes = 0
 
     def get_cache_keys(self) -> list:
         return list(self.cache.iterkeys()) + list(self.durable.iterkeys())
