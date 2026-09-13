@@ -170,7 +170,12 @@ class ContextActor:
             self._exit()
 
     def _hold(self, key: Key, ref: ray.ObjectRef) -> None:
-        location = ray.experimental.get_object_locations([ref], timeout_ms=10_000).get(ref) or {}
+        # The size comes from this owner's own reference table — no RPC. The
+        # RPC form (`get_object_locations`) asks the owner over the core
+        # worker's io thread, which a burst of concurrent stores saturates:
+        # it timed out after 10 s inside a StateActor store and took the
+        # whole graph run down with it (boot 85, 2026-09-13).
+        location = ray.experimental.get_local_object_locations([ref]).get(ref) or {}
         size = location.get("object_size") or 0
         with self._held_lock:
             self._drop(key)
