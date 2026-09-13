@@ -63,6 +63,18 @@ def test_fit_reads_low_without_the_dark():
     assert abs(without - (1 + (0.4 * 3000 - 800) / 3800)) < 0.06
 
 
+def test_fit_takes_a_pixinsight_normalised_dark():
+    """A WBPP master dark arrives as a float XISF in [0, 1]; the fit must
+    bring it to the sub's ADU before subtracting, or the pedestal stays in
+    (boot 82: every k read 0.2-0.4 with the sky 100-700 ADU above it)."""
+    rng = np.random.default_rng(5)
+    flat = _pattern(rng)
+    subs = _subs(rng, flat, 1.4)
+    in_adu = fit_gain(list(subs), flat, np.full((H, W), 800.0, np.float32), scale=SCALE, read=subs.__getitem__)["k"]
+    normalised = fit_gain(list(subs), flat, np.full((H, W), 800.0 / 65535.0, np.float32), scale=SCALE, read=subs.__getitem__)["k"]
+    assert abs(normalised - in_adu) < 0.02 and abs(normalised - 1.4) < 0.08
+
+
 def test_fit_refuses_an_absurd_gain_and_too_few_subs():
     rng = np.random.default_rng(3)
     flat = _pattern(rng)
@@ -93,3 +105,58 @@ def test_block_mean_crops_to_a_multiple():
     a = np.arange(7 * 9, dtype=float).reshape(7, 9)
     b = block_mean(a, 4)
     assert b.shape == (1, 2) and b[0, 0] == a[:4, :4].mean()
+
+
+# ---------------------------------------------------------------- real frames
+_ORION = [f"testdata/input/{n}" for n in (
+    "Light_Orion_Pane 1_300.0s_Bin1_6200MM_H_20231222-210506_0001.fit",
+    "Light_Orion_Pane 1_300.0s_Bin1_6200MM_H_20231222-211007_0002.fit",
+    "Light_Orion_Pane 1_300.0s_Bin1_6200MM_H_20231222-211510_0003.fit",
+)]
+
+
+@pytest.fixture(scope="module")
+def orion_frames():
+    """The three real Orion Pane 1 subs (ZWO ASI6200MM, H, 300 s), as arrays."""
+    import os
+    from file_io.generic import read_image
+    from pathlib import Path
+    if not all(os.path.exists(p) for p in _ORION):
+        pytest.skip("testdata frames not present")
+    return {p: read_image(Path(p)).astype(np.float32) for p in _ORION}
+
+
+def _sensor_pattern(shape, seed=11, amp=0.03):
+    """A smooth 3% pattern on the real sensor's grid (300-600 px blobs)."""
+    from scipy.ndimage import gaussian_filter
+    rng = np.random.default_rng(seed)
+    f = gaussian_filter(rng.standard_normal(shape), 60)
+    return 1.0 + amp * (f - f.mean()) / f.std()
+
+
+def test_fit_on_real_frames_sees_that_the_sky_carries_none_of_a_foreign_pattern(orion_frames):
+    """Negative control on real sky: the Orion subs have nebula, gradients,
+    stars and noise but NOT the synthetic pattern. Dividing by it prints it
+    inverted, and the fit must read that cleanly through the real structure
+    — slope ~ -1 (the sky has 0x of this pattern), correlation ~ -1 — and
+    then refuse the absurd gain: k = 1 with the reason recorded."""
+    flat = _sensor_pattern(next(iter(orion_frames.values())).shape)
+    fit = fit_gain(list(orion_frames), flat, None, read=orion_frames.__getitem__)
+    assert fit["n_used"] == 3
+    assert abs(fit["k_fit"] - 0.0) < 0.1, fit
+    assert np.median(fit["corrs"]) < -0.9
+    assert fit["k"] == 1.0 and "outside" in fit["reason"]
+
+
+def test_fit_on_real_frames_recovers_an_injected_gain(orion_frames):
+    """Positive control on real sky: the same subs with the pattern printed
+    in at 1.3x, calibrated by the pattern at 1x (what a star flat that under-
+    reads the sky's contrast looks like), fit k close to 1.3 despite Orion's
+    nebulosity — the sky mask and the median over subs carry it."""
+    shape = next(iter(orion_frames.values())).shape
+    flat = _sensor_pattern(shape)
+    printed = {p: (a * (1.0 + 1.3 * (flat - 1.0))).astype(np.float32) for p, a in orion_frames.items()}
+    fit = fit_gain(list(printed), flat, None, read=printed.__getitem__)
+    assert fit["n_used"] == 3
+    assert abs(fit["k"] - 1.3) < 0.12, fit
+    assert np.median(fit["corrs"]) > 0.5

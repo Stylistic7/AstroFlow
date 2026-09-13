@@ -43,7 +43,7 @@ from pathlib import Path
 import numpy as np
 from scipy.ndimage import gaussian_filter, median_filter
 
-GAIN_METHOD = 1
+GAIN_METHOD = 2                # 2: the dark is brought to the sub's units before subtraction
 GAIN_BAND_PX = (256, 1024)   # the etalon band, native px
 GAIN_SCALE = 8               # the fit runs at 1/GAIN_SCALE resolution
 GAIN_MAX_SUBS = 40           # subs sampled per stack (evenly through the list)
@@ -104,6 +104,18 @@ def sky_mask(img_ds: np.ndarray, rel: np.ndarray, band=GAIN_BAND_PX, scale=GAIN_
     return ok & (lvl < np.nanpercentile(lvl[ok], 70))
 
 
+def in_units_of(dark: np.ndarray, sub: np.ndarray) -> np.ndarray:
+    """The dark in the sub's units. A WBPP master is a PixInsight float XISF
+    normalised to [0, 1] (1.0 = 65535 ADU) while a raw sub is uint16 ADU;
+    subtracting one from the other removed ~0.01 instead of ~500 ADU and,
+    at gain 0 where the H sky is 100-700 ADU above the pedestal, left the
+    pedestal dominating the fit (boot 82: every k read 0.2-0.4)."""
+    dark = np.asarray(dark, np.float64)
+    if np.nanmax(dark) <= 1.0 and np.nanmax(sub) > 1.0:
+        return dark * 65535.0
+    return dark
+
+
 def sample_paths(paths, max_subs: int) -> list:
     """Up to `max_subs` paths, evenly spaced through the list so every run
     (night) in the stack is represented."""
@@ -136,7 +148,7 @@ def fit_gain(sub_paths, flat: np.ndarray, dark: np.ndarray | None, *,
     for p in chosen:
         img = block_mean(read(p), scale)
         if D is not None:
-            img = img - D
+            img = img - in_units_of(D, img)
         img = img / F
         rel = relative_sky(img, scale)
         ok = sky_mask(img, rel, band, scale)
