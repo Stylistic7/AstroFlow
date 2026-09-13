@@ -355,3 +355,54 @@ def test_star_flat_master_is_a_display_product_like_every_other_master():
     assert getattr(build_star_flat, "_display", None) == "Star Flat"
     # the analogue: ordinary masters are display products too
     assert getattr(stack_files, "_display", None) is not None
+
+
+def test_scale_star_flat_body_runs_on_the_runtime_types(tmp_path, monkeypatch):
+    """The node's body, driven the way the runtime drives it: the group's flat
+    and the dark arrive as `ImageMetadata` (a producer's result reaches its
+    consumer through the metadata wrap, like `stack_files`' `*cal_masters`),
+    and `@node` enforces the hints — boot 81 failed all 286 calls on a
+    `WithSidecar` hint. Real files in, a WBPP-ready scaled master out, with
+    the fit in its sidecar and the group's STBLHASH carried over."""
+    from stacks.star_flat import GAIN_SECTION, scale_star_flat
+    from stacks.starflat import write_master_flat
+    from stacks.star_flat_gain import GAIN_BAND_PX, GAIN_MAX_SUBS, GAIN_METHOD, GAIN_SCALE
+
+    h, w = 2000, 2800
+    rng = np.random.default_rng(7)
+    from scipy.ndimage import gaussian_filter
+    f = gaussian_filter(rng.standard_normal((h, w)), 60); f = 1 + 0.012 * (f - f.mean()) / f.std()
+    flat_path = tmp_path / "group_flat.xisf"
+    write_master_flat(f.astype(np.float32), flat_path, {"IMAGETYP": "Master Flat", "FILTER": "S",
+                                                         "INSTRUME": "ZWO ASI6200MM Pro", "STBLHASH": "1234567890123456"})
+    dark_path = tmp_path / "dark.fit"
+    pf.PrimaryHDU(np.full((h, w), 800, np.uint16)).writeto(dark_path)
+    metas = {}
+    for i in range(4):
+        p = tmp_path / f"L{i}.fit"
+        img = 3000.0 * (1 + 1.4 * (f - 1)) * (1 + 0.1 * i) + 800 + rng.normal(0, 30, (h, w))
+        pf.PrimaryHDU(np.clip(img, 0, 65535).astype(np.uint16)).writeto(p)
+        metas[f"c{i}"] = dataclasses.replace(_meta(i, filt="S", w=w, h=h), filename=p)
+    stack = SimpleNamespace(stable_hash="light1", content_hash="light1c", all_metadata=lambda: metas)
+    star_flat = dataclasses.replace(_meta(90, image_type="Master Flat", w=w, h=h), filename=flat_path,
+                                    content_hash="flat-c", stable_hash="1234567890123456")
+    dark = dataclasses.replace(_meta(91, image_type="Master Dark", w=w, h=h), filename=dark_path,
+                               content_hash="dark-c", stable_hash="dark1")
+    out = tmp_path / "out" / "scaled.xisf"
+    monkeypatch.setattr(scale_star_flat, "filename_fn", lambda *a: out)
+
+    # The hints are the contract the runtime enforces: the masters are ImageMetadata.
+    import inspect, typing
+    hints = typing.get_type_hints(inspect.unwrap(scale_star_flat._function))
+    assert hints["star_flat"] is ImageMetadata and hints["dark"] == typing.Optional[ImageMetadata]
+    # ...and the body, unwrapped (the fake light stack is not a `Stack`).
+    body = inspect.unwrap(scale_star_flat._function)
+    result = body(stack, star_flat, dark, GAIN_BAND_PX, GAIN_SCALE, GAIN_MAX_SUBS, GAIN_METHOD)
+
+    assert Path(str(result)) == out and out.exists()
+    fit = get_section(out, GAIN_SECTION)
+    assert abs(fit["k"] - 1.4) < 0.08 and fit["n_used"] == 4 and fit["dark"] is True
+    hdr = read_header(out)
+    assert str(hdr["STBLHASH"]) == "1234567890123456" and abs(float(hdr["SFLATK"]) - fit["k"]) < 1e-3
+    scaled = read_image(out); scaled = scaled / np.median(scaled)
+    np.testing.assert_allclose(scaled[h // 2, ::400] - 1, fit["k"] * (f[h // 2, ::400] - 1), atol=2e-3)

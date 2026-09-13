@@ -307,7 +307,7 @@ GAIN_SECTION = "star_flat_gain"   # the scaled master's sidecar section: the fit
 
 
 @node(num_cpus=2, ephemeral=True, resources={"diskcache": 0.001})
-def scale_star_flat(stack: Stack, star_flat: WithSidecar[XisfFilePath], dark: WithSidecar | None,
+def scale_star_flat(stack: Stack, star_flat: ImageMetadata, dark: ImageMetadata | None,
                     band: tuple, scale: int, max_subs: int, method: int) -> WithSidecar[XisfFilePath]:
     """The star flat re-scaled to THIS stack's sky: 1 + k * (F - 1), with k fitted
     on the stack's own subs in sensor coordinates (`stacks.star_flat_gain`).
@@ -319,7 +319,12 @@ def scale_star_flat(stack: Stack, star_flat: WithSidecar[XisfFilePath], dark: Wi
     fit settings are arguments so they sit in the cache key. Head-pinned for
     the same reason as `build_star_flat`: it reads the stack's raw subs.
     The fitted k and per-sub slopes go to the master's sidecar (`GAIN_SECTION`)
-    and to a Concern when the gain is unusual."""
+    and to a Concern when the gain is unusual.
+
+    `star_flat` / `dark` arrive as `ImageMetadata` — a producer's result reaches
+    its consumer through the metadata wrap, exactly as `stack_files` receives
+    its `*cal_masters` — and `@node` enforces the hint (boot 81 failed all 286
+    calls on a `WithSidecar` hint)."""
     from concerns import warn
     from file_io.generic import read_image
     from file_io.xisf_file_io import read_xisf_header
@@ -327,8 +332,8 @@ def scale_star_flat(stack: Stack, star_flat: WithSidecar[XisfFilePath], dark: Wi
     missing = [p for p in paths if not Path(p).exists()]
     if missing:
         raise FileNotFoundError(f"{len(missing)} of {len(paths)} subs unreadable here, e.g. {missing[0]}")
-    flat = read_image(Path(str(star_flat)))
-    dark_img = read_image(Path(str(dark))) if dark is not None else None
+    flat = read_image(Path(star_flat.filename))
+    dark_img = read_image(Path(dark.filename)) if dark is not None else None
     fit = fit_gain(paths, flat, dark_img, band=band, scale=scale, max_subs=max_subs)
     k = fit["k"]
     log.info("star flat gain", stack=str(stack), k=round(k, 3), n_used=fit["n_used"],
@@ -351,7 +356,7 @@ def scale_star_flat(stack: Stack, star_flat: WithSidecar[XisfFilePath], dark: Wi
     # the stack by STBLHASH (`str`: the XISF reader literal_evals an all-digit
     # hash into an int) — and IMAGETYP is written afresh: `normalize_header`
     # rewrites it, and WBPP recognises a pre-built master only as 'Master Flat'.
-    hdr = read_xisf_header(str(star_flat))
+    hdr = read_xisf_header(Path(star_flat.filename))
     keywords = {key: hdr[key] for key in ("FILTER", "INSTRUME", "FOCALLEN", "XBINNING", "YBINNING",
                                           "EXPOSURE", "EXPTIME", "SFLATSUB", "SFLATCEL") if key in hdr}
     keywords.update({"IMAGETYP": "Master Flat", "STBLHASH": str(hdr.get("STBLHASH", "")),
@@ -361,7 +366,7 @@ def scale_star_flat(stack: Stack, star_flat: WithSidecar[XisfFilePath], dark: Wi
     return WithSidecar(XisfFilePath(dest))
 
 
-def gain_args(stack: Stack, star_flat: WithSidecar, dark: WithSidecar | None) -> tuple:
+def gain_args(stack: Stack, star_flat, dark) -> tuple:
     """`scale_star_flat`'s arguments for `stack` — the fit settings ride in
     the cache key the same way `build_args` puts the solve settings there."""
     return (stack, star_flat, dark, GAIN_BAND_PX, GAIN_SCALE, GAIN_MAX_SUBS, GAIN_METHOD)
