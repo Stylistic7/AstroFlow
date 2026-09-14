@@ -129,7 +129,7 @@ def test_solve_adaptive_picks_the_finest_cell_within_the_noise_budget():
     sparse, _ = _synth(seed=0, n_subs=24, stars_per_sub=40, contaminated=())
     sol2, cell2, _, _ = solve_adaptive(sparse, (H, W), cells=(256, 128, 64))
     assert cell2 == 256                                           # too noisy for anything finer
-    assert CELLS == (256, 128)                                    # production: 128 re-admitted 2026-09-12 (Cygnus sweep)
+    assert CELLS == (256,)                                        # production: 256 only (128 reverted 2026-09-14)
 
 
 def test_solve_and_write_makes_a_wbpp_master_and_passes_the_gate(tmp_path):

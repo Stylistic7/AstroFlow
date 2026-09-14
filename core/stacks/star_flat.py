@@ -68,7 +68,10 @@ GATE_UNCERTAINTY_MAX = 0.005  # log units; noisier than 0.5% per cell (even at 2
                               # cells into every stack — long-focal-length groups with few stars
                               # per sub sat at 0.6–1.1% on 2026-09-07; they fall back to the old
                               # defaults until more subs arrive
-CELLS = (256, 128)            # coarse-to-fine candidates; the finest under CELL_UNCERTAINTY_MAX wins.
+CELLS = (256,)                # coarse-to-fine candidates; the finest under CELL_UNCERTAINTY_MAX wins.
+                              # 128 was tried in production (2026-09-12..14) and reverted: Stylistic7 judged
+                              # its masters splotchier at medium scales than 256's; the per-stack gain
+                              # (scale_star_flat) carries the amplitude, so 256 with fitted k is the choice.
                               # 128 px re-admitted 2026-09-12: the Cygnus strength x smoothing sweep
                               # (memory project_star_flat_undercorrects_by_scale) put the lowest etalon
                               # residual at 128 px / 0.7 cell on S and equal on H, with thousands of
