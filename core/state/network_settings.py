@@ -14,7 +14,7 @@ from typing import Optional
 
 import psutil
 
-from context import get_cache
+from context import cache_for
 
 
 _CACHE_KEY = "network_settings"
@@ -25,11 +25,11 @@ _ROLE_CHOSEN_KEY = "role_chosen"
 
 
 def role_has_been_chosen() -> bool:
-    return bool(get_cache().get(_ROLE_CHOSEN_KEY, False))
+    return bool(cache_for(_ROLE_CHOSEN_KEY).get(_ROLE_CHOSEN_KEY, False))
 
 
 def mark_role_chosen() -> None:
-    get_cache()[_ROLE_CHOSEN_KEY] = True
+    cache_for(_ROLE_CHOSEN_KEY)[_ROLE_CHOSEN_KEY] = True
 
 
 @dataclass(frozen=True)
@@ -44,16 +44,14 @@ class NetworkSettings:
 
 
 def get_network_settings() -> NetworkSettings:
-    cache = get_cache()
-    stored = cache.get(_CACHE_KEY)
+    stored = cache_for(_CACHE_KEY).get(_CACHE_KEY)
     if isinstance(stored, NetworkSettings):
         return stored
     return NetworkSettings()
 
 
 def set_network_settings(ns: NetworkSettings) -> None:
-    cache = get_cache()
-    cache[_CACHE_KEY] = ns
+    cache_for(_CACHE_KEY)[_CACHE_KEY] = ns
 
 
 def update_network_settings(**fields) -> NetworkSettings:

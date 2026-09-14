@@ -84,6 +84,24 @@ class MissingInjectedValueError(Exception):
 
 _MISSING = object()  # sentinel: a cache miss, distinct from a stored None
 
+# Resolved cache handles, one per provider, PER PROCESS. A module global on
+# purpose: the `inner` a decorator builds is a nested function Ray must pickle
+# by value, closure and all, and a handle memoized in that closure rides to
+# every worker — a `diskcache.Cache` bound to the head's cache PATH, which
+# then opens that path on whatever machine the task lands on. Found
+# 2026-09-14: the MacBook held 170k @node results in a local cache the head
+# never saw, and re-did each one that was later placed on the head. A
+# module-level function is pickled by reference, so a worker resolves for
+# itself (`_head_aware_cache` -> the ContextActor off the head).
+_RESOLVED: dict = {}
+
+
+def _cache_for(cache_provider: Callable[[], "CacheProtocol"]) -> "CacheProtocol":
+    cache = _RESOLVED.get(cache_provider)
+    if cache is None:
+        cache = _RESOLVED[cache_provider] = cache_provider()
+    return cache
+
 
 def _is_head_node() -> bool:
     """True iff this process runs on the node carrying the canonical
@@ -195,13 +213,8 @@ def make_cached_decorator(
     `canonical_call_hash` and passes it in; this module never builds one
     of its own, eliminating the possibility of two competing call_hash
     definitions for the same op."""
-    cache: CacheProtocol | None = None
-
     def _resolve_cache():
-        nonlocal cache
-        if cache is None:
-            cache = cache_provider()
-        return cache
+        return _cache_for(cache_provider)   # per process; never a closure cell
 
     def debug_print(*args, **kwargs):
         if debug:

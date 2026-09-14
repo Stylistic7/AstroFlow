@@ -199,3 +199,49 @@ def test_filename_fn_and_cache_layer_share_canonical_call_hash(test_context) -> 
     assert not failures, "\n".join(failures)
 
 
+
+
+# ---------------------------------------------------------------------------
+# The cache handle stays in the process that resolved it
+# ---------------------------------------------------------------------------
+
+_PROVIDER_CALLS: list = []
+
+
+def _counting_provider():
+    """Module-level (so cloudpickle ships it by reference, like the real
+    `_head_aware_cache`) and counting, so a re-resolution is observable."""
+    _PROVIDER_CALLS.append(1)
+    return get_cache()
+
+
+def test_the_resolved_cache_handle_never_rides_in_the_pickled_task(test_context) -> None:
+    """Ray pickles a decorated op's task body by value, closure included. A
+    cache handle memoized in that closure went to every worker as a
+    `diskcache.Cache` bound to the head's PATH — which a worker then opened
+    on its own disk (2026-09-14: 170k @node results in a MacBook-local
+    cache the head never saw). The handle must be resolved per process."""
+    from ray import cloudpickle
+    from ray.remote_function import RemoteFunction
+    from cache import cached_decorator as cd
+
+    dec = make_cached_decorator(cache_provider=_counting_provider)
+
+    @dec.remote
+    def echo(x: int) -> int:
+        return x
+
+    task = echo.options.__self__                          # the RemoteFunction Ray exports
+    assert isinstance(task, RemoteFunction)
+    body = task._function
+    _PROVIDER_CALLS.clear()
+    assert echo.cached_value(1) == (False, None)          # resolves the handle here
+    assert len(_PROVIDER_CALLS) == 1
+
+    blob = cloudpickle.dumps(body)
+    assert get_cache().directory.encode() not in blob, "a diskcache path travelled with the task"
+    assert b"diskcache" not in blob
+
+    cd._RESOLVED.pop(_counting_provider, None)             # the receiving process starts empty
+    assert cloudpickle.loads(blob)(2) == 2
+    assert len(_PROVIDER_CALLS) == 2, "the unpickled body must resolve through the provider, not a shipped handle"

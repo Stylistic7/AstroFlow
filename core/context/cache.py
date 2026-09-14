@@ -13,14 +13,45 @@ from pathlib import Path
 _CACHE_OP_TIMEOUT = float(os.environ.get("ASTROFLOW_CACHE_TIMEOUT_S", 86400))
 
 
-def _create_cache() -> diskcache.Cache:
+def _evictable_path() -> str:
     if "ASTROFLOW_MOCK_CACHE" in os.environ:
-        temp_dir = os.environ["ASTROFLOW_MOCK_CACHE"]
+        return os.environ["ASTROFLOW_MOCK_CACHE"]
+    # TODO: This path may not be correct on platforms other than MacOS.
+    return str(Path.home() / "Pictures" / "AstroFlow" / "cache")
+
+
+def _hosts_evictable_cache() -> bool:
+    """Whether this process may open the evictable cache: only the node
+    that carries the canonical one — the Ray head, marked by the head-only
+    `diskcache` resource. Every other node's @node results, logs and
+    concerns go through the ContextActor to the head's store; a worker has
+    NO evictable cache of its own, and one it opens anyway is a silent fork
+    of cluster state (the 2026-09-14 finding: a pickled cache handle gave
+    the MacBook a private 170k-entry cache the head never saw). Without Ray
+    (scripts, tests, a web worker before its lazy connect) there is nothing
+    to be a worker of, so the answer is yes."""
+    try:
+        import ray
+        if not ray.is_initialized():
+            return True
+        node_id = ray.get_runtime_context().get_node_id()
+        return any(n["NodeID"] == node_id and "diskcache" in n.get("Resources", {})
+                   for n in ray.nodes())
+    except Exception:
+        return True
+
+
+def _create_cache() -> diskcache.Cache:
+    if not _hosts_evictable_cache():
+        raise RuntimeError(
+            "the evictable diskcache is the head node's; a worker has none and "
+            "must reach it through the ContextActor (decorators._head_aware_cache)")
+    if "ASTROFLOW_MOCK_CACHE" in os.environ:
+        temp_dir = _evictable_path()
         print(f"### Using test cache at {temp_dir}")
         return diskcache.Cache(temp_dir, timeout=_CACHE_OP_TIMEOUT)
     else:
-        # TODO: This path may not be correct on platforms other than MacOS.
-        path = str(Path.home() / "Pictures" / "AstroFlow" / "cache")
+        path = _evictable_path()
         print(f"### Using real cache at {path}")
         os.makedirs(path, exist_ok=True)
         return diskcache.Cache(
@@ -146,17 +177,29 @@ _MIGRATE_STR_KEYS = (
 )
 
 
-def _migrate_rerouted_keys(main: diskcache.Cache, durable: diskcache.Cache) -> None:
-    for key in _MIGRATE_STR_KEYS:
-        try:
-            if key in durable:
-                continue
-            value = main.get(key, None)
-            if value is not None:
-                durable[key] = value
-                print(f"### migrated {key!r} from evictable to durable store")
-        except Exception as e:  # migration must never block startup
-            print(f"### migration of {key!r} failed (non-fatal): {e}")
+def _migrate_rerouted_keys(durable: diskcache.Cache) -> None:
+    """Opens the old evictable store directly (not `get_cache`, which a worker
+    may not call): a worker's machine configuration was written there before
+    `network_settings` routed it durable, and this is how it comes across."""
+    path = _evictable_path()
+    if not os.path.isdir(path):
+        return
+    try:
+        main = diskcache.Cache(path, timeout=_CACHE_OP_TIMEOUT)
+    except Exception as e:  # migration must never block startup
+        print(f"### migration source could not open (non-fatal): {e}")
+        return
+    with main:
+        for key in _MIGRATE_STR_KEYS:
+            try:
+                if key in durable:
+                    continue
+                value = main.get(key, None)
+                if value is not None:
+                    durable[key] = value
+                    print(f"### migrated {key!r} from evictable to durable store")
+            except Exception as e:
+                print(f"### migration of {key!r} failed (non-fatal): {e}")
 
 
 def is_durable_key(key) -> bool:
@@ -186,7 +229,7 @@ def get_durable_cache() -> diskcache.Cache:
 
     if durable_cache is None:
         durable_cache = _create_durable_cache()
-        _migrate_rerouted_keys(get_cache(), durable_cache)
+        _migrate_rerouted_keys(durable_cache)
 
     return durable_cache
 

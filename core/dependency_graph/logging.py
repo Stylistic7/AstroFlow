@@ -135,23 +135,17 @@ def make_capture_logs_decorator(cache):
                 # Always overwrite this op's slot in the per-object
                 # concerns dict (even with []) so a successful re-run
                 # that emitted no concerns clears the previous run's.
-                # Written to the diskcache (`get_cache()`) — it supports
-                # `transact()` for the atomic read-modify-write and is the
-                # same store `/api/concerns` reads from. Empty for
-                # non-producers (see `_concerns_keys_for`).
+                # `or_equals` is the ContextActor's atomic dict merge, so
+                # the write lands in the head's store — the one
+                # `/api/concerns` reads — from any node; a worker has no
+                # cache of its own to write. Empty for non-producers (see
+                # `_concerns_keys_for`).
                 concern_keys = _concerns_keys_for(func, args, kwargs)
                 if concern_keys:
-                    from context import get_cache
+                    from context import context
                     concerns = [e for e in captured_logs if e.get("_concern")]
-                    op_name = func.__name__
-                    concerns_cache = get_cache()
                     for key in concern_keys:
-                        with concerns_cache.transact():
-                            existing = concerns_cache.get(key, {})
-                            if not isinstance(existing, dict):
-                                existing = {}
-                            existing[op_name] = concerns
-                            concerns_cache[key] = existing
+                        context.or_equals(key, {func.__name__: concerns})
 
             return result
 
