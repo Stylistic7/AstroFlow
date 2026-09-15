@@ -250,7 +250,7 @@ class SchedulerActor:
                 pass
 
 
-_last_dawn_kick_date = None
+_last_sun_alt: float | None = None
 
 # Astronomical twilight: the sun this far below the horizon bounds the
 # observing window at both ends.
@@ -274,23 +274,23 @@ def _sun_altitude_deg() -> float | None:
 
 
 def _morning_kick_due(sun_alt: float | None) -> bool:
-    """One extra drain shortly after astronomical dawn, once per day.
+    """One extra drain as the sun rises through -18 deg: astronomical dawn.
 
     By then every rig is done shooting, the newest frame on disk is
     already older than the quiesce gate, and the builder's frontier
     nudge closes the night's final runs — this kick is what turns the
-    accumulated night into the morning bake. Detected at poll
-    granularity, so it fires 0-15 min after the sun crosses -18 deg.
+    accumulated night into the morning bake. Detected as a crossing
+    between consecutive polls, so it fires within one poll interval of
+    dawn and never at boot: a fresh process has no previous sample, and
+    its own plan already covers everything on disk. (The once-a-day
+    latch this replaces lived in process memory, so every pre-noon
+    restart re-fired it — a drain minutes into each morning boot.)
     """
-    global _last_dawn_kick_date
-    import datetime as dt
-    now_local = dt.datetime.now()
-    if now_local.hour >= 12 or _last_dawn_kick_date == now_local.date():
+    global _last_sun_alt
+    if sun_alt is None:
         return False
-    if sun_alt is not None and sun_alt > ASTRONOMICAL_TWILIGHT_DEG:
-        _last_dawn_kick_date = now_local.date()
-        return True
-    return False
+    previous, _last_sun_alt = _last_sun_alt, sun_alt
+    return previous is not None and previous <= ASTRONOMICAL_TWILIGHT_DEG < sun_alt
 
 
 def _drain_due(new_files: int, kick: bool, sun_alt: float | None) -> bool:
