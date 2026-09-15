@@ -252,8 +252,28 @@ class SchedulerActor:
 
 _last_dawn_kick_date = None
 
+# Astronomical twilight: the sun this far below the horizon bounds the
+# observing window at both ends.
+ASTRONOMICAL_TWILIGHT_DEG = -18.0
 
-def _morning_kick_due() -> bool:
+
+def _sun_altitude_deg() -> float | None:
+    """The sun's altitude at the observer; None when it can't be computed."""
+    try:
+        import astropy.units as u
+        from astropy.coordinates import AltAz, EarthLocation, get_sun
+        from astropy.time import Time
+        from context import context
+        lat, lon, elev = context.settings.observer_location
+        t = Time.now()
+        loc = EarthLocation(lat=lat * u.deg, lon=lon * u.deg, height=elev * u.m)
+        return get_sun(t).transform_to(AltAz(obstime=t, location=loc)).alt.deg
+    except Exception as e:
+        print(f"### download poller: sun altitude failed (non-fatal): {e}")
+        return None
+
+
+def _morning_kick_due(sun_alt: float | None) -> bool:
     """One extra drain shortly after astronomical dawn, once per day.
 
     By then every rig is done shooting, the newest frame on disk is
@@ -267,35 +287,43 @@ def _morning_kick_due() -> bool:
     now_local = dt.datetime.now()
     if now_local.hour >= 12 or _last_dawn_kick_date == now_local.date():
         return False
-    try:
-        import astropy.units as u
-        from astropy.coordinates import AltAz, EarthLocation, get_sun
-        from astropy.time import Time
-        from context import context
-        lat, lon, elev = context.settings.observer_location
-        t = Time.now()
-        loc = EarthLocation(lat=lat * u.deg, lon=lon * u.deg, height=elev * u.m)
-        alt = get_sun(t).transform_to(AltAz(obstime=t, location=loc)).alt.deg
-    except Exception as e:
-        print(f"### morning kick: sun altitude failed (non-fatal): {e}")
-        return False
-    if alt > -18.0:
+    if sun_alt is not None and sun_alt > ASTRONOMICAL_TWILIGHT_DEG:
         _last_dawn_kick_date = now_local.date()
         return True
     return False
 
 
+def _drain_due(new_files: int, kick: bool, sun_alt: float | None) -> bool:
+    """Whether this poll's arrivals warrant a drain-and-restart now.
+
+    Frames that land while the sun is below -18 deg wait on disk for the
+    dawn kick — one re-plan for the whole night. Each mid-night drain
+    closed admissions cluster-wide until the WBPP already in flight
+    finished (5.2 h of a 10.3 h night, 2026-09-14) and then re-keyed the
+    hot target anyway; the morning bake delivers the same master at the
+    same time with the rest of the cluster free all night. Daytime
+    arrivals (manual pulls, archive copies) still drain as they land, as
+    does anything landing while the sun's altitude is unknown.
+    """
+    if kick:
+        return True
+    night = sun_alt is not None and sun_alt <= ASTRONOMICAL_TWILIGHT_DEG
+    return new_files > 0 and not night
+
+
 def _run_asiair_download_and_maybe_restart() -> None:
-    """Download from all ASIAir devices in parallel; if any new files
-    landed on disk — or the once-a-day astronomical-dawn kick is due —
-    ask the StateActor to drain and restart the compute graph."""
+    """Download from all ASIAir devices in parallel; if new files landed
+    on disk by day — or the once-a-day astronomical-dawn kick is due —
+    ask the StateActor to drain and restart the compute graph. Night-time
+    arrivals wait on disk for the kick (see `_drain_due`)."""
     from context import context
     from file_io.find_image_files import find_image_files
     from asiair.download_asiair import download_from_asiair
 
     # Checked before the device early-returns: the kick must fire even
     # with every rig powered off and unplugged (the usual morning state).
-    kick = _morning_kick_due()
+    sun_alt = _sun_altitude_deg()
+    kick = _morning_kick_due(sun_alt)
 
     devices = list(context.asiair_devices or [])
 
@@ -357,11 +385,14 @@ def _run_asiair_download_and_maybe_restart() -> None:
         files_after = sum(len(find_image_files(str(d))) for d in input_dirs)
         new_files = files_after - files_before
 
-    if new_files > 0 or kick:
+    if _drain_due(new_files, kick, sun_alt):
         reason = (
-            f"{new_files} new files" if new_files > 0
-            else "astronomical-dawn kick"
+            f"astronomical-dawn kick, {new_files} new files" if kick
+            else f"{new_files} new files"
         )
         print(f"### ASIAir poller draining graph: {reason}")
         state = ray.get_actor("state", namespace=_get_namespace())
         ray.get(state.drain_and_restart.remote())
+    elif new_files > 0:
+        print(f"### download poller: {new_files} new files held for the "
+              f"dawn kick (sun at {sun_alt:.1f} deg)")
