@@ -330,7 +330,7 @@ def _declared_custom_resources(task) -> dict:
     only for scarce, explicitly-declared custom resources that serialize work
     (e.g. the single PixInsight slot): without it, run_graph hands Ray a deep
     backlog of such tasks and Ray arbitrates the slot in submission order,
-    defeating the `node_sort_key` priority."""
+    defeating run_graph's dispatch order."""
     r = getattr(task, "_ray_resources", None)
     if r is None:
         r = getattr(task, "_resources", None)  # raw @ray.remote RemoteFunction
@@ -502,7 +502,6 @@ def run_graph(
     debug: bool = False,
     drain_event: "threading.Event | None" = None,
     preflight: bool = True,
-    node_sort_key: "Callable[[Node, list], Any] | None" = None,
 ) -> tuple[Any, "RunStats"]:
     num_nodes_run: int = 0
     last_status_time: float = 0
@@ -583,28 +582,22 @@ def run_graph(
             _refresh_node_snapshot()
 
     # Cache of ready nodes. Re-scan the tree only when running low.
+    # The dispatch list; admission pops from the TAIL. Work enters only as
+    # readiness EVENTS (`drain_newly_ready`), each batch appended in reverse
+    # so its first-traced node is popped first, and every later batch sits
+    # above everything older. So a completed node's dependents run next:
+    # a started chain (stack → SPFC → merge → BXT → SXT → place) is
+    # followed to the point where it blocks on a merge before untouched
+    # work begins — depth-first, with no policy table and no domain
+    # knowledge. Unplaceable nodes are retained in order (below), so a
+    # freed slot still finds the most recently advanced node that fits it.
+    # Replaces the rescan-below-a-threshold cache (2026-09-15): with a
+    # scarce resource busy, retained nodes kept that cache above its
+    # threshold and everything that became ready later waited hours.
     ready_cache: list[tuple[GraphRuntime, Node]] = []
-    RESCAN_THRESHOLD = MAX_IN_FLIGHT
 
-    def _refill_cache():
-        nonlocal ready_cache
-        ready_cache = root.get_all_ready()
-        if node_sort_key is not None and ready_cache:
-            # Advisory scheduling hint: reorder ready nodes so the caller's
-            # preferred ones dispatch first. Purely an ordering of the run —
-            # every node still runs, and a node is only ever here once its
-            # deps are done, so topological order is unaffected. Dispatch
-            # pops from the tail, so larger key == sooner. The node is
-            # ready, so `make_fn_args` yields its resolved call args
-            # (literals + dep results) for the hint to inspect.
-            def _hint(rt_node):
-                rt, node = rt_node
-                try:
-                    resolved = rt.make_fn_args(node)
-                except Exception:
-                    resolved = list(node.args)
-                return node_sort_key(node, resolved)
-            ready_cache.sort(key=_hint)
+    def _pull_ready() -> None:
+        ready_cache.extend(reversed(root.drain_newly_ready()))
 
     def _draining() -> bool:
         return bool(drain_event and drain_event.is_set())
@@ -614,8 +607,12 @@ def run_graph(
     # via `_maybe_refresh_snapshot` (last_mem_sample starts at 0 → always due).
 
     while root.is_active():
-        if len(ready_cache) < RESCAN_THRESHOLD:
-            _refill_cache()
+        _pull_ready()
+        if not ready_cache:
+            # Active root, nothing queued: a readiness event was missed.
+            # Rescan — rare — and the started() guard makes a duplicate
+            # entry harmless.
+            ready_cache.extend(reversed(root.get_all_ready()))
 
         if debug:
             print(f"Top of loop, {len(ready_cache)} ready nodes")
@@ -640,7 +637,10 @@ def run_graph(
                 and len(pending) < MAX_IN_FLIGHT
             ):
                 rt, node = ready_cache.pop()
+                if rt.started(node):
+                    continue
                 if not dry_run and _complete_if_cached(rt, node):
+                    _pull_ready()  # its dependents may be hits too: chase them now
                     continue
                 need_custom = _declared_custom_resources(node.task)
                 need_mem = _node_mem(rt, node)
@@ -725,8 +725,10 @@ def run_graph(
                     except Exception:
                         pass
                     rt.node_completed(node, NeverRun)
+                    _pull_ready()
                 except AncestorsFailed:
                     rt.node_completed(node, Skipped)
+                    _pull_ready()
             # Return retained nodes (priority order preserved: highest ends up
             # at the tail, popped first next pass) so a freed resource is
             # reconsidered for them after the completions below.
@@ -782,9 +784,8 @@ def run_graph(
                         node, e.cause, _retrieve_logs(rt, node)
                     )
 
-            # Refill the cache when it runs low.
-            if len(ready_cache) < RESCAN_THRESHOLD:
-                _refill_cache()
+            # Everything the completions just unblocked goes on top.
+            _pull_ready()
 
             # Periodic status/graph updates fire once per iteration
             # — whether ray.wait returned completions or not. Putting

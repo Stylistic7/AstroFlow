@@ -4,11 +4,15 @@ GraphRuntime replaces TopologicalSorterWithStatus + the flat subgraphs list
 in run_graph(). It manages a tree of subgraphs internally:
 
 - When a node completes with a Graph result, a child GraphRuntime is
-  created immediately. Its ready nodes are visible on the next get_ready().
+  created immediately. Its ready nodes are visible on the next get_ready()
+  and surface through the next drain_newly_ready().
 - When a child completes, its final_result propagates to the parent
   and unblocks dependents automatically.
 - get_ready() is idempotent and recursive — it returns ready nodes from
   all levels of the tree.
+- Readiness is an EVENT: every node that becomes ready is recorded at that
+  moment, and drain_newly_ready() hands run_graph exactly those nodes, so
+  the dispatcher never rescans the graph to find work.
 """
 from __future__ import annotations
 
@@ -139,6 +143,10 @@ class GraphRuntime:
             n for n in self._graph
             if not self._graph[n]  # no dependencies
         }
+        # Readiness transitions not yet handed to the dispatcher, oldest
+        # first — the initial frontier in graph (trace) order, then every
+        # dependent as it becomes ready. See drain_newly_ready().
+        self._newly_ready: list[Node] = [n for n in self._graph if n in self._ready]
 
         # Children: nodes that returned a Graph get a child runtime.
         # Active children participate in scheduling; completed ones are
@@ -212,6 +220,29 @@ class GraphRuntime:
         """Mark a node as started (submitted to Ray)."""
         self._started.add(node)
         self._ready.discard(node)
+
+    def started(self, node: Node) -> bool:
+        return node in self._started
+
+    def drain_newly_ready(self) -> list[tuple[GraphRuntime, Node]]:
+        """Nodes that became ready since the last drain, oldest first, each
+        tagged with the runtime that owns it — across the whole tree, a
+        child's initial frontier included.
+
+        run_graph's only source of work. A readiness transition is
+        something `_mark_done` already observes, so it is recorded there
+        and handed over here instead of being rediscovered by rescanning
+        the graph: O(dependents) per completion, independent of how many
+        nodes are ready or retained. Nodes started or completed meanwhile
+        (driver-side cache hits) are dropped.
+        """
+        self._propagate_completed_children()
+        out = [(self, n) for n in self._newly_ready if n in self._ready]
+        self._newly_ready.clear()
+        for child in self._children.values():
+            if child.is_active():
+                out.extend(child.drain_newly_ready())
+        return out
 
     def node_completed(
         self, node: Node, result: Any, logs: list[Any] | None = None,
@@ -320,9 +351,11 @@ class GraphRuntime:
         for dependent in self._dependents.get(node, ()):
             if (
                 dependent not in self._started
+                and dependent not in self._ready
                 and all(d in self._done for d in self._graph[dependent])
             ):
                 self._ready.add(dependent)
+                self._newly_ready.append(dependent)
 
 
         # Graceful N/N-1, rebased on RUNTIME truth: the landed path comes from
