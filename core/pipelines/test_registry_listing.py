@@ -24,7 +24,7 @@ def test_listed_pipelines_are_offered():
 
 
 def test_subframe_ranks_below_every_preferred_pipeline():
-    """`default_product_for` sorts by `_pipeline_rank`; Subframe (absent from
+    """`default_finish_for` ranks pipelines by `_pipeline_rank`; Subframe (absent from
     `_PIPELINE_PREFERENCE`) ranks last, so any user-run pipeline that
     produced a viewable tap front-runs it and it remains the fallback."""
     from catalog.queries import _PIPELINE_PREFERENCE, _pipeline_rank

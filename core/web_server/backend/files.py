@@ -1,7 +1,6 @@
 from flask import request, jsonify, Blueprint, Response
 import os
 from pathlib import Path
-import subprocess
 
 from context import local_context as context
 from file_io.generic import read_header
@@ -9,7 +8,7 @@ from file_io.find_image_files import is_external_master_name
 from file_io.sidecar import get_section
 from metadata.image_types import is_light_frame
 from web_server.backend.announcer import announce
-from web_server.backend._route import tap_route
+from web_server.backend._route import finish_route
 from state.actor import state
 
 files_bp = Blueprint("files", __name__)
@@ -83,23 +82,26 @@ def stacking_report(stack_id):
     uniform shape (StackingReport). Returns `null` when the tap point
     hasn't produced an artifact yet.
 
-    Query params (defaults come from the catalog — the preferred pipeline that
-    actually produced a tap for this stack, and that type's default display):
-      pipeline (default: `catalog.default_pipeline_for`)
-      display  (default: `catalog.default_display_for`)
+    Query params:
+      pipeline (default: the pipeline of the stack's default finish)
+    The report IS the stacker's master, so it reads the "Master" tap — the
+    one tap name the report sanctions, whichever finish the page shows.
     """
     from stacks.stacking_report import read_stacking_report
-    from catalog import (
-        Product, default_pipeline_for, default_display_for, master_path)
+    from catalog import Product, default_finish_for, master_path
 
     if stack_id not in (context.stacks or {}):
         return jsonify({"error": "stack not found"}), 404
 
-    pipeline = request.args.get("pipeline") or default_pipeline_for("stack", stack_id)
-    display = request.args.get("display") or default_display_for("stack")
+    pipeline = request.args.get("pipeline")
+    if not pipeline:
+        b = default_finish_for("stack", stack_id)
+        if b is None:
+            return jsonify(None)
+        pipeline = b.pipeline
     stack = context.stacks[stack_id].get()
 
-    path = master_path(Product("stack", stack_id, pipeline, display, stack.filter))
+    path = master_path(Product("stack", stack_id, pipeline, "Master", stack.filter))
     if path is None:
         return jsonify(None)
 
@@ -120,12 +122,14 @@ def concerns_for_object(object_type, object_id):
     stacks at the requested filter.
 
     Query params:
-      filter — required for object_type=mosaic
+      filter — a filter ROLE (H, S, O, R, G, B, L); required for
+               object_type=mosaic
     """
     from context import get_cache
+    from catalog import role_of
 
     cache = get_cache()
-    filter_arg = request.args.get("filter", "")
+    role = role_of(request.args.get("filter", ""))
 
     def concerns_for_key(object_type_name: str, identity_key: str) -> list[dict]:
         """Direct lookup at `('concerns', object_type, identity_key)`.
@@ -150,12 +154,12 @@ def concerns_for_object(object_type, object_id):
         if object_id not in (context.mosaics or {}):
             return jsonify({"error": "mosaic not found"}), 404
         mosaic = context.mosaics[object_id].get()
-        direct = concerns_for_key(
-            "Mosaic",
-            f"{mosaic.stable_hash}_{filter_arg}",
-        )
+        stacks = _constituent_stacks(mosaic, role)
+        direct = []
+        for raw in sorted({s.filter for s in stacks}):
+            direct.extend(concerns_for_key("Mosaic", f"{mosaic.stable_hash}_{raw}"))
         bubbled = []
-        for stack in _constituent_stacks(mosaic, filter_arg):
+        for stack in stacks:
             for c in concerns_for_key(
                 type(stack).__name__, stack.stable_hash,
             ):
@@ -165,7 +169,9 @@ def concerns_for_object(object_type, object_id):
     return jsonify({"error": f"object_type {object_type!r} not supported"}), 400
 
 
-def _constituent_stacks(mosaic, filter):
+def _constituent_stacks(mosaic, role):
+    """The mosaic's stacks whose filter normalises to `role`."""
+    from catalog import role_of
     stacks = context.stacks or {}
     targets = context.targets or {}
     out = []
@@ -178,7 +184,7 @@ def _constituent_stacks(mosaic, filter):
             if stack_ref is None:
                 continue
             stack = stack_ref.get()
-            if stack.filter == filter:
+            if role_of(stack.filter) == role:
                 out.append(stack)
     return out
 
@@ -211,39 +217,6 @@ def invalidate_stack(stack_id):
     if deleted:
         state.drain_and_restart()
     return jsonify({"stack_id": stack_id, "deleted": deleted})
-
-
-@files_bp.route("/api/open_stack_master/<stack_id>", defaults={"pipeline": None})
-@files_bp.route("/api/open_stack_master/<stack_id>/<path:pipeline>")
-def open_stack_master(stack_id, pipeline):
-    """Open the stack's Master file in PixInsight.
-
-    Resolves the on-disk master through the SAME catalog the stack page uses
-    to DISPLAY it (`catalog.master_path`) — so open stays in lockstep with
-    what's shown, and works for any stacker backend (WBPP `stack_files`, OSS
-    `stack_files_oss`, downscaled, ...). `pipeline` (URL-encoded) selects
-    which pipeline's master; the caller passes the pipeline it is currently
-    viewing, or omits it to open the catalog's default
-    (`catalog.default_pipeline_for`).
-    """
-    from catalog import Product, default_pipeline_for, master_path
-    if stack_id not in (context.stacks or {}):
-        return Response(status=404)
-    if pipeline is None:
-        pipeline = default_pipeline_for("stack", stack_id)
-    stack = context.stacks[stack_id].get()
-    filename = master_path(
-        Product("stack", stack_id, pipeline, "Master", stack.filter))
-    if filename is None:
-        return Response(status=404)
-    print(f"### opening filename {filename}", flush=True)
-    subprocess.Popen(
-        [
-            "/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight",
-            str(filename),
-        ]
-    )
-    return Response(status=200)
 
 
 def _find_unsolved_light_frames():
@@ -357,67 +330,43 @@ def open_image(filename):
     return Response(status=200)
 
 
-@tap_route(files_bp, "/api/open_mosaic_master", hierarchy=("mosaic_id",))
-def open_mosaic_master(mosaic_id, pipeline, display, filter):
-    """Open a specific (pipeline, tap) of a mosaic+filter in PixInsight.
-    Path resolution goes through the catalog (`master_path`)."""
-    from catalog import Product, master_path
+@finish_route(files_bp, "/api/open", hierarchy=("object_type", "object_id"),
+              methods=["POST"])
+def open_finish(object_type, object_id, pipeline, finish):
+    """Open a finish's INPUT taps in PixInsight, one view per tap, named by
+    the tap and its filter: the Hubble page opens Linear SHO (+ Linear RGB
+    Stars), the H page opens the H channel's tap. The finish itself is a
+    look, applied live; what PixInsight wants is the linear data under it
+    (a band of a join is one ChannelExtraction away).
 
-    mosaics = context.mosaics or {}
-    if mosaic_id not in mosaics:
-        return jsonify({"error": "mosaic not found"}), 404
-
-    path = master_path(Product("mosaic", mosaic_id, pipeline, display, filter))
-    if path is None:
-        return jsonify({"error": "no image available to open"}), 404
-
-    # Same tiled-TIFF reconstruction as `open_image` — the scene-format taps
-    # this most often resolves to are exactly the ones stored ONLY as pyramids.
-    from file_io.planar import reconstruct_planar_tiff
-    from pix.runner import open_in_gui
-    to_open = Path(reconstruct_planar_tiff(path))
-    open_in_gui({filter or to_open.stem: to_open})
-    return jsonify({"opened": str(to_open)})
-
-
-@files_bp.route("/api/open_target_masters/<target_id>/<path:pipeline>",
-                methods=["POST"])
-def open_target_masters(target_id, pipeline):
-    """Open every channel master of a target in PixInsight, each view named
-    for its filter.
-
-    Paths come from the catalog (`master_path` at the "Channel" tap that
-    `merge_target_channel` declares), never from a filesystem scan. Scanning
-    for a master by stable_hash matches superseded generations as readily as
-    current ones, and a stale master opened by hand is indistinguishable
-    from live output once it is on screen — which is the whole reason this
-    button exists.
+    Paths come from the catalog, never from a filesystem scan: scanning by
+    stable_hash matches superseded generations as readily as current ones,
+    and a stale master opened by hand is indistinguishable from live output
+    once on screen. The deliverable itself (`master_path`) when the current
+    generation is built; else what the viewer serves — the last-good
+    generation (`resolve_product`'s N-1), so the button opens the picture
+    on screen, badged out of date there.
     """
-    from catalog import Product, master_path
+    from catalog import master_path, resolve_finish
     from file_io.planar import reconstruct_planar_tiff
     from pix.runner import open_in_gui
 
-    targets = context.targets or {}
-    if target_id not in targets:
-        return jsonify({"error": "target not found"}), 404
-    target = targets[target_id].get()
-    stacks = context.stacks or {}
-
+    b = resolve_finish(object_type, object_id, pipeline, finish)
+    if b is None:
+        return jsonify({"error": "no such finish for this object"}), 404
     views: dict[str, Path] = {}
     missing: list[str] = []
-    for stack_id in target.stack_ids:
-        filter = stacks[stack_id].get().filter
-        path = master_path(
-            Product("target", target_id, pipeline, "Channel", filter))
+    for i in b.inputs:
+        product = i.product(b)
+        path = (master_path(product) if product is not None else None) or i.path
         if path is None:
-            missing.append(filter)
+            missing.append(i.tap)
             continue
-        views[filter] = Path(reconstruct_planar_tiff(path))
-
+        # Same tiled-TIFF reconstruction as `open_image` — the scene-format
+        # taps are stored tiled, which PixInsight cannot read.
+        views[f"{i.tap} {i.filter}"] = Path(reconstruct_planar_tiff(path))
     if not views:
-        return jsonify(
-            {"error": "no channel masters on disk", "missing": missing}), 404
-
+        return jsonify({"error": "no image available to open", "missing": missing}), 404
     open_in_gui(views)
     return jsonify({"opened": {k: str(v) for k, v in views.items()},
                     "missing": missing})

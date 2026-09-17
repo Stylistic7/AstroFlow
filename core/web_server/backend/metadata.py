@@ -13,10 +13,10 @@ from mosaics.types import Mosaic, Viewbox
 from mosaics.viewbox import compute_viewbox
 from previews.types import MASTER
 from mosaics.trimming import project_to_viewbox
-from metadata.sidecar_io import read_image_metadata, _statistics_to_obj
+from metadata.sidecar_io import read_image_metadata
 from attributes.astrometric_attributes import _spherical_polygon_for_wcs
 from decisions.decisions import ObjectType, get_decisions_for_object
-from web_server.backend._route import tap_route
+from web_server.backend._route import finish_route
 
 metadata_bp = Blueprint("metadata", __name__)
 
@@ -231,34 +231,19 @@ def _resolve_object(object_type_str, object_id, filter):
     abort(400, f"Unknown object type: {object_type_str}")
 
 
-@tap_route(metadata_bp, "/api/metadata", hierarchy=("object_type", "object_id"))
-def metadata(object_type: str, object_id: str, pipeline: str, display: str, filter: str):
-    from catalog import Product, master_path
-    args = _resolve_object(object_type, object_id, filter)
-
-    path = master_path(Product(object_type, object_id, pipeline, display, filter))
-    image_path = str(path) if path is not None else None
-
-    objects = _get_polygons(pipeline, *args)
-
-    # ImageStatistics for the tap output — drives the browser-side
-    # auto-stretch optimizer. Read straight off the sidecar; the
-    # `compute_image_metadata` step populated it when the image was
-    # written. None when the sidecar is missing (very small images, or
-    # taps that don't carry an ImageMetadata).
-    statistics = None
-    if image_path:
-        meta = read_image_metadata(Path(image_path))
-        if meta is not None and meta.statistics is not None:
-            statistics = _statistics_to_obj(meta.statistics)
-
-    return jsonify({
-        "display": display,
-        "pipeline": pipeline,
-        "image_path": image_path,
-        "objects": objects,
-        "statistics": statistics,
-    })
+@finish_route(metadata_bp, "/api/metadata", hierarchy=("object_type", "object_id"))
+def metadata(object_type: str, object_id: str, pipeline: str, finish: str):
+    """The polygons the viewer overlays for a finish: the objects under its
+    PRIMARY input, at the filter that input binds (a channel finish's role;
+    None for a composite, which spans every filter)."""
+    from catalog import resolve_finish
+    b = resolve_finish(object_type, object_id, pipeline, finish)
+    if b is None:
+        return abort(404)
+    primary = b.inputs[0]
+    args = _resolve_object(object_type, object_id,
+                           primary.filter if b.role not in (None, "none") else None)
+    return jsonify({"objects": _get_polygons(pipeline, *args)})
 
 
 def _resolve_entity(object_type: str, object_id: str):
@@ -270,96 +255,55 @@ def _resolve_entity(object_type: str, object_id: str):
     return resolve_entity(object_type, object_id)
 
 
-@metadata_bp.route("/api/pipeline_outputs/<object_type>/<object_id>")
-def pipeline_outputs(object_type: str, object_id: str):
-    """Per-pipeline tap-point matrix for the object dashboard.
+@metadata_bp.route("/api/finishes/<object_type>/<object_id>")
+def finishes(object_type: str, object_id: str):
+    """Every finish each pipeline can show for this object — the view axis
+    of the pills and the dashboard.
 
     Shape:
 
       {
-        "filters": ["H", "S"],
         "pipelines": [
-          {
-            "name": "PixInsight Master",
-            "taps": [
-              {"display": "Master", "outputs": [
-                {"filter": "H", "exists": true, "mtime": 17..., "status": "live"},
-                {"filter": "S", "exists": false, "mtime": null, "status": "absent"},
-              ]},
-              {"display": "Mosaic", "outputs": [...]},
-            ],
-          },
+          {"name": "Hybrid: PI Master + OSS Mosaic",
+           "finishes": [
+             {"name": "Hubble", "role": null, "status": "live", "mtime": 17...,
+              "inputs": [{"tap": "Linear SHO", "filter": "RGB", "status": "live"},
+                         {"tap": "Linear RGB Stars", "filter": "RGB", "status": "live"}]},
+             {"name": "H", "role": "H", "status": "out_of_date", ...},
+           ]},
           ...
         ],
-        "default": {"pipeline": "PixInsight Master", "display": "Master",
-                    "filter": "H"},
+        "default": {"pipeline": "…", "finish": "Hubble"} | null,
       }
 
-    A slice of the catalog: every pipeline whose trace routed a tap to this
-    object, its display taps, and whether each `(display, filter)` is VIEWABLE
-    on disk (`catalog.resolve_product` — the same resolver the tile server
-    uses, so the matrix can never list a tap the viewer cannot serve), plus
-    the `default` landing view the frontend redirects to. Read-only and
-    snapshot-only: a web request never triggers a trace.
+    A slice of the catalog: every pipeline whose trace routed taps to this
+    object that some finish reads, and each finish whose declared inputs
+    those taps satisfy (`catalog.finishes_for` — the same resolver the tile
+    server uses, so the list can never name a view the viewer cannot serve).
+    A pipeline none of whose taps any finish reads is omitted. `status` is
+    the worst over the finish's required inputs. Read-only and snapshot-
+    only: a web request never triggers a trace.
     """
-    from catalog import queries as cat
+    from catalog import default_finish_for, finishes_for, pipelines_for
 
     if _resolve_entity(object_type, object_id) is None:
         return abort(404)
-
-    iter_filters = cat.filters_for(object_type, object_id) or [None]
-    entity_filter_strs = {str(f) for f in iter_filters}
-
-    traces: dict[str, dict[str, dict[str, str]]] = {}
-    extras: set[str] = set()
-    for name in cat.pipelines_for(object_type, object_id):
-        by_display: dict[str, dict[str, str]] = {}
-        for e in cat.product_taps(object_type, object_id, name):
-            fk = str(e["filter"])
-            by_display.setdefault(e["display"], {})[fk] = e["path"]
-            if fk not in entity_filter_strs:
-                extras.add(fk)
-        traces[name] = by_display
-
-    columns = list(iter_filters) + sorted(extras)
-
     pipelines = []
-    for name, by_display in traces.items():
-        taps = []
-        # `by_display` preserves the display order of the trace walk, which is
-        # topological (define-by-run) — so taps come out in ORDER OF COMPUTATION.
-        for display, paths_by_filter in by_display.items():
-            outputs = []
-            # Only the filters that ACTUALLY route through THIS tap in the trace,
-            # not the global column union: a tap node isn't filter-specific, so its
-            # real filter set is whatever the pipeline×object trace produced for it.
-            # `columns` order is reused solely to canonicalize filter order within
-            # the row. A filter that passes through but isn't on disk yet is kept
-            # (shows "not yet built").
-            for f in columns:
-                if str(f) not in paths_by_filter:
-                    continue
-                path, status = cat.resolve_product(
-                    cat.Product(object_type, object_id, name, display, f))
-                outputs.append({
-                    "filter": f,
-                    "exists": path is not None,
-                    "mtime": os.path.getmtime(str(path)) if path is not None else None,
-                    "status": status,
-                })
-            taps.append({"display": display, "outputs": outputs})
-        pipelines.append({"name": name, "taps": taps})
-
-    # The default landing view (pipeline + display + filter) for a bare object
-    # URL, computed by the catalog from `_PIPELINE_PREFERENCE` + what exists on
-    # disk. The frontend redirects to this instead of keeping its own preference
-    # list — one source of truth (see feedback_avoid_derived_state). None when
-    # nothing is on disk yet.
-    default = cat.default_product_for(object_type, object_id)
+    for name in pipelines_for(object_type, object_id):
+        bound = finishes_for(object_type, object_id, name)
+        if not bound:
+            continue     # traced taps no finish reads: nothing to pick
+        pipelines.append({"name": name, "finishes": [
+            {"name": b.name, "role": b.role, "status": b.status, "mtime": b.mtime,
+             "inputs": [{"tap": i.tap, "filter": i.filter, "status": i.status}
+                        for i in b.inputs]}
+            for b in bound
+        ]})
+    default = default_finish_for(object_type, object_id)
     return jsonify({
-        "filters": columns,
         "pipelines": pipelines,
-        "default": default.as_view() if default else None,
+        "default": ({"pipeline": default.pipeline, "finish": default.name}
+                    if default else None),
     })
 
 
@@ -369,7 +313,7 @@ def pipeline_outputs(object_type: str, object_id: str):
 def pipeline_results(object_type: str, object_id: str, pipeline: str):
     """Every op in a pipeline's trace for one object, grouped by function —
     backs the "Discard results" dialog's checkbox list. Unlike
-    `pipeline_outputs` (display taps only), this includes non-display
+    `finishes` (display taps only), this includes non-display
     intermediates (`place_image`, `bxt_correct`, …) so any op's cached results
     can be discarded.
 
@@ -412,5 +356,3 @@ def discard_results(object_type: str, object_id: str, pipeline: str):
     state.drain_and_restart()
     announce("reload_data")
     return jsonify({"discarded_ops": sorted(op_names), **result})
-
-

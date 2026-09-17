@@ -1,7 +1,8 @@
-// Single-letter filter IDs (matching the codebase and URLs) → human-
-// readable names used for display. Anywhere a filter is shown to a
-// user, route through `filterLabel(id)` so the convention stays in one
-// place. URLs and stored objects keep the single-letter form.
+// Filter ROLES (the single letters that name single-channel finishes and
+// the `role` on /api/stacks entries) → human-readable names. Anywhere a
+// role is shown to a user, route through `filterLabel(role)` so the
+// convention stays in one place. URLs and stored objects keep the
+// single-letter form; a composite finish name falls through unchanged.
 const FILTER_LABELS = {
     L: "Luminance",
     R: "Red",

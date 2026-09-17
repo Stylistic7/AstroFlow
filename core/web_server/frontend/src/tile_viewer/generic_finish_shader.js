@@ -1,46 +1,119 @@
 /**
- * Build the WGSL for a data-driven display finish (a Python DisplayFinish).
+ * Build the WGSL for a display finish (a Python DisplayFinish) — the ONE
+ * rendering path of the tile viewer.
  *
  * The seam: the backend serves a finish's WGSL chunk — `struct DisplayParams`
  * (one f32 field per Python `Param`, in declared order) + the ops' helpers +
- * `fn displayFinish(cIn, P)`. We splice it onto the SHARED SHADER_PREAMBLE
- * (structs/bindings/vs_main) so the Globals buffer layout matches the built-in
- * shader — both bind the same globals buffer — then append a generic fs_main:
+ * `fn displayFinish(src0[, src1..src3], P)`, one vec4 per declared input. We
+ * splice it between the shared preamble (structs / bindings / vs_main) and a
+ * generated fs_main that samples every input and hands them all to
+ * displayFinish, then multiplies by the one global, peakBrightness.
  *
- *   sample the S/H/O tile → per-channel normalise to [0,1] using the SAME
- *   anchors as the GHS finish (low = median − shadowClip·σ, so the sky survives
- *   as a small positive the finish can lift, never crushed) → displayFinish()
- *   with the params bound at binding(5) → × peakBrightness.
+ * Binding layout:
+ *   group 0 (shared by every tile):
+ *     @binding(0) globals   — uniform Globals { peakBrightness }
+ *     @binding(1) viewport  — uniform Viewport { tx, ty, scale, screenW, screenH }
+ *     @binding(2) sampler   — linear, clamp-to-edge
+ *     @binding(3) fparams   — uniform DisplayParams (declared AFTER the chunk,
+ *                             which defines the struct; useTileRenderer packs
+ *                             the values in Python's declared order, so field
+ *                             i ↔ param i)
+ *   group 1 (per tile):
+ *     @binding(0) tileRect  — uniform TileRect { worldX, worldY, tileW, tileH }
+ *     @binding(1..4)        — src0..src3, one texture per finish input
+ *                             (a shared 1×1 black dummy where unbound)
  *
- * binding(5) `fparams: DisplayParams` is declared AFTER the finish chunk (which
- * defines the struct). useTileRenderer packs the finish's param values into that
- * uniform in the same order Python declared them, so field i ↔ param i.
+ * The vertex shader emits a unit quad (4 verts, triangle-strip) whose
+ * world-space corners come from `tileRect`; the viewport transform places it
+ * into clip space. The same shader handles every tile; tiles differ only by
+ * their group-1 bind group.
  *
- * This is the F2 (display-referred) half of the scene→display seam made live:
- * add a look = write a Python DisplayFinish; its shader arrives here as text.
- * See the project_scene_display_seam memory.
+ * A 1-band input is BROADCAST to RGB before the call (`vec4(t.rrr, 1.0)`), so
+ * a mono tap read as `src.g` equals `src.r` — the finish never needs to know
+ * how many bands its input file had. See project_scene_display_seam.
  */
-import { SHADER_PREAMBLE } from './tone_mapping.js';
+export const MAX_INPUTS = 4;
+
+const SHADER_PREAMBLE = /* wgsl */ `
+struct Globals {
+    peakBrightness: f32,
+};
+struct Viewport {
+    tx: f32,
+    ty: f32,
+    scale: f32,
+    screenW: f32,
+    screenH: f32,
+    _pad0: f32,
+    _pad1: f32,
+    _pad2: f32,
+};
+struct TileRect {
+    worldX: f32,
+    worldY: f32,
+    tileW: f32,
+    tileH: f32,
+};
+
+@group(0) @binding(0) var<uniform> globals: Globals;
+@group(0) @binding(1) var<uniform> viewport: Viewport;
+@group(0) @binding(2) var tileSampler: sampler;
+@group(1) @binding(0) var<uniform> tileRect: TileRect;
+
+struct VsOut {
+    @builtin(position) pos: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) idx: u32) -> VsOut {
+    // Unit quad as triangle-strip: (0,0), (1,0), (0,1), (1,1).
+    var positions = array<vec2<f32>, 4>(
+        vec2<f32>(0.0, 0.0),
+        vec2<f32>(1.0, 0.0),
+        vec2<f32>(0.0, 1.0),
+        vec2<f32>(1.0, 1.0),
+    );
+    let p = positions[idx];
+
+    // World-space pixel coordinates of this vertex.
+    let worldX = tileRect.worldX + p.x * tileRect.tileW;
+    let worldY = tileRect.worldY + p.y * tileRect.tileH;
+
+    // Apply viewport transform (translate then scale), produce screen
+    // pixels, then convert to clip space [-1, 1].
+    let screenX = (worldX + viewport.tx) * viewport.scale;
+    let screenY = (worldY + viewport.ty) * viewport.scale;
+    let clipX = (screenX / viewport.screenW) * 2.0 - 1.0;
+    // Clip-space Y is up-positive; screen Y is down-positive — flip.
+    let clipY = 1.0 - (screenY / viewport.screenH) * 2.0;
+
+    var out: VsOut;
+    out.pos = vec4<f32>(clipX, clipY, 0.0, 1.0);
+    out.uv = p;
+    return out;
+}
+`;
 
 
-/** The generated fs_main: sample the primary tile plus `numInputs − 1` extra
- * source textures (group(1) bindings 3+; the tile layout always carries the
- * slots, dummy-black-bound when a source is absent) and hand ALL of them to
- * `displayFinish(src0.., P)` — the served chunk's signature has one vec4 per
- * declared input tap. A missing source samples the black dummy, so a finish
- * degrades gracefully (stars=0, Hα=0, L=0) instead of erroring. */
-function genericFsMain(numInputs) {
-    const n = Math.max(1, numInputs);
+/** The generated fs_main: one texture + one sample per declared input,
+ * mono inputs broadcast to RGB, all handed to `displayFinish(src0.., P)`.
+ * `monoMask[i]` is true when input i is a bound 1-band tap. */
+function genericFsMain(monoMask) {
+    const n = Math.max(1, monoMask.length);
     const decls = [];
-    const samples = ['    let s0 = textureSample(tileTexture, tileSampler, in.uv);'];
-    const args = ['s0'];
-    for (let i = 1; i < n; i++) {
-        decls.push(`@group(1) @binding(${2 + i}) var srcTexture${i}: texture_2d<f32>;`);
-        samples.push(`    let s${i} = textureSample(srcTexture${i}, tileSampler, in.uv);`);
+    const samples = [];
+    const args = [];
+    for (let i = 0; i < n; i++) {
+        decls.push(`@group(1) @binding(${1 + i}) var srcTexture${i}: texture_2d<f32>;`);
+        samples.push(`    let t${i} = textureSample(srcTexture${i}, tileSampler, in.uv);`);
+        samples.push(monoMask[i]
+            ? `    let s${i} = vec4<f32>(t${i}.rrr, 1.0);`
+            : `    let s${i} = t${i};`);
         args.push(`s${i}`);
     }
     return `
-@group(0) @binding(5) var<uniform> fparams: DisplayParams;
+@group(0) @binding(3) var<uniform> fparams: DisplayParams;
 ${decls.join('\n')}
 
 @fragment
@@ -64,7 +137,7 @@ ${samples.join('\n')}
 
 /** Full WGSL for a finish, from its served chunk. `finishWgsl` = the backend's
  * `DisplayFinish.to_wgsl()` (DisplayParams struct + helpers + displayFinish);
- * `numInputs` = the finish's declared input-tap count (spec.inputs.length). */
-export function buildFinishShader(finishWgsl, numInputs = 1) {
-    return SHADER_PREAMBLE + '\n' + finishWgsl + '\n' + genericFsMain(numInputs);
+ * `monoMask` = one boolean per declared input (true ⇒ bound 1-band tap). */
+export function buildFinishShader(finishWgsl, monoMask) {
+    return SHADER_PREAMBLE + '\n' + finishWgsl + '\n' + genericFsMain(monoMask);
 }

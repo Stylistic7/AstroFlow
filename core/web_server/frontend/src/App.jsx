@@ -269,13 +269,13 @@ function App() {
                     <StackViewer />
                   </AppLayout>
                 } />
-                <Route path="/stack/:stack_id/:pipeline/:display/:filter" element={
+                <Route path="/stack/:stack_id/:pipeline/:finish" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <StackViewer />
                   </AppLayout>
                 } />
-                <Route path="/stack/:stack_id/calibration_stack/:calibration_stack_id/:pipeline/:display/:filter" element={
+                <Route path="/stack/:stack_id/calibration_stack/:calibration_stack_id/:pipeline/:finish" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <StackViewer />
@@ -287,7 +287,7 @@ function App() {
                     <StackViewer />
                   </AppLayout>
                 } />
-                <Route path="/calibration_stack/:calibration_stack_id/:pipeline/:display/:filter" element={
+                <Route path="/calibration_stack/:calibration_stack_id/:pipeline/:finish" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <StackViewer />
@@ -307,7 +307,7 @@ function App() {
                 } />
                 {/* A target's view route renders the same tap viewer mosaics
                     use — the colour tail gives targets the same deliverables. */}
-                <Route path="/target/:target_id/:pipeline/:display/:filter" element={
+                <Route path="/target/:target_id/:pipeline/:finish" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <MosaicViewer />
@@ -319,7 +319,7 @@ function App() {
                     <MosaicDashboard />
                   </AppLayout>
                 } />
-                <Route path="/mosaic/:mosaic_id/:pipeline/:display/:filter" element={
+                <Route path="/mosaic/:mosaic_id/:pipeline/:finish" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <MosaicViewer />
@@ -331,13 +331,13 @@ function App() {
                     <StackViewer />
                   </AppLayout>
                 } />
-                <Route path="/target/:target_id/stack/:stack_id/:pipeline/:display/:filter" element={
+                <Route path="/target/:target_id/stack/:stack_id/:pipeline/:finish" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <StackViewer />
                   </AppLayout>
                 } />
-                <Route path="/target/:target_id/stack/:stack_id/calibration_stack/:calibration_stack_id/:pipeline/:display/:filter" element={
+                <Route path="/target/:target_id/stack/:stack_id/calibration_stack/:calibration_stack_id/:pipeline/:finish" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <StackViewer />
@@ -355,10 +355,10 @@ function App() {
                     <TargetPanel />
                   </AppLayout>}
                 />
-                <Route path="/mosaic/:mosaic_id/target/:target_id/:pipeline/:display/:filter" element={
+                <Route path="/mosaic/:mosaic_id/target/:target_id/:pipeline/:finish" element={
                   dataIsAvailable &&
                   <AppLayout>
-                    <TargetPanel />
+                    <MosaicViewer />
                   </AppLayout>}
                 />
                 <Route path="/mosaic/:mosaic_id/target/:target_id/stack/:stack_id" element={
@@ -367,13 +367,13 @@ function App() {
                     <StackViewer />
                   </AppLayout>
                 } />
-                <Route path="/mosaic/:mosaic_id/target/:target_id/stack/:stack_id/:pipeline/:display/:filter" element={
+                <Route path="/mosaic/:mosaic_id/target/:target_id/stack/:stack_id/:pipeline/:finish" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <StackViewer />
                   </AppLayout>
                 } />
-                <Route path="/mosaic/:mosaic_id/target/:target_id/stack/:stack_id/calibration_stack/:calibration_stack_id/:pipeline/:display/:filter" element={
+                <Route path="/mosaic/:mosaic_id/target/:target_id/stack/:stack_id/calibration_stack/:calibration_stack_id/:pipeline/:finish" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <StackViewer />

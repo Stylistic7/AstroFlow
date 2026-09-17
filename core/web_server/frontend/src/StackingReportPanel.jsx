@@ -12,20 +12,20 @@ import { format_duration } from './units.js';
  *
  * Props:
  *   stack_id: stable_hash of the stack
- *   pipeline: e.g. "PixInsight Master"
- *   display: e.g. "Master"
+ *   pipeline: the pipeline whose stacker produced the master being viewed
+ *     (undefined until the page has a view — nothing to report on then)
  */
-export default function StackingReportPanel({ stack_id, pipeline = "PixInsight Master", display = "Master" }) {
+export default function StackingReportPanel({ stack_id, pipeline }) {
   const [report, setReport] = useState(null);
 
   useEffect(() => {
+    if (!pipeline) return undefined;
     let cancelled = false;
     (async () => {
       try {
         const res = await fetch(
           `/api/stack/${stack_id}/stacking_report`
           + `?pipeline=${encodeURIComponent(pipeline)}`
-          + `&display=${encodeURIComponent(display)}`
         );
         if (!res.ok) return;
         const data = await res.json();
@@ -33,7 +33,7 @@ export default function StackingReportPanel({ stack_id, pipeline = "PixInsight M
       } catch (e) { console.warn(e); }
     })();
     return () => { cancelled = true; };
-  }, [stack_id, pipeline, display]);
+  }, [stack_id, pipeline]);
 
   if (!report) return null;
 

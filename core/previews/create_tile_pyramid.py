@@ -553,3 +553,14 @@ def pyramid_thumbnail(tile_pyramid_path, min_px: int = _THUMBNAIL_MIN_PX) -> byt
     if not ok:
         raise RuntimeError(f"cv2 failed to encode PNG for {path}")
     return buf.tobytes()
+
+
+def payload_tags(img) -> dict:
+    """The tags a producer stamped into a TIFF's `image-description` JSON
+    (COLORSPC, LAYER, BANDS, FILTER, PALETTE …), or `{}`."""
+    import json
+    try:
+        return json.loads(img.get("image-description")) or {}
+    except Exception:
+        return {}
+

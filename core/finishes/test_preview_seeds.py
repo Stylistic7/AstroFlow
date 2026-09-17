@@ -70,7 +70,17 @@ def test_white_does_not_collapse_on_a_sparse_field():
     assert v["whitepoint"] - v["blackpoint"] > 30 * sky_sigma
 
 
-def test_full_white_keeps_white_at_one():
-    v = _stf_values(_composite(), ("S", "H", "O"), full_white=True)
+def test_display_referred_seeds_the_identity():
+    v = _stf_values(_composite(), ("S", "H", "O"), display=True)
     for s in "SHO":
-        assert v[f"white{s}"] == 1.0
+        assert (v[f"black{s}"], v[f"white{s}"], v[f"mid{s}"]) == (0.0, 1.0, 0.5)
+    assert v["blackpoint"] == 0.0 and v["whitepoint"] == 1.0 and v["trim_floor"] == 0.0
+
+
+def test_per_band_and_linked_keys_are_both_emitted():
+    v = _stf_values(_composite(), ("S", "H", "O"))
+    assert {"blackS", "whiteH", "midO", "blackpoint", "whitepoint", "midtones",
+            "trim_floor", "star_white"} <= set(v)
+    mono = _composite()[..., 1:2]
+    w = _stf_values(mono, ("H",))
+    assert "blackH" in w and "blackS" not in w

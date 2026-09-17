@@ -15,27 +15,12 @@ objects' traces. See `products.product.Product`.
 """
 import os
 from pathlib import Path
-from typing import Iterator
 
 from context import local_context as context
 from dependency_graph.trace_paths import product_taps_key
 from pipelines.registry import registered_pipelines
 from previews.create_tile_pyramid import needs_display_pyramid, pyramid_path_for
 from products.product import Product, resolve_entity  # noqa: F401 — re-exported
-
-
-# ── canonical display per object type (was duplicated in urls.js + useVersions.js
-#    AND hardcoded in files.py) ────────────────────────────────────────────────
-_DEFAULT_DISPLAY_BY_TYPE = {
-    "mosaic": "Mosaic",
-    "target": "Channel",
-    "stack": "Master",
-    "calibration_stack": "Master",
-}
-
-
-def default_display_for(object_type: str) -> str:
-    return _DEFAULT_DISPLAY_BY_TYPE.get(object_type, "Master")
 
 
 # ── pipeline preference for the default view (was the frontend PIPELINE_PREFERENCE).
@@ -144,7 +129,7 @@ def predict_path(product: Product) -> "Path | None":
 def master_path(product: Product) -> "Path | None":
     """The product's PRIMARY file if it is on disk, else None — for downloads
     and opening in PixInsight, which want the deliverable itself rather than
-    whatever serves tiles (`viewable_path`)."""
+    whatever serves tiles (`resolve_product`)."""
     p = predict_path(product)
     return p if p is not None and os.path.exists(p) else None
 
@@ -244,60 +229,3 @@ def resolve_product(product: Product) -> "tuple[Path | None, str]":
         if prev is not None:
             return prev, "out_of_date"
     return None, "absent"
-
-
-def viewable_path(product: Product) -> "Path | None":
-    """The servable path for a product (path-only; last-good fallback included).
-    Use `resolve_product` when you also need the live/out-of-date status."""
-    return resolve_product(product)[0]
-
-
-def exists(product: Product) -> bool:
-    """Whether the product is on disk and viewable."""
-    return viewable_path(product) is not None
-
-
-def products_for(object_type: str, object_id: str) -> Iterator[Product]:
-    """Every product in the catalog for this object: each pipeline that traced
-    it × each of its display taps × filter. Lazy; existence is NOT checked here
-    (use `existing_for`). Snapshot-only reads — never a trace on a request."""
-    for pipeline in pipelines_for(object_type, object_id):
-        for e in product_taps(object_type, object_id, pipeline):
-            yield Product(object_type, object_id, pipeline,
-                          e["display"], e["filter"])
-
-
-def existing_for(object_type: str, object_id: str) -> Iterator[Product]:
-    """The products for this object that are on disk and viewable — the viewer's
-    slice of the catalog."""
-    for product in products_for(object_type, object_id):
-        if exists(product):
-            yield product
-
-
-def default_product_for(
-    object_type: str, object_id: str, filter: "str | None" = None,
-) -> "Product | None":
-    """The product to show for a bare object URL: the highest-preference pipeline
-    that actually produced a viewable tap, on the object type's default display
-    where available, else any existing tap in preference order. Optionally pinned
-    to one `filter`. None when nothing is on disk yet."""
-    want = default_display_for(object_type)
-    existing = [p for p in existing_for(object_type, object_id)
-                if filter is None or str(p.filter) == str(filter)]
-    if not existing:
-        return None
-    existing.sort(key=lambda p: (_pipeline_rank(p.pipeline),
-                                 0 if p.display == want else 1))
-    return existing[0]
-
-
-def default_pipeline_for(object_type: str, object_id: str) -> str:
-    """The pipeline name to open / report by default for a bare object URL: the
-    highest-preference pipeline that produced a viewable tap, else the top
-    preference. The fallback only bites when nothing is on disk yet — the caller
-    then finds no file and reports empty — so this never invents a wrong answer,
-    and `_PIPELINE_PREFERENCE` stays the single home for the ordering (no more
-    `"PixInsight Master"` string literals scattered through the web backend)."""
-    product = default_product_for(object_type, object_id)
-    return product.pipeline if product else _PIPELINE_PREFERENCE[0]

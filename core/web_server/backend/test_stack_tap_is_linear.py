@@ -11,7 +11,7 @@ Classifying by display NAME got both directions wrong, because a name is not
 identity:
 
   * `merge_images_stretched` and `polish_background` BOTH tap
-    `display="Mosaic Starless"`, which IS in `LINEAR_SCENE_DISPLAYS` — so the
+    `display="Mosaic Starless"`, which a name-keyed list called linear — so the
     already-stretched deliverable was marked linear and stretched twice;
   * every stack tap (`Master`, `Post-Processed`) was in no list, fell to the
     `display` default, and was served raw linear — near-black, since a master

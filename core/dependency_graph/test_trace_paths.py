@@ -230,7 +230,7 @@ def test_traced_paths_for_recompute_true_unresolvable_returns_empty(monkeypatch)
 # CALLER's process. On the driver that is intended (sweep / archive of an item
 # outside the current graph). In a web worker it meant
 # calibrate -> resolve_calibration -> find_external_master walking calibration
-# directories with is_dir(), measured at 31 s per /api/pipeline_outputs request
+# directories with is_dir(), measured at 31 s per /api/finishes request
 # on the Heart target (n=325, max 43 s) and 32 s for one thumbnail — while
 # TargetPanel refires on every SSE tick, piling ~18 deep. The viewer's reads
 # now go through `catalog.product_taps`, which cannot trace at all; this pins

@@ -2,7 +2,7 @@
 (registry, the per-entity tap filing, disk). No Ray, no real context. These pin
 the contract for the edge cases that motivated the module: the one "viewable"
 existence definition, the per-entity product lookup, filter union + ordering +
-the missing-stack None-guard, and the preference-ordered default.
+the missing-stack None-guard. (Finishes over these taps: `test_finishes.py`.)
 """
 import pytest
 
@@ -81,13 +81,8 @@ def _prod(**kw):
     return Product(**base)
 
 
-# ── Product identity ──────────────────────────────────────────────────────────
-def test_product_is_frozen_hashable_and_as_view():
+def test_product_is_frozen_and_hashable():
     p = _prod()
-    assert p.as_view() == {"pipeline": "PixInsight Master",
-                           "display": "Master", "filter": "H"}
-    # A filterless product still has a URL: the string the grammar carries.
-    assert _prod(filter=None).as_view()["filter"] == "None"
     assert p in {p}
     with pytest.raises(Exception):
         p.pipeline = "x"
@@ -173,8 +168,7 @@ def test_viewable_prefers_pyramid_even_when_master_reclaimed(monkeypatch):
     monkeypatch.setattr(q, "pyramid_path_for",
                         lambda m: _FakePath("/o/m_tiles.tiff", exists=True))
     monkeypatch.setattr(q.os.path, "exists", lambda p: False)  # primary gone
-    assert str(q.viewable_path(_prod())) == "/o/m_tiles.tiff"
-    assert q.exists(_prod()) is True
+    assert str(q.resolve_product(_prod())[0]) == "/o/m_tiles.tiff"
 
 
 def test_viewable_falls_back_to_display_ready_master_tiff(monkeypatch):
@@ -185,7 +179,7 @@ def test_viewable_falls_back_to_display_ready_master_tiff(monkeypatch):
                         lambda m: _FakePath("/o/m_tiles.tiff", exists=False))
     monkeypatch.setattr(q, "needs_display_pyramid", lambda m: False)
     monkeypatch.setattr(q.os.path, "exists", lambda p: True)
-    assert str(q.viewable_path(_prod())) == "/o/m.tiff"
+    assert str(q.resolve_product(_prod())[0]) == "/o/m.tiff"
 
 
 def test_viewable_refuses_a_float_master_with_no_pyramid(monkeypatch):
@@ -197,7 +191,7 @@ def test_viewable_refuses_a_float_master_with_no_pyramid(monkeypatch):
                         lambda m: _FakePath("/o/m_tiles.tiff", exists=False))
     monkeypatch.setattr(q, "needs_display_pyramid", lambda m: True)
     monkeypatch.setattr(q.os.path, "exists", lambda p: True)
-    assert q.viewable_path(_prod()) is None
+    assert q.resolve_product(_prod())[0] is None
 
 
 def test_viewable_none_when_xisf_master_and_no_pyramid(monkeypatch):
@@ -205,88 +199,12 @@ def test_viewable_none_when_xisf_master_and_no_pyramid(monkeypatch):
     monkeypatch.setattr(q, "pyramid_path_for",
                         lambda m: _FakePath("/o/m_tiles.tiff", exists=False))
     monkeypatch.setattr(q.os.path, "exists", lambda p: False)
-    assert q.viewable_path(_prod()) is None
-    assert q.exists(_prod()) is False
+    assert q.resolve_product(_prod()) == (None, "absent")
 
 
 def test_viewable_none_when_no_predicted_path(monkeypatch):
     monkeypatch.setattr(q, "predict_path", lambda p: None)
-    assert q.viewable_path(_prod()) is None
-
-
-# ── products_for crosses pipelines × taps ────────────────────────────────────
-def test_products_for_crosses_pipelines_and_taps(fake_context, taps):
-    fake_context.stacks = {"s1": _Ref(_Entity(content_hash="c"))}
-    taps("stack", "s1", "PixInsight Master", [
-        {"display": "Master", "filter": "H", "path": "/o/a"},
-        {"display": "Starless", "filter": "H", "path": "/o/b"},
-    ])
-    assert list(q.products_for("stack", "s1")) == [
-        _prod(display="Master"), _prod(display="Starless")]
-
-
-def test_products_for_passes_sentinel_filter_through(fake_context, taps):
-    # A colour composite's "RGB" isn't a real object filter — the catalog treats
-    # it as just another filter value.
-    fake_context.stacks = {"s1": _Ref(_Entity(content_hash="c"))}
-    taps("stack", "s1", "PixInsight Master",
-         [{"display": "Stars", "filter": "RGB", "path": "/o/rgb"}])
-    got = list(q.products_for("stack", "s1"))
-    assert got[0].filter == "RGB"
-
-
-# ── existing_for keeps only what's viewable ──────────────────────────────────
-def test_existing_for_keeps_only_viewable(fake_context, taps, monkeypatch):
-    fake_context.stacks = {"s1": _Ref(_Entity(content_hash="c"))}
-    taps("stack", "s1", "P", [
-        {"display": "Master", "filter": "H", "path": "/o/a"},
-        {"display": "Gone", "filter": "H", "path": "/o/b"},
-    ])
-    monkeypatch.setattr(q, "exists", lambda p: p.display == "Master")
-    assert [p.display for p in q.existing_for("stack", "s1")] == ["Master"]
-
-
-# ── default_product_for: preference + default display + filter pin ───────────
-def test_default_prefers_canonical_pipeline_and_display(monkeypatch):
-    prods = [
-        _prod(pipeline="Hybrid: OSS Stack + OSS Mosaic", display="Master"),
-        _prod(pipeline="PixInsight Master", display="Starless"),
-        _prod(pipeline="PixInsight Master", display="Master"),
-    ]
-    monkeypatch.setattr(q, "existing_for", lambda t, i: iter(prods))
-    assert q.default_product_for("stack", "s1") == _prod(
-        pipeline="PixInsight Master", display="Master")
-
-
-def test_default_filter_pin(monkeypatch):
-    prods = [
-        _prod(object_type="target", object_id="t1", display="Channel", filter="H"),
-        _prod(object_type="target", object_id="t1", display="Channel", filter="S"),
-    ]
-    monkeypatch.setattr(q, "existing_for", lambda t, i: iter(prods))
-    assert q.default_product_for("target", "t1", filter="S").filter == "S"
-
-
-def test_default_none_when_nothing_exists(monkeypatch):
-    monkeypatch.setattr(q, "existing_for", lambda t, i: iter([]))
-    assert q.default_product_for("stack", "s1") is None
-
-
-def test_default_pipeline_prefers_existing(monkeypatch):
-    prods = [
-        _prod(pipeline="Hybrid: OSS Stack + OSS Mosaic", display="Master"),
-        _prod(pipeline="PixInsight Downscaled", display="Master"),
-    ]
-    monkeypatch.setattr(q, "existing_for", lambda t, i: iter(prods))
-    # Preference order (not disk order) decides: Downscaled outranks Hybrid-OSS.
-    assert q.default_pipeline_for("stack", "s1") == "PixInsight Downscaled"
-
-
-def test_default_pipeline_falls_back_to_top_preference(monkeypatch):
-    # Nothing on disk → the top preference (the caller then finds no file and
-    # reports empty); never a scattered "PixInsight Master" literal.
-    monkeypatch.setattr(q, "existing_for", lambda t, i: iter([]))
-    assert q.default_pipeline_for("stack", "s1") == q._PIPELINE_PREFERENCE[0]
+    assert q.resolve_product(_prod())[0] is None
 
 
 # ── filters_for: union / ordering / None-guard / calibration ─────────────────
@@ -334,7 +252,7 @@ def test_viewable_from_master_no_retrace(monkeypatch):
     assert q.viewable_from_master(None) is None
 
 
-def test_products_for_never_traces(fake_context, taps, monkeypatch):
+def test_pipelines_for_never_traces(fake_context, taps, monkeypatch):
     """A web request must never trigger a live trace: the catalog reads the
     per-entity filing only, and a miss is an empty answer, not a trace."""
     import dependency_graph.trace_paths as tp
@@ -344,7 +262,7 @@ def test_products_for_never_traces(fake_context, taps, monkeypatch):
     monkeypatch.setattr(tp, "_resolve_pipeline_call", _boom)
     fake_context.stacks = {"s1": _Ref(_Entity(content_hash="c"))}
     taps("stack", "s1", "P", [])
-    assert list(q.products_for("stack", "s1")) == []
+    assert q.pipelines_for("stack", "s1") == []
 
 
 def test_object_class_is_the_url_word_to_class_map():

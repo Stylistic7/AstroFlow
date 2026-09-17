@@ -9,7 +9,7 @@ import AstroFlowContext from './AstroFlowContext.jsx';
 import { ra_to_hms, dec_to_dms, format_duration } from './units.js'
 
 const StackHeader = ({
-  stack_type, stack, stack_id, pipeline,
+  stack_type, stack, stack_id, pipeline, finish,
 }) => {
   const { isQuarantined, catalogEntries } = useContext(AstroFlowContext);
 
@@ -23,21 +23,21 @@ const StackHeader = ({
     return designations.slice(0, 3).join(' · ');
   }, [catalogEntries, stack.name]);
   const handleOpenStack = async () => {
-    // Pass the CURRENT pipeline so the backend traces the right stacker's
-    // master (e.g. WBPP `stack_files` for "Hybrid: PI Master + OSS Mosaic").
-    // Without it the route falls back to the "PixInsight" default, which
-    // traces the wrong pipeline for this stack and 404s (nothing opens).
-    const url = pipeline
-      ? `/api/open_stack_master/${stack_id}/${encodeURIComponent(pipeline)}`
-      : `/api/open_stack_master/${stack_id}`;
-    await fetch(url, { method: 'HEAD' });
+    // Opens the viewed finish's input taps — the CURRENT pipeline's master
+    // (e.g. WBPP `stack_files` for "Hybrid: PI Master + OSS Mosaic"), not
+    // some default pipeline's. No view yet ⇒ nothing to open.
+    if (!pipeline || !finish) return;
+    await fetch(
+      `/api/open/${stack_type}/${stack_id}/${encodeURIComponent(pipeline)}/${encodeURIComponent(finish)}`,
+      { method: 'POST' },
+    );
   };
 
   // NO pipeline chips here. The breadcrumb bar already carries the pipeline
   // as one PillCrumb dropdown (AstroFlowBreadcrumbs), which is the canonical
-  // URL grammar — hierarchy / pipeline / display / filter, one control per
-  // segment. This header used to render a Chip PER PIPELINE beneath it, so a
-  // stack with two producing pipelines showed two chips offering exactly the
+  // URL grammar — hierarchy / pipeline / finish, one control per segment.
+  // This header used to render a Chip PER PIPELINE beneath it, so a stack
+  // with two producing pipelines showed two chips offering exactly the
   // choice the dropdown above already offered.
   return (
     <Paper

@@ -72,9 +72,15 @@ def refresh_finishes() -> None:
     discover_finishes()
 
 
-def finish_specs() -> list:
+def all_finishes() -> list:
+    """Every registration, in registration order — the preference order
+    the catalog resolves in (a user override keeps its stock position)."""
     discover_finishes()
-    return [f.spec() for f in _REGISTRY.values()]
+    return list(_REGISTRY.values())
+
+
+def finish_specs() -> list:
+    return [f.spec() for f in all_finishes()]
 
 
 def get_finish(name: str, primary: "str | None" = None):

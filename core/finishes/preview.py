@@ -1,14 +1,11 @@
-"""The canonical dashboard preview: ONE server-rendered look per image.
-
-Narrowband present → autostretched Hubble (R=S, G=H, B=O) with RGB stars
-screened in when the image has broadband; otherwise the linked-stretch RGB.
-Rendered by the SAME traced-Python finishes the viewer runs live
-(`Finish.bake` on numpy), over a LOW pyramid level of the linear scene
-formats — pennies of compute, honest colours, and by construction it can
-never drift from what the live sliders show.
+"""Server-rendered finishes: a thumbnail of any bound finish, rendered by
+the SAME traced-Python finish the viewer runs live (`Finish.bake` on
+numpy) over a LOW pyramid level of its input taps, seeded exactly as the
+viewer seeds its first frame — pennies of compute, honest colours, and by
+construction it can never drift from what the live sliders show.
 
 Cached in the durable cache keyed on the finish's definition hash + the
-source pyramids' mtimes, so edits to a finish or a rebuilt tap invalidate
+input pyramids' mtimes, so edits to a finish or a rebuilt tap invalidate
 naturally.
 """
 from __future__ import annotations
@@ -22,21 +19,19 @@ _PREVIEW_MIN_PX = 512
 
 
 def read_pyramid_level(path, min_px: int = _PREVIEW_MIN_PX) -> "np.ndarray":
-    """The smallest stored pyramid level still >= `min_px` on its short side,
-    as (H, W, bands) float32. Scene-format taps always carry `_tiles.tiff`
-    pyramids, so no full-res decode ever happens here."""
-    import pyvips
+    """The smallest zoom level still >= `min_px` on its short side, as
+    (H, W, bands) float32 — a stored TIFF pyramid page or an XISF master
+    shrunk from its memory map (`previews.pyramid_pages`); no full-res
+    decode ever happens here."""
+    from previews.pyramid_pages import _get_vips_page, _pyramid_levels
     p = os.fspath(path)
-    base = pyvips.Image.tiffload(p, page=0, unlimited=True)
-    try:
-        n_pages = base.get("n-pages")
-    except pyvips.Error:
-        n_pages = 1
+    base = _get_vips_page(p, 0)
+    n_pages = _pyramid_levels(p)
     level, dim = 0, min(base.width, base.height)
     while level + 1 < n_pages and dim // 2 >= min_px:
         level += 1
         dim //= 2
-    img = pyvips.Image.tiffload(p, page=level, unlimited=True)
+    img = _get_vips_page(p, level)
     arr = np.ndarray(buffer=img.write_to_memory(),
                      dtype={"float": np.float32, "double": np.float64,
                             "uchar": np.uint8}[img.format],
@@ -48,7 +43,7 @@ def read_pyramid_level(path, min_px: int = _PREVIEW_MIN_PX) -> "np.ndarray":
 
 
 def _stf_values(arr: "np.ndarray", suffixes: "tuple[str, ...] | None",
-                target: float = 0.10, full_white: bool = False) -> dict:
+                target: float = 0.10, display: bool = False) -> dict:
     """Image-adaptive stretch params — the Python twin of the viewer's
     stfSeed recipe (finish_seed.js, 2026-09-03 recalibration):
     per channel, black + midtones anchor on the SKY subset (pixels below
@@ -67,14 +62,21 @@ def _stf_values(arr: "np.ndarray", suffixes: "tuple[str, ...] | None",
     twin of finish_seed.js: measured to put a real broadband frame's
     background at 0.197 with p99 at 0.629, i.e. actually using the
     display range. Darker targets render a ~99%-background frame as
-    nearly black. `suffixes=('S','H','O')` emits per-channel
-    keys; None emits the linked keys from pooled stats.
-    `full_white=True` uses white = 1.0
-    (the classic autostretch recipe — the narrowband Hubble preview
-    matches the proven baked-palette look with it; p99 crushes the faint
-    S/O channels relative to Hα)."""
+    nearly black. `suffixes` are the band roles (`("S","H","O")`,
+    `("R","G","B")`, `("H",)`): per-channel keys `black<role>…` are emitted
+    for each, and the linked keys `blackpoint/whitepoint/midtones` from the
+    pooled stats always — a finish reads the keys it declares.
+    `display=True` (a display-referred payload) seeds the identity: the
+    finish applies taste, not a second autostretch."""
     from mosaics.color.palettes import _solve_midtones
-    chans = [arr[..., i] for i in range(arr.shape[-1])] if suffixes else [arr]
+    if display:
+        out = {"blackpoint": 0.0, "whitepoint": 1.0, "midtones": 0.5,
+               "trim_floor": 0.0, "star_white": 1.0}
+        for s_ in suffixes or ():
+            out[f"black{s_}"], out[f"white{s_}"], out[f"mid{s_}"] = 0.0, 1.0, 0.5
+        return out
+    chans = [arr[..., i] for i in range(len(suffixes))] if suffixes else []
+    chans.append(arr)   # the pooled channel, last
     # Shared sky subset from composite luminance, as in the backend stats.
     lum = arr.mean(axis=-1) if arr.ndim == 3 else arr
     lum_f = lum[np.isfinite(lum) & (lum > 0)]
@@ -97,9 +99,7 @@ def _stf_values(arr: "np.ndarray", suffixes: "tuple[str, ...] | None",
             sky = finite
         med = float(np.median(sky)) if sky.size else 0.0
         sigma = 1.4826 * float(np.median(np.abs(sky - med))) if sky.size else 1e-6
-        if full_white:
-            bright = 1.0
-        elif finite.size:
+        if finite.size:
             # `high`, computed exactly as the backend's channelStats does:
             # a genuinely BRIGHT level, floored well clear of the noise.
             all_med = float(np.median(finite))
@@ -113,12 +113,10 @@ def _stf_values(arr: "np.ndarray", suffixes: "tuple[str, ...] | None",
         wp = max(bright, bp + max(0.02 * med, 1e-6))
         x0 = (med - bp) / max(wp - bp, 1e-6)
         per.append((bp, wp, _solve_midtones(max(x0, 1e-6), target)))
-    if suffixes:
-        for (bp, wp, mid), s in zip(per, suffixes):
-            out[f"black{s}"], out[f"white{s}"], out[f"mid{s}"] = bp, wp, mid
-    else:
-        bp, wp, mid = per[0]
-        out["blackpoint"], out["whitepoint"], out["midtones"] = bp, wp, mid
+    for (bp, wp, mid), s_ in zip(per, suffixes or ()):
+        out[f"black{s_}"], out[f"white{s_}"], out[f"mid{s_}"] = bp, wp, mid
+    bp, wp, mid = per[-1]
+    out["blackpoint"], out["whitepoint"], out["midtones"] = bp, wp, mid
     def _sky_med(c):
         finite, sky = _split(c)
         v = sky if sky.size >= 100 else finite
@@ -130,144 +128,83 @@ def _stf_values(arr: "np.ndarray", suffixes: "tuple[str, ...] | None",
     # Twin of finish_seed.js: normalise the stars layer by the same bright
     # anchor the image white uses, else the stars curve crushes raw linear
     # star pixels to invisibility.
-    out["star_white"] = float(np.mean([wp for _, wp, _ in per]))
+    out["star_white"] = float(np.mean([wp for _, wp, _ in per[:-1]] or [per[-1][1]]))
     return out
 
 
-def _resolve(object_type: str, object_id: str, pipeline: str, display: str
-             ) -> "tuple[Path, str] | None":
-    """(path, status) for a servable scene format, or None. Status is
-    "live" | "out_of_date" — callers must surface it (the 2026-08-31 lesson:
-    this function used to DROP it, and every preview consumer silently showed
-    last-good generations as if current)."""
-    from catalog import Product, resolve_product
-    filter_ = "L" if display.startswith("Linear L") else "RGB"
-    path, status = resolve_product(
-        Product(object_type, object_id, pipeline, display, filter_))
-    return (path, status) if status in ("live", "out_of_date") else None
-
-
-def render_canonical_preview(object_type: str, object_id: str,
-                             pipeline: "str | None" = None,
-                             ) -> "tuple[bytes, str] | None":
-    """(PNG bytes, status) of the canonical look, or None when no scene
-    format is servable yet. Status is the PRIMARY source's freshness
-    ("live" | "out_of_date"); the stars layer never downgrades it.
-    Hubble for anything with narrowband; RGB otherwise.
-
-    `pipeline` PINS which pipeline's scene formats to render. Without it this
-    picks the first that resolves, which is right for a single card but wrong
-    for any A/B: the dashboard shows one preview PER pipeline, and auto-picking
-    would render the same image under both headings (exactly the illusion the
-    2026-08-15 colour-tail collision produced for real)."""
+def _fit(arr: "np.ndarray", shape) -> "np.ndarray":
+    """`arr` resampled to the primary's (H, W) when a pyramid ladder differs."""
     import cv2
-    from catalog.queries import default_pipeline_for
+    if arr.shape[:2] != tuple(shape):
+        arr = cv2.resize(arr, (shape[1], shape[0]), interpolation=cv2.INTER_AREA)
+        if arr.ndim == 2:
+            arr = arr[..., None]
+    return arr
+
+
+def render_finish_preview(object_type: str, object_id: str, pipeline: str,
+                          name: str, min_px: int = _PREVIEW_MIN_PX,
+                          ) -> "tuple[bytes, str] | None":
+    """(PNG bytes, status) of finish `name` bound to this object under
+    `pipeline`, or None when its primary input is not servable yet. Status
+    is the bound finish's (worst required input); callers must surface it
+    (the 2026-08-31 lesson: dropping it showed last-good generations as
+    current)."""
+    import cv2
+    from catalog import resolve_finish, stars_inputs, band_roles
     from context.cache import get_durable_cache
-    from finishes.registry import get_finish
+    from previews.create_tile_pyramid import payload_tags
+    from previews.pyramid_pages import _get_vips_page
 
-    # WHICH PIPELINE: the scene formats live in whichever pipeline built
-    # them, which is NOT necessarily the object's default. The Heart target
-    # is processed by both "PixInsight Master" (no colour tail) and the
-    # hybrid; preference picks PI Master, whose Linear* taps don't exist, so
-    # the preview 404'd on an object whose colour was sitting right there.
-    # Try the default first, then every other pipeline for this class, and
-    # take the first that actually resolves a scene format.
-    from catalog.queries import pipelines_for
-    if pipeline is not None:
-        candidates = [pipeline]
-    else:
-        default = default_pipeline_for(object_type, object_id)
-        candidates = [default] + [p for p in pipelines_for(object_type, object_id)
-                                  if p != default]
-    pipeline = None
-    for cand in candidates:
-        if any(_resolve(object_type, object_id, cand, d)
-               for d in ("Linear SHO", "Linear RGB Starless",
-                         "Linear Narrowband Starless")):
-            pipeline = cand
-            break
-    if pipeline is None:
+    b = resolve_finish(object_type, object_id, pipeline, name)
+    if b is None or b.inputs[0].path is None:
         return None
 
-    def _split(r):
-        return r if r is not None else (None, None)
-    sho_path, sho_status = _split(_resolve(
-        object_type, object_id, pipeline, "Linear SHO"))
-    rgb_path, rgb_status = _split(_resolve(
-        object_type, object_id, pipeline, "Linear RGB Starless"))
-    nb_partial_path, nb_status = _split(_resolve(
-        object_type, object_id, pipeline, "Linear Narrowband Starless"))
-    stars_path, _stars_status = _split(_resolve(
-        object_type, object_id, pipeline, "Linear RGB Stars"))
-
-    # Ladder: full-SHO Hubble is THE canonical look; a partial narrowband
-    # set (an Hα-only galaxy) would render Hubble as a monochrome tint
-    # (zero-filled S/O bands), so broadband RGB wins there; the partial
-    # Hubble is the last resort for narrowband-only partial images (an HOO
-    # bicolor still reads fine).
-    if sho_path is not None:
-        finish, primary_path, primary_status = (
-            get_finish("Hubble", primary="Linear SHO"), sho_path, sho_status)
-    elif rgb_path is not None:
-        finish, primary_path, primary_status = (
-            get_finish("RGB", primary="Linear RGB Starless"),
-            rgb_path, rgb_status)
-    elif nb_partial_path is not None:
-        finish = get_finish("Hubble", primary="Linear Narrowband Starless")
-        primary_path, primary_status = nb_partial_path, nb_status
-    else:
-        return None
-    if finish is None or primary_path is None:
-        return None
-
-    def _mtime(p):
+    def _mtime(q):
         try:
-            return int(os.path.getmtime(p))
+            return int(os.path.getmtime(q))
         except OSError:
             return 0
 
     dc = get_durable_cache()
-    # The literal 5 versions the SEEDING RECIPE (v5: composite-anchored,
-    # sky-subset black/mid, BRIGHT `high` white anchor, background target
-    # 0.04 to match the finish defaults, 2026-09-03) — bump it when the
-    # value derivation changes, since the finish_hash only covers the
+    # The literal 6 versions the SEEDING RECIPE (v6: per-role keys from the
+    # primary's band roles + pooled linked keys, identity seed for
+    # display-referred payloads, viewer parity; 2026-09-16) — bump it when
+    # the value derivation changes, since the finish_hash only covers the
     # finish definition.
-    key = ("finish_preview", 5, object_type, object_id, pipeline,
-           finish.name, finish.finish_hash,
-           _mtime(primary_path), _mtime(stars_path) if stars_path else 0)
+    key = ("finish_preview", 6, object_type, object_id, pipeline, name,
+           b.finish.finish_hash,
+           *(_mtime(i.path) if i.path is not None else 0 for i in b.inputs))
     cached = dc.get(key)
     if cached is not None:
-        return cached, primary_status
+        return cached, b.status
 
-    primary = read_pyramid_level(primary_path)
-    if primary.shape[-1] < 3:
-        primary = np.repeat(primary[..., :1], 3, axis=-1)
-    if stars_path is not None:
-        stars = read_pyramid_level(stars_path)
-        if stars.shape[:2] != primary.shape[:2]:
-            stars = cv2.resize(stars, (primary.shape[1], primary.shape[0]),
-                               interpolation=cv2.INTER_AREA)
-        if stars.ndim == 2:
-            stars = np.repeat(stars[..., None], 3, axis=-1)
-    else:
-        stars = np.zeros_like(primary)   # absent stars layer binds black
-    sources = [primary, stars]
-    # Seed from the COMPOSITE in both branches — the stretch is a property
-    # of the original image (starless + stars), never of the layer viewed.
-    if finish.name == "Hubble":
-        values = _stf_values(primary + stars, ("S", "H", "O"), full_white=True)
-        star_finite = stars[np.isfinite(stars)]
-        if star_finite.size and float(star_finite.max()) > 0:
-            values["star_mid"] = _stf_values(stars, None)["midtones"]
-    else:  # RGB
-        values = _stf_values(primary + stars, None)
-        values["star_s"] = 1.0
+    primary_path = os.fspath(b.inputs[0].path)
+    primary = read_pyramid_level(primary_path, min_px)
+    shape = primary.shape[:2]
+    sources = [primary]
+    for i in b.inputs[1:]:
+        if i.path is None:
+            sources.append(np.zeros((*shape, 3), np.float32))   # binds black
+        else:
+            sources.append(_fit(read_pyramid_level(i.path, min_px), shape))
+    tags = payload_tags(_get_vips_page(primary_path, 0))
+    roles = band_roles(primary.shape[-1], tags, b.inputs[0].filter)
+    # Seed from the COMPOSITE — the stretch is a property of the picture
+    # the finish screens the stars into, never of the layer viewed.
+    composite = primary.astype(np.float32, copy=True)
+    for i in stars_inputs(b, lambda q: payload_tags(_get_vips_page(os.fspath(q), 0))):
+        st = sources[i.index]
+        if st.shape[-1] >= 3 and composite.shape[-1] < 3:
+            st = st[..., :3].mean(axis=-1, keepdims=True)
+        composite += np.maximum(np.nan_to_num(st[..., :composite.shape[-1]]), 0.0)
+    values = _stf_values(composite, tuple(roles), display=tags.get("COLORSPC") == "display")
 
-    out = finish.bake(sources, values)
+    out = b.finish.bake(sources, values)
     ok, buf = cv2.imencode(".png", cv2.cvtColor(
         (out * 255.0).astype(np.uint8), cv2.COLOR_RGB2BGR))
     if not ok:
         return None
     png = buf.tobytes()
     dc.set(key, png)
-    return png, primary_status
+    return png, b.status

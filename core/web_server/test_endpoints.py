@@ -85,201 +85,90 @@ def test_orion_mosaic_endpoints(client, with_orion_mosaic):
             assert sid in stacks, f"Target references nonexistent stack {sid}"
 
 
-@pytest.mark.exhaustive
-def test_orion_mosaic_versions_endpoint(client, with_orion_mosaic):
-    """Exercise the per-pipeline tap-points endpoint that the
-    dashboard reads."""
+def test_orion_mosaic_finishes_endpoint(client, with_orion_mosaic):
+    """The per-pipeline finish list the pills and the dashboard read."""
     mosaics = client.get("/api/mosaics").get_json()
     mosaic_id = next(iter(mosaics.keys()))
 
-    # /api/pipeline_outputs/mosaic/<id>: returns {filters, pipelines}
-    # where each pipeline carries its discovered taps (display-labelled
-    # @makes_image nodes the pipeline trace surfaced) and each tap's
-    # per-filter on-disk presence.
-    resp = client.get(f"/api/pipeline_outputs/mosaic/{mosaic_id}")
+    resp = client.get(f"/api/finishes/mosaic/{mosaic_id}")
     assert resp.status_code == 200
     data = resp.get_json()
-    assert "filters" in data and "pipelines" in data
-    assert isinstance(data["filters"], list) and len(data["filters"]) > 0
-
+    assert set(data) == {"pipelines", "default"}
     pipelines = data["pipelines"]
     assert len(pipelines) > 0
-    saw_existing = False
+    saw_servable = False
     for p in pipelines:
-        assert set(p.keys()) >= {"name", "taps"}
-        assert isinstance(p["taps"], list)
-        for t in p["taps"]:
-            assert set(t.keys()) >= {"display", "outputs"}
-            assert isinstance(t["outputs"], list)
-            # RAGGED: a tap carries ONLY the filters that route through it in the
-            # trace, not the global column union — so `outputs` is a NON-EMPTY,
-            # duplicate-free SUBSET of `data["filters"]` in the same canonical
-            # order, never padded with phantom blanks. (A composite tap like
-            # Hubble is thus a one-image row, not a blank-filled grid.)
-            tap_filters = [o["filter"] for o in t["outputs"]]
-            assert tap_filters, f"{p['name']}/{t['display']} has no outputs"
-            assert len(tap_filters) == len(set(tap_filters)), (
-                f"{p['name']}/{t['display']} duplicate filters {tap_filters}")
-            assert set(tap_filters) <= set(data["filters"]), (
-                f"{p['name']}/{t['display']} filters {tap_filters} ⊄ "
-                f"{data['filters']}")
-            assert tap_filters == [f for f in data["filters"] if f in set(tap_filters)], (
-                f"{p['name']}/{t['display']} filters {tap_filters} not in "
-                f"canonical order")
-            for o in t["outputs"]:
-                assert set(o.keys()) >= {"filter", "exists", "mtime"}
-                if o["exists"]:
-                    saw_existing = True
-                    # /tap/tile_metadata and /tap/thumbnail should resolve.
-                    tap = f"{p['name']}/{t['display']}"
-                    thumb = client.get(
-                        f"/tap/thumbnail/mosaic/{mosaic_id}/{tap}/{o['filter']}"
-                    )
-                    assert thumb.status_code in (200, 404), (
-                        f"thumbnail {tap}/{o['filter']}: {thumb.status_code}"
-                    )
-                    meta = client.get(
-                        f"/tap/tile_metadata/mosaic/{mosaic_id}/{tap}/{o['filter']}"
-                    )
-                    assert meta.status_code in (200, 404), (
-                        f"tile_metadata {tap}/{o['filter']}: {meta.status_code}"
-                    )
-    assert saw_existing, "no pipeline produced any output for the Orion mosaic"
+        assert set(p.keys()) == {"name", "finishes"}
+        names = [f["name"] for f in p["finishes"]]
+        assert len(names) == len(set(names)), f"{p['name']} lists a finish twice"
+        for f in p["finishes"]:
+            assert set(f.keys()) == {"name", "role", "status", "mtime", "inputs"}
+            assert f["status"] in ("live", "out_of_date", "absent")
+            assert f["inputs"] and all(set(i) == {"tap", "filter", "status"} for i in f["inputs"])
+            if f["status"] == "absent":
+                continue
+            saw_servable = True
+            view = f"/mosaic/{mosaic_id}/{p['name']}/{f['name']}"
+            assert client.get(f"/tap/thumbnail{view}").status_code in (200, 404)
+            meta = client.get(f"/tap/tile_metadata{view}", follow_redirects=True)
+            assert meta.status_code == 200, f"tile_metadata {view}: {meta.status_code}"
+            m = meta.get_json()
+            assert set(m) == {"name", "role", "status", "finish", "inputs"}
+            assert m["finish"]["name"] == f["name"]
+            assert m["inputs"][0]["bound"] and m["inputs"][0]["bandRoles"]
+            assert client.get(f"/api/metadata{view}").status_code == 200
+    assert saw_servable, "no pipeline produced a servable finish for the Orion mosaic"
+    assert data["default"] is None or set(data["default"]) == {"pipeline", "finish"}
 
     # Unknown mosaic id → 404.
-    assert client.get("/api/pipeline_outputs/mosaic/does_not_exist").status_code == 404
-
+    assert client.get("/api/finishes/mosaic/does_not_exist").status_code == 404
 
 @pytest.mark.exhaustive
-def test_pipeline_outputs_exists_is_backed_by_trace_and_disk(client, with_orion_mosaic):
-    """The core contract of the output_index → trace+disk migration.
-
-    Every `exists` flag the dashboard endpoint reports MUST agree with an
-    INDEPENDENT re-derivation: predict the tap's primary path straight from
-    the build-time filing (`catalog.predict_path`) and ask the filesystem.
-    There is no other tap→path index in between, so:
-
-      * `exists=True`  ⟺ a real file sits at the trace-predicted path, and
-      * `exists=False` ⟺ no file is there (real absence, never a stale
-        "pending" placeholder — the live-app bug this refactor removed).
-
-    Because the Orion snapshot actually runs the graph, the merge/master
-    deliverables are on disk; at least one tap must therefore surface as
-    existing, proving the previously-"pending" taps now show.
-    """
-    import os
-    from catalog import Product, predict_path
+def test_finish_status_is_backed_by_the_tap_resolver(client, with_orion_mosaic):
+    """Every input status the finishes endpoint reports MUST agree with an
+    INDEPENDENT re-derivation through the catalog's product resolver, and
+    at least one finish must be servable for the built Orion mosaic."""
+    from catalog import Product, resolve_product
 
     mosaics = client.get("/api/mosaics").get_json()
     mosaic_id = next(iter(mosaics.keys()))
+    data = client.get(f"/api/finishes/mosaic/{mosaic_id}").get_json()
 
-    data = client.get(f"/api/pipeline_outputs/mosaic/{mosaic_id}").get_json()
-
-    checked = 0
-    existing = 0
+    checked = servable = 0
     for p in data["pipelines"]:
-        name = p["name"]
-        for t in p["taps"]:
-            display = t["display"]
-            for o in t["outputs"]:
-                # Independent path prediction from the cached trace — the
-                # same source the endpoint uses, recomputed here so a stale
-                # or divergent result would surface as a mismatch.
-                predicted = predict_path(
-                    Product("mosaic", mosaic_id, name, display, o["filter"]))
-                on_disk = predicted is not None and os.path.exists(predicted)
-                assert o["exists"] == on_disk, (
-                    f"{name}/{display}/{o['filter']}: endpoint exists="
-                    f"{o['exists']} but trace+disk says {on_disk} "
-                    f"(predicted path={predicted})"
-                )
+        for f in p["finishes"]:
+            for i in f["inputs"]:
+                if i["filter"] is None:
+                    assert i["status"] == "absent"
+                    continue
+                path, status = resolve_product(
+                    Product("mosaic", mosaic_id, p["name"], i["tap"], i["filter"]))
+                assert i["status"] == status, (
+                    f"{p['name']}/{f['name']}/{i['tap']}: endpoint {i['status']} "
+                    f"but the resolver says {status} ({path})")
                 checked += 1
-                existing += int(o["exists"])
-
-    assert checked > 0, "fixture produced no taps to check"
-    assert existing > 0, (
-        "no tap reported exists=True — deliverables that are on disk for "
-        "the Orion mosaic are not surfacing (the bug this refactor fixes)"
-    )
-
+            servable += int(f["status"] != "absent")
+    assert checked > 0, "fixture produced no finish inputs to check"
+    assert servable > 0
 
 @pytest.mark.exhaustive
-def test_pipeline_outputs_reads_snapshot_not_trace(client, with_orion_mosaic):
-    """Regression for the live-app failure mode: /api/pipeline_outputs taking
-    tens of seconds (or 500ing on the Ray-free web worker) because it traced on
-    demand. It now reads the build-time tap snapshot straight from the diskcache
-    — no trace, no Ray — so it's fast on EVERY call. There is no on-demand trace
-    cache to clear: a snapshot miss on a read-only caller returns `[]`, it never
-    traces."""
+def test_finishes_read_snapshot_not_trace(client, with_orion_mosaic):
+    """Regression for the live-app failure mode: the view listing taking tens
+    of seconds (or 500ing on the Ray-free web worker) because it traced on
+    demand. It reads the build-time tap snapshot straight from the diskcache
+    — no trace, no Ray — so it's fast on EVERY call."""
     import time
 
     mosaics = client.get("/api/mosaics").get_json()
     mosaic_id = next(iter(mosaics.keys()))
-    url = f"/api/pipeline_outputs/mosaic/{mosaic_id}"
-
     t0 = time.perf_counter()
-    r = client.get(url)
+    r = client.get(f"/api/finishes/mosaic/{mosaic_id}")
     dt = time.perf_counter() - t0
     assert r.status_code == 200
-    print(f"[snapshot] pipeline_outputs: {dt*1000:.1f} ms (trace cache cleared)")
-    # A snapshot read is sub-second even cold; an on-demand trace would be many
-    # seconds. Generous bound to stay robust on a loaded box.
+    print(f"[snapshot] finishes: {dt*1000:.1f} ms")
     assert dt < 5.0, (
-        f"/api/pipeline_outputs took {dt*1000:.0f} ms with the on-demand trace "
-        f"cache cleared — it must read the build-time snapshot, not re-trace."
-    )
-
-
-@pytest.mark.exhaustive
-def test_metadata_route_master_path_is_passed_as_path_not_str(client, with_orion_mosaic):
-    """Regression for the 2026-05-30 beartype error on a cache HIT:
-
-        BeartypeCallHintParamViolation: ... parameter
-        filename='/Volumes/.../ef4cde65...xisf' violates type hint
-        <class 'pathlib._local.Path'>, as str ... not instance of <Path>
-
-    `traced_paths_for` returns paths as `str` (cache-friendly), but
-    `read_image_metadata` is beartype-annotated `Path`. The route must
-    wrap the str before passing it down. This test forces the route to
-    take the `os.path.exists -> read_image_metadata` branch by mocking
-    os.path.exists to True for any master path the trace returns; if
-    the str/Path conversion is missing, beartype raises and the route
-    500s.
-    """
-    import os
-    from unittest.mock import patch
-
-    mosaics = client.get("/api/mosaics").get_json()
-    mosaic_id = next(iter(mosaics.keys()))
-    stacks = client.get("/api/stacks").get_json()
-    filter_ = next(
-        (s["filter"] for s in stacks.values() if s.get("filter")),
-        "L",
-    )
-
-    real_exists = os.path.exists
-    def _exists_true_for_traced(path):
-        # Pretend any traced stack_files path exists, so the route
-        # actually invokes read_image_metadata.
-        if isinstance(path, str) and "stack_files" in path:
-            return True
-        return real_exists(path)
-
-    # We can't stub read_image_metadata to None because the route
-    # accesses meta.plate_solution after; instead let it actually run
-    # (it'll fail on the missing file with a different exception that
-    # the route silently ignores). The point of this test is purely
-    # that beartype doesn't reject the call signature.
-    with patch("web_server.backend.metadata.os.path.exists",
-               side_effect=_exists_true_for_traced):
-        resp = client.get(
-            f"/api/metadata/mosaic/{mosaic_id}/PixInsight Downscaled/Merged/{filter_}"
-        )
-
-    assert resp.status_code == 200, (
-        f"got {resp.status_code}: {resp.data[:400]!r}"
-    )
-
+        f"/api/finishes took {dt*1000:.0f} ms — it must read the build-time "
+        f"snapshot, not re-trace.")
 
 @pytest.mark.exhaustive
 def test_stacks_endpoint_returns_raw_integration_s(client, with_orion_mosaic):
@@ -312,43 +201,21 @@ def test_stacks_endpoint_returns_raw_integration_s(client, with_orion_mosaic):
 
 
 @pytest.mark.exhaustive
-def test_metadata_route_with_pipeline_returns_200(client, with_orion_mosaic):
-    """Regression for the 2026-05-30 production crash on
-    /api/metadata/mosaic/.../<pipeline>/<display>/<filter>.
-
-    The bug: `_get_polygons` called `stack_files.filename_fn(active_stack)`
-    with only the stack, but post-@node-refactor that goes through
-    `cache_key_narrow` → `_stack_files_narrow(args, kwargs)` which does
-    `stack, config, *rest = args` — unpacks with 1 arg, ValueError, 500.
-
-    Fix: look up the master path via `traced_path_for(cart_item,
-    "stack_files", stack=...)` instead, which goes through the cached
-    pipeline trace. This test exercises the same URL shape from the
-    production traceback and asserts the route doesn't 500.
-    """
+def test_metadata_route_with_finish_returns_polygons(client, with_orion_mosaic):
+    """Regression for the 2026-05-30 production crash on the metadata route
+    (`_get_polygons` unpacked `stack_files`' narrowed args wrongly and 500ed).
+    The route is finish-keyed now: the polygons of the finish's primary input,
+    at the filter that input binds."""
     mosaics = client.get("/api/mosaics").get_json()
     mosaic_id = next(iter(mosaics.keys()))
-
-    # Find a real filter so the URL is well-formed (the route's pipeline
-    # / display / filter components otherwise hit divergent code paths).
-    stacks = client.get("/api/stacks").get_json()
-    filter_ = next(
-        (s["filter"] for s in stacks.values() if s.get("filter")),
-        "L",
-    )
-
-    # Same URL shape that crashed in production. The display name
-    # ("Merged") doesn't need to correspond to a real tap on disk —
-    # the route returns polygons either way; we just care that it
-    # doesn't 500 inside _get_polygons.
-    resp = client.get(
-        f"/api/metadata/mosaic/{mosaic_id}/PixInsight Downscaled/Merged/{filter_}"
-    )
-    assert resp.status_code == 200, (
-        f"got {resp.status_code}: {resp.data[:300]!r}"
-    )
-    data = resp.get_json()
-    assert "objects" in data, f"missing 'objects' in response: {data}"
+    data = client.get(f"/api/finishes/mosaic/{mosaic_id}").get_json()
+    views = [(p["name"], f["name"]) for p in data["pipelines"] for f in p["finishes"]]
+    assert views, "the Orion mosaic offers no finish"
+    for pipeline, finish in views[:3]:
+        resp = client.get(f"/api/metadata/mosaic/{mosaic_id}/{pipeline}/{finish}")
+        assert resp.status_code == 200, f"got {resp.status_code}: {resp.data[:300]!r}"
+        assert set(resp.get_json()) == {"objects"}
+    assert client.get(f"/api/metadata/mosaic/{mosaic_id}/{views[0][0]}/NoSuchFinish").status_code == 404
 
 
 @pytest.mark.exhaustive

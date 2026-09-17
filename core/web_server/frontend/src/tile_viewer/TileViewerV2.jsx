@@ -1,21 +1,19 @@
 /**
- * WebGPU-based tile viewer (replacement for the Pixi TileViewer).
+ * WebGPU-based tile viewer — ONE rendering path: the finish's shader.
  *
- * Composes: HDR-canvas tile renderer (WebGPU), SVG polygon overlay,
- * DOM text overlay (panel numbers + RA/Dec). HDR brightness slider
- * + toolbar toggles for polygons / panel numbers / over-zoom.
- *
- * Route-mounted at `/webgpu-tile-viewer/...` for iterative testing
- * alongside the existing Pixi TileViewer. Once feature parity is
- * reached, the main routes flip and the Pixi version is deleted.
+ * A view is (pipeline, finish). The backend's tile metadata names the
+ * finish's input taps, ships its WGSL + param spec, and per-band stats
+ * for input 0; this component fetches one tile per bound input, compiles
+ * the finish, seeds its params from the stats, and paints. Composes:
+ * HDR-canvas tile renderer (WebGPU), SVG polygon overlay, DOM text overlay
+ * (panel numbers + RA/Dec), the finish's param sliders and the 3×3
+ * taste-grid explorer.
  *
  * Click navigation: pointerdown that doesn't drag fires a tap event;
  * we hit-test the polygons in JS (precedence: stack → target →
- * mosaic) and navigate. Mimics the Pixi viewer's "drag anywhere,
- * click anywhere on a panel" behavior without fighting CSS
- * pointer-events resolution.
+ * mosaic) and navigate.
  */
-import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -23,39 +21,23 @@ import Divider from '@mui/material/Divider';
 import Slider from '@mui/material/Slider';
 import Switch from '@mui/material/Switch';
 import FormControlLabel from '@mui/material/FormControlLabel';
-import MenuItem from '@mui/material/MenuItem';
-import Select from '@mui/material/Select';
 import Typography from '@mui/material/Typography';
 
 import AstroFlowContext from '../AstroFlowContext.jsx';
 import { useViewport } from './useViewport.js';
 import { useTileRenderer } from './useTileRenderer.js';
-import { buildCellParams, applyMove, sampleMoves, cellFromClick, describeMove, rng, AXIS_GROUPS } from './grid_explore.js';
+import { rng, cellFromClick } from './grid_explore.js';
 import {
     axesFromParams,
-    sampleMoves as gSampleMoves,
-    applyMove as gApplyMove,
-    describeMove as gDescribeMove,
+    sampleMoves,
+    applyMove,
+    describeMove,
     buildCellFinishParams,
 } from './generic_grid.js';
 import { stfSeed } from './finish_seed.js';
-import { useVersionsMatrix } from '../useVersions.js';
 import PolygonOverlay from './PolygonOverlay.jsx';
 import TextOverlay from './TextOverlay.jsx';
-import { computeAutoStretchParams } from '../auto_stretch.js';
-import { computeMaxEntropyLut } from './auto_stretch_maxent.js';
-import { computeGhsLut } from './auto_stretch_ghs.js';
-import { buildApiUrl, buildUrl, inheritView } from '../urls.js';
-
-
-/** Supported stretch modes. Numeric value is what the shader's
- *  `globals.stretchMode` uniform reads (0 = STF closed-form,
- *  1 = LUT-based). */
-export const STRETCH_MODES = {
-    stf: { label: 'PixInsight STF', shaderMode: 0 },
-    maxent: { label: 'Constrained max-entropy', shaderMode: 1 },
-    ghs: { label: 'Generalized Hyperbolic', shaderMode: 1 },
-};
+import { buildApiUrl, buildUrl } from '../urls.js';
 
 
 const TILE_SIZE = 256;
@@ -78,15 +60,16 @@ function pointInPolygon(x, y, points) {
 
 
 /**
- * For a given viewport + tile-pyramid metadata, compute which (z, x, y)
- * tiles are visible and what their world-space rectangles are. The
- * world coordinate system is the FULL-resolution image; each pyramid
- * level renders at world coords scaled by `2^(maxZoom - z)`.
+ * For a given viewport + tile metadata, compute which (z, x, y) tiles are
+ * visible and what their world-space rectangles are. The world coordinate
+ * system is the FULL-resolution image of input 0 (the geometry anchor —
+ * every input of a finish shares its viewbox); each pyramid level renders
+ * at world coords scaled by `2^(maxZoom - z)`. Each tile carries one URL
+ * per finish input (null where the input isn't built, which binds black).
  */
-function computeVisibleTiles({ viewport, meta, view, objectType, imageHash,
-                              primaryView = null, sourceViews = null }) {
+function computeVisibleTiles({ viewport, meta, view, hierarchy }) {
     const { tx, ty, scale, screenW, screenH } = viewport;
-    const { maxZoom, width: imageW, height: imageH, port, mtime } = meta;
+    const { maxZoom, width: imageW, height: imageH } = meta.inputs[0];
 
     // LOD selection: target ~1 source-pixel per DEVICE pixel.
     // At full res (z = maxZoom), worldStep = 1 px world per source px.
@@ -128,41 +111,21 @@ function computeVisibleTiles({ viewport, meta, view, objectType, imageHash,
     const wanted = [];
     for (let ty_ = y0; ty_ <= y1; ty_++) {
         for (let tx_ = x0; tx_ <= x1; tx_++) {
-            // Build the relative path first, then attach origin+port the
-            // same way the Pixi TileViewer does. `mtime` is a cache-
-            // busting query param (pyramid file regenerated → new mtime).
-            const rel = buildApiUrl(
-                '/tap/tile',
-                [{ type: objectType, id: imageHash }],
-                primaryView ?? view,
-                `/${z}/${tx_}/${ty_}.f32`,
-            );
-            const url = new URL(rel, `${origin}:${port}`);
-            if (mtime) url.searchParams.set('v', mtime);
-            // Extra source-tap tiles for a multi-input data-driven finish
-            // (same z/x/y — the scene formats share the tap's geometry).
-            // The key folds the source signature so switching finishes
-            // refetches instead of reusing tiles bound to other sources.
-            let sourceUrls = null;
-            if (sourceViews && sourceViews.length) {
-                sourceUrls = sourceViews.map((sv) => {
-                    if (!sv) return null;      // unbuilt tap → black dummy
-                    const r = buildApiUrl(
-                        '/tap/tile',
-                        [{ type: objectType, id: imageHash }],
-                        sv,
-                        `/${z}/${tx_}/${ty_}.f32`,
-                    );
-                    return new URL(r, `${origin}:${port}`).href;
-                });
-            }
-            const srcSig = [(primaryView ?? view)?.display,
-                            ...(sourceViews ?? []).map((sv) => sv?.display ?? '-')]
-                .filter(Boolean).join('|');
+            // One URL per input, on that input's shard port. `v=mtime` is a
+            // cache-buster (pyramid file regenerated → new mtime).
+            const urls = meta.inputs.map((inp, i) => {
+                if (!inp.bound) return null;
+                const rel = buildApiUrl('/tap/tile', hierarchy, view,
+                                        `/${i}/${z}/${tx_}/${ty_}.f32`);
+                const url = new URL(rel, `${origin}:${inp.port}`);
+                url.searchParams.set('v', inp.mtime);
+                return url.href;
+            });
+            // The key folds the finish so switching finishes refetches
+            // instead of reusing tiles bound to other inputs.
             wanted.push({
-                key: `${z}/${tx_}/${ty_}${srcSig ? `#${srcSig}` : ''}`,
-                url: url.href,
-                sourceUrls,
+                key: `${z}/${tx_}/${ty_}#${meta.finish.finish_hash}`,
+                urls,
                 worldRect: {
                     x: tx_ * sourceTileWorld,
                     y: ty_ * sourceTileWorld,
@@ -177,40 +140,32 @@ function computeVisibleTiles({ viewport, meta, view, objectType, imageHash,
 
 
 export default function TileViewerV2({
-    // Props match the existing Pixi TileViewer so this drops in to
-    // AstroFlowImage / MosaicViewer with no caller changes. When a
-    // prop is undefined, fall back to URL params (so the standalone
-    // /webgpu-tile-viewer test route still works).
+    // When a prop is undefined, fall back to URL params (so the standalone
+    // /tile_viewer test route still works).
     objectType: objectTypeProp,
     imageHash: imageHashProp,
-    filter: filterProp,
     pipeline: pipelineProp,
-    display: displayProp,
+    finish: finishProp,
     showPolygons: showPolygonsProp,
     showPanelNumbers: showPanelNumbersProp,
     showDepth: showDepthProp,
     hdrEnabled: hdrEnabledProp,
     peakBrightness: peakBrightnessProp,
-    stretchMode: stretchModeProp,
-    // Called with true/false once the tile metadata reveals whether this
-    // tap is a baked-stretch color image (>=3 bands). Lets the parent
-    // toolbar hide the stretch/HDR controls that don't apply to color.
-    onColorDetected,
 } = {}) {
-    const routeParams = useParams();
-    const objectType = objectTypeProp ?? routeParams.objectType;
-    const imageHash = imageHashProp ?? routeParams.imageHash;
+    const params = useParams();
+    const objectType = objectTypeProp ?? params.objectType;
+    const imageHash = imageHashProp ?? params.imageHash;
+    const pipeline = pipelineProp ?? params.pipeline;
+    const finish = finishProp ?? params.finish;
 
     const navigate = useNavigate();
-    const params = useParams();
-    const { mosaics, stacks, targets, showQuarantined, isQuarantined, computeGraphStatus }
+    const { stacks, targets, showQuarantined, isQuarantined, computeGraphStatus }
         = useContext(AstroFlowContext);
-    const filter = filterProp ?? routeParams.filter;
-    const pipeline = pipelineProp ?? routeParams.pipeline;
-    const display = displayProp ?? routeParams.display;
-    const view = pipeline && display && filter
-        ? { pipeline, display, filter }
-        : null;
+    const view = useMemo(
+        () => (pipeline && finish ? { pipeline, finish } : null),
+        [pipeline, finish]);
+    const hierarchy = useMemo(
+        () => [{ type: objectType, id: imageHash }], [objectType, imageHash]);
 
     // Whether to show the floating control panel (toggles + slider).
     // Hidden when the parent passes these through as props — in that
@@ -222,217 +177,92 @@ export default function TileViewerV2({
     const containerRef = useRef(null);
     const canvasRef = useRef(null);
     const viewportRef = useRef(null);
+    const renderer = useTileRenderer({ canvasRef });
 
     const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
-    const [tileMeta, setTileMeta] = useState(null);
-    const [metadata, setMetadata] = useState(null);
+    // /tap/tile_metadata for the view: the finish (wgsl + params), its
+    // inputs (geometry, ports, mtimes, stats) and the product status.
+    const [fetchedMeta, setFetchedMeta] = useState(null);
+    // /api/metadata: the panel/target/stack polygons.
+    const [polygons, setPolygons] = useState(null);
     // Standalone-mode local state. When `embedded`, the parent-supplied
     // props win and these are unused.
     const [localPeakBrightness, setLocalPeakBrightness] = useState(2.0);
     const [localShowPolygons, setLocalShowPolygons] = useState(true);
     const [localShowPanelNumbers, setLocalShowPanelNumbers] = useState(false);
     const [localShowDepth, setLocalShowDepth] = useState(false);
-    const [localStretchMode, setLocalStretchMode] = useState('stf');
-    // GHS stretch knobs (only used when stretchMode === 'ghs'). `bg` is the
-    // display level the sky maps to; `intensity` scales the auto-fit lift.
-    const [ghsBg, setGhsBg] = useState(0.10);
-    const [ghsIntensity, setGhsIntensity] = useState(1.0);
     // Default: zoom clamps at 1:1 (one source pixel per screen pixel).
     // Past that the image just gets blurry without revealing detail.
     // Toggle on to allow over-zoom for pixel-peeping or screenshots.
     const [allowOverZoom, setAllowOverZoom] = useState(false);
-    // Narrowband (Linear SHO) live-finish controls — the display-referred view
-    // transform (see project_scene_display_seam). The stretch is per-channel GHS
-    // (Generalized Hyperbolic Stretch, ghsastro math): D = strength, b = contrast,
-    // SP = the dark-tail pivot (auto-seeded per channel from the background so the
-    // sky LIFTS to a grey rather than crushing). D/b here are shared sliders
-    // applied to all three channels; the 3×3 grid perturbs them PER channel.
-    const [palette, setPalette] = useState('hubble');       // 'hubble' | 'foraxx'
-    const [nbD, setNbD] = useState(2.2);                    // GHS strength (exp(D)-1)
-    const [nbB, setNbB] = useState(0.0);                   // GHS contrast (b)
-    const [nbLP, setNbLP] = useState(0.0);                 // shadow protection point
-    const [nbHP, setNbHP] = useState(1.0);                 // highlight protection point
-    const [nbBP, setNbBP] = useState(0.0);                 // black point clip
-    const [nbWP, setNbWP] = useState(1.0);                 // white point clip
-    const [nbSaturation, setNbSaturation] = useState(1.35);
-    const [nbScnr, setNbScnr] = useState(1.0);             // standard green removal → gold
-    // Normalise floor: low anchor = median − shadowClip·σ (BELOW the sky, so it
-    // survives as a small positive for GHS to lift). Also sets where SP lands.
-    const [nbShadowClip, setNbShadowClip] = useState(2.0);
-    // Per-channel gain on the normalised S/H/O.
-    const [nbTrimS, setNbTrimS] = useState(1.0);
-    const [nbTrimH, setNbTrimH] = useState(1.0);
-    const [nbTrimO, setNbTrimO] = useState(1.0);
 
-    // 3×3 taste-grid explorer (narrowband only). While active, the view is
-    // rendered 9× — cell 4 is the current finish, the 8 neighbours are sampled
-    // "suggestion" moves across the finish axes. Clicking a neighbour applies
-    // its move and keeps that same move under the cell (click again = keep going
+    // 3×3 taste-grid explorer. While active, the view is rendered 9× — cell
+    // 4 is the current finish, the 8 neighbours are sampled "suggestion"
+    // moves across the finish's param axes. Clicking a neighbour applies its
+    // move and keeps that same move under the cell (click again = keep going
     // that way); the other 7 reshuffle. Clicking the centre reshuffles all 8.
-    // Committing on exit writes the chosen knobs back to the sliders. See
-    // grid_explore.js.
+    // Committing on exit writes the chosen knobs back to the sliders.
     const [gridActive, setGridActive] = useState(false);
-    const [gridCenter, setGridCenter] = useState(null);   // knobs incl. trimS/H/O
+    const [gridCenter, setGridCenter] = useState(null);   // param values
     const [gridMoves, setGridMoves] = useState(null);     // { cellIndex: move }
     const gridHistoryRef = useRef({ stack: [], idx: -1 }); // [{ center, moves }]
     const gridSeedRef = useRef(1);   // deterministic PRNG counter (reproducible grids)
-    // Which coherent axis group the grid explores (keeps it legible vs all 11).
-    const [gridFocus, setGridFocus] = useState('Stretch');
     // Global multiplier on each finish axis's declared grid step — how far the 8
-    // neighbour cells wander from the centre (data-driven finishes only). 1 = the
-    // finish's own steps; the live "Spread" slider scales it.
+    // neighbour cells wander from the centre. 1 = the finish's own steps; the
+    // live "Spread" slider scales it.
     const [gridSpread, setGridSpread] = useState(1.0);
 
-    // Data-driven display finishes served from /api/display/finishes — each a
-    // Python DisplayFinish's spec { name, inputs, params, wgsl }. The narrowband
-    // "Colour finish" dropdown lists 'ghs' (the built-in per-channel GHS) plus
-    // these; selecting one compiles its served WGSL into the renderer and builds
-    // its sliders + 3×3 grid axes FROM its extracted params. See
-    // project_scene_display_seam.
-    const [finishes, setFinishes] = useState([]);
-    // Which taps this object actually has built — the finish picker's
-    // real gate (a finish needs ALL its inputs, from any page).
-    const objectOutputs = useVersionsMatrix(
-        objectType, imageHash, computeGraphStatus);
-    const [finishName, setFinishName] = useState('ghs');
-    // Current values of the selected data-driven finish's params, keyed by name
-    // (seeded from each param's default when the finish is picked).
+    // Current values of the finish's params, keyed by name (seeded from the
+    // image stats when the finish lands).
     const [genericValues, setGenericValues] = useState({});
-    // Stats of the finish's PRIMARY tap when it isn't the viewed one —
-    // the seeds must describe the pixels the finish actually reads.
-    const [primaryStats, setPrimaryStats] = useState(null);
 
     // Resolve each control to "parent prop if provided, else local state".
     const peakBrightness = peakBrightnessProp ?? localPeakBrightness;
     const showPolygons = showPolygonsProp ?? localShowPolygons;
     const showPanelNumbers = showPanelNumbersProp ?? localShowPanelNumbers;
     const showDepth = showDepthProp ?? localShowDepth;
-    const stretchMode = stretchModeProp ?? localStretchMode;
     // hdrEnabled gates brightness: when off, force peak=1.0 (SDR).
     const effectivePeak = (hdrEnabledProp === false) ? 1.0 : peakBrightness;
 
-    // 3-band tiles come in two flavours, disambiguated by `colorspace`
-    // on /tap/tile_metadata:
-    //   isBakedColor  — baked-stretch RGB deliverable, shader passes through;
-    //   isNarrowband  — LINEAR S/H/O, shader runs the live colour finish.
-    // `isColor` (either) still gates out the mono stretch/HDR controls; the
-    // narrowband finish has its own control panel below.
-    const isColor = (tileMeta?.bands ?? 1) >= 3;
-    const isNarrowband = tileMeta?.colorspace === 'linear-sho';
-    const isLinearScene = tileMeta?.colorspace === 'linear-scene';
-    const isBakedColor = isColor && !isNarrowband && !isLinearScene;
+    // Fetch the tile metadata. Re-fetch when computeGraphStatus changes so
+    // a cart that regenerates a product pushes the new mtime down to the
+    // tile cache. A poll whose payload is UNCHANGED keeps the previous
+    // object, so nothing downstream re-runs on identical content — the
+    // 2026-09-03 slider snap-back came from re-seeding on every poll.
     useEffect(() => {
-        onColorDetected?.(isColor);
-    }, [isColor, onColorDetected]);
+        if (!view) return undefined;
+        let cancelled = false;
+        fetch(buildApiUrl('/tap/tile_metadata', hierarchy, view))
+            .then((r) => (r.ok ? r.json() : null))
+            .then((m) => {
+                if (cancelled) return;
+                const next = m && { ...m, hierarchy, view };
+                setFetchedMeta((prev) =>
+                    (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+            });
+        return () => { cancelled = true; };
+    }, [hierarchy, view, computeGraphStatus]);
+    // Metadata fetched for a PREVIOUS view (a swap in flight) doesn't
+    // describe what the URL now names: seed and fetch nothing from it. The
+    // old tiles stay on screen until the new metadata lands, so a finish
+    // switch never flashes black.
+    const meta = fetchedMeta?.hierarchy === hierarchy && fetchedMeta?.view === view
+        ? fetchedMeta : null;
 
-    // Which finishes can run on THIS OBJECT: every declared input tap must be
-    // built. NOT "does this finish's primary match the page" — a finish reads
-    // all its taps itself, so the page you entered from is a geometry anchor
-    // and a URL, not a constraint. (The old primary-match rule hid Hubble on
-    // the Linear RGB page while offering LRGB to an image with no Linear L.)
-    // Registrations that differ only in primary (Hubble on Linear SHO vs on
-    // Linear Narrowband Starless) collapse to whichever one's inputs exist.
-    const availableTaps = new Map();
-    for (const p of (objectOutputs?.pipelines || [])) {
-        if (view && p.name !== view.pipeline) continue;
-        for (const t of (p.taps || [])) {
-            const built = (t.outputs || []).find((o) => o.exists);
-            if (built && !availableTaps.has(t.display)) {
-                availableTaps.set(t.display, built.filter ?? 'RGB');
-            }
-        }
-    }
-    // Only the REQUIRED inputs must be built: a finish may declare inputs
-    // as `optional` (the star layer — screened, or scaled by a term that is
-    // zero at its default), and those bind black, which is a no-op in the
-    // math. Otherwise a look vanishes from the picker just because one
-    // still-computing tap hasn't landed.
-    const applicableFinishes = [];
-    for (const f of finishes) {
-        const optional = new Set(f.optional || []);
-        const required = (f.inputs || []).filter((d) => !optional.has(d));
-        if (!required.every((d) => availableTaps.has(d))) continue;
-        if (applicableFinishes.some((g) => g.name === f.name)) continue;
-        applicableFinishes.push(f);
-    }
-
-    // The picked data-driven finish (null = the built-in per-channel GHS,
-    // narrowband taps only). gridAxes/paramOrder are extracted from its
-    // params — grid axes and DisplayParams packing both come from Python.
-    const activeFinish = finishName === 'ghs'
-        ? null
-        : (applicableFinishes.find((f) => f.name === finishName) ?? null);
-    // A picked finish renders from its OWN input taps, but only on pages
-    // in the viewbox-geometry family (the linear scene formats + Linear
-    // SHO) — a stack/Channel tap is native-projection, so its tile grid
-    // wouldn't line up with the taps the finish samples.
-    const genericMode = (isNarrowband || isLinearScene) && !!activeFinish;
-    const gridAxes = genericMode ? axesFromParams(activeFinish.params) : null;
-    const paramOrder = genericMode ? activeFinish.params.map((p) => p.name) : null;
-
-    // Auto-pick a colour finish only where the built-in CANNOT serve: a
-    // MULTI-BAND linear-scene tap (Linear RGB Starless and friends), whose
-    // three bands have no meaningful mono rendering.
-    //
-    // A 1-BAND linear-scene tap must keep 'ghs'. Mosaic Starless/H is a real
-    // mono channel (bands=1), and 'ghs' leaves `activeFinish` null, so
-    // `genericMode` is false and `primaryView` stays the tap named in the URL
-    // — exactly the single channel you navigated to. Auto-switching it to a
-    // colour finish overrode `primaryView` to that finish's own first input at
-    // filter RGB, so every per-channel page repainted as the full-colour
-    // composite and the menu offered no way back (2026-09-12).
-    useEffect(() => {
-        if (isLinearScene && isColor && finishName === 'ghs'
-                && applicableFinishes.length) {
-            setFinishName(applicableFinishes[0].name);
-        }
-    }, [isLinearScene, isColor, finishName, applicableFinishes.length]);
-
-    // A finish reads its OWN taps: inputs[0] is the primary texture (src0) and
-    // inputs[1..] the extra bindings — regardless of which tap's page we're
-    // on. Every linear scene format shares the object's viewbox geometry, so
-    // the viewed tap's tile metadata still drives z/x/y and the URL keeps
-    // naming the tap you entered from (stable deep links).
-    const viewFor = (display) => ({
-        pipeline: view.pipeline, display,
-        filter: availableTaps.get(display) ?? 'RGB',
-    });
-    const primaryView = genericMode && view && activeFinish.inputs?.length
-        ? viewFor(activeFinish.inputs[0])
-        : view;
-    // DEBUG KILL-SWITCH: `?nostars=1` binds BLACK for every extra finish
-    // input, so the page renders its primary tap alone. Isolates "does the
-    // second texture cause this look?" without touching data or finishes.
-    const debugNoSources = typeof window !== 'undefined'
-        && new URLSearchParams(window.location.search).get('nostars') === '1';
-    const sourceViews = !debugNoSources
-        && genericMode && view && (activeFinish.inputs?.length ?? 1) > 1
-        ? activeFinish.inputs.slice(1).map(
-            (d) => (availableTaps.has(d) ? viewFor(d) : null))
-        : null;
-    // A declared input that binds black degrades silently by design; say so
-    // in the console, since "finish renders but one layer is missing" is
-    // otherwise invisible.
-    const extraInputSig = genericMode && activeFinish
-        ? (activeFinish.inputs || []).slice(1).map(
-            (d, i) => `${d}=${sourceViews?.[i] ? 'bound' : 'BLACK'}`).join(',')
-        : '';
-    useEffect(() => {
-        if (!extraInputSig) return;
-        console.info(`[finish] ${activeFinish?.name}: ${extraInputSig}`
-            + (debugNoSources ? ' (nostars=1 debug)' : ''));
-    }, [extraInputSig, activeFinish?.name, debugNoSources]);
-
-
-
-    // Filter polygons through the quarantine state same way the Pixi
-    // viewer does.
-    const polygons = metadata?.objects ?? null;
+    // The finish being rendered — its served WGSL + extracted params are
+    // the shader and the sliders; grid axes come from the same params.
+    const activeFinish = meta?.finish ?? null;
+    const inputs = meta?.inputs;
+    const primary = inputs?.[0];
+    const gridAxes = useMemo(
+        () => (activeFinish ? axesFromParams(activeFinish.params) : null), [activeFinish]);
+    const paramOrder = useMemo(
+        () => (activeFinish ? activeFinish.params.map((p) => p.name) : null), [activeFinish]);
 
     // Track container size for resizing the canvas + reporting screen
     // dims to the viewport.
     useLayoutEffect(() => {
-        if (!containerRef.current) return;
+        if (!containerRef.current) return undefined;
         const obs = new ResizeObserver(() => {
             const r = containerRef.current.getBoundingClientRect();
             setContainerSize({ width: r.width, height: r.height });
@@ -441,74 +271,25 @@ export default function TileViewerV2({
         return () => obs.disconnect();
     }, []);
 
-    // Fetch tile pyramid metadata (width/height/maxZoom + port + mtime).
-    // Re-fetch when computeGraphStatus changes so a cart that regenerates
-    // the tile pyramid pushes the new mtime down to the tile cache.
     useEffect(() => {
-        if (!view) return;
-        const url = buildApiUrl(
-            '/tap/tile_metadata',
-            [{ type: objectType, id: imageHash }],
-            view,
-        );
-        fetch(url).then((r) => r.ok ? r.json() : null).then(setTileMeta);
-    }, [objectType, imageHash, view?.pipeline, view?.display, view?.filter,
-        computeGraphStatus]);
-
-    // Fetch ImageMetadata (statistics) so we can drive auto-stretch.
-    useEffect(() => {
-        if (!view) return;
-        const url = buildApiUrl(
-            '/api/metadata',
-            [{ type: objectType, id: imageHash }],
-            view,
-        );
-        fetch(url).then((r) => r.ok ? r.json() : null).then((m) => {
-            if (m) setMetadata(m);
-        });
-    }, [objectType, imageHash, view?.pipeline, view?.display, view?.filter]);
-
-    // Fetch the data-driven display-finish registry once (served from the
-    // Python FINISHES). Relative URL resolves against the page origin, which is
-    // one of the app ports that serves this endpoint.
-    useEffect(() => {
-        fetch('/api/display/finishes')
-            .then((r) => (r.ok ? r.json() : []))
-            .then((list) => setFinishes(Array.isArray(list) ? list : []))
-            .catch(() => setFinishes([]));
-    }, []);
-
-    // Seed the picked finish's param values. Start from the static defaults, then
-    // — if the tap ships per-channel stats — compute IMAGE-ADAPTIVE starting
-    // values (the STF AutoStretch of THIS image) ON THE FRONTEND and use them as
-    // the grid centre. The seed is applied to whichever stretch params the finish
-    // actually has (black/white/midtones), so a non-stretch finish is untouched.
-    // Backend ships only generic stats — no finish logic. Re-runs on finish
-    // switch or tap change.
-    // Fetch the primary tap's stats when the finish reads a different tap
-    // than the page shows (same geometry family, so only stats differ).
-    useEffect(() => {
-        setPrimaryStats(null);
-        if (!primaryView || !view || primaryView.display === view.display) return;
-        const url = buildApiUrl('/tap/tile_metadata',
-            [{ type: objectType, id: imageHash }], primaryView);
+        if (!view) return undefined;
         let cancelled = false;
-        fetch(url).then((r) => (r.ok ? r.json() : null)).then((m) => {
-            if (!cancelled) setPrimaryStats(m?.channelStats ?? null);
-        }).catch(() => {});
+        fetch(buildApiUrl('/api/metadata', hierarchy, view))
+            .then((r) => (r.ok ? r.json() : null))
+            .then((m) => { if (m && !cancelled) setPolygons(m.objects ?? null); });
         return () => { cancelled = true; };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [primaryView?.display, view?.display, objectType, imageHash]);
+    }, [hierarchy, view]);
 
-    // Re-seed ONLY when the seed's CONTENT changes: a finish switch, or
-    // stats that are genuinely new (a rebuilt product landed). The metadata
-    // fetch above re-runs on every computeGraphStatus change by design, and
-    // each response is a fresh channelStats array OBJECT with identical
-    // values — keying this effect on object identity re-seeded on every
-    // poll and snapped the user's sliders back mid-adjustment whenever the
-    // compute graph was busy (2026-09-03).
+    // Seed the finish's param values. Start from the static defaults, then
+    // — when input 0 ships per-band stats — compute IMAGE-ADAPTIVE starting
+    // values (the STF AutoStretch of THIS image) and use them as the grid
+    // centre. The seed is applied to whichever stretch params the finish
+    // actually has, so a non-stretch finish is untouched.
+    //
+    // Re-seed ONLY when the seed's CONTENT changes: a view switch, or stats
+    // that are genuinely new (a rebuilt product landed) — never a poll.
     // `seedReady`: the adaptive seed has been applied, so the canvas may
-    // paint. `seedLate`: stats took too long (or this tap ships none) —
+    // paint. `seedLate`: stats took too long (or this input ships none) —
     // render with defaults rather than staring at an empty canvas.
     const [seedReady, setSeedReady] = useState(false);
     const [seedLate, setSeedLate] = useState(false);
@@ -520,15 +301,20 @@ export default function TileViewerV2({
         setSeedLate(false);
         const t = setTimeout(() => setSeedLate(true), 2500);
         return () => clearTimeout(t);
-    }, [finishName, view?.display, view?.filter, objectType, imageHash]);
+    }, [hierarchy, view]);
 
+    const seedKey = activeFinish
+        ? `${objectType}/${imageHash}/${pipeline}/${finish}|${activeFinish.finish_hash}`
+          + `|${JSON.stringify(primary?.channelStats ?? null)}|${primary?.colorspace}`
+        : null;
     const seedKeyRef = useRef(null);
     useEffect(() => {
-        if (!activeFinish) return;
-        const stats = primaryStats ?? tileMeta?.channelStats;
-        const seedKey = `${finishName}|${JSON.stringify(stats ?? null)}`;
-        if (seedKeyRef.current === seedKey) return;   // same content — keep user values
+        if (!activeFinish || seedKeyRef.current === seedKey) return;   // same content — keep user values
         seedKeyRef.current = seedKey;
+        // A new finish has its own axes: an open grid over the old ones
+        // would be perturbing knobs the shader no longer reads.
+        setGridActive(false);
+        renderer.clearGrid();
         const init = {};
         for (const p of activeFinish.params) init[p.name] = p.default;
         // Hand the finish's declared ranges to the seeder so it solves the
@@ -537,17 +323,17 @@ export default function TileViewerV2({
         // background at the wrong level (see finish_seed.js channelStf).
         const pb = new Map(activeFinish.params.map(
             (p) => [p.name, { lo: p.lo, hi: p.hi }]));
-        const seed = stfSeed(stats, undefined, (n) => pb.get(n) ?? null);
+        const seed = stfSeed(primary?.channelStats, primary?.bandRoles, primary?.colorspace,
+                             (n) => pb.get(n) ?? null);
         if (seed) {
             for (const p of activeFinish.params) {
                 if (p.name in seed) init[p.name] = Math.min(p.hi, Math.max(p.lo, seed[p.name]));
             }
-            setSeedValues(init);
             setSeedReady(true);   // release the first paint (see the tile effect)
         }
+        setSeedValues(seed ? init : {});
         setGenericValues(init);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [finishName, tileMeta?.channelStats, primaryStats]);
+    }, [renderer, activeFinish, primary, seedKey]);
 
     // Hit-test polygons at the tapped world position. Precedence
     // matches the Pixi viewer: stack > target > mosaic.
@@ -576,33 +362,34 @@ export default function TileViewerV2({
         dims: {
             screenW: containerSize.width,
             screenH: containerSize.height,
-            imageW: tileMeta?.width ?? 0,
-            imageH: tileMeta?.height ?? 0,
+            imageW: primary?.width ?? 0,
+            imageH: primary?.height ?? 0,
         },
         onTap: handleTap,
     });
     viewportRef.current = viewport;
 
     function navigateForPoly(poly, e) {
-        const hierarchy = params.mosaic_id
+        const dest = params.mosaic_id
             ? [{ type: 'mosaic', id: params.mosaic_id }]
             : [];
+        // A single-channel finish drills into the target's stack of the
+        // SAME role; a composite lands on the target page.
+        const role = meta?.role;
         if (poly.type === 'stack' && poly.target_id) {
-            hierarchy.push({ type: 'target', id: poly.target_id });
-            hierarchy.push({ type: 'stack', id: poly.stable_hash });
-        } else if (poly.type === 'target' && filter && targets?.[poly.stable_hash]) {
-            hierarchy.push({ type: 'target', id: poly.stable_hash });
+            dest.push({ type: 'target', id: poly.target_id });
+            dest.push({ type: 'stack', id: poly.stable_hash });
+        } else if (poly.type === 'target' && role && targets?.[poly.stable_hash]) {
+            dest.push({ type: 'target', id: poly.stable_hash });
             const target = targets[poly.stable_hash];
-            const stackId = target.stack_ids?.find((s) => stacks?.[s]?.filter === filter);
-            if (stackId) hierarchy.push({ type: 'stack', id: stackId });
+            const stackId = target.stack_ids?.find((s) => stacks?.[s]?.role === role);
+            if (stackId) dest.push({ type: 'stack', id: stackId });
         } else {
-            hierarchy.push({ type: poly.type, id: poly.stable_hash });
+            dest.push({ type: poly.type, id: poly.stable_hash });
         }
-        const destType = hierarchy[hierarchy.length - 1].type;
-        const url = buildUrl({
-            hierarchy,
-            view: view ? inheritView(view, destType) : null,
-        });
+        // The view rides along; the destination page swaps in its own
+        // pipeline's first finish when it doesn't list this one.
+        const url = buildUrl({ hierarchy: dest, view });
         if (e.metaKey || e.ctrlKey) window.open(url, '_blank');
         else navigate(url);
     }
@@ -619,22 +406,34 @@ export default function TileViewerV2({
         viewport.set(patch);
     }, [allowOverZoom, viewport]);
 
-    const renderer = useTileRenderer({ canvasRef });
-
-    // mtime invalidation: when the tile pyramid's on-disk file changes
-    // (cart regenerated it), wipe the GPU cache so the next paint
-    // refetches fresh pixels through the cache-busted URLs.
+    // Cache invalidation: when the finish or any input's on-disk file
+    // changes (a view switch, or the cart regenerated a product), wipe the
+    // GPU cache so the next paint refetches through the cache-busted URLs
+    // and never draws another finish's tiles under this one. Keyed on the
+    // FETCHED metadata, so the old tiles stay up during a swap in flight.
+    const tilesKey = fetchedMeta
+        ? `${fetchedMeta.finish.finish_hash}|${fetchedMeta.inputs.map((i) => i.mtime ?? '-')}`
+        : '';
     useEffect(() => {
         if (!renderer.isReady) return;
         renderer.clearTiles();
-    }, [renderer.isReady, tileMeta?.mtime]);
+    }, [renderer, tilesKey]);
+
+    // Install the finish's compiled shader; a 1-band input is broadcast to
+    // RGB in the generated fs_main. The renderer caches the pipeline on
+    // (wgsl, mask), so this is a redraw when neither changed.
+    const monoKey = inputs?.map((i) => (i.bound && i.bands === 1) ? '1' : '0').join('') ?? '';
+    useEffect(() => {
+        if (!renderer.isReady || !activeFinish) return;
+        renderer.setFinishShader(activeFinish.wgsl, [...monoKey].map((c) => c === '1'));
+    }, [renderer, activeFinish, monoKey]);
 
     /** One control per served param: a switch for `kind === "toggle"`, a
      * slider otherwise. Built-in (framework-injected) params come first and
      * are separated from the author's own by a rule. */
-    function renderFinishParams(params) {
-        const builtin = params.filter((p) => p.builtin);
-        const authored = params.filter((p) => !p.builtin);
+    function renderFinishParams(finishParams) {
+        const builtin = finishParams.filter((p) => p.builtin);
+        const authored = finishParams.filter((p) => !p.builtin);
         // Stretch values on the pinned gauge are ~0.005: toFixed(3) rendered
         // every black/white point as "0.005" / "0.009" and the readout never
         // moved. Show significant figures instead of fixed decimals.
@@ -659,14 +458,6 @@ export default function TileViewerV2({
                 <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
                     {p.label} — {fmtParam(genericValues[p.name] ?? p.default)}
                 </Typography>
-                {/* LOG-SCALED where the param says so. The Params have declared
-                    `scale: "log"` all along and this slider ignored it, running
-                    linear from lo to hi: on the pinned gauge (sky 0.005) a
-                    blackpoint track of 0..0.1 stepped 5e-4 — 10% of sky per
-                    step — so one nudge destroyed the image (2026-09-03).
-                    In log space each step is a fixed RATIO, which is what
-                    stretch controls want. `lo` is floored off zero (log(0) is
-                    undefined) at hi/1000, still far below any real sky. */}
                 {(() => {
                     // STRETCH SLIDERS ARE +/-3 SIGMA WINDOWS around the seeded
                     // point (Stylistic7, 2026-09-03). A black point lives within a
@@ -679,11 +470,13 @@ export default function TileViewerV2({
                     // rather than nominal. Non-stretch params keep their
                     // declared range (log where they ask for it).
                     const SIGMA_SPAN = 3;
-                    const st = primaryStats ?? tileMeta?.channelStats;
-                    const chIdx = { S: 0, H: 1, O: 2 }[p.name.slice(-1)];
+                    const st = primary?.channelStats;
+                    // A per-band param is suffixed by its band's role; a linked
+                    // one (no such band) pools every band's sigma.
+                    const chIdx = primary?.bandRoles?.indexOf(p.name.slice(-1)) ?? -1;
                     const sigmaOf = () => {
                         if (!st || !st.length) return null;
-                        const c = (chIdx != null && st[chIdx]) ? st[chIdx] : null;
+                        const c = chIdx >= 0 ? st[chIdx] : null;
                         if (c) return c.skySigma ?? c.sigma;
                         return st.reduce((a, x) => a + (x.skySigma ?? x.sigma), 0) / st.length;
                     };
@@ -729,6 +522,10 @@ export default function TileViewerV2({
                             />
                         );
                     }
+                    // LOG-SCALED where the param says so: in log space each
+                    // step is a fixed RATIO, which is what stretch controls
+                    // want. `lo` is floored off zero (log(0) is undefined) at
+                    // hi/1000, still far below any real sky.
                     const useLog = p.scale === 'log' && p.hi > 0;
                     const lo = useLog ? Math.max(p.lo, p.hi / 1000) : p.lo;
                     const toPos = (v) => (useLog
@@ -757,135 +554,30 @@ export default function TileViewerV2({
         </>);
     }
 
-    // Install (or clear) the data-driven finish's compiled shader. When a Python
-    // finish is picked on a Linear SHO tap, the renderer switches to a pipeline
-    // built from its served WGSL; otherwise it falls back to the built-in one.
+    // Push the uniforms: the finish's DisplayParams (single view) or one
+    // set per grid cell, plus peakBrightness — the ONE global, applied by
+    // the generated fs_main after the finish.
     useEffect(() => {
-        if (!renderer.isReady) return;
-        renderer.setFinishShader(genericMode ? activeFinish.wgsl : null,
-                                 activeFinish?.inputs?.length ?? 1);
-    }, [renderer.isReady, genericMode, activeFinish?.wgsl]);
-
-    // Push shader uniforms when statistics + brightness + mode change.
-    // The shader picks STF (closed-form) vs LUT (max-entropy) via the
-    // `stretchMode` integer; STF reads e1/e5/max, LUT samples the
-    // texture uploaded by the effect below.
-    useEffect(() => {
-        if (!renderer.isReady) return;
-        // Linear narrowband S/H/O: the shader runs the whole per-pixel
-        // colour finish. The stretch reuses e1/e5 (e1=0 shadow, e5=midtone);
-        // normalise anchors come from the metadata's per-channel stats.
-        // A data-driven finish owns ALL of its scaling and reads its own
-        // taps, so it needs only the peak multiplier + its DisplayParams —
-        // and it must run for ANY page it's active on, not just narrowband
-        // ones. (This branch used to live inside the isNarrowband guard, so
-        // on a linear-scene page the finish's params never reached the
-        // uniform and the canvas rendered black — 2026-08-12.)
-        if (genericMode) {
-            const med = tileMeta?.channelMedians || [0, 0, 0];
-            const sig = tileMeta?.channelSigma || [0, 0, 0];
-            const p99 = tileMeta?.channelP99 || [1, 1, 1];
-            const gbase = {
-                max: 1.0, stretchMode: 0,
-                peakBrightness: 1.0, finishMode: false, isColor: false,
-                anchors: { m: med, p: p99 }, sigmas: sig, shadowClip: nbShadowClip,
-                trims: [nbTrimS, nbTrimH, nbTrimO],
-            };
-            if (gridActive && gridCenter && gridMoves) {
-                renderer.setGrid(buildCellFinishParams(
-                    gridAxes, paramOrder, gridCenter, gbase, gridMoves));
-            } else {
-                renderer.setGlobals({
-                    ...gbase,
-                    finishParams: activeFinish.params.map(
-                        (p) => genericValues[p.name] ?? p.default),
-                });
-            }
-            return;
-        }
-        if (isNarrowband) {
-            const med = tileMeta?.channelMedians || [0, 0, 0];
-            const sig = tileMeta?.channelSigma || [0, 0, 0];
-            const p99 = tileMeta?.channelP99 || [1, 1, 1];
-            // Data-driven finish: feed the SAME normalise context (median −
-            // shadowClip·σ anchors) to the compiled displayFinish; its params
-            // come from genericValues (single view) or the grid (per cell).
-            const paletteMode = palette === 'foraxx' ? 1 : 0;
-            // Per-channel SP = where the background median lands in the shader's
-            // normalised domain (lo = m − shadowClip·σ, hi = p99). GHS pivots there
-            // so the sky lifts to a grey. Nudged per channel by the grid.
-            const ghsSP = [0, 1, 2].map((i) => {
-                const lo = med[i] - nbShadowClip * sig[i];
-                return Math.min(0.5, Math.max(0.01, (med[i] - lo) / Math.max(p99[i] - lo, 1e-9)));
-            });
-            // Fields shared by the single view and every 3×3 grid cell.
-            const base = {
-                max: 1.0, peakBrightness: 1.0, stretchMode: 0,
-                isColor: false, finishMode: true, paletteMode,
-                addStars: false,
-                anchors: { m: med, p: p99 }, sigmas: sig, shadowClip: nbShadowClip,
-                trims: [nbTrimS, nbTrimH, nbTrimO],
-                LP: nbLP, HP: nbHP, BP: nbBP, WP: nbWP, ghsSP,
-            };
-            if (gridActive && gridCenter && gridMoves) {
-                renderer.setGrid(buildCellParams(gridCenter, base, gridMoves));
-            } else {
-                renderer.setGlobals({
-                    ...base,
-                    ghsD: [nbD, nbD, nbD], ghsB: [nbB, nbB, nbB],
-                    scnrAmount: nbScnr, saturation: nbSaturation,
-                });
-            }
-            return;
-        }
-        // Baked-stretch color: fixed identity pass-through (e1=0, e5=0.5,
-        // max=1 ⇒ y=x) at SDR (peak=1.0); the shader's isColor branch
-        // samples .rgb directly. No stats needed.
-        if (isBakedColor) {
+        if (!renderer.isReady || !activeFinish) return;
+        if (gridActive && gridCenter && gridMoves) {
+            renderer.setGlobals({ peakBrightness: effectivePeak });
+            renderer.setGrid(buildCellFinishParams(gridAxes, paramOrder, gridCenter, gridMoves));
+        } else {
             renderer.setGlobals({
-                e1: 0, e5: 0.5, max: 1.0, peakBrightness: 1.0,
-                stretchMode: 0, isColor: true, finishMode: false,
+                peakBrightness: effectivePeak,
+                finishParams: activeFinish.params.map(
+                    (p) => genericValues[p.name] ?? p.default),
             });
-            return;
         }
-        if (!metadata?.statistics) return;
-        const { E1, E5, identity } = computeAutoStretchParams(metadata.statistics);
-        const shaderMode = STRETCH_MODES[stretchMode]?.shaderMode ?? 0;
-        renderer.setGlobals({
-            e1: identity ? 0 : E1,
-            e5: identity ? 0.5 : E5,
-            max: metadata.statistics.max_value || 1.0,
-            peakBrightness: effectivePeak,
-            stretchMode: shaderMode,
-            isColor: false, finishMode: false,
-        });
-    }, [renderer.isReady, isNarrowband, isBakedColor, metadata?.statistics,
-        effectivePeak, stretchMode, palette, nbD, nbB, nbLP, nbHP, nbBP, nbWP,
-        nbSaturation, nbScnr, nbShadowClip, nbTrimS, nbTrimH, nbTrimO,
-        tileMeta?.channelMedians, tileMeta?.channelSigma,
-        tileMeta?.channelP99, gridActive, gridCenter, gridMoves,
-        genericMode, genericValues, finishName]);
-
-    // Recompute + upload the stretch LUT whenever stats change or the
-    // mode flips into a LUT-based path. STF mode doesn't sample the
-    // LUT so we skip the upload there. Color images never sample it.
-    useEffect(() => {
-        if (!renderer.isReady || isColor || !metadata?.statistics) return;
-        if (stretchMode === 'maxent') {
-            renderer.setStretchLut(computeMaxEntropyLut(metadata.statistics));
-        } else if (stretchMode === 'ghs') {
-            renderer.setStretchLut(computeGhsLut(metadata.statistics, {
-                bg: ghsBg, intensity: ghsIntensity,
-            }));
-        }
-    }, [renderer.isReady, isColor, metadata?.statistics, stretchMode, ghsBg, ghsIntensity]);
+    }, [renderer, activeFinish, gridAxes, paramOrder, effectivePeak,
+        gridActive, gridCenter, gridMoves, genericValues]);
 
     // On viewport change: push uniforms to renderer + recompute visible
     // tiles. The viewport already rAF-coalesces its subscriber fan-out,
     // so this callback runs once per displayed frame and we don't need
     // our own rAF on top.
     useEffect(() => {
-        if (!renderer.isReady || !tileMeta || !view || !viewport) return;
+        if (!renderer.isReady || !meta || !view || !viewport) return undefined;
         // Don't paint the first frame with the finish's STATIC DEFAULTS when
         // an image-adaptive seed is on its way: the seed is the real look, and
         // a frame drawn before it lands then re-drawn after is the "pop"
@@ -893,74 +585,32 @@ export default function TileViewerV2({
         // the background maps through (sky − black)/(white − black), whose
         // numerator is ~4e-5 against a ~4e-3 denominator, so a 0.7% shift in
         // an image's sky level moves the rendered background ~50%. Waiting is
-        // free: channelStats is fetched in parallel with the tiles and
-        // normally lands first. `seedLate` is the escape hatch so a tap that
-        // never ships stats still renders.
-        if (genericMode && !seedReady && !seedLate) return;
+        // free: channelStats arrives with the metadata, before any tile.
+        // `seedLate` is the escape hatch so an input that never ships stats
+        // still renders.
+        if (!seedReady && !seedLate) return undefined;
         const apply = (s) => {
             renderer.setViewport({
                 tx: s.tx, ty: s.ty, scale: s.scale,
                 screenW: s.screenW, screenH: s.screenH,
             });
-            const wanted = computeVisibleTiles({
-                viewport: s, meta: tileMeta, view, objectType, imageHash,
-                primaryView, sourceViews,
-            });
-            renderer.setTileUrls(wanted);
+            renderer.setTileUrls(computeVisibleTiles({ viewport: s, meta, view, hierarchy }));
         };
         const unsub = viewport.subscribe(apply);
         apply(viewport.get());
         return unsub;
-    }, [renderer.isReady, tileMeta, view?.pipeline, view?.display, view?.filter,
-        viewport, objectType, imageHash, primaryView?.display,
-        // seedReady/seedLate RELEASE the gate above — without them here the
-        // effect never re-runs once the seed lands and nothing ever paints.
-        seedReady, seedLate, genericMode,
-        sourceViews?.map((sv) => sv?.display ?? '-').join('|') ?? '']);
+    }, [renderer, meta, view, hierarchy, viewport, seedReady, seedLate]);
 
     // ── 3×3 taste-grid handlers ─────────────────────────────────────────
     // Next deterministic PRNG stream. The seed counter lives in a ref so a
     // given sequence of clicks always yields the same suggestions.
     const nextRng = () => rng((gridSeedRef.current = (gridSeedRef.current + 1) | 0));
 
-    // Grid mechanics dispatch on the active finish: a data-driven finish uses
-    // axes EXTRACTED from its params (generic_grid); the built-in GHS uses its
-    // hardcoded per-channel axes + focus groups (grid_explore).
-    const sampleMovesM = (rand, center, rel = gridSpread) => genericMode
-        ? gSampleMoves(rand, gridAxes, center, rel)
-        : sampleMoves(rand, AXIS_GROUPS[gridFocus]);
-    const applyMoveM = (center, move) => genericMode
-        ? gApplyMove(gridAxes, center, move)
-        : applyMove(center, move);
-    const describeMoveM = (move) => genericMode
-        ? gDescribeMove(gridAxes, move)
-        : describeMove(move);
-
     const enterGrid = () => {
-        let c;
-        if (genericMode) {
-            // Centre = the finish's current param values; the grid perturbs each
-            // extracted param axis from here.
-            c = { ...genericValues };
-        } else {
-            // Seed the centre from the current sliders (D/b shared across channels)
-            // + the per-channel dark-tail SP. The grid then perturbs D/b/SP PER
-            // channel from here.
-            const med = tileMeta?.channelMedians || [0, 0, 0];
-            const sig = tileMeta?.channelSigma || [0, 0, 0];
-            const p99 = tileMeta?.channelP99 || [1, 1, 1];
-            const sp = [0, 1, 2].map((i) => {
-                const lo = med[i] - nbShadowClip * sig[i];
-                return Math.min(0.5, Math.max(0.01, (med[i] - lo) / Math.max(p99[i] - lo, 1e-9)));
-            });
-            c = {
-                dS: nbD, dH: nbD, dO: nbD,
-                bS: nbB, bH: nbB, bO: nbB,
-                spS: sp[0], spH: sp[1], spO: sp[2],
-                saturation: nbSaturation, scnr: nbScnr,
-            };
-        }
-        const moves = sampleMovesM(nextRng(), c);
+        // Centre = the finish's current param values; the grid perturbs each
+        // extracted param axis from here.
+        const c = { ...genericValues };
+        const moves = sampleMoves(nextRng(), gridAxes, c, gridSpread);
         gridHistoryRef.current = { stack: [{ center: c, moves }], idx: 0 };
         setGridCenter(c);
         setGridMoves(moves);
@@ -968,20 +618,8 @@ export default function TileViewerV2({
     };
 
     // Commit writes the explored centre back to the sliders; cancel discards.
-    // NOTE: the GHS sliders are shared-across-channels, so a per-channel result
-    // collapses to the mean on commit (per-channel keep is a later refinement).
     const exitGrid = (commit) => {
-        if (commit && gridCenter) {
-            if (genericMode) {
-                setGenericValues({ ...gridCenter });
-            } else {
-                const g = gridCenter;
-                setNbD((g.dS + g.dH + g.dO) / 3);
-                setNbB((g.bS + g.bH + g.bO) / 3);
-                setNbSaturation(g.saturation);
-                setNbScnr(g.scnr);
-            }
-        }
+        if (commit && gridCenter) setGenericValues({ ...gridCenter });
         setGridActive(false);
         renderer.clearGrid();
     };
@@ -1013,7 +651,7 @@ export default function TileViewerV2({
         const rect = canvasRef.current.getBoundingClientRect();
         const cell = cellFromClick(
             e.clientX - rect.left, e.clientY - rect.top, rect.width, rect.height);
-        const moves = sampleMovesM(nextRng(), gridCenter);
+        const moves = sampleMoves(nextRng(), gridAxes, gridCenter, gridSpread);
         if (cell === 4) {
             // Centre = keep this finish, reshuffle all 8 suggestions ("new ideas").
             pushGrid(gridCenter, moves);
@@ -1024,17 +662,12 @@ export default function TileViewerV2({
         // fresh suggestions just sampled above.
         const move = gridMoves[cell];
         moves[cell] = move;
-        pushGrid(applyMoveM(gridCenter, move), moves);
+        pushGrid(applyMove(gridAxes, gridCenter, move), moves);
     };
 
     const gridBtnSx = {
         flex: 1, minWidth: 0, color: '#fff', fontSize: 11,
         borderColor: 'rgba(255,255,255,0.3)',
-    };
-    const selectSx = {
-        width: '100%', color: '#fff',
-        '& .MuiSelect-icon': { color: '#fff' },
-        '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.3)' },
     };
 
     return (
@@ -1059,7 +692,7 @@ export default function TileViewerV2({
                     touchAction: 'none',
                 }}
             />
-            {tileMeta?.status === 'out_of_date' && (
+            {meta?.status === 'out_of_date' && (
                 <Box sx={{
                     position: 'absolute', top: 12, left: '50%',
                     transform: 'translateX(-50%)', zIndex: 10,
@@ -1099,7 +732,7 @@ export default function TileViewerV2({
                                 color: '#fff', backgroundColor: 'rgba(0,0,0,0.55)',
                                 fontWeight: i === 4 ? 600 : 400, whiteSpace: 'nowrap',
                             }}>
-                                {i === 4 ? 'current' : describeMoveM(gridMoves[i])}
+                                {i === 4 ? 'current' : describeMove(gridAxes, gridMoves[i])}
                             </Typography>
                         </Box>
                     ))}
@@ -1111,7 +744,7 @@ export default function TileViewerV2({
                 stacks={stacks}
                 showQuarantined={showQuarantined}
                 isQuarantined={isQuarantined}
-                imageWidth={tileMeta?.width}
+                imageWidth={primary?.width}
                 show={showPolygons}
                 showDepth={showDepth}
             />
@@ -1120,12 +753,12 @@ export default function TileViewerV2({
                 polygons={polygons}
                 show={showPanelNumbers}
             />
-            {/* Live colour finish — shown for the Linear SHO tap AND every
-                linear-scene format tap (Linear RGB & friends drive the
-                multi-source RGB/LRGB/Ha finishes), in both embedded
-                (MosaicViewer) and standalone modes, since the finish is
-                intrinsic to this tap, not the parent toolbar. */}
-            {(isNarrowband || (isLinearScene && applicableFinishes.length > 0)) && (
+            {/* The finish panel: its name, which inputs it is reading, the
+                3×3 explorer and one control per param. Shown in both
+                embedded (MosaicViewer / StackTabs) and standalone modes,
+                since the finish is intrinsic to the view, not the parent
+                toolbar. */}
+            {activeFinish && (
                 <Box sx={{
                     // Above the 3×3 grid overlay (zIndex 4) so this panel's
                     // controls (Spread, Keep, Cancel, sliders) receive clicks
@@ -1136,76 +769,29 @@ export default function TileViewerV2({
                     color: '#fff', backdropFilter: 'blur(6px)',
                 }}>
                     <Typography variant="caption" sx={{ display: 'block', fontWeight: 600, mb: 0.75 }}>
-                        Colour finish
+                        {activeFinish.name}
                     </Typography>
-                    {/* Finish picker — the built-in per-channel GHS plus every
-                        Python DisplayFinish served from /api/display/finishes.
-                        Selecting one rebuilds the sliders + grid axes + shader
-                        from ITS extracted params (project_scene_display_seam). */}
-                    <Select
-                        size="small"
-                        value={finishName}
-                        onChange={(e) => { if (gridActive) exitGrid(false); setFinishName(e.target.value); }}
-                        sx={{ ...selectSx, mb: 1 }}
-                    >
-                        {/* The built-in, offered on every tap it can serve —
-                            not just narrowband. On a 1-band linear-scene tap
-                            it IS the single-channel view: `activeFinish` goes
-                            null, `genericMode` false, and `primaryView` stays
-                            the tap in the URL. Without this entry a per-channel
-                            mosaic page had no way back from a colour finish, so
-                            the filter dropdown offered H/S/O/R/G/B while the
-                            render never changed. */}
-                        {isNarrowband && (
-                            <MenuItem value="ghs">Narrowband GHS (per-channel)</MenuItem>
-                        )}
-                        {isLinearScene && !isColor && (
-                            <MenuItem value="ghs">Single channel (mono)</MenuItem>
-                        )}
-                        {applicableFinishes.map((f) => (
-                            <MenuItem key={f.name} value={f.name}>{f.name}</MenuItem>
+                    {/* WHICH TAPS this finish is actually reading, and
+                        whether each one bound. A declared input that binds
+                        black degrades silently by design, and "finish
+                        renders but one layer is missing" is otherwise
+                        invisible — it cost hours of misdiagnosis on
+                        2026-09-03 because nothing on screen said so. */}
+                    <Typography variant="caption" sx={{
+                        display: 'block', mb: 1, lineHeight: 1.4,
+                        color: 'rgba(255,255,255,0.62)',
+                    }}>
+                        reading&nbsp;
+                        {inputs.map((inp, i) => (
+                            <span key={i}>
+                                {i > 0 && ' + '}
+                                {i === 0 ? <b>{inp.tap}</b> : inp.tap}
+                                {!inp.bound && (
+                                    <span style={{ color: 'rgba(240,160,140,0.9)' }}> (absent)</span>
+                                )}
+                            </span>
                         ))}
-                    </Select>
-                    {/* WHICH TAPS this finish is actually reading. A finish
-                        reads its OWN inputs regardless of the tap named in the
-                        URL, so a page titled "Linear RGB Starless" can be
-                        rendering "Linear SHO" through Hubble — which cost
-                        hours of misdiagnosis on 2026-09-03 because nothing on
-                        screen said so. Primary first, then each extra input
-                        with whether it actually bound. */}
-                    {genericMode && activeFinish && (
-                        <Typography variant="caption" sx={{
-                            display: 'block', mb: 1, lineHeight: 1.4,
-                            color: 'rgba(255,255,255,0.62)',
-                        }}>
-                            reading&nbsp;
-                            <b>{activeFinish.inputs?.[0] ?? '—'}</b>
-                            {(activeFinish.inputs || []).slice(1).map((d, i) => (
-                                <span key={d}>
-                                    {' + '}{d}
-                                    <span style={{
-                                        color: sourceViews?.[i]
-                                            ? 'rgba(140,220,150,0.9)'
-                                            : 'rgba(240,160,140,0.9)',
-                                    }}>
-                                        {sourceViews?.[i] ? '' : ' (absent)'}
-                                    </span>
-                                </span>
-                            ))}
-                        </Typography>
-                    )}
-                    {/* Palette is a GHS-finish knob; hidden for data-driven finishes. */}
-                    {!genericMode && (
-                        <Select
-                            size="small"
-                            value={palette}
-                            onChange={(e) => setPalette(e.target.value)}
-                            sx={{ ...selectSx, mb: 1 }}
-                        >
-                            <MenuItem value="hubble">Hubble (SHO)</MenuItem>
-                            <MenuItem value="foraxx">Foraxx (dynamic)</MenuItem>
-                        </Select>
-                    )}
+                    </Typography>
                     {/* 3×3 taste-grid explorer: render the view 9 ways, click to refine. */}
                     {!gridActive ? (
                         <Button size="small" fullWidth variant="outlined"
@@ -1221,33 +807,13 @@ export default function TileViewerV2({
                             </Typography>
                             {/* Spread: how far the 8 neighbours wander from the centre
                                 (fraction of each knob's value). Re-samples on release. */}
-                            {genericMode && (<>
-                                <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
-                                    Spread — {gridSpread.toFixed(2)}×
-                                </Typography>
-                                <Slider size="small" value={gridSpread} min={0.25} max={4} step={0.25}
-                                    onChange={(_, v) => setGridSpread(v)}
-                                    onChangeCommitted={(_, v) => pushGrid(gridCenter, sampleMovesM(nextRng(), gridCenter, v))}
-                                    sx={{ color: '#fff', mb: 0.5 }} />
-                            </>)}
-                            {/* Focus: which coherent group the grid explores.
-                                GHS-only — a data-driven finish explores all its
-                                extracted params directly, no focus groups. */}
-                            {!genericMode && (
-                            <Box sx={{ display: 'flex', gap: 0.5, mb: 0.5 }}>
-                                {Object.keys(AXIS_GROUPS).map((f) => (
-                                    <Button key={f} size="small"
-                                        variant={gridFocus === f ? 'contained' : 'outlined'}
-                                        onClick={() => {
-                                            setGridFocus(f);
-                                            pushGrid(gridCenter, sampleMoves(nextRng(), AXIS_GROUPS[f]));
-                                        }}
-                                        sx={{ ...gridBtnSx, flex: 1, ...(gridFocus === f ? { color: '#000' } : {}) }}>
-                                        {f}
-                                    </Button>
-                                ))}
-                            </Box>
-                            )}
+                            <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
+                                Spread — {gridSpread.toFixed(2)}×
+                            </Typography>
+                            <Slider size="small" value={gridSpread} min={0.25} max={4} step={0.25}
+                                onChange={(_, v) => setGridSpread(v)}
+                                onChangeCommitted={(_, v) => pushGrid(gridCenter, sampleMoves(nextRng(), gridAxes, gridCenter, v))}
+                                sx={{ color: '#fff', mb: 0.5 }} />
                             <Box sx={{ display: 'flex', gap: 0.5, mb: 0.5 }}>
                                 <Button size="small" variant="outlined" onClick={undoGrid} sx={gridBtnSx}>Undo</Button>
                                 <Button size="small" variant="outlined" onClick={redoGrid} sx={gridBtnSx}>Redo</Button>
@@ -1259,89 +825,16 @@ export default function TileViewerV2({
                             </Box>
                         </Box>
                     )}
-                    {/* Per-axis sliders — hidden in grid mode (the grid IS the
-                        control there; palette + stars below stay as globals). */}
-                    {!gridActive && (<>
-                    {genericMode ? (
-                        // Data-driven controls — one per param EXTRACTED from the
-                        // Python finish (name/label/range/step all from the spec).
-                        // A data-driven finish gets RAW linear input (no global
-                        // normalise / Sky floor); its own params do all scaling.
-                        //
-                        // BUILT-IN params (framework-injected, e.g. the common
-                        // first pass's "Zero ragged edges") render FIRST, above a
-                        // rule, so someone reading their own finish can tell which
-                        // controls they declared and which came with the system.
-                        // They are ordinary params otherwise — same spec, same
-                        // uniform packing, same traced WGSL.
-                        renderFinishParams(activeFinish.params)
-                    ) : (<>
-                    {/* Sky floor lives with the built-in GHS finish only — it's
-                        that pipeline's normalise anchor, not a global. */}
-                    <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
-                        Sky floor — {nbShadowClip.toFixed(1)}σ below median (higher = more lift)
-                    </Typography>
-                    <Slider
-                        size="small" value={nbShadowClip} min={0.5} max={6} step={0.1}
-                        onChange={(_, v) => setNbShadowClip(v)} sx={{ color: '#fff' }}
-                    />
-                    <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
-                        GHS strength (D) — {nbD.toFixed(2)}
-                    </Typography>
-                    <Slider
-                        size="small" value={nbD} min={0.4} max={4} step={0.1}
-                        onChange={(_, v) => setNbD(v)} sx={{ color: '#fff' }}
-                    />
-                    <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
-                        GHS contrast (b) — {nbB.toFixed(2)}
-                    </Typography>
-                    <Slider
-                        size="small" value={nbB} min={-2} max={4} step={0.1}
-                        onChange={(_, v) => setNbB(v)} sx={{ color: '#fff' }}
-                    />
-                    <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
-                        Shadow / highlight protect — LP {nbLP.toFixed(2)} · HP {nbHP.toFixed(2)}
-                    </Typography>
-                    <Slider size="small" value={nbLP} min={0} max={0.5} step={0.01}
-                        onChange={(_, v) => setNbLP(v)} sx={{ color: '#888', py: 0.3 }} />
-                    <Slider size="small" value={nbHP} min={0.5} max={1} step={0.01}
-                        onChange={(_, v) => setNbHP(v)} sx={{ color: '#ccc', py: 0.3 }} />
-                    <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
-                        Black / white point — BP {nbBP.toFixed(3)} · WP {nbWP.toFixed(3)}
-                    </Typography>
-                    <Slider size="small" value={nbBP} min={0} max={0.3} step={0.005}
-                        onChange={(_, v) => setNbBP(v)} sx={{ color: '#000', py: 0.3 }} />
-                    <Slider size="small" value={nbWP} min={0.7} max={1} step={0.005}
-                        onChange={(_, v) => setNbWP(v)} sx={{ color: '#fff', py: 0.3 }} />
-                    <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
-                        Saturation — {nbSaturation.toFixed(2)}×
-                    </Typography>
-                    <Slider
-                        size="small" value={nbSaturation} min={0} max={3} step={0.05}
-                        onChange={(_, v) => setNbSaturation(v)} sx={{ color: '#fff' }}
-                    />
-                    <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
-                        Green removal (SCNR) — {nbScnr.toFixed(2)}
-                    </Typography>
-                    <Slider
-                        size="small" value={nbScnr} min={0} max={1} step={0.05}
-                        onChange={(_, v) => setNbScnr(v)} sx={{ color: '#fff' }}
-                    />
-                    <Typography variant="caption" sx={{ display: 'block', opacity: 0.85, mt: 0.5 }}>
-                        Channel gain — S {nbTrimS.toFixed(2)} · H {nbTrimH.toFixed(2)} · O {nbTrimO.toFixed(2)}
-                    </Typography>
-                    {[['S', nbTrimS, setNbTrimS, '#e05a5a'],
-                      ['H', nbTrimH, setNbTrimH, '#5ae05a'],
-                      ['O', nbTrimO, setNbTrimO, '#5a8ae0']].map(([label, val, set, col]) => (
-                        <Slider
-                            key={label}
-                            size="small" value={val} min={0.2} max={2.5} step={0.05}
-                            onChange={(_, v) => set(v)}
-                            sx={{ color: col, py: 0.4 }}
-                        />
-                    ))}
-                    </>)}
-                    </>)}
+                    {/* Per-param sliders — hidden in grid mode (the grid IS the
+                        control there). One per param EXTRACTED from the Python
+                        finish (name/label/range/step all from the spec). The
+                        finish gets RAW linear input; its own params do all
+                        scaling. BUILT-IN params (framework-injected, e.g. the
+                        common first pass's "Zero ragged edges") render FIRST,
+                        above a rule, so someone reading their own finish can
+                        tell which controls they declared and which came with
+                        the system. */}
+                    {!gridActive && renderFinishParams(activeFinish.params)}
                 </Box>
             )}
             {!embedded && (
@@ -1351,17 +844,15 @@ export default function TileViewerV2({
                     border: '1px solid rgba(255,255,255,0.12)', borderRadius: 1,
                     color: '#fff', backdropFilter: 'blur(6px)',
                 }}>
-                    {!isColor && (<>
-                        <Typography variant="caption">
-                            HDR brightness: {effectivePeak.toFixed(1)}×
-                        </Typography>
-                        <Slider
-                            size="small"
-                            value={localPeakBrightness}
-                            onChange={(_, v) => setLocalPeakBrightness(v)}
-                            min={1} max={8} step={0.1}
-                        />
-                    </>)}
+                    <Typography variant="caption">
+                        HDR brightness: {effectivePeak.toFixed(1)}×
+                    </Typography>
+                    <Slider
+                        size="small"
+                        value={localPeakBrightness}
+                        onChange={(_, v) => setLocalPeakBrightness(v)}
+                        min={1} max={8} step={0.1}
+                    />
                     <FormControlLabel
                         control={
                             <Switch
@@ -1406,55 +897,13 @@ export default function TileViewerV2({
                         label={<Typography variant="caption">Allow over-zoom past 1:1</Typography>}
                         sx={{ mt: -1, ml: -1 }}
                     />
-                    {!isColor && (
-                        <Box sx={{ mt: 1 }}>
-                            <Typography variant="caption" sx={{ display: 'block', opacity: 0.85, mb: 0.5 }}>
-                                Stretch
-                            </Typography>
-                            <Select
-                                size="small"
-                                value={localStretchMode}
-                                onChange={(e) => setLocalStretchMode(e.target.value)}
-                                sx={{
-                                    width: '100%',
-                                    color: '#fff',
-                                    '& .MuiSelect-icon': { color: '#fff' },
-                                    '& .MuiOutlinedInput-notchedOutline': {
-                                        borderColor: 'rgba(255,255,255,0.3)',
-                                    },
-                                }}
-                            >
-                                {Object.entries(STRETCH_MODES).map(([k, m]) => (
-                                    <MenuItem key={k} value={k}>{m.label}</MenuItem>
-                                ))}
-                            </Select>
-                            {localStretchMode === 'ghs' && (
-                                <Box sx={{ mt: 1 }}>
-                                    <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
-                                        Background — {ghsBg.toFixed(2)}
-                                    </Typography>
-                                    <Slider
-                                        size="small" value={ghsBg} min={0.02} max={0.25} step={0.01}
-                                        onChange={(_, v) => setGhsBg(v)} sx={{ color: '#fff' }}
-                                    />
-                                    <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
-                                        Stretch — {ghsIntensity.toFixed(2)}×
-                                    </Typography>
-                                    <Slider
-                                        size="small" value={ghsIntensity} min={0.3} max={3} step={0.05}
-                                        onChange={(_, v) => setGhsIntensity(v)} sx={{ color: '#fff' }}
-                                    />
-                                </Box>
-                            )}
-                        </Box>
-                    )}
                     {renderer.error && (
                         <Typography variant="caption" sx={{ color: '#f55' }}>
                             {renderer.error}
                         </Typography>
                     )}
                     <Typography variant="caption" sx={{ display: 'block', opacity: 0.6 }}>
-                        {tileMeta ? `${tileMeta.width}×${tileMeta.height} px, ${tileMeta.maxZoom + 1} LODs` : 'loading…'}
+                        {primary ? `${primary.width}×${primary.height} px, ${primary.maxZoom + 1} LODs` : 'loading…'}
                     </Typography>
                 </Box>
             )}

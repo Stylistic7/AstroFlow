@@ -1,32 +1,17 @@
 // Canonical URL grammar — see [[project_url_grammar]].
-//   URL: <hierarchy>/<pipeline>/<display>/<filter>
-// Every tap-keyed URL the frontend constructs goes through buildUrl
-// or buildApiUrl; the backend's tap_route helper is the mirror.
-
-const STACK_DISPLAY_BY_TYPE = {
-  mosaic: 'Mosaic',
-  target: 'Channel',
-  stack: 'Master',
-  calibration_stack: 'Master',
-};
-
-export function defaultDisplayFor(objectType) {
-  return STACK_DISPLAY_BY_TYPE[objectType] ?? 'Master';
-}
+//   URL: <hierarchy>/<pipeline>/<finish>
+// Every finish-keyed URL the frontend constructs goes through buildUrl
+// or buildApiUrl; the backend's finish_route helper is the mirror.
 
 function viewPath(view) {
   if (!view) return '';
-  const { pipeline, display, filter } = view;
-  // All-or-nothing on the view triple. Half-views are what caused the
+  const { pipeline, finish } = view;
+  // All-or-nothing on the view pair. Half-views are what caused the
   // 2026-06-08 route-ambiguity 404; refuse them at the source.
-  if (!pipeline || !display || !filter) {
-    throw new Error('buildUrl: view requires pipeline + display + filter');
+  if (!pipeline || !finish) {
+    throw new Error('buildUrl: view requires pipeline + finish');
   }
-  return (
-    `/${encodeURIComponent(pipeline)}`
-    + `/${encodeURIComponent(display)}`
-    + `/${encodeURIComponent(filter)}`
-  );
+  return `/${encodeURIComponent(pipeline)}/${encodeURIComponent(finish)}`;
 }
 
 function hierarchyPath(hierarchy) {
@@ -38,39 +23,10 @@ export function buildUrl({ hierarchy, view }) {
 }
 
 export function buildApiUrl(prefix, hierarchy, view, suffix = '') {
-  // `suffix` is for sub-resources of a tap (e.g. tile coords
-  // `/z/x/y.png`). Always appended AFTER the view triple so the URL
+  // `suffix` is for sub-resources of a finish (e.g. tile coords
+  // `/i/z/x/y.f32`). Always appended AFTER the view pair so the URL
   // stays global → local. An API read names only the LEAF object: the
   // backend resolves any object by its own (type, id), whatever it is
   // nested under in the page URL.
   return prefix + hierarchyPath(hierarchy) + viewPath(view) + suffix;
-}
-
-export function inheritView(parentView, childObjectType) {
-  return {
-    pipeline: parentView.pipeline,
-    display: defaultDisplayFor(childObjectType),
-    filter: parentView.filter,
-  };
-}
-
-// Is there an on-disk tap for `display` × `filter` in a /api/pipeline_outputs
-// pipeline entry?
-function tapExists(pipelineEntry, display, filter) {
-  const tap = (pipelineEntry.taps || []).find((t) => t.display === display);
-  return !!tap?.outputs?.some(
-    (o) => String(o.filter) === String(filter) && o.exists);
-}
-
-// The display this pipeline actually produced for `filter` — preferring
-// `preferred`, else the first tap that exists. Keeps a pipeline-pill switch from
-// landing on a display the target pipeline never built (which would 404). This
-// operates on the matrix the user is already looking at (which pipeline emits
-// which display), NOT on cross-pipeline preference — that (the default landing
-// view) is the backend's job now, served as `pipeline_outputs.default`.
-export function displayForPipeline(pipelineEntry, filter, preferred) {
-  if (tapExists(pipelineEntry, preferred, filter)) return preferred;
-  const tap = (pipelineEntry.taps || []).find((t) =>
-    t.outputs?.some((o) => String(o.filter) === String(filter) && o.exists));
-  return tap ? tap.display : preferred;
 }

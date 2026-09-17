@@ -1,44 +1,51 @@
 """The catalog: query the lazy product of everything AstroFlow can show.
 
-`(object × pipeline × tap × filter) → Product → path → exists?`, all pure reads
-over the pipeline registry, the trace, and disk. See `catalog.queries`.
+`(object × pipeline × tap × filter) → Product → path → status`, all pure reads
+over the pipeline registry, the trace, and disk (`catalog.queries`); and the
+user-facing view axis, finishes bound to those taps (`catalog.finishes`).
 """
 from products.product import Product, object_class, url_type_of
 from catalog.queries import (
-    products_for,
-    existing_for,
-    default_product_for,
-    default_pipeline_for,
     predict_path,
     master_path,
     product_taps,
-    viewable_path,
     resolve_product,
     viewable_from_master,
-    exists,
     pipelines_for,
     filters_for,
     resolve_entity,
-    default_display_for,
+)
+from catalog.finishes import (
+    BoundFinish,
+    BoundInput,
+    bind_finish,
+    resolve_finish,
+    finishes_for,
+    default_finish_for,
+    band_roles,
+    stars_inputs,
+    role_of,
 )
 
 __all__ = [
     "Product",
     "object_class",
     "url_type_of",
-    "products_for",
-    "existing_for",
-    "default_product_for",
-    "default_pipeline_for",
     "predict_path",
     "master_path",
     "product_taps",
-    "viewable_path",
     "resolve_product",
     "viewable_from_master",
-    "exists",
     "pipelines_for",
     "filters_for",
     "resolve_entity",
-    "default_display_for",
+    "BoundFinish",
+    "BoundInput",
+    "bind_finish",
+    "resolve_finish",
+    "finishes_for",
+    "default_finish_for",
+    "band_roles",
+    "stars_inputs",
+    "role_of",
 ]

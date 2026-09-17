@@ -197,6 +197,12 @@ def init_ray(worker_id):
     ray_temp_dir = tempfile.mkdtemp(prefix=f"ray-{worker_id}-", dir="/tmp")
     enable_test_mode(ray_temp_dir=ray_temp_dir)
     assert ray.is_initialized()
+    # Task workers run Ray's packaged copy of `working_dir` (no `.git`), so
+    # THEIR `deployed_code_version()` is "" — the driver keys trace and tap
+    # snapshots the same way, or every snapshot a worker files is unreadable
+    # from the test (the web routes then see no pipelines at all).
+    from state import code_version
+    code_version._deployed_version_cache = ""
     print(f"[init_ray READY pid={os.getpid()} t={time.time():.1f}]", flush=True)
 
     yield

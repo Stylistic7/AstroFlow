@@ -90,15 +90,14 @@ export function describeMove(axes, move) {
     }).join(' · ');
 }
 
-/** The 9 cell param objects for setGrid. Each carries the shared `base`
- * (normalise context: anchors/sigmas/trims/shadowClip/peakBrightness — same for
- * every cell) plus this cell's `finishParams`, packed in `order` (the finish's
- * param order = the served DisplayParams struct field order). Cell 4 = centre. */
-export function buildCellFinishParams(axes, order, center, base, moves) {
+/** The 9 cell param arrays for setGrid: this cell's knobs packed in `order`
+ * (the finish's param order = the served DisplayParams struct field order).
+ * Cell 4 = centre. */
+export function buildCellFinishParams(axes, order, center, moves) {
     const cells = [];
     for (let i = 0; i < 9; i++) {
         const knobs = i === 4 ? center : applyMove(axes, center, moves[i]);
-        cells.push({ ...base, finishParams: order.map((name) => knobs[name]) });
+        cells.push(order.map((name) => knobs[name]));
     }
     return cells;
 }

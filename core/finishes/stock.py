@@ -1,7 +1,11 @@
-"""The stock finishes — the five canonical looks, each a short per-pixel
-function over the linear scene formats. These are the reference for
-user-authored finishes (`~/AstroFlow/finishes/`): copy one, rename it,
-change the math.
+"""The stock finishes — the canonical looks, each a short per-pixel
+function over the linear scene formats, plus the CHANNEL finishes (H, S, O,
+R, G, B, L): one band of a tap, autostretched, RGB stars screened back in.
+These are the reference for user-authored finishes
+(`~/AstroFlow/finishes/`): copy one, rename it, change the math.
+
+Registration order is the default-view preference: the first finish that
+binds for an object is its landing view.
 
 Conventions that make the knobs pleasant:
   * stretch params named `blackpoint/whitepoint/midtones` (linked) or
@@ -16,6 +20,8 @@ Conventions that make the knobs pleasant:
   * Hα is band `.g` of the zero-filled S,H,O narrowband layout.
 """
 from __future__ import annotations
+
+import inspect
 
 from finishes.framework import Param, finish
 from finishes.stdlib import (
@@ -167,3 +173,58 @@ def halrgb(starless, stars, nb, lum,
     star_l = star_s * (stars.r + stars.g + stars.b) / 3.0
     la = _stretch(lum.r + star_l, blackpoint, whitepoint, lum_mid)
     return replace_lightness(c, la, chroma)
+
+
+# ── channel finishes ──────────────────────────────────────────────────────
+# One body serves every level: a mono tap (a stack's Post-Processed master,
+# a target's Channel) is broadcast to (r, r, r) by the viewer and the bake,
+# so `band` reads the same value whichever tap binds. Primaries are in
+# preference order; the catalog binds a per-filter tap to the entry whose
+# filter normalises to `role`. The trailing "Merged"/"Master" are the linear
+# taps BEFORE post-processing — the Subframe preview pipeline's only linear
+# tap, and the fallback while a Mosaic / Post-Processed is still building.
+_NARROWBAND = ("Linear SHO", "Linear Narrowband Starless", "Mosaic Starless",
+               "Post-Processed", "Channel", "Mosaic", "Merged", "Master")
+_BROADBAND = ("Linear RGB Starless", "Mosaic Starless",
+              "Post-Processed", "Channel", "Mosaic", "Merged", "Master")
+_LUM = ("Linear L Starless", "Mosaic Starless",
+        "Post-Processed", "Channel", "Mosaic", "Merged", "Master")
+
+
+def _channel(role: str, band: str, primaries: tuple, stars: str):
+    def body(c, st, **k):
+        x = _stretch(getattr(c, band), k["black" + role], k["white" + role],
+                     k["mid" + role])
+        return screen(vec3(x, x, x),
+                      _stars_layer(st, k["star_s"], k["star_mid"], k["star_white"]))
+
+    kw = inspect.Parameter.KEYWORD_ONLY
+    body.__name__ = role
+    body.__signature__ = inspect.Signature([
+        inspect.Parameter("c", inspect.Parameter.POSITIONAL_ONLY),
+        inspect.Parameter("st", inspect.Parameter.POSITIONAL_ONLY),
+        inspect.Parameter("black" + role, kw, default=Param(0.00496, 0.0, 0.05, step=0.03, label="black", scale="log")),
+        inspect.Parameter("white" + role, kw, default=Param(0.0089, 0.002, 1.0, step=0.03, label="white", scale="log")),
+        inspect.Parameter("mid" + role, kw, default=Param(0.088, 0.05, 0.95, step=0.015, label="mid", scale="log")),
+        inspect.Parameter("star_s", kw, default=Param(1.0, 0.0, 2.0, step=0.1, label="stars")),
+        inspect.Parameter("star_mid", kw, default=Param(0.25, 0.05, 0.95, step=0.03, label="star mid", scale="log")),
+        inspect.Parameter("star_white", kw, default=Param(0.0089, 0.001, 0.5, step=0.03, label="star white", scale="log")),
+    ])
+    return finish(name=role, inputs=(primaries[0], stars), alt_primaries=primaries[1:],
+                  optional=(stars,), role=role)(body)
+
+
+for _role, _band in (("H", "g"), ("S", "r"), ("O", "b")):
+    _channel(_role, _band, _NARROWBAND, "Linear RGB Stars")
+for _role, _band in (("R", "r"), ("G", "g"), ("B", "b")):
+    _channel(_role, _band, _BROADBAND, "Linear RGB Stars")
+_channel("L", "r", _LUM, "Linear L Stars")
+
+
+@finish(name="Master", inputs=("Master",), role="none")
+def master(c,
+           blackpoint=Param(0.00496, 0.0, 0.1, step=0.03, label="black", scale="log"),
+           whitepoint=Param(0.0089, 0.002, 1.0, step=0.03, label="white", scale="log"),
+           midtones=Param(0.088, 0.01, 0.95, step=0.015, label="mid", scale="log")):
+    """A filterless master (dark, bias): the autostretched integration."""
+    return _stretch(c, blackpoint, whitepoint, midtones)

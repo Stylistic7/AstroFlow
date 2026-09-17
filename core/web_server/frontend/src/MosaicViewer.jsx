@@ -1,17 +1,14 @@
 // MosaicViewer.jsx — the detail page for a single
-// (mosaic × implementation × quality × filter). The dashboard
-// (MosaicDashboard.jsx) is the entry point; this is what you see
-// after clicking a thumbnail.
-import React, { useCallback, useContext, useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+// (mosaic × pipeline × finish). The dashboard (MosaicDashboard.jsx) is
+// the entry point; this is what you see after clicking a thumbnail.
+import React, { useContext, useState } from "react";
+import { useParams } from "react-router-dom";
 
 import {
 	Box,
 	Divider,
 	IconButton,
-	MenuItem,
 	Paper,
-	Select,
 	Tab,
 	Tabs,
 	Tooltip,
@@ -29,24 +26,21 @@ import { AstroFlowImage } from "./AstroFlowImage.jsx";
 import TelescopiusDialog from "./TelescopiusDialog.jsx";
 import ToggleIconButton from "./ToggleIconButton";
 import HdrControls, { useHdrCapability } from "./HdrControls.jsx";
-import { STRETCH_MODES } from "./tile_viewer/TileViewerV2.jsx";
 import WorkflowGraph from "./WorkflowGraph.jsx";
 import ConcernsBadge from "./ConcernsBadge.jsx";
 import darkTheme from "./theme.js";
-import { useVersionsMatrix } from "./useVersions.js";
-import { buildUrl, buildApiUrl } from "./urls.js";
+import { useFinishes, useValidFinish } from "./useVersions.js";
 
 
 export default function MosaicViewer() {
     // Serves BOTH /mosaic/:mosaic_id/... and /target/:target_id/... view
-    // routes — a target's colour tail produces the same taps a mosaic's
+    // routes — a target's colour tail produces the same finishes a mosaic's
     // does, and every API here is keyed by (objectType, objectId). The
-    // mosaic-only chrome (outline, panel numbers, depth, Telescopius,
-    // open-in-PixInsight) is hidden on target pages.
-    const { mosaic_id, target_id, pipeline, display, filter } = useParams();
+    // mosaic-only chrome (outline, panel numbers, depth, Telescopius) is
+    // hidden on target pages.
+    const { mosaic_id, target_id, pipeline, finish } = useParams();
     const objectType = target_id ? "target" : "mosaic";
     const objectId = target_id ?? mosaic_id;
-    const navigate = useNavigate();
     const { stacks, targets, mosaics, computeGraphStatus } = useContext(AstroFlowContext);
 
 	const [tabIndex, setTabIndex] = useState(0);
@@ -60,56 +54,25 @@ export default function MosaicViewer() {
 	// that has the headroom; an SDR display still sees peak forced to 1.0.
 	const [hdrEnabled, setHdrEnabled] = useState(hdrCapable);
 	const [peakBrightness, setPeakBrightness] = useState(2.0);
-	const [stretchMode, setStretchMode] = useState('stf');
-	// True once the viewer reports the current tap is a baked-stretch
-	// color image (>=3 bands): its stretch is baked in, so HDR + stretch
-	// controls don't apply and are hidden.
-	const [isColor, setIsColor] = useState(false);
 
     const mosaic = mosaics?.[mosaic_id];
     const entity = target_id ? targets?.[target_id] : mosaic;
 
-    const versionsData = useVersionsMatrix(objectType, objectId, computeGraphStatus);
+    const hierarchy = [];
+    if (mosaic_id) hierarchy.push({ type: 'mosaic', id: mosaic_id });
+    if (target_id) hierarchy.push({ type: 'target', id: target_id });
 
-    // The URL might land on a (pipeline, display) combo this mosaic
-    // doesn't actually have — typically because the user switched
-    // pipelines on an older build of the breadcrumb (which used to
-    // carry the current display across pipelines blindly). Redirect
-    // to a valid (pipeline, display) for THIS pipeline so the page
-    // doesn't 404-loop on every tile-metadata fetch.
-    useEffect(() => {
-        if (!pipeline || !display) return;
-        const pipelines = versionsData?.pipelines || [];  // null until first fetch
-        if (pipelines.length === 0) return;
-        const current = pipelines.find((p) => p.name === pipeline);
-        if (!current) return;
-        const validDisplays = (current.taps || []).map((t) => t.display);
-        if (validDisplays.includes(display)) return;
-        const replacement = validDisplays[0];
-        if (!replacement) return;
-        navigate(buildUrl({
-            hierarchy: [{ type: objectType, id: objectId }],
-            view: { pipeline, display: replacement, filter },
-        }), { replace: true });
-    }, [pipeline, display, filter, objectType, objectId, versionsData, navigate]);
+    const finishes = useFinishes(objectType, objectId, computeGraphStatus);
+    useValidFinish(finishes, hierarchy, pipeline, finish);
+    // A single-channel finish is named by its filter role; composites have
+    // none. Concerns and the workflow graph are filed per role.
+    const role = finishes?.pipelines.find((p) => p.name === pipeline)
+        ?.finishes.find((f) => f.name === finish)?.role ?? null;
 
     const openInPixInsight = () => {
-        // A target opens ALL of its channel masters at once, each view named
-        // for its filter — that is the useful unit of work in PI, and it
-        // takes no display/filter because the masters live at one fixed tap
-        // ("Channel") regardless of which colour tap the page is showing.
-        if (target_id) {
-            fetch(`/api/open_target_masters/${target_id}/${encodeURIComponent(pipeline)}`,
-                  { method: 'POST' })
-                .then((r) => { if (!r.ok) console.warn("open_target_masters failed", r.status); })
-                .catch(console.error);
-            return;
-        }
-        // open_mosaic_master's hierarchy is just <mosaic_id> (not
-        // <type>/<id>), so spell out the prefix explicitly.
-        const tap = `${encodeURIComponent(pipeline)}/${encodeURIComponent(display)}/${encodeURIComponent(filter)}`;
-        fetch(`/api/open_mosaic_master/${mosaic_id}/${tap}`)
-            .then((r) => { if (!r.ok) console.warn("open_mosaic_master failed", r.status); })
+        fetch(`/api/open/${objectType}/${objectId}/${encodeURIComponent(pipeline)}/${encodeURIComponent(finish)}`,
+              { method: 'POST' })
+            .then((r) => { if (!r.ok) console.warn("open failed", r.status); })
             .catch(console.error);
     };
 
@@ -138,8 +101,8 @@ export default function MosaicViewer() {
 				mosaic={mosaic}
 			/>}
 
-			{/* Implementation / quality / filter switching is now handled
-			    by the pill crumbs in AstroFlowBreadcrumbs. */}
+			{/* Pipeline / finish switching is handled by the pill crumbs in
+			    AstroFlowBreadcrumbs. */}
 
 			{/* Control bar */}
 			<Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 2, py: 1 }}>
@@ -163,18 +126,9 @@ export default function MosaicViewer() {
 						handleChange={() => setShowDepth((v) => !v)}
 					/>
 				</>}
-				{/* HDR is NOT gated on band count. Peak brightness is a tone
-				    concern that applies to every colorspace — the generic
-				    finish shader ends in `rgb * globals.peakBrightness`, so an
-				    SHO + RGB-stars composite runs the same multiply a mono
-				    channel does. It used to sit inside `!isColor` alongside the
-				    MONO STRETCH controls (which genuinely don't apply to
-				    colour), which meant `hdrEnabled` stayed at its `false`
-				    default with no control able to flip it: peak was pinned to
-				    1.0 on exactly the deliverable the HDR path exists for.
-				    `HdrControls` already self-gates on real display capability
-				    (`if (!hdrCapable) return null`, a `(dynamic-range: high)`
-				    matchMedia), so that outer wrapper was redundant too. */}
+				{/* Peak brightness is the ONE global uniform: the finish shader
+				    ends in `rgb * globals.peakBrightness`, whatever the finish.
+				    `HdrControls` self-gates on real display capability. */}
 				<HdrControls
 					hdrCapable={hdrCapable}
 					hdrEnabled={hdrEnabled}
@@ -182,23 +136,6 @@ export default function MosaicViewer() {
 					peakBrightness={peakBrightness}
 					setPeakBrightness={setPeakBrightness}
 				/>
-				{!isColor && (<>
-					<Tooltip title="Stretch mode">
-						<Select
-							size="small"
-							value={stretchMode}
-							onChange={(e) => setStretchMode(e.target.value)}
-							sx={{
-								minWidth: 160,
-								'& .MuiSelect-select': { py: 0.5, fontSize: '0.85rem' },
-							}}
-						>
-							{Object.entries(STRETCH_MODES).map(([k, m]) => (
-								<MenuItem key={k} value={k}>{m.label}</MenuItem>
-							))}
-						</Select>
-					</Tooltip>
-				</>)}
 				{mosaic && <Tooltip title="Export to Telescopius">
 					<IconButton
 						size="small"
@@ -208,9 +145,7 @@ export default function MosaicViewer() {
 						<ShareIcon fontSize="small" />
 					</IconButton>
 				</Tooltip>}
-				<Tooltip title={target_id
-					? "Open all channel masters in PixInsight"
-					: "Open in PixInsight"}>
+				<Tooltip title="Open this finish's inputs in PixInsight">
 					<span>
 						<IconButton
 							size="small"
@@ -225,8 +160,7 @@ export default function MosaicViewer() {
 					objectType={objectType}
 					objectId={objectId}
 					pipeline={pipeline}
-					display={display}
-					filter={filter}
+					filter={role}
 				/>
 			</Box>
 
@@ -261,17 +195,13 @@ export default function MosaicViewer() {
 					<AstroFlowImage
 						objectType={objectType}
 						objectId={objectId}
-						filter={filter}
 						showPolygons={mosaic ? showOutline : false}
 						showPanelNumbers={mosaic ? showPanelNumbers : false}
 						showDepth={mosaic ? showDepth : false}
 						pipeline={pipeline}
-						display={display}
-						showQualitySelector={false}
+						finish={finish}
 						hdrEnabled={hdrEnabled}
 						peakBrightness={peakBrightness}
-						stretchMode={stretchMode}
-						onColorDetected={setIsColor}
 					/>
 				</Box>
 
@@ -290,7 +220,7 @@ export default function MosaicViewer() {
 						url={
 							`/api/workflow_graph/${objectType}/${objectId}`
 							+ `/${encodeURIComponent(pipeline)}`
-							+ (filter ? `/${encodeURIComponent(filter)}` : "")
+							+ (role ? `/${encodeURIComponent(role)}` : "")
 						}
 					/>
 				</Box>

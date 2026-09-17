@@ -82,6 +82,11 @@ class Finish:
     # Inputs that may be absent — the viewer binds black and the finish
     # degrades (no stars) instead of vanishing from the picker.
     optional: tuple = ()
+    # The filter ROLE this finish shows (a channel finish: "H", "S", …, or
+    # "none" for filterless masters); None for a composite, which binds its
+    # taps by name alone. The catalog binds a per-filter tap to the entry
+    # whose filter normalises to this role.
+    role: "str | None" = None
     graph: object = field(repr=False, default=None)   # root Node (tests/interp)
 
     def spec(self) -> dict:
@@ -92,6 +97,8 @@ class Finish:
             # black texture and the finish degrades (no stars), instead of
             # the whole look disappearing from the picker.
             "optional": list(self.optional),
+            "role": self.role,
+            "finish_hash": self.finish_hash,
             "params": [p.spec() for p in self.params],
             "wgsl": self.wgsl,
         }
@@ -106,7 +113,7 @@ class Finish:
         v = self.defaults()
         if values:
             v.update({k: values[k] for k in v if k in values})
-        wrapped = [NpVec(np.asarray(s, dtype=np.float32)) for s in sources]
+        wrapped = [NpVec(_broadcast(s)) for s in sources]
         out = self.fn(*wrapped, **{p.name: v[p.name] for p in self.params})
         arr = out.a if isinstance(out, NpVec) else np.asarray(out)
         return np.clip(arr, 0.0, 1.0).astype(np.float32)
@@ -117,9 +124,37 @@ class Finish:
         v = self.defaults()
         if values:
             v.update(values)
-        srcs = [np.asarray(s, dtype=np.float64) for s in sources]
+        srcs = [_broadcast(s).astype(np.float64) for s in sources]
         out = tracer.interpret(self.graph, srcs, v, NUMPY_CALLS)
         return np.clip(out, 0.0, 1.0).astype(np.float32)
+
+
+def _broadcast(s) -> np.ndarray:
+    """A mono source (…, 1) becomes (…, 3) — the same broadcast the shader
+    applies to a 1-band tile — so one finish body reads a mono tap and a
+    3-band join alike (`nb.g` is Hα in the join and the whole mono image)."""
+    a = np.asarray(s, dtype=np.float32)
+    if a.ndim >= 1 and a.shape[-1] == 1:
+        a = np.repeat(a, 3, axis=-1)
+    return a
+
+
+def _bands_read(root, n_inputs: int) -> dict:
+    """Which bands of each source the author's function reads: a direct
+    swizzle reads one band, any other use of the source reads all three."""
+    reads = {i: set() for i in range(n_inputs)}
+    stack, seen = [root], set()
+    while stack:
+        n = stack.pop()
+        if id(n) in seen:
+            continue
+        seen.add(id(n))
+        for a in n.args:
+            if a.op == "src":
+                reads[a.meta] |= {n.meta} if n.op == "swz" else {"r", "g", "b"}
+            else:
+                stack.append(a)
+    return reads
 
 
 def _trace(fn, name: str, inputs: tuple) -> "tuple[str, list, object]":
@@ -207,11 +242,13 @@ def _with_common_first_pass(fn, inputs: tuple, optional: tuple):
     """Compose the framework's common first pass in front of an author's
     finish, and trace the two as ONE function.
 
-    The common pass zeroes pixels that are missing any band of any REQUIRED
-    input. Those pixels have no honest colour: a palette maps the absent
-    channel to zero and renders the absence as a hue, which is why a
-    multi-filter target grows a blue/magenta rim exactly where its
-    per-filter masters disagree about coverage.
+    The common pass zeroes pixels that are missing any band the finish READS
+    of any REQUIRED input. Those pixels have no honest colour: a palette maps
+    the absent channel to zero and renders the absence as a hue, which is why
+    a multi-filter target grows a blue/magenta rim exactly where its
+    per-filter masters disagree about coverage. Only the bands the author's
+    function reads count (`_bands_read`): a channel finish over band g of a
+    zero-filled S,H,O join must not vanish because S is absent.
 
     Testing against exactly 0.0 is sound rather than a threshold guess —
     `place_image` interpolates with fill_value=0, so uncovered canvas is
@@ -233,16 +270,23 @@ def _with_common_first_pass(fn, inputs: tuple, optional: tuple):
 
     required = [i for i, tap in enumerate(inputs) if tap not in optional]
     sig = inspect.signature(fn)
+    reads: dict = {}   # filled once, at trace time; the bake reads the same
 
     def guarded(*srcs, **kwargs):
         trim = kwargs.pop(TRIM_RAGGED.name, TRIM_RAGGED.default)
         floor = kwargs.pop(TRIM_FLOOR.name, TRIM_FLOOR.default)
         out = fn(*srcs, **kwargs)
+        if tracer.tracing():
+            reads.update(_bands_read(out.node, len(inputs)))
         for i in required:
             if i >= len(srcs):
                 continue
             s = srcs[i]
-            covered = minimum(minimum(s.r, s.g), s.b) > floor
+            bands = [getattr(s, b) for b in sorted(reads.get(i) or ("b", "g", "r"))]
+            lo = bands[0]
+            for band in bands[1:]:
+                lo = minimum(lo, band)
+            covered = lo > floor
             # `out * 0.0` rather than a literal vec3: both operands of a
             # traced `select` must themselves be traced, and a vec3 of plain
             # floats is a numpy value the tracer refuses to mix in.
@@ -269,11 +313,13 @@ def _with_common_first_pass(fn, inputs: tuple, optional: tuple):
 
 
 def finish(name: str, inputs: tuple, alt_primaries: tuple = (),
-           optional: tuple = ()):
+           optional: tuple = (), role: "str | None" = None):
     """Register a display finish. `inputs` are tap display names, one per
-    positional argument; `inputs[0]` is the tap whose viewer page offers
-    this finish. `alt_primaries` registers copies with `inputs[0]` swapped
-    (e.g. a Hubble that also appears on partial-narrowband images)."""
+    positional argument; `inputs[0]` is the primary tap (it supplies the
+    tile geometry). `alt_primaries` registers copies with `inputs[0]`
+    swapped, in preference order (e.g. a Hubble that also serves
+    partial-narrowband images). `role` names the filter a channel finish
+    shows; the catalog binds per-filter taps by it."""
     def decorate(fn):
         from hashing.structural_hash import structural_source_hash
         # Validate BEFORE composing: an author's mistake should report against
@@ -293,14 +339,15 @@ def finish(name: str, inputs: tuple, alt_primaries: tuple = (),
         # so changing it invalidates every served spec exactly once.
         h = xxhash.xxh64(
             structural_source_hash(fn) + "|" + name + "|" + ",".join(inputs)
-            # common2: trim_floor added to the common pass (2026-09-03) —
-            # bumping the tag is what invalidates every served spec and
-            # cached preview exactly once when the shared pass changes.
-            + "|common2"
+            # common3: the trim tests only the bands the finish reads
+            # (2026-09-16) — bumping the tag is what invalidates every
+            # served spec and cached preview exactly once when the shared
+            # pass changes.
+            + "|common3"
         ).hexdigest()
         f = Finish(name=name, inputs=tuple(inputs), optional=tuple(optional),
                    params=params, wgsl=wgsl, fn=composed, finish_hash=h,
-                   graph=root)
+                   role=role, graph=root)
         from finishes.registry import register_finish
         register_finish(f)
         for alt in alt_primaries:
@@ -314,4 +361,4 @@ def replace_primary(f: Finish, primary: str) -> Finish:
     positional (src0..), so only the inputs list changes."""
     return Finish(name=f.name, inputs=(primary,) + f.inputs[1:],
                   optional=f.optional, params=f.params, wgsl=f.wgsl, fn=f.fn,
-                  finish_hash=f.finish_hash, graph=f.graph)
+                  finish_hash=f.finish_hash, role=f.role, graph=f.graph)

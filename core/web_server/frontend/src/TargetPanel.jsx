@@ -10,8 +10,8 @@ import QuarantineToggle from "./QuarantineToggle.jsx";
 import ShoppingCartMenu from "./ShoppingCartMenu.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
 import { PipelineSection } from './MosaicDashboard.jsx';
-import { useVersionsMatrix } from './useVersions.js';
-import { buildUrl, inheritView } from './urls.js';
+import { useFinishes } from './useVersions.js';
+import { buildUrl } from './urls.js';
 
 
 export default function TargetPanel() {
@@ -25,30 +25,20 @@ export default function TargetPanel() {
 	if (params.mosaic_id) hierarchy.push({ type: 'mosaic', id: params.mosaic_id });
 	hierarchy.push({ type: 'target', id: params.target_id });
 
-	const view = (params.pipeline && params.display && params.filter)
-		? { pipeline: params.pipeline, display: params.display, filter: params.filter }
-		: null;
-
-	// Pipeline output sections — same per-pipeline tap matrix the mosaic
+	// Pipeline output sections — same per-pipeline finish list the mosaic
 	// dashboard shows. Empty (no sections) for a target no pipeline has
-	// produced taps for.
-	const pipelineOutputs = useVersionsMatrix(
-		"target", params.target_id, computeGraphStatus);
-	const pipelines = (pipelineOutputs?.pipelines || [])
-		.filter((p) => (p.taps || []).length > 0);
+	// produced finishes for.
+	const finishes = useFinishes("target", params.target_id, computeGraphStatus);
+	const pipelines = (finishes?.pipelines || [])
+		.filter((p) => p.finishes.length > 0);
 
 	// No page-level hero here either: each PipelineSection renders its own
 	// canonical preview, deep-linked into that pipeline's viewer.
 
-	// When a view is picked, drilldown URLs propagate it (stack defaults
-	// for display via inheritView); without a view, links degrade to the
-	// hierarchy-only URL so the stack page can pick its own defaults.
-	const handleStackClick = (stack_id) => (event) => {
-		const childHierarchy = [...hierarchy, { type: 'stack', id: stack_id }];
-		const url = view
-			? buildUrl({ hierarchy: childHierarchy, view: inheritView(view, 'stack') })
-			: buildUrl({ hierarchy: childHierarchy });
-		window.open(url, '_blank');
+	// Drilldown links are hierarchy-only: the stack page picks its own
+	// default view.
+	const handleStackClick = (stack_id) => () => {
+		window.open(buildUrl({ hierarchy: [...hierarchy, { type: 'stack', id: stack_id }] }), '_blank');
 	};
 
 	return (

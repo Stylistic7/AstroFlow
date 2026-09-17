@@ -3,61 +3,49 @@ import TileViewer from "./tile_viewer/TileViewerV2.jsx";
 
 /**
  * Thin wrapper around TileViewer (full-size) or a thumbnail <img>
- * (small-size). Caller controls which tap point is shown via
- * (pipeline, display) — passed straight through to TileViewer's URL
- * construction. For the `size="small"` thumbnail variant, no
- * (pipeline, display) is needed: a default-display thumbnail per
- * object type is fine.
+ * (any other `size`). The caller picks the full-size view via
+ * (pipeline, finish) — passed straight through to TileViewer's URL
+ * construction. The thumbnail variant needs no view: it is the object's
+ * own per-type thumbnail.
  */
 export const AstroFlowImage = ({
     objectType,
     objectId,
-    filter = undefined,
     showPolygons = false,
     showPanelNumbers = false,
     showDepth = false,
     size = "full",
     pipeline = undefined,
-    display = undefined,
+    finish = undefined,
     hdrEnabled = false,
     peakBrightness = 1.0,
-    stretchMode = 'stf',
-    onColorDetected = undefined,
-}) => {
-    const thumbnail_url = `/thumbnail/${objectType}/${objectId}${filter ? `/${filter}` : ''}`;
-
-    return (
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-            <div style={{ flexGrow: 1, position: 'relative', overflow: 'hidden' }}>
-                {size === "full" ? (
-                    // Key intentionally omits the view triple
-                    // (pipeline/display/filter). Changing tap shouldn't
-                    // tear down the PIXI canvas — TileViewer handles
-                    // the swap internally and preserves zoom/pan across
-                    // the viewport re-create.
-                    <TileViewer
-                        key={`${objectType}:${objectId}`}
-                        objectType={objectType}
-                        imageHash={objectId}
-                        filter={filter}
-                        pipeline={pipeline}
-                        display={display}
-                        showPolygons={showPolygons}
-                        showPanelNumbers={showPanelNumbers}
-                        showDepth={showDepth}
-                        hdrEnabled={hdrEnabled}
-                        peakBrightness={peakBrightness}
-                        stretchMode={stretchMode}
-                        onColorDetected={onColorDetected}
-                    />
-                ) : (
-                    <img
-                        src={thumbnail_url}
-                        alt={`${objectType} ${objectId}`}
-                        style={{ width: "100%", height: "auto" }}
-                    />
-                )}
-            </div>
+}) => (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <div style={{ flexGrow: 1, position: 'relative', overflow: 'hidden' }}>
+            {size === "full" ? (
+                // Key intentionally omits the view (pipeline/finish).
+                // Changing finish shouldn't tear down the canvas —
+                // TileViewer handles the swap internally and preserves
+                // zoom/pan.
+                <TileViewer
+                    key={`${objectType}:${objectId}`}
+                    objectType={objectType}
+                    imageHash={objectId}
+                    pipeline={pipeline}
+                    finish={finish}
+                    showPolygons={showPolygons}
+                    showPanelNumbers={showPanelNumbers}
+                    showDepth={showDepth}
+                    hdrEnabled={hdrEnabled}
+                    peakBrightness={peakBrightness}
+                />
+            ) : (
+                <img
+                    src={`/thumbnail/${objectType}/${objectId}`}
+                    alt={`${objectType} ${objectId}`}
+                    style={{ width: "100%", height: "auto" }}
+                />
+            )}
         </div>
-    );
-};
+    </div>
+);

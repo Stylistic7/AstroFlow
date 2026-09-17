@@ -16,6 +16,7 @@ from dependency_graph import Graph
 from decisions.settings import ProcessingConfig
 from context import context
 import structlog
+from pix.tasks.filters import normalize_filter
 
 log = structlog.get_logger()
 
@@ -70,6 +71,10 @@ def prepare_stack_for_ui(
             stack.camera_id_hash[:8] if stack.camera_id_hash else None
         ),
         "filter": stack.filter,
+        # The filter's ROLE (H, S, O, R, G, B, L, or "none") — the name of
+        # the channel finish that shows this stack; sibling stacks of a
+        # target are switched between by it.
+        "role": normalize_filter(stack.filter) or "none",
         "exposure": stack.exposure,
         # `integration` is the *effective* (post-subframe-selection)
         # signal — what the viewer's exposure clock should reflect.

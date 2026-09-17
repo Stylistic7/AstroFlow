@@ -146,12 +146,14 @@ def _load_mono_vips(meta: ImageMetadata) -> pyvips.Image:
 
 
 def _save_color_vips(path: str, img: pyvips.Image, name: str,
-                     bands: "tuple | None" = None) -> None:
+                     bands: "tuple | None" = None, layer: str | None = None) -> None:
     """Stream a float RGB vips image to a tiled BigTIFF deliverable (atomic
     tmp+rename), tagging the palette name / pipeline in the TIFF description
     (the same JSON `read_tiff_header` expects). `bands` (scene formats only)
     records which REAL filters occupy the S,H,O band slots — zero-filled
-    absences are indistinguishable from data without it."""
+    absences are indistinguishable from data without it. `layer` stamps the
+    LAYER tag ("starless" | "stars"): a finish's stars inputs are recognised
+    by it, never by name."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     # Force scRGB: the bandjoined float palette otherwise inherits a `b-w`
     # (grayscale) interpretation, so tiffsave writes a MINISBLACK photometric and
@@ -162,6 +164,8 @@ def _save_color_vips(path: str, img: pyvips.Image, name: str,
     desc = {"PALETTE": name, "PIPELINE": "AstroFlow-OSS"}
     if bands is not None:
         desc["BANDS"] = list(bands)
+    if layer is not None:
+        desc["LAYER"] = layer
     img.set_type(pyvips.GValue.gstr_type, "image-description",
                  json.dumps(desc))
     tmp = f"{path}.{os.getpid()}.tmp.tiff"
@@ -331,16 +335,16 @@ def linear_rgb_stars(
     Overwhelmingly zeros, so the deflate tap costs almost nothing; live
     finishes use it for star intensity (`starless + s·stars`)."""
     out = linear_rgb_stars.filename_fn(mosaic, r, g, b)
-    _save_color_vips(out, _rgb_join(r, g, b), "Linear RGB Stars")
+    _save_color_vips(out, _rgb_join(r, g, b), "Linear RGB Stars", layer="stars")
     return WithSidecar(TiffFilePath(out))
 
 
 # ---- named color deliverables (display=name, filter=None, final=True) ----
 
-# The display= of the linear-SHO viewer source. Kept as a constant because the
-# tile server keys `colorspace="linear-sho"` on this exact display name (see
-# web_server/backend/tiles.py LINEAR_FINISH_DISPLAYS) so the WebGPU shader knows
-# to run the live colour finish instead of passing the tile through as baked RGB.
+# The display= of the linear-SHO scene format. The payload's COLORSPC tag
+# ("linear-sho", stamped below) is what tells the viewer this 3-band tile is
+# S,H,O for a live colour finish rather than baked RGB; the name is the
+# tap the Hubble/Foraxx/H/S/O finishes declare as their primary.
 LINEAR_SHO_DISPLAY = "Linear SHO"
 
 

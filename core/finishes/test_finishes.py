@@ -19,7 +19,9 @@ def _srcs(n, seed=7, scale=0.05, size=16):
             for _ in range(n)]
 
 
-STOCK = [("RGB", 2), ("LRGB", 4), ("HaLRGB", 4), ("Hubble", 2), ("Foraxx", 2)]
+STOCK = [("RGB", 2), ("LRGB", 4), ("HaLRGB", 4), ("Hubble", 2), ("Foraxx", 2),
+         ("H", 2), ("S", 2), ("O", 2), ("R", 2), ("G", 2), ("B", 2), ("L", 2),
+         ("Master", 1)]
 
 
 class TestParity:
@@ -82,7 +84,8 @@ class TestWgslStructure:
 
     def test_specs_serve_the_contract(self):
         for s in finish_specs():
-            assert set(s) == {"name", "inputs", "optional", "params", "wgsl"}
+            assert set(s) == {"name", "inputs", "optional", "params", "wgsl",
+                              "role", "finish_hash"}
             assert set(s["optional"]) <= set(s["inputs"])
             for p in s["params"]:
                 assert {"name", "default", "lo", "hi", "step", "label",
@@ -299,3 +302,68 @@ class TestCommonFirstPass:
         assert seeded[3].max() > 0
         legacy = f.bake([nb, stars], {"trim_ragged": 1.0})[0]
         assert legacy[1].max() > 0, "default floor 0.0 = historical behavior"
+
+
+class TestChannelFinishes:
+    """The degenerate finishes — one band of a tap, autostretched, stars
+    screened back in — named by filter ROLE, one body per role serving a
+    3-band join and a mono tap alike."""
+
+    def test_every_role_is_registered_for_its_family(self):
+        from finishes.registry import all_finishes
+        prim = {}
+        for f in all_finishes():
+            if f.role is not None:
+                prim.setdefault(f.name, []).append(f.inputs[0])
+        for role in "HSO":
+            assert prim[role][:2] == ["Linear SHO", "Linear Narrowband Starless"]
+            assert "Post-Processed" in prim[role] and "Master" in prim[role]
+        for role in "RGB":
+            assert prim[role][0] == "Linear RGB Starless"
+        assert prim["L"][0] == "Linear L Starless"
+        assert prim["Master"] == ["Master"]
+        for f in all_finishes():
+            assert (f.role is None) == (f.name in {"Hubble", "Foraxx", "RGB", "LRGB", "HaLRGB"})
+
+    def test_h_reads_band_g_of_the_join_and_the_whole_mono_tap(self):
+        """`nb.g` is Hα in the S,H,O layout; a 1-band source is broadcast so
+        the same body shows a stack's Post-Processed master."""
+        f = get_finish("H", primary="Linear SHO")
+        rng = np.random.default_rng(5)
+        sho = (rng.random((8, 8, 3)) * 0.05).astype(np.float32)
+        mono = sho[..., 1:2].copy()
+        stars = np.zeros((8, 8, 3), np.float32)
+        a = f.bake([sho, stars]); b = f.bake([mono, stars])
+        assert np.allclose(a, b) and np.allclose(a[..., 0], a[..., 1])
+        assert np.abs(f.bake([sho, stars]) - f.interpret([sho, stars])).max() < 1e-5
+        # a different band changes nothing for H …
+        sho2 = sho.copy(); sho2[..., 0] *= 3.0
+        assert np.allclose(f.bake([sho2, stars]), a)
+        # … and everything for S
+        assert not np.allclose(get_finish("S").bake([sho2, stars]), get_finish("S").bake([sho, stars]))
+
+    def test_trim_tests_only_the_bands_the_finish_reads(self):
+        """A zero-filled S band (a partial narrowband set) must not blank the
+        H view; Hubble, which reads all three, still trims it."""
+        h, hub = get_finish("H", primary="Linear SHO"), get_finish("Hubble", primary="Linear SHO")
+        nb = np.array([[[0.0, 0.03, 0.02], [0.02, 0.03, 0.02], [0.02, 0.0, 0.02], [0.02, 0.03, 0.02]]], np.float32)
+        stars = np.zeros_like(nb)
+        out_h = h.bake([nb, stars], {"trim_ragged": 1.0})[0]
+        assert out_h[0].max() > 0 and np.all(out_h[2] == 0)
+        out_hub = hub.bake([nb, stars], {"trim_ragged": 1.0})[0]
+        assert np.all(out_hub[0] == 0) and np.all(out_hub[2] == 0) and out_hub[1].max() > 0
+
+    def test_stars_are_optional_and_screened(self):
+        f = get_finish("R")
+        rgb = np.full((4, 4, 3), 0.006, np.float32)   # between the default black and white
+        no_stars = f.bake([rgb, np.zeros_like(rgb)])
+        with_stars = f.bake([rgb, np.full_like(rgb, 0.01)], {"star_s": 1.0})
+        assert "Linear RGB Stars" in f.optional
+        assert np.all(with_stars >= no_stars) and with_stars.max() > no_stars.max()
+
+    def test_master_finish_is_role_none(self):
+        f = get_finish("Master")
+        assert f.role == "none" and f.inputs == ("Master",)
+        mono = np.full((4, 4, 1), 0.01, np.float32)
+        out = f.bake([mono])
+        assert out.shape == (4, 4, 3) and np.allclose(out[..., 0], out[..., 2])

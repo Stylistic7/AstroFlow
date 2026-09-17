@@ -62,6 +62,10 @@ def end_trace() -> None:
     _active = None
 
 
+def tracing() -> bool:
+    return _active is not None
+
+
 def active_trace() -> Trace:
     if _active is None:
         raise FinishTraceError(

@@ -1,11 +1,11 @@
 """Composite-derived channelStats (2026-09-03).
 
-The viewer's autostretch seeds must describe the ORIGINAL image — the
-starless layer plus its stars sibling — so the stretch never changes
-character with the layer viewed. These tests pin the stats layer that
-feeds `finish_seed.js`: composite pooling (scalar sibling and per-band
-list forms) and the sky-subset stats that anchor the neutral-gray
-background rendering.
+The viewer's autostretch seeds must describe the picture the finish
+screens the stars into — the starless primary plus the finish's STARS
+inputs — so the stretch never changes character with the layer viewed.
+These tests pin the stats layer that feeds `finish_seed.js`: composite
+pooling (a 3-band stars layer band by band, and its band mean into a mono
+primary) and the sky-subset stats that anchor the neutral-gray background.
 """
 import numpy as np
 import pyvips
@@ -43,7 +43,7 @@ def layers(tmp_path):
 def test_composite_stats_are_star_anchored(layers):
     sl_path, st_path = layers
     plain = _per_channel_linear_stats_uncached(sl_path)
-    comp = _per_channel_linear_stats_uncached(sl_path, star_paths=st_path)
+    comp = _per_channel_linear_stats_uncached(sl_path, star_paths=[st_path])
     for b in range(3):
         # stars raise the bright anchors — the whole point: the seeds see
         # the original image's dynamic range, not the starless layer's.
@@ -53,13 +53,14 @@ def test_composite_stats_are_star_anchored(layers):
         assert abs(comp[b]["skyMedian"] - PED) < 5e-5
 
 
-def test_per_band_star_paths(layers):
+def test_three_band_stars_into_a_mono_primary_use_the_band_mean(layers, tmp_path):
     sl_path, st_path = layers
-    comp = _per_channel_linear_stats_uncached(
-        sl_path, star_paths=[st_path, None, None])
-    assert comp[0]["p999"] > comp[1]["p999"] * 2, \
-        "only band 0 got its stars layer"
-    assert abs(comp[1]["skyMedian"] - PED) < 5e-5
+    mono = np.full((256, 320, 1), PED, np.float32)
+    mono_path = _write(tmp_path, "mono", mono)
+    plain = _per_channel_linear_stats_uncached(mono_path)
+    comp = _per_channel_linear_stats_uncached(mono_path, star_paths=[st_path])
+    assert len(comp) == 1 and comp[0]["p999"] > plain[0]["p999"] * 2
+    assert abs(comp[0]["skyMedian"] - PED) < 5e-5
 
 
 def test_sky_stats_exclude_the_signal(layers):
@@ -75,6 +76,6 @@ def test_missing_star_file_degrades_to_primary_stats(layers, tmp_path):
     sl_path, _ = layers
     plain = _per_channel_linear_stats_uncached(sl_path)
     degraded = _per_channel_linear_stats_uncached(
-        sl_path, star_paths=str(tmp_path / "nope.tiff"))
+        sl_path, star_paths=[str(tmp_path / "nope.tiff")])
     for b in range(3):
         assert degraded[b]["p99"] == plain[b]["p99"]

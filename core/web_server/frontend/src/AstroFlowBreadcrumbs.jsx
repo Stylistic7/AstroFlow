@@ -11,7 +11,6 @@ import SquareFootIcon from '@mui/icons-material/SquareFoot';
 import AutoAwesomeMosaicIcon from '@mui/icons-material/AutoAwesomeMosaic';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
-import PhotoIcon from '@mui/icons-material/Photo';
 import ColorLensIcon from '@mui/icons-material/ColorLens';
 import Link from '@mui/material/Link';
 import PanoramaHorizontalIcon from '@mui/icons-material/PanoramaHorizontal';
@@ -22,8 +21,7 @@ import Chevron from './Chevron.jsx';
 import QuarantineToggle from './QuarantineToggle.jsx';
 import ShoppingCartMenu from './ShoppingCartMenu.jsx';
 import SuggestionBadge from './suggestions/SuggestionBadge.jsx';
-import { useVersionsMatrix } from './useVersions.js';
-import { defaultDisplayFor } from './urls.js';
+import { useFinishes } from './useVersions.js';
 import { filterLabel } from './filters.js';
 
 function capitalizeFirst(str) {
@@ -35,8 +33,8 @@ function capitalizeFirst(str) {
  *
  * Renders an icon + the currently-active value + a chevron. Clicking
  * the chip opens an MUI Menu listing all options; unavailable ones
- * (no version on disk) are dimmed and disabled. Keeps the breadcrumb
- * compact even when there are many options (filters can have 7+).
+ * (not built yet) are dimmed and disabled. Keeps the breadcrumb
+ * compact even when there are many options.
  */
 function PillCrumb({ icon, options, active, exists, onPick, fontColor, activeColor, formatOption }) {
     const [open, setOpen] = useState(false);
@@ -112,7 +110,7 @@ export default function AstroFlowBreadcrumbs() {
     const navigate = useNavigate();
     const theme = useTheme();
 
-    const { pipeline, display, filter } = params;
+    const { pipeline, finish } = params;
 
     const mosaic = mosaics[params.mosaic_id];
     const target = targets[params.target_id];
@@ -123,8 +121,8 @@ export default function AstroFlowBreadcrumbs() {
     const fontColor = "#aaa";
 
     // Breadcrumb-link URLs intentionally drop the viewer's trailing
-    // (implementation, quality, filter) segments — those describe
-    // image-viewer state and shouldn't ride along into deeper crumbs.
+    // (pipeline, finish) segments — those describe image-viewer state
+    // and shouldn't ride along into deeper crumbs.
     let mosaic_url = "";
     let target_url = "";
     let stack_url = "";
@@ -149,9 +147,10 @@ export default function AstroFlowBreadcrumbs() {
     }
 
     // The DEEPEST object the URL names is the one being viewed, and its
-    // matrix drives the pill crumbs: a calibration stack under a stack, a
-    // stack under a target, a target under a mosaic, the mosaic itself.
-    // Every one of them renders an image and resolves by its own (type, id).
+    // finish list drives the pill crumbs: a calibration stack under a
+    // stack, a stack under a target, a target under a mosaic, the mosaic
+    // itself. Every one of them renders an image and resolves by its own
+    // (type, id).
     let viewerObjectType = null;
     let viewerObjectId = null;
     let viewerPathPrefix = "";
@@ -172,99 +171,52 @@ export default function AstroFlowBreadcrumbs() {
         viewerObjectId = params.mosaic_id;
         viewerPathPrefix = mosaic_url;
     }
-    // Per [[project_url_grammar]] every tap-keyed URL carries the
-    // full view triple (pipeline / display / filter). Stack URLs
-    // include `:filter` even though it's redundant with `stack.filter`.
-    const viewerHasFilter = viewerObjectType !== null;
 
-    const versionsData = useVersionsMatrix(
+    const finishesData = useFinishes(
         viewerObjectType, viewerObjectId, computeGraphStatus,
-    ) || { filters: [], pipelines: [] };  // null until the first fetch lands
+    ) || { pipelines: [] };  // null until the first fetch lands
     // The pipeline pill offers what this OBJECT has: the pipelines whose
-    // trace produced a tap for it (the same matrix the tap pill and the
+    // trace produced a finish for it (the same list the finish pill and the
     // viewer read), not the registry of everything the cart could queue.
-    const implementations = versionsData.pipelines.map((p) => p.name);
-    const filters = versionsData.filters || [];
+    const implementations = finishesData.pipelines.map((p) => p.name);
 
-    // Displays the current pipeline emits (the tap-point labels:
-    // "Mosaic", "Channel", "Post-Processed", "Subframe", ...). One
-    // pipeline can produce several taps, so the user picks which to
-    // view.
-    const currentPipelineData = versionsData.pipelines.find(
+    // Finishes the current pipeline lists, in preference order. One that is
+    // traced but not built yet (`absent`) stays in the menu, dimmed.
+    const currentFinishes = finishesData.pipelines.find(
         (p) => p.name === pipeline,
-    );
-    const displays = (currentPipelineData?.taps || []).map((t) => t.display);
+    )?.finishes || [];
+    const finishNames = currentFinishes.map((f) => f.name);
+    // On a stack page under a target the pill also offers the SIBLING
+    // stacks' roles: each stack has exactly one filter, so picking another
+    // channel means navigating to a different stack_id.
+    const siblingRoles = viewerObjectType === "stack" && target
+        ? target.stack_ids.map((sid) => stacks[sid]?.role).filter(Boolean)
+        : [];
+    const finishOptions = [...new Set([...finishNames, ...siblingRoles])];
+    const finishExists = (f) =>
+        currentFinishes.find((x) => x.name === f)?.status !== 'absent';
 
-    // URLs are pipeline+display-keyed: /<obj>/<id>/<pipeline>/<display>[/<filter>].
-    // The pill-cycle callers pass the next pipeline name; we pick a
-    // display that THAT pipeline actually emits. Carrying the current
-    // display across pipelines lets you land on combos like
-    // (PixInsight Downscaled, Subframe) which never produce a file —
-    // the dashboard's tap-keyed URL then 404s.
-    //
-    // Selection order: keep current `display` IF the new pipeline
-    // emits it; else fall back to the new pipeline's first tap; else
-    // the per-type default.
-    const goToPipeline = (nextPipeline, f) => {
-        const nextPipelineData = versionsData.pipelines.find(
-            (p) => p.name === nextPipeline,
-        );
-        const validDisplays = (nextPipelineData?.taps || []).map((t) => t.display);
-        const d = (display && validDisplays.includes(display)) ? display
-            : (validDisplays[0] || defaultDisplayFor(viewerObjectType));
-        const segs = [
-            viewerPathPrefix,
-            encodeURIComponent(nextPipeline),
-            encodeURIComponent(d),
-        ];
-        if (viewerHasFilter && f) segs.push(encodeURIComponent(f));
-        navigate(segs.filter(Boolean).join("/"));
+    // Keep the current finish IF the new pipeline lists it; else land on
+    // that pipeline's first (preferred) finish, so a pipeline switch never
+    // names a finish the target pipeline never built.
+    const goToPipeline = (nextPipeline) => {
+        const next = finishesData.pipelines.find((p) => p.name === nextPipeline);
+        const names = (next?.finishes || []).map((f) => f.name);
+        const f = names.includes(finish) ? finish : names[0];
+        if (!f) return;
+        navigate(`${viewerPathPrefix}/${encodeURIComponent(nextPipeline)}/${encodeURIComponent(f)}`);
     };
-    const goToFilter = (f) => {
-        if (!pipeline) return;
-        const d = display || defaultDisplayFor(viewerObjectType);
-        // On a stack page, switching filter means showing a sibling
-        // stack — each stack has exactly one filter, so we have to
-        // navigate to a different stack_id. Resolve via target.stack_ids
-        // when target context exists; otherwise fall through to the
-        // generic URL build (which won't actually switch filter, but
-        // at least won't 404).
-        if (
-            viewerObjectType === "stack"
-            && params.target_id
-            && stack
-            && f !== stack.filter
-        ) {
-            const t = targets[params.target_id];
-            const siblingId = t?.stack_ids?.find(
-                (sid) => stacks?.[sid]?.filter === f,
-            );
-            if (siblingId) {
-                const prefix = params.mosaic_id
-                    ? `/mosaic/${params.mosaic_id}/target/${params.target_id}/stack/${siblingId}`
-                    : `/target/${params.target_id}/stack/${siblingId}`;
-                navigate(
-                    `${prefix}/${encodeURIComponent(pipeline)}/${encodeURIComponent(d)}/${f}`,
-                );
-                return;
-            }
+    const goToFinish = (f) => {
+        if (finishNames.includes(f)) {
+            navigate(`${viewerPathPrefix}/${encodeURIComponent(pipeline)}/${encodeURIComponent(f)}`);
+            return;
         }
-        navigate(
-            `${viewerPathPrefix}/${encodeURIComponent(pipeline)}/${encodeURIComponent(d)}/${f}`,
-        );
-    };
-    const goToDisplay = (nextDisplay) => {
-        if (!pipeline) return;
-        const segs = [
-            viewerPathPrefix,
-            encodeURIComponent(pipeline),
-            encodeURIComponent(nextDisplay),
-        ];
-        // Filter is always part of the view triple in the URL grammar,
-        // even on stack pages where it's intrinsic. Without it we lose
-        // the filter context and React Router can't match the route.
-        if (viewerHasFilter && filter) segs.push(encodeURIComponent(filter));
-        navigate(segs.filter(Boolean).join("/"));
+        const siblingId = target?.stack_ids?.find((sid) => stacks[sid]?.role === f);
+        if (!siblingId) return;
+        const prefix = params.mosaic_id
+            ? `/mosaic/${params.mosaic_id}/target/${params.target_id}/stack/${siblingId}`
+            : `/target/${params.target_id}/stack/${siblingId}`;
+        navigate(`${prefix}/${encodeURIComponent(pipeline)}/${encodeURIComponent(f)}`);
     };
 
     // Determine the deepest (most specific) object for the quarantine toggle.
@@ -391,46 +343,30 @@ export default function AstroFlowBreadcrumbs() {
                     <SquareFootIcon sx={{ marginRight: '0.5em' }} />
                     {capitalizeFirst(calStack.image_type)} calibration stack
                 </Link>}
-                {/* Pipeline pill — URL is pipeline-keyed; the pill
-                    just switches which pipeline's tap is displayed
-                    (carrying the current display label across, falling
-                    back to a sensible default for the object type if
-                    none was set). */}
+                {/* Pipeline pill — switches which pipeline's finish is
+                    displayed, carrying the current finish across when the
+                    next pipeline lists it. */}
                 {pipeline && (
                     <PillCrumb
                         icon={<AccountTreeIcon sx={{ marginRight: '0.5em' }} />}
                         options={implementations}
                         active={pipeline}
                         exists={() => true}
-                        onPick={(p) => goToPipeline(p, filter)}
+                        onPick={goToPipeline}
                         fontColor={fontColor}
                         activeColor={theme.palette.text.primary}
                     />
                 )}
-                {/* Display (tap-point) pill — selects which of the
-                    current pipeline's emitted taps ("Mosaic",
-                    "Channel", "Post-Processed", "Subframe", ...) the
-                    viewer renders. Always rendered when `display` is
-                    in the URL so the breadcrumbs mirror the URL's view
-                    triple, even when there's only one option. */}
-                {display && (
-                    <PillCrumb
-                        icon={<PhotoIcon sx={{ marginRight: '0.5em' }} />}
-                        options={displays}
-                        active={display}
-                        exists={() => true}
-                        onPick={goToDisplay}
-                        fontColor={fontColor}
-                        activeColor={theme.palette.text.primary}
-                    />
-                )}
-                {filter && filters.length > 0 && (
+                {/* Finish pill — the display recipe the viewer composes
+                    live. Single-channel finishes are named by filter role
+                    and labelled like filters; composites show as-is. */}
+                {finish && (
                     <PillCrumb
                         icon={<ColorLensIcon sx={{ marginRight: '0.5em' }} />}
-                        options={filters}
-                        active={filter}
-                        exists={() => true}
-                        onPick={goToFilter}
+                        options={finishOptions}
+                        active={finish}
+                        exists={finishExists}
+                        onPick={goToFinish}
                         fontColor={fontColor}
                         activeColor={theme.palette.text.primary}
                         formatOption={filterLabel}

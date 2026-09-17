@@ -1,18 +1,19 @@
-"""Canonical tap-keyed route helper. Every URL that addresses a
-`(pipeline, display, filter)` tap on an object must use this — see
+"""Canonical finish-keyed route helper. Every URL that addresses a
+`(pipeline, finish)` view of an object must use this — see
 `[[project_url_grammar]]`."""
 
 
-def tap_route(blueprint, prefix: str, *, hierarchy: tuple[str, ...], suffix: str = ""):
-    """`suffix` lets a tap-keyed route address sub-resources of the tap
-    (e.g. a tile pyramid's `/<z>/<x>/<y>.png`) while keeping the view
-    triple in its canonical global→local position."""
+def finish_route(blueprint, prefix: str, *, hierarchy: tuple[str, ...],
+                 suffix: str = "", methods=None):
+    """`suffix` lets a view route address sub-resources of the view (a tile
+    pyramid's `/<i>/<z>/<x>/<y>.f32`) while keeping the view pair in its
+    canonical global→local position."""
     pattern = (
         f"{prefix}/"
         + "/".join(f"<{h}>" for h in hierarchy)
-        + "/<pipeline>/<display>/<filter>"
+        + "/<pipeline>/<finish>"
         + suffix
     )
     def decorator(fn):
-        return blueprint.route(pattern)(fn)
+        return blueprint.route(pattern, methods=methods)(fn)
     return decorator

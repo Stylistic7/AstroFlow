@@ -9,7 +9,7 @@ from flask import Blueprint, abort, request
 from context import local_context as context
 from decisions.resolve import resolve_calibration
 from products.registry import _make_thumbnail, producers_for
-from web_server.backend._route import tap_route
+from web_server.backend._route import finish_route
 
 thumbnails_bp = Blueprint("thumbnails", __name__)
 
@@ -170,23 +170,24 @@ def _is_pyramidal(path) -> bool:
 
 
 def _catalog_thumbnail(entity, args: tuple, extra_args: tuple):
-    """Thumbnail via the CATALOG — tap snapshots + version-log last-good —
-    the app's own answer to "what file shows this object right now".
+    """Thumbnail via the CATALOG — the object's default FINISH, baked from
+    tap snapshots + version-log last-good — the app's own answer to "what
+    shows this object right now".
 
     This is the primary source. Producer `filename_fn`s became call-hash
     based, so they need the op's FULL arguments — `stack_files(stack,
     config, *cal_masters)` — and a bare `/thumbnail/stack/<id>` URL cannot
     supply them: every file-backed producer silently skipped and Stack
-    thumbnails 404'd. The catalog needs only (type, stable_hash, filter),
+    thumbnails 404'd. The catalog needs only (type, stable_hash),
     resolves through the same snapshot/version-log machinery as the viewer,
     and never re-derives a filename without its args — the same "resolve
     versions via the app" rule that keeps stale generations from being
     mistaken for current output.
 
-    Returns PNG bytes or None. Run-shaped requests (a non-str extra arg,
-    e.g. a substack) return None — the catalog has no Run products; the
-    producer path below still owns those."""
-    if any(not isinstance(a, str) for a in extra_args):
+    Returns PNG bytes or None. Requests with extra producer args (a
+    substack) return None — the catalog has no Run products; the producer
+    path below still owns those."""
+    if extra_args:
         return None
     sid = getattr(entity, "stable_hash", None)
     if not sid:
@@ -201,37 +202,13 @@ def _catalog_thumbnail(entity, args: tuple, extra_args: tuple):
         if thumbnail:
             return thumbnail
 
-        from catalog import default_product_for, url_type_of, viewable_path
-        product = default_product_for(
-            url_type_of(entity), sid,
-            filter=extra_args[0] if extra_args else None)
-        path = viewable_path(product) if product is not None else None
-        if path is None or not os.path.exists(path):
+        from catalog import default_finish_for, url_type_of
+        from finishes.preview import render_finish_preview
+        b = default_finish_for(url_type_of(entity), sid)
+        if b is None:
             return None
-
-        png = None
-        from previews.create_tile_pyramid import (
-            pyramid_path_for, pyramid_thumbnail,
-        )
-        sibling = pyramid_path_for(Path(path))
-        for candidate in (sibling if sibling.exists() else None,
-                          Path(path) if _is_pyramidal(path) else None):
-            if candidate is None:
-                continue
-            try:
-                png = pyramid_thumbnail(candidate)
-                break
-            except Exception:
-                continue
-        if png is None:
-            from previews.operations import (
-                resize_array, autostretch, array_to_png,
-            )
-            try:
-                png = _make_thumbnail(
-                    str(path), resize_array, autostretch, array_to_png)
-            except Exception:
-                return None
+        result = render_finish_preview(b.object_type, b.object_id, b.pipeline, b.name)
+        png = result[0] if result else None
         if png is not None:
             context[key] = png
         return png
@@ -382,33 +359,34 @@ def _stack_subframe_thumbnail(entity, args: tuple):
         return thumbnail
 
 
-@thumbnails_bp.route("/thumbnail/preview/<object_type>/<object_id>")
-def canonical_preview(object_type: str, object_id: str):
-    """The canonical colour preview: autostretched Hubble (+RGB stars when
-    present), RGB fallback for broadband-only images — rendered server-side
-    by the SAME traced finish the viewer runs live, over a low pyramid level
-    of the linear scene formats. 404 when no scene format is servable yet
-    (the card's onError falls back to the classic thumbnail)."""
-    import flask
-    from finishes.preview import render_canonical_preview
-    # `?pipeline=` pins which pipeline's scene formats to render. The dashboard
-    # passes it so an A/B shows one preview PER pipeline; omitting it keeps the
-    # auto-pick used by the object cards.
-    result = render_canonical_preview(
-        object_type, object_id, pipeline=flask.request.args.get("pipeline"))
+def _finish_png_response(result):
+    """PNG + `X-Product-Status` for a rendered finish, or 404. `?fresh=1`:
+    strict mode — never serve a last-good stale generation (review
+    workflows; the default keeps graceful N/N-1 serving). The status ALWAYS
+    travels in a header so image consumers can badge it — previously it was
+    computed and silently dropped (2026-08-31)."""
     if result is None:
         return flask.abort(404)
     png, status = result
-    # `?fresh=1`: strict mode — never serve a last-good stale generation
-    # (review workflows; the default keeps graceful N/N-1 serving). The
-    # status ALWAYS travels in a header so image consumers can badge it —
-    # previously it was computed and silently dropped (2026-08-31).
     if flask.request.args.get("fresh") and status != "live":
         return flask.abort(404)
-    resp = flask.Response(png, mimetype="image/png",
-                          direct_passthrough=True)
+    resp = flask.Response(png, mimetype="image/png", direct_passthrough=True)
     resp.headers["X-Product-Status"] = status
     return resp
+
+
+@thumbnails_bp.route("/thumbnail/preview/<object_type>/<object_id>")
+def canonical_preview(object_type: str, object_id: str):
+    """The object's default finish (its landing view), rendered server-side
+    by the SAME traced finish the viewer runs live. 404 when nothing is
+    servable yet (the card's onError falls back to the classic thumbnail)."""
+    from catalog import default_finish_for
+    from finishes.preview import render_finish_preview
+    b = default_finish_for(object_type, object_id)
+    if b is None:
+        return flask.abort(404)
+    return _finish_png_response(
+        render_finish_preview(b.object_type, b.object_id, b.pipeline, b.name))
 
 
 @thumbnails_bp.route("/thumbnail/stack/<stack_id>")
@@ -423,34 +401,14 @@ def target_thumbnail(target_id: str):
     return get_thumbnail(target)
 
 
-@thumbnails_bp.route("/thumbnail/mosaic/<mosaic_id>/<filter>")
-def mosaic_thumbnail(mosaic_id: str, filter: str):
-    mosaic = context.mosaics[mosaic_id].get()
-    return get_thumbnail(mosaic, filter)
-
-
-@tap_route(thumbnails_bp, "/tap/thumbnail", hierarchy=("object_type", "object_id"))
-def thumbnail_tap(
-    object_type: str, object_id: str, pipeline: str, display: str, filter: str,
-):
-    """Thumbnail for a specific (pipeline, tap) of an object.
-
-    Served straight from the tap's pyramidal `.tiff` (a small stored
-    level), never by decoding the full-resolution master."""
-    from web_server.backend.tiles import _tile_pyramid_path_for_tap
-    from previews.create_tile_pyramid import pyramid_thumbnail, NoPreviewAvailable
-    tiff = _tile_pyramid_path_for_tap(
-        object_type, object_id, pipeline, display, filter,
-    )
-    if tiff is None:
-        return abort(404)
-    try:
-        thumbnail = pyramid_thumbnail(tiff)
-    except NoPreviewAvailable:
-        return abort(404)  # no pyramid yet → no preview yet (never full-load)
-    except Exception:
-        return abort(500)
-    return _png_response(thumbnail, display)
+@finish_route(thumbnails_bp, "/tap/thumbnail", hierarchy=("object_type", "object_id"))
+def thumbnail_finish(object_type: str, object_id: str, pipeline: str, finish: str):
+    """Thumbnail of one finish of an object under one pipeline — the finish
+    baked over a small stored pyramid level of its inputs, never a decode
+    of a full-resolution master."""
+    from finishes.preview import render_finish_preview
+    return _finish_png_response(
+        render_finish_preview(object_type, object_id, pipeline, finish))
 
 
 @thumbnails_bp.route("/thumbnail/calibration_stack/<stack_id>")

@@ -3,7 +3,7 @@
 A Product names a single point in the catalog's lazy product
 `(object × pipeline × tap/display × filter)` — one image AstroFlow knows how to
 make. It carries no path and no pixels: those are *derived* from it by the
-catalog (`catalog.predict_path` / `.viewable_path` / `.exists`). Identity only,
+catalog (`catalog.predict_path` / `.resolve_product`). Identity only,
 so it's frozen, hashable, and safe to put in sets and dict keys.
 
 This is the read-side counterpart to the rest of `products/`: `registry.py`
@@ -71,11 +71,3 @@ class Product:
     pipeline: str             # a registered pipeline display name
     display: str              # a @node(display=...) tap name
     filter: str | None        # a filter, a sentinel like "RGB", or None
-
-    def as_view(self) -> dict:
-        """The `{pipeline, display, filter}` triple the URL grammar uses. The
-        filter travels as the string the URL carries — a filterless product
-        (a dark's master) is `/Master/None`, which the catalog matches back
-        by `str(filter)` — so every product has a URL, not only filtered ones."""
-        return {"pipeline": self.pipeline, "display": self.display,
-                "filter": str(self.filter)}

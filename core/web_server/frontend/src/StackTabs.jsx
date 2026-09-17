@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Box,
-  Chip,
-  Stack,
   Tabs,
   Tab,
   Divider,
@@ -79,7 +77,7 @@ function BlinkQualityInfo({ stack_id }) {
   );
 }
 
-const StackTabs = ({ stack_type, stack, stack_id, pipeline, display }) => {
+const StackTabs = ({ stack_type, stack, stack_id, pipeline, finish }) => {
   const [tabIndex, setTabIndex] = useState(0);
   const videoRef = useRef(null);
 
@@ -120,15 +118,13 @@ const StackTabs = ({ stack_type, stack, stack_id, pipeline, display }) => {
               (sx wins specificity), leaving this tab rendered under the
               Runs tab. */}
           <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-            {stack_type === 'stack' && <StackingReportPanel stack_id={stack_id} />}
+            {stack_type === 'stack' && <StackingReportPanel stack_id={stack_id} pipeline={pipeline} />}
             <Box sx={{ flex: 1, minHeight: 0 }}>
               <AstroFlowImage
                 objectType={stack_type}
                 objectId={stack_id}
                 pipeline={pipeline}
-                display={display}
-                filter={stack?.filter}
-                showQualitySelector={false}
+                finish={finish}
               />
             </Box>
           </Box>
