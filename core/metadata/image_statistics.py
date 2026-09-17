@@ -149,9 +149,9 @@ def compute_image_statistics(image: np.ndarray) -> ImageStatistics:
         sky_median = p25
         sky_rms = 0.0
 
-    # MAD = median(|pixel − median(all)|). Matches the `mdev()` helper
-    # inside `previews.operations.autostretch` so the JS port produces
-    # an identical STF black-point. Computed on the full pixel array
+    # MAD = median(|pixel − median(all)|). The same statistic the STF
+    # autostretch (`mosaics.color.palettes.autostretch`) clips shadows
+    # with, so the JS port produces an identical black-point. Computed on the full pixel array
     # (zeros already excluded above), at pixel-level precision —
     # stacked-pedestaled masters have sub-bin sky noise that a 1024-bin
     # histogram would round to 0.

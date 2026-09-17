@@ -163,7 +163,7 @@ ray-status:
 # --- App lifecycle ---------------------------------------------------------
 # Start the live app (Ray head + gunicorn web server) in the FOREGROUND.
 # Run from core/. Ctrl-C stops it (main.py's atexit cleans up gunicorn + ray).
-start: sweep-pi-swap sweep-staging
+start: sweep-pi-swap sweep-vips-scratch sweep-staging
 	uv run python main.py
 
 # Recover payloads stranded by a killed publish, and reap partial copies.
@@ -188,6 +188,19 @@ sweep-staging:
 # accumulated to 79 GB and wedged the boot volume. Safe ONLY when no PI is
 # running — then every ~PI~*.swp is abandoned; if one is alive we skip the sweep
 # so an in-use swap is never deleted, and the next clean start reclaims it.
+# libvips renders a striped gigapixel source into `$TMPDIR/vips-*.v` when an
+# op needs random access to it; a task that dies mid-op leaves the file (boot
+# 91: 87 GB in idle workers). Nothing is running at `make start`, so any such
+# file is an orphan. Same shape as the PI swap sweep below.
+sweep-vips-scratch:
+	@d="$$(getconf DARWIN_USER_TEMP_DIR)"; \
+	n=$$(find "$$d" -maxdepth 1 -name 'vips-*.v' 2>/dev/null | wc -l | tr -d ' '); \
+	if [ "$$n" -gt 0 ]; then \
+		sz=$$(find "$$d" -maxdepth 1 -name 'vips-*.v' -exec du -ch {} + 2>/dev/null | tail -1 | cut -f1); \
+		find "$$d" -maxdepth 1 -name 'vips-*.v' -delete 2>/dev/null; \
+		echo "→ swept $$n orphaned libvips scratch file(s) ($$sz) from $$d"; \
+	fi
+
 sweep-pi-swap:
 	@if pgrep -f 'PixInsight.app' >/dev/null 2>&1; then \
 		echo "→ PixInsight running — skipping PI swap sweep"; \

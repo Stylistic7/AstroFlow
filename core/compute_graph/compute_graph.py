@@ -16,6 +16,7 @@ from calibration import (
 from previews.stack_thumbnails import scatter_stack_thumbnails
 from mosaics.identification import identify_mosaics
 from stacks.compute_graph import (
+    prepare_stack_for_ui,
     process_stacks_for_ui,
     process_calibration_stacks_for_ui,
 )
@@ -291,10 +292,15 @@ def scatter_spatial_groups(
     gather_stacks_task = Node(combine_dicts, name="combine_stacks")
     graph[gather_stacks_task] = stack_tasks
     graph[store_stacks] = {gather_stacks_task}
+    # The builder embeds every `prepare_stack_for_ui` result in ITS cached
+    # value, so an edit to the per-stack entry must miss the builder too —
+    # its own source is unchanged, and it would otherwise replay the old
+    # dict forever (2026-09-17: the new `role` field never reached the UI).
     process_stacks_task = (
         process_stacks_for_ui,
         decision_overrides,
         clustering_settings.min_frames_in_stack,
+        prepare_stack_for_ui._fn_hash,
     )
     # Ordered: process_stacks_for_ui consumes both results positionally
     # (it unpacks by type, but the call HASH folds argument order).

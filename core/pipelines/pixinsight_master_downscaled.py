@@ -5,10 +5,13 @@ lights AND calibration frames — is block-mean downscaled 8x BEFORE
 PixInsight's WBPP runs. That cuts WBPP / plate-solving /
 registration time by ~64x at the cost of a 64x-fewer-pixel master.
 
-The only structural difference from `PixInsight Master` is the
-`downscale_factor=8` arg to `calibrate(...)` and the explicit
-`downscale_stack(8, dest_dir, stack)` wrap before `stack_files`. Everything
-else is identical.
+The only structural difference from `PixInsight Master` is inside
+`post_processed_master`: the light stack is seen through a
+`DownscaledStack` whose frames `downscale_stack` writes, and each
+calibration master `calibrate(...)` builds at full resolution passes
+through `downscale_master` on its way into `stack_files`. Everything else
+is identical — `mosaics/test_orion_pipeline_structures.py` pins that the
+two traces differ by exactly those calls.
 
 To fork this pipeline (e.g. swap MultiscaleGradientCorrection for
 GraXpert, or change the downscale factor), copy this file to
@@ -18,50 +21,33 @@ replace.
 """
 from astroflow.pipeline import pipeline
 from dependency_graph.tracing import workflow_group
-from mosaics.post_process_channel import post_process_mosaic_color_channel
-from mosaics.merging.pixinsight import merge_images
-from mosaics.placement.astroflow import place_image
-from mosaics.viewbox_measured import compute_viewbox_measured
 from mosaics.types import Mosaic
-from stacks.calibration_selection import calibration_plan
+import pipelines.pixinsight_master as pi
+from stacks.calibration_selection import calibrate
 from stacks.composite_stack import Stack
-from stacks.downscale import downscale_stack, downscale_dest_dir
+from previews.types import DOWNSCALE_FACTORS, DOWNSCALED_MASTER
+from stacks.downscale import (
+    DownscaledStack, downscale_dest_dir, downscale_master, downscale_stack,
+)
 from stacks.post_processing.pixinsight import post_process_stack
 from stacks.stacking.pixinsight import stack_files
-from targets.merging.pixinsight import merge_target_channel
 from targets.types import Target
+
+FACTOR = DOWNSCALE_FACTORS[DOWNSCALED_MASTER]
 
 
 @workflow_group
 def post_processed_master(stack, config):
-    """Downscale every stack (cal AND light) by 8x, then stack +
-    post-process. The downscale step is applied explicitly to
-    each cal stack inside the loop so it's easy to swap for a
-    different per-stack transformation (denoise, crop, etc.).
-    Shared across the stack / target / mosaic entry points."""
-    steps, top_ids = calibration_plan(stack, config)
-    _dsdir = downscale_dest_dir()
-    masters = {}
-    for cs, dep_ids in steps:
-        masters[str(cs.stable_hash)] = stack_files(
-            downscale_stack(8, _dsdir, cs), config, *(masters[i] for i in dep_ids))
-    s_downscaled = downscale_stack(8, _dsdir, stack)
-    master = stack_files(
-        s_downscaled, config, *(masters[i] for i in top_ids))
-    return post_process_stack(s_downscaled, config, master)
-
-
-@workflow_group
-def channels_for_target(target, config):
-    """Per-filter HDR-combined channel masters for one target."""
-    channels = {}
-    for filter in target.filters:
-        stacks = target.stacks_for(filter)
-        masters = [post_processed_master(s, config) for s in stacks]
-        channels[filter] = merge_target_channel(
-            target, filter, stacks, config, *masters,
-        )
-    return channels
+    """The full-resolution recipe with the downscale calls added: the light
+    frames are seen through a `DownscaledStack` (written by
+    `downscale_stack`), the calibration masters are built at full resolution
+    exactly as `PixInsight Master` builds them and downscaled at the
+    boundary. Shared across the stack / target / mosaic entry points."""
+    ds = DownscaledStack.of(stack, FACTOR, downscale_dest_dir())
+    frames = downscale_stack(ds)
+    cal_masters = [downscale_master(FACTOR, m) for m in calibrate(stack, config)]
+    master = stack_files(ds, config, *cal_masters, _after=(frames,))
+    return post_process_stack(ds, config, master)
 
 
 @pipeline("PixInsight Downscaled", processes=Stack)
@@ -73,7 +59,7 @@ def for_stack(stack, config):
 @pipeline("PixInsight Downscaled", processes=Target)
 def for_target(target, config):
     """Per-filter downscaled channel masters for one target."""
-    return channels_for_target(target, config)
+    return pi.channels_for_target(target, config, post_processed_master)
 
 
 @pipeline("PixInsight Downscaled", processes=Mosaic)
@@ -81,50 +67,4 @@ def for_mosaic(mosaic, config):
     """Build a downscaled mosaic, end to end. Returns
     `{filter: store_handle}`. Missing panels are skipped (the
     pipeline merges what's present)."""
-    targets_by_id = {t.id: t for t in mosaic.targets}
-
-    channels = {}
-    for target in mosaic.targets:
-        for filter, sink in channels_for_target(target, config).items():
-            channels[(target.id, filter)] = sink
-
-    # ONE measured canvas for the whole object, shared across filters (see
-    # hybrid_graxpert_oss_mosaic._measured_viewbox). Quality is "Master" (i.e. native-of-the-file), not "DownscaledMaster": a downscaled master's plate solution IS the downscaled scale, so the old x8 factor would double-count.
-    _ordered = [channels[k] for k in sorted(channels)]
-    viewbox = compute_viewbox_measured(
-        "Master", len(targets_by_id) == 1,
-        tuple(c.content_hash for c in _ordered), *_ordered)
-
-    out = {}
-    for filter in mosaic.filters:
-
-        # Placed-panel and intermediate-merge images are multi-GB each
-        # and only feed the final `store_*` — everything inside this
-        # block cleans up once it's been consumed. `store_*` is
-        # `final=True`, so the persisted mosaic survives.
-        # Merge per strip first, then merge strips together.
-        rows = []
-        for strip in mosaic.strips:
-            placed = [
-                place_image(mosaic, targets_by_id[tid], filter, viewbox,
-                            config, channels[(tid, filter)])
-                for tid in strip if (tid, filter) in channels
-            ]
-            if not placed:
-                continue
-            row = placed[0]
-            for p in placed[1:]:
-                row = merge_images(mosaic, filter, config, row, p)
-            rows.append(row)
-        if not rows:
-            continue
-
-        merged = rows[0]
-        for r in rows[1:]:
-            merged = merge_images(mosaic, filter, config, merged, r)
-
-        out[filter] = post_process_mosaic_color_channel(
-            mosaic, filter, config, merged,
-        )
-
-    return out
+    return pi.mosaic_stage(mosaic, config, post_processed_master)

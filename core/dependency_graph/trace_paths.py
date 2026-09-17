@@ -75,10 +75,10 @@ class _TracedOutput:
     when it reads the stamped file header.
 
     `entity` is the dep's first identity-bearing arg (or recursive
-    ancestor). When `downscale_stack(8, stack)` becomes a dep of
-    `stack_files(stack_dep, config, *cal_masters)`, the dispatcher in
-    `_make_dispatcher` sees ProcessingConfig at args[0] and needs
-    `entity` on the `_TracedOutput` proxy to find the actual Stack.
+    ancestor). When an entity-valued `@node` result becomes the first arg
+    of a consumer, the dispatcher in `_make_dispatcher` sees a literal at
+    args[0] and needs `entity` on the `_TracedOutput` proxy to find the
+    actual entity.
     """
     content_hash: str
     entity: Any = None

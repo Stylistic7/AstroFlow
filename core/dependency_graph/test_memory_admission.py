@@ -55,6 +55,17 @@ def test_reserved_leg_blocks_despite_stale_high_free():
     assert _sel(20, free={"A": 90}, reserved={"A": 85}, any_in_flight=True) is None
 
 
+def test_reserved_leg_is_capped_at_the_nodes_ray_memory():
+    # RAM says 100 total / 90 free, but Ray's `memory` capacity for the node
+    # is 70 (ray start --memory): a 40-unit lease with 40 already reserved
+    # would be held by Ray (70-40=30 < 40) while our ledger called it running.
+    # eff = min(90, min(100, 70) - 40) - 10 = 20 → hold.
+    assert _sel(40, free={"A": 90}, reserved={"A": 40},
+                capacity={"A": {"memory": 70}}, any_in_flight=True) is None
+    # Without the Ray cap the same lease is admitted: min(90, 100-40)-10 = 50.
+    assert _sel(40, free={"A": 90}, reserved={"A": 40}, any_in_flight=True) == "A"
+
+
 def test_boundary_is_inclusive():
     # eff = min(40,100)-10 = 30
     assert _sel(30, free={"A": 40}, any_in_flight=True) == "A"   # need == free

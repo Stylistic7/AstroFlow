@@ -97,6 +97,11 @@ def _temp_dirs() -> list[Path]:
     return [d for d in [_user_temp_dir()] if d]
 
 
+def _planar_dirs() -> list[Path]:
+    from file_io.planar import _CACHE_DIRNAME
+    return [d / _CACHE_DIRNAME for d in _temp_dirs() if (d / _CACHE_DIRNAME).is_dir()]
+
+
 def _cache_and_temp_dirs() -> list[Path]:
     return [d for d in [_user_cache_dir(), _user_temp_dir()] if d]
 
@@ -245,6 +250,23 @@ SPECS: tuple[DebrisSpec, ...] = (
         dirs=_temp_dirs,
         pattern="rcastro_*",
         min_age_s=6 * 3600,
+    ),
+    # PixInsight exports (`file_io/planar.py`): uncompressed copies of tiled
+    # deliverables, ~9 GB per channel, written when the user opens a finish.
+    # They are the user's scratch — edited or saved from PixInsight as they
+    # wish — so a day's grace (an open one is held by PixInsight and skipped
+    # like any open file); a `.staging` is a rewrite killed mid-write.
+    DebrisSpec(
+        name="planar_exports",
+        dirs=_planar_dirs,
+        pattern="*.planar.tiff",
+        min_age_s=24 * 3600,
+    ),
+    DebrisSpec(
+        name="planar_staging",
+        dirs=_planar_dirs,
+        pattern="*.staging",
+        min_age_s=3600,
     ),
     # Gaia XPSD query scratch (155 MB of stars.json each). The query
     # cleans up after itself (try/finally, 2026-09-02); this spec reaps

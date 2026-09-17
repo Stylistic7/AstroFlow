@@ -103,8 +103,12 @@ def reconstruct_planar_tiff(source: "str | Path") -> Path:
         # tile=False is the whole point: PixInsight reads stripped TIFF only.
         # bigtiff=True is safe (measured: BigTIFF opens fine) and necessary
         # since a reconstructed gigapixel mosaic exceeds the 4 GB classic cap.
-        out.tiffsave(os.fspath(staging), compression="deflate",
-                     predictor="none", bigtiff=True, tile=False)
+        # Uncompressed: this copy exists to be READ ONCE by PixInsight, and
+        # strip encoding is single-threaded — deflate wrote 30 MB/s (a 7.7 GB
+        # channel in six minutes, the 23.5 GB SHO join in half an hour, inside
+        # a web request); uncompressed streams at disk speed, 386 MB/s
+        # measured, for a file only ~12% larger (float sky compresses poorly).
+        out.tiffsave(os.fspath(staging), compression="none", bigtiff=True, tile=False)
         os.replace(staging, dest)
     finally:
         if staging.exists():

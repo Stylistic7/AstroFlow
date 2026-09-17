@@ -9,6 +9,7 @@ import {
 	Divider,
 	IconButton,
 	Paper,
+	Snackbar,
 	Tab,
 	Tabs,
 	Tooltip,
@@ -69,11 +70,20 @@ export default function MosaicViewer() {
     const role = finishes?.pipelines.find((p) => p.name === pipeline)
         ?.finishes.find((f) => f.name === finish)?.role ?? null;
 
-    const openInPixInsight = () => {
-        fetch(`/api/open/${objectType}/${objectId}/${encodeURIComponent(pipeline)}/${encodeURIComponent(finish)}`,
-              { method: 'POST' })
-            .then((r) => { if (!r.ok) console.warn("open failed", r.status); })
-            .catch(console.error);
+    const [openNote, setOpenNote] = useState(null);
+    const openInPixInsight = async () => {
+        // 202: the layers open in PixInsight as they land — a tiled
+        // gigapixel layer is rewritten for it first (~25 s per channel).
+        try {
+            const r = await fetch(`/api/open/${objectType}/${objectId}/${encodeURIComponent(pipeline)}/${encodeURIComponent(finish)}`,
+                                  { method: 'POST' });
+            const d = await r.json();
+            if (!r.ok) { setOpenNote(`Nothing to open: ${d.error || r.status}`); return; }
+            const n = d.opening.length;
+            setOpenNote(d.exporting.length
+                ? `Preparing ${n} image${n > 1 ? 's' : ''} for PixInsight (${d.exporting.length} rewritten first, ~25 s each): ${d.opening.join(', ')}`
+                : `Opening in PixInsight: ${d.opening.join(', ')}`);
+        } catch (e) { console.error(e); setOpenNote("Open failed"); }
     };
 
     if (!entity) {
@@ -179,6 +189,13 @@ export default function MosaicViewer() {
 				</Tabs>
 			</Box>
 			<Divider />
+			<Snackbar
+				open={openNote !== null}
+				autoHideDuration={8000}
+				onClose={() => setOpenNote(null)}
+				message={openNote || ""}
+				anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
+			/>
 
 			{/* Tab content */}
 			<Box sx={{ flex: 1, p: 3, minHeight: 0, position: "relative" }}>

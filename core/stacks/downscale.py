@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 import dataclasses
 from pathlib import Path
@@ -6,11 +5,16 @@ import numpy as np
 from astropy.io import fits
 from frozendict import frozendict
 
+from beartype import beartype
+
 from decorators import node
+from file_io.generic import read_header, read_image
+from file_io.types import WithSidecar, XisfFilePath
+from file_io.xisf_file_io import write_xisf_image
 from hashing import hash_list
 from metadata.classes import ImageMetadata, MetadataDict
-from stacks.composite_stack import BaseStack, Stack, CalibrationStack
-from stacks.run import BaseRun, Run, CalibrationRun, RunsDict
+from stacks.composite_stack import Stack
+from stacks.run import BaseRun, RunsDict
 from units import ArcsecondsPerPixel
 
 
@@ -205,69 +209,115 @@ def downscale_dest_dir() -> Path:
     return Path(context.output_dir) / "downscale_stack"
 
 
+@beartype
+@dataclasses.dataclass(frozen=True, kw_only=True, eq=False)
+class DownscaledStack(Stack):
+    """A stack seen at 1/`factor` resolution — the SAME entity as `source`
+    (`stable_hash` inherited, so `/stack/<hash>/…` surfaces this pipeline's
+    taps too) whose frames are block-mean copies that `downscale_stack`
+    writes. Every field is derived from the source in the pipeline body, at
+    trace time, so `stack_files` receives a real stack with both hashes and
+    keys on it exactly as it keys on any stack; nothing downstream ever
+    sees a handle for the stack itself.
+
+    `content_hash` is `hash(source.content_hash, factor, downscale_stack's
+    source)`: the frames' content is a function of those three and nothing
+    else — in particular NOT of where they land on disk — and editing the
+    downscaler re-keys every master built on its frames."""
+    factor: int
+    source: Stack
+
+    @classmethod
+    def of(cls, stack: Stack, factor: int, dest_dir: Path) -> "DownscaledStack":
+        if factor < 1 or (factor & (factor - 1)) != 0:
+            raise ValueError(f"factor must be a power of two >= 1, got {factor}")
+        dest_dir = Path(dest_dir)
+        new_runs = RunsDict()
+        for run_key, run in stack.contents.items():
+            new_runs[run_key] = _downscale_run(run, factor, dest_dir)
+        values = {f.name: getattr(stack, f.name)
+                  for f in dataclasses.fields(stack) if f.init}
+        values.update(
+            contents=new_runs,
+            content_hash=hash_list([stack.content_hash, factor, downscale_stack._fn_hash]),
+            width_pixels=stack.width_pixels // factor,
+            height_pixels=stack.height_pixels // factor,
+            image_scale=ArcsecondsPerPixel(float(stack.image_scale) * factor),
+        )
+        return cls(**values, factor=factor, source=stack)
+
+
 @node
-def downscale_stack(
-    factor: int, dest_dir: Path, stack: BaseStack
-) -> BaseStack:
-    """Block-mean-downscale every frame in `stack` by `factor`.
+def downscale_stack(stack: DownscaledStack) -> tuple[Path, ...]:
+    """Write the frames a `DownscaledStack` names: each source frame
+    block-mean downscaled by `stack.factor` to the content-addressed path
+    its downscaled metadata already carries
+    (`<output_dir>/downscale_stack/<derived_hash>.fits`). Returns those
+    paths. Consumers of the frames (`stack_files`) order after this node
+    with `_after=`: the stack they read is the literal view, the files are
+    this node's side effect.
 
-    Returns a new Stack with the SAME `stable_hash` as the input
-    (preserves the user-facing identity used by tap routing —
-    `/stack/<original_hash>/...` still surfaces taps from
-    pipelines that downscale before stacking) and a NEW
-    `content_hash` derived from the downscaled frames' content
-    (so downstream ops that include the stack in their call_hash
-    produce distinct outputs).
-
-    @node — runs at runtime in a Ray worker. The trace records a
-    Node handle; downstream ops like `stack_files(stack, config,
-    *cal_masters)` see this handle in their dep chain. Signature
-    follows the "literals first, deps trailing" convention so the
-    tracer's reordering keeps the entity properly recorded.
-
-    Frame-level downscaling is parallelized via a ThreadPool;
-    per-frame output paths are content-addressed
-    (`<output_dir>/downscale_stack/<derived_hash>.fits`), so
-    re-runs skip already-written files. Pipelines wrap calls in
-    `ephemeral_intermediates()` so the FITS get cleaned up after
-    consumers complete — regenerating one is a sub-second
-    block-mean per frame.
-
-    Pipeline-agnostic — works on `Stack` (light frames) and
-    `CalibrationStack` (bias/dark/flat) the same way."""
+    Idempotent per file (an existing frame is not rewritten); frames are
+    written in parallel. Works on light stacks; calibration MASTERS are
+    downscaled as images by `downscale_master` instead of re-integrating
+    downscaled cal frames, so the full-resolution masters are shared with
+    the full-resolution pipeline."""
     from concurrent.futures import ThreadPoolExecutor
 
-    if factor == 1:
-        return stack
-
-    dest_dir = Path(dest_dir)
-    dest_dir.mkdir(parents=True, exist_ok=True)
     jobs = []
-    for run in stack.contents.values():
-        for m in run.metadata.values():
-            new_h = _downscaled_frame_content_hash(m.content_hash, factor)
-            new_path = dest_dir / f"{new_h}.fits"
-            if not new_path.exists():
-                jobs.append((m.filename, new_path))
-    if jobs:
-        with ThreadPoolExecutor(max_workers=16) as ex:
-            list(ex.map(
-                lambda j: downscale_fits(j[0], j[1], K=factor),
-                jobs,
-            ))
-
-    new_runs = RunsDict()
     for run_key, run in stack.contents.items():
-        new_runs[run_key] = _downscale_run(run, factor, dest_dir)
+        source_run = stack.source.contents[run_key]
+        for m, src in zip(run.metadata.values(), source_run.metadata.values()):
+            if not Path(m.filename).exists():
+                jobs.append((src.filename, m.filename))
+    if jobs:
+        Path(jobs[0][1]).parent.mkdir(parents=True, exist_ok=True)
+        with ThreadPoolExecutor(max_workers=16) as ex:
+            list(ex.map(lambda j: downscale_fits(j[0], j[1], K=stack.factor), jobs))
+    return tuple(Path(m.filename) for run in stack.contents.values()
+                 for m in run.metadata.values())
 
-    overrides = dict(
-        contents=new_runs,
-        content_hash=hash_list(sorted(r.content_hash for r in new_runs.values())),
-        width_pixels=stack.width_pixels // factor,
-        height_pixels=stack.height_pixels // factor,
-    )
-    if hasattr(stack, "image_scale"):
-        overrides["image_scale"] = ArcsecondsPerPixel(
-            float(stack.image_scale) * factor
-        )
-    return dataclasses.replace(stack, **overrides)
+
+# Header keywords a downscaled master keeps verbatim: identity + what WBPP
+# matches on. Geometry keys are regenerated by the writer; binning and pixel
+# size scale with the factor below (same rule as `downscale_fits`).
+_MASTER_KEEP = (
+    "IMAGETYP", "STBLHASH", "FILTER", "EXPOSURE", "EXPTIME", "INSTRUME",
+    "TELESCOP", "GAIN", "OFFSET", "EGAIN", "CCD-TEMP", "SET-TEMP", "FOCALLEN",
+)
+
+
+@node(plate_solve="none")
+def downscale_master(factor: int, master: ImageMetadata) -> WithSidecar[XisfFilePath]:
+    """A calibration master at 1/`factor` resolution: the block mean of the
+    full-resolution master, header identity kept (`STBLHASH` is how
+    `stack_files` maps a master to the cal stack a run depends on).
+
+    Calibration is linear, so the mean of a dark over a block IS the dark of
+    the block-meaned light; a flat's block mean is the flat at that scale to
+    within the smoothness of the pattern. Building the masters once at full
+    resolution and downscaling them at the boundary is what makes the
+    downscaled pipeline "the full pipeline plus downscale calls" rather than
+    a second calibration stack of its own."""
+    if factor < 1 or (factor & (factor - 1)) != 0:
+        raise ValueError(f"factor must be a power of two >= 1, got {factor}")
+    img = np.asarray(read_image(Path(master.filename)), dtype=np.float32)
+    if img.ndim != 2:
+        raise ValueError(f"expected a mono master, got shape {img.shape}")
+    h, w = img.shape
+    img = img[: h - h % factor, : w - w % factor]
+    h, w = img.shape
+    out = img.reshape(h // factor, factor, w // factor, factor).mean(axis=(1, 3))
+
+    src = read_header(Path(master.filename))
+    header = {k: src[k] for k in _MASTER_KEEP if k in src}
+    for k in ("XBINNING", "YBINNING"):
+        if k in src:
+            header[k] = int(round(float(src[k]) * factor))
+    for k in ("XPIXSZ", "YPIXSZ"):
+        if k in src:
+            header[k] = float(src[k]) * factor
+    output = downscale_master.filename_fn(factor, master)
+    # `XISF.write` wants (H, W, C); a master is mono.
+    write_xisf_image(Path(output), out.astype(np.float32, copy=False)[:, :, None], header)
+    return WithSidecar(XisfFilePath(output))

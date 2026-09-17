@@ -106,17 +106,16 @@ def test_shared_op_distinct_outputs_per_pipeline(test_context):
     output = Path(context.output_dir)
     from file_io.generic import read_header
 
-    # Both pipelines call the UNIFIED `stack_files` op (PI Master with
-    # the identity downscaler, PI Downscaled with `downscale_stack(_, 8)`).
-    # Outputs land under the same `Stack/stack_files/` dir, distinguished
-    # by call_hash: same stable_hash, different content_hash → different
-    # call_hash → different filename.
+    # Both pipelines call the UNIFIED `stack_files` op (Master on the
+    # stack itself, Downscaled on its `DownscaledStack` view). Outputs land
+    # under the same `Stack/stack_files/` dir, distinguished by call_hash:
+    # same stable_hash, different content_hash → different call_hash →
+    # different filename.
     #
-    # `stack_files` is unified across light AND calibration stacks, and both
-    # litmus pipelines also stack the bias/dark/flat cal masters — so the dir
-    # holds those too. Isolate THIS stack's two light masters (full-res +
-    # downscaled; `downscale_stack` preserves `stable_hash`) by STBLHASH; the
-    # cal masters carry their own stable_hashes.
+    # `stack_files` is unified across light AND calibration stacks, and the
+    # cal masters both pipelines share land in the dir too. Isolate THIS
+    # stack's two light masters (full-res + downscaled; the view inherits
+    # `stable_hash`) by STBLHASH; the cal masters carry their own.
     all_stack_masters = sorted((output / "stack_files").glob("*.xisf"))
     stack_masters = [
         p for p in all_stack_masters

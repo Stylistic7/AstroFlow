@@ -42,8 +42,8 @@ def _copy_frames_with_plate_solution(
     """Stage input frames into the WBPP working dir.
 
     Resolution-agnostic — `stack_files` no longer knows whether
-    frames are full-res or already-downscaled (the pipeline calls
-    `downscale_stack` upstream when it wants smaller frames). For
+    frames are full-res or already-downscaled (the pipeline hands it a
+    `DownscaledStack` view when it wants smaller frames). For
     each frame: copy the file, drop a stale BAYERPAT, and write
     plate-solution header info — full WCS when the frame's
     `width_pixels` matches the plate-solution NAXIS1 (lossless
@@ -223,7 +223,7 @@ def _run_wbpp_stacking(
 ) -> WithSidecar[XisfFilePath]:
     """Shared body for `stack_files`. Resolution-agnostic — reads
     `stack.contents` frame paths AS-IS (the pipeline calls
-    `downscale_stack` upstream if it wants smaller frames). Cal
+    `DownscaledStack` view if it wants smaller frames). Cal
     master file paths come from `cal_masters`; each master's
     `STBLHASH` header (written by `_run_wbpp_stacking` on the
     upstream call) names the cal stack it was built from, so the
@@ -333,16 +333,14 @@ def stack_files(
     """Resolution-agnostic PixInsight WBPP master.
 
     Frame paths are read from `stack.contents` AS-IS — if the
-    pipeline wants downscaled frames it wraps `stack` in
-    `downscale_stack` upstream (preserving `stable_hash`, so this
-    op's `@makes_image` identity routes to the same user-facing
-    stack regardless of resolution).
+    pipeline wants downscaled frames it passes a `DownscaledStack`
+    view (same `stable_hash`, so this op's `@makes_image` identity
+    routes to the same user-facing stack regardless of resolution)
+    and orders this call after `downscale_stack` with `_after=`.
 
     Signature follows the tracer's "literals first, deps trailing"
-    convention: `config` is a literal `ProcessingConfig`, `stack` may
-    be a trace-time literal Stack OR a Node handle (from
-    `downscale_stack`), and `*cal_masters` are always Node handles
-    from upstream `stack_files` calls on the cal stacks.
+    convention: `stack` and `config` are literals, and `*cal_masters`
+    are always Node handles from upstream producers.
 
     `*cal_masters` is the cal masters this stack's runs depend on
     (any order; one per (bias, dark, flat) the stack references).

@@ -6,7 +6,6 @@ sys.path.append("../..")
 # TODO: Don't connect to Ray until instructed to by the user.
 # from ray_infra import ray_init
 
-import ray
 import io
 import flask
 from flask import request, jsonify, Response
@@ -429,77 +428,31 @@ def flats_for_sensor_and_filter(width, height, filter):
 
 @app.route("/api/ray/status")
 def ray_status():
-    """Returns the current Ray cluster status."""
-    try:
-        nodes = ray.nodes()
-        cluster_resources = ray.cluster_resources()
-    except Exception:
+    """The cluster as the 1 Hz sampler last saw it (`ray_metrics`): node list
+    and totals plus the utilization histories. Ray-free — a web worker
+    never joins the cluster, so this reads the sampler's snapshot rather
+    than calling `ray.nodes()`."""
+    from web_server.backend.ray_metrics import (
+        get_cluster_summary, get_cpu_history, get_mem_history,
+        get_object_store_history,
+    )
+
+    summary = get_cluster_summary()
+    if summary is None:
         return jsonify(
             {
                 "healthyNodes": 0,
                 "unhealthyNodes": 0,
+                "totalNodes": 0,
                 "totalCPUs": 0,
                 "totalRAM": 0,
                 "nodes": [],
-                "error": "Ray is not running. Start a head node to initialize the cluster.",
+                "error": "No cluster sample yet — the head has not started sampling.",
             }
         )
-
-    healthy_nodes = sum(1 for node in nodes if node["Alive"])
-    unhealthy_nodes = len(nodes) - healthy_nodes
-
-    total_cpus = int(cluster_resources.get("CPU", 0))
-    total_ram = int(
-        cluster_resources.get("memory", 0) / 1e9
-    )  # Convert bytes to GB
-
-    node_list = []
-    for node in nodes:
-        ip = node["NodeManagerAddress"]
-        health = "healthy" if node["Alive"] else "unhealthy"
-        cpus = int(node["Resources"].get("CPU", 0))
-        ram = int(
-            node["Resources"].get("memory", 0) / 1e9
-        )  # Convert bytes to GB
-        message = None
-
-        # Check for node failure reasons (if any)
-        if not node["Alive"]:
-            message = "Unknown failure"
-            if "NodeID" in node:
-                failure_reason = node.get("MetricsExportError", None)
-                if failure_reason:
-                    message = failure_reason
-
-        node_list.append(
-            {
-                "ip": ip,
-                "health": health,
-                "cpus": cpus,
-                "ram": ram,
-                "message": message,
-            }
-        )
-
-    # Pull the rolling utilization history written by the 1 Hz
-    # sampler in `web_server.backend.ray_metrics`. Empty lists when
-    # the sampler hasn't ticked yet (very first second after worker
-    # boot, or Ray not yet initialized).
-    from web_server.backend.ray_metrics import (
-        get_cpu_history, get_mem_history, get_object_store_history,
-    )
-
     return jsonify(
         {
-            "healthyNodes": healthy_nodes,
-            "unhealthyNodes": unhealthy_nodes,
-            # `totalNodes` includes both alive and dead. When healthy
-            # < total, the chip surfaces an "X/Y" disparity so a
-            # missing worker is glanceable.
-            "totalNodes": len(nodes),
-            "totalCPUs": total_cpus,
-            "totalRAM": total_ram,
-            "nodes": node_list,
+            **summary,
             # Last 60 samples of each utilization stream, oldest first.
             # CPU / memory / object-store are sampled in lockstep so
             # indices line up.

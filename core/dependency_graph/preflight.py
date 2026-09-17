@@ -50,8 +50,7 @@ class _PredictedRef:
     `_stack_files_narrow` need to reach through the ref to compute
     `decisions_for_stack(stack.stable_hash)` — without `entity` they
     crash at preflight when the entity arrives as a dep instead of a
-    literal (the post-`@node-downscale_stack` topology). Same pattern
-    we use for trace_paths' `_TracedOutput.entity`.
+    literal. Same pattern we use for trace_paths' `_TracedOutput.entity`.
     """
     __slots__ = ("content_hash", "entity", "stable_hash")
 

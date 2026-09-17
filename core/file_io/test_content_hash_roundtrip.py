@@ -38,3 +38,16 @@ def test_content_hash_stamp_survives_pyvips_cache(tmp_path, shape):
         f"(pixel-hash={hash_of_image_data(p)}) — the stamp was read stale from "
         f"libvips's cache. Reads must revalidate.")
     assert read_tiff_header(p).get("CONTHASH") == "call_hash_deadbeef"
+
+
+def test_all_digit_content_hash_round_trips_as_a_string(tmp_path):
+    """An all-digit call hash written to an XISF comes back through the
+    reader's `literal_eval` as an int; `get_content_hash` is an identifier
+    and must return the string (boot 91: `4526235228981703 ==
+    '4526235228981703'` was False, so one master was re-stacked every pass)."""
+    from file_io.types import XisfFilePath
+    from file_io.xisf_file_io import write_xisf_image
+    p = XisfFilePath(tmp_path / "m.xisf")
+    write_xisf_image(p, np.zeros((8, 8, 1), np.float32), {"CONTHASH": "4526235228981703"})
+    h = get_content_hash(p)
+    assert h == "4526235228981703" and isinstance(h, str)

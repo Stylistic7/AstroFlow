@@ -75,7 +75,7 @@ def calibration_plan(
             my_transform(stack), config, *(masters[i] for i in top_ids),
         )
 
-    (Transforms like `downscale_stack` preserve `stable_hash`, so the
+    (A `DownscaledStack` view keeps its source's `stable_hash`, so the
     id-keyed indexing is transform-agnostic.)
     """
     cal_stacks = config.get_calibration_stacks()

@@ -57,9 +57,7 @@ def connect_to_ray_cluster(create_orchestrator_actors: bool = True):
                 # Install the ContextRef Ray-context serializer in every
                 # worker process (restores the same-session Plasma fast
                 # path; stdlib pickle stays ref-free / airtight).
-                "worker_process_setup_hook": (
-                    "cache.context_ref.register_context_ref_serializer"
-                ),
+                "worker_process_setup_hook": "ray_infra.worker_setup.setup_worker",
             },
         )
 

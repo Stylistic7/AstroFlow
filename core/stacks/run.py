@@ -61,7 +61,7 @@ class RunsDict(dict[str, BaseRun]):
         return f"RunsDict({len(self)})"
 
 
-@node
+@node(identity_root=True)
 def run_from_frames(
     frames: list[FrameHash], metadata: MetadataDict
 ) -> Run:
@@ -92,7 +92,7 @@ def run_from_frames(
     return Run(**attributes)
 
 
-@node
+@node(identity_root=True)
 def calibration_run_from_frames(
     frames: list[FrameHash], metadata: MetadataDict
 ) -> CalibrationRun:

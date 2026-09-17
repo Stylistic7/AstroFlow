@@ -339,6 +339,11 @@ class _Node:
         # consumers outside. That is a DEFERRAL, not an exemption — one level
         # up the same node is interior, so the enclosing graph reclaims it.
         ephemeral = ray_opts.pop("ephemeral", False)
+        # The op's result is an IDENTITY, not a derivation: its content hash
+        # names the data it identifies (`run_from_frames`: the frames), so the
+        # cache layer leaves it alone instead of stamping the call hash. Every
+        # other entity-valued op is derived and hashes as its call.
+        identity_root = ray_opts.pop("identity_root", False)
 
         # A `final=True` op is a deliverable, and a deliverable is always
         # user-facing (shown + openable). So `final` requires an explicit,
@@ -441,6 +446,7 @@ class _Node:
         wrapper = cached.remote(
             wrapped,
             canonical_call_hash=canonical_call_hash,
+            identity_root=identity_root,
             **ray_opts,
         )
 

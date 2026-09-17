@@ -41,7 +41,8 @@ def _count_by_op(graph) -> dict[str, int]:
         for n in [k, *deps]:
             if isinstance(n, Node) and n not in seen:
                 seen.add(n)
-                name = getattr(n.task, "__name__", str(n.task))
+                fn = getattr(n.task, "_function", n.task)
+                name = getattr(fn, "__name__", str(fn))
                 counts[name] = counts.get(name, 0) + 1
     return counts
 
@@ -731,35 +732,96 @@ def test_pi_master_pipeline_callbacks_are_fresh_per_call(test_context):
     assert g2.node_status_fn is not None
 
 
+_DOWNSCALE_OPS = {"downscale_stack", "downscale_master"}
+
+
+def _stack_files_nodes(g):
+    seen, out = set(), []
+    for k, deps in g.items():
+        for n in [k, *deps]:
+            if isinstance(n, Node) and n not in seen and n.task._function.__name__ == "stack_files":
+                seen.add(n)
+                out.append(n)
+    return out
+
+
 @pytest.mark.exhaustive
-def test_pi_downscaled_orion_op_counts(test_context):
-    """`PixInsight Downscaled`.for_mosaic — same op counts as PI
-    Master. `downscale_stack` is a plain Python function, not a
-    `@node`, so no extra Nodes appear in the trace; the only
-    difference between the two pipelines lives inside `stack_files`
-    bodies (different upstream `stack.contents`)."""
+@pytest.mark.parametrize("full, downscaled", [
+    ("pipelines.pixinsight_master", "pipelines.pixinsight_master_downscaled"),
+    ("pipelines.hybrid_pi_oss_mosaic", "pipelines.hybrid_pi_oss_mosaic_downscaled"),
+])
+def test_downscaled_pipeline_is_the_full_pipeline_plus_downscale_calls(
+    test_context, full, downscaled,
+):
+    """A downscaled pipeline IS its full-resolution twin with the downscale
+    calls added — nothing else may differ. Per light stack one
+    `downscale_stack` (writing the frames of its `DownscaledStack` view);
+    per distinct master a light consumes one `downscale_master` (the
+    full-res master, shared with the twin, downscaled at the boundary);
+    every other op appears exactly as often as in the twin."""
+    import importlib
+    from stacks.composite_stack import CalibrationStack
+    from stacks.downscale import DownscaledStack
+
     mosaic = _identify(test_context)
     config = _make_config()
+    g_full = trace(importlib.import_module(full).for_mosaic._function, mosaic, config)
+    g_ds = trace(importlib.import_module(downscaled).for_mosaic._function, mosaic, config)
+    c_full, c_ds = _count_by_op(g_full), _count_by_op(g_ds)
+    print(f"\n{full}: {c_full}\n{downscaled}: {c_ds}")
 
+    assert not _DOWNSCALE_OPS & set(c_full), c_full
+    assert {k: v for k, v in c_ds.items() if k not in _DOWNSCALE_OPS} == c_full
+
+    lights = [n for n in _stack_files_nodes(g_full) if not isinstance(n.args[0], CalibrationStack)]
+    # the masters the lights consume — shared cal masters and per-stack
+    # scaled star flats alike — each downscaled once
+    masters = {d for n in lights for d in g_full[n] if isinstance(d, Node)}
+    assert lights and c_ds["downscale_stack"] == len(lights)
+    assert masters and c_ds["downscale_master"] == len(masters)
+
+
+@pytest.mark.exhaustive
+def test_downscaled_view_keeps_identity_and_keys_at_trace_time(test_context):
+    """The stack `stack_files` receives in the downscaled pipeline is a
+    `DownscaledStack`: the same entity as the source (stable_hash) with its
+    own content — so its master lands in a distinct file — and a real value
+    at trace time, so every handle downstream is stamped with the content
+    hash its runtime result will carry (a handle that fails to stamp is how
+    the pipeline was unroutable, 2026-09-17)."""
+    from stacks.composite_stack import CalibrationStack
+    from stacks.downscale import DownscaledStack
+    import pipelines.pixinsight_master as pi
     import pipelines.pixinsight_master_downscaled as pid
-    g = trace(pid.for_mosaic._function, mosaic, config)
-    counts = _count_by_op(g)
 
-    print(f"\nPI Downscaled op counts:\n{counts}")
+    mosaic = _identify(test_context)
+    config = _make_config()
+    g_full = trace(pi.for_mosaic._function, mosaic, config)
+    g_ds = trace(pid.for_mosaic._function, mosaic, config)
 
-    assert counts["post_process_stack"] == 4, counts
-    assert counts["stack_files"] == 7, counts
-    assert counts["merge_target_channel"] == 4, counts
-    assert counts["place_image"] == 4, counts
-    assert counts["merge_images"] == 3, counts
-    assert counts["post_process_mosaic_color_channel"] == 1, counts
+    full_by_id = {n.args[0].stable_hash: n for n in _stack_files_nodes(g_full)
+                  if not isinstance(n.args[0], CalibrationStack)}
+    views = [n for n in _stack_files_nodes(g_ds) if isinstance(n.args[0], DownscaledStack)]
+    assert len(views) == len(full_by_id) > 0
+    for n in views:
+        ds = n.args[0]
+        twin = full_by_id[ds.stable_hash].args[0]
+        assert ds.source == twin and ds.content_hash != twin.content_hash
+        assert ds.width_pixels == twin.width_pixels // ds.factor
+        assert n.content_hash != full_by_id[ds.stable_hash].content_hash
+        # ordered after the frames that write its view
+        assert any(d.task._function.__name__ == "downscale_stack" for d in g_ds[n])
+
+    unstamped = [n for n in g_ds if isinstance(n, Node) and not getattr(n, "content_hash", "")]
+    assert not unstamped, [n.task._function.__name__ for n in unstamped]
 
 
 @pytest.mark.exhaustive
 def test_subframe_orion_op_counts(test_context):
     """`Subframe`.for_mosaic — no stacking / calibration; each
-    panel's best light frame is taken directly, projected, then
-    blended in one variadic `_blend_many` pass per filter."""
+    panel's best light frame is taken directly, then projected and
+    blended in one variadic `_blend_many` pass per filter inside a
+    single dynamic scope."""
     mosaic = _identify(test_context)
     config = _make_config()
 
@@ -769,7 +831,10 @@ def test_subframe_orion_op_counts(test_context):
 
     print(f"\nSubframe op counts:\n{counts}")
 
-    assert counts["get_stack_subframe_image"] == 4, counts
-    assert counts["place_image"] == 4, counts
-    assert counts["merge_images_subframe"] == 1, counts
+    # One representative frame per pane, re-identified under its op; the
+    # `{4 x place_image -> merge_images_subframe}` merge is ONE scope node
+    # (`subframe_scope`, presented as its terminal), then the stored channel.
+    assert counts["subframe_channel"] == 4, counts
+    assert counts["compute_viewbox_measured"] == 1, counts
+    assert counts["subframe_scope"] == 1, counts
     assert counts["store_mosaic_color_channel_subframe"] == 1, counts

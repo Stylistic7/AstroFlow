@@ -5,12 +5,14 @@ Traces a real `process_in_panels` graph over a 2-panel Mosaic, drives it through
 `run_graph` TWICE in the same `test_context` (cache carries over), changing ONE
 panel's data between runs, and proves:
 
-  1. PIXEL IDENTITY — the incrementally-recomputed blend is BYTE-IDENTICAL
-     (np.array_equal) to an honest full recompute of the changed (v2) state. A
-     stale (un-recomputed) panel tile would fail this.
-  2. INCREMENTALITY — only the changed panel's tile got a new `crop_panel` key
-     and re-ran; the disjoint panel kept its exact `crop_panel` output path and
-     was a genuine cache HIT (unchanged file mtime), never re-executed.
+  1. PIXEL IDENTITY — the recomputed blend is BYTE-IDENTICAL (np.array_equal)
+     to an honest full recompute of the changed (v2) state, cut on the same
+     ladder rects the pipeline crops on. A stale panel tile would fail this.
+  2. RE-KEYING — a changed source re-keys EVERY panel's crop, so both tiles
+     re-run (Stylistic7's 2026-09-03 correctness ruling: the merged raster's
+     identity is part of each panel's manifest — a re-merge moves every
+     pixel, so tiles cut from the old raster are stale even where the panel
+     itself did not change). Run-1 tiles are superseded, never rewritten.
 
 This is the run-graph counterpart to the pure-key `test_panels.py`. Marked
 `exhaustive`; uses `identity_tile` (no gpu_slots) so run_graph completes (the
@@ -42,6 +44,7 @@ from metadata.classes import ImageMetadata
 from mosaics.panels import (
     base_panel_mosaic, blend_panels, crop_panel, panel_tiles,
     process_in_panels, _panel_pixel_bboxes,
+    panel_rect,
 )
 from mosaics.types import Mosaic
 from targets.types import Target
@@ -127,9 +130,8 @@ def test_panel_incremental_is_pixel_identical_and_selective(test_context, tmp_pa
     vb = mosaic.viewbox("Master")
     w, h = vb.num_pixels_x, vb.num_pixels_y
 
-    # overlap_px=0 → each panel's tile is exactly its bbox (no padding into
-    # neighbours), so the disjoint panels have disjoint scopes — the cleanest
-    # incremental case (B is provably untouched by an A change).
+    # overlap_px=0 → each panel's tile is its (ladder-grown) bbox with no
+    # padding into neighbours, so the disjoint panels have disjoint scopes.
     config = ProcessingConfig(
         development_settings=DevelopmentSettings(mock_pixinsight=True),
         tiling=TilingSettings(overlap_px=0))
@@ -162,10 +164,10 @@ def test_panel_incremental_is_pixel_identical_and_selective(test_context, tmp_pa
     out_dir = Path(context.output_dir)
     rects = {pid: rect for pid, rect, _ in tiles}
 
-    def crop_paths() -> dict:
-        """{panel_id: crop_panel output path} for the CURRENT context.targets —
-        keyed on the per-panel manifest, source EXCLUDED."""
-        pm = base_panel_mosaic(mosaic, "L", src1)   # src excluded from key
+    def crop_paths(src) -> dict:
+        """{panel_id: crop_panel output path} for the CURRENT context.targets
+        and `src` — keyed on the per-panel manifest, which folds the source."""
+        pm = base_panel_mosaic(mosaic, "L", src)
         pad = config.tiling.overlap_px
         paths = {}
         for pid, rect, sc in panel_tiles(mosaic, vb, config):
@@ -175,7 +177,7 @@ def test_panel_incremental_is_pixel_identical_and_selective(test_context, tmp_pa
                 mosaic, context.targets[pid], vb, pad, pm.merged, sh)
         return paths
 
-    paths_v1 = crop_paths()
+    paths_v1 = crop_paths(src1)
 
     # Crops persist here: this pipeline builds them in the caller's graph, not
     # inside a `delete_intermediates=True` subgraph, so cross-run crop HITS
@@ -197,10 +199,11 @@ def test_panel_incremental_is_pixel_identical_and_selective(test_context, tmp_pa
 
     # ---- CHANGE ONE PANEL'S DATA (A) ---------------------------------------
     context.targets = {"A": _target("A", "A_v2", fp_a), "B": context.targets["B"]}
-    paths_v2 = crop_paths()
-    # KEY-level incrementality: A's crop key MOVED, B's did NOT.
+    paths_v2 = crop_paths(src2)
+    # KEY level: a new source re-keys EVERY panel's crop (the manifest folds
+    # the merged raster's identity), the changed panel's doubly so.
     assert paths_v2["A"] != paths_v1["A"], "A's crop key did not move on re-stack"
-    assert paths_v2["B"] == paths_v1["B"], "B's crop key moved (disjoint panel churned)"
+    assert paths_v2["B"] != paths_v1["B"], "B's crop key did not move on a re-merge"
 
     time.sleep(0.05)
 
@@ -213,12 +216,17 @@ def test_panel_incremental_is_pixel_identical_and_selective(test_context, tmp_pa
 
     # ---- ASSERTION 1: PIXEL IDENTITY vs an honest full recompute -----------
     ref_path = tmp_path / "reference_v2.tiff"
-    ordered = [(pid, rects[pid]) for pid, _, _ in tiles]
+    # The pipeline crops and blends on `panel_rect` — the padded bbox grown to
+    # the RC_ASTRO_SIZE_QUANTUM ladder — not the raw padded bbox `panel_tiles`
+    # reports; an honest recompute uses the same rects.
+    ordered = [(pid, panel_rect(context.targets[pid], vb, config.tiling.overlap_px))
+               for pid, _, _ in tiles]
     feather_blend_to_bigtiff(
         [tuple(r) for _, r in ordered],
         [_crop_to(tmp_path, i, p_v2, r) for i, (_, r) in enumerate(ordered)],
         ref_path, taper_px=config.tiling.overlap_px, blend=config.tiling.blend,
-        metadata={"PIPELINE": "AstroFlow-OSS"})
+        metadata={"PIPELINE": "AstroFlow-OSS"},
+        canvas=(w, h))   # the pipeline blends onto the viewbox canvas, not the tiles' extent
     incr = np.asarray(read_image(b2_incr), dtype=np.float32)
     ref = np.asarray(read_image(ref_path), dtype=np.float32)
     assert incr.shape == ref.shape, (incr.shape, ref.shape)
@@ -227,29 +235,25 @@ def test_panel_incremental_is_pixel_identical_and_selective(test_context, tmp_pa
         f"STALE PANEL: incremental blend differs from full recompute in {n_diff} "
         f"pixels — a changed panel left a v1 tile in the v2 result")
 
-    # ---- ASSERTION 2: INCREMENTALITY — only panel A re-ran -----------------
-    # `identity_tile` drops one marker per EXECUTION, so re-runs are directly
-    # countable: A and B in run 1, then A alone in run 2.
+    # ---- ASSERTION 2: RE-KEYING — every panel re-ran on the new source ------
+    # `identity_tile` drops one marker per EXECUTION, so runs are directly
+    # countable: A and B in run 1, A and B again in run 2.
     execs = len(list((out_dir / "_identity_exec").glob("*.marker")))
-    assert execs == 3, (
-        f"expected 3 identity_tile executions (A+B in run 1, A only in run 2), "
-        f"got {execs} — run 2 re-processed a panel whose data didn't change")
+    assert execs == 4, (
+        f"expected 4 identity_tile executions (A+B per run), got {execs}")
 
     tiles_after = {str(p): p.stat().st_mtime_ns
                    for p in tile_dir.rglob("*.tiff")}
     # Tiles PERSIST (only crops are scope-local), so run 1's two tiles must
-    # both still be byte-untouched: B's because it wasn't re-processed, A's
-    # because its v1 output is merely superseded, never rewritten in place.
-    # If B had been re-run, its path would be rewritten and its mtime would
-    # move — so "both untouched" is exactly the no-redundant-work claim.
+    # both still be byte-untouched: v1 outputs are superseded under new keys,
+    # never rewritten in place.
     survived = [p for p, mt in tile_mtimes_1.items()
                 if tiles_after.get(p) == mt]
     assert len(survived) == 2, (
-        f"a run-1 tile was rewritten in run 2 — panel B was re-processed "
-        f"needlessly; untouched={survived}")
+        f"a run-1 tile was rewritten in place in run 2; untouched={survived}")
     new_tiles = set(tiles_after) - set(tile_mtimes_1)
-    assert len(new_tiles) == 1, (
-        f"expected exactly one NEW tile (A's, re-keyed), got {new_tiles}")
+    assert len(new_tiles) == 2, (
+        f"expected two NEW tiles (both re-keyed), got {new_tiles}")
 
     # The crop KEYS still move correctly even though the files are transient —
     # pure `filename_fn` arithmetic, asserted above (paths_v1 vs paths_v2).

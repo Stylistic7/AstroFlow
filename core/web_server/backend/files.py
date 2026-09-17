@@ -9,6 +9,7 @@ from file_io.sidecar import get_section
 from metadata.image_types import is_light_frame
 from web_server.backend.announcer import announce
 from web_server.backend._route import finish_route
+from products.product import Product
 from state.actor import state
 
 files_bp = Blueprint("files", __name__)
@@ -330,30 +331,29 @@ def open_image(filename):
     return Response(status=200)
 
 
-@finish_route(files_bp, "/api/open", hierarchy=("object_type", "object_id"),
-              methods=["POST"])
-def open_finish(object_type, object_id, pipeline, finish):
-    """Open a finish's INPUT taps in PixInsight, one view per tap, named by
-    the tap and its filter: the Hubble page opens Linear SHO (+ Linear RGB
-    Stars), the H page opens the H channel's tap. The finish itself is a
-    look, applied live; what PixInsight wants is the linear data under it
-    (a band of a join is one ChannelExtraction away).
+def _open_layers(b) -> "tuple[dict[str, Path], list[str]]":
+    """What PixInsight gets for a finish: for each bound input, the file
+    itself when it is one layer, else the mono layers the join was built from
+    — the same LAYER (payload tag) in the pipeline's per-filter taps, one per
+    band role of the join (only the finish's own band for a channel finish).
+    A join with no traced constituents falls back to itself. Data-driven:
+    payload tags and filter roles, never a tap name."""
+    from catalog import band_roles, master_path, product_taps, resolve_product
+    from catalog.finishes import role_of
+    from previews.create_tile_pyramid import payload_tags
+    from previews.pyramid_pages import _get_vips_page
 
-    Paths come from the catalog, never from a filesystem scan: scanning by
-    stable_hash matches superseded generations as readily as current ones,
-    and a stale master opened by hand is indistinguishable from live output
-    once on screen. The deliverable itself (`master_path`) when the current
-    generation is built; else what the viewer serves — the last-good
-    generation (`resolve_product`'s N-1), so the button opens the picture
-    on screen, badged out of date there.
-    """
-    from catalog import master_path, resolve_finish
-    from file_io.planar import reconstruct_planar_tiff
-    from pix.runner import open_in_gui
+    def _describe(path):
+        img = _get_vips_page(os.fspath(path), 0)
+        tags = payload_tags(img)
+        # The stars joins and the mono layers stamp LAYER; the starless joins
+        # (`stack_sho_channels`, `blend_linear_sho`, `linear_rgb_starless`)
+        # predate the tag and carry none — the same reading the finishes use
+        # (`stars_inputs`: stars iff LAYER == "stars"). Stamping them is a
+        # rebuild of the NXT tail, so it waits for a wipe window.
+        return img.bands, tags.get("LAYER") or "starless", tags
 
-    b = resolve_finish(object_type, object_id, pipeline, finish)
-    if b is None:
-        return jsonify({"error": "no such finish for this object"}), 404
+    taps = product_taps(b.object_type, b.object_id, b.pipeline)
     views: dict[str, Path] = {}
     missing: list[str] = []
     for i in b.inputs:
@@ -362,11 +362,81 @@ def open_finish(object_type, object_id, pipeline, finish):
         if path is None:
             missing.append(i.tap)
             continue
-        # Same tiled-TIFF reconstruction as `open_image` — the scene-format
-        # taps are stored tiled, which PixInsight cannot read.
-        views[f"{i.tap} {i.filter}"] = Path(reconstruct_planar_tiff(path))
+        try:
+            bands, layer, tags = _describe(path)
+        except Exception:
+            bands, layer, tags = 1, "starless", {}
+        if bands == 1:
+            views[f"{i.tap} {i.filter}"] = Path(path)
+            continue
+        # a channel finish opens only its own band of the PRIMARY; the stars
+        # it screens in are every band of the stars join
+        wanted = [b.role] if (b.role and i.index == 0) else band_roles(bands, tags, i.filter)
+        found: dict[str, Path] = {}
+        for e in taps:
+            role = role_of(e["filter"])
+            if role not in wanted or role == "none":
+                continue
+            cpath, _ = resolve_product(Product(b.object_type, b.object_id, b.pipeline,
+                                               e["display"], e["filter"]))
+            if cpath is None:
+                continue
+            try:
+                cbands, clayer, _ = _describe(cpath)
+            except Exception:
+                continue
+            if cbands == 1 and clayer == layer:
+                found[f"{e['display']} {e['filter']}"] = Path(cpath)
+        if found and len(found) == len(wanted):
+            views.update(found)
+        else:
+            views[f"{i.tap} {i.filter}"] = Path(path)
+    return views, missing
+
+
+def _export_and_open(views: "dict[str, Path]") -> None:
+    """Off the request thread: rewrite what PixInsight cannot read (tiled
+    TIFF → stripped, uncompressed, cached), then open every view by name."""
+    from file_io.planar import reconstruct_planar_tiff
+    from pix.runner import open_in_gui
+    try:
+        ready = {name: Path(reconstruct_planar_tiff(path)) for name, path in views.items()}
+        open_in_gui(ready)
+    except Exception as e:  # a background thread: log, never die silently
+        print(f"### open_finish: export failed: {type(e).__name__}: {e}")
+
+
+@finish_route(files_bp, "/api/open", hierarchy=("object_type", "object_id"), methods=["POST"])
+def open_finish(object_type, object_id, pipeline, finish):
+    """Open a finish's linear inputs in PixInsight: the Hubble page opens the
+    S, H, O starless layers and the R, G, B stars layers its joins were built
+    from; the H page opens the H layer. The finish itself is a look, applied
+    live; what PixInsight wants is the linear data under it (`_open_layers`).
+
+    Paths come from the catalog, never from a filesystem scan: scanning by
+    stable_hash matches superseded generations as readily as current ones,
+    and a stale master opened by hand is indistinguishable from live output
+    once on screen. The deliverable itself (`master_path`) when the current
+    generation is built; else what the viewer serves — the last-good
+    generation (`resolve_product`'s N-1), so the button opens the picture
+    on screen, badged out of date there.
+
+    Returns 202 at once: a tiled gigapixel layer is rewritten for PixInsight
+    first (uncompressed, ~25 s per 8 GB channel), which no request should
+    wait on — the windows appear in PixInsight as they land."""
+    import threading
+    from catalog import resolve_finish
+    from file_io.planar import is_tiled_tiff
+
+    b = resolve_finish(object_type, object_id, pipeline, finish)
+    if b is None:
+        return jsonify({"error": "no such finish for this object"}), 404
+    views, missing = _open_layers(b)
     if not views:
         return jsonify({"error": "no image available to open", "missing": missing}), 404
-    open_in_gui(views)
-    return jsonify({"opened": {k: str(v) for k, v in views.items()},
-                    "missing": missing})
+    threading.Thread(target=_export_and_open, args=(views,), daemon=True).start()
+    return jsonify({
+        "opening": sorted(views),
+        "exporting": sorted(n for n, p in views.items() if is_tiled_tiff(p)),
+        "missing": missing,
+    }), 202

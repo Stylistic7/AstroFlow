@@ -225,7 +225,7 @@ class DuplicateFileException(Exception):
 # light-task path (estimate < _GATE_MIN_BYTES), so it dispatches unpinned and
 # SPREAD — worker share is a scheduling non-issue; the worker simply completes
 # fewer per minute because its frames cross the network.
-@node(num_cpus=0.25, auto_memory=True)
+@node(num_cpus=0.25, auto_memory=True, identity_root=True)
 def compute_image_metadata(
     filename: os.PathLike,
     plate_solve: bool | None = None,

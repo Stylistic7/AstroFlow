@@ -36,8 +36,14 @@ def test_hashes_and_metadata(test_context) -> None:
     assert hash(dict) == 1247087795776248668
 
     # --- Metadata hash ---
+    # The library ref's identity is `(content_hash, filename)` per frame —
+    # deliberately PATH-dependent, so a moved library re-keys its consumers
+    # (`ContextRef.store_large`'s `identity`). A fixture builds into a fresh
+    # temp dir every run, so the value is not a constant to pin: pin that it
+    # is stable for the same library and moves when frames are added.
     metadata = ray.get(load_library_now.remote())
-    assert metadata.content_hash == "f7d2afc361d2b308"
+    first = metadata.content_hash
+    assert first and ray.get(load_library_now.remote()).content_hash == first
 
     # Adding more frames changes the metadata hash.
     add_orion_mosaic_images(
@@ -46,7 +52,7 @@ def test_hashes_and_metadata(test_context) -> None:
     run_graph(build_compute_graph())
 
     metadata = ray.get(load_library_now.remote())
-    assert metadata.content_hash != "f7d2afc361d2b308"
+    assert metadata.content_hash != first
 
 
 def test_frozendict_hash_call_stable():

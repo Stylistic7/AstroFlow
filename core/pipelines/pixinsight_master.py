@@ -39,8 +39,13 @@ def post_processed_master(stack, config):
 
 
 @workflow_group
-def channels_for_target(target, config):
-    """Per-filter HDR-combined channel masters for one target."""
+def channels_for_target(target, config, post_processed_master=post_processed_master):
+    """Per-filter HDR-combined channel masters for one target.
+
+    `post_processed_master` is the per-stack recipe: this module's, or a
+    twin's that adds a transform in front of it (`PixInsight Downscaled`
+    passes its own). Everything from here up is shared with the twin, so
+    the two pipelines cannot drift apart except in that one call."""
     channels = {}
     for filter in target.filters:
         stacks = target.stacks_for(filter)
@@ -68,11 +73,18 @@ def for_mosaic(mosaic, config):
     """Build a complete mosaic, end to end. Returns
     `{filter: store_handle}`. Missing panels are skipped (the
     pipeline merges what's present)."""
+    return mosaic_stage(mosaic, config)
+
+
+def mosaic_stage(mosaic, config, post_processed_master=post_processed_master):
+    """Place + merge every target's channel masters into per-filter mosaic
+    files. Shared with the twins that only change the per-stack recipe."""
     targets_by_id = {t.id: t for t in mosaic.targets}
 
     channels = {}
     for target in mosaic.targets:
-        for filter, sink in channels_for_target(target, config).items():
+        for filter, sink in channels_for_target(
+                target, config, post_processed_master).items():
             channels[(target.id, filter)] = sink
 
     # ONE measured canvas for the whole object, shared across filters (see

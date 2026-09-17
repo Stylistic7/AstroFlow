@@ -53,8 +53,10 @@ def post_processed_master(stack, config):
 
 
 @workflow_group
-def channels_for_target(target, config):
-    """Per-filter HDR-combined channel masters. Same as PI Master."""
+def channels_for_target(target, config, post_processed_master=post_processed_master):
+    """Per-filter HDR-combined channel masters. Same as PI Master.
+    `post_processed_master` is the per-stack recipe — this module's, or the
+    Downscaled twin's, which adds a transform in front of it."""
     channels = {}
     for filter in target.filters:
         stacks = target.stacks_for(filter)
@@ -113,11 +115,19 @@ def for_mosaic(mosaic, config):
     colour images.
 
     Missing panels are skipped (the pipeline merges what's present)."""
+    return mosaic_stage(mosaic, config)
+
+
+def mosaic_stage(mosaic, config, post_processed_master=post_processed_master):
+    """Native star separation, place + merge each layer, the colour tail.
+    Shared with the Downscaled twin, which only changes the per-stack
+    recipe."""
     targets_by_id = {t.id: t for t in mosaic.targets}
 
     channels = {}
     for target in mosaic.targets:
-        for filter, sink in channels_for_target(target, config).items():
+        for filter, sink in channels_for_target(
+                target, config, post_processed_master).items():
             channels[(target.id, filter)] = sink
 
     viewbox = _measured_viewbox(channels,

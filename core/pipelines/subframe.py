@@ -51,12 +51,15 @@ def subframe_channel(stack: Stack) -> ImageMetadata:
     from what the run actually landed (caught by the trace-vs-disk tests;
     confirmed by logging both reductions).
 
-    Returning `content_hash=""` lets the runtime's pure-Merkle result stamp
-    fill in the call hash — restoring the convention WITHOUT touching the
+    The runtime's pure-Merkle result stamp overwrites `content_hash` with
+    this op's call hash — restoring the convention WITHOUT touching the
     user's file (stamping CONTHASH into raw lights is off the table) and
     without changing `compute_image_metadata`'s frame-identity semantics
-    anywhere else. The inner ops run via `._function`: pure lookups (frames
-    sorted by star count; sidecar-restored metadata), no nested dispatch."""
+    anywhere else (that op is an identity root). Until 2026-09-17 the stamp
+    skipped ImageMetadata, so the value hashed structurally and every
+    Subframe tap path was mispredicted (permanently "out of date"). The
+    inner ops run via `._function`: pure lookups (frames sorted by star
+    count; sidecar-restored metadata), no nested dispatch."""
     import dataclasses
     path = get_stack_subframe_image._function(stack)
     meta = compute_image_metadata._function(path)

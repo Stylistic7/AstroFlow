@@ -148,10 +148,9 @@ def reconstruct_call_args(literals, dep_values, dep_positions):
 
     `dep_positions` is the list of arg indices that were data-dep
     handles at trace time (ascending; `dep_values` is in the same
-    order). With it, an op whose first arg is a dep — e.g.
-    `stack_files(downscale_stack(8, stack), config, *cal_masters)` in the
-    downscaled pipeline — reconstructs as `[downscaled, config, cal…]`
-    instead of collapsing the literal `config` into slot 0.
+    order). With it, an op whose first arg is a dep — an entity that is
+    itself a `@node` result — reconstructs with that dep in slot 0 instead
+    of collapsing the literal `config` into it.
 
     `dep_positions is None` is the legacy path for Nodes built directly
     (not via `record()`): fall back to literals-then-deps, the historical

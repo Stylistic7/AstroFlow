@@ -239,22 +239,29 @@ def get_content_hash(filename: Path) -> str:
 # that was minutes of vips decode per preflight satisfaction check, serialized
 # on the StateActor (caught 2026-08-06 by the big-hash tripwire below).
 
+def _stamped_or_hashed(filename: Path) -> str:
+    # `str()`: the XISF reader runs `ast.literal_eval` on keyword values, so an
+    # all-digit hash round-trips as an int. A content hash is an identifier —
+    # `4526235228981703 == '4526235228981703'` is False, and that inequality
+    # made one stack's master "never satisfied": re-stacked every pass, its
+    # key alternating with the int/str of the master on disk (boot 91).
+    stamped = read_header(filename).get(_CONTENT_HASH_KEY)
+    return str(stamped) if stamped is not None else hash_of_image_data(filename)
+
+
 @get_content_hash.register
 def _(filename: FitsFilePath) -> str:
-    stamped = read_header(filename).get(_CONTENT_HASH_KEY)
-    return stamped if stamped is not None else hash_of_image_data(filename)
+    return _stamped_or_hashed(filename)
 
 
 @get_content_hash.register
 def _(filename: XisfFilePath) -> str:
-    stamped = read_header(filename).get(_CONTENT_HASH_KEY)
-    return stamped if stamped is not None else hash_of_image_data(filename)
+    return _stamped_or_hashed(filename)
 
 
 @get_content_hash.register
 def _(filename: TiffFilePath) -> str:
-    stamped = read_header(filename).get(_CONTENT_HASH_KEY)
-    return stamped if stamped is not None else hash_of_image_data(filename)
+    return _stamped_or_hashed(filename)
 
 
 @get_content_hash.register

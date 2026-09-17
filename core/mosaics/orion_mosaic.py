@@ -74,6 +74,10 @@ def add_orion_mosaic_images(panes=[1, 2, 3, 4], add_calibration_frames=True, **k
             height_pixels=6388,
             temperature=-20,
             exposure=300,
+            # The Orion lights are FOCALLEN=350; a flat from another optical
+            # train is refused outright (`_chronological_flat`), so the
+            # fixture's flat must be shot through the same one.
+            focal_length_m=0.35,
             dest_dir=context.input_dirs[0],
             **kwargs,
         )

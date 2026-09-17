@@ -180,15 +180,15 @@ def halrgb(starless, stars, nb, lum,
 # a target's Channel) is broadcast to (r, r, r) by the viewer and the bake,
 # so `band` reads the same value whichever tap binds. Primaries are in
 # preference order; the catalog binds a per-filter tap to the entry whose
-# filter normalises to `role`. The trailing "Merged"/"Master" are the linear
-# taps BEFORE post-processing — the Subframe preview pipeline's only linear
-# tap, and the fallback while a Mosaic / Post-Processed is still building.
+# filter normalises to `role`. "Mosaic" is a pipeline's finished per-filter
+# mosaic (the PI post-processed channel, or the Subframe preview's merge);
+# "Master" is the fallback while a stack's Post-Processed is still building.
 _NARROWBAND = ("Linear SHO", "Linear Narrowband Starless", "Mosaic Starless",
-               "Post-Processed", "Channel", "Mosaic", "Merged", "Master")
+               "Post-Processed", "Channel", "Mosaic", "Master")
 _BROADBAND = ("Linear RGB Starless", "Mosaic Starless",
-              "Post-Processed", "Channel", "Mosaic", "Merged", "Master")
+              "Post-Processed", "Channel", "Mosaic", "Master")
 _LUM = ("Linear L Starless", "Mosaic Starless",
-        "Post-Processed", "Channel", "Mosaic", "Merged", "Master")
+        "Post-Processed", "Channel", "Mosaic", "Master")
 
 
 def _channel(role: str, band: str, primaries: tuple, stars: str):

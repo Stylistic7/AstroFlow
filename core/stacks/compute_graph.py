@@ -121,6 +121,7 @@ def gather_ui_stacks(prior_ref, *stack_dicts) -> dict:
 def process_stacks_for_ui(
     decisions,
     min_frames: int,
+    entry_version: str,
     *ancestor_results,
 ) -> "Graph | dict":
     """Build (or simply return) the ui_stacks mapping — DELTA-ONLY.
@@ -129,11 +130,15 @@ def process_stacks_for_ui(
     nodes ONLY for misses; hits are collected as values. When every stack
     hits, this returns the assembled dict directly — no subgraph, no
     per-stack dispatches, no gather. And because this builder is itself
-    @node-cached on (decisions, min_frames, stacks, cal_stacks), the next
-    identical startup short-circuits to ONE diskcache hit returning the
-    finished dict: the ~1,020-task fan-out that previously re-dispatched on
-    every startup (and helped wedge the web server's ContextActor reads)
-    never enters the graph at all.
+    @node-cached on (decisions, min_frames, entry_version, stacks,
+    cal_stacks), the next identical startup short-circuits to ONE diskcache
+    hit returning the finished dict: the ~1,020-task fan-out that previously
+    re-dispatched on every startup (and helped wedge the web server's
+    ContextActor reads) never enters the graph at all.
+
+    `entry_version` is `prepare_stack_for_ui`'s source hash, key material
+    only: the cached value EMBEDS the per-stack entries, so editing their
+    producer must miss here as well.
     """
     from cache.context_ref import ContextRef
 

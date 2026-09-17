@@ -84,7 +84,7 @@ def record(task: Callable, *args: Any, _after: tuple = ()) -> Node:
     deps = data_deps + ordering_deps
     # Original positions of the data-dep args, so the runtime/preflight
     # can rebuild the call with each dep at its true slot (the entity
-    # stays first even when it's a `@node` result, e.g. downscale_stack).
+    # stays first even when it's a `@node` result).
     dep_positions = [i for i, a in enumerate(args) if isinstance(a, Node)]
 
     fn = getattr(task, "_function", task)

@@ -1,5 +1,4 @@
 import numpy as np
-from numpy import abs, minimum, maximum, median
 from skimage.transform import resize
 import cv2
 
@@ -15,52 +14,24 @@ def resize_array(array: np.ndarray, new_width: int) -> np.ndarray:
     return result
 
 
-# See this YouTube video: https://www.youtube.com/watch?v=em9IQzbkBuU
-# which links to this PixelMath stretching:
-# https://drive.google.com/drive/folders/1ZuE8VKlrryofFAGdx-hIH8drrdNZxVCN
-def autostretch(image: np.ndarray, debug: bool = False) -> np.ndarray:
-    image = image.astype(np.float32) / np.max(image)
-    unclipped = np.where((image > 0.0) & (image < 1.0))
-    if debug:
-        print(
-            f"### autostretch, input image "
-            f"min {np.min(image)} max {np.max(image)} "
-            f"median {np.median(image[unclipped])}"
-        )
+def autostretch(image: np.ndarray) -> np.ndarray:
+    """The house display stretch (`mosaics.color.palettes.autostretch`, the
+    STF the viewer seeds from) for callers whose input is not yet in
+    [0, 1]: raw-ADU frames are scaled by their brightest finite pixel
+    first, normalised images pass through unchanged.
 
-    curve = 1.0  # 1 = normal stretch, > 1 = arcsin style
-    stretch = 0.20  # target background value
-    clip = 2.8  # increase to prevent shadow clipping
-
-    # The median of the absolute values of the residuals from the data's median.
-    def mdev(image: np.ndarray) -> float:
-        return median(abs(image - median(image)))
-
-    E1 = np.clip(
-        median(image[unclipped]) + -clip * 1.4826 * mdev(image[unclipped]), 0, 1
-    )
-    E2 = maximum(0, (image - E1) / (1 - E1))
-    E3 = median(image[unclipped]) - E1
-    E4 = minimum(1, (1 / curve))
-    E5 = np.nan_to_num(
-        ((stretch - 1) * E3) / ((2 * stretch - 1) * pow(E3, E4) - stretch)
-    )
-    output = np.nan_to_num(((E5 - 1) * E2) / ((2 * E5 - 1) * pow(E2, E4) - E5))
-
-    if debug:
-        print(f"### E1 {E1}")
-        print(f"### E2 {E2}")
-        print(f"### E3 {E3}")
-        print(f"### E4 {E4}")
-        print(f"### E5 {E5}")
-
-    assert not np.isnan(output).any(), "stretched image contains NaN"
-
-    if debug:
-        print(
-            f"### autostretch, output image min {np.min(output)} max {np.max(output)}"
-        )
-    return output
+    This replaced a second, older implementation (2026-09-17) whose
+    midtone was solved for the UN-renormalised median — after clipping
+    the shadows it stretched every image as if its background sat far
+    above where it really was, which is why the S and O merged-mosaic
+    thumbnails came out white while H looked right."""
+    from mosaics.color.palettes import autostretch as _stf
+    x = image.astype(np.float32)
+    finite = x[np.isfinite(x)]
+    peak = float(finite.max()) if finite.size else 1.0
+    if peak > 1.0:
+        x = x / peak
+    return _stf(x, target_background=0.20)
 
 
 def array_to_png(array: np.ndarray, debug: bool = False) -> bytes:

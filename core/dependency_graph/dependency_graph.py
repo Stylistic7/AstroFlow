@@ -185,6 +185,18 @@ def _restore_single_terminal(norm, pruned: Graph) -> Graph:
     return pruned
 
 
+def _call_key(rt, node) -> "tuple | None":
+    """`(op, call_hash)` of a node about to dispatch — None for a task the
+    cache layer does not key (a builder) or when the key cannot be formed."""
+    key_of = getattr(node.task, "call_key", None)
+    if key_of is None:
+        return None
+    try:
+        return key_of(*rt.make_fn_args(node))
+    except Exception:
+        return None
+
+
 def _complete_if_cached(rt, node) -> bool:
     """DRIVER-SIDE HIT SHORT-CIRCUIT — the admission decision "this node
     needs no dispatch at all". Probes the node's cache entry read-only and,
@@ -414,11 +426,18 @@ def _select_node(
     workers, since only the head's capacity carries them.
 
     Memory admission for a candidate ``n`` uses the two-leg min:
-        effective_free(n) = min(free_by_node[n], total_by_node[n] - reserved_by_node[n]) - margin
+        effective_free(n) = min(free_by_node[n], ceiling(n) - reserved_by_node[n]) - margin
+        ceiling(n) = min(total_by_node[n], capacity_by_node[n]["memory"])
     * ACTUAL leg (measured psutil free) sees PixInsight's out-of-process RSS and
       anything else Ray never reserved.
-    * RESERVED leg (total - reserved) covers the lag before a just-launched task
-      has allocated and shows up in the measurement.
+    * RESERVED leg (ceiling - reserved) covers the lag before a just-launched
+      task has allocated and shows up in the measurement. The ceiling is the
+      SMALLER of physical RAM and the node's Ray ``memory`` capacity (``ray
+      start --memory``, 0.7 x RAM): the reservation we hand Ray is admitted
+      against the latter, so a lease that fits RAM but not Ray's ledger is
+      not placed — Ray holds it, pending, while our ledger shows it running
+      (24-panel merges, 2026-09-16: 43 GB admitted against 68.7 GB of RAM on
+      a 48.1 GB Ray node, "running" with no worker for an hour).
     A node whose OS memory PRESSURE is yellow/red (``pressure_by_node[n] >= 2``)
     is dropped from candidates regardless of the byte math — the macOS-accurate
     brake the ACTUAL leg misses (``available`` over-counts reclaimable pages).
@@ -465,8 +484,11 @@ def _select_node(
         # IGNORES pressure — it must place *something* rather than stall forever.
         if pressure.get(nid, 0) >= 2:
             continue
-        total = total_by_node.get(nid, avail)
-        eff = min(avail, total - reserved_by_node.get(nid, 0)) - margin
+        ceiling = total_by_node.get(nid, avail)
+        ray_cap = capacity_by_node.get(nid, {}).get("memory")
+        if ray_cap:
+            ceiling = min(ceiling, int(ray_cap))
+        eff = min(avail, ceiling - reserved_by_node.get(nid, 0)) - margin
         scored.append((eff, nid))
 
     if scored:
@@ -619,7 +641,18 @@ def run_graph(
 
         # Submit ready nodes incrementally, cap in-flight, process completions.
         pending: list[ray.ObjectRef] = []
-        ref_meta: dict[ray.ObjectRef, tuple[GraphRuntime, Node]] = {}
+        # Every (runtime, node) a ref completes — more than one when a second
+        # runtime asked for the SAME call while it was in flight (see
+        # `in_flight`); all of them see the one result.
+        ref_meta: dict[ray.ObjectRef, list[tuple[GraphRuntime, Node]]] = {}
+        # Cross-runtime in-flight dedup: `(op, call_hash)` -> the ref computing
+        # it. Two cart pipelines for one mosaic each own an identical node;
+        # a runtime dedups within itself and the @node cache catches a repeat
+        # only once the first call has LANDED — so boot 91 ran three WBPP
+        # masters twice, one per Mac (~75 min of PixInsight). Keyed exactly as
+        # the cache is, so anything that would become a cache hit later
+        # becomes a shared ref now.
+        in_flight: dict[tuple, ray.ObjectRef] = {}
 
         while ready_cache or pending:
             # Admit ready nodes up to the concurrency cap. A HEAVY task (declares
@@ -685,11 +718,17 @@ def run_graph(
                         continue
                 rt.start(node)
                 try:
+                    key = _call_key(rt, node) if not dry_run else None
+                    if key is not None and key in in_flight:
+                        ref_meta[in_flight[key]].append((rt, node))
+                        continue  # ride the in-flight computation
                     ref = _submit_node(
                         rt, node, dry_run, debug,
                         node_id=node_id, memory=(need_mem or None),
                     )
-                    ref_meta[ref] = (rt, node)
+                    ref_meta[ref] = [(rt, node)]
+                    if key is not None:
+                        in_flight[key] = ref
                     pending.append(ref)
                     if gated:  # reserve on the chosen node iff it launched
                         reserved_by_node[node_id] = (
@@ -745,7 +784,11 @@ def run_graph(
             pending = still_pending
 
             for ref in ready_refs:
-                rt, node = ref_meta.pop(ref)
+                completions = ref_meta.pop(ref)
+                rt, node = completions[0]
+                for k, r in list(in_flight.items()):
+                    if r is ref:
+                        del in_flight[k]
                 # Release the reservation on the ref RESOLVING (success or terminal
                 # error) — held correctly across Ray retries (ref stays unresolved
                 # while retrying). A leak here would only inflate `reserved` →
@@ -775,14 +818,13 @@ def run_graph(
                 num_nodes_run += 1
                 try:
                     result = ray.get(ref)
-                    rt.node_completed(
-                        node, result, _retrieve_logs(rt, node)
-                    )
                 except ray.exceptions.RayTaskError as e:
                     print(f"Node {node_to_string(node)} raised exception {e}")
-                    rt.node_failed(
-                        node, e.cause, _retrieve_logs(rt, node)
-                    )
+                    for rt, node in completions:
+                        rt.node_failed(node, e.cause, _retrieve_logs(rt, node))
+                else:
+                    for rt, node in completions:
+                        rt.node_completed(node, result, _retrieve_logs(rt, node))
 
             # Everything the completions just unblocked goes on top.
             _pull_ready()

@@ -36,6 +36,10 @@ _HISTORY_LEN = 60
 _CPU_KEY = "ray_metrics_cpu_history"
 _MEM_KEY = "ray_metrics_mem_history"
 _OBJ_KEY = "ray_metrics_obj_history"
+# The cluster's node list + totals, as of the last sample — the web server is
+# Ray-free, so `/api/ray/status` reads THIS instead of calling `ray.nodes()`
+# (which, from a gunicorn worker, always raised "Ray is not running").
+_CLUSTER_KEY = "ray_metrics_cluster"
 
 
 def _push_sample(key: str, value: float) -> None:
@@ -112,6 +116,7 @@ def sample_once() -> None:
 
         from ray.util.scheduling_strategies import NodeAffinitySchedulingStrategy
         nodes = ray.nodes()
+        _store_cluster_summary(nodes, ray.cluster_resources() or {})
         alive = [n for n in nodes if n.get("Alive")]
         if not alive:
             return
@@ -154,6 +159,41 @@ def sample_once() -> None:
             pass
     except Exception as e:
         print(f"### ray_metrics sample failed: {type(e).__name__}: {e}")
+
+
+def _store_cluster_summary(nodes: list, cluster_resources: dict) -> None:
+    """Persist what the Ray status chip shows about the cluster's shape."""
+    from context import local_context as context
+    node_list = []
+    for node in nodes:
+        message = None
+        if not node.get("Alive"):
+            message = node.get("MetricsExportError") or "Unknown failure"
+        node_list.append({
+            "ip": node.get("NodeManagerAddress"),
+            "health": "healthy" if node.get("Alive") else "unhealthy",
+            "cpus": int(node.get("Resources", {}).get("CPU", 0)),
+            "ram": int(node.get("Resources", {}).get("memory", 0) / 1e9),
+            "message": message,
+        })
+    healthy = sum(1 for n in nodes if n.get("Alive"))
+    context[_CLUSTER_KEY] = {
+        "healthyNodes": healthy,
+        "unhealthyNodes": len(nodes) - healthy,
+        # alive + dead: when healthy < total the chip shows the disparity
+        "totalNodes": len(nodes),
+        "totalCPUs": int(cluster_resources.get("CPU", 0)),
+        "totalRAM": int(cluster_resources.get("memory", 0) / 1e9),
+        "nodes": node_list,
+        "sampledAt": time.time(),
+    }
+
+
+def get_cluster_summary() -> "dict | None":
+    """The last stored cluster summary, or None before the first sample."""
+    from context import local_context as context
+    val = context.get(_CLUSTER_KEY, None)
+    return val if isinstance(val, dict) else None
 
 
 def get_cpu_history() -> list[float]:

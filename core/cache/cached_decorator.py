@@ -37,7 +37,6 @@ from beartype import beartype as _beartype
 from dataclasses import dataclass
 from ray.runtime_context import get_runtime_context
 
-from cache.content_hashed import ContentHashed
 from cache.context_ref import ContextRef, strip_refs
 from cache.types import NeverRun
 from protocols import CacheProtocol
@@ -203,6 +202,15 @@ def _bind_args(
     return bound
 
 
+def _carries_identity(result: Any) -> bool:
+    """Whether `result` is a dataclass value with a `content_hash` FIELD —
+    the shape the pure-Merkle stamp applies to. Files (`WithSidecar`, the
+    typed paths) compute theirs from the header and are stamped there."""
+    import dataclasses
+    return (dataclasses.is_dataclass(result) and not isinstance(result, type)
+            and any(f.name == "content_hash" for f in dataclasses.fields(result)))
+
+
 def make_cached_decorator(
     cache_provider: Callable[[], CacheProtocol],
     memory_estimator: Optional[Callable[[Callable, tuple, dict], int]] = None,
@@ -225,8 +233,14 @@ def make_cached_decorator(
         *,
         canonical_call_hash: Callable,
         ray_opts: dict,
+        identity_root: bool = False,
     ) -> Callable:
-        """Wrap `func` with caching keyed by `canonical_call_hash(args)`."""
+        """Wrap `func` with caching keyed by `canonical_call_hash(args)`.
+
+        `identity_root`: the op's result IS an identity — its content hash
+        names the data it identifies (a run's frame membership) and must not
+        move with code or the library. Every other entity result is DERIVED
+        and carries its producer's call hash (see the stamp below)."""
         func = _beartype(func)
 
         def _key_and_lookup(bound):
@@ -314,19 +328,22 @@ def make_cached_decorator(
                 )
             if isinstance(result, Path) and not result.exists():
                 raise FileNotFoundError(result)
-            # Pure-Merkle stamp for PLAIN-OBJECT results. The trace side already
-            # stamps every handle with `content_hash = canonical_call_hash(...)`
-            # and documents that as "the content_hash its runtime result will
-            # carry" — but only image producers actually carried it (via the
-            # CONTHASH header that `compute_image_metadata` reads back). A
-            # ContentHashed value returned by a plain @node came back with
-            # content_hash="", so a trace-time key built from the HANDLE and a
-            # runtime key built from the RESULT disagreed — exactly the
-            # mismatch that would break `process_in_panels`-style identity
-            # prediction over a Viewbox handle. Results that set their own
-            # content_hash (Stack, Target, Mosaic from the identify ops) are
-            # left alone.
-            if isinstance(result, ContentHashed) and not result.content_hash:
+            # Pure-Merkle stamp for PLAIN-OBJECT results: a derived value's
+            # content hash IS its producer's call hash. The trace side stamps
+            # every handle with `canonical_call_hash(...)` as "the content_hash
+            # its runtime result will carry"; image producers honour that via
+            # the CONTHASH header `compute_image_metadata` reads back, and this
+            # is the same promise for every result that CARRIES an identity —
+            # a ContentHashed value (Viewbox, Mask, a transformed Stack) or an
+            # ImageMetadata handed back directly (`subframe_channel`).
+            # Unconditional: an op that computed its own hash for a derived
+            # result (downscale_stack, 2026-09-17) or left one empty on a type
+            # this stamp skipped (subframe_channel: every Subframe tap path was
+            # mispredicted) made the trace-time key and the runtime key
+            # disagree. Only an identity ROOT keeps its own — a run's hash is
+            # its frame membership, a frame's is its file — and must not move
+            # with the op's source or the library it was built from.
+            if not identity_root and _carries_identity(result):
                 object.__setattr__(result, "content_hash", call_hash)
             from dependency_graph.classes import Graph
             if isinstance(result, Graph):
@@ -445,6 +462,16 @@ def make_cached_decorator(
             return valid
         wrapper.is_cached = is_cached
 
+        def call_key(*args, injected_context=None, **kwargs) -> tuple:
+            """`(op name, call_hash)` for these args — the cache key's identity,
+            without touching the cache. The dispatcher dedups IN-FLIGHT work
+            across graph runtimes by it (two pipelines for one mosaic own the
+            same `stack_files` node; only the second call's landing would
+            otherwise be a cache hit)."""
+            bound = _bind_args(func, args, kwargs, injected_context)
+            return (func.__name__, canonical_call_hash(*bound.args, **bound.kwargs))
+        wrapper.call_key = call_key
+
         def cached_value(*args, injected_context=None,
                          log_hit: bool = False, **kwargs):
             """(hit, value): a read-only probe of this call's cache entry —
@@ -503,10 +530,11 @@ def make_cached_decorator(
         """
 
         def remote(self, func=None, *, canonical_call_hash=None, cache_key_narrow=None,
-                   **ray_opts):
+                   identity_root=False, **ray_opts):
             def go(f):
                 cch = canonical_call_hash or _default_canonical_call_hash(f, cache_key_narrow)
-                return decorate(f, canonical_call_hash=cch, ray_opts=ray_opts)
+                return decorate(f, canonical_call_hash=cch, ray_opts=ray_opts,
+                                identity_root=identity_root)
             if func is None:
                 return go
             return go(func)

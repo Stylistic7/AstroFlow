@@ -27,6 +27,7 @@ const StackHeader = ({
     // (e.g. WBPP `stack_files` for "Hybrid: PI Master + OSS Mosaic"), not
     // some default pipeline's. No view yet ⇒ nothing to open.
     if (!pipeline || !finish) return;
+    // 202: opens in PixInsight as soon as the master is readable there.
     await fetch(
       `/api/open/${stack_type}/${stack_id}/${encodeURIComponent(pipeline)}/${encodeURIComponent(finish)}`,
       { method: 'POST' },

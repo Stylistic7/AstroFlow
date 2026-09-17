@@ -517,7 +517,7 @@ def merge_stars_scope(mosaic, filter, viewbox, config, targets, *stars,
 
 
 @node(
-    display="Merged",
+    display="Mosaic",
     resources={"fastest_storage": 0.001},
     plate_solve="none",  # mosaic projection — non-square pixels, can't solve
 )
@@ -525,8 +525,10 @@ def merge_images_subframe(
     mosaic: Mosaic, filter: str, *inputs,
 ) -> WithSidecar[TiffFilePath]:
     """The Subframe preview pipeline's mosaic merge — the SAME distance-weighted
-    blend as `merge_images_oss` (`_blend_many`), just emitting the preview tap
-    (`display="Merged"`, non-final, TIFF) instead of the final Mosaic deliverable.
+    blend as `merge_images_oss` (`_blend_many`), emitting the preview
+    pipeline's per-filter mosaic (`display="Mosaic"`: the linear image the
+    channel finishes read, the same name the PI pipeline's post-processed
+    channel carries) instead of the final Mosaic Starless deliverable.
 
     Subframe panels are tiny (downscaled), so this variadic single-call blend
     over every placed panel is near-instant. One call per (mosaic, filter) →
