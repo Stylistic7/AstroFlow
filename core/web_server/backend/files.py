@@ -369,9 +369,9 @@ def _open_layers(b) -> "tuple[dict[str, Path], list[str]]":
         if bands == 1:
             views[f"{i.tap} {i.filter}"] = Path(path)
             continue
-        # a channel finish opens only its own band of the PRIMARY; the stars
-        # it screens in are every band of the stars join
-        wanted = [b.role] if (b.role and i.index == 0) else band_roles(bands, tags, i.filter)
+        # a channel finish opens its own band of every join — the H page is
+        # the H starless layer and the H stars layer, not three stars layers
+        wanted = [b.role] if b.role else band_roles(bands, tags, i.filter)
         found: dict[str, Path] = {}
         for e in taps:
             role = role_of(e["filter"])
@@ -410,8 +410,9 @@ def _export_and_open(views: "dict[str, Path]") -> None:
 def open_finish(object_type, object_id, pipeline, finish):
     """Open a finish's linear inputs in PixInsight: the Hubble page opens the
     S, H, O starless layers and the R, G, B stars layers its joins were built
-    from; the H page opens the H layer. The finish itself is a look, applied
-    live; what PixInsight wants is the linear data under it (`_open_layers`).
+    from; the H page opens the H starless and H stars layers. The finish
+    itself is a look, applied live; what PixInsight wants is the linear data
+    under it (`_open_layers`).
 
     Paths come from the catalog, never from a filesystem scan: scanning by
     stable_hash matches superseded generations as readily as current ones,

@@ -272,6 +272,13 @@ def make_cached_decorator(
                     f"longer on disk, treating as miss"
                 )
                 return key, call_hash, False, None
+            # The pure-Merkle stamp on a HIT too: the key IS the call hash, so
+            # whatever sits under it is that call's result and carries that
+            # identity by definition. Entries stored before the stamp covered
+            # their type (subframe_channel's ImageMetadata, 2026-09-17) would
+            # otherwise keep an empty or foreign hash for as long as they hit.
+            if not identity_root and _carries_identity(cached):
+                object.__setattr__(cached, "content_hash", call_hash)
             from dependency_graph.classes import Graph
             if isinstance(cached, Graph):
                 # A Graph is a PLAN, not a result — the store side has refused

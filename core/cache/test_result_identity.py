@@ -64,3 +64,14 @@ def test_cache_hit_returns_the_stamped_value(test_context):
     first = ray.get(derive.remote(7))
     again = ray.get(derive.remote(7))
     assert again.content_hash == first.content_hash == _call_hash(derive, 7)
+
+
+def test_an_entry_stored_before_the_stamp_is_stamped_on_hit(test_context):
+    """The key IS the call hash, so a cached value carries that identity by
+    definition — including entries written before the stamp covered their
+    type (subframe_channel's ImageMetadata sat at "" for as long as it hit)."""
+    from context import get_cache
+    key = ("derive", _call_hash(derive, 11))
+    get_cache()[key] = _Derived(content_hash="foreign", payload=11)
+    r = ray.get(derive.remote(11))
+    assert r.payload == 11 and r.content_hash == _call_hash(derive, 11)
