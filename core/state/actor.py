@@ -142,6 +142,10 @@ class StateActor:
             from context.context import _get_namespace
             actor = ray.get_actor("context", namespace=_get_namespace())
             actor.set.remote("compute_graph_status", progress)
+            from dependency_graph.progress import running_snapshot
+            hosts = {n["NodeID"]: n.get("NodeManagerAddress")
+                     for n in ray.nodes() if n.get("Alive")}
+            actor.set.remote("node_running", running_snapshot(status, hosts))
 
             from web_server.backend.announcer import announce
             announce("compute_graph_status")
@@ -158,6 +162,9 @@ class StateActor:
             )
         except GraphCancelled:
             print("### Graph drained; restart already enqueued")
+            from context.context import _get_namespace
+            ray.get_actor("context", namespace=_get_namespace()).set.remote(
+                "node_running", {})  # the drain waited for every in-flight task
             return state, [Action(type="announce", message="reload_data")]
         except _NODE_LOST_ERRORS as e:
             # A worker node/raylet died mid-run (infra failure, not a task bug).

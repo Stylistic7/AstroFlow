@@ -67,3 +67,21 @@ def graph_status_to_progress(status: GraphStatus) -> dict[str, Any]:
     }
 
     return status_dict
+
+
+def running_snapshot(status: GraphStatus, address_of: dict[str, str]) -> dict[str, dict]:
+    """What is running where: `{node_id: {op, started_at, ray_node_id, host}}`
+    for every in-flight node, host resolved through `address_of` (Ray node
+    id -> address). Published as `node_running` on each status tick and
+    cleared when a run drains; a run that dies otherwise leaves the last
+    tick's entries until the next run's first tick overwrites them."""
+    from dependency_graph.workflow_graph_adapter import node_to_id
+    return {
+        node_to_id(n): {
+            "op": n.task._function.__name__,
+            "started_at": started_at,
+            "ray_node_id": ray_node_id,
+            "host": address_of.get(ray_node_id) if ray_node_id else None,
+        }
+        for n, (started_at, ray_node_id) in status.in_flight_placement.items()
+    }

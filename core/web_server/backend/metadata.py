@@ -302,65 +302,12 @@ def pipeline_outputs(object_type: str, object_id: str):
     the `default` landing view the frontend redirects to. Read-only and
     snapshot-only: a web request never triggers a trace.
     """
-    from catalog import queries as cat
+    from catalog.queries import product_matrix
 
-    if _resolve_entity(object_type, object_id) is None:
+    matrix = product_matrix(object_type, object_id)
+    if matrix is None:
         return abort(404)
-
-    iter_filters = cat.filters_for(object_type, object_id) or [None]
-    entity_filter_strs = {str(f) for f in iter_filters}
-
-    traces: dict[str, dict[str, dict[str, str]]] = {}
-    extras: set[str] = set()
-    for name in cat.pipelines_for(object_type, object_id):
-        by_display: dict[str, dict[str, str]] = {}
-        for e in cat.product_taps(object_type, object_id, name):
-            fk = str(e["filter"])
-            by_display.setdefault(e["display"], {})[fk] = e["path"]
-            if fk not in entity_filter_strs:
-                extras.add(fk)
-        traces[name] = by_display
-
-    columns = list(iter_filters) + sorted(extras)
-
-    pipelines = []
-    for name, by_display in traces.items():
-        taps = []
-        # `by_display` preserves the display order of the trace walk, which is
-        # topological (define-by-run) — so taps come out in ORDER OF COMPUTATION.
-        for display, paths_by_filter in by_display.items():
-            outputs = []
-            # Only the filters that ACTUALLY route through THIS tap in the trace,
-            # not the global column union: a tap node isn't filter-specific, so its
-            # real filter set is whatever the pipeline×object trace produced for it.
-            # `columns` order is reused solely to canonicalize filter order within
-            # the row. A filter that passes through but isn't on disk yet is kept
-            # (shows "not yet built").
-            for f in columns:
-                if str(f) not in paths_by_filter:
-                    continue
-                path, status = cat.resolve_product(
-                    cat.Product(object_type, object_id, name, display, f))
-                outputs.append({
-                    "filter": f,
-                    "exists": path is not None,
-                    "mtime": os.path.getmtime(str(path)) if path is not None else None,
-                    "status": status,
-                })
-            taps.append({"display": display, "outputs": outputs})
-        pipelines.append({"name": name, "taps": taps})
-
-    # The default landing view (pipeline + display + filter) for a bare object
-    # URL, computed by the catalog from `_PIPELINE_PREFERENCE` + what exists on
-    # disk. The frontend redirects to this instead of keeping its own preference
-    # list — one source of truth (see feedback_avoid_derived_state). None when
-    # nothing is on disk yet.
-    default = cat.default_product_for(object_type, object_id)
-    return jsonify({
-        "filters": columns,
-        "pipelines": pipelines,
-        "default": default.as_view() if default else None,
-    })
+    return jsonify(matrix)
 
 
 @metadata_bp.route(

@@ -369,52 +369,8 @@ def _per_channel_linear_stats_uncached(path, star_paths=None):
     # testing the primary would call almost the whole mosaic uncovered and
     # leave the stats to a handful of star pixels. The composite carries the
     # pedestal across the footprint either way round.
-    coverage = np.all(np.isfinite(arr), axis=1) & np.all(arr > 0.0, axis=1)
-    # Sky subset: covered pixels whose composite luminance sits below p60 —
-    # background, largely star-free (stars are bright). Falls back to the
-    # full covered set when coverage is tiny.
-    sky_mask = coverage.copy()
-    if coverage.sum() > 100:
-        lum = arr[coverage].mean(axis=1)
-        cut = np.percentile(lum, 60)
-        idx = np.where(coverage)[0]
-        sky_mask = np.zeros_like(coverage)
-        sky_mask[idx[lum < cut]] = True
-    # GENERIC per-channel statistics (median, robust σ/MAD, min/max, percentiles).
-    # Finish-agnostic: the frontend's display finishes compute their own starting
-    # values from these (e.g. the STF/MTF seed = median − 2.8σ, p99, midtones-to-
-    # target). The backend ships scene + stats, never finish logic. Narrowband
-    # channels differ wildly in SNR (Hα ~13σ, SII ~2σ, OIII <1σ), so everything is
-    # per-channel.
-    stats = []
-    for b in range(nb):
-        c = arr[:, b]
-        good = np.isfinite(c) & (c > 0.0)
-        c = c[good]
-        if c.size == 0:
-            stats.append({"median": 0.0, "mad": 0.0, "sigma": 1.0, "min": 0.0,
-                          "max": 1.0, "p1": 0.0, "p95": 1.0, "p99": 1.0,
-                          "p999": 1.0, "high": 1.0})
-            continue
-        med = float(np.median(c))
-        mad = float(np.median(np.abs(c - med)))
-        sigma = 1.4826 * mad if mad > 0 else max(med * 1e-3, 1e-6)
-        p1, p95, p99, p999 = (float(np.percentile(c, q)) for q in (1, 95, 99, 99.9))
-        sky = arr[:, b][sky_mask & good] if (sky_mask & good).any() else c
-        sky_med = float(np.median(sky))
-        sky_mad = float(np.median(np.abs(sky - sky_med)))
-        stats.append({
-            "median": med, "mad": mad, "sigma": sigma,
-            "min": float(c.min()), "max": float(c.max()),
-            "p1": p1, "p95": p95, "p99": p99, "p999": p999,
-            "skyMedian": sky_med,
-            "skySigma": 1.4826 * sky_mad if sky_mad > 0 else sigma,
-            # Legacy HIGH anchor the built-in GHS finish reads: p99.9 floored at
-            # median + 60σ so the gap stays wide relative to noise for a faint
-            # channel.
-            "high": max(p999, med + 60.0 * sigma),
-        })
-    return stats
+    from previews.linear_stats import band_stats
+    return band_stats(arr)
 
 
 def _declared_colorspace(base) -> "str | None":

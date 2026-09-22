@@ -107,18 +107,9 @@ def override_decision():
     key = _deserialize_key(data["key"])
     raw_choice = data.get("choice")
 
-    def updater(settings):
-        current = dict(settings.decision_overrides)
-        if raw_choice is None:
-            current.pop(key, None)
-        else:
-            choice = _deserialize_choice(raw_choice, key.decision_type)
-            current[key] = DecisionOverride(choice=choice)
-        return replace(settings, decision_overrides=frozendict(current))
-
-    settings = context.settings
-    new_settings = updater(settings)
-    context.settings = new_settings
+    from decisions.helpers import with_override
+    choice = _deserialize_choice(raw_choice, key.decision_type)
+    context.settings = with_override(context.settings, key, choice)
 
     state.drain_and_restart()
 

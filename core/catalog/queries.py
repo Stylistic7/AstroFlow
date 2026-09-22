@@ -301,3 +301,60 @@ def default_pipeline_for(object_type: str, object_id: str) -> str:
     `"PixInsight Master"` string literals scattered through the web backend)."""
     product = default_product_for(object_type, object_id)
     return product.pipeline if product else _PIPELINE_PREFERENCE[0]
+
+
+def product_matrix(object_type: str, object_id: str,
+                   with_paths: bool = False) -> dict | None:
+    """Every pipeline whose trace routed a tap to this object, its display
+    taps in order of computation, and per `(display, filter)` whether the
+    output is on disk — `{filters, pipelines: [{name, taps: [{display,
+    outputs: [{filter, exists, mtime, status}]}]}], default}`, plus `path`
+    and `predicted_path` per output when `with_paths`. None for an unknown
+    object. Snapshot-only: never traces.
+    """
+    if resolve_entity(object_type, object_id) is None:
+        return None
+    iter_filters = filters_for(object_type, object_id) or [None]
+    entity_filter_strs = {str(f) for f in iter_filters}
+    traces: dict[str, dict[str, dict[str, str]]] = {}
+    extras: set[str] = set()
+    for name in pipelines_for(object_type, object_id):
+        by_display: dict[str, dict[str, str]] = {}
+        for e in product_taps(object_type, object_id, name):
+            fk = str(e["filter"])
+            by_display.setdefault(e["display"], {})[fk] = e["path"]
+            if fk not in entity_filter_strs:
+                extras.add(fk)
+        traces[name] = by_display
+    columns = list(iter_filters) + sorted(extras)
+    pipelines = []
+    for name, by_display in traces.items():
+        taps = []
+        for display, paths_by_filter in by_display.items():
+            outputs = []
+            # Only the filters that actually route through this tap; a
+            # filter that passes through but is not on disk yet is kept.
+            for f in columns:
+                if str(f) not in paths_by_filter:
+                    continue
+                product = Product(object_type, object_id, name, display, f)
+                path, status = resolve_product(product)
+                row = {
+                    "filter": f,
+                    "exists": path is not None,
+                    "mtime": os.path.getmtime(str(path)) if path is not None else None,
+                    "status": status,
+                }
+                if with_paths:
+                    predicted = predict_path(product)
+                    row["path"] = str(path) if path is not None else None
+                    row["predicted_path"] = str(predicted) if predicted else None
+                outputs.append(row)
+            taps.append({"display": display, "outputs": outputs})
+        pipelines.append({"name": name, "taps": taps})
+    default = default_product_for(object_type, object_id)
+    return {
+        "filters": columns,
+        "pipelines": pipelines,
+        "default": default.as_view() if default else None,
+    }

@@ -38,6 +38,18 @@ def calibration_override(
     }
 
 
+def with_override(settings, key: DecisionKey, choice):
+    """`settings` with `key` overridden to `choice`, or cleared when `choice`
+    is None. A new Settings; the input is untouched. The one update path
+    for the web route and the MCP tools."""
+    current = dict(settings.decision_overrides)
+    if choice is None:
+        current.pop(key, None)
+    else:
+        current[key] = DecisionOverride(choice=choice)
+    return replace(settings, decision_overrides=frozendict(current))
+
+
 # ---------------------------------------------------------------------------
 # Actions (read-modify-write context.settings.decision_overrides)
 # ---------------------------------------------------------------------------

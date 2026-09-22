@@ -55,6 +55,9 @@ def _prevent_idle_sleep() -> None:
 def _force_cleanup():
     ray_path = get_bin_dir() / "ray"
     subprocess.run(["pkill", "-f", "gunicorn"], capture_output=True)
+    # The MCP sidecar: `mcp_server --port` cannot match Claude Code's own
+    # hyphenated `mcp-server-*` processes.
+    subprocess.run(["pkill", "-f", "mcp_server --port"], capture_output=True)
     # Kill any PixInsight too. The pix runner keeps a persistent out-of-process
     # PI instance; on a CRASH (Ray/raylet dies, main.py exits with an error) it's
     # orphaned — its in-flight WBPP output is never cached (the dispatching Ray

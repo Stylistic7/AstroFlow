@@ -17,6 +17,7 @@ in run_graph(). It manages a tree of subgraphs internally:
 from __future__ import annotations
 
 import inspect
+import time
 from collections import Counter, defaultdict
 from typing import Any, Callable
 
@@ -130,6 +131,9 @@ class GraphRuntime:
 
         self._started: set[Node] = set()
         self._done: set[Node] = set()
+        # (started_at, ray node id or None) per started node — what
+        # `running_snapshot` publishes as "running where, since when".
+        self._placement: dict[Node, tuple[float, str | None]] = {}
 
         # Reverse dependencies: node -> set of nodes that depend on it.
         self._dependents: dict[Node, set[Node]] = defaultdict(set)
@@ -216,10 +220,12 @@ class GraphRuntime:
         self._propagate_completed_children()
         return list(self._ready)
 
-    def start(self, node: Node) -> None:
-        """Mark a node as started (submitted to Ray)."""
+    def start(self, node: Node, placed_on: str | None = None) -> None:
+        """Mark a node as started (submitted to Ray), pinned to Ray node
+        `placed_on` or unpinned (None)."""
         self._started.add(node)
         self._ready.discard(node)
+        self._placement[node] = (time.time(), placed_on)
 
     def started(self, node: Node) -> bool:
         return node in self._started
@@ -526,6 +532,8 @@ class GraphRuntime:
             waiting_count=self.waiting_count(),
             done_per_fn=Counter(self._done_per_fn),
             total_per_fn=Counter(self._total_per_fn),
+            in_flight_placement={n: self._placement[n] for n in in_flight
+                                 if n in self._placement},
         )
         for child in self._children.values():
             status = status + child.get_status()

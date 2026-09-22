@@ -151,6 +151,7 @@ _DURABLE_STR_KEYS = frozenset(
         "ui_mosaics",
         "ui_calibration_stacks",
         "tap_snapshots",
+        "node_running",
         # --- machine configuration (reason 1 again: the 2026-08-06 wipe
         # silently reverted cluster_interface to auto-detect → head bound the
         # WiFi NIC (10.0.0.x) → the MBP could not join → split-brain with two

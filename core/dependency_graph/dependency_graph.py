@@ -683,7 +683,7 @@ def run_graph(
                             )
                         retained.append((rt, node))
                         continue
-                rt.start(node)
+                rt.start(node, placed_on=node_id)
                 try:
                     ref = _submit_node(
                         rt, node, dry_run, debug,
