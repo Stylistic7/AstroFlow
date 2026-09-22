@@ -32,7 +32,25 @@ from astropy.wcs import WCS
 # The largest systematic displacement a solution may show in any region.
 # Real solutions on every train in the 2026-09-20 sample sit at 0.1-0.5 px
 # after refinement; the broken ones at 5-40 px in the corners.
-MAX_OFFSET_PX = 1.0
+#
+# The threshold is the CALLER's, because the two consumers are asking
+# different questions and only one of them is self-protecting:
+#
+#   MASTER_MAX_OFFSET_PX — a master's WCS PLACES THE IMAGE. `place_image`
+#     reprojects through it into the mosaic, so a 2 px corner error is 1.26"
+#     on the 0.63"/px train and lands as misregistration at a panel seam —
+#     doubled stars, and nothing downstream catches it. Stays at one pixel.
+#   SUB_MAX_OFFSET_PX — a sub's WCS only SEEDS APERTURES, and a badly seeded
+#     aperture already excludes itself: `forced_photometry.CENTROID_STEP_PX`
+#     rejects any star whose centroid sits more than a pixel from where the
+#     WCS predicted. So a frame with one bad cell of nine loses that cell's
+#     stars and contributes the other eight, and `stacks.starflat.sub_is_good`
+#     drops the frame outright once too much of the field misses. Rejecting
+#     the whole frame at one pixel threw away the good 89% with the bad 11%:
+#     2,594 subs excluded on 2026-09-22, 54% of them under two pixels.
+MASTER_MAX_OFFSET_PX = 1.0
+SUB_MAX_OFFSET_PX = 2.0
+MAX_OFFSET_PX = MASTER_MAX_OFFSET_PX
 # Catalogue stars used: the harvest's own depth (a star it would measure
 # must be a peak), and at least this many or the check is inconclusive
 # (treated as passing — a nearly empty field cannot be judged, and it
@@ -51,9 +69,14 @@ class SolutionCheck:
     max_shift_px: float   # largest systematic displacement over the field and its cells
     worst_region: str     # where it is: "field" or "cell r,c"
 
+    def ok_within(self, max_offset_px: float) -> bool:
+        """Whether this solution is good enough for a caller that tolerates
+        `max_offset_px` of systematic displacement (see the note above)."""
+        return self.n_stars < MIN_STARS or self.max_shift_px <= max_offset_px
+
     @property
     def ok(self) -> bool:
-        return self.n_stars < MIN_STARS or self.max_shift_px <= MAX_OFFSET_PX
+        return self.ok_within(MAX_OFFSET_PX)
 
     def __str__(self) -> str:
         return (f"{self.n_stars} stars, predicted→peak median {self.median_px:.2f} px, "

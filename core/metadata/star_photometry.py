@@ -126,9 +126,14 @@ def compute_star_photometry(filename: Path) -> np.ndarray | None:
     # measured wrong silently (`photometry.solution_check`). A sub whose
     # solution fails is left out of the star flat with a concern; the flat
     # is solved from the subs that pass.
-    from photometry.solution_check import check_file
+    #
+    # Judged at SUB_MAX_OFFSET_PX, not the master's one pixel: a badly seeded
+    # aperture excludes ITSELF, so a frame with one bad cell of nine should
+    # contribute the other eight rather than be discarded whole. This is the
+    # backstop for a solution that is wrong across the whole field.
+    from photometry.solution_check import SUB_MAX_OFFSET_PX, check_file
     verdict = check_file(filename, filter)
-    if verdict is not None and not verdict.ok:
+    if verdict is not None and not verdict.ok_within(SUB_MAX_OFFSET_PX):
         from concerns import warn
         warn("Plate solution does not place the stars; sub excluded from photometry",
              f"{filename.name}: {verdict}. Every aperture would sit beside its star "

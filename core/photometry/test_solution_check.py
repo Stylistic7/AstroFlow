@@ -68,6 +68,19 @@ def test_the_real_solution_places_its_stars(frame, monkeypatch):
     assert v.n_stars > 200 and v.max_shift_px <= sc.MAX_OFFSET_PX and v.ok, str(v)
 
 
+def test_the_threshold_belongs_to_the_caller(frame, monkeypatch):
+    """A master's WCS places the image in a mosaic, so it is held to one
+    pixel. A sub's only seeds apertures, and a badly seeded aperture excludes
+    itself — so a sub is held to two, and contributes the cells that worked
+    instead of being discarded whole."""
+    img, wcs, cat = frame
+    monkeypatch.setattr("photometry.harvest.catalog", lambda: cat)
+    v = sc.check_solution(img, _with_radial_distortion(wcs, 6e-11), "H")
+    assert sc.MASTER_MAX_OFFSET_PX < v.max_shift_px <= sc.SUB_MAX_OFFSET_PX, str(v)
+    assert v.ok_within(sc.SUB_MAX_OFFSET_PX) and not v.ok_within(sc.MASTER_MAX_OFFSET_PX)
+    assert not v.ok                              # the bare property is the master's rule
+
+
 def test_a_cubic_radial_error_fails_the_check(frame, monkeypatch):
     """k3 = 4e-10: 0.4 px at r=1000, 12 px at r=3000 — the corner error a
     quadratic SIP leaves on the 0.63"/px train, scaled to this frame."""
