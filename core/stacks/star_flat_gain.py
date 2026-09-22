@@ -43,11 +43,27 @@ from pathlib import Path
 import numpy as np
 from scipy.ndimage import gaussian_filter, median_filter
 
-GAIN_METHOD = 2                # 2: the dark is brought to the sub's units before subtraction
+GAIN_METHOD = 3                # 3: a fit that is well-determined and lands below GAIN_RANGE
+                               # WITHHOLDS the flat (k = 0) instead of applying it whole
 GAIN_BAND_PX = (256, 1024)   # the etalon band, native px
 GAIN_SCALE = 8               # the fit runs at 1/GAIN_SCALE resolution
 GAIN_MAX_SUBS = 40           # subs sampled per stack (evenly through the list)
-GAIN_RANGE = (0.5, 2.5)      # outside this the fit is not believed: k = 1 and a warning
+GAIN_RANGE = (0.5, 2.5)      # a believable etalon amplitude for a stack's own sky
+# k is an AMPLITUDE: 0 applies no star flat at all, 1 applies it exactly as
+# built. So "I don't believe the fit" must not resolve to 1 — that is the
+# maximum, not a neutral default. What distinguishes the two failures is the
+# CORRELATION, not k: a fit that could not be measured has |corr| near 0,
+# while a fit that measured the flat and found it wrong has |corr| near 1.
+#   |corr| >= GAIN_CORR_TRUSTED and k below range -> the flat's pattern is
+#       not in this stack's sky. Withhold it (k = 0) and raise a Concern;
+#       the stack falls back to its panel flat.
+#   |corr| >= GAIN_CORR_TRUSTED and k above range -> the sky wants more than
+#       the flat has. Clamp to the range and warn.
+#   |corr| below it -> nothing was measured; leave the group's flat as built.
+# 2026-09-22: 49 of 124 fits refused, median fitted k 0.19, median corr -0.56;
+# the Triangulum L stack fitted k=0.10 at corr -0.99 over 40 subs and had the
+# full flat applied, punching holes where the flat's own artifacts were.
+GAIN_CORR_TRUSTED = 0.5
 GAIN_UNUSUAL = (0.7, 2.0)    # outside this it is applied but worth a look
 
 
@@ -166,10 +182,22 @@ def fit_gain(sub_paths, flat: np.ndarray, dark: np.ndarray | None, *,
         out.update(k=1.0, reason=f"only {len(slopes)} subs fit")
         return out
     k = 1.0 + float(np.median(slopes))
-    if not (GAIN_RANGE[0] <= k <= GAIN_RANGE[1]):
-        out.update(k=1.0, k_fit=k, reason=f"fitted k={k:.2f} outside {GAIN_RANGE}")
+    corr = float(np.median(corrs))
+    if GAIN_RANGE[0] <= k <= GAIN_RANGE[1]:
+        out.update(k=k)
         return out
-    out.update(k=k)
+    if abs(corr) < GAIN_CORR_TRUSTED:
+        out.update(k=1.0, k_fit=k, reason=f"fitted k={k:.2f} outside {GAIN_RANGE} "
+                                          f"and the fit is weak (|corr|={abs(corr):.2f}); "
+                                          f"the flat is applied as built")
+        return out
+    if k < GAIN_RANGE[0]:
+        out.update(k=0.0, k_fit=k, withheld=True,
+                   reason=f"fitted k={k:.2f} at |corr|={abs(corr):.2f} — this stack's sky does "
+                          f"not contain the flat's pattern, so no star flat is applied")
+        return out
+    out.update(k=GAIN_RANGE[1], k_fit=k,
+               reason=f"fitted k={k:.2f} above {GAIN_RANGE[1]} at |corr|={abs(corr):.2f}; clamped")
     return out
 
 

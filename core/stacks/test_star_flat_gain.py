@@ -75,12 +75,16 @@ def test_fit_takes_a_pixinsight_normalised_dark():
     assert abs(normalised - in_adu) < 0.02 and abs(normalised - 1.4) < 0.08
 
 
-def test_fit_refuses_an_absurd_gain_and_too_few_subs():
+def test_fit_clamps_an_absurd_gain_and_stands_down_on_too_few_subs():
+    """A fit ABOVE the range, measured confidently, is clamped — the sky wants
+    more than the flat has, so apply all of it. Too few subs to fit at all is
+    the other story: nothing was measured, so the flat is left as built."""
     rng = np.random.default_rng(3)
     flat = _pattern(rng)
     subs = _subs(rng, flat, 4.0, n=4)                                   # far outside GAIN_RANGE
     fit = fit_gain(list(subs), flat, np.full((H, W), 800.0, np.float32), scale=SCALE, read=subs.__getitem__)
-    assert fit["k"] == 1.0 and "outside" in fit["reason"] and fit["k_fit"] > GAIN_RANGE[1]
+    assert fit["k"] == GAIN_RANGE[1] and "clamped" in fit["reason"] and fit["k_fit"] > GAIN_RANGE[1]
+    assert not fit.get("withheld")
     two = fit_gain(list(subs)[:2], flat, None, scale=SCALE, read=subs.__getitem__)
     assert two["k"] == 1.0 and "only 2" in two["reason"]
 
@@ -139,13 +143,17 @@ def test_fit_on_real_frames_sees_that_the_sky_carries_none_of_a_foreign_pattern(
     stars and noise but NOT the synthetic pattern. Dividing by it prints it
     inverted, and the fit must read that cleanly through the real structure
     — slope ~ -1 (the sky has 0x of this pattern), correlation ~ -1 — and
-    then refuse the absurd gain: k = 1 with the reason recorded."""
+    then WITHHOLD the flat: k = 0, because a confident measurement that the
+    pattern is ABSENT is a reason not to apply it, not a reason to apply it
+    whole. Until 2026-09-22 this case set k = 1 and printed the flat's own
+    structure into the master (the galaxy masters came out with black holes)."""
     flat = _sensor_pattern(next(iter(orion_frames.values())).shape)
     fit = fit_gain(list(orion_frames), flat, None, read=orion_frames.__getitem__)
     assert fit["n_used"] == 3
     assert abs(fit["k_fit"] - 0.0) < 0.1, fit
     assert np.median(fit["corrs"]) < -0.9
-    assert fit["k"] == 1.0 and "outside" in fit["reason"]
+    assert fit["k"] == 0.0 and fit["withheld"] is True
+    assert "does not contain the flat's pattern" in fit["reason"]
 
 
 def test_fit_on_real_frames_recovers_an_injected_gain(orion_frames):

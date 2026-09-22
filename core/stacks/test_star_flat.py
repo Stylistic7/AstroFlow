@@ -23,6 +23,7 @@ from metadata.star_photometry import SCHEMA as PHOTOMETRY_SCHEMA, write_star_pho
 from plate_solving import PlateSolution
 from stacks.run import RunsDict
 from stacks.star_flat import (
+    CELL_COVERAGE_MIN,
     CELLS, GATE_UNCERTAINTY_MAX, MAG_WINDOW, MIN_SPLIT_HALF, MIN_SUBS, StarFlatCandidates, StarFlatStack,
     StarFlats, _focal_clusters, gate, passes_gate, solve_adaptive, solve_and_write, star_flat_candidates,
 )
@@ -65,7 +66,16 @@ def test_identity_follows_the_stack_conventions():
     assert len(cands) == 1
     sf = next(iter(cands.values()))
     assert sf.stable_hash == "c0000"                                  # the oldest member's content hash
-    assert sf.content_hash == hash_list(sorted(f"c{i:04d}" for i in range(30)))
+    # the house convention — membership — plus the one term a Stack does not
+    # need: the photometry schema, because the flat's pixels come from the
+    # members' MEASUREMENTS, not their pixels (cf. DownscaledStack's _fn_hash)
+    from metadata.star_photometry import SCHEMA as PHOTOMETRY_SCHEMA
+    assert sf.content_hash == hash_list(sorted(f"c{i:04d}" for i in range(30)) + [PHOTOMETRY_SCHEMA])
+    # re-solving a member must NOT move it — that would re-stack the whole train
+    lib = _library(30)
+    lib[FrameHash("c0007")] = dataclasses.replace(lib[FrameHash("c0007")], plate_solution=dataclasses.replace(
+        lib[FrameHash("c0007")].plate_solution, header={**lib[FrameHash("c0007")].plate_solution.header, "CRVAL1": 99.0}))
+    assert next(iter(star_flat_candidates(lib, {}).values())).content_hash == sf.content_hash
     assert sf.kind == "star" and sf.image_type == "flat" and sf.n_subs == 30
     assert sf.contents == RunsDict() and sf.focal_length == 351.0 and sf.filter == "H"
     assert sf.photometry_schema == PHOTOMETRY_SCHEMA                  # an engine change re-keys
@@ -121,15 +131,21 @@ def _write_synthetic_subs(tmp_path, n_subs):
     return paths
 
 
-def test_solve_adaptive_picks_the_finest_cell_within_the_noise_budget():
+def test_solve_adaptive_picks_the_finest_cell_every_cell_can_fill():
+    """Sufficiency is judged per CELL, and the finest cell size at which every
+    cell qualifies wins. A group with the same stars spread thinner drops to a
+    coarser cell rather than fitting a dozen stars per cell."""
     stars, _ = _synth(seed=0, n_subs=24, stars_per_sub=1200, contaminated=())
-    # 24 x 1200 stars at 3% scatter: 128 px cells sit under the 0.15% budget, 64 px do not
-    sol, cell, r_raw, r_blob = solve_adaptive(stars, (H, W), cells=(256, 128, 64))
-    assert cell == 128 and r_raw > 0.8
+    sol, cell, r_raw, r_blob, cov = solve_adaptive(stars, (H, W), cells=(64, 128, 256))
+    assert cell == 64 and r_raw > 0.8 and cov["covered_fraction"] >= CELL_COVERAGE_MIN
     sparse, _ = _synth(seed=0, n_subs=24, stars_per_sub=40, contaminated=())
-    sol2, cell2, _, _ = solve_adaptive(sparse, (H, W), cells=(256, 128, 64))
-    assert cell2 == 256                                           # too noisy for anything finer
-    assert CELLS == (256,)                                        # production: 256 only (128 reverted 2026-09-14)
+    sol2, cell2, _, _, cov2 = solve_adaptive(sparse, (H, W), cells=(128, 256))
+    assert cell2 == 256 and sol2 is not None                      # too thin for anything finer
+    # nothing at all when even the coarsest cell is starved
+    thin, _ = _synth(seed=0, n_subs=3, stars_per_sub=5, contaminated=())
+    sol3, cell3, _, _, cov3 = solve_adaptive(thin, (H, W), cells=(128, 256))
+    assert sol3 is None and cell3 is None and cov3["covered_fraction"] < CELL_COVERAGE_MIN
+    assert CELLS == (256, 512, 1024)                              # production: fine -> coarse
 
 
 def test_solve_and_write_makes_a_wbpp_master_and_passes_the_gate(tmp_path):

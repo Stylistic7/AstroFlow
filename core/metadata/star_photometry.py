@@ -6,10 +6,12 @@ at Gaia positions, no PixInsight; ~0.4 s per sub). Schema history: v1 =
 PixInsight SPFC; v2 = the engine before PI's relative saturation rule and
 the wide-PSF annulus; v3 = fixed stamp geometry, flat "ideal QE" L passband,
 outlier-fraction gate; v4 = FWHM-adaptive geometry, L = R/G/B envelope,
-scatter gate; v5 = robust FWHM probe, gate over 8-13.5; v6 = current
-(apertures seeded exactly at the catalogue position and refined by at most
-one pixel, behind a check of the solution itself — `photometry.
-solution_check`). Older sections are recomputed by the sweep.
+scatter gate; v5 = robust FWHM probe, gate over 8-13.5; v6 = apertures seeded
+exactly at the catalogue position and refined by at most one pixel, behind a
+check of the solution itself (`photometry.solution_check`); v7 = current (a
+sub is judged on whether it FOUND the stars that were there, not on how many
+there were — `stacks.starflat.sub_is_good`). Older sections are recomputed by
+the sweep.
 
 Section `star_photometry`, shaped like `plate_solution`:
 
@@ -19,7 +21,7 @@ Section `star_photometry`, shaped like `plate_solution`:
 `reason` "no_plate_solution" is provisional (a solution may arrive later and
 the next call harvests); "no_match" is final for this schema (too few usable
 stars, or a wrong WCS: the per-star scatter about the colour term exceeds
-`stacks.starflat._MAX_SCATTER`). Bumping SCHEMA recomputes every sub.
+`stacks.starflat.sub_is_good`). Bumping SCHEMA recomputes every sub.
 
 Deliberately NOT a field of `ImageMetadata`: metadata values are hashed into
 downstream cache keys, so a new field would re-key every stack in the
@@ -39,7 +41,7 @@ from file_io.sidecar import get_section, set_section
 
 log = structlog.get_logger()
 
-SCHEMA = "astroflow.starphotometry.v6"
+SCHEMA = "astroflow.starphotometry.v7"
 SECTION = "star_photometry"
 # Column order of the arrays read back; `scale` is the image/catalogue flux
 # ratio (∝ the sensor's response at that pixel, exp(+F)).

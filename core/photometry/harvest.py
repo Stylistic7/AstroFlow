@@ -17,7 +17,7 @@ from astropy.io import fits
 from astropy.wcs import WCS
 
 from file_io.sidecar import get_section
-from photometry.forced_photometry import measure
+from photometry.forced_photometry import CENTROID_STEP_PX, measure
 from photometry.gaia_catalog import CATALOG_PATH, GaiaCatalog
 
 # Depth: G 12-13 roughly doubles the star flat's information per sub (photon
@@ -25,6 +25,12 @@ from photometry.gaia_catalog import CATALOG_PATH, GaiaCatalog
 # sidecar bytes. Faint stars are weighted by SNR in the solve, not cut.
 MAX_G = 13.5
 MIN_SNR = 10.0
+# A MASTER's flux scale is ONE number whose precision is scatter/sqrt(n), so
+# unlike a star flat (where each star informs its own cell and sufficiency is
+# judged per cell) a count floor is meaningful here: `spfc_scale` refuses
+# rather than put a channel on a gauge it cannot determine.
+_SPFC_MIN_STARS = 20
+_SPFC_MAX_SCATTER = 0.25
 _catalog: GaiaCatalog | None = None
 
 
@@ -54,7 +60,7 @@ def harvest_sub_xp(path: str | Path, *, filter: str | None, cat: GaiaCatalog | N
     """Forced photometry of every catalogue star on the sub → (stars, info)
     in `stacks.starflat.STAR_COLUMNS` order (without `sub`): x, y (PI
     convention), ra, dec, G, colour, fwhm, signal, scale, snr."""
-    from stacks.starflat import _match_quality, _MAX_SCATTER, _MIN_WINDOW_STARS
+    from stacks.starflat import _match_quality, sub_is_good
     path = Path(path)
     if filter is None:
         raise ValueError(f"{path}: no FITS FILTER; cannot pick a catalogue passband")
@@ -72,8 +78,17 @@ def harvest_sub_xp(path: str | Path, *, filter: str | None, cat: GaiaCatalog | N
         m["fwhm"][ok], m["signal"][ok], m["signal"][ok] / st["catalog_flux"][ok], m["snr"][ok],
     ]).astype(np.float64)
     n, scatter, gross = _match_quality(stars)
-    return stars, {"engine": "astroflow-xp", "n_window": n, "scatter": scatter, "gross": gross,
-                   "good": n >= _MIN_WINDOW_STARS and np.isfinite(scatter) and scatter < _MAX_SCATTER}
+    # How the sub did against WHAT WAS THERE — the catalogue says how many
+    # stars the field holds, so the only question is whether they were found
+    # and measured (`stacks.starflat.sub_is_good`). `n_detectable` counts the
+    # stars bright enough to measure whose stamp fits on the frame; `n_found`
+    # those the centroid then located within a pixel of the predicted spot.
+    detectable = m["on_frame"] & (m["snr"] >= MIN_SNR)
+    info = {"engine": "astroflow-xp", "n_available": int(len(st["G"])),
+            "n_detectable": int(detectable.sum()),
+            "n_found": int((detectable & (m["offset"] <= CENTROID_STEP_PX)).sum()),
+            "n_window": n, "scatter": scatter, "gross": gross}
+    return stars, {**info, "good": sub_is_good(info)}
 
 
 # PI-SPFC ScaleFactor per unit of THIS engine's raw ratio. Our catalogue
@@ -128,7 +143,7 @@ def spfc_scale(
     "Insufficient data" produced: a master that cannot be flux-calibrated
     must not pass downstream.
     """
-    from stacks.starflat import _MAX_SCATTER, _MIN_WINDOW_STARS, _match_quality
+    from stacks.starflat import _match_quality
 
     if filter is None:
         raise ValueError("spfc_scale: no FITS FILTER; cannot pick a catalogue passband")
@@ -152,11 +167,11 @@ def spfc_scale(
     ]).astype(np.float64)
 
     n, scatter, _gross = _match_quality(stars)
-    if n < _MIN_WINDOW_STARS or not np.isfinite(scatter) or scatter >= _MAX_SCATTER:
+    if n < _SPFC_MIN_STARS or not np.isfinite(scatter) or scatter >= _SPFC_MAX_SCATTER:
         raise ValueError(
             f"spfc_scale: too few calibratable stars (n={n} in window, "
-            f"scatter={scatter:.3f}); need n>={_MIN_WINDOW_STARS} and "
-            f"scatter<{_MAX_SCATTER}"
+            f"scatter={scatter:.3f}); need n>={_SPFC_MIN_STARS} and "
+            f"scatter<{_SPFC_MAX_SCATTER}"
         )
     # Median over the SAME magnitude window the quality gate uses. The
     # per-star ratio varies across the field (that is exactly what the star

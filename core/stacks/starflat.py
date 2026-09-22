@@ -76,11 +76,42 @@ def _match_quality(stars: np.ndarray, mag_window=(8.0, 13.5)) -> tuple[int, floa
     return int(m.sum()), float(1.4826 * np.median(np.abs(r - med))), float(np.mean(np.abs(r - med) > 0.3))
 
 
-_MIN_WINDOW_STARS = 20
-# Forced photometry has no partially-wrong pairing: a bad WCS makes EVERY star
-# garbage (scatter 0.5-1.3 in log), a good sub sits at 0.03-0.06 and a long
-# focal length with 8-10 px PSFs at ~0.1-0.2. Gate on the scatter itself.
+# A sub is judged on whether it FOUND AND MEASURED the stars that were there
+# — never on how many there were. A 2055 mm field holds 16 catalogue stars and
+# a 351 mm field holds 14,000; both are fine data if the stars land where the
+# WCS says and measure consistently (2026-09-22: detectable -> found is
+# 99-100% on every optical train in the library, sparse or rich). Absolute
+# floors here and in `solve_star_flat` discarded 89% of the 1234 mm L subs and
+# left that group's flat fitting ~13 stars per cell instead of 70.
+#
+# FOUND: of the stars bright enough to measure (SNR >= MIN_SNR) whose stamp
+# fits on the frame, the fraction the centroid found within CENTROID_STEP_PX
+# of the position the WCS predicted. Saturated and too-faint stars are not
+# failures and are not counted against the sub. A wrong WCS collapses this.
+_MIN_FOUND_FRACTION = 0.80
+# MEASURED: the robust scatter of log(scale) about the colour term. A bad WCS
+# measures noise everywhere (0.5-1.3); a good sub sits at 0.03-0.06, a long
+# focal length with 8-10 px PSFs at 0.1-0.2.
 _MAX_SCATTER = 0.25
+# The scatter needs stars to be an estimate at all. Below this it is not
+# computed and the sub is judged on the found fraction alone — which is
+# exactly the sparse-field case the old count floor was rejecting.
+_SCATTER_MIN_STARS = 20
+
+
+def sub_is_good(info: dict) -> bool:
+    """Whether a harvested sub's photometry may join a star flat.
+
+    `info` is `photometry.harvest.harvest_sub_xp`'s record. No count
+    threshold: a sub contributes whatever stars its field holds."""
+    det = int(info.get("n_detectable") or 0)
+    if det and info.get("n_found") is not None:
+        if info["n_found"] / det < _MIN_FOUND_FRACTION:
+            return False
+    n, scatter = int(info.get("n_window") or 0), info.get("scatter")
+    if n >= _SCATTER_MIN_STARS:
+        return bool(np.isfinite(scatter) and scatter < _MAX_SCATTER)
+    return n > 0
 
 
 def gather_star_photometry(paths) -> np.ndarray:
@@ -123,7 +154,7 @@ def _wmean_by(idx: np.ndarray, v: np.ndarray, w: np.ndarray, n: int) -> np.ndarr
 
 
 def solve_star_flat(stars: np.ndarray, shape: tuple[int, int], *, cell: int = 256,
-                    mag_window: tuple[float, float] = (8.0, 12.0), min_stars_per_sub: int = 100,
+                    mag_window: tuple[float, float] = (8.0, 12.0), min_stars_per_sub: int = 5,
                     contamination_fraction: float = 0.05, iterations: int = 8) -> StarFlatSolution:
     """Joint solve  log(scale) = F(cell) + K[sub] + c * colour  by robust alternation.
 
@@ -131,7 +162,15 @@ def solve_star_flat(stars: np.ndarray, shape: tuple[int, int], *, cell: int = 25
     global residual scale, hard rejection of |residual| > 5 sigma (catalog
     mismatches are x2-x4 off), then any sub with more than
     `contamination_fraction` gross outliers is dropped entirely and the solve
-    is repeated on the clean set. Every group statistic is a `bincount`, so
+    is repeated on the clean set.
+
+    `min_stars_per_sub` exists only so a sub's own zero point K[sub] — one
+    free parameter — is not set by a single star; it is NOT a quality gate.
+    It was 100 until 2026-09-22, which threw away 89% of the 1234 mm L subs
+    (91 stars per sub in a star-poor galaxy field) and left that group's flat
+    fitting ~13 stars per cell instead of the 70 it had. Whether a sub's
+    photometry is trustworthy is decided once, by `sub_is_good`, on whether
+    the stars that were there got found and measured. Every group statistic is a `bincount`, so
     the cost is O(stars) per iteration whatever the cell size. `stars` is an
     (n, 11) array in STAR_COLUMNS order.
     """
@@ -146,7 +185,11 @@ def solve_star_flat(stars: np.ndarray, shape: tuple[int, int], *, cell: int = 25
     ok = (np.isfinite(t) & (col > -0.5) & (col < 3.5) & (fwhm <= np.nanpercentile(fwhm, 97))
           & (G >= mag_window[0]) & (G <= mag_window[1]) & (n_of[sid] >= min_stars_per_sub))
     x, y, col, t, sid, w0 = x[ok], y[ok], col[ok], t[ok], sid[ok], w0[ok]
-    nx, ny = W // cell + 1, H // cell + 1
+    # ceil, not `// cell + 1`: on a detector whose size is an exact multiple of
+    # the cell the latter appends a trailing row/column that no pixel can fall
+    # in, and those phantom cells read as permanently starved (2026-09-22,
+    # found by the per-cell coverage rule on a 960x640 test detector).
+    nx, ny = -(-W // cell), -(-H // cell)
     cells = (np.clip(y.astype(int), 0, H - 1) // cell) * nx + (np.clip(x.astype(int), 0, W - 1) // cell)
 
     def _solve(col, t, sid, cells, w0, iters):
@@ -199,7 +242,7 @@ def split_half(stars: np.ndarray, sol: StarFlatSolution) -> tuple[float, float]:
     sid = sid.astype(int)
     keep = np.isin(sid, sol.kept_subs) & (sc > 0)
     x, y, col, t, sid = x[keep], y[keep], col[keep], np.log(sc[keep]), sid[keep]
-    nx, ny = W // sol.cell + 1, H // sol.cell + 1
+    nx, ny = -(-W // sol.cell), -(-H // sol.cell)
     cells = (np.clip(y.astype(int), 0, H - 1) // sol.cell) * nx + (np.clip(x.astype(int), 0, W - 1) // sol.cell)
     rr = t - np.array([sol.zero_points.get(int(s), 0.0) for s in sid]) - sol.colour_term * col
 

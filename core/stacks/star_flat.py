@@ -68,7 +68,10 @@ GATE_UNCERTAINTY_MAX = 0.005  # log units; noisier than 0.5% per cell (even at 2
                               # cells into every stack — long-focal-length groups with few stars
                               # per sub sat at 0.6–1.1% on 2026-09-07; they fall back to the old
                               # defaults until more subs arrive
-CELLS = (256,)                # coarse-to-fine candidates; the finest under CELL_UNCERTAINTY_MAX wins.
+CELLS = (256, 512, 1024)      # fine-to-coarse candidates; the FINEST whose cells are all
+                              # sufficiently sampled wins (`solve_adaptive`). 512/1024 exist so a
+                              # star-poor long-focal group gets an honest coarse flat instead of a
+                              # fine one fitted on a dozen stars per cell.
                               # 128 was tried in production (2026-09-12..14) and reverted: Stylistic7 judged
                               # its masters splotchier at medium scales than 256's; the per-stack gain
                               # (scale_star_flat) carries the amplitude, so 256 with fitted k is the choice.
@@ -77,6 +80,14 @@ CELLS = (256,)                # coarse-to-fine candidates; the finest under CELL
                               # residual at 128 px / 0.7 cell on S and equal on H, with thousands of
                               # stars per cell; the uncertainty gate still drops sparse groups to 256.
                               # 64 px printed cell noise into masters (2026-09-07) and stays out.
+# A cell's value is the weighted mean of its stars, so the cell — not the sub,
+# and not the group — is where "enough data" has to be decided (Stylistic7,
+# 2026-09-22). Stars alone are not enough: they must come from different
+# POINTINGS, or a cell holds the same dozen stars measured over and over and
+# their systematics become the flat.
+MIN_CELL_STARS = 30           # stars in a cell before its gain means anything
+MIN_CELL_POINTINGS = 4        # distinct sky positions contributing to that cell
+CELL_COVERAGE_MIN = 0.98      # fraction of cells that must meet both, or try a coarser cell
 MAG_WINDOW = (8.0, 13.5)      # forced photometry has no faint-star selection bias; SNR-weighted
 SECTION = "star_flat"         # the master's sidecar section: quality metrics for the gate
 
@@ -152,6 +163,30 @@ def _focal_clusters(values) -> list[list[int]]:
     ]
 
 
+def _group_content_hash(frames) -> str:
+    """A star flat's content hash: its membership, plus the photometry schema.
+
+    The membership part is the house convention — a Mosaic hashes its
+    targets' content hashes, a Target its stacks', a Stack its runs', a Run
+    its frames' — and a frame's content hash is its PIXELS, so the whole
+    hierarchy is deliberately blind to metadata and re-solving a frame moves
+    nothing. That is what keeps the library from re-deriving itself.
+
+    The schema is the one extra term, the same shape as `DownscaledStack`'s
+    `downscale_stack._fn_hash`: unlike a Stack, whose product depends only on
+    its frames' pixels, a star flat's product depends on their PHOTOMETRY,
+    which is a function of the pixels, the WCS and the measuring code. The
+    schema names that code. Without it the 2026-09-21 re-solve changed every
+    member's measurements and moved no hash, so `build_star_flat` cache-hit
+    on flats built from the old solutions and every master kept them.
+
+    NOT hashed: the individual plate solutions. That would re-key the group
+    — and re-stack its whole train — every time a single sub was re-solved.
+    See `MIN_SUBS`' note on the cost of a revision.
+    """
+    return hash_list(sorted(str(f) for f in frames) + [PHOTOMETRY_SCHEMA])
+
+
 def star_flat_candidates(metadata: MetadataDict, fingerprints: dict) -> StarFlatCandidates:
     """One candidate per (camera identity, focal length, filter) with at
     least MIN_SUBS plate-solved lights. Camera identity is the defect-
@@ -185,7 +220,7 @@ def star_flat_candidates(metadata: MetadataDict, fingerprints: dict) -> StarFlat
             chron = ChronologyAttributes.from_frames(frames, sub)
             first = metadata[frames[0]]
             stack = StarFlatStack(
-                content_hash=hash_list(sorted(str(f) for f in frames)),
+                content_hash=_group_content_hash(frames),
                 image_type="flat",
                 camera=_camera_label(m.header.get("INSTRUME") for m in sub.values()),
                 filter=filt,
@@ -219,21 +254,72 @@ def identify_star_flats(
     return candidates
 
 
-def solve_adaptive(stars: np.ndarray, shape: tuple[int, int], cells=CELLS, mag_window=MAG_WINDOW) -> tuple:
-    """Solve at `cells` from coarse to fine and keep the finest cell whose
-    median per-cell uncertainty stays under CELL_UNCERTAINTY_MAX.
-    Returns (solution, cell, r_raw, r_blob)."""
-    best = None
-    for cell in cells:
+def cell_coverage(sol, min_stars: int, min_pointings: int, pointings=None) -> dict:
+    """How well `sol`'s cells are sampled: the fraction that carry at least
+    `min_stars` stars, and — when `pointings` gives each sub's sky position —
+    at least `min_pointings` DISTINCT pointings.
+
+    The pointing count is what makes a cell's stars independent. Six nights
+    on one galaxy put the same dozen stars in the same cell every time; the
+    per-cell mean then converges on whatever those stars' systematics are,
+    and split-half agreement is perfect because odd and even subs hold the
+    SAME stars (2026-09-22: the 1234 mm L flat, split-half 0.996, carried a
+    +15.7% blob no other filter on that sensor sees)."""
+    n = sol.counts
+    enough = n >= min_stars
+    out = {"cells": int(n.size), "min_stars": min_stars,
+           "covered_fraction": float(enough.mean()),
+           "starved_cells": int((~enough).sum()),
+           "median_stars_per_cell": float(np.median(n))}
+    if pointings is not None:
+        out["min_pointings"] = min_pointings
+        out["pointing_covered_fraction"] = float((pointings >= min_pointings).mean())
+        out["covered_fraction"] = float((enough & (pointings >= min_pointings)).mean())
+    return out
+
+
+def solve_adaptive(stars: np.ndarray, shape: tuple[int, int], cells=CELLS, mag_window=MAG_WINDOW,
+                   min_stars=MIN_CELL_STARS, min_pointings=MIN_CELL_POINTINGS,
+                   pointing_of_sub=None) -> tuple:
+    """Solve from FINE to COARSE and keep the finest cell size at which every
+    cell is sufficiently sampled — Stylistic7's rule (2026-09-22): "the star flat
+    can only be built when all of its cells have sufficient samples".
+
+    A sparse long-focal group then gets an honest coarse flat instead of a
+    fine one fitted on a dozen stars per cell; a dense mosaic group still
+    gets 256 px. When even the coarsest cell size leaves cells starved the
+    caller gets `sol=None` and builds no flat at all.
+
+    Returns (solution|None, cell|None, r_raw, r_blob, coverage).
+    """
+    worst = None
+    for cell in sorted(cells, reverse=False):        # fine -> coarse
         sol = solve_star_flat(stars, shape, cell=cell, mag_window=mag_window)
-        unc = float(np.nanmedian(sol.uncertainty)) if np.isfinite(sol.uncertainty).any() else float("inf")
-        if best is None or unc <= CELL_UNCERTAINTY_MAX:
-            best = (sol, cell)
-        if unc > CELL_UNCERTAINTY_MAX:
-            break
-    sol, cell = best
-    r_raw, r_blob = split_half(stars, sol)
-    return sol, cell, r_raw, r_blob
+        pts = _pointings_per_cell(stars, sol, pointing_of_sub) if pointing_of_sub is not None else None
+        cov = cell_coverage(sol, min_stars, min_pointings, pts)
+        cov["cell"] = cell
+        if cov["covered_fraction"] >= CELL_COVERAGE_MIN:
+            r_raw, r_blob = split_half(stars, sol)
+            return sol, cell, r_raw, r_blob, cov
+        worst = cov
+    return None, None, float("nan"), float("nan"), (worst or {})
+
+
+def _pointings_per_cell(stars: np.ndarray, sol, pointing_of_sub) -> np.ndarray:
+    """Distinct pointings contributing to each cell, in `sol.counts`' shape."""
+    H, W = sol.shape
+    nx = -(-W // sol.cell)
+    x, y, sid = stars[:, 0], stars[:, 1], stars[:, 10].astype(int)
+    cells = (np.clip(y.astype(int), 0, H - 1) // sol.cell) * nx + (np.clip(x.astype(int), 0, W - 1) // sol.cell)
+    pid = np.array([pointing_of_sub.get(int(i), -1) for i in sid])
+    seen: dict[int, set] = {}
+    for c, q in zip(cells, pid):
+        seen.setdefault(int(c), set()).add(int(q))
+    out = np.zeros(sol.counts.size, int)
+    for c, qs in seen.items():
+        if 0 <= c < out.size:
+            out[c] = len(qs)
+    return out.reshape(sol.counts.shape)
 
 
 def passes_gate(quality: dict, *, min_subs: int, min_split_half: float, max_uncertainty: float) -> bool:
@@ -248,26 +334,51 @@ def _passes(quality: dict) -> bool:
                        max_uncertainty=GATE_UNCERTAINTY_MAX)
 
 
+def _pointing_of_sub(members: list[Path]) -> dict[int, int]:
+    """Each member's sky position, as an integer id per ~0.1 deg cell — the
+    unit `solve_adaptive` counts to tell independent samples from repeats.
+    Read from the sidecar's plate solution; a member without one gets its own
+    id, which can only make a cell look LESS independent than it is."""
+    from file_io.sidecar import get_section
+    out: dict[int, int] = {}
+    ids: dict[tuple, int] = {}
+    for i, m in enumerate(members):
+        ps = get_section(m, "plate_solution") or {}
+        c = ((ps.get("data") or {}).get("center")) if isinstance(ps, dict) else None
+        key = (round(float(c[0]), 1), round(float(c[1]), 1)) if c else ("unsolved", i)
+        out[i] = ids.setdefault(key, len(ids))
+    return out
+
+
 def solve_and_write(star_flat: StarFlatStack, dest, *, cells=CELLS, mag_window=MAG_WINDOW) -> dict:
     """Solve the group, write `dest` as a WBPP-ready Master Flat XISF
     carrying the star flat's STBLHASH, and record the quality metrics in
     its sidecar (`SECTION`); `good` there is informational (UI, logs) — the
     gate itself is applied in `mint_star_flats`, whose thresholds sit in its
     cache key. Returns the metrics."""
-    stars = gather_star_photometry([Path(p) for p in star_flat.member_files])
+    members = [Path(p) for p in star_flat.member_files]
+    stars = gather_star_photometry(members)
     n_with = int(len(np.unique(stars[:, 10]))) if len(stars) else 0
     shape = (star_flat.height_pixels, star_flat.width_pixels)
     log.info("building star flat", stack=str(star_flat), subs_with_photometry=n_with, stars=len(stars))
-    if n_with < MIN_SUBS:
+    sol, cell, r_raw, r_blob, coverage = solve_adaptive(
+        stars, shape, cells, mag_window, pointing_of_sub=_pointing_of_sub(members))
+    if sol is None:
+        # No cell size samples the sensor well enough. A flat of ones is the
+        # honest answer — WBPP divides by it and the stack falls back to its
+        # panel flat — and the reason rides in the sidecar and the log.
         response = np.ones(shape, np.float32)
-        quality = {"n_subs": n_with, "reason": "too few subs with photometry"}
+        quality = {"n_subs": n_with, "stars": int(len(stars)), **coverage,
+                   "reason": ("cells under-sampled at every cell size: "
+                              f"{coverage.get('covered_fraction', 0):.0%} covered at "
+                              f"{coverage.get('cell', '?')} px, need {CELL_COVERAGE_MIN:.0%} "
+                              f"with >= {MIN_CELL_STARS} stars from >= {MIN_CELL_POINTINGS} pointings")}
     else:
-        sol, cell, r_raw, r_blob = solve_adaptive(stars, shape, cells, mag_window)
         response = response_image(sol, smooth_sigma_cells=0.7)
         quality = {"n_subs": len(sol.kept_subs), "cell": cell, "split_half_r": r_raw, "split_half_blob": r_blob,
                    "per_cell_uncertainty": float(np.nanmedian(sol.uncertainty)), "colour_term": sol.colour_term,
-                   "residual_scatter": sol.residual_scatter}
-    quality["good"] = _passes(quality)
+                   "residual_scatter": sol.residual_scatter, **coverage}
+    quality["good"] = sol is not None and _passes(quality)
     Path(dest).parent.mkdir(parents=True, exist_ok=True)
     write_master_flat(response, dest, {
         "IMAGETYP": "Master Flat", "FILTER": star_flat.filter or "", "INSTRUME": star_flat.camera,
@@ -342,7 +453,14 @@ def scale_star_flat(stack: Stack, star_flat: ImageMetadata, dark: ImageMetadata 
     log.info("star flat gain", stack=str(stack), k=round(k, 3), n_used=fit["n_used"],
              median_corr=round(float(np.median(fit["corrs"])), 2) if fit["corrs"] else None,
              reason=fit.get("reason"))
-    if fit.get("reason"):
+    if fit.get("withheld"):
+        warn("Star flat withheld — it does not match this stack's sky",
+             f"{fit['reason']}. Applying it would print its own structure into the master "
+             f"(2026-09-22: at k = 1 this punched holes into the galaxy masters). The stack "
+             f"falls back to its panel or sky flat; the star flat for this group may be built "
+             f"from too few pointings to describe the sensor.",
+             stack=stack.stable_hash, **{k_: v for k_, v in fit.items() if k_ not in ("slopes", "corrs")})
+    elif fit.get("reason"):
         warn("Star flat gain could not be fitted; applied as built (k = 1)",
              f"{fit['reason']}. The stack's sky did not yield a believable amplitude for the "
              f"star flat's etalon pattern, so the group's flat is used unchanged.",

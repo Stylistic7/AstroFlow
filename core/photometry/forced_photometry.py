@@ -83,7 +83,7 @@ def measure(image: np.ndarray, x: np.ndarray, y: np.ndarray, *, iterations: int 
     chunk = max(200, CHUNK_PIXELS // (2 * stamp_r + 1) ** 2)
     parts = [_measure_chunk(image, x[i:i + chunk], y[i:i + chunk], iterations, geo) for i in range(0, len(x), chunk)]
     out = {k: np.concatenate([p[k] for p in parts]) if parts else np.zeros(0) for k in
-           ("x", "y", "signal", "fwhm", "peak", "background", "snr", "ok", "offset")}
+           ("x", "y", "signal", "fwhm", "peak", "background", "snr", "ok", "offset", "on_frame")}
     out["fwhm_typical"] = fwhm_typ
     # PI's rule needs the brightest unsaturated peak over the WHOLE frame
     unsat = out["peak"][out["peak"] < 0.999]
@@ -151,7 +151,12 @@ def _measure_chunk(image: np.ndarray, x: np.ndarray, y: np.ndarray, iterations: 
     peak = (stamps * (r2 <= 4.0)).max((1, 2))
     snr = signal / np.maximum(noise * np.sqrt(ap.sum((1, 2))), 1e-12)
     offset = np.hypot(cx - fx, cy - fy)
+    on_frame = ok.copy()                                  # a whole stamp fits inside the image
     ok &= (signal > 0) & (offset <= CENTROID_STEP_PX)
     return {"x": ix + cx + 0.5, "y": iy + cy + 0.5,      # PI convention: 0-based, centre at +0.5
             "signal": signal, "fwhm": fwhm, "peak": peak, "background": bg, "snr": snr, "ok": ok,
-            "offset": offset}                             # predicted → measured centroid, px
+            "offset": offset,                             # predicted → measured centroid, px
+            "on_frame": on_frame}                         # separable from `ok` so a caller can ask
+                                                          # "of the stars I COULD measure, how many
+                                                          # did I find?" — saturation and faintness
+                                                          # are not failures, a missing star is
