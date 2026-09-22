@@ -139,7 +139,13 @@ class GaiaCatalog:
             dra = (self.ra[sel] - c_ra + 180) % 360 - 180
             sel = sel[np.abs(dra) * np.cos(np.radians(c_dec)) <= radius * 1.05]
         ra, dec = self.ra[sel], self.dec[sel]
-        px = wcs.all_world2pix(np.c_[ra, dec], 1)
+        # `quiet=True`: the inverse SIP iteration is allowed to give up on
+        # stars far OUTSIDE the frame (a cone query overshoots the corners
+        # by design, and an order-4 polynomial extrapolates wildly there);
+        # those land at nonsense pixels and the frame filter below drops
+        # them. With the default it raised NoConvergence for the whole
+        # field over 20 far-off stars (order-4 solutions, 2026-09-20).
+        px = wcs.all_world2pix(np.c_[ra, dec], 1, quiet=True)
         inside = ((px[:, 0] > margin_px) & (px[:, 0] < width - margin_px)
                   & (px[:, 1] > margin_px) & (px[:, 1] < height - margin_px))
         sel, px = sel[inside], px[inside]

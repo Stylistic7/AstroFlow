@@ -26,7 +26,19 @@ APERTURE_R_MIN = 3.5
 ANNULUS_GAP, ANNULUS_R_MIN = 2.5, 9.0                     # annulus inner = max(aperture + gap, 9 or 3 FWHM), outer = stamp radius
 FWHM_WEIGHT_SIGMA = 1.0   # px; Gaussian weight of the moment estimator (scaled with FWHM in pass 2)
 FWHM_SCALE = 1 / 1.148    # moment FWHM -> PI PSF-fit FWHM (2026-09-07: ratio 1.148, corr 0.95)
-CENTROID_R = 3.0
+# How far the centroid may move from the position the WCS predicted. ONE
+# pixel: a refined solution places every catalogue star within 0.5 px on
+# every optical train measured 2026-09-20, so a star further off than this
+# is a wrong solution, not a star to go looking for. The search radius used
+# to scale to 1.5 FWHM (6 px on the 0.63"/px train): stars 5-10 px off were
+# "found" — partly in the aperture, their wings in the sky annulus — and
+# measured 10-30% faint while passing every clip, which put a false
+# vignetting term into every star flat from that train. The window is a
+# little wider than the tolerance so the moment centroid can converge; the
+# tolerance is what decides `ok`. (`solution_check` judges the SOLUTION —
+# the systematic displacement over the field; this is per star.)
+CENTROID_STEP_PX = 1.0
+CENTROID_R = 2.5
 # PI rejects a star whose peak exceeds 0.75 x the brightest UNSATURATED star's
 # peak in the frame (a saturated star fails its PSF fit and does not count):
 # 0.4531 on an H sub whose brightest clean star peaks at 0.60, ~0.75 on an L
@@ -41,7 +53,7 @@ def _geometry(stamp_r: int, fwhm: float) -> dict:
     ann_min = max(ANNULUS_R_MIN, 3.0 * fwhm)
     return {"stamp_r": stamp_r, "xx": xx.astype(np.float32), "yy": yy.astype(np.float32), "rr": rr,
             "annulus0": (rr >= ann_min) & (rr <= stamp_r), "ann_min": ann_min,
-            "ap_max": min(max(12.0, 3.0 * fwhm), stamp_r - ANNULUS_GAP - 2.0), "centroid_r": max(CENTROID_R, 1.5 * fwhm),
+            "ap_max": min(max(12.0, 3.0 * fwhm), stamp_r - ANNULUS_GAP - 2.0), "centroid_r": CENTROID_R,
             "weight_sigma": max(FWHM_WEIGHT_SIGMA, fwhm / 2.0), "core_r2": max(16.0, (2.5 * fwhm) ** 2)}
 
 
@@ -71,7 +83,7 @@ def measure(image: np.ndarray, x: np.ndarray, y: np.ndarray, *, iterations: int 
     chunk = max(200, CHUNK_PIXELS // (2 * stamp_r + 1) ** 2)
     parts = [_measure_chunk(image, x[i:i + chunk], y[i:i + chunk], iterations, geo) for i in range(0, len(x), chunk)]
     out = {k: np.concatenate([p[k] for p in parts]) if parts else np.zeros(0) for k in
-           ("x", "y", "signal", "fwhm", "peak", "background", "snr", "ok")}
+           ("x", "y", "signal", "fwhm", "peak", "background", "snr", "ok", "offset")}
     out["fwhm_typical"] = fwhm_typ
     # PI's rule needs the brightest unsaturated peak over the WHOLE frame
     unsat = out["peak"][out["peak"] < 0.999]
@@ -85,9 +97,13 @@ def _measure_chunk(image: np.ndarray, x: np.ndarray, y: np.ndarray, iterations: 
     H, W = image.shape
     STAMP_R, xx, yy, _rr, _annulus0 = geo["stamp_r"], geo["xx"], geo["yy"], geo["rr"], geo["annulus0"]
     ANNULUS_R_MIN_, APERTURE_R_MAX, CENTROID_R_, WSIG, CORE_R2 = geo["ann_min"], geo["ap_max"], geo["centroid_r"], geo["weight_sigma"], geo["core_r2"]
-    # FITS 1-based centre -> array index of the containing pixel
+    # FITS 1-based centre -> array index of the containing pixel (whose own
+    # centre is at ix + 1), and the position's offset from that centre. This
+    # seed read (x - 0.5) - ix until 2026-09-21: +0.5 px in both axes, so a
+    # perfectly placed star started 0.71 px off and "moved" that far to its
+    # centroid — a 1 px step tolerance rejected a quarter of them.
     ix = np.floor(x - 0.5).astype(int); iy = np.floor(y - 0.5).astype(int)
-    fx = (x - 0.5) - ix; fy = (y - 0.5) - iy       # sub-pixel offset from that pixel's centre
+    fx = x - 1.0 - ix; fy = y - 1.0 - iy
     n = len(x)
     stamps = np.zeros((n, 2 * STAMP_R + 1, 2 * STAMP_R + 1), np.float32)
     ok = (ix >= STAMP_R) & (ix < W - STAMP_R) & (iy >= STAMP_R) & (iy < H - STAMP_R)
@@ -134,6 +150,8 @@ def _measure_chunk(image: np.ndarray, x: np.ndarray, y: np.ndarray, iterations: 
     signal = (sub * ap).sum((1, 2))
     peak = (stamps * (r2 <= 4.0)).max((1, 2))
     snr = signal / np.maximum(noise * np.sqrt(ap.sum((1, 2))), 1e-12)
-    ok &= (signal > 0) & (np.hypot(cx - fx, cy - fy) <= CENTROID_R_)
+    offset = np.hypot(cx - fx, cy - fy)
+    ok &= (signal > 0) & (offset <= CENTROID_STEP_PX)
     return {"x": ix + cx + 0.5, "y": iy + cy + 0.5,      # PI convention: 0-based, centre at +0.5
-            "signal": signal, "fwhm": fwhm, "peak": peak, "background": bg, "snr": snr, "ok": ok}
+            "signal": signal, "fwhm": fwhm, "peak": peak, "background": bg, "snr": snr, "ok": ok,
+            "offset": offset}                             # predicted → measured centroid, px

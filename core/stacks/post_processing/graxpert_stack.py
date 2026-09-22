@@ -170,6 +170,22 @@ def post_stack_calibrate(
         k: v for k, v in hdr.items()
         if isinstance(v, (int, float, str)) and k not in ("COMMENT", "HISTORY")
     }))
+    # A master's solution is what every downstream aperture and placement
+    # reads; one that cannot place its own stars is a hard failure here,
+    # with the geometry named — not a photometric refusal three steps later
+    # that reads as "too few stars" (Lion Nebula, 2026-09-20: a quadratic
+    # SIP left the right third of the frame 10-20 px off).
+    from photometry.harvest import passband_key
+    from photometry.solution_check import check_solution
+    key = passband_key(stack.filter)
+    verdict = check_solution(image, wcs, key) if key else None
+    if verdict is not None and not verdict.ok:
+        raise ValueError(
+            f"post_stack_calibrate: the plate solution of {master.filename} "
+            f"(stack {stack.stable_hash}, filter {stack.filter}) does not place the "
+            f"stars: {verdict}. REFUSING to calibrate against apertures that miss "
+            f"their stars — re-solve the master (a stale or under-fitted SIP)."
+        )
     try:
         scale, n_stars, sigma = spfc_scale(image, wcs, filter=stack.filter)
     except ValueError as e:

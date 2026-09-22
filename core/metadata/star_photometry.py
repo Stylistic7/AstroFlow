@@ -6,8 +6,10 @@ at Gaia positions, no PixInsight; ~0.4 s per sub). Schema history: v1 =
 PixInsight SPFC; v2 = the engine before PI's relative saturation rule and
 the wide-PSF annulus; v3 = fixed stamp geometry, flat "ideal QE" L passband,
 outlier-fraction gate; v4 = FWHM-adaptive geometry, L = R/G/B envelope,
-scatter gate; v5 = current (robust FWHM probe, gate over 8-13.5). Older
-sections are recomputed by the sweep.
+scatter gate; v5 = robust FWHM probe, gate over 8-13.5; v6 = current
+(apertures seeded exactly at the catalogue position and refined by at most
+one pixel, behind a check of the solution itself — `photometry.
+solution_check`). Older sections are recomputed by the sweep.
 
 Section `star_photometry`, shaped like `plate_solution`:
 
@@ -37,13 +39,14 @@ from file_io.sidecar import get_section, set_section
 
 log = structlog.get_logger()
 
-SCHEMA = "astroflow.starphotometry.v5"
+SCHEMA = "astroflow.starphotometry.v6"
 SECTION = "star_photometry"
 # Column order of the arrays read back; `scale` is the image/catalogue flux
 # ratio (∝ the sensor's response at that pixel, exp(+F)).
 COLUMNS = ("x", "y", "mag_G", "colour", "fwhm", "signal", "scale", "snr")
 _NO_SOLUTION = "no_plate_solution"
 _NO_MATCH = "no_match"
+_BAD_SOLUTION = "bad_plate_solution"
 # (decimals, or None → 6 significant figures) per column; keeps a 2,000-star
 # section near 100 KB.
 _ROUND = {"x": 2, "y": 2, "mag_G": 3, "colour": 3, "fwhm": 2, "signal": None, "scale": None, "snr": 1}
@@ -84,6 +87,15 @@ def read_star_photometry(filename: Path) -> np.ndarray | None:
     return None
 
 
+def _solution_id(filename: Path) -> str:
+    """A fingerprint of the sidecar's current plate solution (its WCS
+    keywords), so a verdict on it can be told apart from one on a re-solve."""
+    from hashing import hash_list
+    ps = get_section(filename, "plate_solution") or {}
+    hdr = ((ps.get("data") or {}).get("header") or {})
+    return hash_list([sorted((k, v) for k, v in hdr.items() if isinstance(v, (int, float, str)))])
+
+
 def compute_star_photometry(filename: Path) -> np.ndarray | None:
     """Sidecar first; otherwise measure the sub and persist the result.
     Returns the (n, 8) array, or None when there is nothing to harvest.
@@ -93,7 +105,12 @@ def compute_star_photometry(filename: Path) -> np.ndarray | None:
     if isinstance(obj, dict) and obj.get("schema") == SCHEMA:
         if obj.get("data") is not None:
             return _from_obj(obj)
-        if obj.get("reason") != _NO_SOLUTION:
+        # A missing or bad solution is retried whenever the solution changes
+        # (a re-solve rewrites the plate_solution section); "no match" is
+        # final for this solution.
+        if obj.get("reason") not in (_NO_SOLUTION, _BAD_SOLUTION):
+            return None
+        if obj.get("reason") == _BAD_SOLUTION and obj.get("solution") == _solution_id(filename):
             return None
 
     ps = get_section(filename, "plate_solution")
@@ -101,8 +118,28 @@ def compute_star_photometry(filename: Path) -> np.ndarray | None:
         set_section(filename, SECTION, {"schema": SCHEMA, "data": None, "reason": _NO_SOLUTION})
         return None
 
+    filter = read_header(filename).get("FILTER")
+    # The solution must PLACE the stars before any aperture is trusted: the
+    # photometry refines by at most one pixel and a star further off is
+    # measured wrong silently (`photometry.solution_check`). A sub whose
+    # solution fails is left out of the star flat with a concern; the flat
+    # is solved from the subs that pass.
+    from photometry.solution_check import check_file
+    verdict = check_file(filename, filter)
+    if verdict is not None and not verdict.ok:
+        from concerns import warn
+        warn("Plate solution does not place the stars; sub excluded from photometry",
+             f"{filename.name}: {verdict}. Every aperture would sit beside its star "
+             f"(partly outside it, wings in the sky annulus) and read 10-30% faint, which "
+             f"the star flat would take for vignetting. Re-solve the frame; the harvest "
+             f"retries once its solution changes.",
+             filename=str(filename), shift_px=round(verdict.max_shift_px, 2), n_stars=verdict.n_stars)
+        set_section(filename, SECTION, {"schema": SCHEMA, "data": None, "reason": _BAD_SOLUTION,
+                                        "solution": _solution_id(filename),
+                                        "shift_px": verdict.max_shift_px, "n_stars": verdict.n_stars})
+        return None
     from photometry.harvest import harvest_sub_xp   # loads the Gaia catalogue on first use
-    stars, info = harvest_sub_xp(filename, filter=read_header(filename).get("FILTER"))
+    stars, info = harvest_sub_xp(filename, filter=filter)
     if not info.pop("good"):
         log.warning("star photometry: too few usable stars or a wrong WCS; not stored",
                     filename=str(filename), **info)

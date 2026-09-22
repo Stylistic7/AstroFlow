@@ -38,7 +38,9 @@ def _solution(filename) -> "plate_solving.PlateSolution":
 def test_rung2_rescues_and_writes_real_solution(frame, monkeypatch):
     attempts = []
 
-    def fake_solve(filename, arguments, debug):
+    def fake_solve(filename, arguments, debug, verify=None):
+        if verify is not None:
+            return None                      # the refine stage: not under test here
         attempts.append(_downsample_of(arguments))
         if _downsample_of(arguments) == "4":
             return _solution(filename)
@@ -73,7 +75,9 @@ def test_all_rungs_fail_writes_tombstone_once(frame, monkeypatch):
 def test_rung1_success_never_reaches_rung2(frame, monkeypatch):
     attempts = []
 
-    def fake_solve(filename, arguments, debug):
+    def fake_solve(filename, arguments, debug, verify=None):
+        if verify is not None:          # the refine is not a rung
+            return None
         attempts.append(_downsample_of(arguments))
         return _solution(filename)
 
@@ -125,3 +129,45 @@ class TestHeaderHints:
         from plate_solving import _header_hints
         h = _header_hints({"RA": 51.0, "DEC": 59.0, "FOCALLEN": None})
         assert "--ra" in h and "--scale-units" not in h
+
+
+def test_find_then_refine(frame, monkeypatch):
+    """Two stages. FIND: the ladder as before — quadratic SIP, 1000 sources,
+    --downsample 4 on the hinted rung. REFINE: the found solution handed back
+    with --verify (no quad search), SIP order 3, 5000 sources, --downsample
+    2 — the stage that fits the distortion from every matchable star
+    (2026-09-20: a quadratic left 10-25 px at the corners of the 0.63"/px
+    train; a cubic fitted in the FIND stage was noise). A refine that
+    fails keeps the find."""
+    with pyfits.open(frame, mode="update") as hdul:
+        hdul[0].header["RA"] = 311.5; hdul[0].header["DEC"] = 30.7
+        hdul[0].header["FOCALLEN"] = 350.0; hdul[0].header["XPIXSZ"] = 3.76
+    calls = []
+
+    def fake_solve(filename, arguments, debug, verify=None):
+        calls.append((list(arguments), verify))
+        if verify is not None:
+            return plate_solving.PlateSolution(header={"CRVAL1": 311.5, "CRVAL2": 30.7, "A_ORDER": 3},
+                                               num_stars=185, center=(311.5, 30.7), image_scale=1.2, rotation_angle=0.1)
+        return _solution(filename)
+
+    monkeypatch.setattr(plate_solving, "_solve_field", fake_solve)
+    result = plate_solving.solve_field(frame)
+    assert len(calls) == 2
+    find, refine = calls
+    assert find[1] is None and find[0][find[0].index("--tweak-order") + 1] == "2" and _downsample_of(find[0]) == "4"
+    assert refine[1] is not None and refine[0][refine[0].index("--tweak-order") + 1] == "3"
+    assert refine[0][refine[0].index("--objs") + 1] == "5000" and _downsample_of(refine[0]) == "2"
+    assert "--ra" in refine[0], "the refine keeps the header hints (a scale window bounds verification)"
+    assert result.num_stars == 185 and result.header["A_ORDER"] == 3, "the refined solution is the one kept"
+    ps = get_section(frame, "plate_solution")
+    assert ps["data"]["num_stars"] == 185
+
+
+def test_refine_failure_keeps_the_find(frame, monkeypatch):
+    def fake_solve(filename, arguments, debug, verify=None):
+        return None if verify is not None else _solution(filename)
+    monkeypatch.setattr(plate_solving, "_solve_field", fake_solve)
+    result = plate_solving.solve_field(frame)
+    assert result is not None and result.num_stars == 42
+    assert get_section(frame, "plate_solution")["data"]["num_stars"] == 42

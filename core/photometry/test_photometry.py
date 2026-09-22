@@ -26,8 +26,12 @@ def test_measure_recovers_flux_centroid_fwhm():
     # (PI's rule: 0.75 x the brightest clean star's peak); it is itself rejected
     sig = 2.0 / 2.3548; yy, xx = np.mgrid[:img.shape[0], :img.shape[1]]
     img += (4.0 / (2 * np.pi * sig ** 2) * np.exp(-((xx - 699) ** 2 + (yy - 499) ** 2) / (2 * sig ** 2))).astype(np.float32)
-    m = fp.measure(img, np.r_[x + rng.normal(0, 0.4, len(x)), 700.0], np.r_[y + rng.normal(0, 0.4, len(y)), 500.0])   # start ~0.5 px off
+    m = fp.measure(img, np.r_[x + rng.normal(0, 0.25, len(x)), 700.0], np.r_[y + rng.normal(0, 0.25, len(y)), 500.0])   # start ~0.35 px off
     assert m["ok"][:-1].all() and not m["ok"][-1]
+    assert (m["offset"][:-1] < 1.0).all() and np.median(m["offset"][:-1]) < 0.4   # the offset IS the seed jitter
+    # a star seeded beyond the step tolerance is NOT chased: flagged, never "found"
+    far = fp.measure(img, x + 3.0, y)
+    assert not far["ok"].any() and (far["offset"] > fp.CENTROID_STEP_PX).all()
     assert m["saturation"] == pytest.approx(0.75 * m["peak"][-1], rel=1e-6)
     m = {k: (v[:-1] if isinstance(v, np.ndarray) else v) for k, v in m.items()}
     # PI convention: 0-based with centres at +0.5 == FITS 1-based - 0.5
@@ -103,9 +107,9 @@ def test_harvest_gate_accepts_a_correct_wcs_and_rejects_a_wrong_one(tmp_path):
     flux = 0.3 * 10 ** (-0.4 * (G - 8.0))                       # sub-saturation for the brightest
     yy, xx = np.mgrid[:H, :W]
     image = np.full((H, W), 0.02) + rng.normal(0, 1e-4, (H, W))
-    for xi, yi, fi in zip(x, y, flux):
+    for xi, yi, fi in zip(x, y, flux):     # FITS 1-based centres: pixel index = coord - 1
         sl = (slice(int(yi) - 8, int(yi) + 9), slice(int(xi) - 8, int(xi) + 9))
-        image[sl] += fi / (2 * np.pi * sigma**2) * np.exp(-((xx[sl] - xi) ** 2 + (yy[sl] - yi) ** 2) / (2 * sigma**2))
+        image[sl] += fi / (2 * np.pi * sigma**2) * np.exp(-((xx[sl] - (xi - 1)) ** 2 + (yy[sl] - (yi - 1)) ** 2) / (2 * sigma**2))
     p = tmp_path / "sub.fit"
     fits.PrimaryHDU((image * 65535).clip(0, 65535).astype(np.uint16)).writeto(p)
     w = WCS(naxis=2)
@@ -143,10 +147,10 @@ def _synthetic_field(rng, H=600, W=800, n=300, fwhm=2.5):
     flux = 0.3 * 10 ** (-0.4 * (G - 8.0))
     yy, xx = np.mgrid[:H, :W]
     image = np.full((H, W), 0.02) + rng.normal(0, 1e-4, (H, W))
-    for xi, yi, fi in zip(x, y, flux):
+    for xi, yi, fi in zip(x, y, flux):     # FITS 1-based centres: pixel index = coord - 1
         sl = (slice(int(yi) - 8, int(yi) + 9), slice(int(xi) - 8, int(xi) + 9))
         image[sl] += fi / (2 * np.pi * sigma**2) * np.exp(
-            -((xx[sl] - xi) ** 2 + (yy[sl] - yi) ** 2) / (2 * sigma**2))
+            -((xx[sl] - (xi - 1)) ** 2 + (yy[sl] - (yi - 1)) ** 2) / (2 * sigma**2))
     w = WCS(naxis=2)
     w.wcs.crpix, w.wcs.cdelt = [W / 2, H / 2], [-1 / 3600, 1 / 3600]
     w.wcs.crval, w.wcs.ctype = [100, 45], ["RA---TAN", "DEC--TAN"]

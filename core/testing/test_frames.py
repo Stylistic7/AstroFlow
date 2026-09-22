@@ -14,7 +14,6 @@ from metadata.classes import ImageMetadata
 from context import context
 import plate_solving
 from file_io.normalize_header import normalize_header
-from file_io.sidecar import sidecar_path_for, get_section
 from units import Degrees, Radians, ArcsecondsPerPixel
 from hashing import hash_source_code, hash_call
 from metadata.image_metadata import compute_image_metadata
@@ -98,6 +97,34 @@ def _make_flat_frame(
     return img.astype(np.uint16)
 
 
+def _solution_cache_path(src: Path) -> Path:
+    """Where the plate solution of a testdata SOURCE frame is cached across
+    test processes: the system temp dir, keyed by the source's pixels and
+    the solver's own source, so a solver change re-solves and a copy with
+    a different header or noise (same sky) does not. A cache, never a
+    fixture — the shipped `.json` sidecars this replaces (2026-09-21) were
+    solved once and never invalidated."""
+    import tempfile
+    h = xxhash.xxh64()
+    h.update(Path(plate_solving.__file__).read_bytes())
+    h.update(src.read_bytes())
+    d = Path(tempfile.gettempdir()) / "astroflow-testdata-solutions"
+    d.mkdir(exist_ok=True)
+    return d / f"{h.hexdigest()}.json"
+
+
+def bank_testdata_solutions(target_name: str, dest_dir: str, prefix: str = "") -> None:
+    """After a graph has solved the copies `copy_testdata_frames` made,
+    cache their solutions for the next process (see `_solution_cache_path`)."""
+    import json
+    from file_io.sidecar import get_section
+    for filename in _TESTDATA_TARGETS[target_name]:
+        ps = get_section(Path(dest_dir) / (prefix + filename), "plate_solution")
+        cached = _solution_cache_path(Path("testdata", "input", filename))
+        if isinstance(ps, dict) and ps.get("data") and not cached.exists():
+            cached.write_text(json.dumps(ps))
+
+
 def copy_testdata_frames(
     target_name: str,
     dest_dir: str,
@@ -107,6 +134,13 @@ def copy_testdata_frames(
     fits_header_overrides: dict[str, Any] | None = None,
     start_datetime: datetime.datetime | None = None,
 ) -> None:
+    """Copy a target's testdata frames into `dest_dir` with fresh content
+    (noise, header overrides). The copies carry NO metadata: the pipeline
+    reads and solves them like any new frame — except that a solution
+    already banked for the source (`bank_testdata_solutions`) is seeded
+    into the copy's sidecar, where `solve_field` finds it first."""
+    import json
+    from file_io.sidecar import set_section
     if not fits_header_overrides:
         fits_header_overrides = {}
 
@@ -140,29 +174,10 @@ def copy_testdata_frames(
         fits.flush()
         fits.close()
 
-        src_sidecar = sidecar_path_for(Path(src_filename))
-        assert src_sidecar.exists(), (
-            f"Testdata sidecar missing: {src_sidecar}. "
-            f"Run scripts/plate_solve_testdata.py to generate it."
-        )
-        assert get_section(Path(src_filename), "plate_solution"), (
-            f"Testdata sidecar has no plate solution: {src_sidecar}. "
-            f"Run scripts/plate_solve_testdata.py to regenerate it."
-        )
-        dest_sidecar = sidecar_path_for(Path(dest_filename))
-        shutil.copy(src_sidecar, dest_sidecar)
+        cached = _solution_cache_path(Path(src_filename))
+        if cached.exists():
+            set_section(Path(dest_filename), "plate_solution", json.loads(cached.read_text()))
 
-        # Update sidecar to reflect any FITS header overrides (DATE-OBS,
-        # content hash) so the sidecar short-circuit returns correct metadata.
-        from file_io.sidecar import set_section
-        im_obj = get_section(Path(dest_filename), "image_metadata")
-        if im_obj is not None:
-            im_obj["content_hash"] = content_hash
-            if date_obs is not None:
-                im_obj["header"]["DATE-OBS"] = header["DATE-OBS"]
-            set_section(Path(dest_filename), "image_metadata", im_obj)
-
-        print(f"### Copied sidecar {dest_sidecar}")
 
 
 def make_synthetic_frames(

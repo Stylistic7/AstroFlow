@@ -108,8 +108,12 @@ def simplify_header(header: Mapping[str, Any]) -> dict[str, Any]:
 
 @beartype
 def _solve_field(
-    filename: Path | str, arguments: list[str], debug: bool = False
+    filename: Path | str, arguments: list[str], debug: bool = False,
+    verify: PlateSolution | None = None,
 ) -> PlateSolution | None:
+    """One `solve-field` run. `verify` = an existing solution to REFINE:
+    the quad search is skipped (`--verify`), so a large source budget and a
+    high SIP order cost no search time and cannot blow up."""
     # TODO: Only copy the file to a temp dir once.
     with tempfile.TemporaryDirectory() as temp_dir:
         if os.path.splitext(filename)[-1] in [".xisf"]:
@@ -122,6 +126,18 @@ def _solve_field(
                 os.path.join(temp_dir, os.path.basename(filename))
             )
             os.symlink(Path(filename).resolve(), dest_filename)
+
+        if verify is not None:
+            # a header-only FITS carrying the WCS keywords (NAXISn are what
+            # `_ensure_naxis` added for astropy; a data-less HDU must not
+            # carry them)
+            seed = Path(temp_dir) / "seed.wcs"
+            hdr = pyfits.Header({k: v for k, v in verify.header.items()
+                                 if isinstance(v, (int, float, str))
+                                 and k not in ("COMMENT", "HISTORY", "NAXIS", "NAXIS1", "NAXIS2")})
+            hdr["IMAGEW"], hdr["IMAGEH"] = verify.header.get("NAXIS1", 0), verify.header.get("NAXIS2", 0)
+            pyfits.PrimaryHDU(header=hdr).writeto(seed)
+            arguments = arguments + ["--verify", str(seed)]
 
         try:
             command = arguments + [dest_filename]
@@ -326,6 +342,25 @@ def solve_field(
     # log-odds 342. The brightest ~1000 sources are ample for ANY solve
     # (it needs dozens) and make subframes faster too — so one arg set for
     # everything, no image-class guessing.
+    # TWO STAGES. FIND: the quad search, capped at the brightest 1000 sources
+    # and a quadratic SIP — bounded, robust, the ladder below. REFINE: the
+    # found solution is handed back to solve-field with `--verify`, which
+    # skips the search and re-fits the distortion from EVERY star it can
+    # match under a 5000-source budget at SIP order 3. A reducer's
+    # distortion is cubic in radius and a quadratic diverges at the corners
+    # (2026-09-20, the 0.63"/px 6200MM train: 1 px inside r=700, 21 px at
+    # r=5500 — forced photometry measured sky at the edge and
+    # post_stack_calibrate refused four masters every pass). Fitting the
+    # cubic in the FIND stage was worse (23 matches at --downsample 4:
+    # noise everywhere); the refine matched 3-8x more stars — the capped
+    # brightest-1000 of a deep master are saturated cores and knots. Order
+    # 3, not 4 (2026-09-21, 74-image stratified sample, 15 optical trains,
+    # judged by `photometry.solution_check`): the two agree to 0.1 px
+    # wherever both fit, order 3 is 6 s faster, and a quartic OVERFITS a
+    # sparse corner — the 540 mm 2600MM M42 frame came out 7 px off in one
+    # corner at order 4 and 0.9 px at order 3. Systematic displacement
+    # after the refine: 0.1-0.5 px on every train but the 2000 mm 6200MM,
+    # where 2 of 5 subs sit at 1.3-1.7 px in one corner at either order.
     base = [
         "solve-field",
         "--overwrite",
@@ -399,6 +434,18 @@ def solve_field(
             filename, "plate_solution", {"schema": _PLATESOLUTION_SCHEMA, "data": None}
         )
         return None
+
+    # REFINE (see `base`): the distortion fit, seeded by the find. A refine
+    # that fails leaves the find in place — it is a better solution than
+    # none, and `check_solution` below is what says whether it is good enough.
+    refine_args = [a for a in base if a not in ("--tweak-order", "2", "--objs", "1000")] + [
+        "--tweak-order", "3", "--objs", "5000", "--downsample", "2",
+    ] + (hints if hints else []) + ([] if (hints and any(a == "--scale-units" for a in hints)) else blind_scale)
+    refined = _solve_field(filename, refine_args, debug, verify=result)
+    if refined is not None:
+        result = refined
+    else:
+        print(f"### plate-solve: refine failed, keeping the find: {filename}")
 
     set_section(
         filename, "plate_solution", _plate_solution_to_obj(result)

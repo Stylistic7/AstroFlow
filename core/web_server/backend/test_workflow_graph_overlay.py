@@ -19,6 +19,9 @@ class _FakeCtx:
         self.reads.append(key)
         return self.outcomes.get(key, default)
 
+    def __getitem__(self, key):
+        return self.get(key)
+
 
 def _build(tmp_path, monkeypatch):
     present = tmp_path / "present.fits"
@@ -141,3 +144,23 @@ def test_slice_reconstructs_shared_group_definition():
     # ...pruned to visible children: H's bxt + the shared deliverable, not S's
     defids = {c["id"] for c in color["definition"]}
     assert defids == {"bxtH", "hubble"}, defids
+
+
+def test_every_hierarchy_level_strips_server_fields(tmp_path, monkeypatch):
+    """The stack and target routes returned the RAW snapshot — `filters` and
+    `expectedPath` included — and the frontend's DagNode constructor rejects
+    unknown keys; every target page in the cart errored (2026-09-20). One
+    preparation for all three levels."""
+    snap, ctx = _build(tmp_path, monkeypatch)
+    for meta in snap["state"].values():
+        meta["filters"] = ["H"]
+    ctx.outcomes["workflow_graphs"] = {("target", "t1", "P"): snap}
+    monkeypatch.setattr(compute_graphs, "_resolve_ref", lambda ref: ref)
+    for level, oid in (("target", "t1"), ("stack", "s1")):
+        ctx.outcomes["workflow_graphs"] = {(level, oid, "P"): snap}
+        out = compute_graphs._workflow_graph(level, oid, "P")
+        assert set(out) == {"skeleton", "state"} and out["state"]
+        for meta in out["state"].values():
+            assert "filters" not in meta and "expectedPath" not in (meta.get("options") or {})
+        assert out["state"]["done@root"]["state"] == "SUCCEEDED", "durable overlay must have run"
+    assert compute_graphs._workflow_graph("target", "t1", None) == compute_graphs._EMPTY_WORKFLOW_GRAPH

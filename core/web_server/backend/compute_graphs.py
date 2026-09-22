@@ -21,20 +21,32 @@ def compute_graph_status():
 # sentinel. The pipeline / filter segments are accepted but unused;
 # they reserve the URL shape for when pipelines start tagging their
 # trace with workflow keys.
+def _workflow_graph(object_type: str, object_id: str, pipeline_name) -> dict:
+    """One object's workflow-graph snapshot, prepared for the frontend the
+    same way at every hierarchy level: durable state overlaid, server-only
+    fields stripped. The stack and target routes used to return the raw
+    snapshot, and the DagNode constructor rejects its `filters` key — every
+    target page in the cart errored once targets were cart items of their
+    own (2026-09-20)."""
+    if not pipeline_name:
+        return _EMPTY_WORKFLOW_GRAPH
+    wf = context["workflow_graphs"] or {}
+    snapshot = _resolve_ref(wf.get((object_type, object_id, pipeline_name)))
+    if snapshot is None:
+        return _EMPTY_WORKFLOW_GRAPH
+    return _strip_server_internal_fields(_overlay_durable_state(snapshot))
+
+
 @compute_graphs_bp.route("/api/workflow_graph/stack/<stack_id>")
 @compute_graphs_bp.route("/api/workflow_graph/stack/<stack_id>/<pipeline_name>")
 def workflow_graph_for_stack(stack_id, pipeline_name=None):
-    wf = context["workflow_graphs"] or {}
-    graph = _resolve_ref(wf.get(("stack", stack_id, pipeline_name))) if pipeline_name else None
-    return graph if graph is not None else _EMPTY_WORKFLOW_GRAPH
+    return _workflow_graph("stack", stack_id, pipeline_name)
 
 
 @compute_graphs_bp.route("/api/workflow_graph/target/<target_id>")
 @compute_graphs_bp.route("/api/workflow_graph/target/<target_id>/<pipeline_name>")
 def workflow_graph_for_target(target_id, pipeline_name=None):
-    wf = context["workflow_graphs"] or {}
-    graph = _resolve_ref(wf.get(("target", target_id, pipeline_name))) if pipeline_name else None
-    return graph if graph is not None else _EMPTY_WORKFLOW_GRAPH
+    return _workflow_graph("target", target_id, pipeline_name)
 
 
 @compute_graphs_bp.route("/api/workflow_graph/mosaic/<mosaic_id>")
@@ -56,8 +68,7 @@ def workflow_graph_for_mosaic(mosaic_id, pipeline_name=None, filter=None):
     the sanitized view looks wrong."""
     if not pipeline_name:
         return _EMPTY_WORKFLOW_GRAPH
-    raw = request.args.get("raw") == "1"
-    if raw:
+    if request.args.get("raw") == "1":
         snapshot = _build_raw_workflow_graph(mosaic_id, pipeline_name)
     else:
         wf = context["workflow_graphs"] or {}

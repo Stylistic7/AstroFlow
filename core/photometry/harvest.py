@@ -36,6 +36,14 @@ def catalog() -> GaiaCatalog:
     return _catalog
 
 
+def passband_key(filter: str | None) -> str | None:
+    """The catalogue passband letter for a FITS FILTER value ("Ha" -> "H",
+    "OIII" -> "O", "Lum" -> "L"), or None when there is no filter."""
+    if filter is None or not str(filter).strip():
+        return None
+    return str(filter).strip().upper()[:1]
+
+
 def wcs_from_sidecar(path: Path) -> WCS:
     hdr = get_section(path, "plate_solution")["data"]["header"]
     return WCS(fits.Header({k: v for k, v in hdr.items()
