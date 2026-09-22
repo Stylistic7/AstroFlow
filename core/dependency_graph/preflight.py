@@ -4,9 +4,13 @@ The whole runtime is a pure function of literal pipeline args because every
 `@node(identity=...)` op is content-addressed:
 
 * filename is `f(call_hash)` (`build_filename_fns`),
-* `_stamp_header` stamps `CONTHASH = call_hash` into the file header,
-* `_maybe_use_content_hash` substitutes the CONTHASH for downstream call_hash
-  computations.
+* `_stamp_header` stamps `CALLHASH = call_hash` into the file header — the
+  write-completion witness this module checks,
+* `_maybe_use_content_hash` substitutes an upstream's IDENTITY for downstream
+  call_hash computations. That identity is the call hash unless the producer
+  declared its own by stamping CONTHASH (`_dep_identity`), which is what lets
+  a node re-run and produce materially the same thing without re-keying
+  everything below it.
 
 Therefore: an op's runtime call_hash equals
 `hash_call(fn_hash, literals + [upstream.call_hash for upstream in data_deps])`.
@@ -21,8 +25,8 @@ This module supplies two things:
 * `nodes_to_dispatch(graph, predicted)` — the subset of nodes whose work
   must actually happen. Reverse-walk from `final=True` nodes and graph
   leaves: derive each one's expected output path via
-  `wrapper.filename_fn(literals + stubs)`, check disk + stamped CONTHASH
-  header. Satisfied finals plus their entire upstream subtree drop out
+  `wrapper.filename_fn(literals + stubs)`, check disk + stamped CALLHASH
+  witness. Satisfied finals plus their entire upstream subtree drop out
   UNLESS some still-unsatisfied final transitively needs them.
 """
 from __future__ import annotations
@@ -117,15 +121,70 @@ def _predicted_fn_args(node, predicted: dict, graph) -> list[Any]:
         fn_args: list[Any] = list(literals)
         for d in _data_deps(node, graph):
             fn_args.append(_PredictedRef(
-                predicted[d], entity=_find_dep_entity(d, graph),
+                _dep_identity(d, predicted, graph), entity=_find_dep_entity(d, graph),
             ))
         return fn_args
     deps = list(graph.get(node, []))[: len(positions)]
     dep_refs = [
-        _PredictedRef(predicted[d], entity=_find_dep_entity(d, graph))
+        _PredictedRef(_dep_identity(d, predicted, graph), entity=_find_dep_entity(d, graph))
         for d in deps
     ]
     return reconstruct_call_args(literals, dep_refs, positions)
+
+
+# `_dep_identity` reads a file per dep, and the recursion through
+# `expected_output_path` re-expands each dep's own args — so without a memo the
+# walk is exponential in graph depth and stats the shared volume tens of
+# thousands of times. Keyed by (dep, its call hash), so an entry can never
+# outlive the prediction it belongs to; cleared per `predict_call_hashes`.
+_IDENTITY_MEMO: dict = {}
+
+
+def _dep_identity(dep, predicted: dict, graph) -> str:
+    """What `dep` contributes to its CONSUMER's key: the identity it declared
+    for its output, or — the ordinary case — the call that produced it.
+
+    An op may declare an identity of its own by stamping CONTHASH (see
+    `file_io.generic`). The point is EARLY CUTOFF: a node that re-runs under a
+    new call hash and writes materially the same thing keeps its identity, so
+    its consumers' keys do not move and their work is skipped. Without it,
+    adding subframes to one stack re-keyed every master sharing that train's
+    star flat, because the flat's identity was the call that built it.
+
+    Only ops that declared `@node(declares_identity=True)` are consulted, so
+    the disk lookup stays a handful of files rather than one per node.
+
+    The declaration lives on disk, so it is only readable once the dep has run
+    at least once under THIS call hash. Before that there is no file at the
+    predicted path and we fall back to the call hash — which predicts "changed"
+    and costs a dispatch that the runtime resolves to a cache hit. Conservative
+    on the first plan, exact on every one after.
+    """
+    call_hash = predicted[dep]
+    memo_key = (dep, call_hash)
+    if memo_key in _IDENTITY_MEMO:
+        return _IDENTITY_MEMO[memo_key]
+    identity = _declared_identity(dep, call_hash, predicted, graph)
+    _IDENTITY_MEMO[memo_key] = identity
+    return identity
+
+
+def _declares_identity(dep) -> bool:
+    task = getattr(dep, "task", None)
+    return bool(getattr(task, "_declares_identity", False))
+
+
+def _declared_identity(dep, call_hash: str, predicted: dict, graph) -> str:
+    if not _declares_identity(dep):
+        return call_hash                  # the ordinary case: identity IS the call
+    try:
+        expected = expected_output_path(dep, predicted, graph)
+        if expected is None or not expected.exists():
+            return call_hash
+        from file_io.generic import read_declared_content_hash
+        return read_declared_content_hash(expected) or call_hash
+    except Exception:
+        return call_hash
 
 
 def _predict_one(node, predicted: dict, graph) -> str:
@@ -261,6 +320,7 @@ def predict_call_hashes(graph) -> dict:
     Returns `dict[Node, str]`. Raises `ValueError` on a real cycle (after
     normalising bare-dep source nodes, so a mere orphan dep is not a cycle).
     """
+    _IDENTITY_MEMO.clear()
     graph = _with_source_nodes(graph)
     in_degree = {n: len(graph.get(n, [])) for n in graph}
     successors: dict = defaultdict(list)
@@ -310,17 +370,26 @@ def expected_output_path(node, predicted: dict, graph) -> Path | None:
 
 def _is_satisfied(node, predicted: dict, graph) -> bool:
     """A node is satisfied if its expected output file exists on disk AND
-    its CONTHASH header matches the predicted call_hash. Disk is the
+    carries the predicted call_hash as its CALLHASH witness. Disk is the
     source of truth — `@cached.remote`'s in-memory entry is irrelevant
     here.
+
+    The WITNESS, not the identity: CALLHASH is stamped only after the body
+    finished, so it separates "this file is the finished output of the call
+    I predicted" from "a body wrote straight to this path and was killed".
+    A file's IDENTITY is a different question, answered by
+    `declared_identity` below — before 2026-09-22 one field did both jobs,
+    which is why an op could not keep an identity across a rebuild.
     """
     expected = expected_output_path(node, predicted, graph)
     if expected is None or not expected.exists():
         return False
 
-    from file_io.generic import get_content_hash
+    from file_io.generic import get_content_hash, read_call_hash
     try:
-        stamped = get_content_hash(expected)
+        stamped = read_call_hash(expected)
+        if stamped is None:                      # nothing stamped a witness:
+            stamped = get_content_hash(expected)  # a raw frame, hashed by pixels
     except Exception:
         return False
     return stamped == predicted[node]

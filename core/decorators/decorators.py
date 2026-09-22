@@ -344,6 +344,14 @@ class _Node:
         # cache layer leaves it alone instead of stamping the call hash. Every
         # other entity-valued op is derived and hashes as its call.
         identity_root = ray_opts.pop("identity_root", False)
+        # `declares_identity`: this op stamps its own CONTHASH, so its output's
+        # identity is NOT its call hash (see `file_io.generic`). Both sides
+        # that predict a consumer's key — `preflight._dep_identity` and the
+        # trace-time handle stamp — read the declaration off disk for these
+        # ops only, so the lookup stays a handful of files rather than one per
+        # node. Opting in is what buys EARLY CUTOFF: rebuild under a new call
+        # hash, write the same content, and nothing below re-keys.
+        declares_identity = ray_opts.pop("declares_identity", False)
 
         # A `final=True` op is a deliverable, and a deliverable is always
         # user-facing (shown + openable). So `final` requires an explicit,
@@ -447,6 +455,7 @@ class _Node:
             wrapped,
             canonical_call_hash=canonical_call_hash,
             identity_root=identity_root,
+            declares_identity=declares_identity,
             **ray_opts,
         )
 

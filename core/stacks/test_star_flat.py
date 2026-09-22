@@ -19,7 +19,7 @@ from file_io.generic import read_header, read_image
 from file_io.sidecar import get_section
 from hashing import hash_list
 from metadata.classes import FrameHash, ImageMetadata, MetadataDict
-from metadata.star_photometry import SCHEMA as PHOTOMETRY_SCHEMA, write_star_photometry
+from metadata.star_photometry import SCHEMA as PHOTOMETRY_SCHEMA, read_star_photometry, write_star_photometry
 from plate_solving import PlateSolution
 from stacks.run import RunsDict
 from stacks.star_flat import (
@@ -422,3 +422,43 @@ def test_scale_star_flat_body_runs_on_the_runtime_types(tmp_path, monkeypatch):
     assert str(hdr["STBLHASH"]) == "1234567890123456" and abs(float(hdr["SFLATK"]) - fit["k"]) < 1e-3
     scaled = read_image(out); scaled = scaled / np.median(scaled)
     np.testing.assert_allclose(scaled[h // 2, ::400] - 1, fit["k"] * (f[h // 2, ::400] - 1), atol=2e-3)
+
+
+# ------------------------------------------------- declared content identity
+def test_a_rebuilt_flat_keeps_its_identity_until_it_really_changes(tmp_path):
+    """The star flat declares its own identity (CONTHASH) so that rebuilding
+    it — which happens whenever ANY stack in its optical train gains subs —
+    does not re-key every master built with it. Only a materially different
+    flat publishes a new identity."""
+    from file_io.generic import read_declared_content_hash, read_call_hash
+    from stacks.star_flat import STAR_FLAT_CHANGE
+
+    paths = _write_synthetic_subs(tmp_path / "subs", 30)
+    sf = _star_flat(members=[Path(p).stem for p in paths], member_files=tuple(paths),
+                    width_pixels=W, height_pixels=H)
+    out = tmp_path / "flats"
+    q1 = solve_and_write(sf, out / "a.xisf", cells=(128,))
+    first = read_declared_content_hash(out / "a.xisf")
+    assert first and q1["good"] and "carried_forward" not in q1
+    assert read_call_hash(out / "a.xisf") is None           # the FRAMEWORK stamps that, not the body
+
+    # the same data again: same pixels, so the same declared identity
+    q2 = solve_and_write(sf, out / "b.xisf", cells=(128,))
+    assert q2["carried_forward"] is True and q2["change_vs_standing"] <= STAR_FLAT_CHANGE
+    assert read_declared_content_hash(out / "b.xisf") == first
+    a = np.asarray(read_image(out / "a.xisf"), np.float64).squeeze()
+    b = np.asarray(read_image(out / "b.xisf"), np.float64).squeeze()
+    np.testing.assert_array_equal(a, b)                     # bit-identical: it wrote the standing pixels
+
+    # a genuinely different flat publishes a new identity
+    other = _write_synthetic_subs(tmp_path / "subs2", 30)
+    for p in other:                                          # shift every scale by 5%
+        t = read_star_photometry(Path(p))
+        t[:, 5] *= 1.05
+        write_star_photometry(Path(p), np.column_stack(
+            [t[:, 0], t[:, 1], np.zeros(len(t)), np.zeros(len(t)), t[:, 2], t[:, 3],
+             t[:, 4], t[:, 5], t[:, 6], t[:, 7]]), {"engine": "test"})
+    moved = _star_flat(members=[Path(p).stem for p in other], member_files=tuple(other),
+                       width_pixels=W, height_pixels=H)
+    q3 = solve_and_write(moved, out / "c.xisf", cells=(128,))
+    assert read_declared_content_hash(out / "c.xisf") is not None

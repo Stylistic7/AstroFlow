@@ -798,3 +798,56 @@ def test_list_deps_wall_time(test_context) -> None:
 
     assert captured[gather] == sum(range(N))
     assert elapsed < N * 0.5, f"Took {elapsed:.1f}s — tasks ran serially"
+
+
+def test_a_dep_that_declares_an_identity_stops_the_re_key(tmp_path):
+    """EARLY CUTOFF. A consumer's predicted key takes its upstream's DECLARED
+    identity (CONTHASH) when the upstream has one on disk, and the upstream's
+    call hash otherwise. That is what lets a node re-run under a new call hash,
+    write materially the same thing, and leave every key below it alone."""
+    import numpy as np
+    import astropy.io.fits as pyfits
+    from dependency_graph import preflight
+    from file_io.types import FitsFilePath
+
+    def write(name, header):
+        p = FitsFilePath(tmp_path / name)
+        hdu = pyfits.PrimaryHDU(np.zeros((4, 4), np.float32))
+        for k, v in header.items():
+            hdu.header[k] = v
+        hdu.writeto(p, overwrite=True)
+        return p
+
+    declared = write("declared.fits", {"CALLHASH": "call-2", "CONTHASH": "stable-id"})
+    plain = write("plain.fits", {"CALLHASH": "call-9"})
+
+    class _Task:
+        _declares_identity = True
+
+    class _Dep:
+        def __init__(self, path, declares=True):
+            self.path = path
+            self.task = _Task() if declares else None
+    graph: dict = {}
+
+    def fake_expected(dep, predicted, g):
+        return dep.path
+    original = preflight.expected_output_path
+    preflight.expected_output_path = fake_expected
+    preflight._IDENTITY_MEMO.clear()
+    try:
+        d1, d2, d3 = _Dep(declared), _Dep(plain), _Dep(tmp_path / "missing.fits")
+        d4 = _Dep(declared, declares=False)     # an ordinary op: never consulted
+        predicted = {d1: "call-2", d2: "call-9", d3: "call-7", d4: "call-2"}
+        # the declaration overrides the call hash...
+        assert preflight._dep_identity(d1, predicted, graph) == "stable-id"
+        # ...while an ordinary producer contributes its call hash unchanged...
+        assert preflight._dep_identity(d2, predicted, graph) == "call-9"
+        # ...and so does one whose output does not exist yet (first plan after
+        # its key moved: conservative, the runtime resolves it to a cache hit)
+        assert preflight._dep_identity(d3, predicted, graph) == "call-7"
+        # an op that never opted in is not even looked up, stamp or no stamp
+        assert preflight._dep_identity(d4, predicted, graph) == "call-2"
+    finally:
+        preflight.expected_output_path = original
+        preflight._IDENTITY_MEMO.clear()

@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+import xxhash
 import ray
 import structlog
 from beartype import beartype
@@ -334,6 +335,62 @@ def _passes(quality: dict) -> bool:
                        max_uncertainty=GATE_UNCERTAINTY_MAX)
 
 
+# How much a rebuilt flat may differ from the standing one and still count as
+# the same thing. The flats' own per-cell uncertainty is 0.06-0.22%, so a
+# change below this is smaller than the measurement's noise. Above it, the new
+# flat is published and its train re-stacks — deliberately, once.
+STAR_FLAT_CHANGE = 0.002
+
+
+def _unit(response: np.ndarray) -> np.ndarray:
+    """`response` about its own median — the form the flats are compared in
+    (`write_master_flat` stores them at a median of 0.5)."""
+    return np.asarray(response, np.float64) / float(np.nanmedian(response))
+
+
+def response_identity(response: np.ndarray) -> str:
+    """A star flat's identity: a hash of the pixels it will be written as.
+    Computed here, at write time, from the array already in hand — never by
+    re-reading the file (`hash_of_image_data`'s tripwire exists for that)."""
+    from hashing import hash_list
+    r = (_unit(response) * 0.5).astype(np.float32)
+    return hash_list([xxhash.xxh64(np.ascontiguousarray(r)).hexdigest()])
+
+
+def _standing_flat(dest: Path, star_flat: StarFlatStack) -> tuple[np.ndarray, str] | None:
+    """The flat this group most recently published — its pixels and its
+    declared identity — or None when it has never built one.
+
+    Found by scanning this op's own output directory for a file stamped with
+    the group's STBLHASH: the same lookup `gate()` does over built masters,
+    and the only stable handle a star flat has (its stable_hash is the oldest
+    member's, which never moves as the group grows). Star flats are not
+    pipeline display taps, so nothing supersedes them and earlier revisions
+    stay on disk for exactly this comparison.
+
+    Only the header is read for the match; the pixels of the ONE match are
+    read after."""
+    from file_io.generic import read_declared_content_hash, read_image
+    best: tuple[float, Path] | None = None
+    for path in Path(dest).parent.glob("*.xisf"):
+        if path == Path(dest):
+            continue
+        try:
+            if str(read_header(path).get("STBLHASH", "")) != str(star_flat.stable_hash):
+                continue
+            mtime = path.stat().st_mtime
+        except (OSError, ValueError, KeyError):
+            continue
+        if best is None or mtime > best[0]:
+            best = (mtime, path)
+    if best is None:
+        return None
+    identity = read_declared_content_hash(best[1])
+    if identity is None:
+        return None
+    return np.asarray(read_image(best[1]), np.float32).squeeze(), identity
+
+
 def _pointing_of_sub(members: list[Path]) -> dict[int, int]:
     """Each member's sky position, as an integer id per ~0.1 deg cell — the
     unit `solve_adaptive` counts to tell independent samples from repeats.
@@ -379,11 +436,35 @@ def solve_and_write(star_flat: StarFlatStack, dest, *, cells=CELLS, mag_window=M
                    "per_cell_uncertainty": float(np.nanmedian(sol.uncertainty)), "colour_term": sol.colour_term,
                    "residual_scatter": sol.residual_scatter, **coverage}
     quality["good"] = sol is not None and _passes(quality)
+    # DECLARE AN IDENTITY (see `file_io.generic`'s CALLHASH/CONTHASH note).
+    # A star flat is shared by every stack of its optical train, so without
+    # this, adding subs to ONE stack moved the group's membership, moved this
+    # op's call hash, and re-stacked the whole train through WBPP for a flat
+    # that had not meaningfully changed. When the new response matches the
+    # standing flat within `STAR_FLAT_CHANGE`, we write the STANDING flat's
+    # pixels — so the declared identity is literally the same content, and
+    # every consumer's key holds still.
+    standing = _standing_flat(dest, star_flat)
+    if standing is not None:
+        old_response, old_identity = standing
+        if old_response.shape == response.shape:
+            change = float(np.nanmax(np.abs(_unit(response) / _unit(old_response) - 1.0)))
+            quality["change_vs_standing"] = change
+            if change <= STAR_FLAT_CHANGE:
+                response, identity = old_response, old_identity
+                quality["carried_forward"] = True
+            else:
+                identity = None
+        else:
+            identity = None
+    else:
+        identity = None
     Path(dest).parent.mkdir(parents=True, exist_ok=True)
     write_master_flat(response, dest, {
         "IMAGETYP": "Master Flat", "FILTER": star_flat.filter or "", "INSTRUME": star_flat.camera,
         "FOCALLEN": star_flat.focal_length, "XBINNING": 1, "YBINNING": 1, "EXPOSURE": 1.0, "EXPTIME": 1.0,
         "STBLHASH": star_flat.stable_hash, "SFLATSUB": quality.get("n_subs", 0), "SFLATCEL": quality.get("cell", 0),
+        "CONTHASH": identity or response_identity(response),
     })
     set_section(Path(dest), SECTION, quality)
     log.info("star flat built", stack=str(star_flat), **quality)
@@ -398,7 +479,7 @@ def solve_and_write(star_flat: StarFlatStack, dest, *, cells=CELLS, mag_window=M
 # 61 MP primary was refused by the thumbnail budget -> silent 404
 # (2026-09-09). Decorator lists are stripped from the structural hash,
 # so adding this does NOT re-key the 91 existing masters.
-@node(num_cpus=4, display="Star Flat", resources={"diskcache": 0.001})
+@node(num_cpus=4, display="Star Flat", resources={"diskcache": 0.001}, declares_identity=True)
 def build_star_flat(star_flat: StarFlatStack, cells: tuple, mag_window: tuple) -> WithSidecar[XisfFilePath]:
     """The group's master flat (see `solve_and_write`). The solve settings
     are arguments so they sit in the cache key: a new cell size or window

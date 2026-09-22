@@ -33,7 +33,25 @@ from file_io.tiff_file_io import (
     update_tiff_header,
 )
 
+# TWO header fields, two jobs (split 2026-09-22 — they were one field, and
+# that is why a derived product could not keep an identity across a rebuild).
+#
+#   CALLHASH — the call that produced this file. Written by the framework on
+#     every produced image, after the body finished, so its presence is the
+#     WRITE-COMPLETION WITNESS: many bodies write straight to their final path
+#     (`write_master_flat` -> `XISF.write(dest)`), so a file existing there is
+#     not proof the writer survived. Preflight compares this to the call hash
+#     it predicted.
+#   CONTHASH — what this file IS, for anything that keys on it. OPTIONAL: only
+#     an op that wants an identity of its own writes one, and its presence is
+#     exactly that declaration. Absent, the call hash serves — which is what
+#     every producer did before the split, so nothing changes by default.
+#
+# Read order is CONTHASH, then CALLHASH, then a full pixel hash. The last is
+# the expensive branch (see the tripwire on `hash_of_image_data`) and is only
+# reached for files nobody stamped — raw frames, which is where it belongs.
 _CONTENT_HASH_KEY = "CONTHASH"
+_CALL_HASH_KEY = "CALLHASH"
 
 
 def classify_by_extension(filename: Path) -> Any:
@@ -245,8 +263,27 @@ def _stamped_or_hashed(filename: Path) -> str:
     # `4526235228981703 == '4526235228981703'` is False, and that inequality
     # made one stack's master "never satisfied": re-stacked every pass, its
     # key alternating with the int/str of the master on disk (boot 91).
-    stamped = read_header(filename).get(_CONTENT_HASH_KEY)
-    return str(stamped) if stamped is not None else hash_of_image_data(filename)
+    header = read_header(filename)
+    for key in (_CONTENT_HASH_KEY, _CALL_HASH_KEY):
+        stamped = header.get(key)
+        if stamped is not None:
+            return str(stamped)
+    return hash_of_image_data(filename)
+
+
+def read_call_hash(filename: Path) -> str | None:
+    """The call that produced this file, or None when nothing stamped it —
+    preflight's write-completion witness. `str()` for the same reason
+    `_stamped_or_hashed` needs it."""
+    stamped = read_header(classify_by_extension(Path(filename))).get(_CALL_HASH_KEY)
+    return str(stamped) if stamped is not None else None
+
+
+def read_declared_content_hash(filename: Path) -> str | None:
+    """The identity this file's producer DECLARED for it, or None when it
+    declared none (the ordinary case — then the call hash is the identity)."""
+    stamped = read_header(classify_by_extension(Path(filename))).get(_CONTENT_HASH_KEY)
+    return str(stamped) if stamped is not None else None
 
 
 @get_content_hash.register

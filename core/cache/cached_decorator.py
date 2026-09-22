@@ -122,6 +122,22 @@ def _is_head_node() -> bool:
 _PROCESS_IS_HEAD: Optional[bool] = None
 
 
+def _declared_or_call_hash(wrapper, call_hash: str, args: tuple) -> str:
+    """A `declares_identity` op's handle carries the identity its output
+    ALREADY declared on disk, when there is one, so trace-time path
+    prediction agrees with what the run will key on. Falls back to the call
+    hash when the file is absent (the op has not run under this key yet) —
+    conservative, and symmetric with `preflight._dep_identity`."""
+    try:
+        from file_io.generic import read_declared_content_hash
+        path = Path(str(wrapper.filename_fn(*args)))
+        if path.exists():
+            return read_declared_content_hash(path) or call_hash
+    except Exception:
+        pass
+    return call_hash
+
+
 def _log_node_exec(
     op: str,
     call_hash: str,
@@ -234,6 +250,7 @@ def make_cached_decorator(
         canonical_call_hash: Callable,
         ray_opts: dict,
         identity_root: bool = False,
+        declares_identity: bool = False,
     ) -> Callable:
         """Wrap `func` with caching keyed by `canonical_call_hash(args)`.
 
@@ -416,7 +433,9 @@ def make_cached_decorator(
                 # per-process nondeterministic and silently broke the
                 # eager-trace/lazy-trace bit-identity claim.
                 try:
-                    handle.content_hash = canonical_call_hash(*args)
+                    handle.content_hash = _declared_or_call_hash(
+                        wrapper, canonical_call_hash(*args), args
+                    ) if declares_identity else canonical_call_hash(*args)
                 except Exception as e:
                     # LOUD, deliberately: an unstamped handle silently
                     # degrades every downstream path prediction (the
@@ -520,6 +539,7 @@ def make_cached_decorator(
             except KeyError:
                 return False
         wrapper.invalidate = invalidate
+        wrapper._declares_identity = declares_identity
 
         return wrapper
 
@@ -537,11 +557,12 @@ def make_cached_decorator(
         """
 
         def remote(self, func=None, *, canonical_call_hash=None, cache_key_narrow=None,
-                   identity_root=False, **ray_opts):
+                   identity_root=False, declares_identity=False, **ray_opts):
             def go(f):
                 cch = canonical_call_hash or _default_canonical_call_hash(f, cache_key_narrow)
                 return decorate(f, canonical_call_hash=cch, ray_opts=ray_opts,
-                                identity_root=identity_root)
+                                identity_root=identity_root,
+                                declares_identity=declares_identity)
             if func is None:
                 return go
             return go(func)

@@ -92,8 +92,9 @@ def _write_fits(path, header=None):
 
 
 def test_stamp_header_adds_imagetyp_and_content_hash(tmp_path):
-    """`_stamp_header` writes CONTHASH=call_hash and, by default,
-    IMAGETYP=light into a produced file that declares no type — so
+    """`_stamp_header` writes CALLHASH=call_hash — the write-completion
+    witness, NOT the identity (CONTHASH stays the body's to declare) — and by
+    default IMAGETYP=light into a produced file that declares no type, so
     `is_light_frame` is uniformly true for produced images."""
     from products.registry import _stamp_header
     from file_io.generic import read_header
@@ -104,13 +105,13 @@ def test_stamp_header_adds_imagetyp_and_content_hash(tmp_path):
     _stamp_header(p, "deadbeef", "light")
 
     header = read_header(p)
-    assert header.get("CONTHASH") == "deadbeef"
+    assert header.get("CALLHASH") == "deadbeef" and "CONTHASH" not in header
     assert str(header.get("IMAGETYP")).lower() == "light"
 
 
 def test_stamp_header_does_not_clobber_existing_imagetyp(tmp_path):
     """The shared stacker writes its own IMAGETYP ("Master Dark" etc.) in
-    the body; `_stamp_header` must preserve it — only the content hash is
+    the body; `_stamp_header` must preserve it — only the call hash is
     added. This is what keeps the calibration carve-out working without
     touching stack_files."""
     from products.registry import _stamp_header
@@ -122,7 +123,7 @@ def test_stamp_header_does_not_clobber_existing_imagetyp(tmp_path):
     _stamp_header(p, "cafe", "light")
 
     header = read_header(p)
-    assert header.get("CONTHASH") == "cafe"
+    assert header.get("CALLHASH") == "cafe" and "CONTHASH" not in header
     # read_fits_header lowercases header values; the point is the body's
     # "Master Dark" survived (not overwritten by the default "light").
     assert str(header.get("IMAGETYP")).lower() == "master dark"  # not clobbered
@@ -130,7 +131,7 @@ def test_stamp_header_does_not_clobber_existing_imagetyp(tmp_path):
 
 def test_stamp_header_image_type_none_skips_imagetyp(tmp_path):
     """`image_type=None` disables the IMAGETYP stamp entirely; only the
-    content hash is written."""
+    call hash is written."""
     from products.registry import _stamp_header
     from file_io.generic import read_header
     from file_io.types import FitsFilePath
@@ -140,5 +141,5 @@ def test_stamp_header_image_type_none_skips_imagetyp(tmp_path):
     _stamp_header(p, "f00d", None)
 
     header = read_header(p)
-    assert header.get("CONTHASH") == "f00d"
+    assert header.get("CALLHASH") == "f00d" and "CONTHASH" not in header
     assert header.get("IMAGETYP") is None

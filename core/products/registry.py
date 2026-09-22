@@ -330,8 +330,14 @@ def _stamp_header(
 ) -> None:
     """Stamp the result file's native header in a single write:
 
-      * `content_hash` (CONTHASH) = `call_hash` — always. Provenance axis +
-        write-completion witness (stamped only after the body finished).
+      * `CALLHASH` = `call_hash` — always. Provenance axis +
+        write-completion witness (stamped only after the body finished, so a
+        body that writes straight to its final path cannot be mistaken for
+        finished when its process was killed). Preflight compares this.
+        CONTHASH is NOT written here: it is optional, it means "my producer
+        declared an identity of its own", and only a body that wants one
+        writes it — `_stamped_or_hashed` falls back to CALLHASH otherwise,
+        which is the value every consumer saw before the 2026-09-22 split.
       * `STBLHASH` = the primary arg's stable_hash — when resolvable AND the
         body didn't already write one (the stackers/mergers stamp their own,
         sometimes composed differently — never clobber). Identity axis:
@@ -353,9 +359,9 @@ def _stamp_header(
     if not isinstance(target, Path):
         return
     try:
-        from file_io.generic import read_header, update_header, _CONTENT_HASH_KEY
+        from file_io.generic import read_header, update_header, _CALL_HASH_KEY
         header = read_header(target)
-        updates: dict[str, Any] = {_CONTENT_HASH_KEY: call_hash}
+        updates: dict[str, Any] = {_CALL_HASH_KEY: str(call_hash)}
         if image_type is not None and not header.get("IMAGETYP"):
             updates["IMAGETYP"] = image_type
         stable = _primary_stable_hash(args)
