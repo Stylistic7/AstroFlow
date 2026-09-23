@@ -418,6 +418,28 @@ def solve_and_write(star_flat: StarFlatStack, dest, *, cells=CELLS, mag_window=M
     n_with = int(len(np.unique(stars[:, 10]))) if len(stars) else 0
     shape = (star_flat.height_pixels, star_flat.width_pixels)
     log.info("building star flat", stack=str(star_flat), subs_with_photometry=n_with, stars=len(stars))
+    if len(stars) == 0 or n_with == 0:
+        # Nothing to solve. `solve_star_flat` normalises its weights by their
+        # own max, so an empty star table reaches numpy as `max()` of a
+        # zero-size array and the op dies — which then fails `mint_star_flats`
+        # and `build_regroup_graph` above it, and the whole pass ends with a
+        # FAILED node instead of a flat of ones (boot 97, 2026-09-22: five
+        # groups whose members yielded no photometry stalled the rebuild for
+        # hours). The guard used to live in the `n_with < MIN_SUBS` branch
+        # that the per-cell sufficiency rule replaced.
+        response = np.ones(shape, np.float32)
+        quality = {"n_subs": n_with, "stars": 0, "good": False,
+                   "reason": "no member sub yielded any photometry"}
+        Path(dest).parent.mkdir(parents=True, exist_ok=True)
+        write_master_flat(response, dest, {
+            "IMAGETYP": "Master Flat", "FILTER": star_flat.filter or "", "INSTRUME": star_flat.camera,
+            "FOCALLEN": star_flat.focal_length, "XBINNING": 1, "YBINNING": 1, "EXPOSURE": 1.0, "EXPTIME": 1.0,
+            "STBLHASH": star_flat.stable_hash, "SFLATSUB": 0, "SFLATCEL": 0,
+            "CONTHASH": response_identity(response),
+        })
+        set_section(Path(dest), SECTION, quality)
+        log.info("star flat built", stack=str(star_flat), **quality)
+        return quality
     sol, cell, r_raw, r_blob, coverage = solve_adaptive(
         stars, shape, cells, mag_window, pointing_of_sub=_pointing_of_sub(members))
     if sol is None:

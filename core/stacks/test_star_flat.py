@@ -462,3 +462,24 @@ def test_a_rebuilt_flat_keeps_its_identity_until_it_really_changes(tmp_path):
                        width_pixels=W, height_pixels=H)
     q3 = solve_and_write(moved, out / "c.xisf", cells=(128,))
     assert read_declared_content_hash(out / "c.xisf") is not None
+
+
+def test_a_group_with_no_photometry_builds_a_flat_of_ones(tmp_path):
+    """Five groups whose members yielded no photometry crashed the whole
+    rebuild on boot 97: `solve_star_flat` normalises its weights by their own
+    max, and an empty star table reaches numpy as max() of a zero-size array.
+    The failure propagated up through mint_star_flats to build_regroup_graph
+    and ended every pass with a FAILED node. A group with nothing to solve
+    must build a flat of ones and say why."""
+    import astropy.io.fits as pf
+    paths = []
+    for i in range(3):
+        p = tmp_path / f"empty{i}.fit"
+        pf.PrimaryHDU(np.zeros((4, 4), np.uint16)).writeto(p)
+        paths.append(str(p))                       # no star_photometry section at all
+    sf = _star_flat(members=[Path(p).stem for p in paths], member_files=tuple(paths),
+                    width_pixels=W, height_pixels=H)
+    q = solve_and_write(sf, tmp_path / "flat.xisf")
+    assert q["good"] is False and q["n_subs"] == 0 and "no member sub" in q["reason"]
+    img = np.asarray(read_image(tmp_path / "flat.xisf"), np.float64).squeeze()
+    assert img.shape == (H, W) and np.allclose(img, np.median(img))   # featureless
