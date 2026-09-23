@@ -85,6 +85,7 @@ def _deserialize_choice(choice, decision_type: DecisionType):
         DecisionType.ROTATION_OUTLIER,
         DecisionType.SUBFRAME_QUALITY,
         DecisionType.QUARANTINE,
+        DecisionType.FRINGE_SOURCE,
     }
     if decision_type in binary_types:
         return BinaryChoice(choice)

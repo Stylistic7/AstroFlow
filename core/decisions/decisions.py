@@ -14,6 +14,12 @@ class DecisionType(str, Enum):
     CALIBRATION_BIAS = "calibration_bias"
     CALIBRATION_DARK = "calibration_dark"
     CALIBRATION_FLAT = "calibration_flat"
+    CALIBRATION_FRINGE = "calibration_fringe"
+    # Not a calibration CHOICE but a promotion: "the frames of this stack are
+    # blank sky, build a fringe frame from them". The user is the only one who
+    # can know that — blank-sky frames arrive stamped `Light` like any other,
+    # so nothing in the header distinguishes them (see `stacks/fringe.py`).
+    FRINGE_SOURCE = "fringe_source"
 
 
 # Lower precedence = applied first by resolve_decisions.
@@ -39,6 +45,7 @@ _CAL_TYPE_TO_DECISION_TYPE: dict[str, DecisionType] = {
     "bias": DecisionType.CALIBRATION_BIAS,
     "dark": DecisionType.CALIBRATION_DARK,
     "flat": DecisionType.CALIBRATION_FLAT,
+    "fringe": DecisionType.CALIBRATION_FRINGE,
 }
 
 
@@ -75,6 +82,15 @@ class DecisionKey:
             object_type,
             parent_stack_id or object_id,
             object_id,
+        )
+
+    @classmethod
+    def fringe_source(cls, stack_id: str) -> "DecisionKey":
+        """Whether this stack's frames are blank sky to build a fringe frame
+        from. A whole-stack decision, so subject and parent are the same —
+        the same shape `subframe_quality` uses."""
+        return cls(
+            DecisionType.FRINGE_SOURCE, ObjectType.STACK, stack_id, stack_id,
         )
 
     @classmethod

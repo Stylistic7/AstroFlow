@@ -19,9 +19,10 @@ WBPP, never wrong pixels.
 
 * `calibration_plan(stack, config)` — the build recipe: topologically
   ordered `(cal_stack, its_dep_ids)` steps plus `stack`'s own dep ids.
-* `calibration_master(cs, config, dep_masters)` — one step of that recipe:
-  the producer a calibration stack is built by (solved from photometry for
-  a star flat, integrated from frames for everything else).
+* `calibration_master(cs, config, dep_masters, dep_ids)` — one step of that
+  recipe: the producer a calibration stack is built by (solved from
+  photometry for a star flat, combined from blank sky for a fringe frame,
+  integrated from frames for everything else).
 * `master_for(stack, cs, master, dark)` — the master `stack` is actually
   calibrated with: a star flat is re-scaled to the stack's own sky first
   (`scale_star_flat`, ephemeral, per light stack); anything else as built.
@@ -104,17 +105,65 @@ def calibration_plan(
     )
 
 
+def has_own_producer(cs: CalibrationStack) -> bool:
+    """Is this cal stack built by something other than a stacker?
+
+    A star flat is solved from photometry and a fringe frame is combined
+    from blank sky; neither is an integration of `contents`, so no stacking
+    backend may be handed one. Every backend asks HERE rather than testing
+    types itself — the OSS pipeline used to run `stack_files_oss` over every
+    plan step, which for a star flat integrated an empty `contents`.
+    """
+    from stacks.star_flat import StarFlatStack
+    from stacks.fringe import FringeStack
+    return isinstance(cs, (StarFlatStack, FringeStack))
+
+
 def calibration_master(
     cs: CalibrationStack, config: ProcessingConfig, dep_masters: list[WithSidecar],
+    dep_ids: tuple[str, ...] = (),
 ) -> WithSidecar:
-    """One calibration stack's master. A star flat is SOLVED from its members'
-    star photometry — its own producer, keyed on the group's membership, no
-    cal deps of its own; every other kind is INTEGRATED from its frames with
-    the masters of its own dependencies."""
+    """One calibration stack's master, by the producer its kind is built by.
+
+      * a star flat is SOLVED from its members' star photometry — its own
+        producer, keyed on the group's membership, no cal deps of its own;
+      * a fringe frame is COMBINED from the blank-sky lights of the stack the
+        user promoted, calibrated with its own dark and flat so that what
+        survives is the residual the flat could not remove;
+      * everything else is INTEGRATED from its frames with the masters of its
+        own dependencies.
+
+    `dep_ids` name `dep_masters` positionally (the sorted ids
+    `calibration_plan` returns), which is how the fringe build tells its dark
+    from its flat.
+    """
     from stacks.star_flat import StarFlatStack, build_args, build_star_flat
+    from stacks.fringe import FringeStack, build_fringe_frame
     if isinstance(cs, StarFlatStack):
         return build_star_flat(*build_args(cs))
+    if isinstance(cs, FringeStack):
+        by_type = _masters_by_type(config, dep_ids, dep_masters)
+        # The RAW star flat, not the per-stack-scaled one: the amplitude the
+        # map is applied at is fitted per Run anyway (`fringe_gain`), and the
+        # gain's own residual is the same band-limited shape, so it lands in
+        # A rather than in the map. Scaling here would key the fringe frame
+        # to one consumer's sky, which is exactly what a shared calibration
+        # product must not be.
+        return build_fringe_frame(cs, by_type.get("dark"), by_type.get("flat"))
     return stack_files(cs, config, *dep_masters)
+
+
+def _masters_by_type(
+    config: ProcessingConfig, dep_ids: tuple[str, ...], dep_masters: list[WithSidecar],
+) -> dict[str, WithSidecar]:
+    """`{image_type: master}` for a step's own dependencies."""
+    cal_stacks = config.get_calibration_stacks()
+    out: dict[str, WithSidecar] = {}
+    for dep_id, master in zip(dep_ids, dep_masters):
+        cs = cal_stacks.get(dep_id)
+        if cs is not None:
+            out.setdefault(str(cs.image_type), master)
+    return out
 
 
 def master_for(
@@ -147,6 +196,6 @@ def calibrate(
     for cs, dep_ids in steps:
         cal_stacks[str(cs.stable_hash)] = cs
         masters[str(cs.stable_hash)] = calibration_master(
-            cs, config, [masters[i] for i in dep_ids])
+            cs, config, [masters[i] for i in dep_ids], dep_ids)
     dark = next((masters[i] for i in top_ids if getattr(cal_stacks[i], "image_type", None) == "dark"), None)
     return [master_for(stack, cal_stacks[i], masters[i], dark) for i in top_ids]

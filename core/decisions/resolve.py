@@ -210,7 +210,7 @@ def resolve_calibration(
         focal_length_of, same_optical_train,
     )
     from calibration.directory_affinity import find_external_master
-    from calibration.topology import CALIBRATION_TOPOLOGY
+    from calibration.topology import CALIBRATION_TOPOLOGY, OPTIONAL_CALIBRATION
 
     bias_by_sensor, dark_by_sensor, flat_by_sensor_filter = _build_cal_index(
         cal_stacks
@@ -280,10 +280,34 @@ def resolve_calibration(
         mid = _midpoint_s(run.oldest_date, run.newest_date)
         return min(cand, key=lambda x: abs(x[0] - mid))[3]
 
+    def _chronological_fringe(run: Run):
+        """The nearest fringe frame in time for this run's optical train.
+
+        Matched like a flat — same sensor geometry, same filter, same train,
+        preferring the same camera — because the pattern is sensor structure
+        seen through one filter's passband, and the amplitude it is applied
+        at is fitted per Run anyway. Nothing selects one by default that a
+        user did not create: `cal_stacks` carries a fringe frame only where
+        a stack was explicitly promoted to be one."""
+        run_focal = focal_length_of(run)
+        cand = [
+            (s.oldest_date, sid, s) for sid, s in cal_stacks.items()
+            if getattr(s, "kind", None) == "fringe"
+            and s.filter == run.filter
+            and sensor_of(s) == sensor_of(run)
+            and same_optical_train(run_focal, getattr(s, "focal_length", None))
+        ]
+        if not cand:
+            return None
+        cand = _prefer_same_camera(cand, cam_id, lambda c: c[2].camera_id_hash)
+        mid = _midpoint_s(run.oldest_date, run.newest_date)
+        return min(cand, key=lambda c: abs(_midpoint_s(c[2].oldest_date, c[2].newest_date) - mid))[1]
+
     chronological = {
         "bias": _chronological_bias,
         "dark": _chronological_dark,
         "flat": _chronological_flat,
+        "fringe": _chronological_fringe,
     }
 
     def _default_choice(cal_type: str, run: Run) -> str | None:
@@ -310,7 +334,7 @@ def resolve_calibration(
             kind=cal_type,
             shape=sensor_of(run),
             temperature=run.mean_temperature,
-            filter=(run.filter if cal_type == "flat" else None),
+            filter=(run.filter if cal_type in ("flat", "fringe") else None),
             exposure=(run.exposure if cal_type == "dark" else None),
         )
         if path is not None:
@@ -340,6 +364,11 @@ def resolve_calibration(
             if choice == NO_FLAT:
                 continue   # the user pinned "no flat": deliberate, no concern
             if choice is None:
+                if cal_type in OPTIONAL_CALIBRATION:
+                    # A fringe frame exists only where a user built one, so
+                    # its absence is the normal case and says nothing about
+                    # the integration. Silence here, unlike below.
+                    continue
                 # Nothing matched. Proceeding is deliberate — plenty of
                 # people never shoot flats and failing their data outright
                 # would be worse — but it must not be silent. An

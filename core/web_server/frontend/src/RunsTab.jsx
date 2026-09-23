@@ -221,6 +221,16 @@ const RunsTab = ({ stack }) => {
                 (filename, applyToAll) => { onSelectFile('flat', filename, run.id, applyToAll) }} />
             </Box>
 
+            {/* Only when one resolved. A fringe frame exists where the user
+                built one and nowhere else, so an empty row on every other
+                run would say "missing" about something nobody is missing. */}
+            {'fringe' in run.dependencies && (
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                Fringe: &nbsp;&nbsp; {calibrationStackInfo(run.dependencies['fringe'])} <FileBrowser onSelectFile={
+                  (filename, applyToAll) => { onSelectFile('fringe', filename, run.id, applyToAll) }} />
+              </Box>
+            )}
+
             <Box sx={{ display: 'flex', overflowX: 'auto', gap: 2, py: 2 }}>
               {starFlatIds.map((flatId) => (
                 <FlatThumbnail

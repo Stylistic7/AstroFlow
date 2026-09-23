@@ -184,6 +184,16 @@ def process_calibration_stacks_for_ui(cal_stacks: dict) -> dict:
         # Focal length distinguishes the two same-model rigs on the cards
         # (flats separate by it); None when the header lacks it.
         result["focal_length"] = _focal_length_of(stack)
+        if getattr(stack, "kind", None) == "fringe":
+            # A fringe frame: its "frames" are the blank-sky lights of the
+            # stack the user promoted, so the card shows those, not the one
+            # synthetic run that carries them.
+            result["kind"] = "fringe"
+            result["focal_length"] = round(stack.focal_length) if stack.focal_length else None
+            result["n_frames"] = stack.n_frames
+            result["source_stack_id"] = stack.source_stack_id
+            result["filenames"] = list(stack.member_files)
+            result.pop("member_files", None)
         if getattr(stack, "kind", None) == "star":
             # A star flat: its "frames" are the group's light subframes.
             result["kind"] = "star"

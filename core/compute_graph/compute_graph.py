@@ -170,6 +170,7 @@ def scatter_spatial_groups(
     *ancestor_results,
 ) -> Graph:
     from cache.context_ref import ContextRef
+    from stacks.fringe import identify_fringe_stacks, merge_fringe_stacks
     from stacks.star_flat import StarFlats, merge_star_flats
 
     # Three ancestor results in non-deterministic order:
@@ -251,9 +252,6 @@ def scatter_spatial_groups(
     # calibration (`resolve_calibration`), so it takes the decision overrides.
     associate_cal_task = (associate_calibration_stacks, decision_overrides)
     graph[associate_cal_task] = {merge_star_flats_task}
-    graph[store_calibration_stacks] = {associate_cal_task}
-    graph[process_calibration_stacks_for_ui] = {associate_cal_task}
-    graph[store_ui_calibration_stacks] = {process_calibration_stacks_for_ui}
 
     # ORDERED lists, not sets: these deps feed value-consuming nodes
     # (combine_dicts takes *ancestor_results), and dep order is part of the
@@ -292,6 +290,22 @@ def scatter_spatial_groups(
     gather_stacks_task = Node(combine_dicts, name="combine_stacks")
     graph[gather_stacks_task] = stack_tasks
     graph[store_stacks] = {gather_stacks_task}
+
+    # Fringe frames close the loop the other three calibration types do not:
+    # their source is a LIGHT stack the user promoted, so the calibration
+    # chain genuinely waits on identification here. Nothing else changes —
+    # with no promoted stack the merge is the identity and the whole branch
+    # cache-hits. They join AFTER cal-to-cal association because a fringe
+    # frame's own dark and flat resolve at plan time like any other step's.
+    identify_fringe_task = (identify_fringe_stacks, decision_overrides)
+    graph[identify_fringe_task] = [store_stacks]
+    merge_fringe_task = Node(merge_fringe_stacks, name="merge_fringe_stacks")
+    # ORDERED: merge_fringe_stacks(fringe_stacks, cal_stacks) consumes both
+    # positionally.
+    graph[merge_fringe_task] = [identify_fringe_task, associate_cal_task]
+    graph[store_calibration_stacks] = {merge_fringe_task}
+    graph[process_calibration_stacks_for_ui] = {merge_fringe_task}
+    graph[store_ui_calibration_stacks] = {process_calibration_stacks_for_ui}
     # The builder embeds every `prepare_stack_for_ui` result in ITS cached
     # value, so an edit to the per-stack entry must miss the builder too —
     # its own source is unchanged, and it would otherwise replay the old

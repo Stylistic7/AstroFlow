@@ -26,7 +26,9 @@ from mosaics.merging.oss import merge_images_oss, merge_images_stars
 from mosaics.placement.astroflow import place_image
 from mosaics.viewbox_measured import compute_viewbox_measured
 from mosaics.types import Mosaic
-from stacks.calibration_selection import calibration_plan
+from stacks.calibration_selection import (
+    calibration_master, calibration_plan, has_own_producer,
+)
 from stacks.composite_stack import Stack
 from stacks.post_processing.oss import post_process_stack_oss
 from stacks.stacking.oss import stack_files_oss
@@ -49,8 +51,17 @@ def post_processed_master(stack, config):
     """
     steps, _top_ids = calibration_plan(stack, config)
     cal_masters = []
-    for cs, _dep_ids in steps:
-        cal_masters.append(stack_files_oss(cs, config, _after=tuple(cal_masters)))
+    masters = {}
+    for cs, dep_ids in steps:
+        # A star flat or a fringe frame is not an integration of `contents`
+        # — it has its own producer, and handing one to a stacker integrates
+        # the wrong thing (an empty run set, or blank sky as if it were a
+        # calibration stack). `has_own_producer` is where that is decided.
+        m = (calibration_master(cs, config, [masters[i] for i in dep_ids], dep_ids)
+             if has_own_producer(cs)
+             else stack_files_oss(cs, config, _after=tuple(cal_masters)))
+        masters[str(cs.stable_hash)] = m
+        cal_masters.append(m)
     master = stack_files_oss(stack, config, _after=tuple(cal_masters))
     # OSS post-processing (GraXpert background correction + solve) — NOT PI's
     # post_process_stack, whose SPFC/MGC need flux-cal metadata the OSS FITS

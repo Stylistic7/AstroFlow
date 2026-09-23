@@ -208,6 +208,22 @@ function App() {
 
   const quarantineCount = quarantinedSet.size;
 
+  // Stacks the user has promoted to fringe sources. Nothing in a header says
+  // a stack is blank sky, so this override is the only record of it.
+  const fringeSourceSet = useMemo(() => {
+    const set = new Set();
+    for (const { key, choice } of decisionOverrides) {
+      if (key.decision_type === "fringe_source" && choice === "include") {
+        set.add(key.subject_id);
+      }
+    }
+    return set;
+  }, [decisionOverrides]);
+
+  const isFringeSource = useCallback(
+    (stackId) => fringeSourceSet.has(stackId), [fringeSourceSet]
+  );
+
   const refreshDecisions = useCallback(async () => {
     try {
       const d = await fetch('/api/decision_overrides').then(r => r.json());
@@ -245,6 +261,7 @@ function App() {
             asiairDevices,
             refreshAsiairDevices,
             isQuarantined,
+            isFringeSource,
             showQuarantined,
             toggleShowQuarantined,
             quarantineCount,

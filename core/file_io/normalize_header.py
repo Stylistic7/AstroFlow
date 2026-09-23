@@ -9,7 +9,10 @@ def normalize_header(header: dict) -> dict:
 
         if k == "IMAGETYP":
             image_type = None
-            for t in ["bias", "dark", "flat", "light"]:
+            # "fringe" before "light": a fringe frame is BUILT from lights
+            # and may inherit their IMAGETYP wording, and the specific type is
+            # the one that matters (see stacks/fringe.py).
+            for t in ["bias", "dark", "flat", "fringe", "light"]:
                 if t in v.lower():
                     image_type = t
 

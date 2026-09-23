@@ -66,6 +66,40 @@ def toggle_quarantine(object_type, object_id):
     })
 
 
+@settings_bp.route("/api/fringe_source/<stack_id>", methods=["POST"])
+def toggle_fringe_source(stack_id):
+    """Promote a stack to a fringe source, or demote it.
+
+    Blank-sky frames arrive stamped `Light` like any other, so nothing in a
+    header can identify them — this decision is the only place that knowledge
+    exists (`stacks/fringe.py`). Promoting mints a `FringeStack` whose frames
+    are this stack's, which then resolves onto lights of the same optical
+    train exactly the way a flat does.
+    """
+    key = DecisionKey.fringe_source(stack_id)
+    current = context.settings.decision_overrides
+    promoted = key in current and current[key].choice == BinaryChoice.INCLUDE
+
+    if promoted:
+        new_overrides = frozendict({k: v for k, v in current.items() if k != key})
+    else:
+        from decisions.helpers import include
+        new_overrides = frozendict(dict(current) | include(key))
+
+    _update_settings(lambda s: replace(s, decision_overrides=new_overrides))
+    announce("reload_data")
+
+    from state.actor import state
+    state.drain_and_restart()
+
+    from stacks.fringe import fringe_stack_id_for
+    return jsonify({
+        "stack_id": stack_id,
+        "is_fringe_source": not promoted,
+        "fringe_stack_id": None if promoted else str(fringe_stack_id_for(stack_id)),
+    })
+
+
 def _quarantined_frame_files() -> list[Path]:
     """Collect all raw frame files belonging to quarantined stacks/runs."""
     overrides = context.settings.decision_overrides

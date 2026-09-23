@@ -98,6 +98,18 @@ def is_flat_frame(header: dict) -> bool:
     return "flat" in image_type
 
 
+def is_fringe_frame(header: dict) -> bool:
+    """A fringe frame — AstroFlow's own `Master Fringe`, or one a user has
+    exported and dropped back into a calibration folder. It is only ever a
+    MASTER: nothing is shot as a fringe frame, it is combined from blank-sky
+    lights (`stacks/fringe.py`)."""
+    if not header:
+        return False
+    if "IMAGETYP" not in header:
+        return False
+    return "fringe" in header["IMAGETYP"].lower()
+
+
 def is_frame_type(header: dict, type: str) -> bool:
     if type == "light":
         return is_light_frame(header)
@@ -107,5 +119,7 @@ def is_frame_type(header: dict, type: str) -> bool:
         return is_bias_frame(header)
     elif type == "flat":
         return is_flat_frame(header)
+    elif type == "fringe":
+        return is_fringe_frame(header)
 
     raise ValueError(f"Unknown image type {type}")
