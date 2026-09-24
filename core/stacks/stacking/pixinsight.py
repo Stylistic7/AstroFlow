@@ -77,26 +77,32 @@ def _copy_frames_with_plate_solution(
                     for k, v in ps_header.items():
                         fits[0].header[k] = v
 
+# Frames sampled to measure a run's sky level for the fringe scale. The
+# median over a handful is robust to a passing cloud; reading the whole run
+# would cost a full extra pass over the night's pixels for a single number.
+MAX_SKY_FRAMES = 8
+
+
 def _fold_fringe_into_dark(run, cal_master_by_id: dict, dest_dir: str) -> tuple[dict, set]:
     """WBPP's one subtractive slot is the master dark, so a fringe frame is
     folded into the dark THIS run is about to be calibrated with.
 
     This is a quirk of the PixInsight backend and must not leak: a fringe
     frame stays a distinct calibration type everywhere else in AstroFlow, and
-    another stacker should simply subtract it (`stacks.fringe_gain.
-    apply_fringe`). The arithmetic is exact rather than approximate —
+    another stacker should simply subtract it (`stacks.fringe.apply_fringe`).
+    The arithmetic is exact rather than approximate —
 
-        (raw - dark - A*sky*fringe*flat) / flat  ==  (raw - dark)/flat - A*sky*fringe
+        (raw - dark - sky*fringe*flat) / flat  ==  (raw - dark)/flat - sky*fringe
 
     — so folding it into the dark and letting WBPP divide by the flat
     afterwards gives precisely the correction, with no extra pass over the
     pixels and nothing persisted: the combined dark is written into the run's
     own temp dir and dies with it.
 
-    `A` is fitted against THIS run's sky, because the fringe rides on the
-    monochromatic sky and that fraction moves with transparency, moonlight
-    and light pollution. A fit that fails yields A = 0, which subtracts
-    nothing and leaves the plain dark in place.
+    The scale is the run's own SKY BACKGROUND, measured in calibrated units,
+    and nothing else — Arne Henden's "scale that to match the sky background
+    in your image, subtract, and voila". The map is per unit sky, so that is
+    the whole of it.
 
     Returns `(overrides, skip)`: path overrides keyed by cal-stack id, and
     the ids not to stage at all (WBPP would not know what a fringe frame is).
@@ -104,7 +110,6 @@ def _fold_fringe_into_dark(run, cal_master_by_id: dict, dest_dir: str) -> tuple[
     import numpy as np
     from file_io.generic import read_header, read_image
     from stacks.fringe import IMAGE_TYPE as FRINGE_IMAGE_TYPE, read_fringe_frame
-    from stacks.fringe_gain import fit_amplitude
 
     by_type: dict[str, tuple[str, str]] = {}
     for d in run.dependencies.values():
@@ -144,23 +149,23 @@ def _fold_fringe_into_dark(run, cal_master_by_id: dict, dest_dir: str) -> tuple[
             if flat.ndim == 3:
                 flat = flat[:, :, 0]
             flat = flat / float(np.nanmedian(flat))
+        # The run's sky in CALIBRATED units — the same units the map is per
+        # unit OF. Median over the run's frames rather than one of them, so a
+        # single cloud-dimmed sub does not set the scale for the night.
         paths = [str(i.filename) for i in run.metadata.values()]
-        fit = fit_amplitude(paths, fringe, dark=dark, flat=flat)
-        A = float(fit.get("A", 0.0))
-        log.info("fringe amplitude", run=str(run.stable_hash), A=round(A, 3),
-                 n_used=fit.get("n_used"), corr=fit.get("corr"), reason=fit.get("reason"))
-        if A == 0.0:
-            return {}, {fringe_id}
-
-        # sky in CALIBRATED units — the amplitude was fitted against that
-        sky = float(np.nanmedian(
-            (np.asarray(read_image(Path(paths[0])), np.float64) - dark)
-            / (flat if flat is not None else 1.0)))
-        combined = dark + A * sky * fringe * (flat if flat is not None else 1.0)
+        skies = []
+        for p in paths[:MAX_SKY_FRAMES]:
+            img = np.asarray(read_image(Path(p)), np.float64)
+            if img.ndim == 3:
+                img = img[:, :, 0]
+            skies.append(float(np.nanmedian(
+                (img - dark) / (flat if flat is not None else 1.0))))
+        sky = float(np.median(skies))
+        combined = dark + sky * fringe * (flat if flat is not None else 1.0)
         out = Path(dest_dir) / f"masterDark_fringe_{dark_id}.xisf"
         _write_dark_like(dark_path, combined, out)
         log.info("fringe folded into the dark", run=str(run.stable_hash),
-                 A=round(A, 3), sky=round(sky, 1), dest=str(out))
+                 sky=round(sky, 1), n_sky_frames=len(skies), dest=str(out))
         return {dark_id: str(out)}, {fringe_id}
     except Exception as e:
         # Never let this cost a master: fall back to the plain dark.

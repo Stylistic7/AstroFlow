@@ -29,11 +29,24 @@ would double-count whatever the flat already took out.
 
     fringe(x) = combine( (light - dark) / flat / median ) - 1      # zero mean
 
-A stacker then removes it as `frame - A * sky * fringe`, with A fitted per
-Run against that run's own sky (`stacks/fringe_gain.py`). Fitting rather
-than assuming is what makes it robust to transparency, moonlight and light
-pollution: those move the monochromatic FRACTION of the sky, so a map
-scaled by total sky level would be wrong whenever the mix changed.
+A stacker then removes it exactly as Arne Henden describes (AAVSO,
+2012-10-20): "You then just scale that to match the sky background in your
+image, subtract, and voila! The fringing goes away." The map is already per
+unit sky, so the scale factor IS the frame's sky level — no fit, no filter.
+
+Arne's own answer to the thing a fit would chase — "the night sky emission
+can vary during a night, so you need a fringe map that corresponds with the
+monochromatic illumination source present at the time of the science image"
+— is to SHOOT a matching map, not to compute a correction for a mismatched
+one. Match the conditions at the telescope and the scale factor is just the
+sky. (He lists two more: the pattern depends on wavelength, so a map is
+per-filter; and it is a weak function of temperature, so it is per setpoint.
+Both fall out of matching on camera, filter and optical train.)
+
+GOOD SIGNAL-TO-NOISE MATTERS. Arne's last gotcha: "since you are
+subtracting this, you want good signal/noise in the master fringe image, not
+always easy to obtain." Hence `MIN_FRAMES` — a map built from too few frames
+is noise that gets added to every science frame it touches.
 
 A DISTINCT CALIBRATION TYPE, all the way through. `bias`, `dark` and `flat`
 have a fourth sibling in `CALIBRATION_TOPOLOGY`, it resolves per Run like
@@ -292,6 +305,19 @@ def combine_fringe(
         "flat_divided": flat is not None,
     }
     return fringe.astype(np.float32), quality
+
+
+def apply_fringe(frame: np.ndarray, fringe: np.ndarray,
+                 sky: float | None = None) -> np.ndarray:
+    """`frame - sky * fringe` — the correction, and the whole of it.
+
+    `sky` defaults to the frame's own median, which is what "the sky
+    background in your image" means. The map is per unit sky, so the product
+    is in the frame's own units and the subtraction is dimensionally honest.
+    """
+    f = np.asarray(frame, np.float64)
+    s = float(np.nanmedian(f)) if sky is None else float(sky)
+    return (f - s * np.asarray(fringe, np.float64)).astype(frame.dtype)
 
 
 def write_fringe_frame(fringe: np.ndarray, dest, keywords: dict) -> None:

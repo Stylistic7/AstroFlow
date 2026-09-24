@@ -12,9 +12,8 @@ import numpy as np
 import pytest
 
 from stacks.fringe import (
-    MIN_FRAMES, combine_fringe, read_fringe_frame, write_fringe_frame,
+    MIN_FRAMES, apply_fringe, combine_fringe, read_fringe_frame, write_fringe_frame,
 )
-from stacks.fringe_gain import GAIN_RANGE, apply_fringe, fit_amplitude
 
 H, W = 600, 900
 
@@ -22,9 +21,9 @@ H, W = 600, 900
 def _pattern(seed=3, amp=0.02, sigma=45):
     """A smooth sensor-fixed ripple, unit-normalised, mean 0.
 
-    `sigma` puts the structure inside `fringe_gain.BAND_PX` (64-400 px), which
-    is where the real etalon's power lives and the only band the fit looks at.
-    A finer pattern is filtered away before the regression ever sees it."""
+    `sigma` is the etalon's own scale — broad, smooth blobs, not fine
+    structure — so the synthetic sensor prints something the combine can
+    actually recover from dithered frames."""
     from scipy.ndimage import gaussian_filter
     rng = np.random.default_rng(seed)
     f = gaussian_filter(rng.standard_normal((H, W)), sigma)
@@ -94,65 +93,48 @@ def test_the_map_survives_the_xisf_round_trip(tmp_path):
     assert abs(float(np.mean(back))) < 1e-5
 
 
-def test_the_amplitude_is_fitted_per_run(world):
-    """The map is a SHAPE; how strongly a frame carries it depends on how much
-    of its sky is the monochromatic component, which moves with conditions. So
-    it is measured, not assumed."""
-    g, resp, _, dark = world
-    rng = np.random.default_rng(11)
-    for a_true in (0.6, 1.0, 1.6):
-        frames = _blank_sky(rng, g, resp, a=a_true, n=8, stars=20)
-        fit = fit_amplitude(range(len(frames)), g, dark=dark, flat=resp,
-                            read=lambda i: frames[int(i)])
-        assert "reason" not in fit, fit
-        assert abs(fit["A"] - a_true) < 0.25, (a_true, fit["A"])
-        assert abs(fit["corr"]) > 0.3      # diluted by photon noise in the band
+def test_apply_scales_the_map_to_the_sky_and_subtracts(world):
+    """Arne's whole method: "scale that to match the sky background in your
+    image, subtract, and voila". `sky` defaults to the frame's own median.
 
-
-def test_a_sky_without_the_pattern_subtracts_nothing(world):
-    """The neutral value is ZERO — unlike the star flat's gain, where "I do not
-    believe this" once resolved to the maximum and printed the flat's own
-    structure into the masters. Here the safe fallback and the do-nothing
-    fallback are the same number."""
-    g, resp, _, dark = world
-    rng = np.random.default_rng(12)
-    frames = _blank_sky(rng, g, resp, a=0.0, n=8, stars=20)   # no fringe in this sky
-    foreign = _pattern(seed=99)                                # and a foreign map
-    fit = fit_amplitude(range(len(frames)), foreign, dark=dark, flat=resp,
-                        read=lambda i: frames[int(i)])
-    assert fit["A"] == 0.0
-    assert "reason" in fit
-    fewer = fit_amplitude(range(2), g, dark=dark, flat=resp, read=lambda i: frames[int(i)])
-    assert fewer["A"] == 0.0 and "only" in fewer["reason"]
-
-
-def test_apply_removes_the_pattern(world):
-    """frame - A * sky * fringe, in the frame's own units.
-
-    Judged by CORRELATION with the pattern, not by scatter: a real frame's
-    scatter in that band is dominated by stars and photon noise, which the
-    correction neither should nor does touch, so an rms ratio understates it
-    badly (it reads 0.85 while the pattern is entirely gone)."""
-    from stacks.fringe_gain import _bandpass, _block_mean
+    On a noiseless, starless frame the removal is essentially total — there
+    is no fit involved, so nothing to be approximately right about."""
     g, resp, frames, dark = world
-    band = lambda a: _bandpass(_block_mean(a / np.median(a) - 1.0, 8))  # noqa: E731
-    truth = _bandpass(_block_mean(g, 8))
-    f = (frames[0] - dark) / resp
-    before = float(np.corrcoef(band(f).ravel(), truth.ravel())[0, 1])
-    after = float(np.corrcoef(band(apply_fringe(f, g, 1.0)).ravel(), truth.ravel())[0, 1])
-    assert before > 0.4 and abs(after) < 0.1, (before, after)
+    rel = lambda a: a / np.median(a) - 1.0        # noqa: E731
 
-    # on a noiseless, starless frame the removal is essentially total
     clean = (np.full(g.shape, 300.0) * (1.0 + g)) * resp + dark
     fc = (clean - dark) / resp
-    ratio = float(np.std(band(apply_fringe(fc, g, 1.0)))) / float(np.std(band(fc)))
+    ratio = float(np.std(rel(apply_fringe(fc, g)))) / float(np.std(rel(fc)))
     assert ratio < 0.02, ratio
 
+    # An explicit sky overrides the frame's own median, and the subtraction
+    # is exactly that scalar times the map — no filtering, no regression.
+    np.testing.assert_allclose(fc - 100.0 * g, apply_fringe(fc, g, sky=100.0), rtol=1e-6)
 
-def test_gain_range_brackets_one():
-    """A sky can carry none of the pattern or somewhat more than the map has;
-    anything far outside that is fitting something else."""
-    assert GAIN_RANGE[0] <= 0.0 < 1.0 < GAIN_RANGE[1]
+    # On a real frame the pattern goes; stars and photon noise are untouched.
+    # Correlate on 16x16 BLOCK MEANS, not per pixel: the fringe is ~2% of sky
+    # while a single sub's per-pixel noise is many times that, so per-pixel
+    # the correlation is 0.02 and says nothing. Averaging is how you see a
+    # signal under noise — it is a measurement here, not a filter on the
+    # data, and nothing in the production path does it.
+    def binned(a, k=16):
+        """Block MEDIAN, not mean: the synthetic stars are 1200-12000 ADU
+        against a 6 ADU pattern, so one star ruins a mean block. A median
+        over 256 px rejects the ~0.1% of pixels a star occupies."""
+        h, w = (a.shape[0] // k) * k, (a.shape[1] // k) * k
+        return np.median(a[:h, :w].reshape(h // k, k, w // k, k), axis=(1, 3))
+
+    f = (frames[0] - dark) / resp
+    truth = binned(g).ravel()
+    before = float(np.corrcoef(binned(rel(f)).ravel(), truth)[0, 1])
+    after = float(np.corrcoef(binned(rel(apply_fringe(f, g))).ravel(), truth)[0, 1])
+    assert before > 0.3 and abs(after) < abs(before) / 3, (before, after)
+
+
+def test_a_map_needs_enough_frames_to_be_worth_subtracting():
+    """Arne's last gotcha: "since you are subtracting this, you want good
+    signal/noise in the master fringe image, not always easy to obtain." A
+    map built from too few frames is noise added to every frame it touches."""
     assert MIN_FRAMES >= 15
 
 
@@ -193,7 +175,7 @@ def test_without_a_fringe_frame_nothing_changes(tmp_path):
     assert overrides == {} and skip == set()
 
 
-def test_a_fringe_frame_is_folded_into_the_dark(tmp_path, monkeypatch):
+def test_a_fringe_frame_is_folded_into_the_dark(tmp_path):
     """WBPP has no subtractive slot but the dark, so the map is folded in
     there — and the fringe frame itself is NEVER staged, because WBPP would
     not know what it was."""
@@ -216,11 +198,6 @@ def test_a_fringe_frame_is_folded_into_the_dark(tmp_path, monkeypatch):
     pf.PrimaryHDU(((sky * (1 + g)) * _response() + dark_px).astype(np.float32)).writeto(light)
     run = _Run({"d": _Dep("D"), "f": _Dep("F"), "r": _Dep("R")},
                {i: _Meta(str(light)) for i in range(4)})
-
-    monkeypatch.setattr(pi, "fit_amplitude", lambda *a, **k: {"A": 1.0, "n_used": 4, "corr": 0.9},
-                        raising=False)
-    import stacks.fringe_gain as fg
-    monkeypatch.setattr(fg, "fit_amplitude", lambda *a, **k: {"A": 1.0, "n_used": 4, "corr": 0.9})
 
     overrides, skip = pi._fold_fringe_into_dark(
         run, {"D": dark, "F": flat, "R": str(fpath)}, str(tmp_path))

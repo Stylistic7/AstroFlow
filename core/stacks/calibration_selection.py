@@ -143,12 +143,9 @@ def calibration_master(
         return build_star_flat(*build_args(cs))
     if isinstance(cs, FringeStack):
         by_type = _masters_by_type(config, dep_ids, dep_masters)
-        # The RAW star flat, not the per-stack-scaled one: the amplitude the
-        # map is applied at is fitted per Run anyway (`fringe_gain`), and the
-        # gain's own residual is the same band-limited shape, so it lands in
-        # A rather than in the map. Scaling here would key the fringe frame
-        # to one consumer's sky, which is exactly what a shared calibration
-        # product must not be.
+        # The RAW star flat, not the per-stack-scaled one: scaling here
+        # would key the fringe frame to one consumer's sky, which is exactly
+        # what a shared calibration product must not be.
         return build_fringe_frame(cs, by_type.get("dark"), by_type.get("flat"))
     return stack_files(cs, config, *dep_masters)
 
