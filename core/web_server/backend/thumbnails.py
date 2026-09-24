@@ -421,7 +421,7 @@ def calibration_stack_thumbnail(stack_id: str):
 def run_thumbnail(stack_id: str, run_id: str):
     """Preview of one run's best subframe, calibrated as the query says.
 
-        /thumbnail/run/<stack>/<run>?flat=<id>&dark=<id>&bias=<id>
+        /thumbnail/run/<stack>/<run>?flat=<id>&dark=<id>&bias=<id>&fringe=<id>
 
     Every calibration input is NAMED, and what is not named is not applied,
     so the URL alone says what the picture is. `flat=none` pins "no flat"
@@ -457,6 +457,7 @@ def run_thumbnail(stack_id: str, run_id: str):
 
     return get_thumbnail(
         resolved, run, pick("flat"), pick("dark"), pick("bias"),
+        pick("fringe"),
     )
 
 

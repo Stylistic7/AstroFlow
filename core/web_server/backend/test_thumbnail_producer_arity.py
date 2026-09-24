@@ -8,12 +8,12 @@ from previews.flat_correction import calibrated_run_preview
 
 
 def test_matches_real_producer_arities():
-    # calibrated_run_preview(stack, run, flat_id, dark_id, bias_id) → 5.
+    # calibrated_run_preview(stack, run, flat_id, dark_id, bias_id, fringe_id) → 6.
     # Every calibration input is REQUIRED (pass None to skip one), so the
     # arity is exact and no shorter Stack producer can be invoked by a
     # Run-preview URL, nor this one by a bare /thumbnail/stack/<id>.
-    assert _producer_accepts(calibrated_run_preview, 5)
-    assert not _producer_accepts(calibrated_run_preview, 4)
+    assert _producer_accepts(calibrated_run_preview, 6)
+    assert not _producer_accepts(calibrated_run_preview, 5)
     assert not _producer_accepts(calibrated_run_preview, 2)
 
 

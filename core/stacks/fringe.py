@@ -255,6 +255,28 @@ def merge_fringe_stacks(
     return CalibrationStacksDict({**cal_stacks, **fringe_stacks})
 
 
+def fringe_master_path(stable_hash) -> Path | None:
+    """The built map for this fringe stack, or None when it is not on disk.
+
+    Found by scanning the producer's output directory for the file whose
+    `STBLHASH` matches, rather than by replaying `build_fringe_frame`'s
+    argument tuple through the cache: the preview path does not have the
+    dark and flat `ImageMetadata` those arguments carry, and a preview must
+    never trigger a build. `gate()` locates star-flat masters the same way.
+    """
+    from context import context
+    out = Path(context.output_dir) / "build_fringe_frame"
+    if not out.is_dir():
+        return None
+    for f in sorted(out.glob("*.xisf")):
+        try:
+            if str(read_header(f).get("STBLHASH")) == str(stable_hash):
+                return f
+        except (OSError, ValueError):
+            continue
+    return None
+
+
 def combine_fringe(
     member_files: list[str], dark: np.ndarray | None, flat: np.ndarray | None,
     sigma: float = CLIP_SIGMA,
