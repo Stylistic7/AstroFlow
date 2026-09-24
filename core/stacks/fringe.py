@@ -61,7 +61,14 @@ like any other, so nothing in a header can identify them — the user marks a
 stack as the source (`DecisionKey.fringe_source`), which is the only place
 that knowledge exists.
 """
-from __future__ import annotations
+# NO `from __future__ import annotations` here, deliberately. `@node` decides
+# an op is an artifact producer by resolving its RETURN ANNOTATION at
+# decoration time; under PEP 563 that annotation is still a string while the
+# module is executing, resolution fails, and the op silently never gets a
+# `filename_fn`. `build_fringe_frame` then dies on its first real trace with
+# "'function' object has no attribute 'filename_fn'" — invisible to every
+# test, because no test calls the producer body. `stacks/star_flat.py` omits
+# it for the same reason.
 
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path

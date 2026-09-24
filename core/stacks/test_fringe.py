@@ -351,3 +351,33 @@ def test_a_promoted_stack_yields_a_fringe_typed_calibration_stack(tmp_path):
     assert fringe.stable_hash == fringe_stack_id_for("srcstack") != "srcstack"
     (run,) = fringe.contents.values()
     assert run.image_type == "fringe", "a light-typed run would depend on a fringe"
+
+
+def test_the_producer_is_wired_as_an_artifact_producer():
+    """`build_fringe_frame` must carry a `filename_fn`, or it dies on its
+    first real trace and never on a test.
+
+    `@node` decides an op writes files by resolving its RETURN ANNOTATION at
+    DECORATION time. Under `from __future__ import annotations` that
+    annotation is still a string while the module executes, resolution
+    fails, and the op is silently treated as a non-producer — no
+    `filename_fn`, no output path, no registration. The body then raises
+    `'function' object has no attribute 'filename_fn'` the first time the
+    graph traces it (2026-09-24, boot99), which no unit test catches because
+    none of them calls the producer body.
+
+    This asserts the wiring directly, so the future import cannot come back
+    by accident."""
+    from stacks.fringe import build_fringe_frame
+    assert callable(getattr(build_fringe_frame, "filename_fn", None)), (
+        "build_fringe_frame has no filename_fn — is `from __future__ import "
+        "annotations` back at the top of stacks/fringe.py?"
+    )
+    # Check the module's actual future flag, not its source text — the
+    # comment explaining the absence contains the very string a source
+    # search would match.
+    import __future__
+    import stacks.fringe as mod
+    assert getattr(mod, "annotations", None) is not __future__.annotations, (
+        "stacks/fringe.py has PEP 563 annotations enabled again"
+    )
