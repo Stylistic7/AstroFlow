@@ -2,9 +2,10 @@
 that a stack with no fringe frame is calibrated exactly as it was before.
 
 A synthetic sensor prints a smooth fringe; "blank sky" frames are sky x
-response x (1 + a.g), dithered, with stars sprinkled on top. The map built
-from them must recover g, the per-run fit must recover a, and subtracting
-the two must remove the pattern from a frame that has it.
+response x (1 + a.g), dithered, with stars sprinkled on top. The map is built
+from DARK-SUBTRACTED frames only — no flat, because a flat factors out of the
+average and comes back as itself inverted — so it recovers g, and subtracting
+it must remove the pattern from a frame that has it.
 """
 from pathlib import Path
 
@@ -60,25 +61,55 @@ def world():
     return g, resp, frames, dark
 
 
-def test_the_map_recovers_the_pattern_the_flat_could_not(world, tmp_path):
-    """The frames are calibrated the way science frames are — dark subtracted,
-    flat divided — so what the combine leaves is the residual the flat did NOT
-    remove. With a flat that carries none of the fringe, that residual IS the
-    fringe."""
-    g, resp, frames, dark = world
+def test_the_map_recovers_the_sensor_pattern(tmp_path):
+    """Dark subtracted and NOTHING else. What the combine leaves is the
+    sensor's own modulation per unit sky — provided the optical response is
+    flat, which is the case this is used in (the 351 mm train measures 0.34%
+    of structure with no flat at all). Where it is not flat, the response
+    lands in the map; that is the deliberate trade, not a bug."""
+    rng = np.random.default_rng(0)
+    g = _pattern()
+    frames = _blank_sky(rng, g, np.ones((H, W)), a=1.0)
+    dark = np.full((H, W), 500.0)
     paths = []
     import astropy.io.fits as pf
     for i, f in enumerate(frames):
-        p = tmp_path / f"blank{i:03d}.fits"
-        pf.PrimaryHDU(f.astype(np.float32)).writeto(p)
-        paths.append(str(p))
-    fringe, q = combine_fringe(paths, dark, resp)
-    assert q["n_frames"] == len(paths) and q["flat_divided"] and q["dark_subtracted"]
+        q = tmp_path / f"blank{i:03d}.fits"
+        pf.PrimaryHDU(f.astype(np.float32)).writeto(q)
+        paths.append(str(q))
+    fringe, q = combine_fringe(paths, dark, None)
+    assert q["n_frames"] == len(paths) and q["dark_subtracted"]
+    assert not q["flat_divided"]            # this train resolves NO_FLAT
     assert abs(float(np.median(fringe))) < 1e-4    # normalised by its MEDIAN, so that is the zero
     r = np.corrcoef(fringe.ravel(), g.ravel())[0, 1]
     assert r > 0.95, f"recovered pattern correlates {r:.3f} with the truth"
     # and at the right amplitude: the map is per unit sky
     assert 0.8 < float(np.std(fringe)) / float(np.std(g)) < 1.25
+
+
+def test_a_wrong_flat_lands_in_the_map(world, tmp_path):
+    """`map = f + (V/F - 1)`. A flat that does not match the train's real
+    response V puts its own error into the map, and where V is small that
+    error can be the whole of it.
+
+    Here V = 1 (frames built with no response) and the members arrive divided
+    by `resp`, so F/V = resp and the map must come back as resp inverted.
+    Measured on the real 351 mm Ha shoot 2026-09-24, where V is 0.34%: the
+    map built against the star flat correlated -0.981 with that flat."""
+    _, resp, _, dark = world
+    rng = np.random.default_rng(1)
+    sky = 300.0
+    paths = []
+    import astropy.io.fits as pf
+    for i in range(20):                      # a PERFECTLY uniform sky, no fringe at all
+        f = (sky + rng.normal(0, 0.02 * sky, (H, W))) / resp + dark
+        q = tmp_path / f"divided{i:03d}.fits"
+        pf.PrimaryHDU(f.astype(np.float32)).writeto(q)
+        paths.append(str(q))
+    fringe, _ = combine_fringe(paths, dark, None)
+    inverted = -(resp / np.median(resp) - 1.0)
+    r = np.corrcoef(fringe.ravel(), inverted.ravel())[0, 1]
+    assert r > 0.95, f"map correlates {r:.3f} with the inverted flat, expected ~1"
 
 
 def test_the_map_survives_the_xisf_round_trip(tmp_path):

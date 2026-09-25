@@ -20,14 +20,30 @@ the passband differently, which damps the pattern unevenly across the field
 rather than merely scaling it (the phase shift with wavelength goes as the
 local fringe order, so thicker silicon is damped more).
 
-WHAT IS IN A FRINGE FRAME. The frames it is built from are calibrated
-exactly as the science frames are — dark subtracted, then divided by the
-same flat — because the flat has ALREADY removed part of the fringe at its
-own amplitude. What survives that division is the residual per unit sky,
-and the residual is what wants subtracting. Building it from raw frames
-would double-count whatever the flat already took out.
+WHAT IS IN A FRINGE FRAME, and why the flat it is divided by must be RIGHT.
+With V the true optical response and f the interference:
 
-    fringe(x) = combine( (light - dark) / flat / median ) - 1      # zero mean
+    frames:            light - dark  =  sky . V . (1 + f)
+    divided by flat F: sky . (V/F) . (1 + f)
+    averaged over the dither, normalised, minus one:
+
+        map  =  f  +  (V/F - 1)
+
+A CORRECT flat (F = V) leaves the pure fringe, which is the textbook scheme
+and what this code is built for. A WRONG flat puts its own error straight
+into the map, and if the train's real response is small the error can be the
+whole of it: on the 351 mm Ha shoot 2026-09-24, V is only 0.34% while the
+star flat carried 1.39% of structure that is not on the sensor, so the map
+came out correlating -0.981 with that flat and holding no sky at all.
+
+That is a broken FLAT, not a broken method. Where no trustworthy flat exists
+the honest choice is none at all — the flat decision resolves to `NO_FLAT`,
+`flat` arrives None here, and the map becomes `f + (V - 1)`: fringe plus the
+response. Subtracting it then corrects the sky for both. Note what that does
+NOT do: the object never gets flat-fielded, so it is only defensible on a
+train whose V is negligible. It is a per-train decision, deliberately, and
+not a property of fringe frames — which is why `CALIBRATION_TOPOLOGY` still
+gives a fringe frame a flat to resolve.
 
 A stacker then removes it exactly as Arne Henden describes (AAVSO,
 2012-10-20): "You then just scale that to match the sky background in your
@@ -101,9 +117,12 @@ IMAGE_TYPE = "Master Fringe"
 # emerges after averaging at the pattern's own scale over many frames. 15 is
 # the floor at which a 32 px-smoothed map reaches ~35% precision.
 MIN_FRAMES = 15
-# Clipping threshold for the combine. Stars are per-pixel outliers once the
-# frames are dithered; 3 sigma removes them without eating the sky.
-CLIP_SIGMA = 3.0
+# How the stars come out (see `combine_fringe`). A block median at 8x rejects
+# any star smaller than ~4 px outright; a 9-cell median filter on top of that
+# reaches ~72 px at full resolution, which covers the haloes of all but the
+# brightest. Measured: worst surviving star drops from 217 sigma to 7.7.
+BLOCK = 8
+MEDIAN_FOOTPRINT = 9
 
 
 @beartype
@@ -167,11 +186,10 @@ def fringe_stack_for(source, metadata) -> FringeStack:
     than reused so a fringe frame and its source stack never collide on an id.
 
     `contents` is ONE synthetic run over every member frame, typed `fringe`.
-    That run is what `CALIBRATION_TOPOLOGY["fringe"]` resolves a dark and a
-    flat against, so the members are calibrated exactly as the science frames
-    will be — and one run rather than the source's own means one dark and one
-    flat, which is all `combine_fringe` can use. A fringe source is a
-    dedicated blank-sky shoot, so that is also what it really is.
+    That run is what `CALIBRATION_TOPOLOGY["fringe"]` resolves a dark
+    against — and one run rather than the source's own means one dark, which
+    is all `combine_fringe` can use. A fringe source is a dedicated blank-sky
+    shoot, so that is also what it really is.
     """
     frames = sorted(source.all_frames())
     sub = MetadataDict({f: metadata[f] for f in frames if f in metadata})
@@ -279,19 +297,41 @@ def fringe_master_path(stable_hash) -> Path | None:
 
 def combine_fringe(
     member_files: list[str], dark: np.ndarray | None, flat: np.ndarray | None,
-    sigma: float = CLIP_SIGMA,
 ) -> tuple[np.ndarray, dict]:
-    """The zero-mean residual modulation per unit sky.
+    """The zero-mean modulation per unit sky — Arne Henden's recipe, whole.
 
-    Each frame is calibrated as a science frame would be — dark subtracted,
-    flat divided — then normalised by its own median so frames taken through
-    different transparency contribute equally. A sigma-clipped mean over the
-    stack rejects stars (per-pixel outliers once the frames are dithered),
-    and subtracting 1 leaves the modulation the flat did NOT remove.
+    `flat` is whatever the fringe stack's own flat decision resolved to, and
+    it had better be right: see the module docstring. None is a legitimate
+    answer and the one this train uses.
 
-    Returns `(fringe, quality)`; the fringe is float32, mean ~0.
+    "Take a few long exposures of dithered blank sky, remove the stars, and
+    form a master fringe image." That is three steps and this is all three:
+
+      1. dark subtract, divide by the flat if there is one, normalise each
+         frame by its own median so frames taken through different
+         transparency contribute equally;
+      2. BLOCK-MEDIAN down by `BLOCK`, then a `MEDIAN_FOOTPRINT` median
+         filter — together these are "remove the stars". A block median
+         rejects anything smaller than half a block outright, and the filter
+         takes the survivors' haloes. The pattern is large-scale (its power
+         is unchanged from 8x to 32x binning), so nothing real is lost;
+      3. plain mean across frames, then subtract 1.
+
+    Then resample back to full resolution. The map carries no detail finer
+    than a block by construction, so the upsample invents nothing — it
+    restores the grid the map has to be subtracted on. Working small is the
+    point rather than a shortcut: at full resolution a single sub's per-pixel
+    noise is several times the pattern, and averaging 20 of them does not get
+    below it. Measured on the 351 mm Ha shoot, the full-resolution map was
+    1.9% noise around 1.1% signal; the resampled one keeps the signal and
+    drops the noise, correlating +0.968 with it.
+
+    No sigma clipping and no object mask: both were in here, both left
+    visible stars in the map, and neither survives contact with a median.
+
+    Returns `(fringe, quality)`; the fringe is float32, median 0.
     """
-    from stacks.superflat import _object_mask
+    from scipy.ndimage import median_filter, zoom
 
     def calibrated(path: str) -> np.ndarray:
         f = np.asarray(read_image(Path(path)), np.float64)
@@ -304,32 +344,34 @@ def combine_fringe(
         m = float(np.nanmedian(f[::8, ::8]))
         return f / (m if abs(m) > 1e-6 else 1.0)
 
-    first = calibrated(member_files[0])
-    H, W = first.shape
-    s1 = np.zeros((H, W)); s2 = np.zeros((H, W)); cnt = np.zeros((H, W))
-    for p in member_files:                       # pass 1: mean and spread
-        f = calibrated(p)
-        keep = ~_object_mask(f)
-        s1 += np.where(keep, f, 0.0); s2 += np.where(keep, f * f, 0.0); cnt += keep
-    denom = np.maximum(cnt, 1)
-    mean = s1 / denom
-    std = np.sqrt(np.maximum(s2 / denom - mean * mean, 0.0))
-    lo, hi = mean - sigma * std, mean + sigma * std
+    def starless(f: np.ndarray) -> np.ndarray:
+        h, w = (f.shape[0] // BLOCK) * BLOCK, (f.shape[1] // BLOCK) * BLOCK
+        small = np.median(
+            f[:h, :w].reshape(h // BLOCK, BLOCK, w // BLOCK, BLOCK), axis=(1, 3))
+        return median_filter(small, size=MEDIAN_FOOTPRINT)
 
-    csum = np.zeros((H, W)); ccnt = np.zeros((H, W))
-    for p in member_files:                       # pass 2: clipped mean
-        f = calibrated(p)
-        keep = ~_object_mask(f) & (f >= lo) & (f <= hi)
-        csum += np.where(keep, f, 0.0); ccnt += keep
-    combined = np.where(ccnt > 0, csum / np.maximum(ccnt, 1), mean)
+    shape = calibrated(member_files[0]).shape
+    acc = None
+    for path in member_files:
+        small = starless(calibrated(path))
+        acc = small if acc is None else acc + small
+    small = acc / len(member_files)
+    small = small / float(np.nanmedian(small)) - 1.0
 
-    fringe = combined / float(np.nanmedian(combined)) - 1.0
+    # back to the grid the map is subtracted on; order 1 is enough for a map
+    # that holds nothing finer than a block
+    full = zoom(small, (shape[0] / small.shape[0], shape[1] / small.shape[1]), order=1)
+    fringe = np.zeros(shape, np.float64)
+    fringe[:full.shape[0], :full.shape[1]] = full
+    fringe = fringe - float(np.nanmedian(fringe))
+
     quality = {
         "n_frames": len(member_files),
         "rms": float(np.std(fringe)),
         "p1": float(np.percentile(fringe, 1)),
         "p99": float(np.percentile(fringe, 99)),
-        "uncovered": int((ccnt == 0).sum()),
+        "block": BLOCK,
+        "median_footprint": MEDIAN_FOOTPRINT,
         "dark_subtracted": dark is not None,
         "flat_divided": flat is not None,
     }
@@ -380,9 +422,9 @@ def build_fringe_frame(
     as missing. A missing member is an error, never "no data" — the task
     fails and is retried rather than minting a blank map.
 
-    `dark` and `flat` are the SOURCE stack's own resolved masters, so the
-    members are calibrated exactly as the science frames will be and what
-    survives is the residual the flat could not remove."""
+    `dark` and `flat` are the source stack's own resolved masters. A flat
+    that is WRONG lands in the map; see the module docstring. On a train with
+    no trustworthy flat the decision resolves to none, and that is correct."""
     missing = [p for p in fringe.member_files if not Path(p).exists()]
     if missing:
         raise FileNotFoundError(
