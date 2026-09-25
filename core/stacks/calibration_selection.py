@@ -21,7 +21,7 @@ WBPP, never wrong pixels.
   ordered `(cal_stack, its_dep_ids)` steps plus `stack`'s own dep ids.
 * `calibration_master(cs, config, dep_masters, dep_ids)` — one step of that
   recipe: the producer a calibration stack is built by (solved from
-  photometry for a star flat, combined from blank sky for a fringe frame,
+  photometry for a star flat, combined from blank sky for a night-sky flat,
   integrated from frames for everything else).
 * `master_for(stack, cs, master, dark)` — the master `stack` is actually
   calibrated with: a star flat is re-scaled to the stack's own sky first
@@ -108,15 +108,15 @@ def calibration_plan(
 def has_own_producer(cs: CalibrationStack) -> bool:
     """Is this cal stack built by something other than a stacker?
 
-    A star flat is solved from photometry and a fringe frame is combined
+    A star flat is solved from photometry and a night-sky flat is combined
     from blank sky; neither is an integration of `contents`, so no stacking
     backend may be handed one. Every backend asks HERE rather than testing
     types itself — the OSS pipeline used to run `stack_files_oss` over every
     plan step, which for a star flat integrated an empty `contents`.
     """
     from stacks.star_flat import StarFlatStack
-    from stacks.fringe import FringeStack
-    return isinstance(cs, (StarFlatStack, FringeStack))
+    from stacks.sky_flat import SkyFlatStack
+    return isinstance(cs, (StarFlatStack, SkyFlatStack))
 
 
 def calibration_master(
@@ -127,26 +127,23 @@ def calibration_master(
 
       * a star flat is SOLVED from its members' star photometry — its own
         producer, keyed on the group's membership, no cal deps of its own;
-      * a fringe frame is COMBINED from the blank-sky lights of the stack the
-        user promoted, calibrated with its own dark and flat so that what
-        survives is the residual the flat could not remove;
+      * a night-sky flat is COMBINED from the blank-sky lights of the stack
+        the user promoted, dark-subtracted only — dividing by a flat first
+        would make it that flat's RESIDUAL instead of a flat in its own right;
       * everything else is INTEGRATED from its frames with the masters of its
         own dependencies.
 
     `dep_ids` name `dep_masters` positionally (the sorted ids
-    `calibration_plan` returns), which is how the fringe build tells its dark
-    from its flat.
+    `calibration_plan` returns), which is how the sky-flat build picks out
+    its dark.
     """
     from stacks.star_flat import StarFlatStack, build_args, build_star_flat
-    from stacks.fringe import FringeStack, build_fringe_frame
+    from stacks.sky_flat import SkyFlatStack, build_sky_flat
     if isinstance(cs, StarFlatStack):
         return build_star_flat(*build_args(cs))
-    if isinstance(cs, FringeStack):
+    if isinstance(cs, SkyFlatStack):
         by_type = _masters_by_type(config, dep_ids, dep_masters)
-        # The RAW star flat, not the per-stack-scaled one: scaling here
-        # would key the fringe frame to one consumer's sky, which is exactly
-        # what a shared calibration product must not be.
-        return build_fringe_frame(cs, by_type.get("dark"), by_type.get("flat"))
+        return build_sky_flat(cs, by_type.get("dark"))
     return stack_files(cs, config, *dep_masters)
 
 

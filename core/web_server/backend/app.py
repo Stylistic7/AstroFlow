@@ -393,32 +393,6 @@ def recent():
 
 
 # TODO: Loading stuff from the cache on every endpoint call is very slow.
-@app.route("/api/fringes/<width>/<height>/<filter>")
-def fringes_for_sensor_and_filter(width, height, filter):
-    """Fringe frames a run of this sensor/filter/train may pick from.
-
-    Same candidate rule as the automatic matcher (`_chronological_fringe`):
-    sensor geometry, filter, and optical train within 2% of FOCALLEN. The
-    grid is the manual-override path for that decision, so offering a
-    different set than the matcher considers would be its own bug.
-
-    A fringe frame is per-filter because the interference pattern depends on
-    wavelength (Arne Henden's first gotcha, confirmed here: the H and S maps
-    from one sensor correlate only +0.61).
-    """
-    from calibration.calibration_frames import same_optical_train
-    raw = request.args.get("focal_length")
-    target_focal = float(raw) if raw not in (None, "", "null") else None
-    matching = [
-        k for k, s in (context.calibration_stacks or {}).items()
-        if getattr(s, "kind", None) == "fringe"
-        and s.filter == filter
-        and (s.width_pixels, s.height_pixels) == (int(width), int(height))
-        and same_optical_train(target_focal, getattr(s, "focal_length", None))
-    ]
-    return sorted(matching)
-
-
 @app.route("/api/flats/<width>/<height>/<filter>")
 def flats_for_sensor_and_filter(width, height, filter):
     """Flats the user may pick from for a stack of this sensor and filter.
@@ -447,7 +421,8 @@ def flats_for_sensor_and_filter(width, height, filter):
         and s.filter == filter  # calibration_stacks holds real Run objects
         and same_optical_train(target_focal, focal_length_of(s))
     ]
-    # Star flats first (the default), then the explicit masters.
+    # Night-sky flats first (spectrally matched to the lights), then star
+    # flats, then the explicit masters — the order `_default_choice` picks in.
     return ([k for k, s in matching if getattr(s, "kind", None) == "star"]
             + [k for k, s in matching if getattr(s, "kind", None) != "star"])
 

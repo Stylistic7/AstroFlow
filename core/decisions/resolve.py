@@ -210,7 +210,7 @@ def resolve_calibration(
         focal_length_of, same_optical_train,
     )
     from calibration.directory_affinity import find_external_master
-    from calibration.topology import CALIBRATION_TOPOLOGY, OPTIONAL_CALIBRATION
+    from calibration.topology import CALIBRATION_TOPOLOGY
 
     bias_by_sensor, dark_by_sensor, flat_by_sensor_filter = _build_cal_index(
         cal_stacks
@@ -280,19 +280,22 @@ def resolve_calibration(
         mid = _midpoint_s(run.oldest_date, run.newest_date)
         return min(cand, key=lambda x: abs(x[0] - mid))[3]
 
-    def _chronological_fringe(run: Run):
-        """The nearest fringe frame in time for this run's optical train.
+    def _sky_flat_for(run: Run):
+        """The nearest NIGHT-SKY flat in time for this run's optical train.
 
-        Matched like a flat — same sensor geometry, same filter, same train,
-        preferring the same camera — because the pattern is sensor structure
-        seen through one filter's passband, and the amplitude it is applied
-        at is fitted per Run anyway. Nothing selects one by default that a
-        user did not create: `cal_stacks` carries a fringe frame only where
-        a stack was explicitly promoted to be one."""
+        Matched exactly like any other flat — same sensor geometry, same
+        filter, same train, preferring the same camera — because that is
+        what it is. What sets it apart is its ILLUMINANT: lit by the night
+        sky's emission lines, it captures the sensor's etalon at the same
+        spectral weighting the lights see it, which a panel or twilight flat
+        (continuum) cannot. Hence its place at the TOP of the flat ladder.
+
+        Nothing selects one that a user did not create: `cal_stacks` carries
+        a night-sky flat only where a Stack was explicitly promoted."""
         run_focal = focal_length_of(run)
         cand = [
             (s.oldest_date, sid, s) for sid, s in cal_stacks.items()
-            if getattr(s, "kind", None) == "fringe"
+            if getattr(s, "kind", None) == "sky"
             and s.filter == run.filter
             and sensor_of(s) == sensor_of(run)
             and same_optical_train(run_focal, getattr(s, "focal_length", None))
@@ -301,13 +304,13 @@ def resolve_calibration(
             return None
         cand = _prefer_same_camera(cand, cam_id, lambda c: c[2].camera_id_hash)
         mid = _midpoint_s(run.oldest_date, run.newest_date)
-        return min(cand, key=lambda c: abs(_midpoint_s(c[2].oldest_date, c[2].newest_date) - mid))[1]
+        return min(cand, key=lambda c: abs(
+            _midpoint_s(c[2].oldest_date, c[2].newest_date) - mid))[1]
 
     chronological = {
         "bias": _chronological_bias,
         "dark": _chronological_dark,
         "flat": _chronological_flat,
-        "fringe": _chronological_fringe,
     }
 
     def _default_choice(cal_type: str, run: Run) -> str | None:
@@ -326,6 +329,13 @@ def resolve_calibration(
         stack. Disambiguated downstream by whether the choice starts with "/".
         """
         if cal_type == "flat":
+            # Three flavours of flat, most spectrally-matched first: a
+            # night-sky flat sees the etalon exactly as the lights do; a star
+            # flat measures it from continuum and needs k to scale it; a
+            # panel/twilight flat barely sees it at all.
+            sky = _sky_flat_for(run)
+            if sky is not None:
+                return sky
             star = _star_flat_for(run, cal_stacks, cam_id)
             if star is not None:
                 return star
@@ -334,7 +344,7 @@ def resolve_calibration(
             kind=cal_type,
             shape=sensor_of(run),
             temperature=run.mean_temperature,
-            filter=(run.filter if cal_type in ("flat", "fringe") else None),
+            filter=(run.filter if cal_type == "flat" else None),
             exposure=(run.exposure if cal_type == "dark" else None),
         )
         if path is not None:
@@ -364,11 +374,6 @@ def resolve_calibration(
             if choice == NO_FLAT:
                 continue   # the user pinned "no flat": deliberate, no concern
             if choice is None:
-                if cal_type in OPTIONAL_CALIBRATION:
-                    # A fringe frame exists only where a user built one, so
-                    # its absence is the normal case and says nothing about
-                    # the integration. Silence here, unlike below.
-                    continue
                 # Nothing matched. Proceeding is deliberate — plenty of
                 # people never shoot flats and failing their data outright
                 # would be worse — but it must not be silent. An

@@ -18,7 +18,6 @@ def calibrated_run_preview(
     flat_id: str | None,
     dark_id: str | None,
     bias_id: str | None,
-    fringe_id: str | None,
 ) -> np.ndarray:
     """One run's best subframe, calibrated with EXACTLY the stacks named here.
 
@@ -34,9 +33,8 @@ def calibrated_run_preview(
     means "do not apply this kind", which is how the uncorrected view is
     spelled — one producer covers both, so they can never disagree.
 
-    `fringe_id` is the fourth axis, named like the rest so that a grid cell
-    showing (flat A, fringe B) is a DIFFERENT cached product from (flat A,
-    no fringe) — which is the whole point of a comparison grid.
+    A night-sky flat is not a separate axis: it is a flat, so it arrives as
+    `flat_id` and divides like any other (`stacks/sky_flat.py`).
     """
     light_frames_by_stars = get_light_frames_sorted_by_stars(stack)
     best_in_run = next(l for l in light_frames_by_stars if l in substack.frames)
@@ -46,7 +44,6 @@ def calibrated_run_preview(
         kind: StackIdDependency(stack_id=StackHash(cal_id))
         for kind, cal_id in (
             ("flat", flat_id), ("dark", dark_id), ("bias", bias_id),
-            ("fringe", fringe_id),
         )
         if cal_id is not None
     }

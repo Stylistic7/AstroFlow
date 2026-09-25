@@ -469,7 +469,7 @@ class _Node:
         wrapper._ephemeral = ephemeral
         # Exposed so a producer can be asserted not to solve: a map with no
         # stars in it fails the solver, and a failing solve reschedules the
-        # node forever (build_fringe_frame, 2026-09-24).
+        # node forever (build_sky_flat, 2026-09-24).
         wrapper._plate_solve = plate_solve
         if display_name is not None:
             wrapper._display_name = display_name

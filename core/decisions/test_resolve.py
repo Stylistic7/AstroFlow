@@ -16,17 +16,17 @@ def test_calibrations_for_image_type():
     darks; no master bias for lights; no pre-calibrated master dark). This is
     the single source of truth shared by light resolution AND cal-to-cal
     association."""
-    from calibration.topology import CALIBRATION_TOPOLOGY, OPTIONAL_CALIBRATION
-    assert CALIBRATION_TOPOLOGY["light"] == ("dark", "flat", "fringe")
+    from calibration.topology import CALIBRATION_TOPOLOGY
+    assert CALIBRATION_TOPOLOGY["light"] == ("dark", "flat")
     assert CALIBRATION_TOPOLOGY["dark"] == ()
     assert CALIBRATION_TOPOLOGY["flat"] == ("bias",)
     assert CALIBRATION_TOPOLOGY["bias"] == ()
-    # A fringe frame's members ARE lights, so it takes a dark and a flat of
-    # its own — calibrated exactly as the science frames are. Never a fringe.
-    assert CALIBRATION_TOPOLOGY["fringe"] == ("dark", "flat")
-    # A fringe frame exists only where the user built one, so its absence is
-    # the normal case and must never raise the missing-master concern.
-    assert OPTIONAL_CALIBRATION == frozenset({"fringe"})
+    # A night-sky flat's members ARE lights, so it takes a DARK — and only a
+    # dark. Dividing them by a flat first would make it that flat's residual
+    # rather than a flat in its own right.
+    assert CALIBRATION_TOPOLOGY["sky"] == ("dark",)
+    # There is no fourth calibration type: a night-sky flat IS a flat.
+    assert "fringe" not in CALIBRATION_TOPOLOGY
 
 
 def test_cal_decision_types():
@@ -34,7 +34,7 @@ def test_cal_decision_types():
     assert _CAL_TYPE_TO_DECISION_TYPE["bias"] == DecisionType.CALIBRATION_BIAS
     assert _CAL_TYPE_TO_DECISION_TYPE["dark"] == DecisionType.CALIBRATION_DARK
     assert _CAL_TYPE_TO_DECISION_TYPE["flat"] == DecisionType.CALIBRATION_FLAT
-    assert _CAL_TYPE_TO_DECISION_TYPE["fringe"] == DecisionType.CALIBRATION_FRINGE
+    assert "fringe" not in _CAL_TYPE_TO_DECISION_TYPE
 
 
 def test_decision_key_via_calibration_constructor():

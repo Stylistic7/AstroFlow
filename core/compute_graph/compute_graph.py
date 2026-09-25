@@ -170,7 +170,7 @@ def scatter_spatial_groups(
     *ancestor_results,
 ) -> Graph:
     from cache.context_ref import ContextRef
-    from stacks.fringe import identify_fringe_stacks, merge_fringe_stacks
+    from stacks.sky_flat import identify_sky_flats, merge_sky_flats
     from stacks.star_flat import StarFlats, merge_star_flats
 
     # Three ancestor results in non-deterministic order:
@@ -291,20 +291,20 @@ def scatter_spatial_groups(
     graph[gather_stacks_task] = stack_tasks
     graph[store_stacks] = {gather_stacks_task}
 
-    # Fringe frames close the loop the other three calibration types do not:
+    # Night-sky flats close the loop the other calibration types do not:
     # their source is a LIGHT stack the user promoted, so the calibration
     # chain genuinely waits on identification here. Nothing else changes —
     # with no promoted stack the merge is the identity and the whole branch
-    # cache-hits. They join AFTER cal-to-cal association because a fringe
-    # frame's own dark and flat resolve at plan time like any other step's.
-    identify_fringe_task = (identify_fringe_stacks, decision_overrides)
-    graph[identify_fringe_task] = [store_stacks]
-    merge_fringe_task = Node(merge_fringe_stacks, name="merge_fringe_stacks")
-    # ORDERED: merge_fringe_stacks(fringe_stacks, cal_stacks) consumes both
+    # cache-hits. They join AFTER cal-to-cal association because a night-sky
+    # flat's own dark resolves at plan time like any other step's.
+    identify_sky_flat_task = (identify_sky_flats, decision_overrides)
+    graph[identify_sky_flat_task] = [store_stacks]
+    merge_sky_flat_task = Node(merge_sky_flats, name="merge_sky_flats")
+    # ORDERED: merge_sky_flats(sky_flats, cal_stacks) consumes both
     # positionally.
-    graph[merge_fringe_task] = [identify_fringe_task, associate_cal_task]
-    graph[store_calibration_stacks] = {merge_fringe_task}
-    graph[process_calibration_stacks_for_ui] = {merge_fringe_task}
+    graph[merge_sky_flat_task] = [identify_sky_flat_task, associate_cal_task]
+    graph[store_calibration_stacks] = {merge_sky_flat_task}
+    graph[process_calibration_stacks_for_ui] = {merge_sky_flat_task}
     graph[store_ui_calibration_stacks] = {process_calibration_stacks_for_ui}
     # The builder embeds every `prepare_stack_for_ui` result in ITS cached
     # value, so an edit to the per-stack entry must miss the builder too —

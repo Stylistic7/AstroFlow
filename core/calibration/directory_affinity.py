@@ -23,7 +23,7 @@ from typing import Iterable
 import astropy.io.fits as pyfits
 
 from metadata.image_types import (
-    is_bias_frame, is_dark_frame, is_flat_frame, is_fringe_frame, is_master,
+    is_bias_frame, is_dark_frame, is_flat_frame, is_master,
 )
 
 
@@ -33,7 +33,7 @@ SensorShape = tuple[int | None, int | None]   # (NAXIS1, NAXIS2)
 @dataclass(frozen=True)
 class ExternalMaster:
     path: str
-    image_type: str            # 'bias' | 'dark' | 'flat' | 'fringe'
+    image_type: str            # 'bias' | 'dark' | 'flat'
     shape: SensorShape         # the pixel array, not a claim about it
     filter: str | None
     exposure: float | None
@@ -62,8 +62,6 @@ def _classify_image_type(header: dict) -> str | None:
         return "dark"
     if is_flat_frame(header):
         return "flat"
-    if is_fringe_frame(header):
-        return "fringe"
     return None
 
 
@@ -171,8 +169,8 @@ def _match_kind(
             if (m.exposure is None or exposure is None
                 or m.exposure + 1.0 >= exposure)
         ]
-    if kind in ("flat", "fringe"):
-        # A fringe frame is a per-filter pattern like a flat: the etalon's
+    if kind == "flat":
+        # A flat is a per-filter pattern: the etalon's
         # contrast is set by the passband it is seen through.
         cands = [m for m in cands if filter is None or m.filter == filter]
     return cands
@@ -209,7 +207,7 @@ def _candidate_dirs_at(ancestor: Path) -> Iterable[Path]:
 def find_external_master(
     run_frame_filenames: Iterable[str],
     *,
-    kind: str,                       # 'bias' | 'dark' | 'flat' | 'fringe'
+    kind: str,                       # 'bias' | 'dark' | 'flat'
     shape: SensorShape | None,
     temperature: float | None,
     filter: str | None,

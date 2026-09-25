@@ -19,7 +19,6 @@ def calibrate_image(
     flat_metadata: ImageMetadata | None,
     flat_image: np.ndarray | None,
     rotate: bool,
-    fringe_image: np.ndarray | None = None,
 ) -> np.ndarray:
     """Preview-grade calibration: apply WHATEVER components are present.
 
@@ -38,15 +37,13 @@ def calibrate_image(
         bias-inclusive dark is approximate; fine at preview scale.
       * dark absent: no dark subtraction (and no dark term in the flat).
       * flat absent: no division — the honest "uncorrected" preview.
-      * fringe absent: no subtraction. Present: `image - sky * fringe`,
-        AFTER the flat, because the map is the residual the flat left and
-        is stored per unit sky (`stacks/fringe.py`). Subtracting before
-        dividing would scale the correction by the vignetting.
+      * a NIGHT-SKY flat is not a separate component: it is a flat, and it
+        divides through the flat slot like any other (`stacks/sky_flat.py`).
     """
     assert light_image is not None
 
-    frames = [f for f in (light_image, bias_image, dark_image, flat_image,
-                          fringe_image) if f is not None]
+    frames = [f for f in (light_image, bias_image, dark_image, flat_image)
+              if f is not None]
     # Independent resize-to-width can leave light and cal frames with
     # heights that differ by ±1 row when their native heights straddle an
     # integer-truncation boundary (e.g. a sensor crop of 2 rows pushes
@@ -59,7 +56,6 @@ def calibrate_image(
     bias = bias_image[:h, :w] if bias_image is not None else np.float32(0.0)
     dark = dark_image[:h, :w] if dark_image is not None else None
     flat = flat_image[:h, :w] if flat_image is not None else None
-    fringe = fringe_image[:h, :w] if fringe_image is not None else None
 
     def _exposure(md):
         assert md is not None and "EXPOSURE" in md.header, (
@@ -93,14 +89,6 @@ def calibrate_image(
             where=flat_signal != 0,
         )
 
-    if fringe is not None:
-        # Arne Henden's method, the same arithmetic the stacker uses
-        # (`stacks.fringe.apply_fringe`): scale the map to THIS frame's sky
-        # background and subtract. The map is per unit sky, so the frame's
-        # own median is the scale factor.
-        sky = float(np.median(image))
-        image = image - sky * fringe.astype(np.float32)
-
     if rotate:
         image = np.rot90(image, 2)
 
@@ -116,17 +104,17 @@ def get_subframe_for_calibration_stack(
 
     stack = context.calibration_stacks[stack_id]
     assert stack is not None
-    if getattr(stack, "kind", None) == "fringe":
-        # A fringe frame has no exposed frames of its own: preview with the
-        # built map, pedestal removed. Never trigger the build from a
-        # preview — no map yet means no fringe correction shown.
-        from stacks.fringe import fringe_master_path, read_fringe_frame
+    if getattr(stack, "kind", None) == "sky":
+        # A night-sky flat has no exposed frames of its own: preview with the
+        # built master, which is a Master Flat like any other and divides
+        # through the flat slot. Never trigger the build from a preview.
+        from stacks.sky_flat import sky_flat_master_path
         from metadata.sidecar_io import read_image_metadata
-        path = fringe_master_path(stack.stable_hash)
+        path = sky_flat_master_path(stack.stable_hash)
         if path is None:
             return None, None
         return read_image_metadata(path), resize_array(
-            read_fringe_frame(path), width).astype(np.float32)
+            np.asarray(read_image(path), np.float32).squeeze(), width).astype(np.float32)
     if getattr(stack, "kind", None) == "star":
         # A star flat has no frames: preview with its built master (never
         # trigger the build from a preview; no master yet -> no flat).
@@ -169,9 +157,6 @@ def calibrate_subframe(
     flat_frame, flat_image = get_subframe_for_calibration_stack(
         get_stack_id("flat"), width
     )
-    _, fringe_image = get_subframe_for_calibration_stack(
-        get_stack_id("fringe"), width
-    )
 
     return calibrate_image(
         light_frame,
@@ -183,5 +168,4 @@ def calibrate_subframe(
         flat_frame,
         flat_image,
         rotate,
-        fringe_image,
     )

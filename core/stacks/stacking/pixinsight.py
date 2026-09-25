@@ -77,123 +77,6 @@ def _copy_frames_with_plate_solution(
                     for k, v in ps_header.items():
                         fits[0].header[k] = v
 
-# Frames sampled to measure a run's sky level for the fringe scale. The
-# median over a handful is robust to a passing cloud; reading the whole run
-# would cost a full extra pass over the night's pixels for a single number.
-MAX_SKY_FRAMES = 8
-
-
-def _fold_fringe_into_dark(run, cal_master_by_id: dict, dest_dir: str) -> tuple[dict, set]:
-    """WBPP's one subtractive slot is the master dark, so a fringe frame is
-    folded into the dark THIS run is about to be calibrated with.
-
-    This is a quirk of the PixInsight backend and must not leak: a fringe
-    frame stays a distinct calibration type everywhere else in AstroFlow, and
-    another stacker should simply subtract it (`stacks.fringe.apply_fringe`).
-    The arithmetic is exact rather than approximate —
-
-        (raw - dark - sky*fringe*flat) / flat  ==  (raw - dark)/flat - sky*fringe
-
-    — so folding it into the dark and letting WBPP divide by the flat
-    afterwards gives precisely the correction, with no extra pass over the
-    pixels and nothing persisted: the combined dark is written into the run's
-    own temp dir and dies with it.
-
-    The scale is the run's own SKY BACKGROUND, measured in calibrated units,
-    and nothing else — Arne Henden's "scale that to match the sky background
-    in your image, subtract, and voila". The map is per unit sky, so that is
-    the whole of it.
-
-    Returns `(overrides, skip)`: path overrides keyed by cal-stack id, and
-    the ids not to stage at all (WBPP would not know what a fringe frame is).
-    """
-    import numpy as np
-    from file_io.generic import read_header, read_image
-    from stacks.fringe import IMAGE_TYPE as FRINGE_IMAGE_TYPE, read_fringe_frame
-
-    by_type: dict[str, tuple[str, str]] = {}
-    for d in run.dependencies.values():
-        sid = str(getattr(d, "stack_id", "") or "")
-        path = cal_master_by_id.get(sid)
-        if not path:
-            continue
-        try:
-            t = str(read_header(path).get("IMAGETYP", "")).strip().lower()
-        except (OSError, ValueError):
-            continue
-        by_type[t] = (sid, path)
-
-    fringe_entry = by_type.get(FRINGE_IMAGE_TYPE.lower())
-    dark_entry = next((v for k, v in by_type.items() if "dark" in k), None)
-    if fringe_entry is None:
-        return {}, set()
-    fringe_id, fringe_path = fringe_entry
-    if dark_entry is None:
-        # Nothing to fold into. Leaving the fringe unstaged is the safe
-        # outcome: an uncorrected master beats one calibrated by a frame
-        # WBPP would treat as something it is not.
-        log.warning("fringe frame resolved but this run has no dark; not applied",
-                    run=str(run.stable_hash))
-        return {}, {fringe_id}
-
-    dark_id, dark_path = dark_entry
-    flat_entry = next((v for k, v in by_type.items() if "flat" in k), None)
-    try:
-        fringe = read_fringe_frame(fringe_path)
-        dark = np.asarray(read_image(Path(dark_path)), np.float64)
-        if dark.ndim == 3:
-            dark = dark[:, :, 0]
-        flat = None
-        if flat_entry is not None:
-            flat = np.asarray(read_image(Path(flat_entry[1])), np.float64)
-            if flat.ndim == 3:
-                flat = flat[:, :, 0]
-            flat = flat / float(np.nanmedian(flat))
-        # The run's sky in CALIBRATED units — the same units the map is per
-        # unit OF. Median over the run's frames rather than one of them, so a
-        # single cloud-dimmed sub does not set the scale for the night.
-        paths = [str(i.filename) for i in run.metadata.values()]
-        skies = []
-        for p in paths[:MAX_SKY_FRAMES]:
-            img = np.asarray(read_image(Path(p)), np.float64)
-            if img.ndim == 3:
-                img = img[:, :, 0]
-            skies.append(float(np.nanmedian(
-                (img - dark) / (flat if flat is not None else 1.0))))
-        sky = float(np.median(skies))
-        combined = dark + sky * fringe * (flat if flat is not None else 1.0)
-        # The run's own hash is in the name because WBPP validates its output
-        # dir with `rglob("master*.xisf")` and this file lands there: two runs
-        # of one stack share a dark, so a name keyed only on `dark_id` writes
-        # the SAME filename into RUN_0 and RUN_1 and WBPP calls it a duplicate
-        # master. Cost a 1844 s integration on 2026-09-24, the first time this
-        # fold ever fired.
-        out = Path(dest_dir) / f"masterDark_fringe_{dark_id}_{run.stable_hash}.xisf"
-        _write_dark_like(dark_path, combined, out)
-        log.info("fringe folded into the dark", run=str(run.stable_hash),
-                 sky=round(sky, 1), n_sky_frames=len(skies), dest=str(out))
-        return {dark_id: str(out)}, {fringe_id}
-    except Exception as e:
-        # Never let this cost a master: fall back to the plain dark.
-        log.warning("fringe fold failed; stacking with the plain dark",
-                    run=str(run.stable_hash), error=f"{type(e).__name__}: {e}")
-        return {}, {fringe_id}
-
-
-def _write_dark_like(template_path: str, pixels, dest: Path) -> None:
-    """Write `pixels` as a master dark carrying `template_path`'s keywords, so
-    WBPP matches it to this run exactly as it would have matched the original."""
-    import numpy as np
-    from file_io.xisf_file_io import read_xisf_header
-    from xisf import XISF
-    hdr = read_xisf_header(Path(template_path))
-    kw = {k: [{"value": str(v), "comment": ""}] for k, v in hdr.items()
-          if isinstance(v, (int, float, str)) and k not in ("COMMENT", "HISTORY")}
-    XISF.write(str(dest), np.asarray(pixels, np.float32)[..., None],
-               creator_app="AstroFlow fringe-corrected dark",
-               image_metadata={"FITSKeywords": kw, "XISFProperties": {}})
-
-
 def _setup_run(
     run: Run,
     cal_master_by_id: dict,
@@ -211,15 +94,9 @@ def _setup_run(
 
     _copy_frames_with_plate_solution(run.metadata, dest_dir)
 
-    # A fringe frame is subtractive and WBPP has no slot for it, so it is
-    # folded into this run's dark; `skip` keeps the map itself out of the
-    # working dir, where WBPP would only be confused by it.
-    overrides, skip = _fold_fringe_into_dark(run, cal_master_by_id, dest_dir)
-
     def get_dependency_filename(d):
         if isinstance(d, StackIdDependency):
-            sid = str(d.stack_id)
-            return None if sid in skip else overrides.get(sid, cal_master_by_id[sid])
+            return cal_master_by_id[str(d.stack_id)]
         elif isinstance(d, FilenameDependency):
             return d.filename
 
@@ -227,9 +104,7 @@ def _setup_run(
         p for d in run.dependencies.values()
         if (p := get_dependency_filename(d)) is not None
     ]
-    # The folded dark is WRITTEN into the run dir, not symlinked from
-    # elsewhere; symlinking it onto itself would fail.
-    _symlink_frames([p for p in dependency_filenames if p not in overrides.values()], dest_dir)
+    _symlink_frames(dependency_filenames, dest_dir)
 
     return filenames
 

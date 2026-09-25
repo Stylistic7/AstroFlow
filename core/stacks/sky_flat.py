@@ -1,87 +1,74 @@
-"""Fringe frames — the SUBTRACTIVE calibration type.
+"""Night-sky flats — a FLAT, distinguished by its ILLUMINANT.
 
-Interference in a thinned, back-illuminated sensor modulates its quantum
-efficiency at a given wavelength. The night sky's emission lines are
-effectively monochromatic and fringe at full amplitude; a continuum source
-integrates over the fringe's ~5 nm period and fringes less. So the pattern
-rides on the SKY, in proportion to the monochromatic sky, and not on the
-total flux — which is why it is removed by SUBTRACTING a scaled map rather
-than by dividing a flat (Arne Henden, AAVSO, 2012-10-20: "this is just like
-a sky background (actually, it is EXACTLY like sky, just a modulated
-version), so you can easily subtract it out").
+A flat measures the system's normalised response to a uniform source. What
+makes this one different is only what lit it: the night sky, rather than a
+panel or twilight.
 
-Dividing instead — which is what a flat carrying the fringe does — is wrong
-three ways, all small but systematic: it modulates the STARS, which fringe
-at only ~75% of the sky's amplitude in a 3 nm passband (measured here as
-`scale_star_flat`'s k ~ 1.33 for H, 1.41 for S); it applies the correction
-regardless of how much sky is present, so it INJECTS a ripple into a
-low-sky frame that never had one; and the flat's own illumination weights
-the passband differently, which damps the pattern unevenly across the field
-rather than merely scaling it (the phase shift with wavelength goes as the
-local fringe order, so thicker silicon is damped more).
+That matters because the sensor's interference fringing depends on the
+illuminating SPECTRUM. A thinned, back-illuminated sensor modulates its
+quantum efficiency with a period of a few nm, so a near-monochromatic source
+fringes at full depth while a continuum source averages over the modulation
+and fringes far less (by `sinc(W / dlambda)` for a top-hat passband). The
+night sky is dominated by emission lines; a flat panel and the twilight sky
+are continuum. So a night-sky flat captures the etalon at the SAME spectral
+weighting the science frames see it, and a panel or twilight flat does not —
+which is precisely the deficit `scale_star_flat`'s k (~1.33 H, ~1.41 S) was
+invented to patch on the star flat, and which this needs no patch for.
 
-WHAT IS IN A FRINGE FRAME, and why the flat it is divided by must be RIGHT.
-With V the true optical response and f the interference:
+WHY DIVIDE, when the literature says fringes are additive. Write a frame as
+sky plus object, each with its own response to its own spectrum:
 
-    frames:            light - dark  =  sky . V . (1 + f)
-    divided by flat F: sky . (V/F) . (1 + f)
-    averaged over the dither, normalised, minus one:
+    L - dark = S.R(x) + O(x).R_obj(x)          R = V.(1 + f)
 
-        map  =  f  +  (V/F - 1)
+`V` is the spectrum-independent part (vignetting, dust, QE); `f` the fringe.
+Dividing by this flat (`1 + M = R/<R>`):
 
-A CORRECT flat (F = V) leaves the pure fringe, which is the textbook scheme
-and what this code is built for. A WRONG flat puts its own error straight
-into the map, and if the train's real response is small the error can be the
-whole of it: on the 351 mm Ha shoot 2026-09-24, V is only 0.34% while the
-star flat carried 1.39% of structure that is not on the sensor, so the map
-came out correlating -0.981 with that flat and holding no sky at all.
+    (L-dark)/(1+M) = S.<R> + O(x).<R>.[R_obj/R],  R_obj/R ~ 1 + (f_obj - f_sky)
 
-That is a broken FLAT, not a broken method. Where no trustworthy flat exists
-the honest choice is none at all — the flat decision resolves to `NO_FLAT`,
-`flat` arrives None here, and the map becomes `f + (V - 1)`: fringe plus the
-response. Subtracting it then corrects the sky for both. Note what that does
-NOT do: the object never gets flat-fielded, so it is only defensible on a
-train whose V is negligible. It is a per-train decision, deliberately, and
-not a property of fringe frames — which is why `CALIBRATION_TOPOLOGY` still
-gives a fringe frame a flat to resolve.
+`V` cancels EXACTLY — vignetting and dust come off the object too, not just
+the background. The only residual is the DIFFERENCE in fringe depth between
+the object's spectrum and the sky's. Subtracting a scaled map instead leaves
+`S.<R> + O.R_obj`: the background flattens but the object keeps vignetting,
+dust and etalon whole, so subtraction is not an alternative to a flat, only a
+supplement to a fringe-free one.
 
-A stacker then removes it exactly as Arne Henden describes (AAVSO,
-2012-10-20): "You then just scale that to match the sky background in your
-image, subtract, and voila! The fringing goes away." The map is already per
-unit sky, so the scale factor IS the frame's sky level — no fit, no filter.
+The published recipes subtract because they are BROADBAND: there the objects
+are continuum (`f_obj ~ 0`) while the sky lines fringe, so dividing by the
+sky's response would print `-f_sky` — the full etalon, inverted — onto every
+star. In NARROWBAND the object is line emission at essentially the filter's
+centre, `f_obj ~ f_sky`, and that failure mode disappears. Stars remain
+continuum and are over-corrected by ~0.25 x the etalon (~0.09%), which is
+negligible and spread over a 256-1024 px pattern.
 
-Arne's own answer to the thing a fit would chase — "the night sky emission
-can vary during a night, so you need a fringe map that corresponds with the
-monochromatic illumination source present at the time of the science image"
-— is to SHOOT a matching map, not to compute a correction for a mismatched
-one. Match the conditions at the telescope and the scale factor is just the
-sky. (He lists two more: the pattern depends on wavelength, so a map is
-per-filter; and it is a weak function of temperature, so it is per setpoint.
-Both fall out of matching on camera, filter and optical train.)
+MEASURED, 2026-09-25, two panels of the Cygnus mosaic (Kite Cluster 57
+frames / 7 runs; Sadr Region 66 / 9), five calibration arms each, frame-for-
+frame identical accounting: dividing by this flat beat subtracting the same
+map, and matched or beat both the star flat and a twilight flat. The etalon
+was not visible in any arm on Sadr, so this is a SIMPLIFICATION — one flavour
+of flat instead of a fourth calibration type — and not a quality claim.
 
-GOOD SIGNAL-TO-NOISE MATTERS. Arne's last gotcha: "since you are
-subtracting this, you want good signal/noise in the master fringe image, not
-always easy to obtain." Hence `MIN_FRAMES` — a map built from too few frames
-is noise that gets added to every science frame it touches.
+STORED like every other master flat: `(1 + M) * 0.5`, MULTIPLICATIVE, median
+0.5, exactly as `star_flat.py` writes its response. It must never be stored
+as `M + 0.5` (a zero-mean map on a pedestal): anything that normalises by the
+median then divides by `1 + 2M` and applies the pattern at DOUBLE amplitude.
+That bug shipped briefly and was caught by comparing rms against the map's.
 
-A DISTINCT CALIBRATION TYPE, all the way through. `bias`, `dark` and `flat`
-have a fourth sibling in `CALIBRATION_TOPOLOGY`, it resolves per Run like
-the others, and it reaches a stacker as one more entry in `*cal_masters`.
-How a stacker APPLIES it is the stacker's business: the PixInsight backend
-folds it into the dark it stages for WBPP because WBPP has no other
-subtractive slot, and that quirk stays inside
-`stacks/stacking/pixinsight.py`. An OSS stacker should just subtract it.
+BUILT dark-only. Its members are lights, so it takes a dark and nothing else
+(`CALIBRATION_TOPOLOGY["sky"]`). Dividing the members by a flat first would
+make this the RESIDUAL that flat could not remove — a different object, and
+the one that came out as the star flat inverted (corr -0.981) when the flat
+it was paired with was wrong.
 
-OPTIONAL, and nobody's default. Blank-sky frames arrive stamped `Light`
-like any other, so nothing in a header can identify them — the user marks a
-stack as the source (`DecisionKey.fringe_source`), which is the only place
-that knowledge exists.
+NOT a separate calibration type. `kind` is "sky"; it resolves through the
+FLAT slot, ahead of the star flat, exactly as `StarFlatStack` (kind "star")
+already does. One flat ladder, three flavours: sky, star, panel.
 """
+
 # NO `from __future__ import annotations` here, deliberately. `@node` decides
 # an op is an artifact producer by resolving its RETURN ANNOTATION at
 # decoration time; under PEP 563 that annotation is still a string while the
 # module is executing, resolution fails, and the op silently never gets a
-# `filename_fn`. `build_fringe_frame` then dies on its first real trace with
+# `filename_fn`. `build_sky_flat` then dies on its first real trace with
 # "'function' object has no attribute 'filename_fn'" — invisible to every
 # test, because no test calls the producer body. `stacks/star_flat.py` omits
 # it for the same reason.
@@ -110,14 +97,16 @@ from stacks.types import StackHash
 
 log = structlog.get_logger()
 
-SECTION = "fringe"          # the built frame's sidecar section: quality metrics
-IMAGE_TYPE = "Master Fringe"
+SECTION = "sky_flat"        # the built frame's sidecar section: quality metrics
+# WBPP recognises a pre-built master only as "Master Flat" — and that is
+# what this IS, so there is nothing to disguise.
+IMAGE_TYPE = "Master Flat"
 # Below this many member frames the map is noise: the fringe is ~0.4% of the
 # sky and a single 300 s sub's per-pixel noise is ~45x larger, so it only
 # emerges after averaging at the pattern's own scale over many frames. 15 is
 # the floor at which a 32 px-smoothed map reaches ~35% precision.
 MIN_FRAMES = 15
-# How the stars come out (see `combine_fringe`). A block median at 8x rejects
+# How the stars come out (see `combine_sky_flat`). A block median at 8x rejects
 # any star smaller than ~4 px outright; a 9-cell median filter on top of that
 # reaches ~72 px at full resolution, which covers the haloes of all but the
 # brightest. Measured: worst surviving star drops from 217 sigma to 7.7.
@@ -127,8 +116,8 @@ MEDIAN_FOOTPRINT = 9
 
 @beartype
 @dataclass(frozen=True)
-class FringeStack(CalibrationStack):
-    """A fringe frame whose "frames" are the blank-sky lights of the Stack a
+class SkyFlatStack(CalibrationStack):
+    """A night-sky flat whose "frames" are the blank-sky lights of the Stack a
     user promoted. `contents` is empty — there is nothing to integrate in the
     calibration sense; `member_files` are the lights the combine reads."""
     source_stack_id: str = ""
@@ -137,7 +126,7 @@ class FringeStack(CalibrationStack):
 
     @property
     def kind(self) -> str:
-        return "fringe"
+        return "sky"
 
     @property
     def n_frames(self) -> int:
@@ -152,51 +141,56 @@ class FringeStack(CalibrationStack):
         return (self.content_hash, self.stable_hash) == (other.content_hash, other.stable_hash)
 
     def __str__(self) -> str:
-        return (f"FringeStack(Content hash {self.content_hash}, Camera {self.camera}, "
+        return (f"SkyFlatStack(Content hash {self.content_hash}, Camera {self.camera}, "
                 f"Filter {self.filter}, Focal {self.focal_length}, Frames {self.n_frames})")
 
 
-class FringeStacks(dict):
-    """`{StackHash: FringeStack}` — joins the calibration stacks so light↔cal
-    resolution finds fringe frames the same way it finds flats."""
+class SkyFlatStacks(dict):
+    """`{StackHash: SkyFlatStack}` — joins the calibration stacks so light↔cal
+    resolution finds night-sky flats the same way it finds any other flat."""
     def __hash__(self):
         return hash_list_int([self[k].content_hash for k in sorted(self)])
 
     def __str__(self):
-        return f"FringeStacks({len(self)})"
+        return f"SkyFlatStacks({len(self)})"
 
 
-def fringe_stack_id_for(stack_id: str) -> StackHash:
-    """The id `fringe_stack_for` will give the fringe frame of this stack —
+def sky_flat_id_for(stack_id: str) -> StackHash:
+    """The id `sky_flat_for` will give the night-sky flat of this stack —
     without needing the stack itself (the UI asks before one exists).
 
-    DERIVED from the source's, never equal to it: a fringe frame and the
+    DERIVED from the source's, never equal to it: a night-sky flat and the
     stack it came from are different objects and must not collide on an id.
     """
-    return StackHash(hash_list([str(stack_id), "fringe"]))
+    return StackHash(hash_list([str(stack_id), "sky_flat"]))
 
 
-def fringe_stack_for(source, metadata) -> FringeStack:
-    """The `FringeStack` a promoted Stack yields.
+def sky_flat_for(source, metadata) -> SkyFlatStack:
+    """The `SkyFlatStack` a promoted Stack yields.
 
     Identity follows the house convention — the members' content hashes —
     so the frame re-builds when its source gains frames and not otherwise.
     `stable_hash` is derived from the SOURCE stack's, which is what makes the
     product addressable and stable as the source grows; it is derived rather
-    than reused so a fringe frame and its source stack never collide on an id.
+    than reused so a night-sky flat and its source stack never collide on an id.
 
-    `contents` is ONE synthetic run over every member frame, typed `fringe`.
-    That run is what `CALIBRATION_TOPOLOGY["fringe"]` resolves a dark
+    `contents` is ONE synthetic run over every member frame, typed `sky`.
+    That run is what `CALIBRATION_TOPOLOGY["sky"]` resolves a dark
     against — and one run rather than the source's own means one dark, which
-    is all `combine_fringe` can use. A fringe source is a dedicated blank-sky
+    is all `combine_sky_flat` can use. A sky-flat source is a dedicated blank-sky
     shoot, so that is also what it really is.
     """
     frames = sorted(source.all_frames())
     sub = MetadataDict({f: metadata[f] for f in frames if f in metadata})
-    assert sub, f"fringe source {source.stable_hash} has no metadata for its frames"
+    assert sub, f"sky-flat source {source.stable_hash} has no metadata for its frames"
     files = tuple(sorted(str(m.filename) for m in sub.values()))
     chron = ChronologyAttributes.from_frames(list(sub), sub)
-    imaging = replace(ImagingAttributes.from_frames(list(sub), sub), image_type="fringe")
+    # The synthetic RUN is typed "sky" so CALIBRATION_TOPOLOGY gives it a
+    # DARK (its members are lights). The STACK below is typed "flat", so it
+    # appears in the flat picker and resolves through the flat slot — the
+    # same split `StarFlatStack` uses (run-less, stack image_type "flat",
+    # kind "star").
+    imaging = replace(ImagingAttributes.from_frames(list(sub), sub), image_type="sky")
     content_hash = hash_list(sorted(str(f) for f in sub))
     attributes: dict[str, Any] = asdict(chron) | asdict(imaging) | {
         "content_hash": content_hash,
@@ -206,9 +200,9 @@ def fringe_stack_for(source, metadata) -> FringeStack:
         "state": frozendict(),
     }
     run = CalibrationRun(**attributes)
-    return FringeStack(
+    return SkyFlatStack(
         content_hash=content_hash,
-        image_type="fringe",
+        image_type="flat",
         camera=source.camera,
         filter=source.filter,
         mean_temperature=source.mean_temperature,
@@ -216,7 +210,7 @@ def fringe_stack_for(source, metadata) -> FringeStack:
         integration=source.integration,
         width_pixels=source.width_pixels,
         height_pixels=source.height_pixels,
-        stable_hash=fringe_stack_id_for(source.stable_hash),
+        stable_hash=sky_flat_id_for(source.stable_hash),
         oldest_date=source.oldest_date,
         newest_date=source.newest_date,
         state=frozendict(),
@@ -238,52 +232,52 @@ def promoted_stack_ids(decision_overrides) -> set[str]:
     return {
         key.subject_id
         for key, override in decision_overrides.items()
-        if key.decision_type == DecisionType.FRINGE_SOURCE
+        if key.decision_type == DecisionType.SKY_FLAT_SOURCE
         and override.choice == BinaryChoice.INCLUDE
     }
 
 
 @node
-def identify_fringe_stacks(decision_overrides, stacks: dict) -> FringeStacks:
-    """One `FringeStack` per promoted Stack.
+def identify_sky_flats(decision_overrides, stacks: dict) -> SkyFlatStacks:
+    """One `SkyFlatStack` per promoted Stack.
 
-    Takes the light stacks because a fringe frame is derived from one: the
+    Takes the light stacks because a night-sky flat is derived from one: the
     calibration chain genuinely waits on identification here, which is the
-    cost of a calibration type whose source is a science stack."""
-    out = FringeStacks()
+    cost of a flat whose source is a science stack."""
+    out = SkyFlatStacks()
     for sid in sorted(promoted_stack_ids(decision_overrides)):
         ref = stacks.get(sid)
         source = ref.get() if hasattr(ref, "get") else ref
         if source is None:
-            log.info("fringe source no longer exists", stack=sid)
+            log.info("sky-flat source no longer exists", stack=sid)
             continue
-        fringe = fringe_stack_for(source, source.all_metadata())
-        out[fringe.stable_hash] = fringe
-    log.info("fringe stacks", count=len(out),
+        sky_flat = sky_flat_for(source, source.all_metadata())
+        out[sky_flat.stable_hash] = sky_flat
+    log.info("night-sky flats", count=len(out),
              detail={k: str(v) for k, v in out.items()})
     return out
 
 
 @node
-def merge_fringe_stacks(
-    fringe_stacks: FringeStacks, cal_stacks: CalibrationStacksDict,
+def merge_sky_flats(
+    sky_flats: SkyFlatStacks, cal_stacks: CalibrationStacksDict,
 ) -> CalibrationStacksDict:
-    """Fringe frames join the calibration stacks, so every light↔cal
-    resolution finds them exactly the way it finds flats."""
-    return CalibrationStacksDict({**cal_stacks, **fringe_stacks})
+    """Night-sky flats join the calibration stacks, so every light↔cal
+    resolution finds them exactly the way it finds any other flat."""
+    return CalibrationStacksDict({**cal_stacks, **sky_flats})
 
 
-def fringe_master_path(stable_hash) -> Path | None:
-    """The built map for this fringe stack, or None when it is not on disk.
+def sky_flat_master_path(stable_hash) -> Path | None:
+    """The built flat for this sky-flat stack, or None when it is not on disk.
 
     Found by scanning the producer's output directory for the file whose
-    `STBLHASH` matches, rather than by replaying `build_fringe_frame`'s
+    `STBLHASH` matches, rather than by replaying `build_sky_flat`'s
     argument tuple through the cache: the preview path does not have the
     dark and flat `ImageMetadata` those arguments carry, and a preview must
     never trigger a build. `gate()` locates star-flat masters the same way.
     """
     from context import context
-    out = Path(context.output_dir) / "build_fringe_frame"
+    out = Path(context.output_dir) / "build_sky_flat"
     if not out.is_dir():
         return None
     for f in sorted(out.glob("*.xisf")):
@@ -295,17 +289,17 @@ def fringe_master_path(stable_hash) -> Path | None:
     return None
 
 
-def combine_fringe(
-    member_files: list[str], dark: np.ndarray | None, flat: np.ndarray | None,
+def combine_sky_flat(
+    member_files: list[str], dark: np.ndarray | None,
 ) -> tuple[np.ndarray, dict]:
     """The zero-mean modulation per unit sky — Arne Henden's recipe, whole.
 
-    `flat` is whatever the fringe stack's own flat decision resolved to, and
-    it had better be right: see the module docstring. None is a legitimate
-    answer and the one this train uses.
+    Dark-subtracted only. Dividing the members by a flat first would make
+    this the RESIDUAL that flat could not remove — a different object, and
+    the one that came out as the star flat inverted when the flat was wrong.
 
     "Take a few long exposures of dithered blank sky, remove the stars, and
-    form a master fringe image." That is three steps and this is all three:
+    form a master flat." That is three steps and this is all three:
 
       1. dark subtract, divide by the flat if there is one, normalise each
          frame by its own median so frames taken through different
@@ -339,8 +333,6 @@ def combine_fringe(
             f = f[:, :, 0]
         if dark is not None:
             f = f - dark
-        if flat is not None:
-            f = f / np.maximum(flat / np.nanmedian(flat), 1e-6)
         m = float(np.nanmedian(f[::8, ::8]))
         return f / (m if abs(m) > 1e-6 else 1.0)
 
@@ -373,42 +365,43 @@ def combine_fringe(
         "block": BLOCK,
         "median_footprint": MEDIAN_FOOTPRINT,
         "dark_subtracted": dark is not None,
-        "flat_divided": flat is not None,
     }
     return fringe.astype(np.float32), quality
 
 
-def apply_fringe(frame: np.ndarray, fringe: np.ndarray,
-                 sky: float | None = None) -> np.ndarray:
-    """`frame - sky * fringe` — the correction, and the whole of it.
+def write_sky_flat(response: np.ndarray, dest, keywords: dict) -> None:
+    """Write the flat as a WBPP-ready Master Flat XISF.
 
-    `sky` defaults to the frame's own median, which is what "the sky
-    background in your image" means. The map is per unit sky, so the product
-    is in the frame's own units and the subtraction is dimensionally honest.
+    `response` is the ZERO-MEAN modulation `M`; what lands on disk is
+    `(1 + M) * 0.5` — multiplicative, median 0.5, byte-identical in
+    convention to `star_flat.write_master_flat`. Anything that normalises by
+    the median then divides by `1 + M`, which is the amplitude the map
+    actually measured.
+
+    Storing `M + 0.5` instead (a zero-mean map on an additive pedestal) makes
+    the median normalisation yield `1 + 2M` and applies the pattern at DOUBLE
+    amplitude. That is not a hypothetical: it shipped, and was caught only by
+    comparing the normalised rms (0.00681) against the map's own (0.00341).
     """
-    f = np.asarray(frame, np.float64)
-    s = float(np.nanmedian(f)) if sky is None else float(sky)
-    return (f - s * np.asarray(fringe, np.float64)).astype(frame.dtype)
-
-
-def write_fringe_frame(fringe: np.ndarray, dest, keywords: dict) -> None:
-    """Write the map as an XISF. Stored ZERO-MEAN with an explicit pedestal of
-    0.5 so it survives readers that assume [0, 1]; `FRNGPED` records the
-    pedestal so a consumer subtracts it back off rather than guessing."""
     from xisf import XISF
-    r = (np.asarray(fringe, np.float32) + 0.5).astype(np.float32)
-    kw = {**keywords, "FRNGPED": 0.5}
-    fits_keywords = {k: [{"value": str(v), "comment": ""}] for k, v in kw.items() if v is not None}
+    r = ((1.0 + np.asarray(response, np.float64)) * 0.5).astype(np.float32)
+    fits_keywords = {k: [{"value": str(v), "comment": ""}]
+                     for k, v in keywords.items() if v is not None}
     Path(dest).parent.mkdir(parents=True, exist_ok=True)
-    XISF.write(str(dest), r[..., None], creator_app="AstroFlow fringe frame",
+    XISF.write(str(dest), r[..., None], creator_app="AstroFlow night-sky flat",
                image_metadata={"FITSKeywords": fits_keywords, "XISFProperties": {}})
 
 
-def read_fringe_frame(path) -> np.ndarray:
-    """The zero-mean map back, pedestal removed."""
-    img = np.asarray(read_image(Path(path)), np.float32).squeeze()
-    ped = read_header(Path(path)).get("FRNGPED")
-    return img - (float(ped) if ped is not None else 0.0)
+def read_sky_flat(path) -> np.ndarray:
+    """The zero-mean modulation `M` back, however the file was scaled.
+
+    Normalising by the median rather than subtracting a recorded pedestal
+    makes this convention-independent: it reads a master written here, a
+    star flat, or anything else stored as a flat.
+    """
+    img = np.asarray(read_image(Path(path)), np.float64).squeeze()
+    m = float(np.nanmedian(img))
+    return (img / (m if abs(m) > 1e-12 else 1.0) - 1.0).astype(np.float32)
 
 
 # `plate_solve="none"`: a fringe map is a zero-mean residual with the stars
@@ -418,8 +411,8 @@ def read_fringe_frame(path) -> np.ndarray:
 # rejection leaked 16k residuals; removing them properly exposed this.
 @node(num_cpus=4, display="Fringe Frame", resources={"diskcache": 0.001},
       plate_solve="none")
-def build_fringe_frame(
-    fringe: FringeStack, dark: ImageMetadata | None, flat: ImageMetadata | None,
+def build_sky_flat(
+    sky_flat: SkyFlatStack, dark: ImageMetadata | None,
 ) -> WithSidecar[XisfFilePath]:
     """The blank-sky residual for one promoted stack.
 
@@ -431,36 +424,33 @@ def build_fringe_frame(
     `dark` and `flat` are the source stack's own resolved masters. A flat
     that is WRONG lands in the map; see the module docstring. On a train with
     no trustworthy flat the decision resolves to none, and that is correct."""
-    missing = [p for p in fringe.member_files if not Path(p).exists()]
+    missing = [p for p in sky_flat.member_files if not Path(p).exists()]
     if missing:
         raise FileNotFoundError(
-            f"{len(missing)} of {fringe.n_frames} member frames unreadable here, e.g. {missing[0]}")
-    dest = build_fringe_frame.filename_fn(fringe, dark, flat)
+            f"{len(missing)} of {sky_flat.n_frames} member frames unreadable here, e.g. {missing[0]}")
+    dest = build_sky_flat.filename_fn(sky_flat, dark)
     d = np.asarray(read_image(Path(dark.filename)), np.float64) if dark is not None else None
-    f = np.asarray(read_image(Path(flat.filename)), np.float64) if flat is not None else None
     if d is not None and d.ndim == 3:
         d = d[:, :, 0]
-    if f is not None and f.ndim == 3:
-        f = f[:, :, 0]
-    log.info("building fringe frame", stack=str(fringe), frames=fringe.n_frames)
+    log.info("building fringe frame", stack=str(sky_flat), frames=sky_flat.n_frames)
 
-    if fringe.n_frames < MIN_FRAMES:
+    if sky_flat.n_frames < MIN_FRAMES:
         # Too few frames for the pattern to emerge from the noise. A map of
         # zeros subtracts nothing, which is the honest answer, and the reason
         # rides in the sidecar so the UI can say why.
-        out = np.zeros((fringe.height_pixels, fringe.width_pixels), np.float32)
-        quality = {"n_frames": fringe.n_frames, "good": False,
-                   "reason": f"only {fringe.n_frames} frames; need {MIN_FRAMES}"}
+        out = np.zeros((sky_flat.height_pixels, sky_flat.width_pixels), np.float32)
+        quality = {"n_frames": sky_flat.n_frames, "good": False,
+                   "reason": f"only {sky_flat.n_frames} frames; need {MIN_FRAMES}"}
     else:
-        out, quality = combine_fringe(list(fringe.member_files), d, f)
+        out, quality = combine_sky_flat(list(sky_flat.member_files), d)
         quality["good"] = True
-    write_fringe_frame(out, dest, {
-        "IMAGETYP": IMAGE_TYPE, "FILTER": fringe.filter or "", "INSTRUME": fringe.camera,
-        "FOCALLEN": fringe.focal_length, "XBINNING": 1, "YBINNING": 1,
-        "EXPOSURE": float(fringe.exposure), "EXPTIME": float(fringe.exposure),
-        "STBLHASH": str(fringe.stable_hash), "FRNGSRC": str(fringe.source_stack_id),
-        "FRNGNUM": fringe.n_frames,
+    write_sky_flat(out, dest, {
+        "IMAGETYP": IMAGE_TYPE, "FILTER": sky_flat.filter or "", "INSTRUME": sky_flat.camera,
+        "FOCALLEN": sky_flat.focal_length, "XBINNING": 1, "YBINNING": 1,
+        "EXPOSURE": float(sky_flat.exposure), "EXPTIME": float(sky_flat.exposure),
+        "STBLHASH": str(sky_flat.stable_hash), "FRNGSRC": str(sky_flat.source_stack_id),
+        "FRNGNUM": sky_flat.n_frames,
     })
     set_section(Path(dest), SECTION, quality)
-    log.info("fringe frame built", stack=str(fringe), **quality)
+    log.info("fringe frame built", stack=str(sky_flat), **quality)
     return WithSidecar(XisfFilePath(dest))

@@ -66,17 +66,18 @@ def toggle_quarantine(object_type, object_id):
     })
 
 
-@settings_bp.route("/api/fringe_source/<stack_id>", methods=["POST"])
-def toggle_fringe_source(stack_id):
-    """Promote a stack to a fringe source, or demote it.
+@settings_bp.route("/api/sky_flat_source/<stack_id>", methods=["POST"])
+def toggle_sky_flat_source(stack_id):
+    """Promote a stack to a night-sky flat source, or demote it.
 
     Blank-sky frames arrive stamped `Light` like any other, so nothing in a
     header can identify them — this decision is the only place that knowledge
-    exists (`stacks/fringe.py`). Promoting mints a `FringeStack` whose frames
-    are this stack's, which then resolves onto lights of the same optical
-    train exactly the way a flat does.
+    exists (`stacks/sky_flat.py`). Promoting mints a `SkyFlatStack` whose
+    frames are this stack's; it is then an ordinary flat, and resolves onto
+    lights of the same optical train exactly the way any flat does — pickable
+    in the flat selector alongside panel, twilight and star flats.
     """
-    key = DecisionKey.fringe_source(stack_id)
+    key = DecisionKey.sky_flat_source(stack_id)
     current = context.settings.decision_overrides
     promoted = key in current and current[key].choice == BinaryChoice.INCLUDE
 
@@ -92,11 +93,11 @@ def toggle_fringe_source(stack_id):
     from state.actor import state
     state.drain_and_restart()
 
-    from stacks.fringe import fringe_stack_id_for
+    from stacks.sky_flat import sky_flat_id_for
     return jsonify({
         "stack_id": stack_id,
-        "is_fringe_source": not promoted,
-        "fringe_stack_id": None if promoted else str(fringe_stack_id_for(stack_id)),
+        "is_sky_flat_source": not promoted,
+        "sky_flat_stack_id": None if promoted else str(sky_flat_id_for(stack_id)),
     })
 
 

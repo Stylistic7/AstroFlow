@@ -53,7 +53,7 @@ def post_processed_master(stack, config):
     cal_masters = []
     masters = {}
     for cs, dep_ids in steps:
-        # A star flat or a fringe frame is not an integration of `contents`
+        # A star flat or a night-sky flat is not an integration of `contents`
         # — it has its own producer, and handing one to a stacker integrates
         # the wrong thing (an empty run set, or blank sky as if it were a
         # calibration stack). `has_own_producer` is where that is decided.
