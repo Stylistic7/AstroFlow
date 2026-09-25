@@ -412,3 +412,13 @@ def test_the_producer_is_wired_as_an_artifact_producer():
     assert getattr(mod, "annotations", None) is not __future__.annotations, (
         "stacks/fringe.py has PEP 563 annotations enabled again"
     )
+
+
+def test_the_producer_does_not_try_to_plate_solve():
+    """A fringe map has no stars in it by construction, so a solve can only
+    fail — and a failing solve raises `PlateSolveFailedException`, which fails
+    the node and reschedules it forever. Cost a live rebuild loop on
+    2026-09-24, the same day the star rejection started working properly."""
+    from stacks.fringe import build_fringe_frame
+    assert getattr(build_fringe_frame, "_plate_solve", None) == "none", (
+        "build_fringe_frame must declare plate_solve='none'")

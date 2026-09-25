@@ -411,7 +411,13 @@ def read_fringe_frame(path) -> np.ndarray:
     return img - (float(ped) if ped is not None else 0.0)
 
 
-@node(num_cpus=4, display="Fringe Frame", resources={"diskcache": 0.001})
+# `plate_solve="none"`: a fringe map is a zero-mean residual with the stars
+# median-filtered out and no detail finer than a block — there is nothing to
+# solve, and the solver raising `PlateSolveFailedException` fails the node and
+# sends it round again forever. The OLD map solved only because its star
+# rejection leaked 16k residuals; removing them properly exposed this.
+@node(num_cpus=4, display="Fringe Frame", resources={"diskcache": 0.001},
+      plate_solve="none")
 def build_fringe_frame(
     fringe: FringeStack, dark: ImageMetadata | None, flat: ImageMetadata | None,
 ) -> WithSidecar[XisfFilePath]:
