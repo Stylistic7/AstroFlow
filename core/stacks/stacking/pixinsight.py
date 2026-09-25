@@ -162,7 +162,13 @@ def _fold_fringe_into_dark(run, cal_master_by_id: dict, dest_dir: str) -> tuple[
                 (img - dark) / (flat if flat is not None else 1.0))))
         sky = float(np.median(skies))
         combined = dark + sky * fringe * (flat if flat is not None else 1.0)
-        out = Path(dest_dir) / f"masterDark_fringe_{dark_id}.xisf"
+        # The run's own hash is in the name because WBPP validates its output
+        # dir with `rglob("master*.xisf")` and this file lands there: two runs
+        # of one stack share a dark, so a name keyed only on `dark_id` writes
+        # the SAME filename into RUN_0 and RUN_1 and WBPP calls it a duplicate
+        # master. Cost a 1844 s integration on 2026-09-24, the first time this
+        # fold ever fired.
+        out = Path(dest_dir) / f"masterDark_fringe_{dark_id}_{run.stable_hash}.xisf"
         _write_dark_like(dark_path, combined, out)
         log.info("fringe folded into the dark", run=str(run.stable_hash),
                  sky=round(sky, 1), n_sky_frames=len(skies), dest=str(out))

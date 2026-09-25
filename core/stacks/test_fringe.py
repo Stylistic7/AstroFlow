@@ -422,3 +422,53 @@ def test_the_producer_does_not_try_to_plate_solve():
     from stacks.fringe import build_fringe_frame
     assert getattr(build_fringe_frame, "_plate_solve", None) == "none", (
         "build_fringe_frame must declare plate_solve='none'")
+
+
+def test_two_runs_of_one_stack_get_distinct_folded_darks(tmp_path):
+    """WBPP validates its output dir with `rglob("master*.xisf")`, and the
+    folded dark lands there. Two runs of one stack share a dark, so a name
+    keyed only on the dark id writes the SAME filename into RUN_0 and RUN_1
+    and WBPP raises `WBPPDuplicateMastersError` -- after doing the entire
+    integration. Cost 1844 s on 2026-09-24, the first time the fold fired.
+
+    The two darks also differ in CONTENT: each is scaled to its own run's
+    sky, which is the whole of Arne's method. They are not interchangeable
+    and must not be shared or symlinked."""
+    from stacks.fringe import write_fringe_frame
+    from stacks.stacking import pixinsight as pi
+    import astropy.io.fits as pf
+
+    g = _pattern()
+    H_, W_ = g.shape
+    dark_px = np.full((H_, W_), 500.0)
+    dark = _cal(tmp_path, "dark.xisf", "Master Dark", dark_px, "D")
+    fpath = tmp_path / "fringe.xisf"
+    write_fringe_frame(g.astype(np.float32), fpath,
+                       {"IMAGETYP": "Master Fringe", "STBLHASH": "R"})
+
+    class _Meta:
+        def __init__(self, fn):
+            self.filename = fn
+
+    names, contents = set(), []
+    for stable, sky in (("run000a", 300.0), ("run000b", 900.0)):
+        light = tmp_path / f"light_{stable}.fits"
+        pf.PrimaryHDU((sky * (1 + g) + dark_px).astype(np.float32)).writeto(light)
+        run = _Run({"d": _Dep("D"), "r": _Dep("R")},
+                   {i: _Meta(str(light)) for i in range(4)})
+        run.stable_hash = stable
+        d = tmp_path / stable
+        d.mkdir()
+        overrides, skip = pi._fold_fringe_into_dark(
+            run, {"D": dark, "R": str(fpath)}, str(d))
+        assert set(overrides) == {"D"}, f"fold did not fire for {stable}"
+        names.add(Path(overrides["D"]).name)
+        from file_io.generic import read_image
+        contents.append(np.asarray(read_image(Path(overrides["D"])), np.float64).squeeze())
+
+    assert len(names) == 2, (
+        f"two runs produced the same folded-dark filename {names}; WBPP's "
+        "rglob('master*.xisf') sees them as duplicate masters")
+    assert not np.allclose(contents[0], contents[1]), (
+        "the two runs' folded darks are identical -- the per-run sky scaling "
+        "is not being applied, so they could not be shared anyway")
