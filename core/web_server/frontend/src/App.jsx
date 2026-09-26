@@ -208,9 +208,12 @@ function App() {
 
   const quarantineCount = quarantinedSet.size;
 
-  // Stacks the user has promoted to fringe sources. Nothing in a header says
-  // a stack is blank sky, so this override is the only record of it.
-  const fringeSourceSet = useMemo(() => {
+  // Stacks the user has promoted to night-sky flat sources. Nothing in a
+  // header says a stack is blank sky, so this override is the only record of
+  // it. The decision_type VALUE is still "fringe_source": it is the key the
+  // promotions were persisted under, and a persisted identifier keeps its
+  // value (decisions/decisions.py, SKY_FLAT_SOURCE).
+  const skyFlatSourceSet = useMemo(() => {
     const set = new Set();
     for (const { key, choice } of decisionOverrides) {
       if (key.decision_type === "fringe_source" && choice === "include") {
@@ -220,8 +223,8 @@ function App() {
     return set;
   }, [decisionOverrides]);
 
-  const isFringeSource = useCallback(
-    (stackId) => fringeSourceSet.has(stackId), [fringeSourceSet]
+  const isSkyFlatSource = useCallback(
+    (stackId) => skyFlatSourceSet.has(stackId), [skyFlatSourceSet]
   );
 
   const refreshDecisions = useCallback(async () => {
@@ -261,7 +264,7 @@ function App() {
             asiairDevices,
             refreshAsiairDevices,
             isQuarantined,
-            isFringeSource,
+            isSkyFlatSource,
             showQuarantined,
             toggleShowQuarantined,
             quarantineCount,

@@ -15,8 +15,6 @@ const RunsTab = ({ stack }) => {
   const location = useLocation();
 
   const [flatIds, setFlatIds] = useState([]);
-  const [fringeIds, setFringeIds] = useState([]);
-  const [selectedFringesByRun, setSelectedFringesByRun] = useState({});
   const [selectedFlatsByRun, setSelectedFlatsByRun] = useState({});
   const [decisions, setDecisions] = useState([]);
   const [reviewRunId, setReviewRunId] = useState(null);
@@ -32,11 +30,6 @@ const RunsTab = ({ stack }) => {
         const res = await fetch(`/api/flats/${stack.width_pixels}/${stack.height_pixels}/${stack.filter}${focalQuery}`);
         const json = await res.json();
         setFlatIds(json);
-        // Fringe frames are matched on the same axes as flats (sensor,
-        // filter, optical train), so the grid's two axes are offered by
-        // the same rule the auto-matcher uses.
-        const fres = await fetch(`/api/fringes/${stack.width_pixels}/${stack.height_pixels}/${stack.filter}${focalQuery}`);
-        setFringeIds(await fres.json());
       } catch (err) {
         console.error('Failed to fetch flat frames:', err);
       }
@@ -115,30 +108,6 @@ const RunsTab = ({ stack }) => {
     });
   };
 
-
-  const handleSelectFringe = (runId, fringeId) => {
-    setSelectedFringesByRun(prev => ({ ...prev, [runId]: fringeId }));
-    fetch('/api/decisions/override', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        key: {
-          decision_type: 'calibration_fringe',
-          object_type: 'stack',
-          parent_stack_id: stack.stable_hash,
-          subject_id: runId,
-        },
-        // null clears the override; the run then falls back to whatever
-        // `_chronological_fringe` picks, which may be nothing at all.
-        choice: fringeId,
-      }),
-    });
-  };
-
-  const getSelectedFringeByRun = (run) =>
-    run.id in selectedFringesByRun
-      ? selectedFringesByRun[run.id]
-      : (run.dependencies?.fringe?.stack_id ?? null);
 
   const calibrationStackInfo = (dependency) => {
     if (dependency === undefined) {
@@ -252,26 +221,13 @@ const RunsTab = ({ stack }) => {
                 (filename, applyToAll) => { onSelectFile('flat', filename, run.id, applyToAll) }} />
             </Box>
 
-            {/* Only when one resolved. A fringe frame exists where the user
-                built one and nowhere else, so an empty row on every other
-                run would say "missing" about something nobody is missing. */}
-            {'fringe' in run.dependencies && (
-              <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                Fringe: &nbsp;&nbsp; {calibrationStackInfo(run.dependencies['fringe'])} <FileBrowser onSelectFile={
-                  (filename, applyToAll) => { onSelectFile('fringe', filename, run.id, applyToAll) }} />
-              </Box>
-            )}
-
             <CalibrationGrid
               stack={stack}
               run={run}
               flatIds={[...starFlatIds, ...sortedFlatIds]}
-              fringeIds={fringeIds}
               calibrationStacks={calibrationStacks}
               selectedFlatId={selectedFlatId}
-              selectedFringeId={getSelectedFringeByRun(run)}
               onSelectFlat={(id) => handleSelectFlat(run.id, id)}
-              onSelectFringe={(id) => handleSelectFringe(run.id, id)}
             />
             {selectedFlatId && (
               <Typography variant="body2" sx={{ mt: 1 }}>

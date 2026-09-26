@@ -20,7 +20,13 @@ class DecisionType(str, Enum):
     # other, so nothing in the header distinguishes them. The result is an
     # ordinary flat and is chosen through CALIBRATION_FLAT like any other
     # (see `stacks/sky_flat.py`).
-    SKY_FLAT_SOURCE = "sky_flat_source"
+    #
+    # The VALUE is a persistence identifier: DecisionKeys are pickled into
+    # the durable store and a str-Enum unpickles BY VALUE, so a member whose
+    # value vanishes fails the ENTIRE settings blob on load (every override,
+    # not just its own). It therefore keeps the value it was first stored
+    # under. Rename it only with a migration that rewrites the stored keys.
+    SKY_FLAT_SOURCE = "fringe_source"
 
 
 # Lower precedence = applied first by resolve_decisions.
