@@ -43,7 +43,7 @@ from pathlib import Path
 import numpy as np
 from scipy.ndimage import gaussian_filter, median_filter
 
-GAIN_METHOD = 3                # 3: a fit that is well-determined and lands below GAIN_RANGE
+GAIN_METHOD = 4                # 4: per-kind gain limits (a night-sky flat wants k~5-6)
                                # WITHHOLDS the flat (k = 0) instead of applying it whole
 GAIN_BAND_PX = (256, 1024)   # the etalon band, native px
 GAIN_SCALE = 8               # the fit runs at 1/GAIN_SCALE resolution
@@ -65,6 +65,18 @@ GAIN_RANGE = (0.5, 2.5)      # a believable etalon amplitude for a stack's own s
 # full flat applied, punching holes where the flat's own artifacts were.
 GAIN_CORR_TRUSTED = 0.5
 GAIN_UNUSUAL = (0.7, 2.0)    # outside this it is applied but worth a look
+# Per-KIND limits. The ranges above were tuned for the STAR flat, whose
+# pattern is measured from continuum and wants k ~ 1.3-1.5. A NIGHT-SKY flat
+# (stacks/sky_flat.py) is normalised by its members' TOTAL sky while the
+# etalon rides on the LINE sky, so it comes out diluted: three panels on
+# 2026-09-25 fitted k = 5.27 (H), 6.01 and 6.38 (S), each with per-sub scatter
+# under 1.2x. Under the star flat's (0.5, 2.5) every one of them was CLAMPED
+# to 2.5 and the flat applied at less than half the amplitude the sky wanted.
+# The kind rides in `gain_args` and therefore in the cache key.
+GAIN_LIMITS = {
+    "star": (GAIN_RANGE, GAIN_UNUSUAL),
+    "sky":  ((0.5, 8.0), (2.0, 8.0)),
+}
 
 
 def block_mean(a: np.ndarray, k: int) -> np.ndarray:
@@ -144,11 +156,11 @@ def sample_paths(paths, max_subs: int) -> list:
 
 def fit_gain(sub_paths, flat: np.ndarray, dark: np.ndarray | None, *,
              band=GAIN_BAND_PX, scale=GAIN_SCALE, max_subs=GAIN_MAX_SUBS,
-             read=None) -> dict:
+             gain_range=GAIN_RANGE, read=None) -> dict:
     """The gain the stack's sky wants on `flat`'s pattern.
 
     Returns {k, slopes, corrs, n_subs, n_used, band, scale}. `k` is 1 +
-    median(slopes) when the fit is believable (GAIN_RANGE, >= 3 subs), else
+    median(slopes) when the fit is believable (`gain_range`, >= 3 subs), else
     1.0 with `reason`. `read(path) -> ndarray` defaults to `file_io.generic.
     read_image`; a test passes its own.
     """
@@ -183,21 +195,21 @@ def fit_gain(sub_paths, flat: np.ndarray, dark: np.ndarray | None, *,
         return out
     k = 1.0 + float(np.median(slopes))
     corr = float(np.median(corrs))
-    if GAIN_RANGE[0] <= k <= GAIN_RANGE[1]:
+    if gain_range[0] <= k <= gain_range[1]:
         out.update(k=k)
         return out
     if abs(corr) < GAIN_CORR_TRUSTED:
-        out.update(k=1.0, k_fit=k, reason=f"fitted k={k:.2f} outside {GAIN_RANGE} "
+        out.update(k=1.0, k_fit=k, reason=f"fitted k={k:.2f} outside {gain_range} "
                                           f"and the fit is weak (|corr|={abs(corr):.2f}); "
                                           f"the flat is applied as built")
         return out
-    if k < GAIN_RANGE[0]:
+    if k < gain_range[0]:
         out.update(k=0.0, k_fit=k, withheld=True,
                    reason=f"fitted k={k:.2f} at |corr|={abs(corr):.2f} — this stack's sky does "
                           f"not contain the flat's pattern, so no star flat is applied")
         return out
-    out.update(k=GAIN_RANGE[1], k_fit=k,
-               reason=f"fitted k={k:.2f} above {GAIN_RANGE[1]} at |corr|={abs(corr):.2f}; clamped")
+    out.update(k=gain_range[1], k_fit=k,
+               reason=f"fitted k={k:.2f} above {gain_range[1]} at |corr|={abs(corr):.2f}; clamped")
     return out
 
 

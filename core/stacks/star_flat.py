@@ -51,7 +51,7 @@ from metadata.star_photometry import SCHEMA as PHOTOMETRY_SCHEMA
 from stacks.composite_stack import CalibrationStack, CalibrationStacksDict, Stack, _camera_id_hash_from
 from stacks.run import RunsDict
 from stacks.star_flat_gain import (
-    GAIN_BAND_PX, GAIN_MAX_SUBS, GAIN_METHOD, GAIN_SCALE, GAIN_UNUSUAL, apply_gain, fit_gain,
+    GAIN_BAND_PX, GAIN_LIMITS, GAIN_MAX_SUBS, GAIN_METHOD, GAIN_SCALE, apply_gain, fit_gain,
 )
 from stacks.starflat import (
     gather_star_photometry, response_image, solve_star_flat, split_half, write_master_flat,
@@ -525,7 +525,8 @@ GAIN_SECTION = "star_flat_gain"   # the scaled master's sidecar section: the fit
 
 @node(num_cpus=2, ephemeral=True, resources={"diskcache": 0.001})
 def scale_star_flat(stack: Stack, star_flat: ImageMetadata, dark: ImageMetadata | None,
-                    band: tuple, scale: int, max_subs: int, method: int) -> WithSidecar[XisfFilePath]:
+                    band: tuple, scale: int, max_subs: int, method: int,
+                    kind: str = "star") -> WithSidecar[XisfFilePath]:
     """The star flat re-scaled to THIS stack's sky: 1 + k * (F - 1), with k fitted
     on the stack's own subs in sensor coordinates (`stacks.star_flat_gain`).
     Handed to WBPP in place of the group's star flat, so the per-frame
@@ -551,7 +552,9 @@ def scale_star_flat(stack: Stack, star_flat: ImageMetadata, dark: ImageMetadata 
         raise FileNotFoundError(f"{len(missing)} of {len(paths)} subs unreadable here, e.g. {missing[0]}")
     flat = read_image(Path(star_flat.filename))
     dark_img = read_image(Path(dark.filename)) if dark is not None else None
-    fit = fit_gain(paths, flat, dark_img, band=band, scale=scale, max_subs=max_subs)
+    gain_range, unusual = GAIN_LIMITS[kind]
+    fit = fit_gain(paths, flat, dark_img, band=band, scale=scale, max_subs=max_subs,
+                   gain_range=gain_range)
     k = fit["k"]
     log.info("star flat gain", stack=str(stack), k=round(k, 3), n_used=fit["n_used"],
              median_corr=round(float(np.median(fit["corrs"])), 2) if fit["corrs"] else None,
@@ -568,7 +571,7 @@ def scale_star_flat(stack: Stack, star_flat: ImageMetadata, dark: ImageMetadata 
              f"{fit['reason']}. The stack's sky did not yield a believable amplitude for the "
              f"star flat's etalon pattern, so the group's flat is used unchanged.",
              stack=stack.stable_hash, **{k_: v for k_, v in fit.items() if k_ not in ("slopes", "corrs")})
-    elif not (GAIN_UNUSUAL[0] <= k <= GAIN_UNUSUAL[1]):
+    elif not (unusual[0] <= k <= unusual[1]):
         warn(f"Star flat gain k = {k:.2f} is unusual",
              "The stack's sky sees the sensor's etalon pattern at an amplitude far from what "
              "its neighbours do — often thin cloud or moonlight changing the sky's spectrum. "
@@ -590,10 +593,11 @@ def scale_star_flat(stack: Stack, star_flat: ImageMetadata, dark: ImageMetadata 
     return WithSidecar(XisfFilePath(dest))
 
 
-def gain_args(stack: Stack, star_flat, dark) -> tuple:
+def gain_args(stack: Stack, flat, dark, kind: str = "star") -> tuple:
     """`scale_star_flat`'s arguments for `stack` — the fit settings ride in
-    the cache key the same way `build_args` puts the solve settings there."""
-    return (stack, star_flat, dark, GAIN_BAND_PX, GAIN_SCALE, GAIN_MAX_SUBS, GAIN_METHOD)
+    the cache key the same way `build_args` puts the solve settings there.
+    `kind` selects the gain limits (`GAIN_LIMITS`): "star" or "sky"."""
+    return (stack, flat, dark, GAIN_BAND_PX, GAIN_SCALE, GAIN_MAX_SUBS, GAIN_METHOD, kind)
 
 
 def build_args(star_flat: StarFlatStack) -> tuple:

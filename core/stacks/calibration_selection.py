@@ -163,14 +163,20 @@ def _masters_by_type(
 def master_for(
     stack: BaseStack, cs: CalibrationStack, master: WithSidecar, dark: WithSidecar | None,
 ) -> WithSidecar:
-    """The master `stack` divides by. A star flat's pattern has the right shape
-    for every stack in its group but its own amplitude for each one (the
-    stack's sky sees the sensor's etalon at its own contrast), so the group's
-    flat is re-scaled to this stack before WBPP sees it; an integrated master
-    is used as built. `dark` lets the fit remove the pedestal first."""
+    """The master `stack` divides by. A star flat's or a night-sky flat's
+    pattern has the right shape for every stack in its group but its own
+    amplitude for each one (the stack's sky sees the sensor's etalon at its
+    own contrast), so the group's flat is re-scaled to this stack before WBPP
+    sees it; an integrated master is used as built. `dark` lets the fit
+    remove the pedestal first."""
+    from stacks.sky_flat import SkyFlatStack
     from stacks.star_flat import StarFlatStack, gain_args, scale_star_flat
     if isinstance(cs, StarFlatStack):
-        return scale_star_flat(*gain_args(stack, master, dark))
+        return scale_star_flat(*gain_args(stack, master, dark, kind="star"))
+    if isinstance(cs, SkyFlatStack):
+        # Same fit, wider limits: a night-sky flat is diluted by its members'
+        # continuum and wants k ~ 5-6 (see GAIN_LIMITS).
+        return scale_star_flat(*gain_args(stack, master, dark, kind="sky"))
     return master
 
 
