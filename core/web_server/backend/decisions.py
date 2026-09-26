@@ -127,3 +127,41 @@ def override_decision():
         "key": _serialize_key(key),
         "choice": raw_choice,
     })
+
+
+@decisions_bp.route("/api/decisions/override/bulk", methods=["POST"])
+def override_decisions_bulk():
+    """Set or clear MANY overrides in one settings update and ONE graph
+    restart.
+
+    Body: {"overrides": [{"key": [...], "choice": <value>|null}, ...]}
+    Same semantics per entry as `/api/decisions/override`. Exists because
+    the single-decision route drains and restarts the graph on every call,
+    which is right for a click and wrong for "set the flat for every panel
+    of a mosaic": 275 clicks' worth of restarts thrashed the app on
+    2026-09-25. Returns how many were set and how many cleared.
+    """
+    data = request.get_json() or {}
+    entries = data.get("overrides") or []
+    parsed = []
+    for e in entries:
+        key = _deserialize_key(e["key"])
+        raw = e.get("choice")
+        parsed.append((key, None if raw is None else _deserialize_choice(raw, key.decision_type)))
+
+    def updater(settings):
+        current = dict(settings.decision_overrides)
+        for key, choice in parsed:
+            if choice is None:
+                current.pop(key, None)
+            else:
+                current[key] = DecisionOverride(choice=choice)
+        return replace(settings, decision_overrides=frozendict(current))
+
+    context.settings = updater(context.settings)
+    state.drain_and_restart()
+
+    return jsonify({
+        "set": sum(1 for _, c in parsed if c is not None),
+        "cleared": sum(1 for _, c in parsed if c is None),
+    })
