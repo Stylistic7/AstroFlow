@@ -14,6 +14,15 @@ class DecisionType(str, Enum):
     CALIBRATION_BIAS = "calibration_bias"
     CALIBRATION_DARK = "calibration_dark"
     CALIBRATION_FLAT = "calibration_flat"
+    # RETIRED, kept LOADABLE. There is no fringe calibration type any more
+    # (a night-sky flat is a flat, stacks/sky_flat.py) and nothing creates
+    # this key. But decision points computed before the collapse are pickled
+    # in the durable store under STACK-keyed entries, and `ContextActor.
+    # or_equals` unpickles the stored value to compare — a str-Enum unpickles
+    # BY VALUE, so a missing value raises and the StateActor retries forever
+    # (boot105, 2026-09-25). A value that exists in the store cannot be
+    # deleted; it can only be migrated out. Remove this with that migration.
+    CALIBRATION_FRINGE = "calibration_fringe"
     # Not a calibration CHOICE but a promotion: "the frames of this stack are
     # blank sky, build a NIGHT-SKY FLAT from them". The user is the only one
     # who can know that — blank-sky frames arrive stamped `Light` like any
