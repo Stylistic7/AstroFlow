@@ -106,12 +106,32 @@ IMAGE_TYPE = "Master Flat"
 # emerges after averaging at the pattern's own scale over many frames. 15 is
 # the floor at which a 32 px-smoothed map reaches ~35% precision.
 MIN_FRAMES = 15
-# How the stars come out (see `combine_sky_flat`). A block median at 8x rejects
-# any star smaller than ~4 px outright; a 9-cell median filter on top of that
-# reaches ~72 px at full resolution, which covers the haloes of all but the
-# brightest. Measured: worst surviving star drops from 217 sigma to 7.7.
+# How the stars come out (see `combine_sky_flat`). The PRIMARY rejector is the
+# median ACROSS frames: the field is dithered, so a star sits on a different
+# pixel every frame while the sensor's pattern does not move at all. That is
+# what a median over 20 dithered frames is for, and it costs the pattern
+# nothing.
+#
+# A block median at 8x additionally rejects any star smaller than ~4 px, and
+# doubles as the downsample that makes the combine cheap. 8x = 8 native px,
+# far finer than the 64-400 px etalon cells, so it costs nothing either.
+#
+# MEDIAN_FOOTPRINT is now a light residual cleanup, NOT the star rejector. It
+# was 9 (=72 native px), which sits at the bottom of the etalon's own cell
+# range and measurably crushed the pattern: the S map came out with 0.00107
+# of etalon-band rms against the star flat's 0.00399 (2026-09-25). Spatial
+# smoothing big enough to remove a star is big enough to remove the signal —
+# that is why the rejection has to happen across frames instead.
 BLOCK = 8
-MEDIAN_FOOTPRINT = 9
+MEDIAN_FOOTPRINT = 3
+# Object masking, the canonical star rejector (IRAF `objmasks`): pixels above
+# `OBJECT_SIGMA` robust sigma over the frame's own sky are excluded, then the
+# mask is DILATED by `OBJECT_PAD` px to catch the low-level haloes a bare
+# threshold leaves behind. Masking beats smoothing because it removes a star
+# and leaves every other pixel untouched, where a kernel wide enough to cover
+# a star also degrades the 64-400 px etalon cells everywhere.
+OBJECT_SIGMA = 3.0
+OBJECT_PAD = 6
 
 
 @beartype
@@ -304,12 +324,24 @@ def combine_sky_flat(
       1. dark subtract, divide by the flat if there is one, normalise each
          frame by its own median so frames taken through different
          transparency contribute equally;
-      2. BLOCK-MEDIAN down by `BLOCK`, then a `MEDIAN_FOOTPRINT` median
-         filter — together these are "remove the stars". A block median
-         rejects anything smaller than half a block outright, and the filter
-         takes the survivors' haloes. The pattern is large-scale (its power
-         is unchanged from 8x to 32x binning), so nothing real is lost;
-      3. plain mean across frames, then subtract 1.
+      2. MASK the objects — pixels over OBJECT_SIGMA robust sigma above the
+         frame's own sky, dilated by OBJECT_PAD for their haloes (IRAF
+         `objmasks`). Masking EXCLUDES a star and leaves every other pixel
+         alone; a spatial kernel wide enough to cover a star also degrades
+         the 64-400 px etalon cells everywhere, which is how an earlier
+         72 px median left the S map at a quarter of the star flat's
+         etalon-band amplitude;
+      3. BLOCK-MEDIAN down by `BLOCK`, ignoring masked pixels, then MEDIAN
+         across frames. The dither is what makes this work: a star lands on
+         a different pixel every frame and is outvoted, while the sensor
+         pattern is in the same place every time. Then subtract 1.
+
+    NOT done, deliberately, though the literature does it: subtracting a
+    low-order fit per frame. Published recipes build the fringe frame from
+    ALREADY FLAT-FIELDED frames, so a low-order fit removes residual gradient
+    and leaves only fringe. This IS the flat, so a low-order fit would delete
+    the vignetting it exists to measure. Per-frame sky gradients are
+    suppressed by dither and rotation diversity instead.
 
     Then resample back to full resolution. The map carries no detail finer
     than a block by construction, so the upsample invents nothing — it
@@ -325,7 +357,7 @@ def combine_sky_flat(
 
     Returns `(fringe, quality)`; the fringe is float32, median 0.
     """
-    from scipy.ndimage import median_filter, zoom
+    from scipy.ndimage import binary_dilation, median_filter, zoom
 
     def calibrated(path: str) -> np.ndarray:
         f = np.asarray(read_image(Path(path)), np.float64)
@@ -336,18 +368,34 @@ def combine_sky_flat(
         m = float(np.nanmedian(f[::8, ::8]))
         return f / (m if abs(m) > 1e-6 else 1.0)
 
+    def masked(f: np.ndarray) -> np.ndarray:
+        """Objects out, everything else untouched (IRAF `objmasks`)."""
+        sky = float(np.nanmedian(f))
+        sigma = 1.4826 * float(np.nanmedian(np.abs(f - sky))) or 1e-6
+        bad = f > sky + OBJECT_SIGMA * sigma
+        bad = binary_dilation(bad, iterations=OBJECT_PAD)
+        out = f.copy()
+        out[bad] = np.nan
+        return out
+
     def starless(f: np.ndarray) -> np.ndarray:
+        """Block-median down, ignoring masked pixels."""
         h, w = (f.shape[0] // BLOCK) * BLOCK, (f.shape[1] // BLOCK) * BLOCK
-        small = np.median(
-            f[:h, :w].reshape(h // BLOCK, BLOCK, w // BLOCK, BLOCK), axis=(1, 3))
-        return median_filter(small, size=MEDIAN_FOOTPRINT)
+        blocks = f[:h, :w].reshape(h // BLOCK, BLOCK, w // BLOCK, BLOCK)
+        with np.errstate(invalid="ignore"):
+            small = np.nanmedian(blocks, axis=(1, 3))
+        return small
 
     shape = calibrated(member_files[0]).shape
-    acc = None
-    for path in member_files:
-        small = starless(calibrated(path))
-        acc = small if acc is None else acc + small
-    small = acc / len(member_files)
+    # MEDIAN across the dithers: a star lands on a different pixel every frame
+    # and is outvoted; the sensor pattern is in the same place every time.
+    # `nanmedian` so masked pixels simply do not vote.
+    cube = np.stack([starless(masked(calibrated(p))) for p in member_files])
+    with np.errstate(invalid="ignore"):
+        small = np.nanmedian(cube, axis=0)
+    # any cell masked in EVERY frame (there should be none with real dithering)
+    small = np.where(np.isfinite(small), small, np.nanmedian(small))
+    small = median_filter(small, size=MEDIAN_FOOTPRINT)   # light residual cleanup
     small = small / float(np.nanmedian(small)) - 1.0
 
     # back to the grid the map is subtracted on; order 1 is enough for a map
@@ -364,6 +412,9 @@ def combine_sky_flat(
         "p99": float(np.percentile(fringe, 99)),
         "block": BLOCK,
         "median_footprint": MEDIAN_FOOTPRINT,
+        "object_sigma": OBJECT_SIGMA,
+        "object_pad": OBJECT_PAD,
+        "combine": "masked-median-across-frames",
         "dark_subtracted": dark is not None,
     }
     return fringe.astype(np.float32), quality
