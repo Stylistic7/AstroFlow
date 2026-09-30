@@ -200,6 +200,32 @@ def test_stacks_endpoint_returns_raw_integration_s(client, with_orion_mosaic):
     assert checked > 0, "no stacks were actually checked"
 
 
+def test_metadata_route_selects_stacks_by_finish_role(client, monkeypatch):
+    """A channel finish's primary input is a band-join tap bound as "RGB"; the
+    polygons must be selected by the finish's ROLE (the stack filter), else no
+    target has a matching stack and every master footprint -- and the depth
+    overlay drawn on them -- disappears (2026-09-30). Composites pass None."""
+    import catalog
+    from types import SimpleNamespace
+    from catalog.finishes import BoundFinish, BoundInput
+    from web_server.backend import metadata as md
+
+    def bound(role):
+        finish = SimpleNamespace(name=role or "Hubble", role=role)
+        inp = BoundInput(index=0, tap="Linear SHO", filter="RGB", path=None,
+                         status="live", optional=False)
+        return BoundFinish("mosaic", "m0", "Pipe", finish, (inp,), "live")
+
+    seen = []
+    monkeypatch.setattr(md, "_resolve_object", lambda ot, oid, flt: seen.append(flt) or ("obj", flt))
+    monkeypatch.setattr(md, "_get_polygons", lambda pipeline, *args: [])
+    for role in ("S", None):
+        monkeypatch.setattr(catalog, "resolve_finish", lambda *a, _r=role: bound(_r))
+        resp = client.get(f"/api/metadata/mosaic/m0/Pipe/{role or 'Hubble'}")
+        assert resp.status_code == 200, resp.data[:200]
+    assert seen == ["S", None], seen
+
+
 @pytest.mark.exhaustive
 def test_metadata_route_with_finish_returns_polygons(client, with_orion_mosaic):
     """Regression for the 2026-05-30 production crash on the metadata route

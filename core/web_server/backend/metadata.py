@@ -234,15 +234,17 @@ def _resolve_object(object_type_str, object_id, filter):
 @finish_route(metadata_bp, "/api/metadata", hierarchy=("object_type", "object_id"))
 def metadata(object_type: str, object_id: str, pipeline: str, finish: str):
     """The polygons the viewer overlays for a finish: the objects under its
-    PRIMARY input, at the filter that input binds (a channel finish's role;
-    None for a composite, which spans every filter)."""
+    PRIMARY input, at the finish's ROLE (the stack filter a channel finish
+    shows: H/S/O/R/G/B/L); None for a composite, which spans every filter.
+    Not the input's bound filter: a channel finish reads a band-join tap
+    bound as "RGB", and no stack carries that filter, so the master
+    footprints (and the depth overlay drawn on them) would vanish."""
     from catalog import resolve_finish
     b = resolve_finish(object_type, object_id, pipeline, finish)
     if b is None:
         return abort(404)
-    primary = b.inputs[0]
     args = _resolve_object(object_type, object_id,
-                           primary.filter if b.role not in (None, "none") else None)
+                           b.role if b.role not in (None, "none") else None)
     return jsonify({"objects": _get_polygons(pipeline, *args)})
 
 
