@@ -16,13 +16,14 @@ finish's inputs are the tap pyramids the viewer samples.
 * `/tap/tile_metadata/.../<pipeline>/<finish>` — the finish spec plus, per
   input, image dimensions, tile size, level count, band roles and (for the
   primary) the per-channel statistics the finish seeds from.
-* `/tap/tile/.../<pipeline>/<finish>/{i}/{z}/{x}/{y}.f32` — one tile of
-  input `i`: raw float32 little-endian pixels, brotli-compressed
-  (`Content-Encoding: br`), cropped from the right pyvips pyramid page.
+* `/tap/tiles/.../<pipeline>/<finish>/{z}/{x}/{y}.f16` — one tile of every
+  input: float16 little-endian pixels concatenated in input order, band counts
+  in `X-Tile-Bands`; brotli-compressed for remote browsers only.
 """
 import io
 import os
 import threading
+import time
 
 import brotli
 import numpy as np
@@ -367,121 +368,129 @@ def tile_metadata_finish(object_type: str, object_id: str, pipeline: str,
     return jsonify(_finish_metadata(b, backend_port))
 
 
+# Every tile of a view resolves the same finish; resolving it per request
+# (catalog + snapshot lookups) was a fixed cost on every one of the hundreds
+# of tiles a zoom requests. Held briefly per process: a rebuilt product gets
+# a new pyramid mtime and so new tile URLs anyway.
+_FINISH_TTL_S = 5.0
+_finish_cache: dict = {}
+
+
+def _resolve_finish_cached(object_type, object_id, pipeline, finish):
+    from catalog import resolve_finish
+    key = (object_type, object_id, pipeline, finish)
+    hit = _finish_cache.get(key)
+    now = time.monotonic()
+    if hit is not None and now - hit[0] < _FINISH_TTL_S:
+        return hit[1]
+    b = resolve_finish(object_type, object_id, pipeline, finish)
+    _finish_cache[key] = (now, b)
+    return b
+
+
+def _geometry(path: str) -> tuple:
+    base = _get_vips_page(path, 0)
+    return base.width, base.height, _pyramid_levels(path)
+
+
+def _tile_array(path: str, x: int, y: int, z: int) -> np.ndarray | None:
+    """One _TILE_SIZE^2 tile of a pyramid as float16, (H, W) mono or (H, W, 3)
+    colour, zero-padded past the image edge; None when (x, y) is off the image.
+
+    float16 on the wire: float32 mantissa bits are noise to a compressor (a
+    3-band tile compressed to 77 % of 768 KB), half floats are a quarter of
+    that with 4e-4 worst-case relative error, and r16float / rgba16float
+    textures are always filterable (2026-10-01). Edge padding is exact zero,
+    which the shaders treat as "no data"."""
+    max_zoom = _pyramid_levels(path) - 1
+    img = _get_vips_page(path, max_zoom - z)
+    x0, y0 = x * _TILE_SIZE, y * _TILE_SIZE
+    w = min(_TILE_SIZE, img.width - x0)
+    h = min(_TILE_SIZE, img.height - y0)
+    if w <= 0 or h <= 0:
+        return None
+    tile = img.crop(x0, y0, w, h)
+    raw = tile.write_to_memory()
+    bands = tile.bands
+    if tile.format == "uchar":
+        # Legacy autostretched uint8 pyramids — rescale to [0, 1].
+        arr = np.frombuffer(raw, np.uint8).reshape(h, w, bands).astype(np.float32) / 255.0
+    else:
+        arr = np.frombuffer(raw, np.float32).reshape(h, w, bands)
+    arr = arr[..., :3] if bands >= 3 else arr[..., 0]
+    out = np.zeros((_TILE_SIZE, _TILE_SIZE) + arr.shape[2:], "<f2")
+    out[:h, :w] = np.nan_to_num(arr, nan=0.0, posinf=65504.0, neginf=-65504.0)
+    return out
+
+
+def _is_local_request() -> bool:
+    return request.remote_addr in ("127.0.0.1", "::1")
+
+
 @stateful_route(
     finish_route(
-        tiles_bp, "/tap/tile",
+        tiles_bp, "/tap/tiles",
         hierarchy=("object_type", "object_id"),
-        suffix="/<int:i>/<int:z>/<int:x>/<int:y>.f32",
+        suffix="/<int:z>/<int:x>/<int:y>.f16",
     ),
     sharding_key="object_id",
 )
 def serve_tile_finish(
     object_type: str, object_id: str, pipeline: str, finish: str,
-    i: int, z: int, x: int, y: int,
+    z: int, x: int, y: int,
 ):
-    """One tile of the finish's input `i` (0 = the primary)."""
-    from catalog import resolve_finish
-    b = resolve_finish(object_type, object_id, pipeline, finish)
-    if b is None or i >= len(b.inputs) or b.inputs[i].path is None:
+    """One tile of EVERY input of the finish, in one response: the inputs'
+    float16 tiles concatenated in input order. `X-Tile-Bands` lists each
+    input's band count (3 colour, 1 mono, 0 = not served: unbound, absent,
+    or a canvas that differs from the primary's -- the shader samples black
+    for it, as tile_metadata already told the viewer). Input 0 off the image
+    is a 404. One request per tile instead of one per input cut a three-input
+    view's request count threefold (2026-10-01)."""
+    b = _resolve_finish_cached(object_type, object_id, pipeline, finish)
+    if b is None or b.inputs[0].path is None:
         return abort(404)
-    return _serve_tile_response(os.fspath(b.inputs[i].path), object_type, object_id, x, y, z)
-
-
-def _serve_tile_response(path, object_type, object_id, x, y, z):
-    """Read one tile out of the pyramid, send it as float16 brotli-compressed
-    with `Content-Encoding: br`. The browser's `fetch` decompresses brotli on
-    the network thread; the bytes that arrive in JavaScript are half-float
-    bit patterns that upload to an r16float/rgba16float texture with no
-    parse step.
-
-    Pyvips is the natural read path because the tile pyramid TIFFs
-    were also written by pyvips. The earlier large_image[vips] path
-    routed `getTile()` through a JPEG-encoding step regardless of the
-    requested format, which silently rounded our linear-float pixels
-    to all-zero (the float values are << 1.0, JPEG quantizes to
-    uint8 [0,255]). Going pyvips end-to-end keeps the pixels as-is.
-    """
-    if path is None:
-        return abort(404)
-
     try:
-        # Map URL zoom (0 = lowest res) to pyvips page (0 = full res).
-        # tile_metadata returned `maxZoom = levels - 1`; pages are
-        # symmetric to that.
-        max_zoom = _pyramid_levels(path) - 1
-        page = max_zoom - z
-        img = _get_vips_page(path, page)
-
-        x0 = x * _TILE_SIZE
-        y0 = y * _TILE_SIZE
-        w = min(_TILE_SIZE, img.width - x0)
-        h = min(_TILE_SIZE, img.height - y0)
-        if w <= 0 or h <= 0:
+        primary = os.fspath(b.inputs[0].path)
+        geometry = _geometry(primary)
+        arrays = []
+        for bound in b.inputs:
+            if bound.path is None:
+                arrays.append(None)
+                continue
+            path = os.fspath(bound.path)
+            if path != primary and _geometry(path) != geometry:
+                arrays.append(None)
+                continue
+            try:
+                arrays.append(_tile_array(path, x, y, z))
+            except Exception:
+                if path == primary:
+                    raise
+                arrays.append(None)   # an extra input degrades to black
+        if arrays[0] is None:
             return abort(404)
-        tile = img.crop(x0, y0, w, h)
-        raw = tile.write_to_memory()
-        bands = tile.bands
-
-        if tile.format == "float":
-            arr = np.frombuffer(raw, dtype=np.float32).reshape(h, w, bands)
-        elif tile.format == "uchar":
-            # Legacy autostretched uint8 pyramids — rescale to [0,1]
-            # so the shader's per-pixel normalization still lines up.
-            arr = (
-                np.frombuffer(raw, dtype=np.uint8)
-                .reshape(h, w, bands)
-                .astype(np.float32) / 255.0
-            )
+        body = b"".join(a.tobytes() for a in arrays if a is not None)
+        bands = [0 if a is None else (3 if a.ndim == 3 else 1) for a in arrays]
+        if _is_local_request():
+            # Same machine: bandwidth is free and compressing costs CPU on
+            # both ends, so send the half floats as they are.
+            resp = Response(body, mimetype="application/octet-stream")
         else:
-            arr = np.frombuffer(raw, dtype=np.float32).reshape(h, w, bands).astype("<f4")
-
-        # Color path: 3-band baked-stretch RGB served interleaved; the
-        # shader samples .rgb and passes it through (stretch is baked in).
-        # Mono path: a single linear channel the shader tone-maps client-
-        # side. `X-Tile-Bands` tells the client which decode/texture to use.
-        color = bands >= 3
-        send_bands = 3 if color else 1
-        arr = arr[..., :3] if color else arr[..., 0]
-
-        # Edge tiles get padded to a full _TILE_SIZE × _TILE_SIZE with
-        # zeros — the shader renders those pixels as opaque black, which
-        # is the correct "no data" appearance past the image's actual
-        # bounds (mono short-circuits on xRaw==0; color emits vec3(0)).
-        # Padding eliminates the frontend's "texture smaller than the
-        # mesh" case. Matches what `large_image.getTile()` did implicitly.
-        if h < _TILE_SIZE or w < _TILE_SIZE:
-            pad_shape = ((_TILE_SIZE, _TILE_SIZE, send_bands) if color
-                         else (_TILE_SIZE, _TILE_SIZE))
-            padded = np.zeros(pad_shape, dtype=np.float32)
-            padded[:h, :w] = arr
-            arr = padded
-            h = w = _TILE_SIZE
-
-        # float16 on the wire: float32 mantissa bits are noise to brotli (a
-        # 3-band tile compressed to 77 % of 768 KB), half floats compress to
-        # ~23 % of it with 4e-4 worst-case relative error, and r16float /
-        # rgba16float textures are always filterable (2026-10-01).
-        arr = np.nan_to_num(arr, nan=0.0, posinf=65504.0, neginf=-65504.0)
-        arr = np.ascontiguousarray(arr.astype("<f2"))
-        compressed = brotli.compress(arr.tobytes(), quality=_TILE_BROTLI_QUALITY)
-        resp = Response(compressed, mimetype="application/octet-stream")
-        resp.headers["Content-Encoding"] = "br"
+            resp = Response(brotli.compress(body, quality=_TILE_BROTLI_QUALITY),
+                            mimetype="application/octet-stream")
+            resp.headers["Content-Encoding"] = "br"
+        resp.headers["X-Tile-Width"] = str(_TILE_SIZE)
+        resp.headers["X-Tile-Height"] = str(_TILE_SIZE)
+        resp.headers["X-Tile-Bands"] = ",".join(map(str, bands))
         if request.args.get("v"):
-            # `v` is the pyramid's mtime: a rebuilt pyramid gets a new URL,
-            # so a versioned tile never changes and the browser may keep it.
+            # `v` carries the inputs' pyramid mtimes: a rebuilt pyramid gets a
+            # new URL, so a versioned tile never changes and may be kept.
             resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-        resp.headers["X-Tile-Width"] = str(w)
-        resp.headers["X-Tile-Height"] = str(h)
-        resp.headers["X-Tile-Bands"] = str(send_bands)
         return resp
     except HTTPException:
-        # An `abort(404)` raised INSIDE this try (the out-of-bounds tile check
-        # below) is a NotFound, which `except Exception` used to swallow and
-        # re-report as 500. A 500 reads as "server error, retry" — one viewer
-        # holding stale tile_metadata across a rebuild then looped at ~3,220
-        # req/min (36,150 errors on 2026-08-14), burying every `### node_exec`
-        # line in the log. Let the real status through so the client can treat
-        # it as "gone" and re-fetch metadata instead of hammering.
+        # A real status (404) must reach the client as itself, never as a
+        # 500 that reads as "retry": one viewer holding stale metadata across
+        # a rebuild once looped at ~3,220 req/min (2026-08-14).
         raise
     except Exception as e:
         _log_tile_error(object_type, object_id, e)

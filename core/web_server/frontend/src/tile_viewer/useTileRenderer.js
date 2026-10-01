@@ -23,7 +23,7 @@
  *
  * Tile data flow:
  *   caller computes visible (z, x, y) tile coords from current viewport
- *   → setTileUrls([{key, urls, worldRect}, ...]) — one URL per finish input
+ *   → setTileUrls([{key, url, worldRect}, ...]) — one URL for all finish inputs
  *   → renderer fetches each missing tile's inputs, uploads them as float
  *     textures, creates a per-tile bind group with the tile's world rect
  *   → next frame draws all currently-loaded tiles via the finish pipeline
@@ -31,7 +31,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { buildFinishShader, MAX_INPUTS } from './generic_finish_shader.js';
-import { fetchLinearTile } from './tile_loader.js';
+import { fetchTileInputs } from './tile_loader.js';
 
 
 // Group 0: globals + viewport + sampler + the finish's DisplayParams.
@@ -308,7 +308,9 @@ function makeRenderer(stateRef) {
     // thousands of requests in flight and Chrome refused new ones with
     // net::ERR_INSUFFICIENT_RESOURCES ("Failed to fetch") -- the 1 Hz ray-status
     // poll was the visible casualty. The browser runs ~6 per host anyway.
-    const MAX_IN_FLIGHT = 16;
+    // One request per tile now carries every input; 32 in flight keeps the 16
+    // tile-server processes busy without queueing far behind the viewport.
+    const MAX_IN_FLIGHT = 32;
 
     function destroyTile(tile) {
         for (const t of tile.textures) t.destroy();
@@ -320,10 +322,10 @@ function makeRenderer(stateRef) {
      * leave the visible set, so a small pan back doesn't trigger
      * re-fetch + black-square flicker.
      *
-     * `wanted` is an array of `{ key, urls, worldRect }` where:
+     * `wanted` is an array of `{ key, url, worldRect }` where:
      *   key       — stable cache key (e.g. `${z}/${x}/${y}#${finish_hash}`)
-     *   urls      — one backend tile URL per finish input, null where the
-     *               input isn't built (binds the black dummy)
+     *   url       — one backend URL returning every finish input's tile; an
+     *               input that isn't built comes back empty (black dummy)
      *   worldRect — { x, y, w, h } in IMAGE pixel coordinates
      */
     function setTileUrls(wanted) {
@@ -414,15 +416,11 @@ function makeRenderer(stateRef) {
         const startTile = (tw) => {
             const ctl = new AbortController();
             pending.set(tw.key, ctl);
-            const urls = tw.urls.slice(0, MAX_INPUTS);
-            Promise.all(urls.map((u, i) => {
-                if (!u) return Promise.resolve(null);
-                const p = fetchLinearTile(u, ctl.signal);
-                return i === 0 ? p : p.catch(() => null);
-            })).then((inputs) => {
+            fetchTileInputs(tw.url, ctl.signal).then((fetched) => {
                 if (pending.get(tw.key) === ctl) pending.delete(tw.key);
-                if (inputs[0] === null) return;
+                if (!fetched || !fetched[0]) return;
                 if (!stateRef.current) return;
+                const inputs = fetched.slice(0, MAX_INPUTS);
 
                 const views = inputs.map((d) => (d ? uploadTile(d) : null));
 

@@ -13,12 +13,13 @@ const TILE_SIZE = 256;
 
 
 /**
- * Fetch a tile as IEEE float16 bit patterns (a Uint16Array, uploaded as-is to
- * an r16float / rgba16float texture). Returns { array, width, height, bands }
- * or null for 404 (off the edge of the image). `bands` is 1 for a mono
- * channel or 3 for RGB; the array is band-interleaved (RGBRGB…).
+ * Fetch one tile of EVERY finish input in one request. The body is the
+ * inputs' float16 tiles concatenated in input order; `X-Tile-Bands` lists each
+ * input's band count (3 colour, 1 mono, 0 = not served). Returns an array with
+ * one { array: Uint16Array of IEEE half bits, width, height, bands } or null
+ * per input, or null for a 404 (off the edge of the image).
  */
-export async function fetchLinearTile(url, signal) {
+export async function fetchTileInputs(url, signal) {
     const resp = await fetch(url, { signal });
     if (!resp.ok) {
         if (resp.status === 404) return null;
@@ -27,11 +28,14 @@ export async function fetchLinearTile(url, signal) {
     const buffer = await resp.arrayBuffer();
     const width = parseInt(resp.headers.get("X-Tile-Width") || TILE_SIZE, 10);
     const height = parseInt(resp.headers.get("X-Tile-Height") || TILE_SIZE, 10);
-    const bands = parseInt(resp.headers.get("X-Tile-Bands") || "1", 10);
-    return {
-        array: new Uint16Array(buffer),
-        width,
-        height,
-        bands,
-    };
+    const bandList = (resp.headers.get("X-Tile-Bands") || "1").split(",").map(Number);
+    const out = [];
+    let offset = 0;
+    for (const bands of bandList) {
+        if (!bands) { out.push(null); continue; }
+        const n = width * height * bands;
+        out.push({ array: new Uint16Array(buffer, offset, n), width, height, bands });
+        offset += n * 2;
+    }
+    return out;
 }

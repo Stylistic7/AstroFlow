@@ -39,7 +39,10 @@ def guincorn_configs() -> list[GunicornConfig]:
             worker_type="sync",
             num_servers=4,
             start_port=8002,
-            num_workers=1,
+            # Four processes per tile server (16 in all): one process is one
+            # GIL, and four servers of one process each plateaued at ~250
+            # tiles/s no matter how many requests were in flight (2026-10-01).
+            num_workers=4,
             timeout=300,
         ),
     }

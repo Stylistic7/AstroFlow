@@ -64,8 +64,9 @@ function pointInPolygon(x, y, points) {
  * visible and what their world-space rectangles are. The world coordinate
  * system is the FULL-resolution image of input 0 (the geometry anchor —
  * every input of a finish shares its viewbox); each pyramid level renders
- * at world coords scaled by `2^(maxZoom - z)`. Each tile carries one URL
- * per finish input (null where the input isn't built, which binds black).
+ * at world coords scaled by `2^(maxZoom - z)`. Each tile carries ONE URL
+ * that returns every finish input (an unbuilt input comes back empty and
+ * binds black). Returned centre-out.
  */
 function computeVisibleTiles({ viewport, meta, view, hierarchy }) {
     const { tx, ty, scale, screenW, screenH } = viewport;
@@ -108,29 +109,25 @@ function computeVisibleTiles({ viewport, meta, view, hierarchy }) {
     const y1 = Math.min(tilesY - 1, Math.floor(worldBottom / sourceTileWorld) + 1);
 
     const origin = `${window.location.protocol}//${window.location.hostname}`;
+    const version = meta.inputs.map((inp) => (inp.bound ? inp.mtime : 0)).join('_');
     const wanted = [];
     for (let ty_ = y0; ty_ <= y1; ty_++) {
         for (let tx_ = x0; tx_ <= x1; tx_++) {
-            // One URL per input, spread over EVERY tile server by tile
-            // coordinate (each is one process; one object's tiles on one port
-            // capped delivery at its threads and the browser's six connections
-            // per host:port). `v=mtime` is the version: a regenerated pyramid
-            // gets a new mtime, so the browser may cache tiles forever.
-            const urls = meta.inputs.map((inp, i) => {
-                if (!inp.bound) return null;
-                const rel = buildApiUrl('/tap/tile', hierarchy, view,
-                                        `/${i}/${z}/${tx_}/${ty_}.f32`);
-                const ports = meta.tilePorts;
-                const port = ports[(tx_ * 7 + ty_ * 13 + i) % ports.length];
-                const url = new URL(rel, `${origin}:${port}`);
-                url.searchParams.set('v', inp.mtime);
-                return url.href;
-            });
+            // ONE request per tile carries every input, spread over every
+            // tile server by tile coordinate (one object's tiles on one port
+            // capped delivery at that server and at the browser's six
+            // connections per host:port). `v` is the inputs' pyramid mtimes:
+            // a regenerated pyramid gets a new URL, so tiles cache forever.
+            const rel = buildApiUrl('/tap/tiles', hierarchy, view,
+                                    `/${z}/${tx_}/${ty_}.f16`);
+            const ports = meta.tilePorts;
+            const url = new URL(rel, `${origin}:${ports[(tx_ * 7 + ty_ * 13) % ports.length]}`);
+            url.searchParams.set('v', version);
             // The key folds the finish so switching finishes refetches
             // instead of reusing tiles bound to other inputs.
             wanted.push({
                 key: `${z}/${tx_}/${ty_}#${meta.finish.finish_hash}`,
-                urls,
+                url: url.href,
                 worldRect: {
                     x: tx_ * sourceTileWorld,
                     y: ty_ * sourceTileWorld,
@@ -140,7 +137,13 @@ function computeVisibleTiles({ viewport, meta, view, hierarchy }) {
             });
         }
     }
-    return wanted;
+    // Centre out: the tiles under the middle of the screen load first and the
+    // view sharpens evenly, instead of filling in rows from the top-left.
+    const cx = (worldLeft + worldRight) / 2;
+    const cy = (worldTop + worldBottom) / 2;
+    const dist = (t) => (t.worldRect.x + t.worldRect.w / 2 - cx) ** 2
+        + (t.worldRect.y + t.worldRect.h / 2 - cy) ** 2;
+    return wanted.sort((a, b) => dist(a) - dist(b));
 }
 
 
