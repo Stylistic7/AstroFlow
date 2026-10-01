@@ -30,7 +30,7 @@ import pyvips
 from flask import Blueprint, request, abort, jsonify, Response
 from werkzeug.exceptions import HTTPException
 
-from web_server.backend.router import stateful_route
+from web_server.backend.router import BACKEND_PORTS, stateful_route
 from web_server.backend._route import finish_route
 from previews.create_tile_pyramid import payload_tags
 
@@ -343,6 +343,10 @@ def _finish_metadata(b, backend_port) -> dict:
         # still building); the viewer badges it. See catalog.resolve_product.
         "finish": b.finish.spec(),
         "inputs": inputs,
+        # Every tile server: the viewer spreads tiles across all of them by
+        # tile coordinate (any backend serves any tile; the router's shard
+        # only picks where a bare request is redirected).
+        "tilePorts": list(BACKEND_PORTS),
     }
 
 
@@ -384,11 +388,11 @@ def serve_tile_finish(
 
 
 def _serve_tile_response(path, object_type, object_id, x, y, z):
-    """Read one tile out of the pyramid as float32, brotli-compress,
-    return with `Content-Encoding: br`. The browser's `fetch`
-    decompresses brotli on the network thread; the bytes that arrive
-    in JavaScript are Float32Array-compatible and upload to a WebGL
-    R32F texture with no parse step.
+    """Read one tile out of the pyramid, send it as float16 brotli-compressed
+    with `Content-Encoding: br`. The browser's `fetch` decompresses brotli on
+    the network thread; the bytes that arrive in JavaScript are half-float
+    bit patterns that upload to an r16float/rgba16float texture with no
+    parse step.
 
     Pyvips is the natural read path because the tile pyramid TIFFs
     were also written by pyvips. The earlier large_image[vips] path
@@ -453,10 +457,19 @@ def _serve_tile_response(path, object_type, object_id, x, y, z):
             arr = padded
             h = w = _TILE_SIZE
 
-        arr = np.ascontiguousarray(arr.astype("<f4"))
+        # float16 on the wire: float32 mantissa bits are noise to brotli (a
+        # 3-band tile compressed to 77 % of 768 KB), half floats compress to
+        # ~23 % of it with 4e-4 worst-case relative error, and r16float /
+        # rgba16float textures are always filterable (2026-10-01).
+        arr = np.nan_to_num(arr, nan=0.0, posinf=65504.0, neginf=-65504.0)
+        arr = np.ascontiguousarray(arr.astype("<f2"))
         compressed = brotli.compress(arr.tobytes(), quality=_TILE_BROTLI_QUALITY)
         resp = Response(compressed, mimetype="application/octet-stream")
         resp.headers["Content-Encoding"] = "br"
+        if request.args.get("v"):
+            # `v` is the pyramid's mtime: a rebuilt pyramid gets a new URL,
+            # so a versioned tile never changes and the browser may keep it.
+            resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         resp.headers["X-Tile-Width"] = str(w)
         resp.headers["X-Tile-Height"] = str(h)
         resp.headers["X-Tile-Bands"] = str(send_bands)

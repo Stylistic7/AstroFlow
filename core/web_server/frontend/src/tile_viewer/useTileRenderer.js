@@ -49,18 +49,21 @@ const GLOBALS_BYTES = 16;
 // prefix; the shader reads only its own fields, the rest is slack.
 const FINISH_PARAMS_BYTES = 256;
 
+// IEEE half 1.0 (the dummy texture's alpha).
+const HALF_ONE_BITS = 0x3C00;
+
 // Group 1 (per tile): the TileRect uniform + MAX_INPUTS texture slots, one
 // per finish input (src0..src3), dummy-bound when a finish declares fewer
 // or an input isn't built. A pipeline layout may carry bindings a shader
 // never declares, so no bind group is ever rebuilt when the finish changes.
-// r32float/rgba32float are `unfilterable-float` by default; linear
-// filtering requires the `float32-filterable` feature.
+// Tiles arrive as float16 and upload as r16float/rgba16float, which are
+// always filterable -- no optional `float32-filterable` feature needed.
 const TILE_LAYOUT_ENTRIES = [
     { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
     ...Array.from({ length: MAX_INPUTS }, (_, i) => ({
         binding: 1 + i,
         visibility: GPUShaderStage.FRAGMENT,
-        texture: { sampleType: 'unfilterable-float' },
+        texture: { sampleType: 'float' },
     })),
 ];
 
@@ -294,8 +297,8 @@ function makeRenderer(stateRef) {
     // Cache cap. Sized generously because EVERY cached tile is a
     // potential fallback for either zoom direction — the no-blink
     // behavior comes from accumulating tiles so the previous LOD is
-    // always there to cover loading ones. At 256 KB per r32float tile,
-    // 2 000 tiles ≈ 500 MB of GPU memory — fine for a Mac-Studio-class
+    // always there to cover loading ones. At 128 KB per r16float tile,
+    // 2 000 tiles ≈ 250 MB of GPU memory — fine for a Mac-Studio-class
     // machine and lets users explore a full mosaic across all LODs
     // without ever evicting fallback tiles.
     const MAX_CACHE_SIZE = 2000;
@@ -367,27 +370,28 @@ function makeRenderer(stateRef) {
             }
         }
 
-        // Upload one decoded tile as a GPU texture. Color tiles (bands>=3)
-        // arrive band-interleaved (RGB); WebGPU has no 3-channel float
-        // format, so expand to RGBA (alpha=1) and upload as rgba32float.
-        // Mono tiles stay single-channel r32float. The tile layout's float
-        // sampleType accepts both, so the same pipeline renders either.
+        // Upload one decoded tile as a GPU texture. Tiles arrive as IEEE
+        // float16 bit patterns (Uint16Array). Color tiles (bands>=3) are
+        // band-interleaved RGB; WebGPU has no 3-channel format, so expand to
+        // RGBA (alpha = half 1.0 = 0x3C00) and upload as rgba16float. Mono
+        // tiles stay single-channel r16float. Both sample as `float`.
+        const HALF_ONE = 0x3C00;
         const uploadTile = (data) => {
             const color = data.bands >= 3;
             let uploadArray = data.array;
             if (color) {
                 const px = data.width * data.height;
-                uploadArray = new Float32Array(px * 4);
+                uploadArray = new Uint16Array(px * 4);
                 for (let i = 0; i < px; i++) {
                     uploadArray[i * 4 + 0] = data.array[i * 3 + 0];
                     uploadArray[i * 4 + 1] = data.array[i * 3 + 1];
                     uploadArray[i * 4 + 2] = data.array[i * 3 + 2];
-                    uploadArray[i * 4 + 3] = 1.0;
+                    uploadArray[i * 4 + 3] = HALF_ONE;
                 }
             }
             const texture = device.createTexture({
                 size: [data.width, data.height],
-                format: color ? 'rgba32float' : 'r32float',
+                format: color ? 'rgba16float' : 'r16float',
                 usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
             });
             device.queue.writeTexture(
@@ -395,7 +399,7 @@ function makeRenderer(stateRef) {
                 uploadArray.buffer,
                 {
                     offset: uploadArray.byteOffset,
-                    bytesPerRow: data.width * (color ? 16 : 4),
+                    bytesPerRow: data.width * (color ? 8 : 2),
                     rowsPerImage: data.height,
                 },
                 { width: data.width, height: data.height, depthOrArrayLayers: 1 },
@@ -524,15 +528,7 @@ export function useTileRenderer({ canvasRef }) {
             const adapter = await navigator.gpu.requestAdapter();
             if (!adapter) { setError('No WebGPU adapter'); return; }
 
-            // `float32-filterable` lets us sample r32float textures
-            // with `filtering` samplers — without it we get nearest-
-            // neighbor on r32float, which shows pixel edges on zoom-out.
-            // Available on all desktop platforms; absent on some
-            // mobile. Request optionally.
-            const wantsFilterable = adapter.features.has('float32-filterable');
-            const device = await adapter.requestDevice({
-                requiredFeatures: wantsFilterable ? ['float32-filterable'] : [],
-            });
+            const device = await adapter.requestDevice();
             if (cancelled) return;
 
             const canvas = canvasRef.current;
@@ -547,10 +543,10 @@ export function useTileRenderer({ canvasRef }) {
                 alphaMode: 'opaque',
             });
 
-            // Sampler: linear-filtering when supported, nearest otherwise.
+            // Half-float tiles are always filterable: linear sampling.
             const sampler = device.createSampler({
-                magFilter: wantsFilterable ? 'linear' : 'nearest',
-                minFilter: wantsFilterable ? 'linear' : 'nearest',
+                magFilter: 'linear',
+                minFilter: 'linear',
                 mipmapFilter: 'nearest',
                 addressModeU: 'clamp-to-edge',
                 addressModeV: 'clamp-to-edge',
@@ -579,30 +575,21 @@ export function useTileRenderer({ canvasRef }) {
             // which its math treats as "absent".
             const dummyTexture = device.createTexture({
                 size: [1, 1],
-                format: 'rgba32float',
+                format: 'rgba16float',
                 usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
             });
             device.queue.writeTexture(
                 { texture: dummyTexture },
-                new Float32Array([0, 0, 0, 1]).buffer,
-                { bytesPerRow: 16, rowsPerImage: 1 },
+                new Uint16Array([0, 0, 0, HALF_ONE_BITS]).buffer,
+                { bytesPerRow: 8, rowsPerImage: 1 },
                 { width: 1, height: 1, depthOrArrayLayers: 1 },
             );
 
             const globalsLayout = device.createBindGroupLayout({
                 entries: GLOBALS_LAYOUT_ENTRIES,
             });
-            // EVERY texture entry gets the filterable sample type when the
-            // feature is on: `tileSampler` is then a FILTERING sampler, and
-            // sampling an `unfilterable-float` binding with it is a
-            // VALIDATION ERROR — the pipeline is created invalid and every
-            // draw silently no-ops (black canvas, console-only error).
             const tileLayout = device.createBindGroupLayout({
-                entries: wantsFilterable
-                    ? TILE_LAYOUT_ENTRIES.map((e) => (e.texture
-                        ? { ...e, texture: { sampleType: 'float' } }
-                        : e))
-                    : TILE_LAYOUT_ENTRIES,
+                entries: TILE_LAYOUT_ENTRIES,
             });
 
             const globalsBindGroup = device.createBindGroup({

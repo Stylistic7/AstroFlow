@@ -111,13 +111,18 @@ function computeVisibleTiles({ viewport, meta, view, hierarchy }) {
     const wanted = [];
     for (let ty_ = y0; ty_ <= y1; ty_++) {
         for (let tx_ = x0; tx_ <= x1; tx_++) {
-            // One URL per input, on that input's shard port. `v=mtime` is a
-            // cache-buster (pyramid file regenerated → new mtime).
+            // One URL per input, spread over EVERY tile server by tile
+            // coordinate (each is one process; one object's tiles on one port
+            // capped delivery at its threads and the browser's six connections
+            // per host:port). `v=mtime` is the version: a regenerated pyramid
+            // gets a new mtime, so the browser may cache tiles forever.
             const urls = meta.inputs.map((inp, i) => {
                 if (!inp.bound) return null;
                 const rel = buildApiUrl('/tap/tile', hierarchy, view,
                                         `/${i}/${z}/${tx_}/${ty_}.f32`);
-                const url = new URL(rel, `${origin}:${inp.port}`);
+                const ports = meta.tilePorts;
+                const port = ports[(tx_ * 7 + ty_ * 13 + i) % ports.length];
+                const url = new URL(rel, `${origin}:${port}`);
                 url.searchParams.set('v', inp.mtime);
                 return url.href;
             });
