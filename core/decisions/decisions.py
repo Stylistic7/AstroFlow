@@ -55,6 +55,11 @@ class ObjectType(str, Enum):
     STACK = "stack"
     TARGET = "target"
     MOSAIC = "mosaic"
+    # A run inside a stack. Run-level keys need their own type: a run's hash
+    # is its oldest subframe's, and so is its stack's, so the run holding
+    # the stack's oldest sub has the stack's id -- typed as STACK its key
+    # would be the stack-level key (whole stack quarantined, 2026-10-01).
+    RUN = "run"
 
 
 _CAL_TYPE_TO_DECISION_TYPE: dict[str, DecisionType] = {
@@ -71,7 +76,8 @@ class DecisionKey:
     `parent_stack_id` is the stack hash that owns this decision — used
     by per-stack cache filtering. For stack/target/mosaic-level
     decisions, `parent_stack_id == subject_id`. For run-level decisions,
-    `subject_id` is the run hash.
+    `subject_id` is the run hash and -- for quarantine -- `object_type`
+    is RUN, never inferred from subject != parent (see ObjectType.RUN).
     """
     decision_type: DecisionType
     object_type: ObjectType
@@ -92,12 +98,15 @@ class DecisionKey:
         object_id: str,
         parent_stack_id: str | None = None,
     ) -> "DecisionKey":
-        return cls(
-            DecisionType.QUARANTINE,
-            object_type,
-            parent_stack_id or object_id,
-            object_id,
-        )
+        """Stack/target/mosaic-level key, or -- with `parent_stack_id` -- the
+        RUN-level key (quarantine, RUN, stack, run). The run type is what
+        keeps the run that carries the stack's own id distinct from the
+        stack-level key."""
+        if parent_stack_id is not None:
+            return cls(
+                DecisionType.QUARANTINE, ObjectType.RUN, parent_stack_id, object_id,
+            )
+        return cls(DecisionType.QUARANTINE, object_type, object_id, object_id)
 
     @classmethod
     def sky_flat_source(cls, stack_id: str) -> "DecisionKey":

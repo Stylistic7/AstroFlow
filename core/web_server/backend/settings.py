@@ -33,12 +33,17 @@ def toggle_quarantine(object_type, object_id):
     ?parent=<stack_hash> so the decision key carries the stack hash as
     its parent_stack_id (required for per-stack decision filtering).
     """
-    type_map = {"stack": ObjectType.STACK, "target": ObjectType.TARGET, "mosaic": ObjectType.MOSAIC}
+    type_map = {
+        "stack": ObjectType.STACK, "target": ObjectType.TARGET,
+        "mosaic": ObjectType.MOSAIC, "run": ObjectType.RUN,
+    }
     obj_type = type_map.get(object_type)
     if obj_type is None:
         return jsonify({"error": f"Unknown object type: {object_type}"}), 400
 
     parent_stack_id = request.args.get("parent")
+    if obj_type is ObjectType.RUN and not parent_stack_id:
+        return jsonify({"error": "a run quarantine needs ?parent=<stack hash>"}), 400
     key = DecisionKey.quarantine(obj_type, object_id, parent_stack_id)
 
     current_overrides = context.settings.decision_overrides
@@ -115,11 +120,9 @@ def _quarantined_frame_files() -> list[Path]:
             continue
         if override.choice != BinaryChoice.EXCLUDE:
             continue
-        if key.object_type != ObjectType.STACK:
-            continue
-        if key.parent_stack_id != key.subject_id:
+        if key.object_type == ObjectType.RUN:
             quarantined_run_ids.setdefault(key.parent_stack_id, set()).add(key.subject_id)
-        else:
+        elif key.object_type == ObjectType.STACK:
             quarantined_stack_ids.add(key.subject_id)
 
     files = []

@@ -27,7 +27,10 @@ def _apply_run_exclusions(
         for key, override in decision_overrides.items()
         if (
             key.decision_type == decision_type
-            and key.object_type == ObjectType.STACK
+            # quarantine keys for runs are RUN-typed; rotation outliers
+            # (and a stack-level quarantine, whose subject is the stack id)
+            # stay STACK-typed
+            and key.object_type in (ObjectType.STACK, ObjectType.RUN)
             and override.choice == BinaryChoice.EXCLUDE
         )
     }

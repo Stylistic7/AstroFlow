@@ -21,8 +21,10 @@ def test_quarantine_key_stack():
 
 
 def test_quarantine_key_run_with_parent():
+    # run-level keys are RUN-typed, so the run that carries its stack's id
+    # never collides with the stack-level key
     key = DecisionKey.quarantine(ObjectType.STACK, "run1", parent_stack_id="stack1")
-    assert key == DecisionKey(DecisionType.QUARANTINE, ObjectType.STACK, "stack1", "run1")
+    assert key == DecisionKey(DecisionType.QUARANTINE, ObjectType.RUN, "stack1", "run1")
     assert key.matches_stack("stack1")
     assert not key.matches_stack("other")
 

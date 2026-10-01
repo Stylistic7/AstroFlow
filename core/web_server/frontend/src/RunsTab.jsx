@@ -161,7 +161,7 @@ const RunsTab = ({ stack }) => {
   return (
     <Box>
       {runs.map((run) => {
-        const quarantined = isQuarantined("stack", run.id);
+        const quarantined = isQuarantined("run", run.id);
         if (quarantined && !showQuarantined) return null;
         const selectedFlatId = getSelectedFlatByRun(run);
         const runDate = new Date(run.newest_date);
@@ -189,7 +189,7 @@ const RunsTab = ({ stack }) => {
                 ))}
               </Box>
               <QuarantineToggle
-                objectType="stack"
+                objectType="run"
                 objectId={run.id}
                 parentId={stack.stable_hash}
               />
