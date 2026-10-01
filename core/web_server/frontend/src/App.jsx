@@ -90,14 +90,22 @@ function App() {
 
     loadObjectData();
 
+    // Polled on every SSE tick. A refused fetch (the browser's in-flight
+    // budget during a zoom burst, a proxy hiccup) keeps the last value; it
+    // must never surface as an unhandled rejection, which is a full-page
+    // error overlay in the dev server (2026-10-01).
     const loadComputeGraphStatus = async () => {
-      const s = await fetch('/api/compute_graph/status').then(r => r.json());
-      setComputeGraphStatus(s);
+      try {
+        const s = await fetch('/api/compute_graph/status').then(r => r.json());
+        setComputeGraphStatus(s);
+      } catch (e) { console.warn(e); }
     };
 
     const loadRayStatus = async () => {
-      const s = await fetch('/api/ray/status').then(r => r.json());
-      setRayStatus(s);
+      try {
+        const s = await fetch('/api/ray/status').then(r => r.json());
+        setRayStatus(s);
+      } catch (e) { console.warn(e); }
     };
 
 

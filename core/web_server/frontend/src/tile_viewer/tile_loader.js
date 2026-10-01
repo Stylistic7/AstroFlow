@@ -18,8 +18,8 @@ const TILE_SIZE = 256;
  * mono channel (client-side tone-mapping) or 3 for a baked-stretch RGB
  * color image (pass-through); the array is band-interleaved (RGBRGB…).
  */
-export async function fetchLinearTile(url) {
-    const resp = await fetch(url);
+export async function fetchLinearTile(url, signal) {
+    const resp = await fetch(url, { signal });
     if (!resp.ok) {
         if (resp.status === 404) return null;
         throw new Error(`tile fetch failed: ${resp.status} ${resp.statusText}`);

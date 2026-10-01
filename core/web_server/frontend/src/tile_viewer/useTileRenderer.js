@@ -299,6 +299,13 @@ function makeRenderer(stateRef) {
     // machine and lets users explore a full mosaic across all LODs
     // without ever evicting fallback tiles.
     const MAX_CACHE_SIZE = 2000;
+    // In-flight tile loads are capped and stale ones are ABORTED when a tile
+    // leaves the wanted set. Before 2026-10-01 every zoom step queued every
+    // missing tile x every input with no cancellation; an aggressive zoom put
+    // thousands of requests in flight and Chrome refused new ones with
+    // net::ERR_INSUFFICIENT_RESOURCES ("Failed to fetch") -- the 1 Hz ray-status
+    // poll was the visible casualty. The browser runs ~6 per host anyway.
+    const MAX_IN_FLIGHT = 16;
 
     function destroyTile(tile) {
         for (const t of tile.textures) t.destroy();
@@ -322,6 +329,15 @@ function makeRenderer(stateRef) {
         const { device, tileLayout, tiles, pending } = s;
         const wantedKeys = new Set(wanted.map((t) => t.key));
         s.visible = wantedKeys;
+        // A fetch for a tile that is no longer wanted is wasted bandwidth and
+        // a request slot: abort it. The queue is rebuilt from this call's set.
+        for (const [key, ctl] of pending) {
+            if (!wantedKeys.has(key)) {
+                ctl.abort();
+                pending.delete(key);
+            }
+        }
+        s.queue = [];
 
         // Bump LRU recency: visible tiles get re-inserted to push them
         // to the back of the iteration order (Map iterates in insertion
@@ -391,16 +407,16 @@ function makeRenderer(stateRef) {
         // parallel. Input 0 is the geometry anchor — if it fails the tile
         // is dropped; a failed / unbound extra input binds the black dummy
         // (graceful degrade).
-        for (const tw of wanted) {
-            if (tiles.has(tw.key) || pending.has(tw.key)) continue;
-            pending.add(tw.key);
+        const startTile = (tw) => {
+            const ctl = new AbortController();
+            pending.set(tw.key, ctl);
             const urls = tw.urls.slice(0, MAX_INPUTS);
             Promise.all(urls.map((u, i) => {
                 if (!u) return Promise.resolve(null);
-                const p = fetchLinearTile(u);
+                const p = fetchLinearTile(u, ctl.signal);
                 return i === 0 ? p : p.catch(() => null);
             })).then((inputs) => {
-                pending.delete(tw.key);
+                if (pending.get(tw.key) === ctl) pending.delete(tw.key);
                 if (inputs[0] === null) return;
                 if (!stateRef.current) return;
 
@@ -441,10 +457,27 @@ function makeRenderer(stateRef) {
                 // visible set.
                 if (stateRef.current.visible.has(tw.key)) redraw();
             }).catch((e) => {
-                console.warn(`tile fetch ${tw.key} failed:`, e);
-                pending.delete(tw.key);
-            });
+                if (pending.get(tw.key) === ctl) pending.delete(tw.key);
+                if (e?.name !== 'AbortError') console.warn(`tile fetch ${tw.key} failed:`, e);
+            }).finally(pump);
+        };
+        // Start wanted tiles up to the in-flight cap; the rest wait in the
+        // queue and start as slots free up, skipping any that stopped being
+        // wanted meanwhile.
+        function pump() {
+            const st = stateRef.current;
+            if (!st) return;
+            while (st.pending.size < MAX_IN_FLIGHT && st.queue.length) {
+                const next = st.queue.shift();
+                if (!st.visible.has(next.key) || st.tiles.has(next.key) || st.pending.has(next.key)) continue;
+                startTile(next);
+            }
         }
+        for (const tw of wanted) {
+            if (tiles.has(tw.key) || pending.has(tw.key)) continue;
+            s.queue.push(tw);
+        }
+        pump();
 
         // No paint at the end of setTileUrls: TileViewerV2's apply
         // always pairs us with a setViewport() call that has already
@@ -460,6 +493,10 @@ function makeRenderer(stateRef) {
         if (!s) return;
         for (const tile of s.tiles.values()) destroyTile(tile);
         s.tiles.clear();
+        // In-flight fetches belong to the product that was just rebuilt.
+        for (const ctl of s.pending.values()) ctl.abort();
+        s.pending.clear();
+        s.queue = [];
         s.visible = new Set();
         redraw();
     }
@@ -613,7 +650,8 @@ export function useTileRenderer({ canvasRef }) {
                 // is insertion-ordered which we use as LRU below.
                 tiles: new Map(),
                 visible: new Set(),     // subset of `tiles` to draw this frame
-                pending: new Set(),     // keys whose fetch is in-flight
+                pending: new Map(),     // key -> AbortController of the in-flight fetch
+                queue: [],              // wanted tiles waiting for an in-flight slot
                 lastGlobals: new Float32Array([1, 0, 0, 0]),   // peakBrightness + pad
                 lastViewport: new Float32Array(8),
                 // rAF coalescing — multiple redraw() calls within one
