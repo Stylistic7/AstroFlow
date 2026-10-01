@@ -31,7 +31,6 @@ from beartype import beartype as _beartype
 from cache.cached_decorator import make_cached_decorator
 from previews.create_thumbnail import make_create_thumbnail_decorator
 from previews.create_tile_pyramid import make_create_tile_pyramid_decorator
-from previews.create_video import make_create_video_decorator
 from profiling.measure_performance import make_measure_performance_decorator
 from profiling.memory_estimate import estimate_memory, _FIXED_MEMORY_BY_OP
 from dependency_graph.logging import make_capture_logs_decorator
@@ -60,7 +59,6 @@ cached = make_cached_decorator(
 
 create_thumbnail = make_create_thumbnail_decorator(context)
 create_tile_pyramid = make_create_tile_pyramid_decorator(context)
-create_video = make_create_video_decorator(context)
 
 measure_performance = make_measure_performance_decorator(context)
 capture_logs = make_capture_logs_decorator(context)
@@ -481,13 +479,6 @@ class _Node:
                 wrapper._display = display
             if tap_filter is not None:
                 wrapper._tap_filter = tap_filter
-            from products.registry import register_producer
-            register_producer(wrapper, func)
-        elif hasattr(func, "video_fn"):
-            # `@create_video` attaches `video_fn` to its wrapped func.
-            # Surface it on the @node wrapper too so view-side endpoints
-            # can find video producers via `producers_for(type(entity))`.
-            wrapper.video_fn = func.video_fn
             from products.registry import register_producer
             register_producer(wrapper, func)
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Tabs,
@@ -15,7 +15,7 @@ import WorkflowGraph from './WorkflowGraph.jsx';
 import StackingReportPanel from './StackingReportPanel.jsx';
 import darkTheme from './theme.js';
 
-function BlinkQualityInfo({ stack_id }) {
+function QualityFilterInfo({ stack_id }) {
   const [decision, setDecision] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -79,7 +79,6 @@ function BlinkQualityInfo({ stack_id }) {
 
 const StackTabs = ({ stack_type, stack, stack_id, pipeline, finish }) => {
   const [tabIndex, setTabIndex] = useState(0);
-  const videoRef = useRef(null);
 
   return (
     <Paper
@@ -104,7 +103,6 @@ const StackTabs = ({ stack_type, stack, stack_id, pipeline, finish }) => {
           scrollButtons="auto"
         >
           <Tab label="Stacked" />
-          <Tab label="Blink" />
           {(stack_type === 'stack') && <Tab label="Runs" />}
           {(stack_type === 'stack') && <Tab label="Graph" />}
         </Tabs>
@@ -113,12 +111,13 @@ const StackTabs = ({ stack_type, stack, stack_id, pipeline, finish }) => {
 
       <Box sx={{ flex: 1, p: 3, minHeight: 0, position: 'relative' }}>
         <Box hidden={tabIndex !== 0} sx={{ height: '100%', overflow: 'hidden', position: 'absolute', inset: 0, p: 3 }}>
-          {/* Same nested-flex trick as the Blink tab: `display: flex`
+          {/* Nested flex: `display: flex`
               on the outer Box would override `hidden`'s `display: none`
               (sx wins specificity), leaving this tab rendered under the
               Runs tab. */}
           <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
             {stack_type === 'stack' && <StackingReportPanel stack_id={stack_id} pipeline={pipeline} />}
+            {stack_type === 'stack' && <QualityFilterInfo stack_id={stack_id} />}
             <Box sx={{ flex: 1, minHeight: 0 }}>
               <AstroFlowImage
                 objectType={stack_type}
@@ -130,35 +129,11 @@ const StackTabs = ({ stack_type, stack, stack_id, pipeline, finish }) => {
           </Box>
         </Box>
 
-        <Box hidden={tabIndex !== 1} sx={{ height: '100%', position: 'absolute', inset: 0, p: 3 }}>
-          {/* Nested flex container — keeping `display: flex` on the
-              outer Box would override the `hidden` attribute's
-              `display: none` (sx wins specificity), leaving this tab
-              rendered on top of the Stacked tab and eating wheel
-              events before they reach the canvas. */}
-          <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-            <video
-              loop
-              autoPlay
-              muted
-              ref={videoRef}
-              style={{ pointerEvents: 'auto', width: '100%', flex: 1, objectFit: 'contain' }}
-            >
-              <source
-                src={`/video/${stack_type}/${stack_id}`}
-                type="video/webm"
-              />
-              Your browser does not support the video tag.
-            </video>
-            {stack_type === 'stack' && <BlinkQualityInfo stack_id={stack_id} />}
-          </Box>
-        </Box>
-
-        <Box hidden={tabIndex !== 2} sx={{ height: '100%', overflow: 'auto', position: 'absolute', inset: 0, p: 3 }}>
+        <Box hidden={tabIndex !== 1} sx={{ height: '100%', overflow: 'auto', position: 'absolute', inset: 0, p: 3 }}>
           <RunsTab stack={stack} />
         </Box>
 
-        {(stack_type === 'stack') && <Box hidden={tabIndex !== 3} sx={{ height: '100%', overflow: 'auto', position: 'absolute', inset: 0, p: 3 }}>
+        {(stack_type === 'stack') && <Box hidden={tabIndex !== 2} sx={{ height: '100%', overflow: 'auto', position: 'absolute', inset: 0, p: 3 }}>
           <WorkflowGraph theme={darkTheme} url={`/api/workflow_graph/stack/${stack_id}`} />
         </Box>}
       </Box>

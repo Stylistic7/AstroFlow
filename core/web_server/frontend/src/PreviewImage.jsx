@@ -12,7 +12,11 @@
 import React, { useEffect, useState } from 'react';
 import Box from '@mui/material/Box';
 
-export default function PreviewImage({ src, alt, style, onAbsent }) {
+/**
+ * `onLoaded({status, producer})` reports the `X-Product-Status` and
+ * `X-Producer` headers so a card can caption what it is showing.
+ */
+export default function PreviewImage({ src, alt, style, onAbsent, onLoaded }) {
     const [blobUrl, setBlobUrl] = useState(null);
     const [status, setStatus] = useState(null);
 
@@ -25,11 +29,13 @@ export default function PreviewImage({ src, alt, style, onAbsent }) {
             .then(async (r) => {
                 if (!r.ok) throw new Error(String(r.status));
                 const s = r.headers.get('X-Product-Status');
+                const producer = r.headers.get('X-Producer');
                 const blob = await r.blob();
                 if (cancelled) return;
                 revoked = URL.createObjectURL(blob);
                 setBlobUrl(revoked);
                 setStatus(s);
+                onLoaded?.({ status: s, producer });
             })
             .catch(() => { if (!cancelled) onAbsent?.(); });
         return () => {

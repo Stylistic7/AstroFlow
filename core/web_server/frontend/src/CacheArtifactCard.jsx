@@ -38,7 +38,7 @@ export default function CacheArtifactCard({ target_id }) {
             {
               target.stack_ids.map(stack_id => <img
                 key={`stack_thumbnail_image_${stack_id}`}
-                src={`/stack_thumbnail_image/${stack_id}`}
+                src={`/thumbnail/stack/${stack_id}`}
                 style={{ width: "100%" }}
               />)
             }

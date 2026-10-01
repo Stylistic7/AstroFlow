@@ -193,25 +193,18 @@ def _catalog_thumbnail(entity, args: tuple, extra_args: tuple):
     if not sid:
         return None
 
-    key = _presentation_cache_key(entity, args, "catalog")
-    thumbnail = context.get(key)
-    if thumbnail:
-        return thumbnail
-    with _key_lock(key):
-        thumbnail = context.get(key)
-        if thumbnail:
-            return thumbnail
-
+    # No presentation-cache layer here: its key carried no input mtime, so a
+    # thumbnail cached once was served forever after a rebuild (2026-10-01).
+    # `render_finish_preview` already caches durably on the inputs' mtimes;
+    # the lock just keeps concurrent first renders single-flight.
+    with _key_lock(_presentation_cache_key(entity, args, "catalog")):
         from catalog import default_finish_for, url_type_of
         from finishes.preview import render_finish_preview
         b = default_finish_for(url_type_of(entity), sid)
         if b is None:
             return None
         result = render_finish_preview(b.object_type, b.object_id, b.pipeline, b.name)
-        png = result[0] if result else None
-        if png is not None:
-            context[key] = png
-        return png
+        return result[0] if result else None
 
 
 def get_thumbnail(entity, *extra_args):
@@ -351,7 +344,7 @@ def _stack_subframe_thumbnail(entity, args: tuple):
         from previews.operations import resize_array, autostretch, array_to_png
         try:
             thumbnail = _make_thumbnail(
-                str(path), resize_array, autostretch, array_to_png)
+                str(path), resize_array, autostretch, array_to_png, width=1200)
         except Exception:
             return None
         if thumbnail is not None:
@@ -391,8 +384,29 @@ def canonical_preview(object_type: str, object_id: str):
 
 @thumbnails_bp.route("/thumbnail/stack/<stack_id>")
 def stack_thumbnail(stack_id: str):
+    """The stack's card image, and WHICH image it is, in headers:
+    `X-Producer: master` -- the default finish rendered from the master
+    (`X-Product-Status` live / out_of_date, cached on the input mtimes);
+    `X-Producer: subframe` -- nothing stacked yet, so the raw subframe with
+    the most stars (`X-Product-Status: absent`); else 404."""
     stack = context.stacks[stack_id].get()
-    return get_thumbnail(stack)
+    from catalog import default_finish_for
+    from finishes.preview import render_finish_preview
+    b = default_finish_for("stack", stack_id)
+    result = (
+        render_finish_preview(b.object_type, b.object_id, b.pipeline, b.name)
+        if b is not None else None
+    )
+    if result is not None:
+        resp = _finish_png_response(result)
+        resp.headers["X-Producer"] = "master"
+        return resp
+    thumbnail = _stack_subframe_thumbnail(stack, (stack,))
+    if thumbnail:
+        resp = _png_response(thumbnail, "subframe")
+        resp.headers["X-Product-Status"] = "absent"
+        return resp
+    return abort(404)
 
 
 @thumbnails_bp.route("/thumbnail/target/<target_id>")

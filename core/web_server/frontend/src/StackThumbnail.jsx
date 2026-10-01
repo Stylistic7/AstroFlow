@@ -1,108 +1,90 @@
-import { useState, useRef, useEffect, useContext } from "react";
-import useVideoFrames from "./useVideoFrames.ts";
+/**
+ * A stack's card on the target page: ONE still image and what it is.
+ *
+ * `/thumbnail/stack/<id>` serves the master's default finish when the stack
+ * has been stacked (`X-Producer: master`, status live / out_of_date), else
+ * its best raw subframe by star count (`X-Producer: subframe`, status
+ * absent). The chips say which; the rest of the overlay is what the card
+ * can state truthfully from `/api/stacks`: filter, subs and hours, newest
+ * night. (Until 2026-10-01 this played a per-subframe video that was never
+ * generated.)
+ */
+import { useState, useContext } from "react";
 import ExposureDurationWidget from "./ExposureDurationWidget.jsx";
+import PreviewImage from "./PreviewImage.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
 
-export default function StackThumbnail({ stack_id, width, handleClick, children }) {
+const FILTER_COLORS = {
+	L: [255, 255, 255], R: [230, 0, 0], G: [0, 204, 0], B: [0, 0, 204],
+	H: [159, 43, 104], S: [140, 0, 0], O: [0, 204, 204],
+};
+
+function colorForFilter(filter) {
+	const rgb = FILTER_COLORS[filter?.[0]?.toUpperCase?.()] || [128, 128, 128];
+	return `rgb(${rgb.join(', ')})`;
+}
+
+const chipStyle = (background) => ({
+	background, color: "white", padding: "1px 6px", borderRadius: 4,
+	fontSize: 11, fontWeight: 600, letterSpacing: 0.3, pointerEvents: "none",
+});
+
+export default function StackThumbnail({ stack_id, handleClick, children }) {
 	const { stacks, invalidated } = useContext(AstroFlowContext);
+	const [served, setServed] = useState(null);   // {status, producer} | null
+	const [absent, setAbsent] = useState(false);
 	const stack = stacks[stack_id];
+	if (!stack) return null;
+
 	const isStale = (invalidated || []).some(
 		([type, id]) => type === "stack" && id === stack_id
 	);
+	const numSubs = (stack.filenames || []).length;
+	const hours = (stack.raw_integration_s ?? stack.integration ?? 0) / 3600.0;
+	const newest = stack.newest_date ? String(stack.newest_date).slice(0, 10) : null;
 
-	const color_for_filter = (filter) => {
-		const key = filter?.[0]?.toUpperCase?.();
-		const rgb = {
-			'L': [255, 255, 255],
-			'R': [230, 0, 0],
-			'G': [0, 204, 0],
-			'B': [0, 0, 204],
-			'H': [159, 43, 104],
-			'S': [140, 0, 0],
-			'O': [0, 204, 204],
-		}[key] || [128, 128, 128];  // fallback to gray if unknown
-
-		return `rgb(${rgb.join(', ')})`;
-	};
-
-	const video_fps = 10;
-
-	const video_ref = useRef();
-
-	const [frameCount, setFrameCount] = useState(0);
-
-	const currentFrameIsSelected = true;
-
-	const [video, setVideo] = useVideoFrames(mediaTime => {
-		setFrameCount(mediaTime * video_fps);
-	});
-
-	useEffect(() => {
-		setVideo(video_ref.current);
-	}, [video_ref]);
-
-	if (!stack) return null;
-
-	const numFrames = (stack.filenames || []).length || 1;
-
-	// TODO: Display the progress bar as red during frames with too few stars.
 	return (
-		<div className="stack_thumbnail"
-			style={{
-				pointerEvents: "none",
-				position: "relative",
-			}}
-		>
-			<video
-				loop
-				autoPlay
-				muted
-				ref={video_ref}
-				style={{
-					pointerEvents: "auto",
-					width: "100%",
-					top: 0,
-					left: 0,
-				}}
-				onClick={handleClick}
-			>
-				<source src={`/video/stack/${stack_id}`} type="video/mp4" />
-				Your browser does not support the video tag.
-			</video>
-
-			<div
-				style={{
-					position: "absolute",
-					left: "1em",
-					top: "1em",
-					fontSize: "14px"
-				}}
-				onClick={handleClick}
-			>
-				<span style={{ color: "#aaa" }}>
-					{stack.camera}, {stack.image_scale.toFixed(2)}"/px, {(stack.rotation_angle * 180 / Math.PI).toFixed(2)}&deg;
-				</span>
-				&nbsp;
-				<span style={{
-					color: color_for_filter(stack.filter)
+		<div className="stack_thumbnail" style={{ position: "relative", cursor: "pointer" }}
+			onClick={handleClick}>
+			{absent ? (
+				<div style={{
+					width: "100%", aspectRatio: "3 / 2", background: "#111",
+					display: "flex", alignItems: "center", justifyContent: "center",
+					color: "#666", fontSize: 13,
 				}}>
+					no readable frame yet
+				</div>
+			) : (
+				<PreviewImage
+					src={`/thumbnail/stack/${stack_id}`}
+					alt={`${stack.name} ${stack.filter}`}
+					style={{ width: "100%", display: "block" }}
+					onLoaded={setServed}
+					onAbsent={() => setAbsent(true)}
+				/>
+			)}
+
+			<div style={{
+				position: "absolute", left: "0.5em", bottom: "0.5em",
+				display: "flex", alignItems: "center", gap: "0.4em",
+				fontSize: 13, textShadow: "0 0 4px black", pointerEvents: "none",
+			}}>
+				<span style={{ color: colorForFilter(stack.filter), fontWeight: 700 }}>
 					{stack.filter}
+				</span>
+				<span style={{ color: "#ddd" }}>
+					{numSubs} subs · {hours.toFixed(1)} h{newest ? ` · ${newest}` : ""}
 				</span>
 			</div>
 
 			<div style={{
-				position: "absolute",
-				top: "0.3em",
-				right: "0.5em",
-				display: "flex",
-				flexDirection: "row",
-				alignItems: "center",
-				gap: "0.3em",
+				position: "absolute", top: "0.3em", right: "0.5em",
+				display: "flex", flexDirection: "row", alignItems: "center", gap: "0.3em",
 				pointerEvents: "auto",
-			}}>
+			}} onClick={(e) => e.stopPropagation()}>
 				<ExposureDurationWidget
 					key={`exposure_duration_${stack_id}`}
-					totalExposureDuration={(stack.raw_integration_s ?? stack.integration) / 3600.0}
+					totalExposureDuration={hours}
 					stack={stack}
 					sx={{ width: "2em" }}
 				/>
@@ -110,46 +92,18 @@ export default function StackThumbnail({ stack_id, width, handleClick, children 
 			</div>
 
 			<div style={{
-				position: "absolute",
-				bottom: "0em",
-				left: "0",
-				width: "100%",
-			}}
-			>
-				<div style={{
-					margin: "5px",
-					backgroundColor: "#222"
-				}}>
-					<div style={{
-						height: "0.75em",
-						width: (100.0 * (frameCount % numFrames) / numFrames) + "%",
-						backgroundColor: currentFrameIsSelected ? "#ccc" : "#f00"
-					}}></div>
-				</div>
+				position: "absolute", top: "0.5em", left: "0.5em",
+				display: "flex", gap: "0.3em", alignItems: "center",
+			}}>
+				{served?.producer === "subframe" && (
+					<span style={chipStyle("rgba(60, 60, 60, 0.85)")}>
+						unstacked · best of {numSubs} subs
+					</span>
+				)}
+				{isStale && (
+					<span style={chipStyle("rgba(255, 100, 100, 0.85)")}>Reprocessing…</span>
+				)}
 			</div>
-
-			<div style={{
-				position: "absolute",
-				bottom: "5em",
-				left: "0",
-				width: "100%",
-			}}
-			>
-				<span>Frame count {frameCount}</span>
-			</div>
-
-			{isStale && (
-				<div style={{
-					position: "absolute", top: "0.5em", right: "0.5em",
-					background: "rgba(255, 100, 100, 0.85)",
-					color: "white", padding: "1px 6px",
-					borderRadius: 4, fontSize: 11,
-					pointerEvents: "none",
-				}}>
-					Reprocessing...
-				</div>
-			)}
-
 		</div>
 	);
 }
