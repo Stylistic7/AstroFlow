@@ -191,34 +191,33 @@ _LUM = ("Linear L Starless", "Mosaic Starless",
         "Post-Processed", "Channel", "Mosaic", "Master")
 
 
-def _channel(role: str, band: str, primaries: tuple, stars: str):
-    def body(c, st, **k):
+def _channel(role: str, band: str, primaries: tuple):
+    """A single filter's channel, autostretched, with NO stars layer: a
+    channel view shows that filter's (starless) data and nothing else
+    (Stylistic7, 2026-10-01). Where the primary is a with-stars master
+    (Post-Processed / Master), its own stars are simply part of the data."""
+    def body(c, **k):
         x = _stretch(getattr(c, band), k["black" + role], k["white" + role],
                      k["mid" + role])
-        return screen(vec3(x, x, x),
-                      _stars_layer(st, k["star_s"], k["star_mid"], k["star_white"]))
+        return vec3(x, x, x)
 
     kw = inspect.Parameter.KEYWORD_ONLY
     body.__name__ = role
     body.__signature__ = inspect.Signature([
         inspect.Parameter("c", inspect.Parameter.POSITIONAL_ONLY),
-        inspect.Parameter("st", inspect.Parameter.POSITIONAL_ONLY),
         inspect.Parameter("black" + role, kw, default=Param(0.00496, 0.0, 0.05, step=0.03, label="black", scale="log")),
         inspect.Parameter("white" + role, kw, default=Param(0.0089, 0.002, 1.0, step=0.03, label="white", scale="log")),
         inspect.Parameter("mid" + role, kw, default=Param(0.088, 0.05, 0.95, step=0.015, label="mid", scale="log")),
-        inspect.Parameter("star_s", kw, default=Param(1.0, 0.0, 2.0, step=0.1, label="stars")),
-        inspect.Parameter("star_mid", kw, default=Param(0.25, 0.05, 0.95, step=0.03, label="star mid", scale="log")),
-        inspect.Parameter("star_white", kw, default=Param(0.0089, 0.001, 0.5, step=0.03, label="star white", scale="log")),
     ])
-    return finish(name=role, inputs=(primaries[0], stars), alt_primaries=primaries[1:],
-                  optional=(stars,), role=role)(body)
+    return finish(name=role, inputs=(primaries[0],), alt_primaries=primaries[1:],
+                  role=role)(body)
 
 
 for _role, _band in (("H", "g"), ("S", "r"), ("O", "b")):
-    _channel(_role, _band, _NARROWBAND, "Linear RGB Stars")
+    _channel(_role, _band, _NARROWBAND)
 for _role, _band in (("R", "r"), ("G", "g"), ("B", "b")):
-    _channel(_role, _band, _BROADBAND, "Linear RGB Stars")
-_channel("L", "r", _LUM, "Linear L Stars")
+    _channel(_role, _band, _BROADBAND)
+_channel("L", "r", _LUM)
 
 
 @finish(name="Master", inputs=("Master",), role="none")

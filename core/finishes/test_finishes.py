@@ -20,7 +20,7 @@ def _srcs(n, seed=7, scale=0.05, size=16):
 
 
 STOCK = [("RGB", 2), ("LRGB", 4), ("HaLRGB", 4), ("Hubble", 2), ("Foraxx", 2),
-         ("H", 2), ("S", 2), ("O", 2), ("R", 2), ("G", 2), ("B", 2), ("L", 2),
+         ("H", 1), ("S", 1), ("O", 1), ("R", 1), ("G", 1), ("B", 1), ("L", 1),
          ("Master", 1)]
 
 
@@ -332,15 +332,14 @@ class TestChannelFinishes:
         rng = np.random.default_rng(5)
         sho = (rng.random((8, 8, 3)) * 0.05).astype(np.float32)
         mono = sho[..., 1:2].copy()
-        stars = np.zeros((8, 8, 3), np.float32)
-        a = f.bake([sho, stars]); b = f.bake([mono, stars])
+        a = f.bake([sho]); b = f.bake([mono])
         assert np.allclose(a, b) and np.allclose(a[..., 0], a[..., 1])
-        assert np.abs(f.bake([sho, stars]) - f.interpret([sho, stars])).max() < 1e-5
+        assert np.abs(f.bake([sho]) - f.interpret([sho])).max() < 1e-5
         # a different band changes nothing for H …
         sho2 = sho.copy(); sho2[..., 0] *= 3.0
-        assert np.allclose(f.bake([sho2, stars]), a)
+        assert np.allclose(f.bake([sho2]), a)
         # … and everything for S
-        assert not np.allclose(get_finish("S").bake([sho2, stars]), get_finish("S").bake([sho, stars]))
+        assert not np.allclose(get_finish("S").bake([sho2]), get_finish("S").bake([sho]))
 
     def test_trim_tests_only_the_bands_the_finish_reads(self):
         """A zero-filled S band (a partial narrowband set) must not blank the
@@ -348,18 +347,21 @@ class TestChannelFinishes:
         h, hub = get_finish("H", primary="Linear SHO"), get_finish("Hubble", primary="Linear SHO")
         nb = np.array([[[0.0, 0.03, 0.02], [0.02, 0.03, 0.02], [0.02, 0.0, 0.02], [0.02, 0.03, 0.02]]], np.float32)
         stars = np.zeros_like(nb)
-        out_h = h.bake([nb, stars], {"trim_ragged": 1.0})[0]
+        out_h = h.bake([nb], {"trim_ragged": 1.0})[0]
         assert out_h[0].max() > 0 and np.all(out_h[2] == 0)
         out_hub = hub.bake([nb, stars], {"trim_ragged": 1.0})[0]
         assert np.all(out_hub[0] == 0) and np.all(out_hub[2] == 0) and out_hub[1].max() > 0
 
-    def test_stars_are_optional_and_screened(self):
-        f = get_finish("R")
+    def test_channel_finishes_mix_in_no_stars(self):
+        """A single-channel view is that filter's data alone: one input, no
+        star-layer parameters (2026-10-01)."""
+        for role in ("H", "S", "O", "R", "G", "B", "L"):
+            f = get_finish(role)
+            assert len(f.inputs) == 1 and not f.optional, role
+            assert not any(k.startswith("star") for k in f.defaults()), role
         rgb = np.full((4, 4, 3), 0.006, np.float32)   # between the default black and white
-        no_stars = f.bake([rgb, np.zeros_like(rgb)])
-        with_stars = f.bake([rgb, np.full_like(rgb, 0.01)], {"star_s": 1.0})
-        assert "Linear RGB Stars" in f.optional
-        assert np.all(with_stars >= no_stars) and with_stars.max() > no_stars.max()
+        out = get_finish("R").bake([rgb])
+        assert out.shape == (4, 4, 3) and np.allclose(out[..., 0], out[..., 1])
 
     def test_master_finish_is_role_none(self):
         f = get_finish("Master")
