@@ -430,6 +430,7 @@ def test_emission_hues_shows_stretch_controls_and_one_colour_per_line():
         shown = [p for p in f.params if p.kind != "data" and p.group == group]
         assert [p.name for p in shown if p.kind == "float"] == [f"level{r}", f"neb{r}", f"str{r}"]
         assert [p.name for p in shown if p.kind == "color"] == [f"col{r}_r", f"col{r}_g", f"col{r}_b"]
+        assert shown[0].name == f"col{r}_r", "the colour leads its section (Stylistic7, 2026-10-03)"
 
 
 def test_color_knob_is_one_vec3_for_the_author_and_three_uniforms_for_the_shader():
