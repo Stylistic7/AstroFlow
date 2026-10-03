@@ -243,6 +243,15 @@ TRIM_FLOOR = Param(
     name="trim_floor", builtin=True,
 )
 
+# The built-in last-pass knob: paint clipped pixels so the user can see
+# what a finish's settings crush or blow out (Stylistic7, 2026-10-03). Off by
+# default, so previews and thumbnails are unaffected.
+SHOW_CLIPPING = Param(
+    0.0, 0.0, 1.0, step=1.0, label="Show clipping",
+    name="show_clipping", builtin=True, kind="toggle",
+)
+_HALF_STEP = 0.5 / 255.0   # within this of 0 or 1, an 8-bit display shows 0 or 255
+
 
 def _with_common_first_pass(fn, inputs: tuple, optional: tuple):
     """Compose the framework's common first pass in front of an author's
@@ -272,7 +281,7 @@ def _with_common_first_pass(fn, inputs: tuple, optional: tuple):
     this composed function — runs identically in numpy, which keeps the
     server-side preview and the viewer showing the same picture.
     """
-    from finishes.stdlib import minimum, where, mix
+    from finishes.stdlib import maximum, minimum, mix, vec3, where
 
     required = [i for i, tap in enumerate(inputs) if tap not in optional]
     sig = inspect.signature(fn)
@@ -281,25 +290,38 @@ def _with_common_first_pass(fn, inputs: tuple, optional: tuple):
     def guarded(*srcs, **kwargs):
         trim = kwargs.pop(TRIM_RAGGED.name, TRIM_RAGGED.default)
         floor = kwargs.pop(TRIM_FLOOR.name, TRIM_FLOOR.default)
+        show_clip = kwargs.pop(SHOW_CLIPPING.name, SHOW_CLIPPING.default)
         out = fn(*srcs, **kwargs)
         if tracer.tracing():
             reads.update(_bands_read(out.node, len(inputs)))
+        lo = None   # darkest band read across every required input
         for i in required:
             if i >= len(srcs):
                 continue
-            s = srcs[i]
-            bands = [getattr(s, b) for b in sorted(reads.get(i) or ("b", "g", "r"))]
-            lo = bands[0]
-            for band in bands[1:]:
-                lo = minimum(lo, band)
-            covered = lo > floor
-            # `out * 0.0` rather than a literal vec3: both operands of a
-            # traced `select` must themselves be traced, and a vec3 of plain
-            # floats is a numpy value the tracer refuses to mix in.
-            # Branchless throughout, so it traces — `mix` applies the toggle
-            # with one expression that works in both backends.
-            out = mix(out, where(covered, out, out * 0.0), trim)
-        return out
+            for b in sorted(reads.get(i) or ("b", "g", "r")):
+                band = getattr(srcs[i], b)
+                lo = band if lo is None else minimum(lo, band)
+        if lo is None:
+            return out
+        covered = lo > floor
+        # `out * 0.0` rather than a literal vec3: both operands of a
+        # traced `select` must themselves be traced, and a vec3 of plain
+        # floats is a numpy value the tracer refuses to mix in.
+        # Branchless throughout, so it traces — `mix` applies each toggle
+        # with one expression that works in both backends.
+        out = mix(out, where(covered, out, out * 0.0), trim)
+        if not hasattr(out, "r"):
+            return out   # not a colour: the definition check reports it
+        # Clipping, judged on the final colour as an 8-bit display shows it,
+        # and only where there is data: any component that renders as 255 =
+        # blown highlight (magenta); every component rendering as 0 =
+        # crushed shadow (blue). A single zero component is a pure hue, not
+        # clipping.
+        top = maximum(maximum(out.r, out.g), out.b)
+        z = top * 0.0
+        flagged = where(top >= 1.0 - _HALF_STEP, vec3(z + 1.0, z, z + 1.0),
+                        where(top <= _HALF_STEP, vec3(z, z, z + 1.0), out))
+        return mix(out, where(covered, flagged, out), show_clip)
 
     guarded.__name__ = getattr(fn, "__name__", "finish")
     guarded.__doc__ = fn.__doc__
@@ -314,6 +336,9 @@ def _with_common_first_pass(fn, inputs: tuple, optional: tuple):
         inspect.Parameter(TRIM_FLOOR.name,
                           inspect.Parameter.KEYWORD_ONLY,
                           default=TRIM_FLOOR),
+        inspect.Parameter(SHOW_CLIPPING.name,
+                          inspect.Parameter.KEYWORD_ONLY,
+                          default=SHOW_CLIPPING),
     ])
     return guarded
 

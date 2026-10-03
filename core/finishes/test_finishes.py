@@ -19,7 +19,7 @@ def _srcs(n, seed=7, scale=0.05, size=16):
             for _ in range(n)]
 
 
-STOCK = [("RGB", 2), ("LRGB", 4), ("HaLRGB", 4), ("Hubble", 2), ("Hubble Pinned GHS", 2), ("Foraxx", 2),
+STOCK = [("RGB", 2), ("LRGB", 4), ("HaLRGB", 4), ("Hubble", 2), ("Hubble Pinned GHS", 2), ("Emission Hues", 2), ("Foraxx", 2),
          ("H", 1), ("S", 1), ("O", 1), ("R", 1), ("G", 1), ("B", 1), ("L", 1),
          ("Master", 1)]
 
@@ -211,7 +211,7 @@ class TestRegistry:
             # stock one — the framework's common first pass is injected here
             # too, so both run the identical traced path.
             assert [p.name for p in f.params if p.builtin] == [
-                "trim_ragged", "trim_floor"]
+                "trim_ragged", "trim_floor", "show_clipping"]
             assert get_finish("Hubble") is not None, \
                 "a broken sibling file must not abort discovery"
         finally:
@@ -233,12 +233,12 @@ class TestCommonFirstPass:
         for s in finish_specs():
             builtin = [p for p in s["params"] if p.get("builtin")]
             assert [p["name"] for p in builtin] == [
-                "trim_ragged", "trim_floor"], s["name"]
+                "trim_ragged", "trim_floor", "show_clipping"], s["name"]
             assert builtin[0]["kind"] == "toggle", s["name"]
             # LAST, so author param order — and therefore the uniform packing
             # index every author already depends on — is untouched.
-            assert s["params"][-1]["name"] == "trim_floor", s["name"]
-            assert s["params"][-2]["name"] == "trim_ragged", s["name"]
+            assert s["params"][-1]["name"] == "show_clipping", s["name"]
+            assert s["params"][-3]["name"] == "trim_ragged", s["name"]
 
     def test_zeroes_pixels_missing_a_required_band(self):
         import numpy as np
@@ -323,7 +323,7 @@ class TestChannelFinishes:
         assert prim["L"][0] == "Linear L Starless"
         assert prim["Master"] == ["Master"]
         for f in all_finishes():
-            assert (f.role is None) == (f.name in {"Hubble", "Hubble Pinned GHS", "Foraxx", "RGB", "LRGB", "HaLRGB"})
+            assert (f.role is None) == (f.name in {"Hubble", "Hubble Pinned GHS", "Emission Hues", "Foraxx", "RGB", "LRGB", "HaLRGB"})
 
     def test_h_reads_band_g_of_the_join_and_the_whole_mono_tap(self):
         """`nb.g` is Hα in the S,H,O layout; a 1-band source is broadcast so
@@ -398,3 +398,56 @@ def test_pinned_ghs_shows_three_controls_per_channel():
         shown = [p.name for p in f.params if p.kind != "data" and p.name[-1] == r and not p.builtin]
         assert sorted(shown) == sorted([f"level{r}", f"neb{r}", f"str{r}"]), shown
         assert all(p.kind == "data" for p in f.params if p.name in (f"sky{r}", f"sig{r}", f"top{r}"))
+
+
+def test_emission_hues_adds_each_line_in_its_own_colour():
+    """A pixel lit by one line shows that line's hue; lines add; an
+    overflowing sum is scaled down by its own max, keeping its hue
+    (Stylistic7, 2026-10-03)."""
+    f = get_finish("Emission Hues")
+    sky, sig, top = 0.005, 3e-5, 0.0089
+    nb = np.full((4, 4, 3), sky, np.float32)
+    nb[0, 0] = (top, sky, sky)    # SII only
+    nb[0, 1] = (sky, top, sky)    # Hα only
+    nb[0, 2] = (sky, sky, top)    # OIII only
+    nb[0, 3] = (top, top, top)    # all three
+    v = dict(f.defaults(), star_s=0.0)
+    for r in "SHO":
+        v.update({f"sky{r}": sky, f"sig{r}": sig, f"top{r}": top, f"level{r}": 0.0, f"neb{r}": 1.0})
+    v.update(hueS=0.0, hueH=60.0, hueO=240.0, satS=1.0, satH=1.0, satO=0.5)
+    out = f.bake([nb, np.zeros_like(nb)], v)
+    assert np.allclose(out[0, 0], (1, 0, 0), atol=1e-5)
+    assert np.allclose(out[0, 1], (1, 1, 0), atol=1e-5)
+    assert np.allclose(out[0, 2], (0.5, 0.5, 1), atol=1e-5)
+    assert np.allclose(out[0, 3], np.array((2.5, 1.5, 1)) / 2.5, atol=1e-5)
+    assert np.allclose(out[1, 1], 0.0, atol=1e-5)
+
+
+def test_emission_hues_shows_five_controls_per_line():
+    f = get_finish("Emission Hues")
+    for r in "SHO":
+        shown = [p.name for p in f.params if p.kind != "data" and p.name[-1] == r and not p.builtin]
+        assert sorted(shown) == sorted([f"level{r}", f"neb{r}", f"str{r}", f"hue{r}", f"sat{r}"]), shown
+
+
+def test_show_clipping_paints_blown_and_crushed_pixels_only_where_there_is_data():
+    """Built-in last pass (2026-10-03): magenta where any component renders as
+    255, blue where all render as 0, untouched otherwise and on no-data pixels; a
+    pure hue with zero components is not clipping."""
+    f = get_finish("Emission Hues")
+    sky, sig, top = 0.005, 3e-5, 0.0089
+    nb = np.full((4, 4, 3), sky, np.float32)
+    nb[0, 0] = (top, sky, sky)          # SII only, full: (1, 0, 0) → blown
+    nb[0, 1] = (0.0065, sky, sky)       # SII only, partial: pure red, G=B=0
+    nb[0, 2] = (0.0, 0.0, 0.0)          # no data
+    v = dict(f.defaults(), star_s=0.0)
+    for r in "SHO":
+        v.update({f"sky{r}": sky, f"sig{r}": sig, f"top{r}": top, f"level{r}": 0.0, f"neb{r}": 1.0})
+    v.update(levelH=-0.1)               # crush the Hα-only sky
+    plain = f.bake([nb, np.zeros_like(nb)], v)
+    shown = f.bake([nb, np.zeros_like(nb)], dict(v, show_clipping=1.0))
+    assert np.allclose(shown[0, 0], (1, 0, 1))
+    assert np.allclose(shown[0, 1], plain[0, 1]) and plain[0, 1][1] < 1e-6
+    assert np.allclose(shown[0, 2], 0.0)
+    assert np.allclose(shown[1, 1], (0, 0, 1))
+    assert np.allclose(f.bake([nb, np.zeros_like(nb)], dict(v, show_clipping=0.0)), plain)
