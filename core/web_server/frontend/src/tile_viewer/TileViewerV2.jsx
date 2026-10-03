@@ -440,8 +440,10 @@ export default function TileViewerV2({
      * slider otherwise. Built-in (framework-injected) params come first and
      * are separated from the author's own by a rule. */
     function renderFinishParams(finishParams) {
-        const builtin = finishParams.filter((p) => p.builtin);
-        const authored = finishParams.filter((p) => !p.builtin);
+        // `kind: "data"` params are measured from the image (seeded), not controls.
+        const shown = finishParams.filter((p) => p.kind !== 'data');
+        const builtin = shown.filter((p) => p.builtin);
+        const authored = shown.filter((p) => !p.builtin);
         // Stretch values on the pinned gauge are ~0.005: toFixed(3) rendered
         // every black/white point as "0.005" / "0.009" and the readout never
         // moved. Show significant figures instead of fixed decimals.

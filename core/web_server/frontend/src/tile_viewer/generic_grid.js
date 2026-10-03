@@ -26,6 +26,7 @@ const GRID_SPREAD = 1.0;
 export function axesFromParams(params) {
     const axes = {};
     for (const p of params) {
+        if (p.kind === 'data') continue;   // measured from the image, not taste
         axes[p.name] = { lo: p.lo, hi: p.hi, step: p.step, label: p.label, scale: p.scale || 'linear' };
     }
     return axes;

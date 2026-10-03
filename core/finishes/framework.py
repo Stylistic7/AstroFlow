@@ -56,7 +56,10 @@ class Param:
     # viewer groups these above a rule, so someone reading their own finish
     # can tell which controls they wrote and which came with the system.
     builtin: bool = False
-    # "float" renders a slider; "toggle" renders a switch (0/1).
+    # "float" renders a slider; "toggle" renders a switch (0/1); "data" is a
+    # value MEASURED from the image (seeded from its stats by name, like a
+    # sky median) -- passed to the shader like any param but never shown as
+    # a control or moved by the taste grid.
     kind: str = "float"
     # Optional panel heading: the viewer groups consecutive params that share
     # a group under one heading (e.g. one panel per narrowband channel).

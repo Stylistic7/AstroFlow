@@ -388,3 +388,13 @@ def test_hubble_ghs_pins_sky_and_nebula_independently():
         out = f.bake([nb, np.zeros_like(nb)], v)
         assert np.allclose(out[0, 1], level, atol=1e-5)
         assert np.allclose(out[0, 0], neb, atol=1e-5)
+
+
+def test_pinned_ghs_shows_three_controls_per_channel():
+    """The anchors are measured from the image (kind="data"), so each channel
+    offers only sky level, nebula level and stretch (Stylistic7, 2026-10-02)."""
+    f = get_finish("Hubble Pinned GHS")
+    for r in "SHO":
+        shown = [p.name for p in f.params if p.kind != "data" and p.name[-1] == r and not p.builtin]
+        assert sorted(shown) == sorted([f"level{r}", f"neb{r}", f"str{r}"]), shown
+        assert all(p.kind == "data" for p in f.params if p.name in (f"sky{r}", f"sig{r}", f"top{r}"))

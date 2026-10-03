@@ -116,29 +116,29 @@ def hubble_ghs(nb, stars,
                levelS=Param(0.04, 0.0, 0.2, step=0.005, label="sky level", group="SII (red)"),
                nebS=Param(1.0, 0.5, 1.5, step=0.01, label="nebula level", group="SII (red)"),
                strS=Param(4.0, 0.0, 6.0, step=0.05, label="stretch", group="SII (red)"),
-               skyS=Param(0.005, 0.0, 0.05, step=0.03, label="sky (data)", scale="log", group="SII (red)"),
-               sigS=Param(3e-5, 1e-7, 1e-2, step=0.03, label="noise σ (data)", scale="log", group="SII (red)"),
-               topS=Param(0.0089, 0.001, 0.5, step=0.03, label="bright anchor (data)", scale="log", group="SII (red)"),
+               skyS=Param(0.005, 0.0, 0.05, step=0.03, label="sky", scale="log", group="SII (red)", kind="data"),
+               sigS=Param(3e-5, 1e-7, 1e-2, step=0.03, label="noise σ", scale="log", group="SII (red)", kind="data"),
+               topS=Param(0.0089, 0.001, 0.5, step=0.03, label="bright anchor", scale="log", group="SII (red)", kind="data"),
                levelH=Param(0.04, 0.0, 0.2, step=0.005, label="sky level", group="Hα (green)"),
                nebH=Param(1.0, 0.5, 1.5, step=0.01, label="nebula level", group="Hα (green)"),
                strH=Param(4.0, 0.0, 6.0, step=0.05, label="stretch", group="Hα (green)"),
-               skyH=Param(0.005, 0.0, 0.05, step=0.03, label="sky (data)", scale="log", group="Hα (green)"),
-               sigH=Param(3e-5, 1e-7, 1e-2, step=0.03, label="noise σ (data)", scale="log", group="Hα (green)"),
-               topH=Param(0.0089, 0.001, 0.5, step=0.03, label="bright anchor (data)", scale="log", group="Hα (green)"),
+               skyH=Param(0.005, 0.0, 0.05, step=0.03, label="sky", scale="log", group="Hα (green)", kind="data"),
+               sigH=Param(3e-5, 1e-7, 1e-2, step=0.03, label="noise σ", scale="log", group="Hα (green)", kind="data"),
+               topH=Param(0.0089, 0.001, 0.5, step=0.03, label="bright anchor", scale="log", group="Hα (green)", kind="data"),
                levelO=Param(0.04, 0.0, 0.2, step=0.005, label="sky level", group="OIII (blue)"),
                nebO=Param(1.0, 0.5, 1.5, step=0.01, label="nebula level", group="OIII (blue)"),
                strO=Param(4.0, 0.0, 6.0, step=0.05, label="stretch", group="OIII (blue)"),
-               skyO=Param(0.005, 0.0, 0.05, step=0.03, label="sky (data)", scale="log", group="OIII (blue)"),
-               sigO=Param(3e-5, 1e-7, 1e-2, step=0.03, label="noise σ (data)", scale="log", group="OIII (blue)"),
-               topO=Param(0.0089, 0.001, 0.5, step=0.03, label="bright anchor (data)", scale="log", group="OIII (blue)"),
+               skyO=Param(0.005, 0.0, 0.05, step=0.03, label="sky", scale="log", group="OIII (blue)", kind="data"),
+               sigO=Param(3e-5, 1e-7, 1e-2, step=0.03, label="noise σ", scale="log", group="OIII (blue)", kind="data"),
+               topO=Param(0.0089, 0.001, 0.5, step=0.03, label="bright anchor", scale="log", group="OIII (blue)", kind="data"),
                star_s=Param(1.0, 0.0, 2.0, step=0.1, label="stars", group="Stars"),
                star_mid=Param(0.25, 0.05, 0.95, step=0.03, label="star mid", scale="log", group="Stars"),
                star_white=Param(0.0089, 0.001, 0.5, step=0.03, label="star white", scale="log", group="Stars"),
                scnr=Param(0.9, 0.0, 1.0, step=0.1, label="green→gold", group="Colour")):
     """Hubble palette (R=SII, G=Hα, B=OIII) with the pinned GHS stretch per
     channel: sky level, nebula level and stretch are independent knobs.
-    The (data) anchors are seeded from each channel's sky median, sky noise
-    and bright level; they are knobs only so they can be corrected."""
+    The anchors (sky<R>, sig<R>, top<R>) are kind="data": measured from each
+    starless channel's sky median, sky noise and bright level, never shown."""
     s = _ghs_pinned(nb.r, skyS, sigS, topS, levelS, nebS, strS)
     h = _ghs_pinned(nb.g, skyH, sigH, topH, levelH, nebH, strH)
     o = _ghs_pinned(nb.b, skyO, sigO, topO, levelO, nebO, strO)
