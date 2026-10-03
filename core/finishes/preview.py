@@ -93,6 +93,7 @@ def _stf_values(arr: "np.ndarray", suffixes: "tuple[str, ...] | None",
 
     out: dict = {}
     per = []
+    anchors = []
     for c in chans:
         finite, sky = _split(c)
         if sky.size < 100:
@@ -113,8 +114,13 @@ def _stf_values(arr: "np.ndarray", suffixes: "tuple[str, ...] | None",
         wp = max(bright, bp + max(0.02 * med, 1e-6))
         x0 = (med - bp) / max(wp - bp, 1e-6)
         per.append((bp, wp, _solve_midtones(max(x0, 1e-6), target)))
-    for (bp, wp, mid), s_ in zip(per, suffixes or ()):
+        anchors.append((med, max(sigma, 1e-7), bright))
+    for (bp, wp, mid), (med, sigma, bright), s_ in zip(per, anchors, suffixes or ()):
         out[f"black{s_}"], out[f"white{s_}"], out[f"mid{s_}"] = bp, wp, mid
+        # Data anchors for the pinned-GHS finishes (Hubble GHS): the sky
+        # median and noise the stretch pins, and the bright level it maps
+        # to the nebula level. Twin of finish_seed.js.
+        out[f"sky{s_}"], out[f"sig{s_}"], out[f"top{s_}"] = med, sigma, bright
     bp, wp, mid = per[-1]
     out["blackpoint"], out["whitepoint"], out["midtones"] = bp, wp, mid
     def _sky_med(c):

@@ -25,7 +25,7 @@ import inspect
 
 from finishes.framework import Param, finish
 from finishes.stdlib import (
-    maximum, minimum, mtf, replace_lightness, saturate, screen, vec3,
+    maximum, minimum, mtf, replace_lightness, saturate, screen, vec3, where,
 )
 
 
@@ -74,6 +74,74 @@ def hubble(nb, stars,
     o = _stretch(nb.b, blackO, whiteO, midO)
     # SCNR (average-neutral): green → gold, the classic SHO move —
     # without it Hα's dominance renders the whole palette green.
+    h = minimum(h, (1.0 - scnr) * h + scnr * 0.5 * (s + o))
+    return screen(vec3(s, h, o), _stars_layer(stars, star_s, star_mid, star_white))
+
+
+_E = 2.718281828459045
+_GHS_B = 15.0
+
+
+def _ghs_pinned(x, sky, sig, top, level, neb, strength):
+    """One channel of the pinned GHS stretch (designed with Stylistic7 on the
+    75a1 Hα mosaic, 2026-10-02): a FIXED GHS shape -- b = 15, SP just left
+    of the sky peak (sky − 1.5σ) as in Siril's GHS tutorial, D from
+    `strength` = ln(D + 1) -- followed by a linear black/white map SOLVED so
+    the sky median lands exactly on `level` and the bright anchor `top`
+    exactly on `neb`. Sky and nebula then move independently: each slider
+    holds its own point fixed whatever the others do. `sky`, `sig` and `top`
+    are data anchors seeded from the channel's stats; `neb` > 1 clips the
+    brightest nebula to white on purpose.
+
+    Only the GHS's own shape matters here: its normalisation constants
+    cancel in the two-point solve, so f is used un-normalised."""
+    d = maximum(_E ** strength - 1.0, 0.05)
+    sp = sky - 1.5 * sig
+
+    def t(u):   # the b > 0 GHS integral, u >= 0
+        return 1.0 - (1.0 + _GHS_B * d * maximum(u, 0.0)) ** (-1.0 / _GHS_B)
+
+    def f(v):   # point-symmetric about SP
+        return where(v < sp, -t(sp - v), t(v - sp))
+
+    f_sky = f(sky)
+    scale = (neb - level) / maximum(f(top) - f_sky, 1e-12)
+    return saturate((f(x) - f_sky) * scale + level)
+
+
+@finish(name="Hubble GHS", inputs=("Linear SHO", "Linear RGB Stars"),
+        alt_primaries=("Linear Narrowband Starless",),
+        optional=("Linear RGB Stars",))
+def hubble_ghs(nb, stars,
+               levelS=Param(0.04, 0.0, 0.2, step=0.005, label="S sky level"),
+               nebS=Param(1.0, 0.5, 1.5, step=0.01, label="S nebula level"),
+               strS=Param(4.0, 0.0, 6.0, step=0.05, label="S stretch"),
+               levelH=Param(0.04, 0.0, 0.2, step=0.005, label="H sky level"),
+               nebH=Param(1.0, 0.5, 1.5, step=0.01, label="H nebula level"),
+               strH=Param(4.0, 0.0, 6.0, step=0.05, label="H stretch"),
+               levelO=Param(0.04, 0.0, 0.2, step=0.005, label="O sky level"),
+               nebO=Param(1.0, 0.5, 1.5, step=0.01, label="O nebula level"),
+               strO=Param(4.0, 0.0, 6.0, step=0.05, label="O stretch"),
+               skyS=Param(0.005, 0.0, 0.05, step=0.03, label="S sky (data)", scale="log"),
+               sigS=Param(3e-5, 1e-7, 1e-2, step=0.03, label="S noise σ (data)", scale="log"),
+               topS=Param(0.0089, 0.001, 0.5, step=0.03, label="S bright anchor (data)", scale="log"),
+               skyH=Param(0.005, 0.0, 0.05, step=0.03, label="H sky (data)", scale="log"),
+               sigH=Param(3e-5, 1e-7, 1e-2, step=0.03, label="H noise σ (data)", scale="log"),
+               topH=Param(0.0089, 0.001, 0.5, step=0.03, label="H bright anchor (data)", scale="log"),
+               skyO=Param(0.005, 0.0, 0.05, step=0.03, label="O sky (data)", scale="log"),
+               sigO=Param(3e-5, 1e-7, 1e-2, step=0.03, label="O noise σ (data)", scale="log"),
+               topO=Param(0.0089, 0.001, 0.5, step=0.03, label="O bright anchor (data)", scale="log"),
+               star_s=Param(1.0, 0.0, 2.0, step=0.1, label="stars"),
+               star_mid=Param(0.25, 0.05, 0.95, step=0.03, label="star mid", scale="log"),
+               star_white=Param(0.0089, 0.001, 0.5, step=0.03, label="star white", scale="log"),
+               scnr=Param(0.9, 0.0, 1.0, step=0.1, label="green→gold")):
+    """Hubble palette (R=SII, G=Hα, B=OIII) with the pinned GHS stretch per
+    channel: sky level, nebula level and stretch are independent knobs.
+    The (data) anchors are seeded from each channel's sky median, sky noise
+    and bright level; they are knobs only so they can be corrected."""
+    s = _ghs_pinned(nb.r, skyS, sigS, topS, levelS, nebS, strS)
+    h = _ghs_pinned(nb.g, skyH, sigH, topH, levelH, nebH, strH)
+    o = _ghs_pinned(nb.b, skyO, sigO, topO, levelO, nebO, strO)
     h = minimum(h, (1.0 - scnr) * h + scnr * 0.5 * (s + o))
     return screen(vec3(s, h, o), _stars_layer(stars, star_s, star_mid, star_white))
 

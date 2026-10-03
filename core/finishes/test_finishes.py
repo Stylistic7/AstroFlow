@@ -19,7 +19,7 @@ def _srcs(n, seed=7, scale=0.05, size=16):
             for _ in range(n)]
 
 
-STOCK = [("RGB", 2), ("LRGB", 4), ("HaLRGB", 4), ("Hubble", 2), ("Foraxx", 2),
+STOCK = [("RGB", 2), ("LRGB", 4), ("HaLRGB", 4), ("Hubble", 2), ("Hubble GHS", 2), ("Foraxx", 2),
          ("H", 1), ("S", 1), ("O", 1), ("R", 1), ("G", 1), ("B", 1), ("L", 1),
          ("Master", 1)]
 
@@ -323,7 +323,7 @@ class TestChannelFinishes:
         assert prim["L"][0] == "Linear L Starless"
         assert prim["Master"] == ["Master"]
         for f in all_finishes():
-            assert (f.role is None) == (f.name in {"Hubble", "Foraxx", "RGB", "LRGB", "HaLRGB"})
+            assert (f.role is None) == (f.name in {"Hubble", "Hubble GHS", "Foraxx", "RGB", "LRGB", "HaLRGB"})
 
     def test_h_reads_band_g_of_the_join_and_the_whole_mono_tap(self):
         """`nb.g` is Hα in the S,H,O layout; a 1-band source is broadcast so
@@ -369,3 +369,22 @@ class TestChannelFinishes:
         mono = np.full((4, 4, 1), 0.01, np.float32)
         out = f.bake([mono])
         assert out.shape == (4, 4, 3) and np.allclose(out[..., 0], out[..., 2])
+
+
+def test_hubble_ghs_pins_sky_and_nebula_independently():
+    """Each channel's sky median lands exactly on its sky level and its bright
+    anchor exactly on its nebula level, whatever the stretch (2026-10-02)."""
+    f = get_finish("Hubble GHS")
+    rng = np.random.default_rng(1)
+    sky, sig, top = 0.005, 3e-5, 0.0089
+    nb = (sky + rng.normal(0, sig, (16, 16, 3))).astype(np.float32)
+    nb[0, 0], nb[0, 1] = top, sky
+    v = dict(f.defaults(), scnr=0.0, star_s=0.0)
+    for r in "SHO":
+        v.update({f"sky{r}": sky, f"sig{r}": sig, f"top{r}": top})
+    for level, neb, strength in ((0.02, 1.0, 4.0), (0.12, 1.0, 1.0), (0.04, 0.7, 6.0)):
+        for r in "SHO":
+            v.update({f"level{r}": level, f"neb{r}": neb, f"str{r}": strength})
+        out = f.bake([nb, np.zeros_like(nb)], v)
+        assert np.allclose(out[0, 1], level, atol=1e-5)
+        assert np.allclose(out[0, 0], neb, atol=1e-5)
