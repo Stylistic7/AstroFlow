@@ -24,14 +24,14 @@ Params are SYMBOLIC at trace time (they become GPU uniforms — the slider
 moves them without re-tracing), so `if some_param:` raises; per-pixel
 branching is `where(cond, a, b)`.
 """
-from finishes.framework import Param, finish
+from finishes.framework import Color, Param, finish
 from finishes.stdlib import (
     absolute, clamp, dot, exp, log, maximum, minimum, mix, mtf, saturate,
     screen, sqrt, replace_lightness, vec3, where,
 )
 
 __all__ = [
-    "Param", "finish",
+    "Color", "Param", "finish",
     "absolute", "clamp", "dot", "exp", "log", "maximum", "minimum", "mix",
     "mtf", "saturate", "screen", "sqrt", "replace_lightness", "vec3",
     "where",

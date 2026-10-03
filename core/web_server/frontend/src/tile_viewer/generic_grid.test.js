@@ -91,3 +91,11 @@ describe('describeMove', () => {
         expect(describeMove(AXES, [])).toBe('');
     });
 });
+
+test('colour components are not taste-grid axes', () => {
+    const axes = axesFromParams([
+        { name: 'colS_r', default: 1, lo: 0, hi: 1, step: 0.1, label: 'colour', kind: 'color' },
+        { name: 'k', default: 1, lo: 0, hi: 2, step: 0.1, label: 'k', kind: 'float' },
+    ]);
+    expect(Object.keys(axes)).toEqual(['k']);
+});

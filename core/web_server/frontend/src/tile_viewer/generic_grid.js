@@ -27,6 +27,7 @@ export function axesFromParams(params) {
     const axes = {};
     for (const p of params) {
         if (p.kind === 'data') continue;   // measured from the image, not taste
+        if (p.kind === 'color') continue;  // a colour's 3 components move together, in the picker
         axes[p.name] = { lo: p.lo, hi: p.hi, step: p.step, label: p.label, scale: p.scale || 'linear' };
     }
     return axes;

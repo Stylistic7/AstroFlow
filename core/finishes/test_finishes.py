@@ -7,7 +7,7 @@ GPU)."""
 import numpy as np
 import pytest
 
-from finishes.framework import FinishDefinitionError, Param, finish
+from finishes.framework import Color, FinishDefinitionError, Param, finish
 from finishes.registry import finish_specs, get_finish, refresh_finishes
 from finishes.stdlib import NpVec, _mtf_np, _replace_lightness_np
 from finishes.tracer import FinishTraceError
@@ -414,7 +414,8 @@ def test_emission_hues_adds_each_line_in_its_own_colour():
     v = dict(f.defaults(), star_s=0.0)
     for r in "SHO":
         v.update({f"sky{r}": sky, f"sig{r}": sig, f"top{r}": top, f"level{r}": 0.0, f"neb{r}": 1.0})
-    v.update(hueS=0.0, hueH=60.0, hueO=240.0, satS=1.0, satH=1.0, satO=0.5)
+    v.update(colS_r=1.0, colS_g=0.0, colS_b=0.0, colH_r=1.0, colH_g=1.0, colH_b=0.0,
+             colO_r=0.5, colO_g=0.5, colO_b=1.0)
     out = f.bake([nb, np.zeros_like(nb)], v)
     assert np.allclose(out[0, 0], (1, 0, 0), atol=1e-5)
     assert np.allclose(out[0, 1], (1, 1, 0), atol=1e-5)
@@ -423,11 +424,30 @@ def test_emission_hues_adds_each_line_in_its_own_colour():
     assert np.allclose(out[1, 1], 0.0, atol=1e-5)
 
 
-def test_emission_hues_shows_five_controls_per_line():
+def test_emission_hues_shows_stretch_controls_and_one_colour_per_line():
     f = get_finish("Emission Hues")
-    for r in "SHO":
-        shown = [p.name for p in f.params if p.kind != "data" and p.name[-1] == r and not p.builtin]
-        assert sorted(shown) == sorted([f"level{r}", f"neb{r}", f"str{r}", f"hue{r}", f"sat{r}"]), shown
+    for r, group in (("S", "SII"), ("H", "Hα"), ("O", "OIII")):
+        shown = [p for p in f.params if p.kind != "data" and p.group == group]
+        assert [p.name for p in shown if p.kind == "float"] == [f"level{r}", f"neb{r}", f"str{r}"]
+        assert [p.name for p in shown if p.kind == "color"] == [f"col{r}_r", f"col{r}_g", f"col{r}_b"]
+
+
+def test_color_knob_is_one_vec3_for_the_author_and_three_uniforms_for_the_shader():
+    """`Color` expands into three kind="color" scalar params in place; the
+    function sees a vec3; bake and the traced shader agree (2026-10-03)."""
+    @finish(name="_t_color", inputs=("Linear RGB",))
+    def t(c, tint=Color((0.25, 0.5, 1.0), label="tint", group="Look"), k=Param(1.0, 0.0, 2.0)):
+        return tint * c.r * k
+    refresh_finishes()   # drop the test finish from the shared registry
+    authored = [p for p in t.params if not p.builtin]
+    assert [p.name for p in authored] == ["tint_r", "tint_g", "tint_b", "k"]
+    assert all(p.kind == "color" and p.label == "tint" and p.group == "Look" for p in authored[:3])
+    assert [p.default for p in authored[:3]] == [0.25, 0.5, 1.0]
+    src = np.full((2, 2, 3), 0.5, np.float32)
+    out = t.bake([src], {"tint_g": 0.2})
+    assert np.allclose(out[0, 0], (0.125, 0.1, 0.5))
+    assert np.allclose(out, t.interpret([src], {"tint_g": 0.2}))
+    assert "tint_r: f32" in t.wgsl
 
 
 def test_show_clipping_paints_blown_and_crushed_pixels_only_where_there_is_data():

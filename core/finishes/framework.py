@@ -59,7 +59,8 @@ class Param:
     # "float" renders a slider; "toggle" renders a switch (0/1); "data" is a
     # value MEASURED from the image (seeded from its stats by name, like a
     # sky median) -- passed to the shader like any param but never shown as
-    # a control or moved by the taste grid.
+    # a control or moved by the taste grid; "color" is one component of a
+    # `Color` knob (see `Color`), shown as one picker per colour.
     kind: str = "float"
     # Optional panel heading: the viewer groups consecutive params that share
     # a group under one heading (e.g. one panel per narrowband channel).
@@ -70,6 +71,52 @@ class Param:
         d["step"] = self.step if self.step is not None else (self.hi - self.lo) / 15.0
         d["label"] = self.label or self.name
         return d
+
+
+@dataclass(frozen=True)
+class Color:
+    """A colour knob: the author's function receives ONE vec3, the viewer
+    shows ONE colour picker (Stylistic7, 2026-10-03). `default` is a display RGB
+    triple in [0, 1]. The framework expands it into three float Params
+    `<name>_r/_g/_b` (kind "color") — the uniform buffer holds scalars only,
+    and the viewer recognises the three by that suffix."""
+    default: tuple
+    label: str = ""
+    group: str = ""
+
+
+COLOR_SUFFIXES = ("_r", "_g", "_b")
+
+
+def _expand_colors(fn):
+    """Replace each `Color` kwarg with its three scalar Params in the
+    signature, and hand the author a vec3 assembled from them."""
+    from finishes.stdlib import vec3
+
+    sig = inspect.signature(fn)
+    colors = [n for n, q in sig.parameters.items() if isinstance(q.default, Color)]
+    if not colors:
+        return fn
+
+    def expanded(*srcs, **kwargs):
+        for n in colors:
+            kwargs[n] = vec3(*(kwargs.pop(n + c) for c in COLOR_SUFFIXES))
+        return fn(*srcs, **kwargs)
+
+    params = []
+    for n, q in sig.parameters.items():
+        if n not in colors:
+            params.append(q)
+            continue
+        c = q.default
+        for suffix, v in zip(COLOR_SUFFIXES, c.default):
+            params.append(q.replace(name=n + suffix, default=Param(
+                float(v), 0.0, 1.0, label=c.label or n, kind="color",
+                group=c.group)))
+    expanded.__name__ = getattr(fn, "__name__", "finish")
+    expanded.__doc__ = fn.__doc__
+    expanded.__signature__ = sig.replace(parameters=params)
+    return expanded
 
 
 class FinishDefinitionError(Exception):
@@ -363,18 +410,19 @@ def finish(name: str, inputs: tuple, alt_primaries: tuple = (),
             raise FinishDefinitionError(
                 f"{name}: the PRIMARY input can't be optional (it supplies the"
                 f" tile geometry)")
-        composed = _with_common_first_pass(fn, tuple(inputs), tuple(optional))
+        composed = _with_common_first_pass(_expand_colors(fn), tuple(inputs),
+                                           tuple(optional))
         wgsl, params, root = _trace(composed, name, tuple(inputs))
         # Hash the AUTHOR's source (the wrapper is identical everywhere and
         # would not distinguish two finishes), plus a tag for the common pass
         # so changing it invalidates every served spec exactly once.
         h = xxhash.xxh64(
             structural_source_hash(fn) + "|" + name + "|" + ",".join(inputs)
-            # common3: the trim tests only the bands the finish reads
-            # (2026-09-16) — bumping the tag is what invalidates every
-            # served spec and cached preview exactly once when the shared
-            # pass changes.
-            + "|common3"
+            # common4: + the show-clipping last pass and Color expansion
+            # (2026-10-03). Bumping the tag is what invalidates every served
+            # spec and cached preview exactly once when the shared pass
+            # changes.
+            + "|common4"
         ).hexdigest()
         f = Finish(name=name, inputs=tuple(inputs), optional=tuple(optional),
                    params=params, wgsl=wgsl, fn=composed, finish_hash=h,

@@ -23,10 +23,9 @@ from __future__ import annotations
 
 import inspect
 
-from finishes.framework import Param, finish
+from finishes.framework import Color, Param, finish
 from finishes.stdlib import (
-    absolute, clamp, maximum, minimum, mtf, replace_lightness, saturate, screen,
-    vec3, where,
+    maximum, minimum, mtf, replace_lightness, saturate, screen, vec3, where,
 )
 
 
@@ -147,16 +146,6 @@ def hubble_ghs(nb, stars,
     return screen(vec3(s, h, o), _stars_layer(stars, star_s, star_mid, star_white))
 
 
-def _line_colour(hue, sat):
-    """A colour at full value from a hue (degrees, 0-360) and saturation —
-    the classic modulo-free HSV→RGB."""
-    h = hue / 60.0
-    rgb = vec3(clamp(absolute(h - 3.0) - 1.0, 0.0, 1.0),
-               clamp(2.0 - absolute(h - 2.0), 0.0, 1.0),
-               clamp(2.0 - absolute(h - 4.0), 0.0, 1.0))
-    return 1.0 - (1.0 - rgb) * sat
-
-
 @finish(name="Emission Hues", inputs=("Linear SHO", "Linear RGB Stars"),
         alt_primaries=("Linear Narrowband Starless",),
         optional=("Linear RGB Stars",))
@@ -164,41 +153,37 @@ def emission_hues(nb, stars,
                   levelS=Param(0.04, -0.1, 0.2, step=0.005, label="sky level", group="SII"),
                   nebS=Param(1.0, 0.5, 1.5, step=0.01, label="nebula level", group="SII"),
                   strS=Param(4.0, 0.0, 10.0, step=0.05, label="stretch", group="SII"),
-                  hueS=Param(0.0, 0.0, 360.0, step=1.0, label="hue", group="SII"),
-                  satS=Param(1.0, 0.0, 1.0, step=0.01, label="saturation", group="SII"),
+                  colS=Color((1.0, 0.0, 0.0), label="colour", group="SII"),
                   skyS=Param(0.005, 0.0, 0.05, step=0.03, label="sky", scale="log", group="SII", kind="data"),
                   sigS=Param(3e-5, 1e-7, 1e-2, step=0.03, label="noise σ", scale="log", group="SII", kind="data"),
                   topS=Param(0.0089, 0.001, 0.5, step=0.03, label="bright anchor", scale="log", group="SII", kind="data"),
                   levelH=Param(0.04, -0.1, 0.2, step=0.005, label="sky level", group="Hα"),
                   nebH=Param(1.0, 0.5, 1.5, step=0.01, label="nebula level", group="Hα"),
                   strH=Param(4.0, 0.0, 10.0, step=0.05, label="stretch", group="Hα"),
-                  hueH=Param(40.0, 0.0, 360.0, step=1.0, label="hue", group="Hα"),
-                  satH=Param(1.0, 0.0, 1.0, step=0.01, label="saturation", group="Hα"),
+                  colH=Color((1.0, 0.667, 0.0), label="colour", group="Hα"),
                   skyH=Param(0.005, 0.0, 0.05, step=0.03, label="sky", scale="log", group="Hα", kind="data"),
                   sigH=Param(3e-5, 1e-7, 1e-2, step=0.03, label="noise σ", scale="log", group="Hα", kind="data"),
                   topH=Param(0.0089, 0.001, 0.5, step=0.03, label="bright anchor", scale="log", group="Hα", kind="data"),
                   levelO=Param(0.04, -0.1, 0.2, step=0.005, label="sky level", group="OIII"),
                   nebO=Param(1.0, 0.5, 1.5, step=0.01, label="nebula level", group="OIII"),
                   strO=Param(4.0, 0.0, 10.0, step=0.05, label="stretch", group="OIII"),
-                  hueO=Param(195.0, 0.0, 360.0, step=1.0, label="hue", group="OIII"),
-                  satO=Param(1.0, 0.0, 1.0, step=0.01, label="saturation", group="OIII"),
+                  colO=Color((0.0, 0.75, 1.0), label="colour", group="OIII"),
                   skyO=Param(0.005, 0.0, 0.05, step=0.03, label="sky", scale="log", group="OIII", kind="data"),
                   sigO=Param(3e-5, 1e-7, 1e-2, step=0.03, label="noise σ", scale="log", group="OIII", kind="data"),
                   topO=Param(0.0089, 0.001, 0.5, step=0.03, label="bright anchor", scale="log", group="OIII", kind="data"),
                   star_s=Param(1.0, 0.0, 2.0, step=0.1, label="stars", group="Stars"),
                   star_mid=Param(0.25, 0.05, 0.95, step=0.03, label="star mid", scale="log", group="Stars"),
                   star_white=Param(0.0089, 0.001, 0.5, step=0.03, label="star white", scale="log", group="Stars")):
-    """Each emission line gets its own colour (hue + saturation at full
-    value), weighted by its pinned-GHS-stretched intensity, and the three
-    are ADDED: every line keeps its own structure where it emits, overlaps
+    """Each emission line gets its own colour (a `Color` knob: the viewer's
+    picker keeps it at full value), weighted by its pinned-GHS-stretched
+    intensity, and the three are ADDED: every line keeps its own structure where it emits, overlaps
     blend, nothing is discarded (Stylistic7, 2026-10-03; replaces SCNR's green
     cap). A pixel whose sum passes 1 is scaled down by its own largest
     component — per pixel, hue-preserving; no global rescale."""
     s = _ghs_pinned(nb.r, skyS, sigS, topS, levelS, nebS, strS)
     h = _ghs_pinned(nb.g, skyH, sigH, topH, levelH, nebH, strH)
     o = _ghs_pinned(nb.b, skyO, sigO, topO, levelO, nebO, strO)
-    c = (_line_colour(hueS, satS) * s + _line_colour(hueH, satH) * h
-         + _line_colour(hueO, satO) * o)
+    c = colS * s + colH * h + colO * o
     c = c / maximum(maximum(maximum(c.r, c.g), c.b), 1.0)
     return screen(c, _stars_layer(stars, star_s, star_mid, star_white))
 

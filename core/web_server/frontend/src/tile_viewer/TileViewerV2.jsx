@@ -37,6 +37,7 @@ import {
 import { stfSeed } from './finish_seed.js';
 import PolygonOverlay from './PolygonOverlay.jsx';
 import TextOverlay from './TextOverlay.jsx';
+import LineColorPicker from './LineColorPicker.jsx';
 import { buildApiUrl, buildUrl } from '../urls.js';
 
 
@@ -436,9 +437,10 @@ export default function TileViewerV2({
         renderer.setFinishShader(activeFinish.wgsl, [...monoKey].map((c) => c === '1'));
     }, [renderer, activeFinish, monoKey]);
 
-    /** One control per served param: a switch for `kind === "toggle"`, a
-     * slider otherwise. Built-in (framework-injected) params come first and
-     * are separated from the author's own by a rule. */
+    /** One control per served param: a switch for `kind === "toggle"`, one
+     * colour picker per `Color` knob (its three `kind === "color"` params,
+     * suffixed _r/_g/_b), a slider otherwise. Built-in (framework-injected)
+     * params come first and are separated from the author's own by a rule. */
     function renderFinishParams(finishParams) {
         // `kind: "data"` params are measured from the image (seeded), not controls.
         const shown = finishParams.filter((p) => p.kind !== 'data');
@@ -449,7 +451,23 @@ export default function TileViewerV2({
         // moved. Show significant figures instead of fixed decimals.
         const fmtParam = (v) => (Math.abs(v) < 0.1 && v !== 0
             ? Number(v).toPrecision(3) : Number(v).toFixed(3));
-        const control = (p) => (p.kind === 'toggle' ? (
+        const colorControl = (p) => {
+            if (!p.name.endsWith('_r')) return null;   // _g/_b ride on the _r picker
+            const base = p.name.slice(0, -2);
+            const names = ['_r', '_g', '_b'].map((c) => base + c);
+            const value = names.map((n) => genericValues[n]
+                ?? finishParams.find((q) => q.name === n)?.default ?? 0);
+            return (
+                <LineColorPicker
+                    key={base}
+                    label={p.label}
+                    value={value}
+                    onChange={(rgb) => setGenericValues((stt) => ({
+                        ...stt, [names[0]]: rgb[0], [names[1]]: rgb[1], [names[2]]: rgb[2] }))}
+                />
+            );
+        };
+        const control = (p) => (p.kind === 'color' ? colorControl(p) : p.kind === 'toggle' ? (
             <FormControlLabel
                 key={p.name}
                 control={
