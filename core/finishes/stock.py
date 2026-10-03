@@ -333,6 +333,42 @@ for _role, _band in (("R", "r"), ("G", "g"), ("B", "b")):
 _channel("L", "r", _LUM)
 
 
+def _channel_ghs(role: str, band: str, primaries: tuple):
+    """A single filter's channel through the pinned GHS stretch — the
+    per-channel controls of Hubble Pinned GHS (sky level, nebula level,
+    stretch) on one band, no stars layer (Stylistic7, 2026-10-03). The anchors
+    (sky/sig/top<role>) are measured from the image like Hubble Pinned
+    GHS's, so seeding needs nothing new."""
+    def body(c, **k):
+        x = _ghs_pinned(getattr(c, band), k["sky" + role], k["sig" + role],
+                        k["top" + role], k["level" + role], k["neb" + role],
+                        k["str" + role])
+        return vec3(x, x, x)
+
+    kw = inspect.Parameter.KEYWORD_ONLY
+    body.__name__ = f"{role}_pinned_ghs"
+    body.__doc__ = (f"The {role} channel alone through the pinned GHS stretch "
+                    f"(sky level, nebula level, stretch), with no stars layer.")
+    body.__signature__ = inspect.Signature([
+        inspect.Parameter("c", inspect.Parameter.POSITIONAL_ONLY),
+        inspect.Parameter("level" + role, kw, default=Param(0.04, -0.1, 0.2, step=0.005, label="sky level")),
+        inspect.Parameter("neb" + role, kw, default=Param(1.0, 0.5, 1.5, step=0.01, label="nebula level")),
+        inspect.Parameter("str" + role, kw, default=Param(5.0, 0.0, 10.0, step=0.05, label="stretch")),
+        inspect.Parameter("sky" + role, kw, default=Param(0.005, 0.0, 0.05, step=0.03, label="sky", scale="log", kind="data")),
+        inspect.Parameter("sig" + role, kw, default=Param(3e-5, 1e-7, 1e-2, step=0.03, label="noise σ", scale="log", kind="data")),
+        inspect.Parameter("top" + role, kw, default=Param(0.0089, 0.001, 0.5, step=0.03, label="bright anchor", scale="log", kind="data")),
+    ])
+    return finish(name=f"{role} Pinned GHS", inputs=(primaries[0],),
+                  alt_primaries=primaries[1:], role=role)(body)
+
+
+for _role, _band in (("H", "g"), ("S", "r"), ("O", "b")):
+    _channel_ghs(_role, _band, _NARROWBAND)
+for _role, _band in (("R", "r"), ("G", "g"), ("B", "b")):
+    _channel_ghs(_role, _band, _BROADBAND)
+_channel_ghs("L", "r", _LUM)
+
+
 @finish(name="Master", inputs=("Master",), role="none")
 def master(c,
            blackpoint=Param(0.00496, 0.0, 0.1, step=0.03, label="black", scale="log"),

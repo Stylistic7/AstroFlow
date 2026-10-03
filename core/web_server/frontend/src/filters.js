@@ -16,5 +16,9 @@ const FILTER_LABELS = {
 
 export function filterLabel(id) {
     if (id == null) return id;
-    return FILTER_LABELS[id] ?? id;
+    if (FILTER_LABELS[id]) return FILTER_LABELS[id];
+    // A channel finish variant is its role plus a qualifier ("O Pinned GHS"):
+    // label the role, keep the qualifier.
+    const m = /^(\S) (.+)$/.exec(id);
+    return m && FILTER_LABELS[m[1]] ? `${FILTER_LABELS[m[1]]} ${m[2]}` : id;
 }

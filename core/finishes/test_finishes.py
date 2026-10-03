@@ -21,7 +21,7 @@ def _srcs(n, seed=7, scale=0.05, size=16):
 
 STOCK = [("RGB", 2), ("LRGB", 4), ("HaLRGB", 4), ("Hubble", 2), ("Hubble Pinned GHS", 2), ("Emission Hues", 2), ("Foraxx", 2),
          ("H", 1), ("S", 1), ("O", 1), ("R", 1), ("G", 1), ("B", 1), ("L", 1),
-         ("Master", 1)]
+         ("Master", 1)] + [(f"{r} Pinned GHS", 1) for r in "HSORGBL"]
 
 
 class TestParity:
@@ -522,3 +522,24 @@ def test_first_paragraph_summarises_a_docstring():
     from extension_info import first_paragraph
     assert first_paragraph("  One line\n  wrapped.\n\n  More.") == "One line wrapped."
     assert first_paragraph(None) is None and first_paragraph("  ") is None
+
+
+def test_channel_pinned_ghs_pins_sky_and_nebula_on_its_band():
+    """Each channel's pinned GHS fork (2026-10-03): its role's band only,
+    sky median on the sky level, bright anchor on the nebula level, grey."""
+    from finishes.registry import all_finishes
+    sky, sig, top = 0.005, 3e-5, 0.0089
+    for role, band in (("H", 1), ("S", 0), ("O", 2)):
+        f = get_finish(f"{role} Pinned GHS", primary="Linear SHO")
+        assert f.role == role and f.inputs[0] == "Linear SHO"
+        nb = np.full((2, 2, 3), 0.02, np.float32)          # other bands bright
+        nb[..., band] = sky
+        nb[0, 0, band] = top
+        v = dict(f.defaults(), **{f"sky{role}": sky, f"sig{role}": sig, f"top{role}": top,
+                                  f"level{role}": 0.07, f"neb{role}": 0.9})
+        out = f.bake([nb], v)
+        assert np.allclose(out[0, 1], 0.07, atol=1e-5) and np.allclose(out[0, 0], 0.9, atol=1e-5)
+        shown = [p.name for p in f.params if not p.builtin and p.kind != "data"]
+        assert shown == [f"level{role}", f"neb{role}", f"str{role}"]
+    prim = [f.inputs[0] for f in all_finishes() if f.name == "L Pinned GHS"]
+    assert prim[0] == "Linear L Starless" and "Post-Processed" in prim
