@@ -315,6 +315,7 @@ def _channel(role: str, band: str, primaries: tuple):
 
     kw = inspect.Parameter.KEYWORD_ONLY
     body.__name__ = role
+    body.__doc__ = f"The {role} channel alone, autostretched, with no stars layer."
     body.__signature__ = inspect.Signature([
         inspect.Parameter("c", inspect.Parameter.POSITIONAL_ONLY),
         inspect.Parameter("black" + role, kw, default=Param(0.00496, 0.0, 0.05, step=0.03, label="black", scale="log")),

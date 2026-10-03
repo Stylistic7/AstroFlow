@@ -93,3 +93,17 @@ def get_finish(name: str, primary: "str | None" = None):
         if n == name:
             return f
     return None
+
+
+def finish_listing() -> list[dict]:
+    """One row per finish name for the Finishes page, in registration
+    order: author, version, description, built-in or installed, the
+    defining file:line, the role (channel finishes), and the primary taps
+    it can read, in preference order."""
+    rows: dict[str, dict] = {}
+    for f in all_finishes():
+        row = rows.setdefault(f.name, {"name": f.name, **f.about,
+                                       "role": f.role, "reads": []})
+        if f.inputs[0] not in row["reads"]:
+            row["reads"].append(f.inputs[0])
+    return list(rows.values())

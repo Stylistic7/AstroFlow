@@ -152,3 +152,37 @@ def registered_pipelines() -> dict[tuple[str, type], Callable]:
     if not _DISCOVERED:
         discover_pipelines()
     return dict(_REGISTRY)
+
+
+_PROCESS_ORDER = ("Stack", "Target", "Mosaic")
+
+
+def pipeline_listing() -> list[dict]:
+    """One row per pipeline name for the Pipelines page: author, version,
+    description, built-in or installed, and the file (and line) defining
+    it, plus the entity classes it processes. Unlisted (app-internal)
+    pipelines are included and marked, since they are present."""
+    from extension_info import describe
+
+    if not _DISCOVERED:
+        discover_pipelines()
+    by_name: dict[str, list] = {}
+    for (name, cls), runner in _REGISTRY.items():
+        by_name.setdefault(name, []).append((cls.__name__, runner))
+    rows = []
+    for name, entries in sorted(by_name.items()):
+        entries.sort(key=lambda e: _PROCESS_ORDER.index(e[0])
+                     if e[0] in _PROCESS_ORDER else len(_PROCESS_ORDER))
+        fn = entries[0][1]._function
+        declared = {k: next((r._pipeline_about[k] for _, r in entries
+                             if getattr(r, "_pipeline_about", {}).get(k)), None)
+                    for k in ("author", "version", "description")}
+        rows.append({
+            "name": name,
+            # The pipeline FILE's docstring describes the pipeline; each
+            # entry point's own docstring describes only one level of it.
+            **describe(fn, doc=fn.__globals__.get("__doc__"), **declared),
+            "processes": [c for c, _ in entries],
+            "listed": all(getattr(r, "_pipeline_listed", True) for _, r in entries),
+        })
+    return rows

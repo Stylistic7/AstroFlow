@@ -190,6 +190,24 @@ def get_pipelines():
     }
 
 
+@app.route("/api/registry/pipelines")
+def get_pipeline_listing():
+    """Every pipeline present, built-in or installed, with its author,
+    version, description, location and the entity classes it processes —
+    the Pipelines page."""
+    from pipelines.registry import pipeline_listing
+    return {"pipelines": pipeline_listing()}
+
+
+@app.route("/api/registry/finishes")
+def get_finish_listing():
+    """Every finish present, built-in or installed, with its author,
+    version, description, location and the taps it reads — the Finishes
+    page."""
+    from finishes.registry import finish_listing
+    return {"finishes": finish_listing()}
+
+
 @app.route("/api/shopping_cart/<object_type>/<object_id>/<path:pipeline_name>", methods=["POST"])
 def add_to_shopping_cart(object_type, object_id, pipeline_name):
     """Add a cart entry. Pipeline name is the sole variant axis — what

@@ -141,6 +141,9 @@ class Finish:
     # whose filter normalises to this role.
     role: "str | None" = None
     graph: object = field(repr=False, default=None)   # root Node (tests/interp)
+    # What the Finishes page lists: author, version, description, built-in
+    # or installed, and the defining file:line (see `extension_info`).
+    about: dict = field(default_factory=dict)
 
     def spec(self) -> dict:
         return {
@@ -391,13 +394,17 @@ def _with_common_first_pass(fn, inputs: tuple, optional: tuple):
 
 
 def finish(name: str, inputs: tuple, alt_primaries: tuple = (),
-           optional: tuple = (), role: "str | None" = None):
+           optional: tuple = (), role: "str | None" = None,
+           author: "str | None" = None, version: "str | None" = None,
+           description: "str | None" = None):
     """Register a display finish. `inputs` are tap display names, one per
     positional argument; `inputs[0]` is the primary tap (it supplies the
     tile geometry). `alt_primaries` registers copies with `inputs[0]`
     swapped, in preference order (e.g. a Hubble that also serves
     partial-narrowband images). `role` names the filter a channel finish
-    shows; the catalog binds per-filter taps by it."""
+    shows; the catalog binds per-filter taps by it. `author` / `version` /
+    `description` are what the Finishes page lists; the description
+    defaults to the function's docstring."""
     def decorate(fn):
         from hashing.structural_hash import structural_source_hash
         # Validate BEFORE composing: an author's mistake should report against
@@ -424,9 +431,12 @@ def finish(name: str, inputs: tuple, alt_primaries: tuple = (),
             # changes.
             + "|common4"
         ).hexdigest()
+        from extension_info import describe
         f = Finish(name=name, inputs=tuple(inputs), optional=tuple(optional),
                    params=params, wgsl=wgsl, fn=composed, finish_hash=h,
-                   role=role, graph=root)
+                   role=role, graph=root,
+                   about=describe(fn, doc=fn.__doc__, author=author,
+                                  version=version, description=description))
         from finishes.registry import register_finish
         register_finish(f)
         for alt in alt_primaries:
@@ -438,6 +448,4 @@ def finish(name: str, inputs: tuple, alt_primaries: tuple = (),
 def replace_primary(f: Finish, primary: str) -> Finish:
     """A copy of `f` served with a different primary tap — the WGSL is
     positional (src0..), so only the inputs list changes."""
-    return Finish(name=f.name, inputs=(primary,) + f.inputs[1:],
-                  optional=f.optional, params=f.params, wgsl=f.wgsl, fn=f.fn,
-                  finish_hash=f.finish_hash, role=f.role, graph=f.graph)
+    return replace(f, inputs=(primary,) + f.inputs[1:])

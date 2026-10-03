@@ -485,3 +485,40 @@ def test_show_clipping_paints_blown_and_crushed_pixels_only_where_there_is_data(
     assert np.allclose(shown[0, 2], 0.0)
     assert np.allclose(shown[1, 1], (0, 0, 1))
     assert np.allclose(f.bake([nb, np.zeros_like(nb)], dict(v, show_clipping=0.0)), plain)
+
+
+def test_finish_listing_rows(tmp_path, monkeypatch):
+    """The Finishes page rows (2026-10-03): one per name, built-ins by
+    AstroFlow at AstroFlow's version; an installed finish carries what its
+    author declared and leaves the rest None."""
+    import finishes.registry as reg
+    from extension_info import astroflow_version
+    rows = {r["name"]: r for r in reg.finish_listing()}
+    assert len(rows) == len({f.name for f in reg.all_finishes()})
+    eh = rows["Emission Hues"]
+    assert (eh["origin"], eh["author"], eh["version"]) == ("built-in", "AstroFlow", astroflow_version())
+    assert eh["reads"][0] == "Linear SHO" and eh["role"] is None
+    assert rows["H"]["role"] == "H" and rows["H"]["description"].startswith("The H channel alone")
+    d = tmp_path / "AstroFlow" / "finishes"
+    d.mkdir(parents=True)
+    (d / "glow.py").write_text(
+        "from finishes import finish, Param, mtf, saturate\n"
+        "@finish(name='Listing Glow', inputs=('Linear RGB Starless',), version='0.3')\n"
+        "def glow(c, mid=Param(0.3, 0.01, 0.95)):\n"
+        "    \"\"\"A soft glow.\"\"\"\n"
+        "    return mtf(saturate(c), mid)\n")
+    monkeypatch.setattr(reg.Path, "home", lambda: tmp_path)
+    try:
+        refresh_finishes()
+        row = next(r for r in reg.finish_listing() if r["name"] == "Listing Glow")
+        assert (row["origin"], row["author"], row["version"]) == ("installed", None, "0.3")
+        assert row["description"] == "A soft glow."
+    finally:
+        monkeypatch.undo()
+        refresh_finishes()
+
+
+def test_first_paragraph_summarises_a_docstring():
+    from extension_info import first_paragraph
+    assert first_paragraph("  One line\n  wrapped.\n\n  More.") == "One line wrapped."
+    assert first_paragraph(None) is None and first_paragraph("  ") is None

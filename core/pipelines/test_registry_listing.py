@@ -32,3 +32,44 @@ def test_subframe_ranks_below_every_preferred_pipeline():
         _pipeline_rank(p) < _pipeline_rank("Subframe")
         for p in _PIPELINE_PREFERENCE
     )
+
+
+def test_pipeline_listing_describes_every_built_in():
+    """The Pipelines page rows (2026-10-03): built-ins are AstroFlow's, at
+    AstroFlow's version, described by their file's docstring, located at a
+    real file:line; app-internal ones are present but marked."""
+    from pathlib import Path
+    from extension_info import astroflow_version
+    from pipelines.registry import pipeline_listing
+    rows = {r["name"]: r for r in pipeline_listing()}
+    pi = rows["PixInsight Master"]
+    assert pi["origin"] == "built-in" and pi["author"] == "AstroFlow"
+    assert pi["version"] == astroflow_version()
+    assert pi["description"].startswith("Reference pipeline")
+    assert pi["processes"][0] == "Stack" and pi["listed"]
+    path, line = pi["location"].rsplit(":", 1)
+    assert Path(path).is_file() and int(line) > 0
+    assert rows["Subframe"]["listed"] is False
+
+
+def test_an_installed_pipeline_lists_what_its_author_declared(tmp_path, monkeypatch):
+    import pipelines.registry as r
+    f = tmp_path / "AstroFlow" / "pipelines" / "mine.py"
+    f.parent.mkdir(parents=True)
+    f.write_text(
+        '"""My mosaic pipeline.\n\nLonger notes."""\n'
+        "from pipelines.decorators import pipeline\n"
+        "from mosaics.types import Mosaic\n"
+        "@pipeline('Listing Test Pipeline', processes=Mosaic, author='Ada', version='2.1')\n"
+        "def entry(mosaic, config):\n"
+        "    return None\n")
+    monkeypatch.setattr(r.Path, "home", lambda: tmp_path)
+    try:
+        r.refresh_pipelines()
+        row = next(x for x in r.pipeline_listing() if x["name"] == "Listing Test Pipeline")
+        assert row["origin"] == "installed"
+        assert (row["author"], row["version"]) == ("Ada", "2.1")
+        assert row["description"] == "My mosaic pipeline."
+        assert row["location"].startswith(str(f.resolve()))
+    finally:
+        r._REGISTRY.pop(("Listing Test Pipeline", __import__("mosaics.types").types.Mosaic), None)

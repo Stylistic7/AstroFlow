@@ -4,6 +4,7 @@ import Starmap from "./Starmap.jsx";
 import TargetPanel from "./TargetPanel.jsx";
 import DisambiguationPanel from "./DisambiguationPanel.jsx";
 import RecentPanel from "./RecentPanel.jsx";
+import RegistryPanel from "./RegistryPanel.jsx";
 import SsePanel from "./SsePanel.jsx";
 import { usePageVisibility } from './usePageVisibility';
 import { ThemeProvider } from '@mui/material/styles';
@@ -430,7 +431,17 @@ function App() {
                     <TileViewerV2 />
                   </Box>
                 } />
-<Route path="/recent" element={
+<Route path="/pipelines" element={
+                  <AppLayout>
+                    <RegistryPanel kind="pipelines" />
+                  </AppLayout>
+                } />
+                <Route path="/finishes" element={
+                  <AppLayout>
+                    <RegistryPanel kind="finishes" />
+                  </AppLayout>
+                } />
+                <Route path="/recent" element={
                   dataIsAvailable &&
                   <AppLayout>
                     <RecentPanel />

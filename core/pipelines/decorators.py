@@ -46,12 +46,16 @@ _TYPE_TAG = {
 
 
 def pipeline(display_name: str, processes: type,
-             listed: bool = True) -> Callable:
+             listed: bool = True, author: "str | None" = None,
+             version: "str | None" = None,
+             description: "str | None" = None) -> Callable:
     """Decorator: register the wrapped function as an entry point for
     pipeline `display_name`, handling cart entries whose object class
     is `processes`. Re-registration silently overrides (so a user
     file in `~/AstroFlow/pipelines/` can replace a built-in by reusing
-    the (name, class) pair). The wrapped function, when called, runs
+    the (name, class) pair). `author` / `version` / `description` are what the
+    Pipelines page lists (see `extension_info`); the description defaults to
+    the pipeline file's docstring. The wrapped function, when called, runs
     the user's body under a fresh trace context and returns the
     recorded `Graph` (or `None` if the body returned `None`).
 
@@ -85,6 +89,8 @@ def pipeline(display_name: str, processes: type,
         # user-chosen has been built (it ranks below every preferred name in
         # `catalog._PIPELINE_PREFERENCE`, so anything real front-runs it).
         runner._pipeline_listed = listed
+        runner._pipeline_about = {"author": author, "version": version,
+                                  "description": description}
         _REGISTRY[(display_name, processes)] = runner
         return runner
 

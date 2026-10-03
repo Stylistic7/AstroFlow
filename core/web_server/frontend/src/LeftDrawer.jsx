@@ -10,6 +10,8 @@ import ListItemText from '@mui/material/ListItemText';
 import IconButton from '@mui/material/IconButton';
 import MenuIcon from '@mui/icons-material/Menu';
 import ScheduleIcon from '@mui/icons-material/Schedule';
+import AccountTreeIcon from '@mui/icons-material/AccountTree';
+import PaletteIcon from '@mui/icons-material/Palette';
 
 
 export default function LeftDrawer() {
@@ -53,6 +55,22 @@ export default function LeftDrawer() {
                   <ScheduleIcon />
                 </ListItemIcon>
                 <ListItemText primary="Recent" />
+              </ListItemButton>
+            </ListItem>
+            <ListItem key="pipelines" disablePadding>
+              <ListItemButton onClick={() => navigate('/pipelines')}>
+                <ListItemIcon>
+                  <AccountTreeIcon />
+                </ListItemIcon>
+                <ListItemText primary="Pipelines" />
+              </ListItemButton>
+            </ListItem>
+            <ListItem key="finishes" disablePadding>
+              <ListItemButton onClick={() => navigate('/finishes')}>
+                <ListItemIcon>
+                  <PaletteIcon />
+                </ListItemIcon>
+                <ListItemText primary="Finishes" />
               </ListItemButton>
             </ListItem>
           </List>
