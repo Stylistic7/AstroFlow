@@ -113,7 +113,7 @@ def test_orion_mosaic_finishes_endpoint(client, with_orion_mosaic):
             meta = client.get(f"/tap/tile_metadata{view}", follow_redirects=True)
             assert meta.status_code == 200, f"tile_metadata {view}: {meta.status_code}"
             m = meta.get_json()
-            assert set(m) == {"name", "role", "status", "finish", "inputs"}
+            assert set(m) == {"name", "role", "status", "finish", "inputs", "tilePorts"}
             assert m["finish"]["name"] == f["name"]
             assert m["inputs"][0]["bound"] and m["inputs"][0]["bandRoles"]
             assert client.get(f"/api/metadata{view}").status_code == 200

@@ -405,23 +405,38 @@ def nxt(
     normally persist for incremental cache hits, but a cache no upstream
     change can ever hit again is pure disk; when nothing changed, the
     blend itself cache-hits and the tiles never re-run at all. Stylistic7's
-    ruling: correctness over compute — a re-merge re-NXTs the mosaic."""
+    ruling: correctness over compute — a re-merge re-NXTs the mosaic.
+
+    Zero pixels are NO DATA (padding past the canvas, the merge rim, and a
+    band whose footprint is smaller than the others'). NXT stretches
+    internally from image statistics, and zeros cripple it for the WHOLE
+    image: Heart 334b9c01 (19% zeros) lost 13% of its sky noise instead of
+    89% (2026-10-02). So each band's zeros are filled with that band's
+    median before rc-astro sees them, and set back to zero afterwards."""
     out = nxt.filename_fn(mosaic, config, image)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     if config.development_settings.mock_pixinsight:
         write_tiff_image(Path(out), read_image(Path(image.filename)), {"PIPELINE": "AstroFlow-OSS"})
     else:
         from rc_astro_cli import run_nxt
+        filled = np.atleast_3d(read_image(Path(image.filename))).copy()
+        empty = filled == 0
+        for band, hole in zip(np.moveaxis(filled, -1, 0), np.moveaxis(empty, -1, 0)):
+            if (~hole).any():
+                band[hole] = np.median(band[~hole])
         with tempfile.TemporaryDirectory(prefix="nxt_") as td:
-            tout = os.path.join(td, "out.xisf")
-            run_nxt(image.filename, tout,
+            tin, tout = os.path.join(td, "in.tiff"), os.path.join(td, "out.xisf")
+            write_tiff_image(Path(tin), filled)
+            run_nxt(tin, tout,
                     denoise_intensity_hf=config.nxt.denoise_intensity_hf,
                     denoise_intensity_lf=config.nxt.denoise_intensity_lf,
                     denoise_color_hf=config.nxt.denoise_color_hf,
                     denoise_color_lf=config.nxt.denoise_color_lf,
                     frequency_scale=config.nxt.frequency_scale,
                     iterations=config.nxt.iterations)
-            write_tiff_image(Path(out), read_image(Path(tout)), {"PIPELINE": "AstroFlow-OSS"})
+            result = np.atleast_3d(read_image(Path(tout))).copy()
+            result[empty] = 0
+            write_tiff_image(Path(out), result, {"PIPELINE": "AstroFlow-OSS"})
     return WithSidecar(TiffFilePath(out))
 
 
