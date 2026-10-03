@@ -431,6 +431,19 @@ def test_emission_hues_shows_stretch_controls_and_one_colour_per_line():
         assert [p.name for p in shown if p.kind == "float"] == [f"level{r}", f"neb{r}", f"str{r}"]
         assert [p.name for p in shown if p.kind == "color"] == [f"col{r}_r", f"col{r}_g", f"col{r}_b"]
         assert shown[0].name == f"col{r}_r", "the colour leads its section (Stylistic7, 2026-10-03)"
+    authored = [p for p in f.params if not p.builtin and p.kind != "data"]
+    assert authored[0].name == "scale" and authored[0].group == "", "overall scale sits at the top"
+
+
+def test_emission_hues_overall_scale_is_a_linear_gain():
+    f = get_finish("Emission Hues")
+    rng = np.random.default_rng(2)
+    nb = (0.005 + rng.random((8, 8, 3)) * 0.002).astype(np.float32)
+    v = dict(f.defaults(), star_s=0.0)
+    base = f.bake([nb, np.zeros_like(nb)], v)
+    half = f.bake([nb, np.zeros_like(nb)], dict(v, scale=0.5))
+    under = base.max(axis=2) < 1.0      # untouched by the per-pixel overflow step
+    assert under.any() and np.allclose(half[under], 0.5 * base[under], atol=1e-6)
 
 
 def test_color_knob_is_one_vec3_for_the_author_and_three_uniforms_for_the_shader():

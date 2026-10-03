@@ -150,6 +150,7 @@ def hubble_ghs(nb, stars,
         alt_primaries=("Linear Narrowband Starless",),
         optional=("Linear RGB Stars",))
 def emission_hues(nb, stars,
+                  scale=Param(1.0, 0.1, 2.0, step=0.01, label="overall scale"),
                   colS=Color((1.0, 0.0, 0.0), label="colour", group="SII"),
                   levelS=Param(0.04, -0.1, 0.2, step=0.005, label="sky level", group="SII"),
                   nebS=Param(1.0, 0.5, 1.5, step=0.01, label="nebula level", group="SII"),
@@ -178,12 +179,13 @@ def emission_hues(nb, stars,
     picker keeps it at full value), weighted by its pinned-GHS-stretched
     intensity, and the three are ADDED: every line keeps its own structure where it emits, overlaps
     blend, nothing is discarded (Stylistic7, 2026-10-03; replaces SCNR's green
-    cap). A pixel whose sum passes 1 is scaled down by its own largest
+    cap). `scale` multiplies the summed colour — a linear gain, so every
+    ratio (contrast) survives; an experiment alongside the nebula levels. A pixel whose sum passes 1 is scaled down by its own largest
     component — per pixel, hue-preserving; no global rescale."""
     s = _ghs_pinned(nb.r, skyS, sigS, topS, levelS, nebS, strS)
     h = _ghs_pinned(nb.g, skyH, sigH, topH, levelH, nebH, strH)
     o = _ghs_pinned(nb.b, skyO, sigO, topO, levelO, nebO, strO)
-    c = colS * s + colH * h + colO * o
+    c = (colS * s + colH * h + colO * o) * scale
     c = c / maximum(maximum(maximum(c.r, c.g), c.b), 1.0)
     return screen(c, _stars_layer(stars, star_s, star_mid, star_white))
 
