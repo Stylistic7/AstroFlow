@@ -58,6 +58,9 @@ class Param:
     builtin: bool = False
     # "float" renders a slider; "toggle" renders a switch (0/1).
     kind: str = "float"
+    # Optional panel heading: the viewer groups consecutive params that share
+    # a group under one heading (e.g. one panel per narrowband channel).
+    group: str = ""
 
     def spec(self) -> dict:
         d = asdict(self)

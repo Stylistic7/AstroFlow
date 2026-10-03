@@ -89,7 +89,8 @@ function identitySeed(bandRoles) {
 // actually uses the screen; lower values render a frame that is ~99%
 // background as almost entirely dark — correct by the recipe, unusable to
 // look at.
-export function stfSeed(channelStats, bandRoles, colorspace, boundsFor = null, target = 0.10) {
+export function stfSeed(channelStats, bandRoles, colorspace, boundsFor = null, target = 0.10,
+                        starlessStats = null) {
     if (colorspace === 'display') return identitySeed(bandRoles);
     if (!channelStats || !channelStats.length) return null;
     const b = (name) => (boundsFor ? boundsFor(name) : null);
@@ -101,9 +102,10 @@ export function stfSeed(channelStats, bandRoles, colorspace, boundsFor = null, t
     per.forEach((p, i) => {
         const s = bandRoles?.[i] ?? String(i);
         seed[`black${s}`] = p.bp; seed[`white${s}`] = p.wp; seed[`mid${s}`] = p.mid;
-        // Data anchors for the pinned-GHS finishes (Hubble GHS): sky median,
-        // sky noise and the bright level. Twin of `_stf_values` (preview.py).
-        const c = channelStats[i];
+        // Data anchors for the pinned-GHS finishes (Hubble Pinned GHS): sky median,
+        // sky noise and the bright level, measured on the STARLESS primary --
+        // the stretch never sees the stars. Twin of `_stf_values` (preview.py).
+        const c = (starlessStats ?? channelStats)[i] ?? channelStats[i];
         seed[`sky${s}`] = c.skyMedian ?? c.median;
         seed[`sig${s}`] = c.skySigma ?? c.sigma;
         seed[`top${s}`] = c.high ?? c.p999 ?? c.p99;

@@ -19,7 +19,7 @@ def _srcs(n, seed=7, scale=0.05, size=16):
             for _ in range(n)]
 
 
-STOCK = [("RGB", 2), ("LRGB", 4), ("HaLRGB", 4), ("Hubble", 2), ("Hubble GHS", 2), ("Foraxx", 2),
+STOCK = [("RGB", 2), ("LRGB", 4), ("HaLRGB", 4), ("Hubble", 2), ("Hubble Pinned GHS", 2), ("Foraxx", 2),
          ("H", 1), ("S", 1), ("O", 1), ("R", 1), ("G", 1), ("B", 1), ("L", 1),
          ("Master", 1)]
 
@@ -323,7 +323,7 @@ class TestChannelFinishes:
         assert prim["L"][0] == "Linear L Starless"
         assert prim["Master"] == ["Master"]
         for f in all_finishes():
-            assert (f.role is None) == (f.name in {"Hubble", "Hubble GHS", "Foraxx", "RGB", "LRGB", "HaLRGB"})
+            assert (f.role is None) == (f.name in {"Hubble", "Hubble Pinned GHS", "Foraxx", "RGB", "LRGB", "HaLRGB"})
 
     def test_h_reads_band_g_of_the_join_and_the_whole_mono_tap(self):
         """`nb.g` is Hα in the S,H,O layout; a 1-band source is broadcast so
@@ -374,7 +374,7 @@ class TestChannelFinishes:
 def test_hubble_ghs_pins_sky_and_nebula_independently():
     """Each channel's sky median lands exactly on its sky level and its bright
     anchor exactly on its nebula level, whatever the stretch (2026-10-02)."""
-    f = get_finish("Hubble GHS")
+    f = get_finish("Hubble Pinned GHS")
     rng = np.random.default_rng(1)
     sky, sig, top = 0.005, 3e-5, 0.0089
     nb = (sky + rng.normal(0, sig, (16, 16, 3))).astype(np.float32)

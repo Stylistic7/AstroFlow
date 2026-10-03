@@ -87,7 +87,7 @@ def test_per_band_and_linked_keys_are_both_emitted():
 
 
 def test_seeds_carry_the_pinned_ghs_data_anchors():
-    """Hubble GHS reads each channel's sky median, sky noise and bright level
+    """Hubble Pinned GHS reads each channel's sky median, sky noise and bright level
     from the seed (`sky<R>`, `sig<R>`, `top<R>`), twin of finish_seed.js."""
     from finishes.preview import _stf_values
     rng = np.random.default_rng(2)
@@ -98,3 +98,19 @@ def test_seeds_carry_the_pinned_ghs_data_anchors():
         assert abs(out[f"sky{r}"] - 0.005) < 2e-5
         assert 1.5e-5 < out[f"sig{r}"] < 6e-5
         assert out[f"top{r}"] > out[f"sky{r}"] + 50 * out[f"sig{r}"]
+
+
+def test_pinned_ghs_anchors_ignore_the_stars():
+    """With a stars layer composited in, the black/white seeds see the stars
+    but the pinned-GHS anchors come from the starless primary alone."""
+    from finishes.preview import _stf_values
+    rng = np.random.default_rng(3)
+    starless = (0.005 + rng.normal(0, 3e-5, (300, 300, 3))).astype(np.float32)
+    starless[:30, :30] += 0.003                  # nebula
+    stars = np.zeros_like(starless)
+    stars[::7, ::7] = 0.4                        # a crowded star field
+    out = _stf_values(starless + stars, ("S", "H", "O"), anchors_from=starless)
+    alone = _stf_values(starless, ("S", "H", "O"))
+    for r in "SHO":
+        assert out[f"top{r}"] == alone[f"top{r}"]
+        assert out[f"white{r}"] > 10 * alone[f"top{r}"]   # the stars dominate the composite

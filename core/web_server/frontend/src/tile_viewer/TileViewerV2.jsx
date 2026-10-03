@@ -13,7 +13,7 @@
  * we hit-test the polygons in JS (precedence: stack → target →
  * mosaic) and navigate.
  */
-import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -332,7 +332,7 @@ export default function TileViewerV2({
         const pb = new Map(activeFinish.params.map(
             (p) => [p.name, { lo: p.lo, hi: p.hi }]));
         const seed = stfSeed(primary?.channelStats, primary?.bandRoles, primary?.colorspace,
-                             (n) => pb.get(n) ?? null);
+                             (n) => pb.get(n) ?? null, undefined, primary?.channelStatsStarless);
         if (seed) {
             for (const p of activeFinish.params) {
                 if (p.name in seed) init[p.name] = Math.min(p.hi, Math.max(p.lo, seed[p.name]));
@@ -558,7 +558,14 @@ export default function TileViewerV2({
             {builtin.length > 0 && authored.length > 0 && (
                 <Divider sx={{ my: 1, borderColor: 'rgba(255,255,255,0.25)' }} />
             )}
-            {authored.map(control)}
+            {authored.map((p, i) => (p.group && p.group !== authored[i - 1]?.group ? (
+                <Fragment key={`g-${p.name}`}>
+                    <Typography variant="overline" sx={{ display: 'block', mt: i ? 1.5 : 0, opacity: 0.7, lineHeight: 1.6 }}>
+                        {p.group}
+                    </Typography>
+                    {control(p)}
+                </Fragment>
+            ) : control(p)))}
         </>);
     }
 

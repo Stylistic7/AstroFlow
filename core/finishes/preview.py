@@ -43,7 +43,8 @@ def read_pyramid_level(path, min_px: int = _PREVIEW_MIN_PX) -> "np.ndarray":
 
 
 def _stf_values(arr: "np.ndarray", suffixes: "tuple[str, ...] | None",
-                target: float = 0.10, display: bool = False) -> dict:
+                target: float = 0.10, display: bool = False,
+                anchors_from: "np.ndarray | None" = None) -> dict:
     """Image-adaptive stretch params — the Python twin of the viewer's
     stfSeed recipe (finish_seed.js, 2026-09-03 recalibration):
     per channel, black + midtones anchor on the SKY subset (pixels below
@@ -117,7 +118,7 @@ def _stf_values(arr: "np.ndarray", suffixes: "tuple[str, ...] | None",
         anchors.append((med, max(sigma, 1e-7), bright))
     for (bp, wp, mid), (med, sigma, bright), s_ in zip(per, anchors, suffixes or ()):
         out[f"black{s_}"], out[f"white{s_}"], out[f"mid{s_}"] = bp, wp, mid
-        # Data anchors for the pinned-GHS finishes (Hubble GHS): the sky
+        # Data anchors for the pinned-GHS finishes (Hubble Pinned GHS): the sky
         # median and noise the stretch pins, and the bright level it maps
         # to the nebula level. Twin of finish_seed.js.
         out[f"sky{s_}"], out[f"sig{s_}"], out[f"top{s_}"] = med, sigma, bright
@@ -135,6 +136,14 @@ def _stf_values(arr: "np.ndarray", suffixes: "tuple[str, ...] | None",
     # anchor the image white uses, else the stars curve crushes raw linear
     # star pixels to invisibility.
     out["star_white"] = float(np.mean([wp for _, wp, _ in per[:-1]] or [per[-1][1]]))
+    if anchors_from is not None and suffixes:
+        # The pinned-GHS anchors come from the STARLESS primary: that
+        # stretch works on the narrowband channels alone and never sees
+        # the stars (Stylistic7, 2026-10-02). Twin of finish_seed.js.
+        a = _stf_values(anchors_from, suffixes, target)
+        for s_ in suffixes:
+            for k in ("sky", "sig", "top"):
+                out[f"{k}{s_}"] = a[f"{k}{s_}"]
     return out
 
 
@@ -173,12 +182,13 @@ def render_finish_preview(object_type: str, object_id: str, pipeline: str,
             return 0
 
     dc = get_durable_cache()
-    # The literal 6 versions the SEEDING RECIPE (v6: per-role keys from the
+    # The literal 7 versions the SEEDING RECIPE (v7: pinned-GHS anchors from
+    # the starless primary; v6: per-role keys from the
     # primary's band roles + pooled linked keys, identity seed for
     # display-referred payloads, viewer parity; 2026-09-16) — bump it when
     # the value derivation changes, since the finish_hash only covers the
     # finish definition.
-    key = ("finish_preview", 6, object_type, object_id, pipeline, name,
+    key = ("finish_preview", 7, object_type, object_id, pipeline, name,
            b.finish.finish_hash,
            *(_mtime(i.path) if i.path is not None else 0 for i in b.inputs))
     cached = dc.get(key)
@@ -204,7 +214,8 @@ def render_finish_preview(object_type: str, object_id: str, pipeline: str,
         if st.shape[-1] >= 3 and composite.shape[-1] < 3:
             st = st[..., :3].mean(axis=-1, keepdims=True)
         composite += np.maximum(np.nan_to_num(st[..., :composite.shape[-1]]), 0.0)
-    values = _stf_values(composite, tuple(roles), display=tags.get("COLORSPC") == "display")
+    values = _stf_values(composite, tuple(roles), display=tags.get("COLORSPC") == "display",
+                         anchors_from=primary.astype(np.float32, copy=False))
 
     out = b.finish.bake(sources, values)
     ok, buf = cv2.imencode(".png", cv2.cvtColor(

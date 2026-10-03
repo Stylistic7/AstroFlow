@@ -310,6 +310,12 @@ def _input_metadata(bound, path, backend_port, star_paths=()) -> dict:
         # Rich generic per-channel stats — the finish's seeds come from the
         # primary, composited with the stars layers it screens back in.
         meta["channelStats"] = _per_channel_linear_stats(path, star_paths=star_paths)
+        # The primary ALONE, without the stars layers: what a stretch that
+        # works on the starless channels must anchor on (Hubble Pinned GHS's sky,
+        # noise and bright level). With stars composited in, the bright
+        # level in a crowded field is a star and the nebula renders dark.
+        meta["channelStatsStarless"] = (
+            _per_channel_linear_stats(path) if star_paths else meta["channelStats"])
     return meta
 
 
