@@ -414,7 +414,7 @@ def test_emission_hues_adds_each_line_in_its_own_colour():
     v = dict(f.defaults(), star_s=0.0)
     for r in "SHO":
         v.update({f"sky{r}": sky, f"sig{r}": sig, f"top{r}": top, f"level{r}": 0.0, f"neb{r}": 1.0})
-    v.update(colS_r=1.0, colS_g=0.0, colS_b=0.0, colH_r=1.0, colH_g=1.0, colH_b=0.0,
+    v.update(scale=1.0, colS_r=1.0, colS_g=0.0, colS_b=0.0, colH_r=1.0, colH_g=1.0, colH_b=0.0,
              colO_r=0.5, colO_g=0.5, colO_b=1.0)
     out = f.bake([nb, np.zeros_like(nb)], v)
     assert np.allclose(out[0, 0], (1, 0, 0), atol=1e-5)
@@ -440,7 +440,7 @@ def test_emission_hues_overall_scale_is_a_linear_gain():
     rng = np.random.default_rng(2)
     nb = (0.005 + rng.random((8, 8, 3)) * 0.002).astype(np.float32)
     v = dict(f.defaults(), star_s=0.0)
-    base = f.bake([nb, np.zeros_like(nb)], v)
+    base = f.bake([nb, np.zeros_like(nb)], dict(v, scale=1.0))
     half = f.bake([nb, np.zeros_like(nb)], dict(v, scale=0.5))
     under = base.max(axis=2) < 1.0      # untouched by the per-pixel overflow step
     assert under.any() and np.allclose(half[under], 0.5 * base[under], atol=1e-6)
@@ -477,7 +477,7 @@ def test_show_clipping_paints_blown_and_crushed_pixels_only_where_there_is_data(
     v = dict(f.defaults(), star_s=0.0)
     for r in "SHO":
         v.update({f"sky{r}": sky, f"sig{r}": sig, f"top{r}": top, f"level{r}": 0.0, f"neb{r}": 1.0})
-    v.update(levelH=-0.1)               # crush the Hα-only sky
+    v.update(levelH=-0.1, scale=1.0)    # crush the Hα-only sky; unit gain
     plain = f.bake([nb, np.zeros_like(nb)], v)
     shown = f.bake([nb, np.zeros_like(nb)], dict(v, show_clipping=1.0))
     assert np.allclose(shown[0, 0], (1, 0, 1))
