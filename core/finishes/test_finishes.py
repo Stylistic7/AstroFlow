@@ -211,7 +211,7 @@ class TestRegistry:
             # stock one — the framework's common first pass is injected here
             # too, so both run the identical traced path.
             assert [p.name for p in f.params if p.builtin] == [
-                "trim_ragged", "trim_floor", "show_clipping"]
+                "trim_ragged", "trim_floor", "bg_desat", "bg_level", "show_clipping"]
             assert get_finish("Hubble") is not None, \
                 "a broken sibling file must not abort discovery"
         finally:
@@ -232,13 +232,15 @@ class TestCommonFirstPass:
         discover_finishes()
         for s in finish_specs():
             builtin = [p for p in s["params"] if p.get("builtin")]
-            assert [p["name"] for p in builtin] == [
-                "trim_ragged", "trim_floor", "show_clipping"], s["name"]
+            colour = s["role"] is None
+            assert [p["name"] for p in builtin] == (
+                ["trim_ragged", "trim_floor", "bg_desat", "bg_level", "show_clipping"] if colour
+                else ["trim_ragged", "trim_floor", "show_clipping"]), s["name"]
             assert builtin[0]["kind"] == "toggle", s["name"]
             # LAST, so author param order — and therefore the uniform packing
             # index every author already depends on — is untouched.
             assert s["params"][-1]["name"] == "show_clipping", s["name"]
-            assert s["params"][-3]["name"] == "trim_ragged", s["name"]
+            assert s["params"][-(5 if colour else 3)]["name"] == "trim_ragged", s["name"]
 
     def test_zeroes_pixels_missing_a_required_band(self):
         import numpy as np
@@ -543,3 +545,33 @@ def test_channel_pinned_ghs_pins_sky_and_nebula_on_its_band():
         assert shown == [f"level{role}", f"neb{role}", f"str{role}"]
     prim = [f.inputs[0] for f in all_finishes() if f.name == "L Pinned GHS"]
     assert prim[0] == "Linear L Starless" and "Post-Processed" in prim
+
+
+def test_background_desaturation_fades_colour_below_the_level_keeping_luminance():
+    """Built-in pass for colour finishes (2026-10-04): off = the finish's own
+    colour exactly; on = dark pixels lose colour but keep luminance, while a
+    bright saturated red -- low luminance, but bright -- keeps its colour."""
+    f = get_finish("Emission Hues")
+    sky, sig, top = 0.005, 3e-5, 0.0089
+    nb = np.full((4, 4, 3), sky, np.float32)   # not 3 wide: a field must not look like a vec3
+    nb[0, 0] = (0.0052, sky, sky)        # faint SII-only blotch: dark red
+    nb[0, 1] = (top, sky, sky)           # bright SII: full red
+    v = dict(f.defaults(), star_s=0.0, scale=1.0)
+    for r in "SHO":
+        v.update({f"sky{r}": sky, f"sig{r}": sig, f"top{r}": top, f"level{r}": 0.0})
+    srcs = [nb, np.zeros_like(nb)]
+    plain = f.bake(srcs, v)
+    assert np.array_equal(f.bake(srcs, dict(v, bg_desat=0.0)), plain)
+    out = f.bake(srcs, dict(v, bg_desat=1.0, bg_level=1.0))
+    luma = lambda c: c @ np.array([0.2126729, 0.7151522, 0.0721750])
+    dark, bright = plain[0, 0], plain[0, 1]
+    assert dark.max() < 0.2 and bright.max() > 0.99
+    assert np.ptp(out[0, 0]) < 0.15 * np.ptp(dark), "the dark blotch turns (nearly) grey"
+    assert luma(out[0, 0]) == pytest.approx(luma(dark), abs=2e-3), "at the same luminance"
+    assert np.ptp(out[0, 1]) > 0.5 * np.ptp(bright), "the bright red keeps most colour"
+
+
+def test_channel_finishes_get_no_background_desaturation():
+    for name in ("H", "O Pinned GHS", "Master"):
+        names = [p.name for p in get_finish(name).params]
+        assert "bg_desat" not in names and "bg_level" not in names, name

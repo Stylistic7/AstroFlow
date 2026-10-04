@@ -302,8 +302,29 @@ SHOW_CLIPPING = Param(
 )
 _HALF_STEP = 0.5 / 255.0   # within this of 0 or 1, an 8-bit display shows 0 or 255
 
+# The built-in background desaturation, colour finishes only (Stylistic7,
+# 2026-10-04). Faint channels' independent large-scale noise becomes colour
+# blotches in dark sky once each channel is stretched (Heart: background
+# blotches correlate 0.01-0.07 between S, H and O, so they show as hue, not
+# brightness). Astrophotographers fade saturation under a brightness range
+# mask; this does that on the DISPLAYED colour -- grey only means grey after
+# the stretch -- keeping each pixel's luminance: full `bg_desat` at black,
+# easing (smoothstep) to none where the brightest component reaches
+# `bg_level`. Off by
+# default, so existing looks and thumbnails are unchanged.
+BG_DESAT = Param(
+    0.0, 0.0, 1.0, step=0.05, label="Background desaturation",
+    name="bg_desat", builtin=True,
+)
+BG_LEVEL = Param(
+    0.15, 0.01, 0.6, step=0.01, label="Background up to",
+    name="bg_level", builtin=True,
+)
+_LUMA = (0.2126729, 0.7151522, 0.0721750)   # Y row of stdlib's sRGB->XYZ
 
-def _with_common_first_pass(fn, inputs: tuple, optional: tuple):
+
+def _with_common_first_pass(fn, inputs: tuple, optional: tuple,
+                            colour: bool = True):
     """Compose the framework's common first pass in front of an author's
     finish, and trace the two as ONE function.
 
@@ -325,13 +346,19 @@ def _with_common_first_pass(fn, inputs: tuple, optional: tuple):
     OPTIONAL inputs are skipped: they bind black when absent, so testing
     them would blank the whole image instead of its rim.
 
+    `colour` finishes (no filter role) also get the background desaturation
+    pass (BG_DESAT / BG_LEVEL); a channel finish's grey output has nothing to
+    desaturate, so it gets neither the pass nor the sliders.
+
     Composing here rather than in the shader template is the point. The
     guard becomes part of the traced graph, so it emits WGSL through the
     same path as the author's own ops AND — because `Finish.bake` calls
     this composed function — runs identically in numpy, which keeps the
     server-side preview and the viewer showing the same picture.
     """
-    from finishes.stdlib import maximum, minimum, mix, vec3, where
+    from finishes.stdlib import (
+        maximum, minimum, mix, replace_lightness, saturate, vec3, where,
+    )
 
     required = [i for i, tap in enumerate(inputs) if tap not in optional]
     sig = inspect.signature(fn)
@@ -341,6 +368,9 @@ def _with_common_first_pass(fn, inputs: tuple, optional: tuple):
         trim = kwargs.pop(TRIM_RAGGED.name, TRIM_RAGGED.default)
         floor = kwargs.pop(TRIM_FLOOR.name, TRIM_FLOOR.default)
         show_clip = kwargs.pop(SHOW_CLIPPING.name, SHOW_CLIPPING.default)
+        if colour:
+            desat = kwargs.pop(BG_DESAT.name, BG_DESAT.default)
+            level = kwargs.pop(BG_LEVEL.name, BG_LEVEL.default)
         out = fn(*srcs, **kwargs)
         if tracer.tracing():
             reads.update(_bands_read(out.node, len(inputs)))
@@ -362,6 +392,17 @@ def _with_common_first_pass(fn, inputs: tuple, optional: tuple):
         out = mix(out, where(covered, out, out * 0.0), trim)
         if not hasattr(out, "r"):
             return out   # not a colour: the definition check reports it
+        if colour:
+            c = saturate(out)
+            y = c.r * _LUMA[0] + c.g * _LUMA[1] + c.b * _LUMA[2]
+            # The MASK reads brightness as the largest component, not the
+            # luminance: a bright saturated SII red (Y 0.21) or OIII blue
+            # (Y 0.07) is nebula, not background. The desaturation itself
+            # keeps each pixel's luminance.
+            w = saturate(maximum(maximum(c.r, c.g), c.b) / maximum(level, 1e-4))
+            keep = 1.0 - desat * (1.0 - w * w * (3.0 - 2.0 * w))
+            # Exactly the finish's colour when off: no Lab round trip at all.
+            out = where(desat > 0.0, replace_lightness(c, y, keep), out)
         # Clipping, judged on the final colour as an 8-bit display shows it,
         # and only where there is data: any component that renders as 255 =
         # blown highlight (magenta); every component rendering as 0 =
@@ -386,6 +427,10 @@ def _with_common_first_pass(fn, inputs: tuple, optional: tuple):
         inspect.Parameter(TRIM_FLOOR.name,
                           inspect.Parameter.KEYWORD_ONLY,
                           default=TRIM_FLOOR),
+        *([inspect.Parameter(BG_DESAT.name, inspect.Parameter.KEYWORD_ONLY,
+                             default=BG_DESAT),
+           inspect.Parameter(BG_LEVEL.name, inspect.Parameter.KEYWORD_ONLY,
+                             default=BG_LEVEL)] if colour else []),
         inspect.Parameter(SHOW_CLIPPING.name,
                           inspect.Parameter.KEYWORD_ONLY,
                           default=SHOW_CLIPPING),
@@ -418,7 +463,7 @@ def finish(name: str, inputs: tuple, alt_primaries: tuple = (),
                 f"{name}: the PRIMARY input can't be optional (it supplies the"
                 f" tile geometry)")
         composed = _with_common_first_pass(_expand_colors(fn), tuple(inputs),
-                                           tuple(optional))
+                                           tuple(optional), colour=role is None)
         wgsl, params, root = _trace(composed, name, tuple(inputs))
         # Hash the AUTHOR's source (the wrapper is identical everywhere and
         # would not distinguish two finishes), plus a tag for the common pass
@@ -426,10 +471,10 @@ def finish(name: str, inputs: tuple, alt_primaries: tuple = (),
         h = xxhash.xxh64(
             structural_source_hash(fn) + "|" + name + "|" + ",".join(inputs)
             # common4: + the show-clipping last pass and Color expansion
-            # (2026-10-03). Bumping the tag is what invalidates every served
+            # (2026-10-03). common5: + background desaturation (2026-10-04). Bumping the tag is what invalidates every served
             # spec and cached preview exactly once when the shared pass
             # changes.
-            + "|common4"
+            + "|common5"
         ).hexdigest()
         from extension_info import describe
         f = Finish(name=name, inputs=tuple(inputs), optional=tuple(optional),
