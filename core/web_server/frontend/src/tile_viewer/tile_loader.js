@@ -5,7 +5,7 @@
  * + brotli-decode path is identical (the browser handles
  * `Content-Encoding: br` transparently); only the upload helpers
  * differ — there's no `PIXI.BufferResource` / `BaseTexture`, just a
- * raw float16 Uint16Array that the WebGPU renderer uploads via
+ * raw Float32Array that the WebGPU renderer uploads via
  * `device.queue.writeTexture` when it's ready.
  */
 
@@ -14,9 +14,9 @@ const TILE_SIZE = 256;
 
 /**
  * Fetch one tile of EVERY finish input in one request. The body is the
- * inputs' float16 tiles concatenated in input order; `X-Tile-Bands` lists each
+ * inputs' float32 tiles concatenated in input order; `X-Tile-Bands` lists each
  * input's band count (3 colour, 1 mono, 0 = not served). Returns an array with
- * one { array: Uint16Array of IEEE half bits, width, height, bands } or null
+ * one { array: Float32Array, width, height, bands } or null
  * per input, or null for a 404 (off the edge of the image).
  */
 export async function fetchTileInputs(url, signal) {
@@ -34,8 +34,8 @@ export async function fetchTileInputs(url, signal) {
     for (const bands of bandList) {
         if (!bands) { out.push(null); continue; }
         const n = width * height * bands;
-        out.push({ array: new Uint16Array(buffer, offset, n), width, height, bands });
-        offset += n * 2;
+        out.push({ array: new Float32Array(buffer, offset, n), width, height, bands });
+        offset += n * 4;
     }
     return out;
 }

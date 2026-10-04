@@ -1,4 +1,4 @@
-"""One tile request returns every finish input as float16 (2026-10-01): the
+"""One tile request returns every finish input as float32 (2026-10-04): the
 inputs concatenated in order, band counts in `X-Tile-Bands` (0 = not served),
 raw for a local browser and brotli for a remote one, immutable when versioned."""
 from types import SimpleNamespace
@@ -41,30 +41,30 @@ def _get(tiles, url, remote):
         return c.get(url, environ_base=env)
 
 
-def test_local_tile_carries_every_input_raw_float16(setup):
+def test_local_tile_carries_every_input_raw_float32(setup):
     tiles, rgb, z = setup
-    r = _get(tiles, f"/tap/tiles/stack/s/P/F/{z}/0/0.f16?v=1", remote=False)
+    r = _get(tiles, f"/tap/tiles/stack/s/P/F/{z}/0/0.f32?v=1", remote=False)
     assert r.status_code == 200
     assert r.headers["X-Tile-Bands"] == "3,1,0,0"
     assert "Content-Encoding" not in r.headers
     assert r.headers["Cache-Control"] == "public, max-age=31536000, immutable"
-    data = np.frombuffer(r.data, np.float16)
+    data = np.frombuffer(r.data, np.float32)
     assert data.size == 256 * 256 * 4
     got = data[:256 * 256 * 3].reshape(256, 256, 3).astype(np.float32)
-    assert np.max(np.abs(got - rgb[:256, :256]) / rgb[:256, :256]) < 1e-3
-    assert data[256 * 256 * 3] == np.float16(0.01)
+    assert np.array_equal(got, rgb[:256, :256]), "linear data travels bit-exact"
+    assert data[256 * 256 * 3] == np.float32(0.01)
 
 
 def test_remote_tile_is_brotli_and_edge_pads_with_zero(setup):
     tiles, rgb, z = setup
-    r = _get(tiles, f"/tap/tiles/stack/s/P/F/{z}/1/1.f16", remote=True)
+    r = _get(tiles, f"/tap/tiles/stack/s/P/F/{z}/1/1.f32", remote=True)
     assert r.headers["Content-Encoding"] == "br"
     assert "Cache-Control" not in r.headers
-    data = np.frombuffer(brotli.decompress(r.data), np.float16)
+    data = np.frombuffer(brotli.decompress(r.data), np.float32)
     mono = data[256 * 256 * 3:].reshape(256, 256)
-    assert mono[0, 0] == np.float16(0.01) and mono[100, 100] == 0
+    assert mono[0, 0] == np.float32(0.01) and mono[100, 100] == 0
 
 
 def test_off_image_tile_is_404(setup):
     tiles, rgb, z = setup
-    assert _get(tiles, f"/tap/tiles/stack/s/P/F/{z}/5/5.f16", remote=False).status_code == 404
+    assert _get(tiles, f"/tap/tiles/stack/s/P/F/{z}/5/5.f32", remote=False).status_code == 404

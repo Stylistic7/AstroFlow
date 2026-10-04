@@ -16,8 +16,8 @@ finish's inputs are the tap pyramids the viewer samples.
 * `/tap/tile_metadata/.../<pipeline>/<finish>` — the finish spec plus, per
   input, image dimensions, tile size, level count, band roles and (for the
   primary) the per-channel statistics the finish seeds from.
-* `/tap/tiles/.../<pipeline>/<finish>/{z}/{x}/{y}.f16` — one tile of every
-  input: float16 little-endian pixels concatenated in input order, band counts
+* `/tap/tiles/.../<pipeline>/<finish>/{z}/{x}/{y}.f32` — one tile of every
+  input: float32 little-endian pixels concatenated in input order, band counts
   in `X-Tile-Bands`; brotli-compressed for remote browsers only.
 """
 import io
@@ -400,13 +400,13 @@ def _geometry(path: str) -> tuple:
 
 
 def _tile_array(path: str, x: int, y: int, z: int) -> np.ndarray | None:
-    """One _TILE_SIZE^2 tile of a pyramid as float16, (H, W) mono or (H, W, 3)
+    """One _TILE_SIZE^2 tile of a pyramid as float32, (H, W) mono or (H, W, 3)
     colour, zero-padded past the image edge; None when (x, y) is off the image.
 
-    float16 on the wire: float32 mantissa bits are noise to a compressor (a
-    3-band tile compressed to 77 % of 768 KB), half floats are a quarter of
-    that with 4e-4 worst-case relative error, and r16float / rgba16float
-    textures are always filterable (2026-10-01). Edge padding is exact zero,
+    Full float32 on the wire (2026-10-04): linear data needs every bit under
+    an aggressive stretch. float16 stepped by 3.8e-6 near the 0.005 pedestal,
+    and an NXT-denoised faint target (sky noise < 1e-6, sky-to-white 3e-5)
+    showed about ten levels per channel -- hard posterization. Edge padding is exact zero,
     which the shaders treat as "no data"."""
     max_zoom = _pyramid_levels(path) - 1
     img = _get_vips_page(path, max_zoom - z)
@@ -424,8 +424,8 @@ def _tile_array(path: str, x: int, y: int, z: int) -> np.ndarray | None:
     else:
         arr = np.frombuffer(raw, np.float32).reshape(h, w, bands)
     arr = arr[..., :3] if bands >= 3 else arr[..., 0]
-    out = np.zeros((_TILE_SIZE, _TILE_SIZE) + arr.shape[2:], "<f2")
-    out[:h, :w] = np.nan_to_num(arr, nan=0.0, posinf=65504.0, neginf=-65504.0)
+    out = np.zeros((_TILE_SIZE, _TILE_SIZE) + arr.shape[2:], "<f4")
+    out[:h, :w] = np.nan_to_num(arr, nan=0.0)
     return out
 
 
@@ -437,7 +437,7 @@ def _is_local_request() -> bool:
     finish_route(
         tiles_bp, "/tap/tiles",
         hierarchy=("object_type", "object_id"),
-        suffix="/<int:z>/<int:x>/<int:y>.f16",
+        suffix="/<int:z>/<int:x>/<int:y>.f32",
     ),
     sharding_key="object_id",
 )
@@ -446,7 +446,7 @@ def serve_tile_finish(
     z: int, x: int, y: int,
 ):
     """One tile of EVERY input of the finish, in one response: the inputs'
-    float16 tiles concatenated in input order. `X-Tile-Bands` lists each
+    float32 tiles concatenated in input order. `X-Tile-Bands` lists each
     input's band count (3 colour, 1 mono, 0 = not served: unbound, absent,
     or a canvas that differs from the primary's -- the shader samples black
     for it, as tile_metadata already told the viewer). Input 0 off the image

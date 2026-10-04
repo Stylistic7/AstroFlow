@@ -120,7 +120,7 @@ function computeVisibleTiles({ viewport, meta, view, hierarchy }) {
             // connections per host:port). `v` is the inputs' pyramid mtimes:
             // a regenerated pyramid gets a new URL, so tiles cache forever.
             const rel = buildApiUrl('/tap/tiles', hierarchy, view,
-                                    `/${z}/${tx_}/${ty_}.f16`);
+                                    `/${z}/${tx_}/${ty_}.f32`);
             const ports = meta.tilePorts;
             const url = new URL(rel, `${origin}:${ports[(tx_ * 7 + ty_ * 13) % ports.length]}`);
             url.searchParams.set('v', version);

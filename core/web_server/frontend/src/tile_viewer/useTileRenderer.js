@@ -35,10 +35,15 @@ import { fetchTileInputs } from './tile_loader.js';
 
 
 // Group 0: globals + viewport + sampler + the finish's DisplayParams.
-const GLOBALS_LAYOUT_ENTRIES = [
+// Tiles are float32 (r32float / rgba32float): linear data needs every bit
+// under an aggressive stretch. Those formats are filterable only with the
+// optional `float32-filterable` device feature -- linear sampling with it,
+// nearest without (pixel edges show when zoomed in).
+const globalsLayoutEntries = (filterable) => [
     { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
     { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
-    { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+    { binding: 2, visibility: GPUShaderStage.FRAGMENT,
+      sampler: { type: filterable ? 'filtering' : 'non-filtering' } },
     { binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
 ];
 
@@ -49,21 +54,16 @@ const GLOBALS_BYTES = 16;
 // prefix; the shader reads only its own fields, the rest is slack.
 const FINISH_PARAMS_BYTES = 256;
 
-// IEEE half 1.0 (the dummy texture's alpha).
-const HALF_ONE_BITS = 0x3C00;
-
 // Group 1 (per tile): the TileRect uniform + MAX_INPUTS texture slots, one
 // per finish input (src0..src3), dummy-bound when a finish declares fewer
 // or an input isn't built. A pipeline layout may carry bindings a shader
 // never declares, so no bind group is ever rebuilt when the finish changes.
-// Tiles arrive as float16 and upload as r16float/rgba16float, which are
-// always filterable -- no optional `float32-filterable` feature needed.
-const TILE_LAYOUT_ENTRIES = [
+const tileLayoutEntries = (filterable) => [
     { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
     ...Array.from({ length: MAX_INPUTS }, (_, i) => ({
         binding: 1 + i,
         visibility: GPUShaderStage.FRAGMENT,
-        texture: { sampleType: 'float' },
+        texture: { sampleType: filterable ? 'float' : 'unfilterable-float' },
     })),
 ];
 
@@ -297,7 +297,7 @@ function makeRenderer(stateRef) {
     // Cache cap. Sized generously because EVERY cached tile is a
     // potential fallback for either zoom direction — the no-blink
     // behavior comes from accumulating tiles so the previous LOD is
-    // always there to cover loading ones. At 128 KB per r16float tile,
+    // always there to cover loading ones. At 256 KB per r32float tile,
     // 2 000 tiles ≈ 250 MB of GPU memory — fine for a Mac-Studio-class
     // machine and lets users explore a full mosaic across all LODs
     // without ever evicting fallback tiles.
@@ -372,28 +372,26 @@ function makeRenderer(stateRef) {
             }
         }
 
-        // Upload one decoded tile as a GPU texture. Tiles arrive as IEEE
-        // float16 bit patterns (Uint16Array). Color tiles (bands>=3) are
-        // band-interleaved RGB; WebGPU has no 3-channel format, so expand to
-        // RGBA (alpha = half 1.0 = 0x3C00) and upload as rgba16float. Mono
-        // tiles stay single-channel r16float. Both sample as `float`.
-        const HALF_ONE = 0x3C00;
+        // Upload one decoded tile as a GPU texture. Tiles arrive as float32
+        // (Float32Array). Color tiles (bands>=3) are band-interleaved RGB;
+        // WebGPU has no 3-channel format, so expand to RGBA (alpha = 1) and
+        // upload as rgba32float. Mono tiles stay single-channel r32float.
         const uploadTile = (data) => {
             const color = data.bands >= 3;
             let uploadArray = data.array;
             if (color) {
                 const px = data.width * data.height;
-                uploadArray = new Uint16Array(px * 4);
+                uploadArray = new Float32Array(px * 4);
                 for (let i = 0; i < px; i++) {
                     uploadArray[i * 4 + 0] = data.array[i * 3 + 0];
                     uploadArray[i * 4 + 1] = data.array[i * 3 + 1];
                     uploadArray[i * 4 + 2] = data.array[i * 3 + 2];
-                    uploadArray[i * 4 + 3] = HALF_ONE;
+                    uploadArray[i * 4 + 3] = 1;
                 }
             }
             const texture = device.createTexture({
                 size: [data.width, data.height],
-                format: color ? 'rgba16float' : 'r16float',
+                format: color ? 'rgba32float' : 'r32float',
                 usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
             });
             device.queue.writeTexture(
@@ -401,7 +399,7 @@ function makeRenderer(stateRef) {
                 uploadArray.buffer,
                 {
                     offset: uploadArray.byteOffset,
-                    bytesPerRow: data.width * (color ? 8 : 2),
+                    bytesPerRow: data.width * (color ? 16 : 4),
                     rowsPerImage: data.height,
                 },
                 { width: data.width, height: data.height, depthOrArrayLayers: 1 },
@@ -526,7 +524,10 @@ export function useTileRenderer({ canvasRef }) {
             const adapter = await navigator.gpu.requestAdapter();
             if (!adapter) { setError('No WebGPU adapter'); return; }
 
-            const device = await adapter.requestDevice();
+            const filterable = adapter.features.has('float32-filterable');
+            const device = await adapter.requestDevice({
+                requiredFeatures: filterable ? ['float32-filterable'] : [],
+            });
             if (cancelled) return;
 
             const canvas = canvasRef.current;
@@ -541,10 +542,9 @@ export function useTileRenderer({ canvasRef }) {
                 alphaMode: 'opaque',
             });
 
-            // Half-float tiles are always filterable: linear sampling.
             const sampler = device.createSampler({
-                magFilter: 'linear',
-                minFilter: 'linear',
+                magFilter: filterable ? 'linear' : 'nearest',
+                minFilter: filterable ? 'linear' : 'nearest',
                 mipmapFilter: 'nearest',
                 addressModeU: 'clamp-to-edge',
                 addressModeV: 'clamp-to-edge',
@@ -573,21 +573,21 @@ export function useTileRenderer({ canvasRef }) {
             // which its math treats as "absent".
             const dummyTexture = device.createTexture({
                 size: [1, 1],
-                format: 'rgba16float',
+                format: 'rgba32float',
                 usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
             });
             device.queue.writeTexture(
                 { texture: dummyTexture },
-                new Uint16Array([0, 0, 0, HALF_ONE_BITS]).buffer,
-                { bytesPerRow: 8, rowsPerImage: 1 },
+                new Float32Array([0, 0, 0, 1]).buffer,
+                { bytesPerRow: 16, rowsPerImage: 1 },
                 { width: 1, height: 1, depthOrArrayLayers: 1 },
             );
 
             const globalsLayout = device.createBindGroupLayout({
-                entries: GLOBALS_LAYOUT_ENTRIES,
+                entries: globalsLayoutEntries(filterable),
             });
             const tileLayout = device.createBindGroupLayout({
-                entries: TILE_LAYOUT_ENTRIES,
+                entries: tileLayoutEntries(filterable),
             });
 
             const globalsBindGroup = device.createBindGroup({
