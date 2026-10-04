@@ -86,7 +86,11 @@ function computeVisibleTiles({ viewport, meta, view, hierarchy }) {
     // on Retina and only "heals" when a zoom cycle happens to seed the
     // draw cache with finer tiles.
     const dpr = window.devicePixelRatio || 1;
-    let z = Math.round(maxZoom + Math.log2(scale * dpr));
+    // CEIL, never round: always the level at least as fine as the screen,
+    // so tiles are only ever DOWNscaled on screen (by 1x to 2x). Rounding
+    // showed a coarser level magnified up to 1.4x at some zooms. The
+    // epsilon keeps an exact level boundary from flipping on float noise.
+    let z = Math.ceil(maxZoom + Math.log2(scale * dpr) - 1e-9);
     z = Math.max(0, Math.min(maxZoom, z));
 
     const worldPerSource = Math.pow(2, maxZoom - z);
@@ -200,7 +204,7 @@ export default function TileViewerV2({
     const [localShowPolygons, setLocalShowPolygons] = useState(true);
     const [localShowPanelNumbers, setLocalShowPanelNumbers] = useState(false);
     const [localShowDepth, setLocalShowDepth] = useState(false);
-    // Default: zoom clamps at 1:1 (one source pixel per screen pixel).
+    // Default: zoom clamps at 1:1 (one source pixel per device pixel).
     // Past that the image just gets blurry without revealing detail.
     // Toggle on to allow over-zoom for pixel-peeping or screenshots.
     const [allowOverZoom, setAllowOverZoom] = useState(false);
@@ -408,7 +412,10 @@ export default function TileViewerV2({
     // ceiling so the change takes effect immediately.
     useEffect(() => {
         if (!viewport) return;
-        const ceiling = allowOverZoom ? 16 : 1.0;
+        // 1:1 means one image pixel per DEVICE pixel: on a HiDPI screen the
+        // CSS-pixel scale stops at 1/devicePixelRatio, so the full-resolution
+        // level is never magnified.
+        const ceiling = allowOverZoom ? 16 : 1 / (window.devicePixelRatio || 1);
         const cur = viewport.get();
         const patch = { maxScale: ceiling };
         if (cur.scale > ceiling) patch.scale = ceiling;
@@ -935,6 +942,11 @@ export default function TileViewerV2({
                     {renderer.error && (
                         <Typography variant="caption" sx={{ color: '#f55' }}>
                             {renderer.error}
+                        </Typography>
+                    )}
+                    {renderer.smoothing === false && (
+                        <Typography variant="caption" sx={{ display: 'block', color: '#fb5' }}>
+                            This GPU can't smooth 32-bit tiles (no float32-filterable), so zoomed-in pixels show as blocks.
                         </Typography>
                     )}
                     <Typography variant="caption" sx={{ display: 'block', opacity: 0.6 }}>

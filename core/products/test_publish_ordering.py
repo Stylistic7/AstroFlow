@@ -39,7 +39,7 @@ def _run(master, monkeypatch, pyramid_side_effect=None, record=None):
     pyramid build explode, recording os.replace order."""
     from previews import create_tile_pyramid as ctp
 
-    def fake_build(src, dest):
+    def fake_build(src, dest, served=None):
         if record is not None:
             record.append(("build_from", Path(src).name))
         if pyramid_side_effect is not None:
@@ -187,5 +187,10 @@ class TestPyramidIsThePayload:
         monkeypatch.setattr(registry, "_stamp_header", lambda *a, **k: None)
         registry._publish_with_presentations(p, "abc123", None, ())
 
-        leftovers = [f.name for f in p.parent.iterdir() if f.name != "abc123.tiff"]
+        # The product's own sidecar is expected: it carries the pyramid's exact
+        # display stats (2026-10-04), valid for the file that landed.
+        leftovers = [f.name for f in p.parent.iterdir()
+                     if f.name not in ("abc123.tiff", "abc123.tiff.json")]
         assert leftovers == [], leftovers
+        from previews.display_stats import stored_display_stats
+        assert stored_display_stats(p) is not None

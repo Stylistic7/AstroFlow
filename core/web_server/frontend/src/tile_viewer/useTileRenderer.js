@@ -512,6 +512,9 @@ export function useTileRenderer({ canvasRef }) {
     if (!apiRef.current) apiRef.current = makeRenderer(stateRef);
     const [isReady, setIsReady] = useState(false);
     const [error, setError] = useState(null);
+    // Whether the GPU smooths 32-bit float textures (`float32-filterable`);
+    // without it tiles sample nearest-pixel. null until init lands.
+    const [smoothing, setSmoothing] = useState(null);
 
     // Initialize WebGPU + layouts once.
     useEffect(() => {
@@ -525,6 +528,7 @@ export function useTileRenderer({ canvasRef }) {
             if (!adapter) { setError('No WebGPU adapter'); return; }
 
             const filterable = adapter.features.has('float32-filterable');
+            setSmoothing(filterable);
             const device = await adapter.requestDevice({
                 requiredFeatures: filterable ? ['float32-filterable'] : [],
             });
@@ -653,5 +657,6 @@ export function useTileRenderer({ canvasRef }) {
 
     // The API closes over `stateRef` only, so its identity changes just
     // with readiness — effects can list `renderer` as an honest dependency.
-    return useMemo(() => ({ isReady, error, ...apiRef.current }), [isReady, error]);
+    return useMemo(() => ({ isReady, error, smoothing, ...apiRef.current }),
+                   [isReady, error, smoothing]);
 }

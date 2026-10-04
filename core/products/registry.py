@@ -446,7 +446,7 @@ def _publish_with_presentations(
             # read-back-and-write-pyramid ran every publish, just to a sibling
             # path. Only the destination and the discarded planar copy differ.
             scratch = staging.with_name(staging.name + ".pyr")
-            _make_tile_pyramid(staging, dest=scratch)
+            _make_tile_pyramid(staging, dest=scratch, served=source)
             if scratch.exists() and scratch.stat().st_size > 0:
                 published = scratch
         else:
@@ -500,7 +500,8 @@ def _pyramid_is_the_payload(source: Path) -> bool:
             and needs_display_pyramid(source))
 
 
-def _make_tile_pyramid(result, dest: "Path | None" = None) -> "Path | None":
+def _make_tile_pyramid(result, dest: "Path | None" = None,
+                       served: "Path | None" = None) -> "Path | None":
     """Build the display tile pyramid — a separate `<stem>_tiles.tiff`
     sibling — for `result`.
 
@@ -530,7 +531,7 @@ def _make_tile_pyramid(result, dest: "Path | None" = None) -> "Path | None":
     # `<dest>.tmp` then `os.replace`s, so the pyramid itself lands atomically.
     tile_path = Path(dest) if dest is not None else pyramid_path_for(source)
     try:
-        default_make_tile_pyramid(source, tile_path)
+        default_make_tile_pyramid(source, tile_path, served=served)
     except Exception as e:
         # Non-fatal by design: the pyramid is an optional display artifact,
         # and failing here would throw away the (expensive) master the body

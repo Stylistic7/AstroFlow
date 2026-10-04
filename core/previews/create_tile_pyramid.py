@@ -50,7 +50,8 @@ from protocols import CacheProtocol
 _TILE_SIZE = 256
 
 
-def default_make_tile_pyramid(source_path: Path, dest_path: Path) -> None:
+def default_make_tile_pyramid(source_path: Path, dest_path: Path, *,
+                              served: "Path | None" = None) -> None:
     """Read an image and write a *pyramidal* tiled TIFF whose pixel
     data is the source's LINEAR float32 values (no autostretch, no
     uint8 quantization).
@@ -72,6 +73,13 @@ def default_make_tile_pyramid(source_path: Path, dest_path: Path) -> None:
     artifact, below), where smoothness matters for the local
     tone-mapping operator and would be visible as adaptation
     artifacts under a box-averaged shrink.
+
+    EXACT DISPLAY STATS (2026-10-04): the written pyramid is streamed once
+    more (two passes, bounded memory) for exact full-resolution per-band
+    statistics, stored in the sidecar of `served` -- where the pyramid will be
+    served from, `dest_path` unless the caller renames it into place later.
+    A stats failure is logged and the pyramid still lands; the tile server
+    then falls back to sampling (loudly).
     """
     # TIFF sources STREAM: pyvips decodes tiles/strips on demand, so the
     # pyramid build never holds the full image (a gigapixel composite paid
@@ -120,7 +128,16 @@ def default_make_tile_pyramid(source_path: Path, dest_path: Path) -> None:
         # bigtiff so multi-GB linear-float mosaics save cleanly.
         bigtiff=True,
     )
+    from previews.display_stats import pyramid_display_stats, record_display_stats
+    try:
+        stats = pyramid_display_stats(tmp)
+        measured = tmp.stat()
+    except Exception as e:
+        print(f"### display_stats_failed {dest_path}: {type(e).__name__}: {e}", flush=True)
+        stats = None
     os.replace(tmp, dest_path)
+    if stats is not None:
+        record_display_stats(Path(served or dest_path), stats, measured)
 
 
 # ---------------------------------------------------------------------------

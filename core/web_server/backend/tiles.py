@@ -22,6 +22,7 @@ finish's inputs are the tap pyramids the viewer samples.
 """
 import io
 import os
+from pathlib import Path
 import threading
 import time
 
@@ -116,18 +117,49 @@ def _stats_sample(img) -> "np.ndarray | None":
     return None
 
 
+def _exact_stats(path: str) -> "list | None":
+    """EXACT full-resolution per-band stats (2026-10-04,
+    `previews.display_stats`). A pyramidal TIFF carries them in its sidecar,
+    measured when the pyramid was written (a gigapixel mosaic is never read
+    whole here). An XISF master is small and has no pyramid, so it is
+    measured on the fly from its memory map. None when a TIFF has no valid
+    stored stats (built before them, or the measurement failed)."""
+    from previews.display_stats import display_stats, stored_display_stats
+    if not path.lower().endswith(".xisf"):
+        return stored_display_stats(Path(path))
+    return display_stats(_get_vips_page(path, 0))
+
+
 def _per_channel_linear_stats(path, star_paths=()):
+    """The finish seeds' per-band stats. The primary's own stats are exact
+    (`_exact_stats`). With STARS layers composited in, the stats describe
+    starless + stars pixel by pixel across two files, which no per-file pass
+    can give exactly: the bright end (percentiles, max, `high`) still comes
+    from the sampled composite, while the sky level and noise come from the
+    exact starless stats -- the sky subset is star-poor by construction."""
     def _mt(q):
         try:
             return os.path.getmtime(os.fspath(q))
         except OSError:
             return 0
     p = os.fspath(path)
-    key = (p, _mt(p), tuple((os.fspath(q), _mt(q)) for q in star_paths))
+    stored = None if p.lower().endswith(".xisf") else _exact_stats(p)
+    key = (p, _mt(p), stored is not None,
+           tuple((os.fspath(q), _mt(q)) for q in star_paths))
     with _stats_lock:
         cached = _stats_cache.get(key)
         if cached is None:
-            cached = _per_channel_linear_stats_uncached(p, star_paths)
+            exact = stored if stored is not None else _exact_stats(p)
+            if exact is None:
+                print(f"### display_stats missing, sampling a coarse page: {p}", flush=True)
+                cached = _per_channel_linear_stats_uncached(p, star_paths)
+            elif star_paths:
+                cached = _per_channel_linear_stats_uncached(p, star_paths)
+                for c, e in zip(cached, exact):
+                    c.update({k: e[k] for k in ("median", "sigma", "skyMedian", "skySigma")})
+                    c["high"] = max(c["p999"], c["median"] + 60.0 * c["sigma"])
+            else:
+                cached = exact
             _stats_cache[key] = cached
             if len(_stats_cache) > 64:            # a handful of taps in play
                 _stats_cache.pop(next(iter(_stats_cache)))
@@ -406,8 +438,12 @@ def _tile_array(path: str, x: int, y: int, z: int) -> np.ndarray | None:
     Full float32 on the wire (2026-10-04): linear data needs every bit under
     an aggressive stretch. float16 stepped by 3.8e-6 near the 0.005 pedestal,
     and an NXT-denoised faint target (sky noise < 1e-6, sky-to-white 3e-5)
-    showed about ten levels per channel -- hard posterization. Edge padding is exact zero,
-    which the shaders treat as "no data"."""
+    showed about ten levels per channel -- hard posterization. Edge padding is
+    exact zero, which the shaders treat as "no data".
+
+    Aligned with the stored 256 px pyramid tiles on purpose: a window with a
+    one-pixel neighbour gutter (to stop tile-edge filtering seams) touches
+    nine stored tiles and measured 15 ms per tile against 2 ms (2026-10-04)."""
     max_zoom = _pyramid_levels(path) - 1
     img = _get_vips_page(path, max_zoom - z)
     x0, y0 = x * _TILE_SIZE, y * _TILE_SIZE
@@ -479,7 +515,7 @@ def serve_tile_finish(
         bands = [0 if a is None else (3 if a.ndim == 3 else 1) for a in arrays]
         if _is_local_request():
             # Same machine: bandwidth is free and compressing costs CPU on
-            # both ends, so send the half floats as they are.
+            # both ends, so send the floats as they are.
             resp = Response(body, mimetype="application/octet-stream")
         else:
             resp = Response(brotli.compress(body, quality=_TILE_BROTLI_QUALITY),
