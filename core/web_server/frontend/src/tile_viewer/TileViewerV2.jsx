@@ -13,11 +13,12 @@
  * we hit-test the polygons in JS (precedence: stack → target →
  * mosaic) and navigate.
  */
-import { Fragment, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import Divider from '@mui/material/Divider';
+import ButtonBase from '@mui/material/ButtonBase';
+import Collapse from '@mui/material/Collapse';
 import Slider from '@mui/material/Slider';
 import Switch from '@mui/material/Switch';
 import FormControlLabel from '@mui/material/FormControlLabel';
@@ -38,6 +39,7 @@ import { stfSeed } from './finish_seed.js';
 import PolygonOverlay from './PolygonOverlay.jsx';
 import TextOverlay from './TextOverlay.jsx';
 import LineColorPicker from './LineColorPicker.jsx';
+import FinishSaves from './FinishSaves.jsx';
 import { buildApiUrl, buildUrl } from '../urls.js';
 
 
@@ -152,6 +154,24 @@ function computeVisibleTiles({ viewport, meta, view, hierarchy }) {
 }
 
 
+// Per-browser layout conveniences (sidebar open, folded sections). Storage
+// can be missing or throw (private windows), so every access is guarded.
+const readPref = (key, fallback) => {
+    try {
+        const v = window.localStorage.getItem(key);
+        return v === null ? fallback : JSON.parse(v);
+    } catch {
+        return fallback;
+    }
+};
+const writePref = (key, value) => {
+    try {
+        window.localStorage.setItem(key, JSON.stringify(value));
+    } catch {
+        // not persisted; the layout still works
+    }
+};
+
 export default function TileViewerV2({
     // When a prop is undefined, fall back to URL params (so the standalone
     // /tile_viewer test route still works).
@@ -228,6 +248,10 @@ export default function TileViewerV2({
     // Current values of the finish's params, keyed by name (seeded from the
     // image stats when the finish lands).
     const [genericValues, setGenericValues] = useState({});
+    // The finish sidebar: docked beside the image (never over it), scrolling
+    // on its own, hideable; its sections fold, remembered per finish.
+    const [sidebarOpen, setSidebarOpen] = useState(() => readPref('afFinishSidebarOpen', true));
+    const [folded, setFolded] = useState([]);
 
     // Resolve each control to "parent prop if provided, else local state".
     const peakBrightness = peakBrightnessProp ?? localPeakBrightness;
@@ -347,6 +371,20 @@ export default function TileViewerV2({
         setSeedValues(seed ? init : {});
         setGenericValues(init);
     }, [renderer, activeFinish, primary, seedKey]);
+
+    const foldKey = activeFinish ? `afFinishFolded:${activeFinish.name}` : null;
+    useEffect(() => {
+        if (foldKey) setFolded(readPref(foldKey, []));
+    }, [foldKey]);
+    const toggleSection = (title) => setFolded((f) => {
+        const next = f.includes(title) ? f.filter((t) => t !== title) : [...f, title];
+        if (foldKey) writePref(foldKey, next);
+        return next;
+    });
+    const showSidebar = (open) => {
+        setSidebarOpen(open);
+        writePref('afFinishSidebarOpen', open);
+    };
 
     // Hit-test polygons at the tapped world position. Precedence
     // matches the Pixi viewer: stack > target > mosaic.
@@ -580,20 +618,36 @@ export default function TileViewerV2({
                 })()}
             </Box>
         ));
-        return (<>
-            {builtin.map(control)}
-            {builtin.length > 0 && authored.length > 0 && (
-                <Divider sx={{ my: 1, borderColor: 'rgba(255,255,255,0.25)' }} />
-            )}
-            {authored.map((p, i) => (p.group && p.group !== authored[i - 1]?.group ? (
-                <Fragment key={`g-${p.name}`}>
-                    <Typography variant="overline" sx={{ display: 'block', mt: i ? 1.5 : 0, opacity: 0.7, lineHeight: 1.6 }}>
-                        {p.group}
+        // Sections: the built-in controls as "Display", then each run of the
+        // author's params sharing a group. A titled section folds; untitled
+        // params (no group) always show.
+        const sections = builtin.length ? [{ title: 'Display', params: builtin }] : [];
+        for (const prm of authored) {
+            const last = sections[sections.length - 1];
+            if (last && last.authored && last.title === prm.group) last.params.push(prm);
+            else sections.push({ title: prm.group, params: [prm], authored: true });
+        }
+        return sections.map((sec, i) => (sec.title ? (
+            <Box key={`s-${i}`} sx={{ mt: i ? 1 : 0 }}>
+                <ButtonBase
+                    onClick={() => toggleSection(sec.title)}
+                    aria-expanded={!folded.includes(sec.title)}
+                    sx={{
+                        width: '100%', justifyContent: 'space-between', borderRadius: 0.5,
+                        borderTop: i ? '1px solid rgba(255,255,255,0.12)' : 'none', pt: i ? 0.5 : 0,
+                        '&:focus-visible': { outline: '1px solid #fff' },
+                    }}
+                >
+                    <Typography variant="overline" sx={{ opacity: 0.75, lineHeight: 1.8 }}>{sec.title}</Typography>
+                    <Typography component="span" sx={{ fontSize: 12, opacity: 0.6 }}>
+                        {folded.includes(sec.title) ? '▸' : '▾'}
                     </Typography>
-                    {control(p)}
-                </Fragment>
-            ) : control(p)))}
-        </>);
+                </ButtonBase>
+                <Collapse in={!folded.includes(sec.title)}>{sec.params.map(control)}</Collapse>
+            </Box>
+        ) : (
+            <Box key={`s-${i}`} sx={{ mt: i ? 1 : 0 }}>{sec.params.map(control)}</Box>
+        )));
     }
 
     // Push the uniforms: the finish's DisplayParams (single view) or one
@@ -713,8 +767,9 @@ export default function TileViewerV2({
     };
 
     return (
+        <Box sx={{ display: 'flex', width: '100%', height: '100%', backgroundColor: '#000' }}>
         <Box ref={containerRef} sx={{
-            position: 'relative', width: '100%', height: '100%',
+            position: 'relative', flex: 1, minWidth: 0, height: '100%',
             backgroundColor: '#000', overflow: 'hidden',
         }}>
             {/* Backing store in DEVICE px (the style pins CSS size); a
@@ -795,90 +850,6 @@ export default function TileViewerV2({
                 polygons={polygons}
                 show={showPanelNumbers}
             />
-            {/* The finish panel: its name, which inputs it is reading, the
-                3×3 explorer and one control per param. Shown in both
-                embedded (MosaicViewer / StackTabs) and standalone modes,
-                since the finish is intrinsic to the view, not the parent
-                toolbar. */}
-            {activeFinish && (
-                <Box sx={{
-                    // Above the 3×3 grid overlay (zIndex 4) so this panel's
-                    // controls (Spread, Keep, Cancel, sliders) receive clicks
-                    // instead of the overlay reading them as a grid-cell tap.
-                    position: 'absolute', top: 12, left: 12, width: 232, zIndex: 10,
-                    p: 1.5, backgroundColor: 'rgba(20,20,22,0.80)',
-                    border: '1px solid rgba(255,255,255,0.12)', borderRadius: 1,
-                    color: '#fff', backdropFilter: 'blur(6px)',
-                }}>
-                    <Typography variant="caption" sx={{ display: 'block', fontWeight: 600, mb: 0.75 }}>
-                        {activeFinish.name}
-                    </Typography>
-                    {/* WHICH TAPS this finish is actually reading, and
-                        whether each one bound. A declared input that binds
-                        black degrades silently by design, and "finish
-                        renders but one layer is missing" is otherwise
-                        invisible — it cost hours of misdiagnosis on
-                        2026-09-03 because nothing on screen said so. */}
-                    <Typography variant="caption" sx={{
-                        display: 'block', mb: 1, lineHeight: 1.4,
-                        color: 'rgba(255,255,255,0.62)',
-                    }}>
-                        reading&nbsp;
-                        {inputs.map((inp, i) => (
-                            <span key={i}>
-                                {i > 0 && ' + '}
-                                {i === 0 ? <b>{inp.tap}</b> : inp.tap}
-                                {!inp.bound && (
-                                    <span style={{ color: 'rgba(240,160,140,0.9)' }}> (absent)</span>
-                                )}
-                            </span>
-                        ))}
-                    </Typography>
-                    {/* 3×3 taste-grid explorer: render the view 9 ways, click to refine. */}
-                    {!gridActive ? (
-                        <Button size="small" fullWidth variant="outlined"
-                            onClick={enterGrid}
-                            sx={{ mb: 1, color: '#fff', borderColor: 'rgba(255,255,255,0.3)' }}>
-                            Explore 3×3
-                        </Button>
-                    ) : (
-                        <Box sx={{ mb: 1 }}>
-                            <Typography variant="caption" sx={{ display: 'block', opacity: 0.85, mb: 0.5 }}>
-                                Click a look you like — it recenters and the others reshuffle. Click the
-                                same tile again to keep going that way. Centre = keep this + new ideas.
-                            </Typography>
-                            {/* Spread: how far the 8 neighbours wander from the centre
-                                (fraction of each knob's value). Re-samples on release. */}
-                            <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
-                                Spread — {gridSpread.toFixed(2)}×
-                            </Typography>
-                            <Slider size="small" value={gridSpread} min={0.25} max={4} step={0.25}
-                                onChange={(_, v) => setGridSpread(v)}
-                                onChangeCommitted={(_, v) => pushGrid(gridCenter, sampleMoves(nextRng(), gridAxes, gridCenter, v))}
-                                sx={{ color: '#fff', mb: 0.5 }} />
-                            <Box sx={{ display: 'flex', gap: 0.5, mb: 0.5 }}>
-                                <Button size="small" variant="outlined" onClick={undoGrid} sx={gridBtnSx}>Undo</Button>
-                                <Button size="small" variant="outlined" onClick={redoGrid} sx={gridBtnSx}>Redo</Button>
-                            </Box>
-                            <Box sx={{ display: 'flex', gap: 0.5 }}>
-                                <Button size="small" variant="contained" onClick={() => exitGrid(true)}
-                                    sx={{ ...gridBtnSx, color: '#000' }}>Keep</Button>
-                                <Button size="small" variant="outlined" onClick={() => exitGrid(false)} sx={gridBtnSx}>Cancel</Button>
-                            </Box>
-                        </Box>
-                    )}
-                    {/* Per-param sliders — hidden in grid mode (the grid IS the
-                        control there). One per param EXTRACTED from the Python
-                        finish (name/label/range/step all from the spec). The
-                        finish gets RAW linear input; its own params do all
-                        scaling. BUILT-IN params (framework-injected, e.g. the
-                        common first pass's "Zero ragged edges") render FIRST,
-                        above a rule, so someone reading their own finish can
-                        tell which controls they declared and which came with
-                        the system. */}
-                    {!gridActive && renderFinishParams(activeFinish.params)}
-                </Box>
-            )}
             {!embedded && (
                 <Box sx={{
                     position: 'absolute', top: 12, right: 12, width: 260,
@@ -952,6 +923,109 @@ export default function TileViewerV2({
                     <Typography variant="caption" sx={{ display: 'block', opacity: 0.6 }}>
                         {primary ? `${primary.width}×${primary.height} px, ${primary.maxZoom + 1} LODs` : 'loading…'}
                     </Typography>
+                </Box>
+            )}
+            {activeFinish && !sidebarOpen && (
+                <Button size="small" variant="contained" onClick={() => showSidebar(true)}
+                    sx={{ position: 'absolute', bottom: 12, right: 12, zIndex: 10,
+                          bgcolor: 'rgba(20,20,22,0.85)', color: '#fff', '&:hover': { bgcolor: 'rgba(40,40,44,0.95)' } }}>
+                    ‹ Finish
+                </Button>
+            )}
+        </Box>
+            {/* The finish sidebar: its name, which inputs it is reading,
+                saved looks, the 3×3 explorer and one control per param.
+                Docked beside the image so it never covers it, scrolling on
+                its own so a long finish always fits. Shown in both embedded
+                (MosaicViewer / StackTabs) and standalone modes, since the
+                finish is intrinsic to the view, not the parent toolbar. */}
+            {activeFinish && sidebarOpen && (
+                <Box sx={{
+                    width: 300, flexShrink: 0, height: '100%', overflowY: 'auto',
+                    boxSizing: 'border-box', p: 1.5, color: '#fff',
+                    backgroundColor: 'rgb(20,20,22)', borderLeft: '1px solid rgba(255,255,255,0.12)',
+                }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.75 }}>
+                        <Typography variant="caption" sx={{ fontWeight: 600 }}>{activeFinish.name}</Typography>
+                        <Button size="small" onClick={() => showSidebar(false)} aria-label="Hide the finish panel"
+                            sx={{ minWidth: 0, px: 1, color: 'rgba(255,255,255,0.75)' }}>
+                            Hide ›
+                        </Button>
+                    </Box>
+                    {/* WHICH TAPS this finish is actually reading, and
+                        whether each one bound. A declared input that binds
+                        black degrades silently by design, and "finish
+                        renders but one layer is missing" is otherwise
+                        invisible — it cost hours of misdiagnosis on
+                        2026-09-03 because nothing on screen said so. */}
+                    <Typography variant="caption" sx={{
+                        display: 'block', mb: 1, lineHeight: 1.4,
+                        color: 'rgba(255,255,255,0.62)',
+                    }}>
+                        reading&nbsp;
+                        {inputs.map((inp, i) => (
+                            <span key={i}>
+                                {i > 0 && ' + '}
+                                {i === 0 ? <b>{inp.tap}</b> : inp.tap}
+                                {!inp.bound && (
+                                    <span style={{ color: 'rgba(240,160,140,0.9)' }}> (absent)</span>
+                                )}
+                            </span>
+                        ))}
+                    </Typography>
+                    <FinishSaves
+                        url={buildApiUrl('/api/finish_saves', hierarchy, view)}
+                        values={Object.fromEntries(activeFinish.params.map(
+                            (prm) => [prm.name, genericValues[prm.name] ?? prm.default]))}
+                        onRestore={(saved) => setGenericValues((cur) => ({
+                            ...cur,
+                            ...Object.fromEntries(Object.entries(saved).filter(
+                                ([name]) => activeFinish.params.some((prm) => prm.name === name))),
+                        }))}
+                    />
+                    {/* 3×3 taste-grid explorer: render the view 9 ways, click to refine. */}
+                    {!gridActive ? (
+                        <Button size="small" fullWidth variant="outlined"
+                            onClick={enterGrid}
+                            sx={{ mb: 1, color: '#fff', borderColor: 'rgba(255,255,255,0.3)' }}>
+                            Explore 3×3
+                        </Button>
+                    ) : (
+                        <Box sx={{ mb: 1 }}>
+                            <Typography variant="caption" sx={{ display: 'block', opacity: 0.85, mb: 0.5 }}>
+                                Click a look you like — it recenters and the others reshuffle. Click the
+                                same tile again to keep going that way. Centre = keep this + new ideas.
+                            </Typography>
+                            {/* Spread: how far the 8 neighbours wander from the centre
+                                (fraction of each knob's value). Re-samples on release. */}
+                            <Typography variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
+                                Spread — {gridSpread.toFixed(2)}×
+                            </Typography>
+                            <Slider size="small" value={gridSpread} min={0.25} max={4} step={0.25}
+                                onChange={(_, v) => setGridSpread(v)}
+                                onChangeCommitted={(_, v) => pushGrid(gridCenter, sampleMoves(nextRng(), gridAxes, gridCenter, v))}
+                                sx={{ color: '#fff', mb: 0.5 }} />
+                            <Box sx={{ display: 'flex', gap: 0.5, mb: 0.5 }}>
+                                <Button size="small" variant="outlined" onClick={undoGrid} sx={gridBtnSx}>Undo</Button>
+                                <Button size="small" variant="outlined" onClick={redoGrid} sx={gridBtnSx}>Redo</Button>
+                            </Box>
+                            <Box sx={{ display: 'flex', gap: 0.5 }}>
+                                <Button size="small" variant="contained" onClick={() => exitGrid(true)}
+                                    sx={{ ...gridBtnSx, color: '#000' }}>Keep</Button>
+                                <Button size="small" variant="outlined" onClick={() => exitGrid(false)} sx={gridBtnSx}>Cancel</Button>
+                            </Box>
+                        </Box>
+                    )}
+                    {/* Per-param sliders — hidden in grid mode (the grid IS the
+                        control there). One per param EXTRACTED from the Python
+                        finish (name/label/range/step all from the spec). The
+                        finish gets RAW linear input; its own params do all
+                        scaling. BUILT-IN params (framework-injected, e.g. the
+                        common first pass's "Zero ragged edges") render FIRST,
+                        above a rule, so someone reading their own finish can
+                        tell which controls they declared and which came with
+                        the system. */}
+                    {!gridActive && renderFinishParams(activeFinish.params)}
                 </Box>
             )}
         </Box>

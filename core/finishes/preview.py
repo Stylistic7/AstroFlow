@@ -159,12 +159,14 @@ def _fit(arr: "np.ndarray", shape) -> "np.ndarray":
 
 def render_finish_preview(object_type: str, object_id: str, pipeline: str,
                           name: str, min_px: int = _PREVIEW_MIN_PX,
+                          values: "dict | None" = None,
                           ) -> "tuple[bytes, str] | None":
     """(PNG bytes, status) of finish `name` bound to this object under
     `pipeline`, or None when its primary input is not servable yet. Status
     is the bound finish's (worst required input); callers must surface it
     (the 2026-08-31 lesson: dropping it showed last-good generations as
-    current)."""
+    current). `values` (a saved look's parameters) override the seeded
+    ones; such renders are not cached."""
     import cv2
     from catalog import resolve_finish, stars_inputs, band_roles
     from context.cache import get_durable_cache
@@ -191,7 +193,7 @@ def render_finish_preview(object_type: str, object_id: str, pipeline: str,
     key = ("finish_preview", 7, object_type, object_id, pipeline, name,
            b.finish.finish_hash,
            *(_mtime(i.path) if i.path is not None else 0 for i in b.inputs))
-    cached = dc.get(key)
+    cached = dc.get(key) if values is None else None
     if cached is not None:
         return cached, b.status
 
@@ -214,14 +216,15 @@ def render_finish_preview(object_type: str, object_id: str, pipeline: str,
         if st.shape[-1] >= 3 and composite.shape[-1] < 3:
             st = st[..., :3].mean(axis=-1, keepdims=True)
         composite += np.maximum(np.nan_to_num(st[..., :composite.shape[-1]]), 0.0)
-    values = _stf_values(composite, tuple(roles), display=tags.get("COLORSPC") == "display",
+    seeded = _stf_values(composite, tuple(roles), display=tags.get("COLORSPC") == "display",
                          anchors_from=primary.astype(np.float32, copy=False))
 
-    out = b.finish.bake(sources, values)
+    out = b.finish.bake(sources, {**seeded, **(values or {})})
     ok, buf = cv2.imencode(".png", cv2.cvtColor(
         (out * 255.0).astype(np.uint8), cv2.COLOR_RGB2BGR))
     if not ok:
         return None
     png = buf.tobytes()
-    dc.set(key, png)
+    if values is None:
+        dc.set(key, png)
     return png, b.status

@@ -115,6 +115,10 @@ def _create_durable_cache() -> diskcache.Cache:
 _DURABLE_TUPLE_NS = frozenset(
     {"stacks", "targets", "mosaics", "calibration_stacks", "large_object",
      "decisions",
+     # Saved finish looks, per (object type, id, pipeline, finish): user
+     # curation -- an eviction loses the user's work. See
+     # web_server/backend/finish_saves.py.
+     "finish_saves",
      # Per-display-product version history (graceful N/N-1 versioning). This
      # records PAST output paths/call_hashes, which nothing can recompute once
      # the old files are gone — an LFU eviction would silently lose the

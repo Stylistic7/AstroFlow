@@ -35,6 +35,7 @@ from web_server.backend.decisions import decisions_bp
 from web_server.backend.suggestions import suggestions_bp
 from web_server.backend.asiair_panel import asiair_panel_bp
 from web_server.backend.code_sync import code_sync_bp
+from web_server.backend.finish_saves import finish_saves_bp
 from web_server.backend.router import stateful_route
 
 debug = False
@@ -140,6 +141,7 @@ app.register_blueprint(decisions_bp)
 app.register_blueprint(suggestions_bp)
 app.register_blueprint(asiair_panel_bp)
 app.register_blueprint(code_sync_bp)
+app.register_blueprint(finish_saves_bp)
 
 
 class CustomJSONProvider(DefaultJSONProvider):
