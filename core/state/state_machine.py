@@ -188,6 +188,7 @@ def _init(state: State, action: Action) -> tuple[State, list[Action]]:
     # Workers run headless — no gunicorn.
     if is_head_node():
         new_actions.append(Action(type="start_gunicorn"))
+        new_actions.append(Action(type="start_mcp"))
     new_actions.append(Action(type="start_astroflow_zeroconf"))
 
     if is_head_node():
@@ -578,6 +579,20 @@ def _stop_gunicorn(state: State, action: Action) -> tuple[State, list[Action]]:
     return state, []
 
 
+def _start_mcp(state: State, action: Action) -> tuple[State, list[Action]]:
+    from state.mcp_control import McpManager
+
+    state["mcp_manager"] = McpManager().start()
+    return state, []
+
+
+def _stop_mcp(state: State, action: Action) -> tuple[State, list[Action]]:
+    manager = state.pop("mcp_manager", None)
+    if manager is not None:
+        manager.stop()
+    return state, []
+
+
 def _schedule_download_from_asiairs(
     state: State, action: Action
 ) -> tuple[State, list[Action]]:
@@ -625,6 +640,7 @@ def _quit(state: State, action: Action) -> tuple[State, list[Action]]:
         Action(type="stop_scheduler"),
         Action(type="stop_zeroconf"),
         Action(type="stop_gunicorn"),
+        Action(type="stop_mcp"),
         Action(type="stop_ray_node"),
     ]
     # Workers leave the head's disks unmounted on exit; the head must never
@@ -702,6 +718,8 @@ _HANDLERS = {
     "move_archive_to_cart": _move_archive_to_cart,
     "start_gunicorn": _start_gunicorn,
     "stop_gunicorn": _stop_gunicorn,
+    "start_mcp": _start_mcp,
+    "stop_mcp": _stop_mcp,
     "start_ray_head_node": _start_ray_head_node,
     "start_ray_subordinate_node": _start_ray_subordinate_node,
     "stop_ray_node": _stop_ray_node,
@@ -742,6 +760,7 @@ ctrl_c_count = 0
 def _force_cleanup():
     ray_path = get_bin_dir() / "ray"
     subprocess.run(["pkill", "-f", "gunicorn"], capture_output=True)
+    subprocess.run(["pkill", "-f", "mcp_server --port"], capture_output=True)
     # Kill orphan PixInsight on hard shutdown too (see main._force_cleanup): its
     # output is never cached once Ray is gone, and a survivor collides with the
     # next launch's PI.

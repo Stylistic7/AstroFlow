@@ -302,6 +302,8 @@ class GraphStatus:
     # have finished. Keyed by `node.task._function.__name__`.
     done_per_fn: Counter = field(default_factory=Counter)
     total_per_fn: Counter = field(default_factory=Counter)
+    # In-flight node -> (started_at, ray node id or None for unpinned).
+    in_flight_placement: dict = field(default_factory=dict)
 
     def __add__(self, rhs: "GraphStatus") -> "GraphStatus":
         return GraphStatus(
@@ -311,6 +313,8 @@ class GraphStatus:
             waiting_count=self.waiting_count + rhs.waiting_count,
             done_per_fn=self.done_per_fn + rhs.done_per_fn,
             total_per_fn=self.total_per_fn + rhs.total_per_fn,
+            in_flight_placement={**self.in_flight_placement,
+                                 **rhs.in_flight_placement},
         )
 
 

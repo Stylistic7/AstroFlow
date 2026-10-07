@@ -453,6 +453,24 @@ def _exceeds_thumbnail_budget(width, height) -> bool:
     return int(width) * int(height) >= _THUMBNAIL_MAX_SRC_PX
 
 
+def png_from_linear(arr: np.ndarray, min_px: "int | None") -> bytes:
+    """PNG bytes of a linear array: STF-autostretched to uint8, then
+    area-resized so the short side is `min_px` when it is larger."""
+    from previews.operations import autostretch
+    import cv2
+
+    arr_u8 = (autostretch(np.asarray(arr, dtype=np.float32).squeeze()) * 255.0).astype(np.uint8)
+    h, w = arr_u8.shape[:2]
+    if min_px is not None and min(h, w) > min_px:
+        scale = min_px / min(h, w)
+        arr_u8 = cv2.resize(arr_u8, (int(w * scale), int(h * scale)),
+                            interpolation=cv2.INTER_AREA)
+    ok, buf = cv2.imencode(".png", arr_u8)
+    if not ok:
+        raise RuntimeError("cv2 failed to encode PNG")
+    return buf.tobytes()
+
+
 def pyramid_thumbnail(tile_pyramid_path, min_px: int = _THUMBNAIL_MIN_PX) -> bytes:
     """PNG bytes of a thumbnail of the tile pyramid.
 
@@ -496,11 +514,7 @@ def pyramid_thumbnail(tile_pyramid_path, min_px: int = _THUMBNAIL_MIN_PX) -> byt
                 buffer=small.write_to_memory(), dtype=np.float32,
                 shape=(small.height, small.width, small.bands),
             ).squeeze()
-        arr_u8 = (autostretch(arr) * 255.0).astype(np.uint8)
-        ok, buf = cv2.imencode(".png", arr_u8)
-        if not ok:
-            raise RuntimeError(f"cv2 failed to encode PNG for {path}")
-        return buf.tobytes()
+        return png_from_linear(arr, None)
 
     base = pyvips.Image.tiffload(path, page=0, unlimited=True)
 
@@ -531,20 +545,7 @@ def pyramid_thumbnail(tile_pyramid_path, min_px: int = _THUMBNAIL_MIN_PX) -> byt
         # (otherwise the >255 pixels clip to white, producing the binary-mask
         # failure). Read the (now size-bounded) image, autostretch, cv2-resize.
         if base.format in ("float", "double"):
-            arr = read_image(Path(path))
-            arr_u8 = (autostretch(arr) * 255.0).astype(np.uint8)
-            h, w = arr_u8.shape[:2]
-            short = min(h, w)
-            if short > min_px:
-                scale = min_px / short
-                arr_u8 = cv2.resize(
-                    arr_u8, (int(w * scale), int(h * scale)),
-                    interpolation=cv2.INTER_AREA,
-                )
-            ok, buf = cv2.imencode(".png", arr_u8)
-            if not ok:
-                raise RuntimeError(f"cv2 failed to encode PNG for {path}")
-            return buf.tobytes()
+            return png_from_linear(read_image(Path(path)), min_px)
         # uint8 single-page TIFF — pyvips.Image.thumbnail does the
         # right thing without losing dynamic range.
         image = pyvips.Image.thumbnail(path, min_px)

@@ -233,6 +233,7 @@ stop:
 	-pkill -9 -f " [m]ain.py"
 	-ray stop
 	-pkill -f "[g]unicorn"
+	-pkill -f "[m]cp_server --port"
 	-pkill -f "[P]ixInsight"
 	@echo "✅ app stopped (main.py + ray + gunicorn + PixInsight)"
 

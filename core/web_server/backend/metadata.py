@@ -286,27 +286,12 @@ def finishes(object_type: str, object_id: str):
     the worst over the finish's required inputs. Read-only and snapshot-
     only: a web request never triggers a trace.
     """
-    from catalog import default_finish_for, finishes_for, pipelines_for
+    from catalog import finishes_matrix
 
-    if _resolve_entity(object_type, object_id) is None:
+    matrix = finishes_matrix(object_type, object_id)
+    if matrix is None:
         return abort(404)
-    pipelines = []
-    for name in pipelines_for(object_type, object_id):
-        bound = finishes_for(object_type, object_id, name)
-        if not bound:
-            continue     # traced taps no finish reads: nothing to pick
-        pipelines.append({"name": name, "finishes": [
-            {"name": b.name, "role": b.role, "status": b.status, "mtime": b.mtime,
-             "inputs": [{"tap": i.tap, "filter": i.filter, "status": i.status}
-                        for i in b.inputs]}
-            for b in bound
-        ]})
-    default = default_finish_for(object_type, object_id)
-    return jsonify({
-        "pipelines": pipelines,
-        "default": ({"pipeline": default.pipeline, "finish": default.name}
-                    if default else None),
-    })
+    return jsonify(matrix)
 
 
 @metadata_bp.route(

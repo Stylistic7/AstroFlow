@@ -199,3 +199,27 @@ def stars_inputs(b: BoundFinish, tags_of) -> list:
     autostretch must see the picture the finish screens them into."""
     return [i for i in b.inputs[1:]
             if i.path is not None and tags_of(i.path).get("LAYER") == "stars"]
+
+
+def finishes_matrix(object_type: str, object_id: str) -> "dict | None":
+    """`/api/finishes` and the MCP `finishes_for_object` tool: every pipeline
+    that can show the object with its finishes, plus the default view; None
+    for an object the identification does not know. A pipeline none of whose
+    taps any finish reads is omitted. Snapshot-only: never traces."""
+    if queries.resolve_entity(object_type, object_id) is None:
+        return None
+    pipelines = []
+    for name in queries.pipelines_for(object_type, object_id):
+        bound = finishes_for(object_type, object_id, name)
+        if not bound:
+            continue     # traced taps no finish reads: nothing to pick
+        pipelines.append({"name": name, "finishes": [
+            {"name": b.name, "role": b.role, "status": b.status, "mtime": b.mtime,
+             "inputs": [{"tap": i.tap, "filter": i.filter, "status": i.status}
+                        for i in b.inputs]}
+            for b in bound
+        ]})
+    default = default_finish_for(object_type, object_id)
+    return {"pipelines": pipelines,
+            "default": ({"pipeline": default.pipeline, "finish": default.name}
+                        if default else None)}

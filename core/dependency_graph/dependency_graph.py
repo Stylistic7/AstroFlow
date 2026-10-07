@@ -716,7 +716,7 @@ def run_graph(
                             )
                         retained.append((rt, node))
                         continue
-                rt.start(node)
+                rt.start(node, placed_on=node_id)
                 try:
                     key = _call_key(rt, node) if not dry_run else None
                     if key is not None and key in in_flight:

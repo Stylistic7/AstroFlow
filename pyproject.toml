@@ -73,6 +73,9 @@ dependencies = [
     "flask-cors",
     "gunicorn",
     "gevent",
+    # MCP sidecar on the head (core/mcp_server/): typed tools for an LLM
+    # operator over the same read layer the web backend uses.
+    "mcp>=1.9",
     "plotly",
     "matplotlib",
     "rich",
