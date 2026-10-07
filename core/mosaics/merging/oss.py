@@ -1,4 +1,5 @@
-"""OSS mosaic merging: distance-weighted N-way blend with flux equalization.
+"""OSS mosaic merging: distance- and inverse-variance-weighted N-way blend
+with sky equalization.
 
 Replaces PhotometricMosaic. Placed images are already in the same
 coordinate system (the mosaic viewbox), so no WCS reprojection needed —
@@ -72,6 +73,33 @@ def _sub(mask_crop, bbox, region):
     br0, _, bc0, _ = bbox
     rr0, rr1, rc0, rc1 = region
     return mask_crop[rr0 - br0:rr1 - br0, rc0 - bc0:rc1 - bc0]
+
+
+def _noise_sigma(crop: np.ndarray, mask: np.ndarray) -> float:
+    """Per-pixel noise of a placed starless panel, in its merge units: the
+    MAD of horizontal neighbour differences over the footprint, scaled to a
+    Gaussian sigma and divided by sqrt(2) for the two pixels in each
+    difference. Nebulosity is smooth at a 1 px lag and the layer is
+    starless, so structure barely enters; BXT's sharpened noise texture is
+    measured as it is, which is what the blend sees. Every 4th row, all
+    columns. NaN when the footprint is too small to measure."""
+    rows, m = crop[::4], mask[::4]
+    d = np.diff(rows, axis=1)[m[:, 1:] & m[:, :-1]]
+    if d.size < 1000:
+        return float("nan")
+    return float(1.4826 * np.median(np.abs(d - np.median(d))) / np.sqrt(2.0))
+
+
+def _inverse_variance(crops, masks) -> list[float]:
+    """Per-panel 1/sigma^2, normalised to a maximum of 1 so the distance
+    weights keep their pixel scale; 1 for a panel whose noise could not be
+    measured."""
+    sig = np.array([float("nan") if c is None else _noise_sigma(c, m) for c, m in zip(crops, masks)])
+    inv = np.where(np.isfinite(sig) & (sig > 0), 1.0 / np.square(sig), np.nan)
+    if not np.isfinite(inv).any():
+        return [1.0] * len(crops)
+    inv = inv / np.nanmax(inv)
+    return [1.0 if not np.isfinite(v) else float(v) for v in inv]
 
 
 def _edt_weight(mask_crop, bbox, canvas_shape):
@@ -253,8 +281,17 @@ def _equalize_sky(crops, masks, pedestal) -> "float | None":
 
 
 def _blend_many(paths: list[Path], level_solve: "str | None" = None,
-                pedestal: "float | None" = _UNSET_PEDESTAL) -> np.ndarray:
+                pedestal: "float | None" = _UNSET_PEDESTAL,
+                depth_weighted: bool = False) -> np.ndarray:
     """Variadic distance-weighted blend (gains arrive pre-calibrated).
+
+    `depth_weighted` multiplies each panel's distance weight by its inverse
+    noise variance (`_inverse_variance`), so where panels of unequal depth
+    overlap the deeper one dominates instead of a 50/50 average that is
+    NOISIER than the deep panel alone (2 h over 10 h: 1.5x its variance,
+    2026-10-07). With equal panels it is the plain mean, sqrt(2) deeper.
+    Geometry-only weights remain the default for the stars layer, whose
+    zero background has no noise to measure.
 
     Streams every panel off disk one at a time and works per-panel in its
     on-disk BOUNDING BOX, not the full mosaic canvas: a placed panel fills only
@@ -348,6 +385,10 @@ def _blend_many(paths: list[Path], level_solve: "str | None" = None,
     else:
         assert level_solve is None, f"unknown level_solve mode {level_solve!r}"
 
+    inv_var = _inverse_variance(crops, masks) if depth_weighted else [1.0] * n
+    if depth_weighted:
+        log.info("OSS merge depth weights", inverse_variance=[round(v, 3) for v in inv_var])
+
     # Pass 3: weighted sum, accumulated per-panel into its bbox slice.
     # (No per-panel flux scaling: gains are calibrated upstream against
     # Gaia by post_stack_calibrate — see the deletion note at the top.)
@@ -358,6 +399,8 @@ def _blend_many(paths: list[Path], level_solve: "str | None" = None,
             continue
         r0, r1, c0, c1 = bboxes[i]
         weight = _edt_weight(masks[i], bboxes[i], canvas_shape)
+        if inv_var[i] != 1.0:
+            weight *= np.float32(inv_var[i])
         sub = crops[i]  # the retained crop, mutated in place (last use)
         sub *= weight
         numer[r0:r1, c0:c1] += sub
@@ -368,7 +411,7 @@ def _blend_many(paths: list[Path], level_solve: "str | None" = None,
 
 
 def _merge_layer(op, mosaic: Mosaic, filter: str, inputs, level_solve, skyver,
-                 layer):
+                 layer, depth_weighted=False):
     """Shared body of the two layer merges: variadic distance-weighted blend
     (`_blend_many`) + the house TIFF write with the layer's SKYVER stamp.
     `skyver` is the merge-time matching version header — bumping a caller's
@@ -381,7 +424,7 @@ def _merge_layer(op, mosaic: Mosaic, filter: str, inputs, level_solve, skyver,
     Path(output_filename).parent.mkdir(parents=True, exist_ok=True)
 
     paths = [inp.filename.resolve(strict=True) for inp in inputs]
-    result = _blend_many(paths, level_solve=level_solve)
+    result = _blend_many(paths, level_solve=level_solve, depth_weighted=depth_weighted)
 
     write_tiff_image(Path(output_filename), result.astype(np.float32),
                      {"FILTER": filter,
@@ -417,8 +460,8 @@ def merge_images_oss(
     call this with their own placed inputs. One call per mosaic per
     filter; no row/strip decomposition (see `_blend_many` for why)."""
     return _merge_layer(merge_images_oss, mosaic, filter, inputs,
-                        level_solve="overlap", skyver="overlap-2",
-                        layer="starless")
+                        level_solve="overlap", skyver="overlap-3-ivw",
+                        layer="starless", depth_weighted=True)
 
 
 @node(display="Mosaic Stars", final=True, auto_memory=True, plate_solve="none")  # mosaic projection — non-square pixels

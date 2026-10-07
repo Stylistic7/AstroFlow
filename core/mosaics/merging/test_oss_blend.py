@@ -148,3 +148,50 @@ def test_the_two_merge_ops_declare_opposite_layers(monkeypatch):
         # past beartype: the bodies only forward, so a real Mosaic is noise
         inspect.unwrap(op._function)(None, "Ha")
     assert seen == ["starless", "stars"]
+
+
+def _noisy_canvas(rng, H, W, base, sigma, margin=20):
+    """A panel filling the canvas but for a zero `margin` (a placed panel
+    always sits inside its canvas; a footprint with no background has an
+    infinite distance weight): flat `base` plus Gaussian noise `sigma`,
+    clipped strictly positive so the footprint mask holds."""
+    img = np.zeros((H, W), np.float32)
+    img[margin:-margin, margin:-margin] = np.maximum(
+        base + rng.normal(0.0, sigma, (H - 2 * margin, W - 2 * margin)), 1e-3)
+    return img
+
+
+def test_noise_sigma_measures_gaussian_noise(tmp_path):
+    from mosaics.merging.oss import _noise_sigma
+    rng = np.random.default_rng(1)
+    img = _noisy_canvas(rng, 400, 600, 1.0, 0.02)
+    assert abs(_noise_sigma(img, img > 0) / 0.02 - 1.0) < 0.05
+
+
+def test_depth_weighting_makes_coincident_panels_deeper(tmp_path):
+    """Two framings of one field, sigma and 3 sigma. Geometry-only weights
+    average them 50/50 — noisier than the deep panel alone; inverse-variance
+    weights give sqrt(0.9) of its noise. Equal panels come out sqrt(2) deeper."""
+    rng = np.random.default_rng(2)
+    H, W, base, sigma = 400, 600, 1.0, 0.02
+    deep = _write(tmp_path, "deep", _noisy_canvas(rng, H, W, base, sigma))
+    shallow = _write(tmp_path, "shallow", _noisy_canvas(rng, H, W, base, 3 * sigma))
+    twin = _write(tmp_path, "twin", _noisy_canvas(rng, H, W, base, sigma))
+    interior = (slice(40, H - 40), slice(40, W - 40))
+
+    def noise(out):
+        return float(np.std(out[interior] - base))
+
+    assert noise(_blend_many([deep, shallow])) > 1.4 * sigma              # the old 50/50: sqrt(10)/2 = 1.58
+    assert 0.88 * sigma < noise(_blend_many([deep, shallow], depth_weighted=True)) < 0.98 * sigma
+    assert abs(noise(_blend_many([deep, twin], depth_weighted=True)) / (sigma / np.sqrt(2)) - 1.0) < 0.1
+
+
+if __name__ == "__main__":
+    import tempfile
+    from pathlib import Path as _P
+    with tempfile.TemporaryDirectory() as d:
+        test_noise_sigma_measures_gaussian_noise(_P(d))
+        print("ok test_noise_sigma_measures_gaussian_noise")
+        test_depth_weighting_makes_coincident_panels_deeper(_P(d))
+        print("ok test_depth_weighting_makes_coincident_panels_deeper")
