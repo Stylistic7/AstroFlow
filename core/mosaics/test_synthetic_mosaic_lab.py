@@ -125,7 +125,7 @@ def _lab_mosaic(tag: str):
         center=[_RA, _DEC])
     return Mosaic(
         name=f"lab-{tag}", content_hash=f"lab_content_{tag}",
-        stable_hash=f"lab_{tag}", target_ids=("a",), strips=(("a",),),
+        stable_hash=f"lab_{tag}", target_ids=("a",),
         panel_target_ids=("a",), oldest_date=_DATE, newest_date=_DATE,
         center=(Degrees(_RA), Degrees(_DEC)),
         image_scale=ArcsecondsPerPixel(2.0), rotation_angle=Radians(0.0),

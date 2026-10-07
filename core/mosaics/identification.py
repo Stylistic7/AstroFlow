@@ -1,4 +1,18 @@
-import math
+"""Mosaics are ad hoc: any targets whose footprints overlap, on the same
+train, are one mosaic. Membership is transitive — a connected component of
+pairwise overlaps — with one guard: a union that would put two panel
+centres more than `MAX_MOSAIC_SPAN` apart is refused, because the merge
+reprojects every panel onto one tangent plane, and a 60-degree canvas is
+what the Cassiopeia grid chained into Cepheus through a shared pane would
+be.
+
+Until 2026-10-07 a mosaic also had to be a regular grid: overlaps were
+classified LONG_EDGE / SHORT_EDGE by stripe geometry, panes had to agree in
+position angle and area, and panels were ordered into strips for a
+pairwise merge. The merges have been global for a long time; the grid
+rules only dropped mosaics ("Failed to order mosaic") and forbade fill-in
+and hinge panes. Panel numbers come from `rise_time.panel_order`, as before.
+"""
 import structlog
 from frozendict import frozendict
 from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon  # type: ignore
@@ -12,19 +26,12 @@ from beartype import beartype
 from collections import defaultdict
 from itertools import combinations
 
-from clustering.angles import angular_spread_mod_pi
-from mosaics.types import Mosaic, MosaicHash, MosaicsDict, Strip
+from mosaics.types import Mosaic, MosaicsDict
 from catalogs import position_string
 from geometry import footprints
-from targets.types import TargetHash, Target, TargetsDict
-from mosaics.debugging import (
-    plot_targets_and_footprint,
-    plot_mosaic,
-    plot_targets_overlap,
-)
-from mosaics.disjoint_set import HashDisjointSet
-from mosaics.overlap import Overlap
-from decorators import cached, node
+from targets.types import TargetHash, Target
+from mosaics.debugging import plot_mosaic
+from decorators import node
 from attributes import AstrometricAttributes, ChronologyAttributes
 from attributes.astrometric_attributes import healpix_cells_from_poly
 from cache.context_ref import ContextRef
@@ -33,14 +40,10 @@ from units import Degrees, Radians, ArcsecondsPerPixel
 logger = structlog.get_logger()
 log = logger
 
-
-@beartype
-def roughly_same_area(
-    a: SingleSphericalPolygon, b: SingleSphericalPolygon,
-    lo: float, hi: float,
-) -> bool:
-    ratio = a.area() / b.area()
-    return bool(ratio > lo and ratio < hi)
+# Largest separation between two panel centres one mosaic may hold. 75a1,
+# 24 RedCat panels in a 4 x 6 grid, spans ~30 deg and the Cassiopeia grid
+# ~25 deg; a chain through the Question Mark into Cepheus would pass 60.
+MAX_MOSAIC_SPAN = Degrees(45.0)
 
 
 @beartype
@@ -49,372 +52,116 @@ def roughly_same_image_scale(a: ArcsecondsPerPixel, b: ArcsecondsPerPixel) -> bo
     return bool(ratio > 0.9 and ratio < 1.1)
 
 
-@beartype
-def roughly_same_position_angle(
-    a: Radians, b: Radians, angular_tolerance: Radians
-) -> bool:
-    return bool(angular_spread_mod_pi([a, b]) < angular_tolerance)
-
-
 @node
 def targets_overlap(
     a_target_ref: ContextRef[Target],
     b_target_ref: ContextRef[Target],
     min_area_frac: float = 0.03,
-    span_match: float = 0.75,
-    thick_min: float = 0.1,
-    thick_max: float = 0.3,
-    angular_tolerance: Radians = Radians(math.radians(10.0)),
-    debug: bool = False,
-) -> Overlap:
+) -> bool:
+    """Whether two targets are panels of one mosaic: the same train and
+    footprints sharing at least `min_area_frac` of the smaller one — enough
+    overlap to level-match; a corner graze is not a join. Position angle
+    and layout are free: the merge reprojects every panel onto the
+    mosaic's canvas. This node's cache key hashes its own source, so only
+    a change HERE re-keys cached verdicts.
+
+    "Same train" is the same sensor (pixel geometry, as `identify_targets`
+    partitions stacks) at the same image scale (within 10%): different
+    cameras never share a mosaic — Tier 2 combines across cameras, a
+    mosaic does not — and the two rigs' 6200MMs are told apart by scale."""
     a_target = a_target_ref.get()
     b_target = b_target_ref.get()
-
     if a_target is b_target:
-        return Overlap.IDENTICAL
-
+        return False
+    if a_target.sensor != b_target.sensor:
+        return False
     if not roughly_same_image_scale(a_target.image_scale, b_target.image_scale):
-        return Overlap.INCOMPATIBLE
-
-    if not roughly_same_position_angle(
-        a_target.rotation_angle, b_target.rotation_angle, angular_tolerance
-    ):
-        return Overlap.INCOMPATIBLE
-
+        return False
     a, b = a_target.footprint, b_target.footprint
-
-    # Area gate ±15%, widened from ±10% (2026-08-27): a panel's hull
-    # legitimately grows when it holds single-session stacks whose
-    # tight-dither intersections stay near-full-frame and point slightly
-    # off-grid — two γ Cyg panels measured pairwise 1.134 against their
-    # neighbors and the whole 24-panel mosaic was dropped ("Failed to
-    # order mosaic"). Genuinely different-FOV pairings measure ≤0.45, so
-    # 3× slack remains. The bounds are passed HERE, not defaulted in the
-    # helper: this node's cache key hashes its own (AST-normalized)
-    # source, so only a SEMANTIC body change re-keys cached verdicts —
-    # a helper-side or comment-only edit leaves every machine's
-    # diskcache serving the old gate forever.
-    if not roughly_same_area(a, b, lo=0.87, hi=1.15):
-        return Overlap.INCOMPATIBLE
-
     if not a.intersects_poly(b):
-        return Overlap.NON_OVERLAPPING
-
+        return False
     inter = a.intersection(b)
     polys = getattr(inter, "polygons", [inter])
     if not polys:
-        return Overlap.NON_OVERLAPPING
+        return False
     inter = max(polys, key=lambda p: p.area())
+    return bool(inter.area() / max(min(a.area(), b.area()), 1e-30) >= min_area_frac)
 
-    # reject tiny overlaps: real, but not useful for mosaics
-    if inter.area() / max(min(a.area(), b.area()), 1e-30) < min_area_frac:
-        return Overlap.INCOMPATIBLE
 
-    # Tangent basis at the intersection centroid, in XYZ: e1 = local east,
-    # e2 = local north. Everything below is a bounding-box extent along
-    # e1/e2, so the basis must line up with the panes' edges (PA to local
-    # north on an equatorial mount). The reference vector used to switch
-    # from the pole to the x-axis at |sin Dec| > 0.9 (Dec 64.2): above
-    # that the basis sat at a large, RA-dependent angle to the frames,
-    # every stripe's box looked too thick, the whole top row of Stylistic7's
-    # Dec 58-69 Cassiopeia grid went unrecognised and strip ordering
-    # failed (2026-10-06). The pole reference is only degenerate AT the
-    # pole, so the switch now waits for |sin Dec| > 0.999 (Dec 87.4).
-    # Below Dec 64.2 this is byte-identical to the old basis: every
-    # existing mosaic's verdicts are unchanged (checked on all 21).
-    ptsI = np.array(list(inter.points), float)  # (N,3) unit vectors
-    c = ptsI.mean(0)
-    c /= np.linalg.norm(c)
-    ref = np.array([0.0, 0.0, 1.0])
-    if abs(c @ ref) > 0.999:
-        ref = np.array([1.0, 0.0, 0.0])
-    e1 = np.cross(c, ref)
-    e1 /= np.linalg.norm(e1)
-    e2 = np.cross(c, e1)
-    e2 /= np.linalg.norm(e2)
-    E = np.vstack([e1, e2])  # 2x3; rows are basis vectors
-
-    def spans_in_plane(poly):
-        pts = np.array(list(poly.points), float)  # (N,3)
-        xy = pts @ E.T  # (N,2) in common plane
-        d = xy.max(0) - xy.min(0)  # (dx, dy)
-        return float(abs(d[0])), float(abs(d[1]))
-
-    ax, ay = spans_in_plane(a)
-    bx, by = spans_in_plane(b)
-    ix, iy = spans_in_plane(inter)
-
-    # decide which direction is "span" vs "thickness" for the intersection stripe
-    if iy >= ix:
-        span, thick = iy, ix  # stripe runs along e2
-        span_axis_is_y = True
-    else:
-        span, thick = ix, iy  # stripe runs along e1
-        span_axis_is_y = False
-
-    def scores_for_frame(wx, wy):
-        # wx,wy are that frame's extents along e1,e2
-        if wx == 0 or wy == 0:
-            return 0.0, 0.0
-
-        # frame intrinsic long/short sides
-        if wx >= wy:
-            L, S = wx, wy
-            span_L, span_S = ix, iy
-        else:
-            L, S = wy, wx
-            span_L, span_S = iy, ix
-
-        # how much of each side is covered by the intersection bounding box
-        cov_L = span_L / L  # ∈ (0,1]
-        cov_S = span_S / S  # ∈ (0,1]
-
-        # decide whether the stripe runs more along the frame's long or short side
-        stripe_along_L = span_L >= span_S
-
-        long_score = 0.0
-        short_score = 0.0
-
-        if stripe_along_L:
-            # long-edge hypothesis: stripe runs along long side, thin on short side
-            thin_short = cov_S  # stripe thickness vs short side
-            if cov_L >= span_match and thick_min <= thin_short <= thick_max:
-                long_score = cov_L
-        else:
-            # short-edge hypothesis: stripe runs along short side, thin on long side
-            thin_long = cov_L  # stripe thickness vs long side
-            if cov_S >= span_match and thick_min <= thin_long <= thick_max:
-                short_score = cov_S
-
-        return long_score, short_score
-
-    long_a, short_a = scores_for_frame(ax, ay)
-    long_b, short_b = scores_for_frame(bx, by)
-
-    # symmetric aggregation: swapping a,b leaves these unchanged
-    long_score = max(long_a, long_b)
-    short_score = max(short_a, short_b)
-
-    if long_score >= span_match and short_score < span_match:
-        result = Overlap.LONG_EDGE
-    elif short_score >= span_match and long_score < span_match:
-        result = Overlap.SHORT_EDGE
-    elif long_score >= span_match and short_score >= span_match:
-        result = (
-            Overlap.LONG_EDGE
-            if long_score >= short_score
-            else Overlap.SHORT_EDGE
-        )
-    else:
-        result = Overlap.INCOMPATIBLE
-
-    if debug:
-        title = (
-            f"targets_overlap {a_target.stable_hash} {b_target.stable_hash}\n"
-            f"{ax=:.3f} {ay=:.3f} {bx=:.3f} {by=:.3f} {ix=:.3f} {iy=:.3f}\n"
-            f"{span=:.3f} {thick=:.3f} {span_axis_is_y=}\n"
-            f"{long_score=:.3f} {short_score=:.3f} {result=}"
-        )
-
-        plot_targets_overlap(a_target, b_target, title=title)
-
-    return result
+def _span(targets: list[Target]) -> Degrees:
+    """Largest great-circle separation between any two centres."""
+    ra, dec = np.radians(np.array([t.center for t in targets], float)).T
+    xyz = np.stack([np.cos(dec) * np.cos(ra), np.cos(dec) * np.sin(ra), np.sin(dec)], 1)
+    return Degrees(float(np.degrees(np.arccos(np.clip(xyz @ xyz.T, -1.0, 1.0)).max())))
 
 
 @beartype
 def group_targets(
     target_refs: dict[TargetHash, ContextRef[Target]],
     target_ids: list[TargetHash],
-    allowed_overlaps: list[Overlap],
-    angular_tolerance: Radians,
 ) -> list[list[TargetHash]]:
+    """Connected components of the overlap graph, singletons included.
+    Pairs are tested only where they share a HEALPix cell. Edges apply in
+    a fixed order, so which union the span guard refuses is deterministic."""
     assert len(target_ids) > 0
-
+    resolved = {t: target_refs[t].get() for t in target_ids}
     target_ids_for_cell = defaultdict(list)
     for target_id in target_ids:
-        target = target_refs[target_id].get()
-        assert len(target.healpix_cells) > 0
-        for cell in target.healpix_cells:
+        assert len(resolved[target_id].healpix_cells) > 0
+        for cell in resolved[target_id].healpix_cells:
             target_ids_for_cell[cell].append(target_id)
 
-    assert len(target_ids_for_cell) > 0
+    pairs = sorted({tuple(sorted(pair)) for tids in target_ids_for_cell.values()
+                    for pair in combinations(tids, 2)})
+    verdicts = ray.get([targets_overlap.remote(target_refs[a], target_refs[b]) for a, b in pairs])
 
-    disjoint_set = HashDisjointSet()
-    # Fire all overlap checks in parallel, then collect results.
-    futures = []
-    for cell, tids in target_ids_for_cell.items():
-        if len(tids) < 2:
+    component: dict[TargetHash, set[TargetHash]] = {t: {t} for t in target_ids}
+    for (a, b), overlaps in zip(pairs, verdicts):
+        if not overlaps or component[a] is component[b]:
             continue
-        for a, b in combinations(sorted(tids), 2):
-            ref = targets_overlap.remote(
-                target_refs[a], target_refs[b],
-                angular_tolerance=angular_tolerance,
-            )
-            futures.append((a, b, ref))
-
-    for a, b, ref in futures:
-        overlap = ray.get(ref)
-        if overlap in allowed_overlaps:
-            log.debug("Union", a=a[:8], b=b[:8], overlap=str(overlap))
-            disjoint_set.union(a, b)
-
-    mosaics = disjoint_set.groups()
-
-    singletons = [[t] for t in target_ids if not any(t in m for m in mosaics)]
-
-    result = mosaics + singletons
+        merged = component[a] | component[b]
+        span = _span([resolved[t] for t in merged])
+        if span > MAX_MOSAIC_SPAN:
+            log.warning("Refusing to join mosaics: span too large", a=a[:8], b=b[:8],
+                        span_deg=round(float(span), 1), max_deg=float(MAX_MOSAIC_SPAN))
+            continue
+        log.debug("Union", a=a[:8], b=b[:8])
+        for t in merged:
+            component[t] = merged
+    groups = {id(c): sorted(c) for c in component.values()}
+    result = sorted(groups.values(), key=lambda g: g[0])
     assert sum(len(r) for r in result) == len(target_ids)
     return result
-
-
-
-
-@beartype
-def find_strips(
-    target_refs: dict[TargetHash, ContextRef[Target]],
-    target_ids: list[TargetHash],
-    angular_tolerance: Radians,
-    debug: bool = False,
-) -> tuple[Strip, ...]:
-    resolved: dict[TargetHash, Target] = {k: ref.get() for k, ref in target_refs.items()}
-    strips = group_targets(
-        target_refs, target_ids, [Overlap.LONG_EDGE], angular_tolerance
-    )
-    if debug:
-        for i, strip in enumerate(strips):
-            log.debug("Strip", index=i, strip=strip)
-        plot_targets_and_footprint(resolved, target_ids, None, title="Mosaic")
-
-    # TODO: Maybe use this same algorithm to order the strips themselves to make
-    # sure the output strips can be merged with PhotometricMergeMosaic.
-    @beartype
-    def order_strip(strip: set[TargetHash]) -> Strip:
-        strip_length = len(strip)
-        strip = list(sorted(strip, key=lambda t: resolved[t].center[0]))
-
-        if len(strip) < 3:
-            return Strip(strip)
-
-        # Fire all pairwise overlap checks in parallel.
-        overlap_refs = {
-            (tid_a, tid_b): targets_overlap.remote(
-                target_refs[tid_a], target_refs[tid_b],
-                angular_tolerance=angular_tolerance,
-            )
-            for tid_a, tid_b in combinations(strip, 2)
-        }
-        overlap_results = {k: ray.get(ref) for k, ref in overlap_refs.items()}
-
-        def overlap_count(target_id):
-            return sum(
-                1 for tid in strip
-                if tid != target_id and (
-                    overlap_results.get((target_id, tid), overlap_results.get((tid, target_id)))
-                ) == Overlap.LONG_EDGE
-            )
-
-        overlap_counts = {tid: overlap_count(tid) for tid in strip}
-        log.debug("Overlap counts", counts=overlap_counts)
-        assert set(overlap_counts.values()) == {1, 2}
-        ones = [k for k, v in overlap_counts.items() if v == 1]
-        assert len(ones) == 2
-        end_target_id = ones[0]
-
-        output_strip = [end_target_id]
-        strip.remove(end_target_id)
-        while len(output_strip) < strip_length:
-            log.debug("Ordering strip", progress=len(output_strip))
-            starting_length = len(output_strip)
-            # Use pre-computed overlap results instead of serial ray.get calls.
-            last = output_strip[-1]
-            for target_id in strip:
-                overlap = overlap_results.get((last, target_id), overlap_results.get((target_id, last)))
-                if overlap == Overlap.LONG_EDGE:
-                    if debug:
-                        log.debug("Added to strip", target_id=target_id[:8])
-                    output_strip.append(target_id)
-                    strip.remove(target_id)
-                    break
-                else:
-                    log.debug("End of strip", target=output_strip[-1][:8], overlap=str(overlap))
-
-            assert len(output_strip) != starting_length, (
-                "### order_strip did not make progress"
-            )
-
-        assert len(output_strip) == strip_length
-        return Strip(output_strip)
-
-    output_strips = []
-    for i, strip in enumerate(strips):
-        log.debug("Ordering strip", index=i, total=len(strips))
-        ordered_strip = order_strip(set(strip))
-        if debug:
-            log.debug("Strip ordering", before=strip, after=ordered_strip)
-        output_strips.append(ordered_strip)
-
-    # TODO: This is a bit of a hack. Consider more principled ways of sorting
-    # strips.
-    def min_dec(strip: list[TargetHash]):
-        return min(resolved[t].center[1] for t in strip)
-
-    # Sort each strip individually by increasing RA.
-    strips = [tuple(sorted(s, key=lambda t: resolved[t].center[0])) for s in strips]
-
-    # Sort the strips by increasing Dec.
-    return tuple(sorted(strips, key=min_dec))
 
 
 @beartype
 def _identify_overlapping_targets(
     target_refs: dict[TargetHash, ContextRef[Target]],
-    angular_tolerance: Radians,
-    debug: bool = False,
 ) -> list[list[TargetHash]]:
+    """The groups of two or more overlapping targets, each sorted."""
     if not target_refs:
         return []
-
     resolved = {k: ref.get() for k, ref in target_refs.items()}
-
-    # Sort the targets by their center RA.
-    target_ids = list(
-        sorted(resolved.keys(), key=lambda t: resolved[t].center[0])
-    )
+    target_ids = list(sorted(resolved.keys(), key=lambda t: resolved[t].center[0]))
     log.info("Identifying overlapping targets", num_targets=len(target_refs))
-
-    mosaics = group_targets(
-        target_refs,
-        target_ids,
-        [Overlap.LONG_EDGE, Overlap.SHORT_EDGE],
-        angular_tolerance,
-    )
-
-    num_grouped_targets = sum(len(m) for m in mosaics)
-    num_ungrouped_targets = len(target_refs) - num_grouped_targets
-    log.info(
-        "Done grouping overlapping targets",
-        num_mosaics=len(mosaics),
-        num_grouped_targets=num_grouped_targets,
-        num_ungrouped_targets=num_ungrouped_targets,
-    )
-
-    mosaics = [sorted(m) for m in mosaics if len(m) > 1]
+    mosaics = [m for m in group_targets(target_refs, target_ids) if len(m) > 1]
+    log.info("Done grouping overlapping targets", num_mosaics=len(mosaics),
+             num_grouped_targets=sum(len(m) for m in mosaics),
+             num_ungrouped_targets=len(target_refs) - sum(len(m) for m in mosaics))
     for mosaic in mosaics:
         log.info("Overlapping target group", num_targets=len(mosaic))
-
     return mosaics
 
 
 @node
 def identify_mosaics(
-    angular_tolerance: Radians,
     targets: dict[TargetHash, ContextRef[Target]],
     debug: bool = False,
 ) -> MosaicsDict:
     resolved: dict[str, Target] = {k: ref.get() for k, ref in targets.items()}
     log.info("Identifying mosaics", num_targets=len(resolved))
 
-    mosaics = _identify_overlapping_targets(targets, angular_tolerance, debug)
+    mosaics = _identify_overlapping_targets(targets)
     if not mosaics:
         log.info("No overlapping targets found")
         return MosaicsDict({})
@@ -430,27 +177,11 @@ def identify_mosaics(
             sorted(mosaic, key=lambda t: resolved[t].oldest_date)[0]
         ].stable_hash
 
-        if debug:
-            plot_targets_and_footprint(
-                resolved,
-                mosaic,
-                None,
-                title=f"Mosaic {stable_hash} before ordering",
-            )
-
         oldest_date = min(resolved[t].oldest_date for t in mosaic)
         newest_date = max(resolved[t].newest_date for t in mosaic)
 
         image_scale = ArcsecondsPerPixel(np.mean([resolved[t].image_scale for t in mosaic]))
         rotation_angle = Radians(np.mean([resolved[t].rotation_angle for t in mosaic]))
-
-        try:
-            mosaic_refs = {k: targets[k] for k in mosaic}
-            strips = find_strips(mosaic_refs, mosaic, angular_tolerance, debug)
-            log.debug("Ordered strips", num_strips=len(strips))
-        except AssertionError:
-            log.warning("Failed to order mosaic", stable_hash=stable_hash)
-            continue
 
         all_points = [
             resolved[target_id].footprint.points[:-1] for target_id in mosaic
@@ -514,7 +245,6 @@ def identify_mosaics(
                 "stable_hash": stable_hash,
                 "content_hash": content_hash,
                 "target_ids": target_ids,
-                "strips": strips,
                 "panel_target_ids": panel_target_ids,
             }
         )
@@ -526,7 +256,7 @@ def identify_mosaics(
             plot_mosaic(
                 resolved,
                 output_mosaic,
-                title=f"Mosaic {stable_hash} after ordering",
+                title=f"Mosaic {stable_hash}",
             )
 
         output_mosaics[stable_hash] = ContextRef.store(

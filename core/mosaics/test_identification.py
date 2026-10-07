@@ -74,7 +74,7 @@ def test_two_targets(test_context) -> None:
     context.targets = _make_targets_dict(foo, bar)
 
     mosaics = ray.get(
-        identify_mosaics.remote(context.settings.clustering_settings.angular_tolerance, context.targets)
+        identify_mosaics.remote(context.targets)
     )
     assert len(mosaics) == 1
     mosaic = next(iter(mosaics.values())).get()
@@ -154,7 +154,7 @@ def test_three_targets(test_context) -> None:
     context.targets = _make_targets_dict(foo, bar, baz)
 
     mosaics = ray.get(
-        identify_mosaics.remote(context.settings.clustering_settings.angular_tolerance, context.targets)
+        identify_mosaics.remote(context.targets)
     )
 
     assert len(mosaics) == 1
@@ -237,7 +237,7 @@ def test_three_out_of_order_targets(test_context) -> None:
     context.targets = _make_targets_dict(foo, bar, baz)
 
     mosaics = ray.get(
-        identify_mosaics.remote(context.settings.clustering_settings.angular_tolerance, context.targets)
+        identify_mosaics.remote(context.targets)
     )
 
     assert len(mosaics) == 1
@@ -249,7 +249,7 @@ def test_three_out_of_order_targets(test_context) -> None:
     )
 
 
-def test_three_targets_and_an_outlier(test_context) -> None:
+def test_off_grid_pane_joins_the_mosaic(test_context) -> None:
     foo_footprint = SingleSphericalPolygon.from_radec(
         [98, 102, 102, 98], [-1, -1, 1, 1]
     )
@@ -331,17 +331,18 @@ def test_three_targets_and_an_outlier(test_context) -> None:
     context.targets = _make_targets_dict(foo, bar, baz, outlier)
 
     mosaics = ray.get(
-        identify_mosaics.remote(context.settings.clustering_settings.angular_tolerance, context.targets)
+        identify_mosaics.remote(context.targets)
     )
 
     assert len(mosaics) == 1
     mosaic = next(iter(mosaics.values())).get()
 
-    assert len(mosaic.strips) == 2
-    assert sorted(mosaic.strips[0]) == sorted(
-        [bar.stable_hash, baz.stable_hash]
-    )
-    assert sorted(mosaic.strips[1]) == sorted([foo.stable_hash])
+    # The off-grid pane overlaps foo and bar like any neighbour: it is a
+    # panel. Under the grid rules it was rejected for its stripe shape.
+    assert mosaic.target_ids == tuple(sorted(
+        [foo.stable_hash, bar.stable_hash, baz.stable_hash, outlier.stable_hash]
+    ))
+    assert mosaic.strips == (mosaic.panel_target_ids,)
 
 
 def test_ic1318(test_context) -> None:
@@ -408,7 +409,7 @@ def test_ic1318(test_context) -> None:
     context.targets = _make_targets_dict(foo, bar)
 
     mosaics = ray.get(
-        identify_mosaics.remote(context.settings.clustering_settings.angular_tolerance, context.targets)
+        identify_mosaics.remote(context.targets)
     )
 
     assert len(mosaics) == 1
@@ -423,7 +424,7 @@ def test_big_cygnus_pano(with_real_testdata) -> None:
     copy_testdata_into_cache()
 
     mosaics = ray.get(
-        identify_mosaics.remote(context.settings.clustering_settings.angular_tolerance, context.targets)
+        identify_mosaics.remote(context.targets)
     )
 
     mosaic = mosaics["333742eced99004e"].get()

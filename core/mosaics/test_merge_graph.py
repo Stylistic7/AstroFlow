@@ -37,9 +37,8 @@ def test_orion_mosaic_four_panes(test_context) -> None:
     assert len(targets) == 4
     assert len(context.mosaics) == 1
     mosaic = next(iter(context.mosaics.values())).get()
-    assert mosaic.strips == (
-        ("1101452f8cf2f9ff", "6d9f6be3ffab0f22"),
-        ("2e5e69b75efbc277", "15a294ac14d63dea"),
+    assert mosaic.target_ids == (
+        "1101452f8cf2f9ff", "15a294ac14d63dea", "2e5e69b75efbc277", "6d9f6be3ffab0f22",
     )
 
 
@@ -52,7 +51,7 @@ def test_orion_mosaic_one_by_two(test_context) -> None:
     assert len(context.targets) == 2
     assert len(context.mosaics) == 1
     mosaic = next(iter(context.mosaics.values())).get()
-    assert mosaic.strips == (("1101452f8cf2f9ff",), ("2e5e69b75efbc277",))
+    assert mosaic.target_ids == ("1101452f8cf2f9ff", "2e5e69b75efbc277")
 
 
 @pytest.mark.exhaustive
@@ -64,7 +63,7 @@ def test_orion_mosaic_two_by_one(test_context) -> None:
     assert len(context.targets) == 2
     assert len(context.mosaics) == 1
     mosaic = next(iter(context.mosaics.values())).get()
-    assert mosaic.strips == (("2e5e69b75efbc277", "15a294ac14d63dea"),)
+    assert mosaic.target_ids == ("15a294ac14d63dea", "2e5e69b75efbc277")
 
 
 @pytest.mark.exhaustive
@@ -78,7 +77,4 @@ def test_orion_mosaic_missing_panel(test_context) -> None:
     assert len(context.targets) == 3
     assert len(context.mosaics) == 1
     mosaic = next(iter(context.mosaics.values())).get()
-    assert mosaic.strips == (
-        ("1101452f8cf2f9ff",),
-        ("2e5e69b75efbc277", "15a294ac14d63dea"),
-    )
+    assert mosaic.target_ids == ("1101452f8cf2f9ff", "15a294ac14d63dea", "2e5e69b75efbc277")

@@ -45,6 +45,11 @@ class Target(
     ContentHashed, AstrometricAttributes, ChronologyAttributes[TargetHash]
 ):
     stack_ids: tuple[StackHash, ...]
+    # (width, height) in pixels of the one sensor every member stack shares
+    # (`identify_targets` partitions on it): what a mosaic reads to keep
+    # cameras apart, since the 2600MM and 6200MM share a pixel pitch and
+    # so, at one focal length, an image scale.
+    sensor: tuple[int, int] = (0, 0)
 
     @classmethod
     def from_stacks(cls, stacks: list[Stack]) -> Optional["Target"]:
@@ -61,11 +66,14 @@ class Target(
         # only when the set of member identities changes. (stack_ids stays the
         # identity list.)
         content_hash = hash_list(sorted(s.content_hash for s in stacks))
+        sensors = {(s.width_pixels, s.height_pixels) for s in stacks}
+        assert len(sensors) == 1, f"a Target spans sensors: {sensors}"
 
         attributes: dict[str, Any] = (
             asdict(chronology_attributes)
             | asdict(astrometric_attributes)
-            | {"stable_hash": stable_hash, "stack_ids": stack_ids, "content_hash": content_hash}
+            | {"stable_hash": stable_hash, "stack_ids": stack_ids, "content_hash": content_hash,
+               "sensor": sensors.pop()}
         )
 
         return cls(**attributes)

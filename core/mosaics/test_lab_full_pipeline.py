@@ -181,7 +181,6 @@ def _lab_mosaic(targets):
     return Mosaic(
         name="lab-mosaic", content_hash="lab_mosaic_content",
         stable_hash="lab_mosaic", target_ids=ids,
-        strips=tuple(ids[r * cols:(r + 1) * cols] for r in range(rows)),
         panel_target_ids=ids,
         oldest_date=_DATE, newest_date=_DATE,
         center=(Degrees(_RA), Degrees(_DEC)),

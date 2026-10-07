@@ -54,7 +54,7 @@ def plot_targets_and_footprint(
     title: str = "Mosaic",
 ) -> None:
     import ray
-    from mosaics.identification import targets_overlap, Overlap
+    from mosaics.identification import targets_overlap
 
     plt.figure()
     plt.title(title)
@@ -70,12 +70,10 @@ def plot_targets_and_footprint(
 
         print(f"### center is {center}")
 
-        acceptable_overlaps = [Overlap.LONG_EDGE, Overlap.SHORT_EDGE]
         overlapping_targets = [
             tid
             for tid in target_ids
             if ray.get(targets_overlap.remote(targets[target_id], targets[tid]))
-            in acceptable_overlaps
         ]
         print(
             f"### overlapping_targets for target {target_id} are {overlapping_targets}"

@@ -47,7 +47,7 @@ def test_orion_mosaic_endpoints(client, with_orion_mosaic):
     mosaic = mosaics[mosaic_id]
     assert "name" in mosaic
     assert "target_ids" in mosaic
-    assert "strips" in mosaic
+    assert "panel_target_ids" in mosaic
     assert len(mosaic["target_ids"]) == 4
 
     # /calibration_stacks

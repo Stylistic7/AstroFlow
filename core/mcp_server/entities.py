@@ -108,7 +108,6 @@ def _mosaic(m, depth: int) -> dict:
         "oldest_date": m.oldest_date, "newest_date": m.newest_date,
         "filters": filters_for("mosaic", m.stable_hash),
         "n_panels": len(m.panel_target_ids),
-        "strips": [list(s) for s in m.strips],
         "panels": [{"panel": numbers[tid], "target_id": tid}
                    for tid in m.panel_target_ids],
     }

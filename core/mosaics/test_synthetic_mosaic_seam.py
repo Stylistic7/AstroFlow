@@ -58,8 +58,8 @@ _SEAM_IMAGE_DIR = Path(
 # Geometry mirrors the known-good identification examples in
 # test_identification.py: equatorial (Dec 0, so RA == on-sky degrees),
 # axis-aligned (rotation 0). At 4096 px and image_scale 1"/px the FOV is
-# 4096" = 1.1378°; an RA offset of 0.8·FOV leaves ~20% overlap — inside
-# targets_overlap's 10–30% edge-thickness window.
+# 4096" = 1.1378°; an RA offset of 0.8·FOV leaves ~20% overlap, well past
+# targets_overlap's minimum area fraction.
 #
 # Field is at RA 192.85, Dec 0 — galactic latitude b ≈ +63°, deliberately
 # OFF the galactic plane. The earlier default (RA 100, Dec 0) sits at

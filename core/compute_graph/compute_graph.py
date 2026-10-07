@@ -327,7 +327,7 @@ def scatter_spatial_groups(
     graph[process_targets_for_ui] = {gather_targets_task}
     graph[store_ui_targets] = {process_targets_for_ui}
 
-    mosaics_task = Node(identify_mosaics, clustering_settings.angular_tolerance)
+    mosaics_task = Node(identify_mosaics)
     graph[mosaics_task] = {gather_targets_task}
     graph[store_mosaics] = {mosaics_task}
     graph[process_mosaics_for_ui] = {mosaics_task}

@@ -53,7 +53,7 @@ def _write_channel(path: Path, seed: int, h: int, w: int) -> None:
 def _mosaic() -> Mosaic:
     return Mosaic(
         name="color-test", content_hash="content_color", stable_hash="mosaic_color",
-        target_ids=("a",), strips=(("a",),), panel_target_ids=("a",),
+        target_ids=("a",), panel_target_ids=("a",),
         oldest_date=_DATE, newest_date=_DATE,
         center=(Degrees(0.0), Degrees(0.0)), image_scale=ArcsecondsPerPixel(8.0),
         rotation_angle=Radians(0.0), footprint=_FOOTPRINT, healpix_cells=_HEALPIX,

@@ -11,7 +11,6 @@ from cache.content_hashed import ContentHashed
 from cache.context_ref import ContextRef
 
 Template: TypeAlias = tuple[int | None, int | None]
-Strip: TypeAlias = tuple[TargetHash, ...]
 
 MosaicHash = NewType("MosaicHash", str)
 
@@ -22,7 +21,6 @@ class Mosaic(
     ContentHashed, AstrometricAttributes, ChronologyAttributes[MosaicHash]
 ):
     target_ids: tuple[TargetHash, ...]
-    strips: tuple[Strip, ...]
     # Same targets as `target_ids`, ordered for the user. Index + 1 is
     # the panel number shown on polygon labels in the mosaic viewer and
     # in the "Panel N" prefix of the Telescopius / text export — single
@@ -33,6 +31,15 @@ class Mosaic(
 
     def panel_numbers(self) -> dict[TargetHash, int]:
         return {tid: i + 1 for i, tid in enumerate(self.panel_target_ids)}
+
+    @property
+    def strips(self) -> tuple[tuple[TargetHash, ...], ...]:
+        """One strip holding every panel. Mosaics are ad hoc (any overlapping
+        targets, 2026-10-07) and the merges global, so the strip layout of
+        the pairwise-merge days is just the panel list. The merge ops still
+        iterate it, and their cache keys hash their own source: the name
+        stays so nothing re-keys."""
+        return (self.panel_target_ids,)
 
     # User-pipeline conveniences (Phase B of the pipelines-as-Python work).
     # All delegate to existing helpers; nothing here adds new behaviour,
