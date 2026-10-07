@@ -69,6 +69,8 @@ def test_build_plan_schema():
     assert [(q["filter"], q["exp"], q["repeat"], q["gain"], q["type"]) for q in t["seqs"]] == [
         (6, 300.0, 10, -10000, "light"), (4, 300.0, 6, -10000, "light")]
     assert [q["id"] for q in t["seqs"]] == [1, 2]
+    # execution order rides on the target-level capture_index, 0-based
+    assert [x["capture_index"] for x in plan["targets"]] == [0, 1]
 
 
 def test_push_additive_device_keeps_existing_plan():

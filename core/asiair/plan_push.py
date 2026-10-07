@@ -73,7 +73,11 @@ def build_target(index: int, target: PlanTarget, slots: dict[str, int]) -> dict:
         "delay_first": 0,
         "delay_between_frame": 0,
         "extra_sec_per_target": 0,
-        "capture_index": 0,
+        # EXECUTION ORDER, 0-based — not the list position. Stylistic7's old plan
+        # ran its targets by this field (Pane 4 = 0 went first, Pane 2 = 7
+        # went seventh); all-zero ties were broken alphabetically, which put
+        # "7098 LBN 588" ahead of "75a1 Panel 4" (2026-10-06).
+        "capture_index": index - 1,
         "obj_type": "",
         "seqs": [
             {
