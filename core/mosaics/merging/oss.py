@@ -129,6 +129,7 @@ def _edt_weight(mask_crop, bbox, canvas_shape):
 # a target of their own, or None to equalize to the panels' OWN MEAN sky
 # (space-agnostic: no assumption about absolute level).
 _UNSET_PEDESTAL = object()
+_ADU_FULL_SCALE = 65535.0   # a raw 16-bit light's saturation
 
 
 _LEVEL_MIN_OVERLAP_PX = 256  # a few-pixel seam cannot carry a level constraint
@@ -583,7 +584,13 @@ def merge_images_subframe(
     Path(output_filename).parent.mkdir(parents=True, exist_ok=True)
 
     paths = [i.filename.resolve(strict=True) for i in inputs]
-    acc = _blend_many(paths, level_solve="quantile")
+    # The panels are raw 16-bit lights (ADU), but the finishes read the 0-1
+    # linear gauge (sky at the house pedestal, saturation at 1.0) and clamp
+    # their stretch to it — in ADU every pixel sat above white (2026-10-07).
+    # Equalise the sky to the pedestal in ADU, then scale onto the gauge.
+    from stacks.post_processing.background_pedestal import DEFAULT_PEDESTAL
+    acc = _blend_many(paths, level_solve="quantile", pedestal=float(DEFAULT_PEDESTAL) * _ADU_FULL_SCALE)
+    acc /= _ADU_FULL_SCALE
     assert not np.isnan(np.min(acc))
 
     stable_hash = hash_list([i.stable_hash for i in inputs])

@@ -187,10 +187,31 @@ def test_depth_weighting_makes_coincident_panels_deeper(tmp_path):
     assert abs(noise(_blend_many([deep, twin], depth_weighted=True)) / (sigma / np.sqrt(2)) - 1.0) < 0.1
 
 
+def test_subframe_merge_lands_raw_adu_panels_on_the_linear_gauge(tmp_path):
+    """Raw lights in ADU (sky ~1200, stars to 65535) must come out with the
+    sky at the house pedestal and saturation at 1.0 — the gauge the finishes
+    clamp their stretch to."""
+    from mosaics.merging.oss import _ADU_FULL_SCALE, _blend_many
+    from stacks.post_processing.background_pedestal import DEFAULT_PEDESTAL
+    rng = np.random.default_rng(3)
+    H, W = 300, 400
+    panels = []
+    for k, sky in enumerate((1200.0, 1500.0)):
+        img = _noisy_canvas(rng, H, W, sky, 20.0)
+        img[150:160, 200:210] = 65535.0                         # the same saturated star in both
+        panels.append(_write(tmp_path, f"adu{k}", img))
+    acc = _blend_many(panels, level_solve="quantile", pedestal=float(DEFAULT_PEDESTAL) * _ADU_FULL_SCALE) / _ADU_FULL_SCALE
+    data = acc[acc > 0]
+    assert abs(float(np.median(data)) / float(DEFAULT_PEDESTAL) - 1.0) < 0.3, float(np.median(data))
+    assert 0.9 < float(data.max()) <= 1.0 + 1e-3
+
+
 if __name__ == "__main__":
     import tempfile
     from pathlib import Path as _P
     with tempfile.TemporaryDirectory() as d:
+        test_subframe_merge_lands_raw_adu_panels_on_the_linear_gauge(_P(d))
+        print("ok test_subframe_merge_lands_raw_adu_panels_on_the_linear_gauge")
         test_noise_sigma_measures_gaussian_noise(_P(d))
         print("ok test_noise_sigma_measures_gaussian_noise")
         test_depth_weighting_makes_coincident_panels_deeper(_P(d))
