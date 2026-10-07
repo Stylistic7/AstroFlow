@@ -125,20 +125,3 @@ def call(
             except OSError:
                 pass
 
-
-def call_many(
-    ip: str,
-    port: int,
-    methods: list[tuple[str, list]],
-    timeout: float = _DEFAULT_TIMEOUT_S,
-) -> dict[str, dict | None]:
-    """Convenience: send several calls and return `{method: result}`.
-
-    Each call opens its own connection — the device DOES accept
-    multiple requests per connection, but the banner re-emit and the
-    occasional error-induced close make a per-call connection simpler
-    and only ~5-10 ms slower per call on a LAN, which is fine at our
-    polling cadence.
-    """
-    return {method: call(ip, port, method, params, timeout)
-            for method, params in methods}

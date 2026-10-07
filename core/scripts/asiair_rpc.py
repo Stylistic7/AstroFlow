@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from asiair.rpc_session import AsiairRpcError, AsiairSession  # noqa: E402
 from asiair.rsa_sign import default_key_path  # noqa: E402
 
-_WRITE = re.compile(r"^(set_|start_|stop_|import_|clear_|delete_|reset_|scope_|move_|open_|close_|pi_(?!is_verified))")
+_WRITE = re.compile(r"^(set_|start_|stop_|import_|clear_|delete_|reset_|scope_|move_|open_|close_|pi_(?!is_verified|get_info))")
 
 
 def main() -> int:

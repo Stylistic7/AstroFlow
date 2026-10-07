@@ -14,7 +14,7 @@ class SchedulerActor:
         ] = []  # {"interval": float, "action": dict, "next": float}
         self._asiair_poller_task = None
         self._asiair_live_poller_task = None
-        self._asiair_guide_stream_tasks: dict = {}  # hostname -> Task
+        self._asiair_guide_stream_tasks: dict = {}  # rig key -> (ip, Task)
         self._asiair_guide_stream_supervisor_task = None
         self._ray_metrics_task = None
         self._run_task = asyncio.get_event_loop().create_task(self._run())
@@ -128,34 +128,30 @@ class SchedulerActor:
             while True:
                 try:
                     from context import context
-                    devices = context.asiair_devices or []
-                    # By-hostname so a re-IP'd device gets a fresh listener.
-                    wanted = {
-                        d.get("hostname"): d.get("ip")
-                        for d in devices
-                        if d.get("hostname") and d.get("ip")
-                    }
-                    # Cancel listeners for gone-away devices.
-                    for hostname in list(self._asiair_guide_stream_tasks.keys()):
-                        if hostname not in wanted:
-                            task = self._asiair_guide_stream_tasks.pop(hostname)
+                    # Keyed by rig (the device serial), so a rig that moved
+                    # to another IP gets a fresh listener there. Rigs never
+                    # leave the list, so a listener that gave up (the rig
+                    # was off when it first connected) is respawned here.
+                    wanted = {r["key"]: r["ip"] for r in (context.asiair_devices or []) if r.get("ip")}
+                    for key, (ip, task) in list(self._asiair_guide_stream_tasks.items()):
+                        if wanted.get(key) != ip or task.done():
                             task.cancel()
-                            print(f"### guide stream: stopped for {hostname}")
-                    # Spawn for new ones.
-                    for hostname, ip in wanted.items():
-                        if hostname in self._asiair_guide_stream_tasks:
+                            del self._asiair_guide_stream_tasks[key]
+                            print(f"### guide stream: stopped for {key} ({ip})")
+                    for key, ip in wanted.items():
+                        if key in self._asiair_guide_stream_tasks:
                             continue
                         from asiair.guide_event_stream import stream_one
                         task = asyncio.get_event_loop().create_task(
-                            asyncio.to_thread(stream_one, ip, hostname)
+                            asyncio.to_thread(stream_one, ip, key)
                         )
-                        self._asiair_guide_stream_tasks[hostname] = task
-                        print(f"### guide stream: started for {hostname} ({ip})")
+                        self._asiair_guide_stream_tasks[key] = (ip, task)
+                        print(f"### guide stream: started for {key} ({ip})")
                 except Exception as e:
                     print(f"### guide stream supervisor raised, ignoring: {e}")
                 await asyncio.sleep(restart_interval_s)
         except asyncio.CancelledError:
-            for task in self._asiair_guide_stream_tasks.values():
+            for _ip, task in self._asiair_guide_stream_tasks.values():
                 task.cancel()
             self._asiair_guide_stream_tasks.clear()
 
@@ -325,25 +321,10 @@ def _run_asiair_download_and_maybe_restart() -> None:
     sun_alt = _sun_altitude_deg()
     kick = _morning_kick_due(sun_alt)
 
-    devices = list(context.asiair_devices or [])
+    # The live poller's rig list: found by port scan, keyed by serial.
+    rigs = list(context.asiair_devices or [])
 
-    # mDNS discovery MISSES a second unit when both announce the same
-    # generic name (firmware 14.39 names every device "asiair.local"):
-    # 2026-09-05, FLT156 was live and serving but held no discovery
-    # record while RC71 owned the only one. Union in every host that
-    # answers the imager port so a discovery miss can never skip a
-    # rig's download.
-    from asiair.network_hosts import find_hosts_with_open_port
-    known_ips = {d.get("ip") for d in devices}
-    try:
-        for ip in find_hosts_with_open_port(4700):
-            if ip not in known_ips:
-                print(f"### download poller: port-scan found undiscovered ASIAir at {ip}")
-                devices.append({"ip": ip, "hostname": ""})
-    except Exception as e:
-        print(f"### download poller: port scan failed (non-fatal): {e}")
-
-    if not devices and not kick:
+    if not rigs and not kick:
         return
 
     input_dirs = context.input_dirs or []
@@ -351,7 +332,7 @@ def _run_asiair_download_and_maybe_restart() -> None:
         return
 
     new_files = 0
-    if devices:
+    if rigs:
         dest = input_dirs[0]
         files_before = sum(len(find_image_files(str(d))) for d in input_dirs)
 
@@ -360,13 +341,10 @@ def _run_asiair_download_and_maybe_restart() -> None:
         refs = [
             # The first arg is only a FALLBACK label: the downloader names
             # the per-rig folder from the frames' FOCALLEN (see
-            # RIG_NAMES_BY_FOCAL_LENGTH); the mDNS hostname stands in when
+            # RIG_NAMES_BY_FOCAL_LENGTH); the rig's own name stands in when
             # a frame has no mapped focal length.
-            download_from_asiair.remote(
-                (dev.get("hostname") or dev["ip"]).rstrip(".").removesuffix(".local"),
-                dev["ip"], dest,
-            )
-            for dev in devices
+            download_from_asiair.remote(rig.get("name") or rig["ip"], rig["ip"], dest)
+            for rig in rigs
         ]
         ray.get(refs)
 

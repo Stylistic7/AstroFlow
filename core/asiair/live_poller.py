@@ -1,235 +1,174 @@
-"""Periodic poller that pulls live state from every discovered ASIAir
-and merges the result into `context.asiair_devices[i]["live"]`.
+"""Finds the ASIAirs on the LAN and polls each for live state.
 
-Runs alongside the existing SMB downloader in the SchedulerActor's
-async loop. One pass per tick; per-device parallelism kept implicit
-(the cost is dominated by 6 short LAN RPC calls, ~30-60ms total per
-device — fine to serialize).
+Discovery is a port-4700 scan of the directly attached networks, not
+mDNS: firmware 14.39 announces every unit as `asiair.local`, so Bonjour
+listed ONE rig however many were powered on (2026-09-05, 2026-10-07).
+Identity is the device serial — `get_device_state.device.sn`, which the
+imager port tells only a key-verified session — so a rig keeps its
+record through failed polls and DHCP moves, and an address that answers
+with a known serial updates that rig instead of adding one.
 
-State written to `context.asiair_devices[i]["live"]`:
+`context.asiair_devices` is the rig list, written here and read by the
+panel, the guide-event streams and the downloader:
 
-```
-"live": {
-    "queried_at": float,      # epoch seconds of the last cycle
-    "ap_ssid": str,           # user-set device name ("ASIAIR_RC71")
-    "firmware": str,          # "13.41"
-    "model": str,             # "ZWO AirPlus-RK3568 (Linux)"
-    "pi_temp_c": float,       # Pi CPU temp (NOT cooler)
-    "focal_len_mm": int,
-    "location": [lon, lat] | None,
-    "focuser_state": str,     # "open" | "close"
-    "camera_state": str,      # "open" | "close"
-    "camera_name": str | None,
-    "last_goto_target": str | None,
-    "capture_state": str,     # from get_app_state.capture.state
-    "stack_total": int,       # frames in current stack request
-    "stack_done": int,        # frames stacked so far
-    "reachable": bool,        # any of the above succeeded
-}
-```
+    {"key": sn (the IP when there is no key file),
+     "ip", "sn", "name": ap_ssid, "focal_len_mm",
+     "live": {queried_at, reachable, sn, ap_ssid, firmware, model, pi_temp_c,
+              focal_len_mm, location, focuser_state, camera_state,
+              camera_name, last_goto_target, capture_state, stack_total,
+              stack_done, guide_state, guide_app_state_raw}}
 
-Any individual call that fails leaves its slice missing — the panel
-checks per-field and renders only what's there. A FULLY failed cycle
-sets `reachable=False` and dims the panel row to gray.
+A field a call did not answer stays missing; a cycle in which nothing
+answered sets `reachable=False` and the row goes gray.
 """
 from __future__ import annotations
 
 import time
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Callable
+
 import structlog
-from typing import Any
 
-from asiair.rpc_client import call_many
-
+from asiair.network_hosts import find_hosts_with_open_port
+from asiair.rpc_session import GUIDER_PORT, IMAGER_PORT, AsiairRpcError, AsiairSession
+from asiair.rsa_sign import RsaPrivateKey, default_key_path, load_key_file
 
 log = structlog.get_logger()
 
-
-# Method list for one poll cycle on the imager port (4700).
-_POLL_METHODS_IMAGER = [
-    ("get_device_state", []),
-    ("get_app_state", []),
-    ("get_app_setting", []),
-    ("pi_get_info", []),
-    ("get_camera_state", []),
-    ("get_focuser_state", []),
-]
-
-# Method list for one poll cycle on the guider port (4400). The
-# guider subsystem only registers its full method surface when a
-# guide camera is connected and the loop is running — until then
-# only `get_app_state` answers, returning the string "Stopped".
-# Tonight with equipment live we'll see richer shapes (guide RMS,
-# star SNR, calibration status) and can extend this list.
-_POLL_METHODS_GUIDER = [
-    ("get_app_state", []),
-]
+_IMAGER_METHODS = ("get_device_state", "get_app_state", "get_app_setting", "pi_get_info",
+                   "get_camera_state", "get_focuser_state")
+_SCAN_INTERVAL_S = 120.0
+_next_scan = 0.0
+_warned_no_key = False
 
 
-def _result(reply: dict | None) -> dict | None:
-    """Pluck the `.result` payload from a successful JSON-RPC reply,
-    or None if the call failed. The reply shape is the post-error-
-    filter contract from `rpc_client.call`: non-None means code==0
-    and `result` is present."""
-    if reply is None:
-        return None
-    return reply.get("result")
+def _key() -> RsaPrivateKey | None:
+    """The signing key, or None (warned once) when the file is absent: the
+    imager port then answers nothing and rigs are keyed by IP."""
+    global _warned_no_key
+    path = default_key_path()
+    if path.exists():
+        return load_key_file(path)
+    if not _warned_no_key:
+        log.warning("asiair: no key file, rigs are identified by IP only", path=str(path))
+        _warned_no_key = True
+    return None
 
 
 def _normalize_guide_state(raw: Any) -> str | None:
-    """Map whatever `get_app_state` on the guider port (4400) returns
-    onto a small enum the panel can render. Today (idle, no equipment)
-    the value is the bare string "Stopped"; once a real session is
-    live, raw is expected to be a dict with explicit state fields —
-    add cases below as they surface."""
-    if raw is None:
-        return None
+    """The guider port's `get_app_state`: the bare string "Stopped" when
+    idle; a dict with a state field once a loop is running."""
     if isinstance(raw, str):
-        # "Stopped" is the known idle value. Lowercase + collapse so
-        # any "STOPPED" / "Idle" / "Running" variant resolves cleanly.
         return raw.strip().lower() or None
     if isinstance(raw, dict):
-        # Best guess at the live-session shape — when the user is
-        # actively guiding tonight we'll see what's actually in here
-        # and refine.
         for key in ("state", "guide_state", "status", "mode"):
             v = raw.get(key)
             if isinstance(v, str) and v:
                 return v.strip().lower()
-        return None
     return None
 
 
-def _build_live_snapshot(replies: dict[str, dict | None]) -> dict[str, Any]:
-    """Flatten the per-method results into the panel-friendly snapshot
-    shape. Missing fields stay missing — never substitute defaults
-    that would lie about state."""
-    out: dict[str, Any] = {"queried_at": time.time(), "reachable": False}
-
-    device_state = _result(replies.get("get_device_state"))
-    if device_state:
-        out["reachable"] = True
-        ap = device_state.get("ap") or {}
-        if ap.get("ssid"):
-            out["ap_ssid"] = ap["ssid"]
-        device = device_state.get("device") or {}
-        if device.get("firmware_ver_string"):
-            out["firmware"] = device["firmware_ver_string"]
-        if device.get("focal_len"):
-            out["focal_len_mm"] = device["focal_len"]
-        loc = device_state.get("location_lon_lat")
-        if isinstance(loc, list) and len(loc) == 2:
-            out["location"] = list(loc)
-        focuser = device_state.get("focuser") or {}
-        if focuser.get("state"):
-            out["focuser_state"] = focuser["state"]
-
-    pi_info = _result(replies.get("pi_get_info"))
-    if pi_info:
-        out["reachable"] = True
-        if "temp" in pi_info:
-            out["pi_temp_c"] = pi_info["temp"]
-        if pi_info.get("model"):
-            out["model"] = pi_info["model"]
-
-    app_setting = _result(replies.get("get_app_setting"))
-    if app_setting:
-        out["reachable"] = True
-        if app_setting.get("goto_target_name"):
-            out["last_goto_target"] = app_setting["goto_target_name"]
-        if app_setting.get("main_camera_name"):
-            out["camera_name"] = app_setting["main_camera_name"]
-
-    app_state = _result(replies.get("get_app_state"))
-    if app_state:
-        out["reachable"] = True
-        capture = app_state.get("capture") or {}
-        if capture.get("state"):
-            out["capture_state"] = capture["state"]
-        stack = app_state.get("stack") or {}
-        if "total_frame" in stack:
-            out["stack_total"] = stack["total_frame"]
-        if "stacked_frame" in stack:
-            out["stack_done"] = stack["stacked_frame"]
-
-    camera_state = _result(replies.get("get_camera_state"))
-    if camera_state and camera_state.get("state"):
-        out["reachable"] = True
-        out["camera_state"] = camera_state["state"]
-
-    focuser_state = _result(replies.get("get_focuser_state"))
-    if focuser_state and focuser_state.get("state"):
-        out["reachable"] = True
-        # `get_device_state.focuser.state` covers this when the
-        # device-state call succeeds; this is a fallback for when
-        # only the focuser-specific call gets through.
-        out.setdefault("focuser_state", focuser_state["state"])
-
-    # The guider port keeps its own `get_app_state` — namespaced under
-    # `guide_app_state` here. Today (no equipment connected) it returns
-    # the bare string "Stopped"; tonight with the guide camera up and
-    # the loop running, it'll return a richer object that we can
-    # surface as guide RMS / star SNR / calibration progress.
-    guide_app_raw = replies.get("guide_app_state")
-    if guide_app_raw is not None:
-        result = guide_app_raw.get("result") if isinstance(guide_app_raw, dict) else None
-        if result is not None:
-            out["reachable"] = True
-            out["guide_app_state_raw"] = result
-            normalized = _normalize_guide_state(result)
-            if normalized:
-                out["guide_state"] = normalized
-
+def _build_live_snapshot(results: dict[str, Any]) -> dict[str, Any]:
+    """Flatten the per-method results into the snapshot. `results` holds
+    only the calls that answered, so an empty dict is "unreachable"."""
+    out: dict[str, Any] = {"queried_at": time.time(), "reachable": bool(results)}
+    device_state = results.get("get_device_state") or {}
+    device = device_state.get("device") or {}
+    pi_info = results.get("pi_get_info") or {}
+    app_setting = results.get("get_app_setting") or {}
+    app_state = results.get("get_app_state") or {}
+    fields = {
+        "sn": device.get("sn") or pi_info.get("guid"),
+        "ap_ssid": (device_state.get("ap") or {}).get("ssid"),
+        "firmware": device.get("firmware_ver_string"),
+        "focal_len_mm": device.get("focal_len"),
+        "location": device_state.get("location_lon_lat"),
+        "focuser_state": (device_state.get("focuser") or {}).get("state")
+        or (results.get("get_focuser_state") or {}).get("state"),
+        "model": pi_info.get("model"),
+        "pi_temp_c": pi_info.get("temp"),
+        "last_goto_target": app_setting.get("goto_target_name"),
+        "camera_name": app_setting.get("main_camera_name"),
+        "camera_state": (results.get("get_camera_state") or {}).get("state"),
+        "capture_state": (app_state.get("capture") or {}).get("state"),
+        "stack_total": (app_state.get("stack") or {}).get("total_frame"),
+        "stack_done": (app_state.get("stack") or {}).get("stacked_frame"),
+    }
+    out.update({k: v for k, v in fields.items() if v not in (None, "")})
+    if "guide_app_state" in results:
+        out["guide_app_state_raw"] = results["guide_app_state"]
+        if state := _normalize_guide_state(results["guide_app_state"]):
+            out["guide_state"] = state
     return out
 
 
-def poll_device(device: dict[str, Any], timeout: float = 2.0) -> dict[str, Any]:
-    """Run one poll cycle against a single discovered device and
-    return the snapshot dict. Hits BOTH the imager port (4700) for
-    most state and the guider port (4400) for guide-loop state. The
-    caller merges this into `context.asiair_devices[i]["live"]`."""
-    ip = device.get("ip")
-    if not ip:
-        return {"queried_at": time.time(), "reachable": False}
-
-    imager_replies = call_many(ip, 4700, _POLL_METHODS_IMAGER, timeout=timeout)
-    guider_replies = call_many(ip, 4400, _POLL_METHODS_GUIDER, timeout=timeout)
-    # Namespace the guider reply so `_build_live_snapshot` can tell
-    # the two `get_app_state` results apart — they answer different
-    # questions on the two ports (imager: capture/stack state;
-    # guider: loop state).
-    merged = dict(imager_replies)
-    if "get_app_state" in guider_replies:
-        merged["guide_app_state"] = guider_replies["get_app_state"]
-    return _build_live_snapshot(merged)
-
-
-def tick() -> None:
-    """One poll cycle across all discovered devices. Writes back the
-    updated `context.asiair_devices` list and announces an
-    `asiair_devices` SSE event so connected clients refetch.
-
-    Best-effort: a probe failure logs at debug and dims that one row;
-    a fatal error in this function is caught at the SchedulerActor
-    level so the rest of the poll loop keeps going.
-    """
-    from context import context  # local import: avoids cycle at module load
-    devices = list(context.asiair_devices or [])
-    if not devices:
-        return
-
-    changed = False
-    for d in devices:
+def poll_ip(ip: str, key: RsaPrivateKey | None, timeout: float = 2.0) -> dict[str, Any]:
+    """One poll of one address: the verified imager session for identity
+    and capture state, the guider session for the loop state. A call that
+    fails leaves its slice missing; a port that fails leaves all of its."""
+    results: dict[str, Any] = {}
+    if key is not None:
         try:
-            d["live"] = poll_device(d)
-            changed = True
-        except Exception as e:
-            log.warning("asiair live-poller: device crash", ip=d.get("ip"), error=str(e))
-    if not changed:
-        return
-    context.asiair_devices = devices
-
+            with AsiairSession(ip, IMAGER_PORT, timeout=timeout) as s:
+                if not s.verify(key):
+                    log.warning("asiair poll: key rejected", ip=ip)
+                for method in _IMAGER_METHODS if s.verified else ():
+                    try:
+                        results[method] = s.call(method)
+                    except AsiairRpcError as e:
+                        log.debug("asiair poll", ip=ip, method=method, error=str(e))
+        except (OSError, AsiairRpcError) as e:
+            log.debug("asiair poll: imager port", ip=ip, error=str(e))
     try:
-        from web_server.backend.announcer import announce
-        announce("asiair_devices")
-    except Exception as e:
-        log.debug("asiair live-poller: announce failed", error=str(e))
+        with AsiairSession(ip, GUIDER_PORT, timeout=timeout) as s:
+            results["guide_app_state"] = s.call("get_app_state")
+    except (OSError, AsiairRpcError) as e:
+        log.debug("asiair poll: guider port", ip=ip, error=str(e))
+    return _build_live_snapshot(results)
+
+
+def _merge(rigs: list[dict], polled: list[tuple[str, dict]]) -> list[dict]:
+    """Fold one cycle's snapshots into the rig list. A snapshot with a
+    serial finds (or re-keys) the rig of that serial; without one it
+    updates the rig last seen at that address, or — when something did
+    answer — starts an IP-keyed rig. Silence from an unknown address is
+    nothing to record."""
+    by_key = {r["key"]: dict(r) for r in rigs}
+    for ip, live in polled:
+        prev = next((r for r in by_key.values() if r["ip"] == ip), None)
+        if prev is None and "sn" not in live and not live.get("reachable"):
+            continue
+        key = live.get("sn") or (prev["key"] if prev else ip)
+        if prev is not None and prev["key"] != key:
+            del by_key[prev["key"]]
+        rec = by_key.get(key) or prev or {}
+        rec.update(key=key, ip=ip, live=live)
+        for field, src in (("sn", "sn"), ("name", "ap_ssid"), ("focal_len_mm", "focal_len_mm")):
+            if src in live:
+                rec[field] = live[src]
+        by_key[key] = rec
+    return sorted(by_key.values(), key=lambda r: r["key"])
+
+
+def tick(*, scan: Callable[[int], list[str]] = find_hosts_with_open_port,
+         poll: Callable[[str, RsaPrivateKey | None], dict] = poll_ip,
+         now: Callable[[], float] = time.time) -> None:
+    """One cycle: poll every known address and, every `_SCAN_INTERVAL_S`,
+    every host with the imager port open; write the rig list back and
+    tell the web clients. The polls run in parallel so a powered-off rig's
+    connect timeout never delays a live one."""
+    from context import context  # local import: avoids a cycle at module load
+    global _next_scan
+    rigs = list(context.asiair_devices or [])
+    ips = {r["ip"] for r in rigs}
+    if now() >= _next_scan:
+        ips |= set(scan(IMAGER_PORT))
+        _next_scan = now() + _SCAN_INTERVAL_S
+    if not ips:
+        return
+    key = _key()
+    with ThreadPoolExecutor(max_workers=len(ips)) as ex:
+        polled = list(zip(sorted(ips), ex.map(lambda ip: poll(ip, key), sorted(ips))))
+    context.asiair_devices = _merge(rigs, polled)
+    from web_server.backend.announcer import announce
+    announce("asiair_devices")

@@ -147,8 +147,6 @@ _DURABLE_STR_KEYS = frozenset(
         "shopping_cart",
         "archive",
         "observing_plan",
-        "asiair_device_nicknames",
-        "asiair_known_labels",
         # --- hot web-read state (reason 2: keep reads off the LFU lock) ---
         "ui_stacks",
         "ui_targets",
@@ -174,7 +172,6 @@ _DURABLE_STR_KEYS = frozenset(
 # _store_tap_snapshot's presence check.
 _MIGRATE_STR_KEYS = (
     "shopping_cart", "archive", "observing_plan",
-    "asiair_device_nicknames", "asiair_known_labels",
     "ui_stacks", "ui_targets", "ui_mosaics", "ui_calibration_stacks",
     "tap_snapshots",
     "network_settings", "role_chosen",

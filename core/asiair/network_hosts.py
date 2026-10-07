@@ -1,60 +1,43 @@
-import netifaces as net
-import ipaddress as ip
-import traceback
-from concurrent.futures import ThreadPoolExecutor
-import socket
-from contextlib import closing
+"""Hosts on the directly attached networks with a TCP port open: how the
+ASIAirs are found (`asiair.live_poller`), since their mDNS names collide."""
+from __future__ import annotations
+
+import ipaddress
 import itertools
+import socket
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
+
+import netifaces
+
+_MAX_ADDRESSES = 1024   # a /22; a bigger interface is not a home LAN, and each address costs a probe
+_CONNECT_TIMEOUT_S = 0.5
 
 
-def check_socket(host, port):
+def _local_networks() -> list[ipaddress.IPv4Network]:
+    nets = []
+    for iface in netifaces.interfaces():
+        for addr in netifaces.ifaddresses(iface).get(netifaces.AF_INET, []):
+            if "netmask" not in addr or "broadcast" not in addr:
+                continue   # loopback or point-to-point (VPN)
+            net = ipaddress.ip_network(f"{addr['addr']}/{addr['netmask']}", strict=False)
+            if not net.is_link_local and net.num_addresses <= _MAX_ADDRESSES:
+                nets.append(net)
+    return nets
+
+
+def check_socket(host: str, port: int) -> bool:
     with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
-        sock.settimeout(0.5)
+        sock.settimeout(_CONNECT_TIMEOUT_S)
         return sock.connect_ex((host, port)) == 0
 
 
-def find_hosts_with_open_port(port):
-    hosts = []
-    for iface in net.interfaces():
-        print(f"looking at interface {iface}")
-        try:
-            networks = net.ifaddresses(iface)
-            print(f"got networks", networks)
-            if net.AF_INET not in networks:
-                continue
-            networks = networks[net.AF_INET]
-            print(f"interface {iface} has networks iwth AF_INET {networks}")
-            for network in networks:
-                print(f"looking at network {network}")
-                if "broadcast" not in network:
-                    continue
-                if "netmask" not in network:
-                    continue
-                net_string = f"{network['broadcast']}/{network['netmask']}"
-                print(f"net_string {net_string}")
-                network = ip.ip_network(net_string, strict=False)
-                print(f"network {network}")
-                hosts.extend(list(network.hosts()))
-        except:
-            pass
-
-    hosts = [str(h) for h in hosts]
-    hosts = list(set(hosts))
-    print(f"### checking {len(hosts)} hosts")
-
-    active_hosts = []
-    with ThreadPoolExecutor(max_workers=32) as executor:
-        ports_open = executor.map(check_socket, hosts, itertools.repeat(port))
-
-        # TODO: Look for the ASIAIR identification, instead of just the port being open.
-        for host, port_open in zip(hosts, ports_open):
-            if port_open:
-                print(f"host {host} has port open")
-                active_hosts.append(host)
-
-    return active_hosts
+def find_hosts_with_open_port(port: int) -> list[str]:
+    hosts = sorted({str(h) for net in _local_networks() for h in net.hosts()}, key=ipaddress.IPv4Address)
+    with ThreadPoolExecutor(max_workers=32) as ex:
+        is_open = ex.map(check_socket, hosts, itertools.repeat(port))
+        return [h for h, ok in zip(hosts, is_open) if ok]
 
 
 if __name__ == "__main__":
-    hosts = find_hosts_with_open_port(4700)
-    print("Found hosts", hosts)
+    print(find_hosts_with_open_port(4700))

@@ -32,7 +32,6 @@ from state.code_version import (
     local_code_version,
     require_clean_and_pushed,
 )
-from asiair.asiair_zeroconf import ASIAIRZeroconf
 from state.types import State, Action
 from dependency_graph import Graph, GraphRuntime
 
@@ -263,15 +262,6 @@ def _start_astroflow_zeroconf(
     return state, []
 
 
-def _start_asiair_zeroconf(
-    state: State, action: Action
-) -> tuple[State, list[Action]]:
-    assert "asiair_zeroconf" not in state
-    state["asiair_zeroconf"] = ASIAIRZeroconf(enqueue_action)
-
-    return state, []
-
-
 def _advertise_zeroconf(
     state: State, action: Action
 ) -> tuple[State, list[Action]]:
@@ -293,11 +283,6 @@ def _stop_zeroconf(state: State, action: Action) -> tuple[State, list[Action]]:
         print("Stopping AstroFlow peer discovery...")
         state["astroflow_zeroconf"].close()
         del state["astroflow_zeroconf"]
-
-    if "asiair_zeroconf" in state:
-        print("Stopping ASIAir peer discovery...")
-        state["asiair_zeroconf"].close()
-        del state["asiair_zeroconf"]
 
     return state, []
 
@@ -322,7 +307,6 @@ def _start_ray_head_node(
     return state, [
         Action(type="populate_context"),
         Action(type="advertise_zeroconf"),
-        Action(type="start_asiair_zeroconf"),
         Action(type="schedule_download_from_asiairs"),
     ]
 
@@ -567,15 +551,6 @@ def _start_ray_subordinate_node(
     return state, []
 
 
-def _update_asiair_services(
-    state: State, action: Action
-) -> tuple[State, list[Action]]:
-    print(f"### _update_asiair_services {action=}")
-    context.asiair_devices = action["devices"]
-
-    return state, []
-
-
 def _prepare_pix(state: State, action: Action) -> tuple[State, list[Action]]:
     return state, []
 
@@ -715,12 +690,10 @@ _HANDLERS = {
     "noop": lambda s, a: (s, []),
     "init": _init,
     "start_astroflow_zeroconf": _start_astroflow_zeroconf,
-    "start_asiair_zeroconf": _start_asiair_zeroconf,
     "advertise_zeroconf": _advertise_zeroconf,
     "update_astroflow_services": _update_astroflow_services,
     "join_head": _join_head,
     "unmount_head_shares": _unmount_head_shares,
-    "update_asiair_services": _update_asiair_services,
     "stop_zeroconf": _stop_zeroconf,
     "prepare_pix": _prepare_pix,
     "add_to_shopping_cart": _add_to_shopping_cart,

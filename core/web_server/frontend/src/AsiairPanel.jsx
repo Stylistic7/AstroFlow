@@ -294,10 +294,8 @@ const RigRow = ({ rig, defaultExpanded = false }) => {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const live = rig.live || null;
 
-  // Primary line: the device's user-set name (from the ZWO app),
-  // taken from `get_device_state.result.ap.ssid` by the live poller.
-  // Falls back to the mDNS hostname (stripped of `.local.`) when the
-  // poll hasn't succeeded yet.
+  // Primary line: the name set in the ZWO app plus the focal length of
+  // the train it drives (`asiair.panel_state.label`).
   const titleLine = rig.label || "ASIAir";
 
   // Secondary line: live progress signals. "capturing X/Y" is the
@@ -352,19 +350,12 @@ const RigRow = ({ rig, defaultExpanded = false }) => {
       {expanded && (
         <Box sx={{ pl: 3, pt: 1 }}>
           <Typography variant="caption" color="text.secondary" component="div">
-            hostname: {rig.hostname || "unknown"} ({rig.ip || "?"})
+            serial: {rig.sn || "unknown"} · {rig.ip || "?"}
           </Typography>
           {rig.camera_name && (
             <Typography variant="caption" color="text.secondary" component="div">
               camera: {rig.camera_name} ({rig.camera_state || "?"})
             </Typography>
-          )}
-          {rig.camera_hash_short && (
-            <Tooltip title="Defect-pixel fingerprint of the connected camera. Used internally to associate calibration frames; not normally something you'd act on.">
-              <Typography variant="caption" color="text.secondary" component="div">
-                camera fingerprint: <code>{rig.camera_hash_short}</code>
-              </Typography>
-            </Tooltip>
           )}
           {rig.guide_history && rig.guide_history.length > 0 && (
             <Box sx={{ mt: 1, pl: 1, borderLeft: "2px solid", borderColor: "divider" }}>
@@ -459,11 +450,6 @@ const RigRow = ({ rig, defaultExpanded = false }) => {
               {live.model && (
                 <Typography variant="caption" color="text.secondary" component="div">
                   model: {live.model}
-                </Typography>
-              )}
-              {live.focal_len_mm && (
-                <Typography variant="caption" color="text.secondary" component="div">
-                  focal length: {live.focal_len_mm} mm
                 </Typography>
               )}
               {live.focuser_state && (
