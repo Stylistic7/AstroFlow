@@ -15,7 +15,7 @@ and hinge panes. Panel numbers come from `rise_time.panel_order`, as before.
 """
 import structlog
 from frozendict import frozendict
-from spherical_geometry.polygon import SphericalPolygon, SingleSphericalPolygon  # type: ignore
+from spherical_geometry.polygon import MalformedPolygonError, SphericalPolygon, SingleSphericalPolygon  # type: ignore
 from spherical_geometry.vector import vector_to_lonlat
 import ray
 import numpy as np
@@ -80,12 +80,48 @@ def targets_overlap(
     a, b = a_target.footprint, b_target.footprint
     if not a.intersects_poly(b):
         return False
-    inter = a.intersection(b)
+    try:
+        inter = a.intersection(b)
+    except MalformedPolygonError as e:
+        # spherical_geometry gives up on degenerate pairs — coincident
+        # framings, hulls sharing an edge ("remove orphan nodes", "remove
+        # cut lines"; the grid rules' PA gate used to keep these from ever
+        # being intersected, 2026-10-07). The question is still just "how
+        # much of the smaller footprint lies inside the other", so answer
+        # it by sampling.
+        log.warning("targets_overlap: intersection failed, sampling instead",
+                    a=a_target.stable_hash[:8], b=b_target.stable_hash[:8], error=str(e))
+        return _sampled_overlap_frac(a, b) >= min_area_frac
     polys = getattr(inter, "polygons", [inter])
     if not polys:
         return False
     inter = max(polys, key=lambda p: p.area())
     return bool(inter.area() / max(min(a.area(), b.area()), 1e-30) >= min_area_frac)
+
+
+def _sampled_overlap_frac(a, b, n: int = 6000) -> float:
+    """Fraction of the smaller footprint's area inside the other, by Monte
+    Carlo: `n` points uniform in the spherical cap around the smaller
+    polygon, kept where it contains them, counted where the other does
+    too. Seeded, so the verdict is a pure function of the pair. ±1% at the
+    3% threshold."""
+    small, other = sorted((a, b), key=lambda p: p.area())
+    pts = np.asarray(small.points, float)
+    c = pts.mean(0)
+    c /= np.linalg.norm(c)
+    cos_r = float(np.min(pts @ c))                      # cap just covering the polygon
+    rng = np.random.default_rng(0)
+    z = rng.uniform(cos_r, 1.0, n)                      # uniform on the sphere within the cap
+    phi = rng.uniform(0.0, 2 * np.pi, n)
+    u = np.cross(c, [0.0, 0.0, 1.0] if abs(c[2]) < 0.999 else [1.0, 0.0, 0.0])
+    u /= np.linalg.norm(u)
+    v = np.cross(c, u)
+    s = np.sqrt(1.0 - z * z)
+    samples = z[:, None] * c + (s * np.cos(phi))[:, None] * u + (s * np.sin(phi))[:, None] * v
+    inside_small = [p for p in samples if small.contains_point(p)]
+    if not inside_small:
+        return 0.0
+    return sum(1 for p in inside_small if other.contains_point(p)) / len(inside_small)
 
 
 def _span(targets: list[Target]) -> Degrees:

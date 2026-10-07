@@ -80,6 +80,12 @@ def identify_targets(
                     new_target = Target.from_stacks(
                         [resolved[s] for s in rotation_stacks]
                     )
+                    # The sensor keeps cameras apart in mosaics. Checked HERE,
+                    # in the node body: this node's key hashes only its own
+                    # source, so the field's arrival in `from_stacks`
+                    # (2026-10-07) would otherwise cache-hit sensorless
+                    # Targets forever.
+                    assert new_target.sensor != (0, 0), "Target without a sensor"
                     new_targets[new_target.stable_hash] = ContextRef.store(
                         ("targets", new_target.stable_hash), new_target
                     )

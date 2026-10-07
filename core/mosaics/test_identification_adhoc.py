@@ -147,6 +147,33 @@ def test_another_train_over_the_same_field_never_joins():
     assert _groups(refs) == []
 
 
+def test_sampled_overlap_matches_the_exact_intersection():
+    a = _footprint(100.0, 20.0, 270.0)
+    for b, exact in ((_footprint(100.0 + PANE_H * 0.85 / np.cos(np.radians(20.0)), 20.0, 270.0), None),
+                     (_footprint(100.0, 20.0, 315.0), None)):
+        inter = a.intersection(b)
+        exact = max(getattr(inter, "polygons", [inter]), key=lambda p: p.area()).area() / min(a.area(), b.area())
+        assert abs(ident._sampled_overlap_frac(a, b) - exact) < 0.02, (exact, ident._sampled_overlap_frac(a, b))
+
+
+def test_overlap_falls_back_to_sampling_when_the_intersection_is_malformed():
+    """The live hulls can make spherical_geometry raise on coincident
+    framings; the verdict must not die with it."""
+    from spherical_geometry.polygon import MalformedPolygonError, SingleSphericalPolygon
+    row = _targets(_tangent_grid(100.0, 20.0, cols=3, rows=1, overlap=0.15))
+    raw, hs = _raw_overlap(), list(row)
+    saved = SingleSphericalPolygon.intersection
+
+    def boom(self, other):
+        raise MalformedPolygonError("intersection: remove orphan nodes")
+    SingleSphericalPolygon.intersection = boom
+    try:
+        assert raw(row[hs[0]], row[hs[1]]) is True
+        assert raw(row[hs[0]], row[hs[2]]) is False
+    finally:
+        SingleSphericalPolygon.intersection = saved
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
