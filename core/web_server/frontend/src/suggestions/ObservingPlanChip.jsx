@@ -1,4 +1,4 @@
-import { useContext } from 'react';
+import { useContext, useState } from 'react';
 import {
   Box,
   Button,
@@ -17,6 +17,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 
 import AstroFlowContext from '../AstroFlowContext.jsx';
 import DropdownChip from '../DropdownChip.jsx';
+import SendToAsiairDialog from './SendToAsiairDialog.jsx';
 
 function hours(s) {
   return (s / 3600).toFixed(1);
@@ -45,6 +46,7 @@ async function downloadExport(entries, format, refresh) {
 export default function ObservingPlanChip() {
   const { observingPlan, refreshObservingPlan } = useContext(AstroFlowContext);
   const entries = observingPlan?.entries || [];
+  const [asiairOpen, setAsiairOpen] = useState(false);
 
   const totalSeconds = entries.reduce(
     (a, e) => a + (e.exposure_per_frame_s || 0) * (e.frame_count || 0),
@@ -136,6 +138,15 @@ export default function ObservingPlanChip() {
         <Button
           size="small"
           variant="contained"
+          onClick={() => setAsiairOpen(true)}
+          disabled={entries.length === 0}
+        >
+          ASIAir…
+        </Button>
+        <SendToAsiairDialog open={asiairOpen} onClose={() => setAsiairOpen(false)} entries={entries} />
+        <Button
+          size="small"
+          variant="outlined"
           onClick={() => downloadExport(entries, 'telescopius')}
           disabled={entries.length === 0}
         >

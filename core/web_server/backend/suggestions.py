@@ -152,10 +152,11 @@ def clear_observing_plan():
     return jsonify({"entries": []})
 
 
-@suggestions_bp.route("/api/observing_plan/export", methods=["POST"])
-def export_plan():
-    body = request.get_json(force=True)
-    fmt = body.get("format", "text")
+def _resolve_plan(body: dict) -> tuple[ObservingPlan, list, dict[str, int]]:
+    """The request's plan (its entries or the stored ones), the suggestions
+    they point at, and the panel numbers of every mosaic involved. Panel
+    numbers come from Mosaic — single source of truth so the polygon
+    labels in the viewer can't disagree with an export."""
     for_date_str = body.get("for_date")
     for_date = (
         datetime.date.fromisoformat(for_date_str)
@@ -173,9 +174,6 @@ def export_plan():
     )
     plan = ObservingPlan(for_date=for_date, entries=entries)
     sugs = generate_suggestions(_ALL_FILTERS)
-
-    # Panel numbers come from Mosaic — single source of truth so the
-    # polygon labels in the viewer can't disagree with the export.
     by_key = {s.stable_key(): s for s in sugs}
     plan_mosaic_ids = {
         by_key[e.suggestion_key].mosaic_id
@@ -188,6 +186,15 @@ def export_plan():
         ref = mosaics.get(mid)
         if ref is not None:
             panel_numbers.update(ref.get().panel_numbers())
+    return plan, sugs, panel_numbers
+
+
+@suggestions_bp.route("/api/observing_plan/export", methods=["POST"])
+def export_plan():
+    body = request.get_json(force=True)
+    fmt = body.get("format", "text")
+    plan, sugs, panel_numbers = _resolve_plan(body)
+    for_date = plan.for_date
 
     if fmt == "telescopius":
         return Response(
@@ -200,3 +207,80 @@ def export_plan():
     if fmt == "text":
         return Response(plain_text(plan, sugs, panel_numbers), mimetype="text/plain")
     abort(400, description=f"unknown format {fmt!r}")
+
+
+@suggestions_bp.route("/api/observing_plan/send_asiair", methods=["POST"])
+def send_plan_to_asiair():
+    """Write the observing plan into an ASIAir's Plan mode — coordinates
+    AND exposure rows — as a NEW, disabled plan beside whatever is armed.
+
+    Body: {"ip": "10.0.0.28", "dry_run": true, "plan_name": "...",
+    "replace": true, "entries": [...]?}. `dry_run` (the default) returns the
+    plan exactly as it would be sent plus what the device holds now; a real
+    send backs up the device's plan list first, then writes and verifies by
+    reading back. `replace` (the default — Stylistic7's workflow) deletes the
+    device's plans and writes ours fresh, which is the only way to drop a
+    target; `replace: false` adds ours beside the existing ones. Nothing
+    here starts a plan or moves the mount; Start is a tap on the tablet.
+    """
+    import json
+    import time
+    from asiair.plan_push import (
+        ExposureRow, PlanTarget, build_plan, next_plan_id, push_plan, replace_plan, wheel_slots,
+    )
+    from asiair.rpc_session import AsiairSession
+    from asiair.rsa_sign import default_key_path
+    from base_path import app_support_dir
+    from suggestions.export import _match
+
+    body = request.get_json(force=True)
+    ip = body.get("ip")
+    if not ip:
+        abort(400, description="missing ip")
+    dry_run = bool(body.get("dry_run", True))
+    replace = bool(body.get("replace", True))
+    key = default_key_path()
+    if not key.exists():
+        abort(409, description=f"no ASIAir signing key at {key}")
+
+    plan, sugs, panel_numbers = _resolve_plan(body)
+    grouped: dict[str, dict] = {}
+    for entry, s in _match(plan, sugs):
+        n = panel_numbers.get(s.target_id)
+        # Target names are identity, not prose (they end up in file names):
+        # "<mosaic hash prefix> Panel N", or "<target hash prefix> <label>"
+        # for a panel outside any mosaic — Stylistic7's shorthand ("75a1 Panel 10").
+        t = grouped.setdefault(s.target_id, {
+            "order": (n is None, n or 0, s.panel_label),
+            "name": f"{s.mosaic_id[:4]} Panel {n}" if n is not None else f"{s.target_id[:4]} {s.panel_label}",
+            "ra": s.ra_deg, "dec": s.dec_deg, "rows": [],
+        })
+        t["rows"].append(ExposureRow(s.filter, entry.exposure_per_frame_s, entry.frame_count))
+    targets = [
+        PlanTarget(t["name"], t["ra"], t["dec"], tuple(t["rows"]))
+        for t in sorted(grouped.values(), key=lambda t: t["order"])
+    ]
+    if not targets:
+        abort(400, description="the observing plan is empty")
+
+    with AsiairSession(ip) as session:
+        if not session.verify(key):
+            abort(502, description=f"ASIAir {ip} refused the handshake")
+        existing = session.call("get_plan") or []
+        like = next((p for p in existing if p.get("enable")), existing[0] if existing else None)
+        device_plan = build_plan(
+            1 if replace else next_plan_id(session), body.get("plan_name") or f"AstroFlow {plan.for_date}",
+            targets, wheel_slots(session), like=like,
+        )
+        summary = [{"id": p.get("id"), "plan_name": p.get("plan_name"), "enable": p.get("enable"),
+                    "targets": len(p.get("targets", []))} for p in existing]
+        if dry_run:
+            return jsonify({"dry_run": True, "plan": device_plan, "existing": summary})
+        backups = app_support_dir() / "asiair_backups"
+        backups.mkdir(parents=True, exist_ok=True)
+        (backups / f"{ip}_get_plan_{time.strftime('%Y%m%d-%H%M%S')}.json").write_text(json.dumps(existing, indent=2))
+        try:
+            result = (replace_plan if replace else push_plan)(session, device_plan)
+        except RuntimeError as e:
+            abort(502, description=str(e))
+    return jsonify({"dry_run": False, "plan_name": device_plan["plan_name"], "existing": summary, **result})
