@@ -110,12 +110,23 @@ def targets_overlap(
     if inter.area() / max(min(a.area(), b.area()), 1e-30) < min_area_frac:
         return Overlap.INCOMPATIBLE
 
-    # tangent basis at intersection centroid, in XYZ
+    # Tangent basis at the intersection centroid, in XYZ: e1 = local east,
+    # e2 = local north. Everything below is a bounding-box extent along
+    # e1/e2, so the basis must line up with the panes' edges (PA to local
+    # north on an equatorial mount). The reference vector used to switch
+    # from the pole to the x-axis at |sin Dec| > 0.9 (Dec 64.2): above
+    # that the basis sat at a large, RA-dependent angle to the frames,
+    # every stripe's box looked too thick, the whole top row of Stylistic7's
+    # Dec 58-69 Cassiopeia grid went unrecognised and strip ordering
+    # failed (2026-10-06). The pole reference is only degenerate AT the
+    # pole, so the switch now waits for |sin Dec| > 0.999 (Dec 87.4).
+    # Below Dec 64.2 this is byte-identical to the old basis: every
+    # existing mosaic's verdicts are unchanged (checked on all 21).
     ptsI = np.array(list(inter.points), float)  # (N,3) unit vectors
     c = ptsI.mean(0)
     c /= np.linalg.norm(c)
     ref = np.array([0.0, 0.0, 1.0])
-    if abs(c @ ref) > 0.9:
+    if abs(c @ ref) > 0.999:
         ref = np.array([1.0, 0.0, 0.0])
     e1 = np.cross(c, ref)
     e1 /= np.linalg.norm(e1)
