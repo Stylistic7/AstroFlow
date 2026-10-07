@@ -40,6 +40,7 @@ import PolygonOverlay from './PolygonOverlay.jsx';
 import TextOverlay from './TextOverlay.jsx';
 import LineColorPicker from './LineColorPicker.jsx';
 import FinishSaves from './FinishSaves.jsx';
+import FinishExport from './FinishExport.jsx';
 import { buildApiUrl, buildUrl } from '../urls.js';
 
 
@@ -982,6 +983,11 @@ export default function TileViewerV2({
                             ...Object.fromEntries(Object.entries(saved).filter(
                                 ([name]) => activeFinish.params.some((prm) => prm.name === name))),
                         }))}
+                    />
+                    <FinishExport
+                        url={buildApiUrl('/api/finish_export', hierarchy, view)}
+                        values={Object.fromEntries(activeFinish.params.map(
+                            (prm) => [prm.name, genericValues[prm.name] ?? prm.default]))}
                     />
                     {/* 3×3 taste-grid explorer: render the view 9 ways, click to refine. */}
                     {!gridActive ? (
