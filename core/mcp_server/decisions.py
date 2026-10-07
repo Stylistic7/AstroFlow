@@ -12,7 +12,7 @@ from web_server.backend.decisions import (_deserialize_choice, _serialize_choice
 
 DecisionTypeName = Literal["quarantine", "rotation_outlier", "subframe_quality",
                            "calibration_bias", "calibration_dark", "calibration_flat"]
-ObjectTypeName = Literal["stack", "target", "mosaic"]
+ObjectTypeName = Literal["stack", "target", "mosaic", "run"]
 
 _RESTART_EFFECT = ("the head stops admitting tasks, lets in-flight ones finish, "
                    "then re-plans and re-runs the whole graph (finished work "
@@ -71,11 +71,12 @@ def set_decision(decision_type: DecisionTypeName, object_type: ObjectTypeName,
                  confirm: bool = False) -> dict:
     """Override a decision. Binary types (quarantine, rotation_outlier)
     take "include"/"exclude"; calibration types take a calibration-stack
-    hash, a file path, or "none" (pinned no-flat). To quarantine a run:
-    decision_type="quarantine", object_type="stack", parent_stack_id=
-    <stack>, subject_id=<run id>, choice="exclude" (a whole stack: subject_id
-    = parent_stack_id). Without confirm=true only the preview is returned;
-    a confirmed write restarts the compute graph.
+    hash, a file path, or "none" (pinned no-flat). Keys are exactly as
+    list_decisions reports them. To quarantine a run: decision_type=
+    "quarantine", object_type="run", parent_stack_id=<stack>, subject_id=
+    <run id>, choice="exclude"; a whole stack: object_type="stack",
+    subject_id = parent_stack_id = <stack>. Without confirm=true only the
+    preview is returned; a confirmed write restarts the compute graph.
     """
     key = _key(decision_type, object_type, parent_stack_id, subject_id)
     parsed = _deserialize_choice(choice, key.decision_type)

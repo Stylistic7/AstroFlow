@@ -32,7 +32,7 @@ def recorder(monkeypatch):
 def test_set_decision_previews_then_applies_on_confirm(test_context, recorder):
     from context import local_context as lc
     from mcp_server import decisions as d
-    args = dict(decision_type="quarantine", object_type="stack",
+    args = dict(decision_type="quarantine", object_type="run",
                 parent_stack_id="stackA", subject_id="runA", choice="exclude")
     preview = d.set_decision(**args)
     assert preview["confirm"] is False and preview["new_choice"] == "exclude"
@@ -48,7 +48,7 @@ def test_set_decision_previews_then_applies_on_confirm(test_context, recorder):
 
     listed = d.list_decisions(object_type="stack", object_id="stackA")
     assert listed["overrides"] == [{"key": {"decision_type": "quarantine",
-                                            "object_type": "stack",
+                                            "object_type": "run",
                                             "parent_stack_id": "stackA",
                                             "subject_id": "runA"},
                                     "choice": "exclude"}]
@@ -56,7 +56,7 @@ def test_set_decision_previews_then_applies_on_confirm(test_context, recorder):
 
 def test_clear_decision_is_a_no_op_without_an_override(test_context, recorder):
     from mcp_server import decisions as d
-    args = dict(decision_type="quarantine", object_type="stack",
+    args = dict(decision_type="quarantine", object_type="run",
                 parent_stack_id="stackA", subject_id="runA")
     out = d.clear_decision(**args, confirm=True)
     assert out["will_restart"] is False and "applied" not in out
