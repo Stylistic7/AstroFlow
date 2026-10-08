@@ -39,12 +39,14 @@ def test_each_run_calibrates_with_its_own_masters_then_all_are_merged():
     tmp = Path(tempfile.mkdtemp(prefix="sirtest"))
     (tmp / "proc").mkdir()
     lights = tmp / "lights"; lights.mkdir()
-    dark, flat = _fits(tmp / "dark.fits"), _fits(tmp / "flat.fits")
+    library = tmp / "NGC 7000 masters"; library.mkdir()     # library paths have spaces
+    dark, flat = _fits(library / "dark.fits"), _fits(library / "flat.fits")
     run0 = _Run({str(k): _Meta(_fits(lights / f"a{k}.fit")) for k in range(2)},
                 {"dark": StackIdDependency("d1"), "flat": StackIdDependency("f1")})
     run1 = _Run({str(k): _Meta(_fits(lights / f"b{k}.fit")) for k in range(2)})       # no calibration
     script = _script(_Stack({"r0": run0, "r1": run1}), {"d1": dark, "f1": flat}, tmp)
-    assert f"calibrate r0 -dark={dark} -flat={flat} -prefix=pp_" in script
+    assert f"calibrate r0 -dark={tmp}/r0_dark.fit -flat={tmp}/r0_flat.fit -prefix=pp_" in script
+    assert (tmp / "r0_dark.fit").resolve() == dark.resolve()
     assert "merge pp_r0 r1 all" in script and "register all" in script
     assert f"stack r_all {STACK_OPTIONS} -out={tmp}/master" in script
     assert len(list((tmp / "run_0").iterdir())) == 2 and len(list((tmp / "run_1").iterdir())) == 2

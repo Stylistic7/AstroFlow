@@ -68,12 +68,16 @@ def siril_cli() -> str:
 
 
 def _as_fits(src: Path, dst: Path) -> Path:
-    """A calibration master as 32-bit FITS (Siril does not read XISF)."""
+    """A calibration master as 32-bit FITS at `dst` (Siril does not read
+    XISF). A FITS master is symlinked, because the script names it by `dst`:
+    library paths contain spaces, which Siril splits arguments on."""
     from astropy.io import fits
     from file_io.generic import read_image
+    if dst.exists():
+        return dst
     if src.suffix.lower() in (".fit", ".fits"):
-        return src
-    if not dst.exists():
+        os.symlink(src, dst)
+    else:
         fits.writeto(dst, np.asarray(read_image(src), np.float32).squeeze(), overwrite=True)
     return dst
 
@@ -98,7 +102,7 @@ def _script(stack: BaseStack, cal_by_id: dict[str, Path], tmp: Path) -> str:
             else:
                 src = None
             if src is not None and kind in ("bias", "dark", "flat"):
-                cal[kind] = _as_fits(Path(src), tmp / f"{kind}_{Path(src).stem}.fit")
+                cal[kind] = _as_fits(Path(src), tmp / f"r{i}_{kind}.fit")
         lines += [f'cd {run_dir}', f'link r{i} -out={tmp}/proc', f'cd {tmp}/proc']   # Siril names it r{i}_
         if cal:
             args = " ".join(f'-{k}={v}' for k, v in sorted(cal.items()))
