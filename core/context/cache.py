@@ -147,6 +147,7 @@ _DURABLE_STR_KEYS = frozenset(
         "shopping_cart",
         "archive",
         "observing_plan",
+        "asiair_cooling",
         # --- hot web-read state (reason 2: keep reads off the LFU lock) ---
         "ui_stacks",
         "ui_targets",
