@@ -87,19 +87,13 @@ def _as_fits(src: Path, dst: Path) -> Path:
     return dst
 
 
-def _script(stack: BaseStack, cal_by_id: dict[str, Path], tmp: Path, mem_gb: float) -> str:
-    """The siril-cli script. Paths are written bare: Siril keeps quote marks
-    as part of an option's value, so `tmp` must contain no spaces. Siril
-    stacks within `mem_gb` (its default, 0.9 of free memory, would let
-    concurrent instances each claim the machine)."""
+def _calibration_script(stack: BaseStack, cal_by_id: dict[str, Path], tmp: Path) -> str | None:
+    """Phase 1: calibrate each run that has masters into `tmp/proc` as
+    pp_r{i}_NNNNN.fit. None when no run has any. Paths are written bare:
+    Siril splits arguments on spaces (masters are linked under `tmp`)."""
     assert " " not in str(tmp), tmp
-    lines = ["requires 1.4.0", "setext fit", "set core.mem_mode=1", f"set core.mem_amount={mem_gb:.1f}"]
-    seqs = []
+    lines = ["requires 1.4.0", "setext fit"]
     for i, run in enumerate(stack.contents.values()):
-        run_dir = tmp / f"run_{i}"
-        run_dir.mkdir()
-        for m in run.metadata.values():
-            os.symlink(m.filename, run_dir / Path(m.filename).name)
         cal = {}
         for kind, dep in run.dependencies.items():
             if isinstance(dep, StackIdDependency):
@@ -110,21 +104,52 @@ def _script(stack: BaseStack, cal_by_id: dict[str, Path], tmp: Path, mem_gb: flo
                 src = None
             if src is not None and kind in ("bias", "dark", "flat"):
                 cal[kind] = _as_fits(Path(src), tmp / f"r{i}_{kind}.fit")
-        lines += [f'cd {run_dir}', f'link r{i} -out={tmp}/proc', f'cd {tmp}/proc']   # Siril names it r{i}_
-        if cal:
-            args = " ".join(f'-{k}={v}' for k, v in sorted(cal.items()))
-            lines.append(f"calibrate r{i} {args} -prefix=pp_")
-            seqs.append(f"pp_r{i}")
-        else:
-            seqs.append(f"r{i}")
-    lines.append(f'cd {tmp}/proc')
-    if len(seqs) > 1:
-        lines.append("merge " + " ".join(seqs) + " all")
-        seq = "all"
-    else:
-        seq = seqs[0]
-    lines += [f"register {seq}", f'stack r_{seq} {STACK_OPTIONS} -out={tmp}/master', "close"]
-    return "\n".join(lines) + "\n"
+        if not cal:
+            continue
+        run_dir = tmp / f"run_{i}"
+        run_dir.mkdir()
+        for m in run.metadata.values():
+            os.symlink(m.filename, run_dir / Path(m.filename).name)
+        args = " ".join(f"-{k}={v}" for k, v in sorted(cal.items()))
+        lines += [f"cd {run_dir}", f"link r{i} -out={tmp}/proc", f"cd {tmp}/proc",   # Siril names it r{i}_
+                  f"calibrate r{i} {args} -prefix=pp_"]
+    return "\n".join(lines) + "\n" if len(lines) > 2 else None
+
+
+def _gather(stack: BaseStack, tmp: Path) -> Path:
+    """Every frame to stack, calibrated where phase 1 calibrated it, as
+    symlinks in ONE folder: one sequence without Siril's `merge`, which
+    would copy every calibrated frame again."""
+    all_dir = tmp / "all"
+    all_dir.mkdir()
+    n = 0
+    for i, run in enumerate(stack.contents.values()):
+        calibrated = sorted((tmp / "proc").glob(f"pp_r{i}_*.fit"))
+        frames = calibrated or [Path(m.filename) for m in run.metadata.values()]
+        assert len(frames) == len(run.metadata), (i, len(frames), len(run.metadata))
+        for f in frames:
+            n += 1
+            os.symlink(f, all_dir / f"{n:05d}{f.suffix.lower()}")
+    return all_dir
+
+
+def _stack_script(all_dir: Path, tmp: Path, mem_gb: float) -> str:
+    """Phase 2: register and integrate the gathered frames within `mem_gb`
+    (Siril's default, 0.9 of free memory, would let concurrent instances
+    each claim the machine)."""
+    assert " " not in str(tmp), tmp
+    return "\n".join([
+        "requires 1.4.0", "setext fit", "set core.mem_mode=1", f"set core.mem_amount={mem_gb:.1f}",
+        f"cd {all_dir}", f"link light -out={tmp}/reg", f"cd {tmp}/reg",
+        "register light", f"stack r_light {STACK_OPTIONS} -out={tmp}/master", "close"]) + "\n"
+
+
+def _run_siril(tmp: Path, name: str, script: str) -> None:
+    (tmp / name).write_text(script)
+    r = subprocess.run([siril_cli(), "-d", str(tmp), "-s", str(tmp / name)],
+                       capture_output=True, text=True, timeout=6 * 3600)
+    if r.returncode != 0:
+        raise RuntimeError(f"Siril {name} exited {r.returncode}.\n{r.stdout[-3000:]}\n{r.stderr[-1500:]}")
 
 
 def _memory_budget_gb() -> float:
@@ -167,17 +192,20 @@ def integrate_with_siril(
     dest = Path(integrate_with_siril.filename_fn(stack, config, *cal_masters))
     dest.parent.mkdir(parents=True, exist_ok=True)
     cal_by_id = {str(read_header(m.filename)["STBLHASH"]): Path(m.filename) for m in cal_masters}
-    with tempfile.TemporaryDirectory(prefix="siril-") as d:
+    # Scratch beside the output, on the big processed volume: one stack
+    # writes ~2 x frames x 245 MB (calibrated + registered, 61 MP, 32-bit),
+    # 170 GB for the largest, more than the boot volume holds.
+    with tempfile.TemporaryDirectory(prefix=".siril-", dir=dest.parent) as d:
         tmp = Path(d)
         (tmp / "proc").mkdir()
-        (tmp / "stack.ssf").write_text(_script(stack, cal_by_id, tmp, _memory_budget_gb()))
         log.info("Running Siril", stack=str(stack), frames=n)
-        r = subprocess.run([siril_cli(), "-d", str(tmp), "-s", str(tmp / "stack.ssf")],
-                           capture_output=True, text=True, timeout=6 * 3600)
+        script = _calibration_script(stack, cal_by_id, tmp)
+        if script:
+            _run_siril(tmp, "calibrate.ssf", script)
+        _run_siril(tmp, "stack.ssf", _stack_script(_gather(stack, tmp), tmp, _memory_budget_gb()))
         out = tmp / "master.fit"
-        if r.returncode != 0 or not out.exists():
-            raise RuntimeError(f"Siril exited {r.returncode} without a master.\n{r.stdout[-3000:]}\n{r.stderr[-1500:]}")
-        shutil.copy(out, dest)
+        assert out.exists(), f"Siril wrote no master for {stack}"
+        os.replace(out, dest)
     update_header(dest, {"IMAGETYP": f"Master {stack.image_type}", "STBLHASH": stack.stable_hash,
                          "NOISE00": _robust_noise(dest), "NOISEEST": "robust high-pass (AstroFlow)"})
     return WithSidecar(FitsFilePath(dest))

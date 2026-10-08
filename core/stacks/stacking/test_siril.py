@@ -2,6 +2,7 @@
 running Siril. Runs as a script too."""
 from __future__ import annotations
 
+import os
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -10,7 +11,7 @@ import numpy as np
 from astropy.io import fits
 
 from file_io.master_integration import read_master_integration_seconds
-from stacks.stacking.siril import STACK_OPTIONS, _script
+from stacks.stacking.siril import STACK_OPTIONS, _calibration_script, _gather, _stack_script
 from stacks.types import StackIdDependency
 
 
@@ -35,7 +36,7 @@ def _fits(path: Path) -> Path:
     return path
 
 
-def test_each_run_calibrates_with_its_own_masters_then_all_are_merged():
+def test_runs_calibrate_with_their_own_masters_then_stack_as_one_sequence():
     tmp = Path(tempfile.mkdtemp(prefix="sirtest"))
     (tmp / "proc").mkdir()
     lights = tmp / "lights"; lights.mkdir()
@@ -44,21 +45,28 @@ def test_each_run_calibrates_with_its_own_masters_then_all_are_merged():
     run0 = _Run({str(k): _Meta(_fits(lights / f"a{k}.fit")) for k in range(2)},
                 {"dark": StackIdDependency("d1"), "flat": StackIdDependency("f1")})
     run1 = _Run({str(k): _Meta(_fits(lights / f"b{k}.fit")) for k in range(2)})       # no calibration
-    script = _script(_Stack({"r0": run0, "r1": run1}), {"d1": dark, "f1": flat}, tmp, 7.25)
-    assert "set core.mem_mode=1\nset core.mem_amount=7.2\n" in script
+    stack = _Stack({"r0": run0, "r1": run1})
+    script = _calibration_script(stack, {"d1": dark, "f1": flat}, tmp)
     assert f"calibrate r0 -dark={tmp}/r0_dark.fit -flat={tmp}/r0_flat.fit -prefix=pp_" in script
+    assert "r1" not in script                                   # nothing to calibrate
     assert (tmp / "r0_dark.fit").resolve() == dark.resolve()
-    assert "merge pp_r0 r1 all" in script and "register all" in script
-    assert f"stack r_all {STACK_OPTIONS} -out={tmp}/master" in script
-    assert len(list((tmp / "run_0").iterdir())) == 2 and len(list((tmp / "run_1").iterdir())) == 2
+    for k in (1, 2):                                            # what Siril's calibrate writes
+        _fits(tmp / "proc" / f"pp_r0_{k:05d}.fit")
+    all_dir = _gather(stack, tmp)
+    targets = sorted(os.readlink(f) for f in all_dir.iterdir())
+    assert targets == sorted([str(tmp / "proc/pp_r0_00001.fit"), str(tmp / "proc/pp_r0_00002.fit"),
+                              str(lights / "b0.fit"), str(lights / "b1.fit")])
+    script = _stack_script(all_dir, tmp, 7.25)
+    assert "set core.mem_mode=1\nset core.mem_amount=7.2\n" in script and "merge" not in script
+    assert f"stack r_light {STACK_OPTIONS} -out={tmp}/master" in script
 
 
-def test_a_single_run_is_registered_without_a_merge():
+def test_uncalibrated_stack_needs_no_calibration_phase():
     tmp = Path(tempfile.mkdtemp(prefix="sirtest"))
     (tmp / "proc").mkdir()
     run = _Run({"0": _Meta(_fits(tmp / "x.fit"))})
-    script = _script(_Stack({"r": run}), {}, tmp, 4.0)
-    assert "merge" not in script and "register r0" in script and "stack r_r0 " in script
+    assert _calibration_script(_Stack({"r": run}), {}, tmp) is None
+    assert len(list(_gather(_Stack({"r": run}), tmp).iterdir())) == 1
 
 
 def test_siril_master_integration_is_frame_count_times_exposure():

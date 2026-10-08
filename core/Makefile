@@ -163,7 +163,7 @@ ray-status:
 # --- App lifecycle ---------------------------------------------------------
 # Start the live app (Ray head + gunicorn web server) in the FOREGROUND.
 # Run from core/. Ctrl-C stops it (main.py's atexit cleans up gunicorn + ray).
-start: sweep-pi-swap sweep-vips-scratch sweep-staging
+start: sweep-pi-swap sweep-vips-scratch sweep-staging sweep-siril-scratch
 	uv run python main.py
 
 # Recover payloads stranded by a killed publish, and reap partial copies.
@@ -175,6 +175,16 @@ start: sweep-pi-swap sweep-vips-scratch sweep-staging
 # payload ASIDE while it builds the pyramid, so a leftover `.staging.` file
 # whose canonical name is missing IS the product. Deleting one cost an 18.9 GB
 # combine_broadband_rgb master on 2026-08-17. See file_io/staging.py.
+# Siril works in `.siril-*` beside its output (stacks/stacking/siril.py):
+# calibrated + registered frames, up to ~170 GB for one stack. A finished
+# integration deletes its own; a killed one leaves it. Nothing runs at start.
+.PHONY: sweep-siril-scratch
+sweep-siril-scratch:
+	@d="$$(PYTHONPATH=. uv run python -c 'from context import local_context as c; print(c.output_dir)' 2>/dev/null)/integrate_with_siril"; \
+	for x in $$(find "$$d" -maxdepth 1 -name '.siril-*' -type d 2>/dev/null); do \
+		echo "→ swept orphaned Siril scratch $$x ($$(du -sh $$x | cut -f1))"; rm -rf "$$x"; \
+	done
+
 .PHONY: sweep-staging
 sweep-staging:
 	@PYTHONPATH=. uv run python -m scripts.sweep_staging --apply 2>/dev/null \
