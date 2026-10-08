@@ -21,7 +21,9 @@ pipeline every master is measured the same way; do not compare the number
 across stackers. Its frame count comes from Siril's own `STACKCNT`
 (`file_io.master_integration`).
 """
-from __future__ import annotations
+# NO `from __future__ import annotations`: `@node` resolves the return
+# annotation at decoration time to give the op its `filename_fn`; as a string
+# it silently doesn't (see stacks/sky_flat.py).
 
 import os
 import shutil

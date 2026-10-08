@@ -72,3 +72,10 @@ if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
             fn(); print("ok", name)
+
+
+def test_integrate_with_siril_is_an_artifact_producer():
+    """The body names its own output via `filename_fn`; postponed annotations
+    silently drop it (boot141: every integration failed on it)."""
+    from stacks.stacking.siril import integrate_with_siril
+    assert callable(getattr(integrate_with_siril, "filename_fn", None))
