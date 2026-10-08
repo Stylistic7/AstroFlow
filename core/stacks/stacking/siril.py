@@ -49,8 +49,8 @@ log = structlog.get_logger()
 SIRIL_APP = "/Applications/Siril.app/Contents/MacOS/siril-cli"
 # Siril parallelises every heavy phase across all cores, but its file reads
 # and writes are serial, so one integration averages ~8 busy cores. Ray
-# runs integrations side by side, bounded by CPUs and by the memory
-# reservation auto_memory grants each one.
+# runs integrations side by side, bounded by CPUs and by each one's fixed
+# memory reservation, which is also Siril's stacking budget.
 SIRIL_CPUS = 8
 # The integration recipe, chosen by measurement (2026-10-08, panel 6 OIII,
 # 45 subs, uncalibrated; "revealed" = % of the field at >=3 sigma after
@@ -153,9 +153,9 @@ def _run_siril(tmp: Path, name: str, script: str) -> None:
 
 
 def _memory_budget_gb() -> float:
-    """What this task may give Siril: its Ray memory reservation (sized by
-    auto_memory from measured peaks, child processes included) less what
-    the worker itself already holds."""
+    """What this task may give Siril: its Ray memory reservation (fixed in
+    profiling.memory_estimate._FIXED_MEMORY_BY_OP) less what the worker
+    itself already holds."""
     import psutil
     import ray
     reserved = ray.get_runtime_context().get_assigned_resources().get("memory")

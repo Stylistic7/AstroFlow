@@ -90,6 +90,11 @@ _FIXED_MEMORY_BY_OP = {
     # fresh-worker rule (see decorators.py), so it keeps worker reuse instead of
     # paying a ~2-4s respawn on every one of those 30k calls.
     "compute_image_metadata": 1 * _GB,
+    # siril-cli's memory is elastic: it stacks in as much as it is given, so a
+    # measured peak only echoes the budget. The budget is this number instead:
+    # integrate_with_siril hands Siril its own reservation. 12 GB holds ~45
+    # full-frame 61 MP subs in one pass, and three fit under the gate at once.
+    "integrate_with_siril": 12 * _GB,
 }
 
 # Ops whose only sizing arg is a *filename* (e.g. `compute_image_metadata`)
