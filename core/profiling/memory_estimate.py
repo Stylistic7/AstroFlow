@@ -93,7 +93,7 @@ _FIXED_MEMORY_BY_OP = {
     # siril-cli's memory is elastic: it stacks in as much as it is given, so a
     # measured peak only echoes the budget. The budget is this number instead:
     # integrate_with_siril hands Siril its own reservation. 12 GB holds ~45
-    # full-frame 61 MP subs in one pass, and three fit under the gate at once.
+    # full-frame 61 MP subs in one pass, and the gate admits three, CPUs (12 each) admit two.
     "integrate_with_siril": 12 * _GB,
 }
 

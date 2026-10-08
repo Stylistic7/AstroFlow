@@ -47,11 +47,12 @@ from stacks.types import FilenameDependency, StackIdDependency
 log = structlog.get_logger()
 
 SIRIL_APP = "/Applications/Siril.app/Contents/MacOS/siril-cli"
-# Siril parallelises every heavy phase across all cores, but its file reads
-# and writes are serial, so one integration averages ~8 busy cores. Ray
-# runs integrations side by side, bounded by CPUs and by each one's fixed
-# memory reservation, which is also Siril's stacking budget.
-SIRIL_CPUS = 8
+# Threads per Siril instance, and the CPUs its Ray task reserves. Siril's
+# file I/O is serial, so one instance leaves cores idle; but two instances
+# at 24 threads each spin-wait in OpenMP. Measured on 45 x 61 MP subs with
+# the app running (2026-10-08), seconds per stack: one at a time x 24
+# threads 38.5, two at once x 12 threads 32.5, three x 8 38, two x 24 43.
+SIRIL_CPUS = 12
 # The integration recipe, chosen by measurement (2026-10-08, panel 6 OIII,
 # 45 subs, uncalibrated; "revealed" = % of the field at >=3 sigma after
 # GraXpert): winsorized 3/3 sigma clipping, additive + scaling normalisation,
@@ -92,7 +93,7 @@ def _calibration_script(stack: BaseStack, cal_by_id: dict[str, Path], tmp: Path)
     pp_r{i}_NNNNN.fit. None when no run has any. Paths are written bare:
     Siril splits arguments on spaces (masters are linked under `tmp`)."""
     assert " " not in str(tmp), tmp
-    lines = ["requires 1.4.0", "setext fit"]
+    lines = ["requires 1.4.0", "setext fit", f"setcpu {SIRIL_CPUS}"]
     for i, run in enumerate(stack.contents.values()):
         cal = {}
         for kind, dep in run.dependencies.items():
@@ -113,7 +114,7 @@ def _calibration_script(stack: BaseStack, cal_by_id: dict[str, Path], tmp: Path)
         args = " ".join(f"-{k}={v}" for k, v in sorted(cal.items()))
         lines += [f"cd {run_dir}", f"link r{i} -out={tmp}/proc", f"cd {tmp}/proc",   # Siril names it r{i}_
                   f"calibrate r{i} {args} -prefix=pp_"]
-    return "\n".join(lines) + "\n" if len(lines) > 2 else None
+    return "\n".join(lines) + "\n" if len(lines) > 3 else None
 
 
 def _gather(stack: BaseStack, tmp: Path) -> Path:
@@ -139,7 +140,7 @@ def _stack_script(all_dir: Path, tmp: Path, mem_gb: float) -> str:
     each claim the machine)."""
     assert " " not in str(tmp), tmp
     return "\n".join([
-        "requires 1.4.0", "setext fit", "set core.mem_mode=1", f"set core.mem_amount={mem_gb:.1f}",
+        "requires 1.4.0", "setext fit", f"setcpu {SIRIL_CPUS}", "set core.mem_mode=1", f"set core.mem_amount={mem_gb:.1f}",
         f"cd {all_dir}", f"link light -out={tmp}/reg", f"cd {tmp}/reg",
         "register light", f"stack r_light {STACK_OPTIONS} -out={tmp}/master", "close"]) + "\n"
 

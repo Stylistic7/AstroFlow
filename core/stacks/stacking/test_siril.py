@@ -57,7 +57,7 @@ def test_runs_calibrate_with_their_own_masters_then_stack_as_one_sequence():
     assert targets == sorted([str(tmp / "proc/pp_r0_00001.fit"), str(tmp / "proc/pp_r0_00002.fit"),
                               str(lights / "b0.fit"), str(lights / "b1.fit")])
     script = _stack_script(all_dir, tmp, 7.25)
-    assert "set core.mem_mode=1\nset core.mem_amount=7.2\n" in script and "merge" not in script
+    assert "setcpu 12\nset core.mem_mode=1\nset core.mem_amount=7.2\n" in script and "merge" not in script
     assert f"stack r_light {STACK_OPTIONS} -out={tmp}/master" in script
 
 
