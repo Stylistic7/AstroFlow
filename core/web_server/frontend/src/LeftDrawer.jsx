@@ -10,6 +10,7 @@ import ListItemText from '@mui/material/ListItemText';
 import IconButton from '@mui/material/IconButton';
 import MenuIcon from '@mui/icons-material/Menu';
 import ScheduleIcon from '@mui/icons-material/Schedule';
+import NightsStayIcon from '@mui/icons-material/NightsStay';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import PaletteIcon from '@mui/icons-material/Palette';
 
@@ -49,6 +50,14 @@ export default function LeftDrawer() {
           onKeyDown={toggleDrawer(false)}
         >
           <List>
+            <ListItem key="planner" disablePadding>
+              <ListItemButton onClick={() => navigate('/planner')}>
+                <ListItemIcon>
+                  <NightsStayIcon />
+                </ListItemIcon>
+                <ListItemText primary="Next night" />
+              </ListItemButton>
+            </ListItem>
             <ListItem key="recent" disablePadding>
               <ListItemButton onClick={() => navigate('/recent')}>
                 <ListItemIcon>

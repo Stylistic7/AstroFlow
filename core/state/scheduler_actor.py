@@ -17,6 +17,7 @@ class SchedulerActor:
         self._asiair_guide_stream_tasks: dict = {}  # rig key -> (ip, Task)
         self._asiair_guide_stream_supervisor_task = None
         self._ray_metrics_task = None
+        self._planner_refresh_task = None
         self._run_task = asyncio.get_event_loop().create_task(self._run())
 
     async def add(
@@ -155,6 +156,35 @@ class SchedulerActor:
                 task.cancel()
             self._asiair_guide_stream_tasks.clear()
 
+    async def start_planner_refresh(
+        self, interval_s: float = 3600.0, start_delay_s: float = 300.0,
+    ) -> None:
+        """Keep the stored next-night plan current (`planner.refresh`): once
+        an hour, regenerate it if it is for another night or older inputs (a
+        master landed, the cart changed), so the planner page rarely waits.
+        The planning itself is a subprocess; this loop only checks and
+        starts it."""
+        if self._planner_refresh_task is not None:
+            return
+        self._planner_refresh_task = asyncio.get_event_loop().create_task(
+            self._planner_refresh_loop(interval_s, start_delay_s)
+        )
+
+    async def _planner_refresh_loop(self, interval_s: float, start_delay_s: float) -> None:
+        try:
+            await asyncio.sleep(start_delay_s)
+            while True:
+                try:
+                    from context import context
+                    from planner.refresh import refresh_if_stale
+                    state = await asyncio.to_thread(refresh_if_stale, context)
+                    print(f"### planner refresh: {state}")
+                except Exception as e:
+                    print(f"### planner refresh raised, ignoring: {e}")
+                await asyncio.sleep(interval_s)
+        except asyncio.CancelledError:
+            pass
+
     async def start_ray_metrics_poller(
         self, interval_s: float = 1.0, start_delay_s: float = 1.0,
     ) -> None:
@@ -236,6 +266,7 @@ class SchedulerActor:
             self._asiair_poller_task,
             self._asiair_live_poller_task,
             self._ray_metrics_task,
+            self._planner_refresh_task,
         ):
             if task is None:
                 continue
