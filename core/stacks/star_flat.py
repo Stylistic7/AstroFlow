@@ -345,6 +345,10 @@ def _passes(quality: dict) -> bool:
 #     re-solved noise;
 #   material: that RMS change exceeds STAR_FLAT_CHANGE — big enough to matter
 #     against the 0.3-1% patterns these flats correct.
+# An RMS over the field hides a change confined to one region (a new dust
+# shadow, a corner the old solve never covered), so a LOCAL change also
+# publishes: the largest relative change anywhere at least
+# STAR_FLAT_LOCAL_CHANGE and STAR_FLAT_LOCAL_SIGNIFICANCE times the noise.
 # Measured on the two cases that motivated this: the RedCat OIII flat re-solved
 # with 5% more subs changed 0.04% RMS at 0.45x its uncertainty (the same flat;
 # carry forward) while the young FLT156 OIII flat changed 1.1% RMS at 2.7x with
@@ -354,6 +358,8 @@ def _passes(quality: dict) -> bool:
 # RedCat train (100 stacks, 276 h) re-stacked on consecutive mornings.
 STAR_FLAT_CHANGE = 0.002
 STAR_FLAT_SIGNIFICANCE = 2.0
+STAR_FLAT_LOCAL_CHANGE = 0.01
+STAR_FLAT_LOCAL_SIGNIFICANCE = 5.0
 
 
 def _unit(response: np.ndarray) -> np.ndarray:
@@ -485,7 +491,9 @@ def solve_and_write(star_flat: StarFlatStack, dest, *, cells=CELLS, mag_window=M
     identity = None
     if standing is not None and standing[0].shape == response.shape:
         old_response, old_identity, old_quality = standing
-        change = float(np.sqrt(np.nanmean(np.square(_unit(response) / _unit(old_response) - 1.0))))
+        delta = _unit(response) / _unit(old_response) - 1.0
+        change = float(np.sqrt(np.nanmean(np.square(delta))))
+        local = float(np.nanmax(np.abs(delta)))
         unc_new = float(quality.get("per_cell_uncertainty") or 0.0)
         unc_old = float(old_quality.get("per_cell_uncertainty") or 0.0)
         noise = float(np.hypot(unc_new, unc_old))
@@ -494,9 +502,14 @@ def solve_and_write(star_flat: StarFlatStack, dest, *, cells=CELLS, mag_window=M
             change_vs_standing=change,
             change_significance=change / noise if noise > 0 else float("inf"),
             change_vs_pattern=change / pattern if pattern > 0 else float("inf"),
+            change_local=local,
+            change_local_significance=local / noise if noise > 0 else float("inf"),
             uncertainty_ratio=unc_new / unc_old if unc_old > 0 else None,
         )
-        if not (quality["change_significance"] >= STAR_FLAT_SIGNIFICANCE and change > STAR_FLAT_CHANGE):
+        different = quality["change_significance"] >= STAR_FLAT_SIGNIFICANCE and change > STAR_FLAT_CHANGE
+        local_change = (quality["change_local_significance"] >= STAR_FLAT_LOCAL_SIGNIFICANCE
+                        and local >= STAR_FLAT_LOCAL_CHANGE)
+        if not (different or local_change):
             response, identity = old_response, old_identity
             quality["carried_forward"] = True
     Path(dest).parent.mkdir(parents=True, exist_ok=True)
