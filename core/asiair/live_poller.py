@@ -29,6 +29,7 @@ from typing import Any, Callable
 
 import structlog
 
+from asiair import cooling
 from asiair.network_hosts import find_hosts_with_open_port
 from asiair.rpc_session import GUIDER_PORT, IMAGER_PORT, AsiairRpcError, AsiairSession
 from asiair.rsa_sign import RsaPrivateKey, default_key_path, load_key_file
@@ -154,9 +155,9 @@ def tick(*, scan: Callable[[int], list[str]] = find_hosts_with_open_port,
          poll: Callable[[str, RsaPrivateKey | None], dict] = poll_ip,
          now: Callable[[], float] = time.time) -> None:
     """One cycle: poll every known address and, every `_SCAN_INTERVAL_S`,
-    every host with the imager port open; write the rig list back and
-    tell the web clients. The polls run in parallel so a powered-off rig's
-    connect timeout never delays a live one."""
+    every host with the imager port open; step any enabled cooling ramp;
+    write the rig list back and tell the web clients. The polls run in
+    parallel so a powered-off rig's connect timeout never delays a live one."""
     from context import context  # local import: avoids a cycle at module load
     global _next_scan
     rigs = list(context.asiair_devices or [])
@@ -169,6 +170,17 @@ def tick(*, scan: Callable[[int], list[str]] = find_hosts_with_open_port,
     key = _key()
     with ThreadPoolExecutor(max_workers=len(ips)) as ex:
         polled = list(zip(sorted(ips), ex.map(lambda ip: poll(ip, key), sorted(ips))))
-    context.asiair_devices = _merge(rigs, polled)
+    rigs = _merge(rigs, polled)
+    # Slow-ramp cooling: one step per rig per minute while its switch is on.
+    requests = context.get("asiair_cooling", None) or {}
+    for rig in rigs:
+        request = requests.get(rig["key"])
+        if request and request.get("enabled"):
+            progress = cooling.step(rig, request, key, now())
+            if progress is not None:
+                rig["cooling"] = progress
+        else:
+            rig.pop("cooling", None)
+    context.asiair_devices = rigs
     from web_server.backend.announcer import announce
     announce("asiair_devices")

@@ -49,6 +49,7 @@ def compute_panel_state() -> dict[str, Any]:
     from asiair.guide_event_stream import get_history
     from asiair.sky_quality import estimate as estimate_sky
 
+    cooling_requests = context.get("asiair_cooling", None) or {}
     rigs: list[dict[str, Any]] = []
     for rig in sorted(context.asiair_devices or [], key=label):
         live = rig.get("live") or {}
@@ -72,6 +73,9 @@ def compute_panel_state() -> dict[str, Any]:
             "guide_state": live.get("guide_state"),
             "guide_warning": guide_warning,
             "live": live or None,
+            # The slow-ramp request (switch + target) and its live progress.
+            "cooling": {"enabled": False, "target_c": None,
+                        **(cooling_requests.get(rig["key"]) or {}), **(rig.get("cooling") or {})},
             "guide_history": guide_history,
             "sky": estimate_sky(guide_history),
         })

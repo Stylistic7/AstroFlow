@@ -7,6 +7,9 @@ import {
   List,
   Divider,
   Tooltip,
+  Switch,
+  TextField,
+  FormControlLabel,
 } from "@mui/material";
 import {
   ExpandMore, ExpandLess, Circle, AutoMode, Warning,
@@ -290,6 +293,51 @@ const GuideAxisChart = ({
 };
 
 
+// Slow-ramp cooling: a switch and a target. While the switch is on, the
+// live poller lowers the camera's setpoint by 1 °C per minute from where
+// the sensor is (ambient, if the cooler was off) until it reaches the
+// target, holding whenever the cooler is flat out; the status line is the
+// poller's last step (`rig.cooling`, see `asiair.cooling.step`).
+const CoolingRamp = ({ rig }) => {
+  const c = rig.cooling || {};
+  const [target, setTarget] = useState(c.target_c ?? -10);
+  const put = (enabled, t) => fetch(
+    `/api/asiair/devices/${encodeURIComponent(rig.key)}/cooling`,
+    { method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled, target_c: Number(t) }) },
+  );
+  const status = [
+    c.phase,
+    c.setpoint_c != null && `setpoint ${c.setpoint_c.toFixed(0)} °C`,
+    c.temperature_c != null && `sensor ${c.temperature_c.toFixed(1)} °C`,
+    c.power != null && `cooler ${c.power.toFixed(0)} %`,
+  ].filter(Boolean).join(" · ");
+  return (
+    <Box sx={{ mt: 1, pl: 1, borderLeft: "2px solid", borderColor: "divider" }}>
+      <Typography variant="caption" color="text.secondary" component="div" sx={{ fontWeight: 600 }}>
+        Cooling
+      </Typography>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 0.5 }}>
+        <FormControlLabel
+          sx={{ mr: 0 }}
+          control={<Switch size="small" checked={!!c.enabled} onChange={(e) => put(e.target.checked, target)} />}
+          label={<Typography variant="caption">slow ramp, 1 °C/min</Typography>}
+        />
+        <TextField
+          size="small" type="number" label="target °C" value={target}
+          onChange={(e) => setTarget(e.target.value)}
+          onBlur={() => { if (c.enabled) put(true, target); }}
+          inputProps={{ min: -40, max: 30, step: 1 }}
+          sx={{ width: 96 }}
+        />
+      </Box>
+      {status && (
+        <Typography variant="caption" color="text.secondary" component="div">{status}</Typography>
+      )}
+    </Box>
+  );
+};
+
 const RigRow = ({ rig, defaultExpanded = false }) => {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const live = rig.live || null;
@@ -357,6 +405,7 @@ const RigRow = ({ rig, defaultExpanded = false }) => {
               camera: {rig.camera_name} ({rig.camera_state || "?"})
             </Typography>
           )}
+          {rig.sn && <CoolingRamp rig={rig} />}
           {rig.guide_history && rig.guide_history.length > 0 && (
             <Box sx={{ mt: 1, pl: 1, borderLeft: "2px solid", borderColor: "divider" }}>
               <Typography variant="caption" color="text.secondary" component="div" sx={{ fontWeight: 600 }}>

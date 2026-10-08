@@ -21,6 +21,28 @@ def test_get_devices_serves_the_rig_rows():
     assert (row["label"], row["sn"], row["ip"], row["active_state"]) == ("ASIAIR_RC71 · 351 mm", "96578d3e", "10.0.0.28", "yellow")
 
 
+def test_put_cooling_persists_the_request_and_announces():
+    import web_server.backend.asiair_panel as bp
+
+    class _Store(dict):
+        def get(self, key, default=None):
+            return super().get(key, default)
+    store, announced = _Store(), []
+    saved = bp.context, bp.announce
+    bp.context, bp.announce = store, lambda event, data=None: announced.append(event)
+    try:
+        app = flask.Flask(__name__); app.register_blueprint(asiair_panel_bp)
+        c = app.test_client()
+        assert c.put("/api/asiair/devices/96578d3e/cooling", json={"enabled": True, "target_c": -10}).status_code == 200
+        assert store["asiair_cooling"] == {"96578d3e": {"enabled": True, "target_c": -10.0}} and announced == ["asiair_devices"]
+        assert c.put("/api/asiair/devices/96578d3e/cooling", json={"enabled": True, "target_c": -60}).status_code == 400
+        assert c.put("/api/asiair/devices/96578d3e/cooling", json={"enabled": "yes"}).status_code == 400
+    finally:
+        bp.context, bp.announce = saved
+
+
 if __name__ == "__main__":
     test_get_devices_serves_the_rig_rows()
     print("ok test_get_devices_serves_the_rig_rows")
+    test_put_cooling_persists_the_request_and_announces()
+    print("ok test_put_cooling_persists_the_request_and_announces")

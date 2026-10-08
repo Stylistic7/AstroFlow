@@ -71,6 +71,10 @@ def test_silence_from_an_unknown_address_adds_nothing():
 
 class _Store:
     asiair_devices = None
+    asiair_cooling = None
+
+    def get(self, key, default=None):
+        return self.asiair_cooling if key == "asiair_cooling" else default
 
 
 def test_tick_scans_once_then_polls_the_known_addresses():
@@ -96,6 +100,24 @@ def test_tick_scans_once_then_polls_the_known_addresses():
         ctx_mod.context, announcer.announce, lp._next_scan = saved
     assert calls == {"scan": 1, "polled": ["10.0.0.28", "10.0.0.28"]}
     assert [r["key"] for r in store.asiair_devices] == ["96578d3e"]
+
+
+def test_tick_steps_an_enabled_cooling_ramp_and_drops_a_disabled_one():
+    import context as ctx_mod
+    import web_server.backend.announcer as announcer
+    store = _Store(); store.asiair_cooling = {"96578d3e": {"enabled": True, "target_c": -10.0}}
+    stepped = []
+    saved = ctx_mod.context, announcer.announce, lp._next_scan, lp.cooling.step
+    ctx_mod.context, announcer.announce, lp._next_scan = store, lambda *a, **k: None, 0.0
+    lp.cooling.step = lambda rig, req, key, now: stepped.append(rig["key"]) or {"phase": "ramping", "target_c": req["target_c"]}
+    try:
+        lp.tick(scan=lambda port: ["10.0.0.28"], poll=lambda ip, key: snapshot("96578d3e", "ASIAIR_RC71", 351), now=lambda: 1000.0)
+        assert stepped == ["96578d3e"] and store.asiair_devices[0]["cooling"]["phase"] == "ramping"
+        store.asiair_cooling = {"96578d3e": {"enabled": False, "target_c": -10.0}}
+        lp.tick(scan=lambda port: ["10.0.0.28"], poll=lambda ip, key: snapshot("96578d3e", "ASIAIR_RC71", 351), now=lambda: 1005.0)
+        assert "cooling" not in store.asiair_devices[0] and stepped == ["96578d3e"]
+    finally:
+        ctx_mod.context, announcer.announce, lp._next_scan, lp.cooling.step = saved
 
 
 if __name__ == "__main__":

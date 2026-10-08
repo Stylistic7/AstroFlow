@@ -10,14 +10,18 @@ import asiair.panel_state as ps
 
 
 class _Ctx:
-    def __init__(self, rigs):
+    def __init__(self, rigs, cooling=None):
         self.asiair_devices = rigs
+        self._cooling = cooling or {}
+
+    def get(self, key, default=None):
+        return self._cooling if key == "asiair_cooling" else default
 
 
 @contextmanager
-def rigs_in_context(rigs):
+def rigs_in_context(rigs, cooling=None):
     saved = ps.context, ges.get_history
-    ps.context, ges.get_history = _Ctx(rigs), lambda key: []
+    ps.context, ges.get_history = _Ctx(rigs, cooling), lambda key: []
     try:
         yield
     finally:
@@ -67,6 +71,15 @@ def test_guide_warning_only_while_capturing():
     assert out["summary"]["warnings"] == 1
     with rigs_in_context([rig(reachable=True, capture_state="idle", guide_state="stopped")]):
         assert ps.compute_panel_state()["rigs"][0]["guide_warning"] is False
+
+
+def test_cooling_merges_the_request_with_the_live_progress():
+    r = rig(reachable=True); r["cooling"] = {"target_c": -10.0, "setpoint_c": 12.0, "temperature_c": 12.4, "power": 55.0, "phase": "ramping"}
+    with rigs_in_context([r], cooling={"96578d3e": {"enabled": True, "target_c": -10.0}}):
+        (row,) = ps.compute_panel_state()["rigs"]
+    assert row["cooling"] == {"enabled": True, "target_c": -10.0, "setpoint_c": 12.0, "temperature_c": 12.4, "power": 55.0, "phase": "ramping"}
+    with rigs_in_context([rig(reachable=True)]):
+        assert ps.compute_panel_state()["rigs"][0]["cooling"] == {"enabled": False, "target_c": None}
 
 
 if __name__ == "__main__":
