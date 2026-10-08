@@ -47,11 +47,11 @@ from stacks.types import FilenameDependency, StackIdDependency
 log = structlog.get_logger()
 
 SIRIL_APP = "/Applications/Siril.app/Contents/MacOS/siril-cli"
-# Concurrent Siril integrations per node (the node's "Siril" Ray resource).
-# One instance kept only ~8 of 24 cores busy, so several run side by side;
-# each may take an equal share of free memory for stacking (Siril's default
-# ratio is 0.9 of free memory, which three instances would oversubscribe).
-SIRIL_SLOTS = 3
+# Siril parallelises every heavy phase across all cores, but its file reads
+# and writes are serial, so one integration averages ~8 busy cores. Ray
+# runs integrations side by side, bounded by CPUs and by the memory
+# reservation auto_memory grants each one.
+SIRIL_CPUS = 8
 # The integration recipe, chosen by measurement (2026-10-08, panel 6 OIII,
 # 45 subs, uncalibrated; "revealed" = % of the field at >=3 sigma after
 # GraXpert): winsorized 3/3 sigma clipping, additive + scaling normalisation,
@@ -87,11 +87,13 @@ def _as_fits(src: Path, dst: Path) -> Path:
     return dst
 
 
-def _script(stack: BaseStack, cal_by_id: dict[str, Path], tmp: Path) -> str:
+def _script(stack: BaseStack, cal_by_id: dict[str, Path], tmp: Path, mem_gb: float) -> str:
     """The siril-cli script. Paths are written bare: Siril keeps quote marks
-    as part of an option's value, so `tmp` must contain no spaces."""
+    as part of an option's value, so `tmp` must contain no spaces. Siril
+    stacks within `mem_gb` (its default, 0.9 of free memory, would let
+    concurrent instances each claim the machine)."""
     assert " " not in str(tmp), tmp
-    lines = ["requires 1.4.0", "setext fit", f"setmem {0.9 / SIRIL_SLOTS:.2f}"]
+    lines = ["requires 1.4.0", "setext fit", "set core.mem_mode=1", f"set core.mem_amount={mem_gb:.1f}"]
     seqs = []
     for i, run in enumerate(stack.contents.values()):
         run_dir = tmp / f"run_{i}"
@@ -125,6 +127,17 @@ def _script(stack: BaseStack, cal_by_id: dict[str, Path], tmp: Path) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _memory_budget_gb() -> float:
+    """What this task may give Siril: its Ray memory reservation (sized by
+    auto_memory from measured peaks, child processes included) less what
+    the worker itself already holds."""
+    import psutil
+    import ray
+    reserved = ray.get_runtime_context().get_assigned_resources().get("memory")
+    assert reserved, "integrate_with_siril runs without a Ray memory reservation"
+    return max(1.0, (reserved - psutil.Process().memory_info().rss) / 1024 ** 3)
+
+
 def _robust_noise(path: Path) -> float:
     from file_io.generic import read_image
     from metadata.visibility import _noise
@@ -133,7 +146,8 @@ def _robust_noise(path: Path) -> float:
 
 
 @node(display="Master", final=True, cache_key_narrow=_stack_files_narrow,
-      resources={"Siril": 1}, scheduling_strategy="SPREAD", auto_memory=True)
+      num_cpus=SIRIL_CPUS, resources={"Siril": 0.001}, scheduling_strategy="SPREAD",
+      auto_memory=True)
 def integrate_with_siril(
     stack: BaseStack,
     config: ProcessingConfig,
@@ -156,7 +170,7 @@ def integrate_with_siril(
     with tempfile.TemporaryDirectory(prefix="siril-") as d:
         tmp = Path(d)
         (tmp / "proc").mkdir()
-        (tmp / "stack.ssf").write_text(_script(stack, cal_by_id, tmp))
+        (tmp / "stack.ssf").write_text(_script(stack, cal_by_id, tmp, _memory_budget_gb()))
         log.info("Running Siril", stack=str(stack), frames=n)
         r = subprocess.run([siril_cli(), "-d", str(tmp), "-s", str(tmp / "stack.ssf")],
                            capture_output=True, text=True, timeout=6 * 3600)

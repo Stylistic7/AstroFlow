@@ -52,10 +52,10 @@ _DEFAULT_MEMORY_BY_OP = {
 }
 _DEFAULT_MEMORY_UNKNOWN = 16 * _GB
 
-# Ops that shell out to rc-astro (BXT/SXT/NXT). The profiler only samples the
-# small Python WORKER — which spawns the CLI and moves a file (see rc_astro_cli.py)
-# — NEVER the CLI child, which is invisible to Ray. So these genuinely can't be
-# auto-estimated; the `auto_memory=True` on their decorators just routes them
+# Ops that shell out to rc-astro (BXT/SXT/NXT). Until 2026-10-08 the profiler
+# sampled only the Python WORKER, never the CLI child (see rc_astro_cli.py), so
+# these were given fixed values; the profile now includes child processes, but
+# they keep them. The `auto_memory=True` on their decorators just routes them
 # through `estimate_memory`, which short-circuits to this fixed value — keeping the
 # admission gate and Ray's `memory=` reservation reading the SAME number. Kept as a
 # side-table (not `@node(memory=)`) so the value can change WITHOUT a decorator edit
@@ -290,8 +290,7 @@ def estimate_memory(fn: Callable, args: tuple, kwargs: dict) -> int:
     """
     cap = _max_memory_bytes()
     # Fixed override for ops that shell out to a fixed-memory external tool
-    # (rc-astro BXT/SXT): the worker-RSS profile can't see the CLI child, which
-    # dominates the footprint. See _FIXED_MEMORY_BY_OP.
+    # (rc-astro BXT/SXT). See _FIXED_MEMORY_BY_OP.
     fixed = _FIXED_MEMORY_BY_OP.get(fn.__name__)
     if fixed is not None:
         return min(fixed, cap)

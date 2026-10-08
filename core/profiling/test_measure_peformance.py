@@ -51,3 +51,23 @@ def test_decorator(test_context):
     histories = [v for v in matches.values() if v]
     assert len(histories) > 0, f"No profile samples recorded; matches={matches}"
     assert isinstance(histories[0][0], dict)
+
+
+def test_tree_rss_counts_child_processes():
+    """An op that shells out (siril-cli, GraXpert) holds its memory in the
+    child; the profile must see it."""
+    import subprocess
+    import sys
+    import time
+
+    import psutil
+
+    from profiling.measure_performance import _tree_rss
+    me = psutil.Process()
+    child = subprocess.Popen([sys.executable, "-c",
+                              "b = bytearray(300 * 2**20); import time; time.sleep(30)"])
+    try:
+        time.sleep(1.5)
+        assert _tree_rss(me, me.children(recursive=True)) - _tree_rss(me, []) > 250 * 2**20
+    finally:
+        child.kill()

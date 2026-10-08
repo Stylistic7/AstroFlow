@@ -44,7 +44,8 @@ def test_each_run_calibrates_with_its_own_masters_then_all_are_merged():
     run0 = _Run({str(k): _Meta(_fits(lights / f"a{k}.fit")) for k in range(2)},
                 {"dark": StackIdDependency("d1"), "flat": StackIdDependency("f1")})
     run1 = _Run({str(k): _Meta(_fits(lights / f"b{k}.fit")) for k in range(2)})       # no calibration
-    script = _script(_Stack({"r0": run0, "r1": run1}), {"d1": dark, "f1": flat}, tmp)
+    script = _script(_Stack({"r0": run0, "r1": run1}), {"d1": dark, "f1": flat}, tmp, 7.25)
+    assert "set core.mem_mode=1\nset core.mem_amount=7.2\n" in script
     assert f"calibrate r0 -dark={tmp}/r0_dark.fit -flat={tmp}/r0_flat.fit -prefix=pp_" in script
     assert (tmp / "r0_dark.fit").resolve() == dark.resolve()
     assert "merge pp_r0 r1 all" in script and "register all" in script
@@ -56,7 +57,7 @@ def test_a_single_run_is_registered_without_a_merge():
     tmp = Path(tempfile.mkdtemp(prefix="sirtest"))
     (tmp / "proc").mkdir()
     run = _Run({"0": _Meta(_fits(tmp / "x.fit"))})
-    script = _script(_Stack({"r": run}), {}, tmp)
+    script = _script(_Stack({"r": run}), {}, tmp, 4.0)
     assert "merge" not in script and "register r0" in script and "stack r_r0 " in script
 
 

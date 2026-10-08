@@ -75,12 +75,12 @@ def _wait_for_ray(timeout):
 
 def _resources(base: dict) -> str:
     """The node's custom Ray resources as `ray start --resources` wants them.
-    `Siril: SIRIL_SLOTS` only where Siril is installed (a node without it
-    must never be offered a Siril task)."""
+    `Siril: 1` marks a node with Siril installed: integrations request a
+    sliver of it, so it gates where they run, not how many."""
     import json
-    from stacks.stacking.siril import SIRIL_APP, SIRIL_SLOTS
+    from stacks.stacking.siril import SIRIL_APP
     if os.path.exists(os.environ.get("ASTROFLOW_SIRIL_BIN") or SIRIL_APP):
-        base = {**base, "Siril": SIRIL_SLOTS}
+        base = {**base, "Siril": 1}
     return "'" + json.dumps(base) + "'"
 
 

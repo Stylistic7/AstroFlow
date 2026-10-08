@@ -15,6 +15,23 @@ from metadata.classes import ImageMetadata
 
 _MAX_PROFILE_SAMPLES = 100
 _MEMORY_SAMPLE_INTERVAL = 0.002
+# Child processes (siril-cli, GraXpert, solve-field, the rc-astro CLI) are
+# found less often than RSS is read: enumerating children walks the whole
+# process table.
+_CHILD_SCAN_EVERY = 100
+
+
+def _tree_rss(process: psutil.Process, children: list) -> int:
+    """RSS of `process` plus its live `children`: an op that shells out
+    holds its working set in the child, where the worker's own RSS can't
+    see it."""
+    total = process.memory_info().rss
+    for child in children:
+        try:
+            total += child.memory_info().rss
+        except psutil.Error:
+            pass
+    return total
 
 
 def _collect_image_stats(obj):
@@ -112,8 +129,12 @@ def make_measure_performance_decorator(cache: CacheProtocol):
 
             def sampler():
                 nonlocal peak_rss
+                children, n = [], 0
                 while not stop_event.is_set():
-                    peak_rss = max(peak_rss, process.memory_info().rss)
+                    if n % _CHILD_SCAN_EVERY == 0:
+                        children = process.children(recursive=True)
+                    n += 1
+                    peak_rss = max(peak_rss, _tree_rss(process, children))
                     stop_event.wait(_MEMORY_SAMPLE_INTERVAL)
 
             image_stats_by_arg, image_totals = _collect_image_stats_by_argument(
