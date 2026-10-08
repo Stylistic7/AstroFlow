@@ -73,13 +73,25 @@ def _wait_for_ray(timeout):
     raise TimeoutError(f"Ray node did not start within {timeout}s")
 
 
+def _resources(base: dict) -> str:
+    """The node's custom Ray resources as `ray start --resources` wants them.
+    `Siril: 1` only where Siril is installed: like PixInsight it saturates
+    every core, so one integration per node at a time, and a node without
+    it must never be offered a Siril task."""
+    import json
+    from stacks.stacking.siril import SIRIL_APP
+    if os.path.exists(os.environ.get("ASTROFLOW_SIRIL_BIN") or SIRIL_APP):
+        base = {**base, "Siril": 1}
+    return "'" + json.dumps(base) + "'"
+
+
 def start_ray_head_node(node_ip_address: str | None = None, timeout=60):
     # TODO: Check for an existing Ray head node.
     ray_path = get_bin_dir() / "ray"
     # TODO: Put these resources in the UI.
     # For debug-style one-task-at-a-time serialization, add {"fake_resource": 1}
     # here and tag the target functions with resources={"fake_resource": 1}.
-    resources = """'{"PixInsight": 1, "diskcache": 1, "fastest_storage": 1, "gpu_slots": 3}'"""
+    resources = _resources({"PixInsight": 1, "diskcache": 1, "fastest_storage": 1, "gpu_slots": 3})
     bind = f" --node-ip-address {node_ip_address}" if node_ip_address else ""
     command = f"""ulimit -n 10000 && RAY_num_workers_soft_limit={_workers_soft_limit()} {ray_path} start --head{bind} --memory {_ray_memory_bytes()} --resources {resources}"""
     print(f'### Starting Ray head node with command "{command}"')
@@ -160,7 +172,7 @@ def start_ray_subordinate_node(head_node_address, node_ip_address: str | None = 
     # are running); only ever called on a worker joining, never on the head.
     subprocess.run([ray_path, "stop", "--force"], capture_output=True, text=True)
     # TODO: Put these resources in the UI.
-    resources = """'{"PixInsight": 1, "gpu_slots": 2}'"""
+    resources = _resources({"PixInsight": 1, "gpu_slots": 2})
     bind = node_ip_address or get_ip()
     command = f"""ulimit -n 10000 && RAY_num_workers_soft_limit={_workers_soft_limit()} {ray_path} start --address {head_node_address}:6379 --node-ip-address {bind} --memory {_ray_memory_bytes()} --resources {resources}"""
     print(f'### Starting Ray subordinate node with command "{command}"')

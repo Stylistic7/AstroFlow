@@ -52,10 +52,22 @@ def _read_xisf(filename: Path, header: dict[str, Any]) -> float | None:
     return n * exptime
 
 
+def _read_siril_fits(filename: Path, header: dict[str, Any]) -> float | None:
+    """Siril master: `STACKCNT` (images integrated) x per-sub `EXPTIME`, or
+    `LIVETIME` when only the total is present."""
+    if filename.suffix.lower() not in (".fit", ".fits"):
+        return None
+    n, exptime = _safe_float(header.get("STACKCNT")), _safe_float(header.get("EXPTIME"))
+    if n and exptime:
+        return n * exptime
+    return _safe_float(header.get("LIVETIME"))
+
+
 # Registered in priority order — first match wins. Each reader is free
 # to inspect the header and skip cheaply when the master isn't theirs.
 _READERS: tuple[_Reader, ...] = (
     _read_xisf,
+    _read_siril_fits,
 )
 
 

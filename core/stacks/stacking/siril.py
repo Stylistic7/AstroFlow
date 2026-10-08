@@ -1,0 +1,158 @@
+"""Siril as a stacker: `integrate_with_siril`, the peer of WBPP's `stack_files`.
+
+Same contract — same signature (`stack, config, *cal_masters`), same
+cache-key narrowing, same calibration resolution and decision filtering, a
+master stamped with `STBLHASH` — but the integration runs in Siril's
+headless `siril-cli`:
+
+    per run      link the run's lights, calibrate with ITS dark/flat (runs
+                 can differ, as in WBPP's grouping)
+    all runs     merge into one sequence, global star registration
+                 (homography), average with linear fit clipping, additive +
+                 scale normalisation, noise weighting
+
+Measured on 45 x 61 MP OIII subs (2026-10-08): 35 s, against ~29 min for the
+app's WBPP on the same stack. What it does NOT do that WBPP does: local
+normalisation and PSF-based weights (see the stacking A/B).
+
+Siril writes no `NOISE00`, so the master gets one here — the robust noise
+`metadata.visibility` uses, NOT PixInsight's MRS estimate. Within one
+pipeline every master is measured the same way; do not compare the number
+across stackers. Its frame count comes from Siril's own `STACKCNT`
+(`file_io.master_integration`).
+"""
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+
+import numpy as np
+import structlog
+
+from decisions.compute_graph import ALL_EXCLUSION_TYPES
+from decisions.resolve import resolve_calibration, resolve_decisions
+from decisions.settings import ProcessingConfig
+from decorators import node
+from file_io.types import FitsFilePath, WithSidecar
+from metadata.classes import ImageMetadata
+from stacks.composite_stack import BaseStack, Stack
+from stacks.stacking.pixinsight import _stack_files_narrow
+from stacks.types import FilenameDependency, StackIdDependency
+
+log = structlog.get_logger()
+
+SIRIL_APP = "/Applications/Siril.app/Contents/MacOS/siril-cli"
+# The integration recipe, chosen by measurement (2026-10-08, panel 6 OIII,
+# 45 subs, uncalibrated; "revealed" = % of the field at >=3 sigma after
+# GraXpert): winsorized 3/3 sigma clipping, additive + scaling normalisation,
+# weights from star-weighted FWHM. It revealed 21.0% against WBPP's 19.9%, in
+# 26 s against WBPP's minutes. Linear-fit clipping (WBPP's choice above 15
+# frames) revealed 20.0%; noise weighting gave fatter stars; dropping the
+# worst 20% by wFWHM (-filter-wfwhm=80%) lost depth; two-pass registration
+# gave sharper stars (2.09 px vs 2.19) but revealed less (18.7%).
+STACK_OPTIONS = "rej w 3 3 -norm=addscale -output_norm -weight=wfwhm"
+
+
+def siril_cli() -> str:
+    """`$ASTROFLOW_SIRIL_BIN`, else the official app bundle (Homebrew's 1.4.4
+    links OpenCV 5 and crashes in every rejection stack, 2026-10-08)."""
+    path = os.environ.get("ASTROFLOW_SIRIL_BIN") or SIRIL_APP
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"siril-cli not found at {path}: install Siril on this node (siril.org)")
+    return path
+
+
+def _as_fits(src: Path, dst: Path) -> Path:
+    """A calibration master as 32-bit FITS (Siril does not read XISF)."""
+    from astropy.io import fits
+    from file_io.generic import read_image
+    if src.suffix.lower() in (".fit", ".fits"):
+        return src
+    if not dst.exists():
+        fits.writeto(dst, np.asarray(read_image(src), np.float32).squeeze(), overwrite=True)
+    return dst
+
+
+def _script(stack: BaseStack, cal_by_id: dict[str, Path], tmp: Path) -> str:
+    """The siril-cli script. Paths are written bare: Siril keeps quote marks
+    as part of an option's value, so `tmp` must contain no spaces."""
+    assert " " not in str(tmp), tmp
+    lines = ["requires 1.4.0", "setext fit"]
+    seqs = []
+    for i, run in enumerate(stack.contents.values()):
+        run_dir = tmp / f"run_{i}"
+        run_dir.mkdir()
+        for m in run.metadata.values():
+            os.symlink(m.filename, run_dir / Path(m.filename).name)
+        cal = {}
+        for kind, dep in run.dependencies.items():
+            if isinstance(dep, StackIdDependency):
+                src = cal_by_id.get(str(dep.stack_id))
+            elif isinstance(dep, FilenameDependency):
+                src = Path(dep.filename) if dep.filename else None
+            else:
+                src = None
+            if src is not None and kind in ("bias", "dark", "flat"):
+                cal[kind] = _as_fits(Path(src), tmp / f"{kind}_{Path(src).stem}.fit")
+        lines += [f'cd {run_dir}', f'link r{i} -out={tmp}/proc', f'cd {tmp}/proc']   # Siril names it r{i}_
+        if cal:
+            args = " ".join(f'-{k}={v}' for k, v in sorted(cal.items()))
+            lines.append(f"calibrate r{i} {args} -prefix=pp_")
+            seqs.append(f"pp_r{i}")
+        else:
+            seqs.append(f"r{i}")
+    lines.append(f'cd {tmp}/proc')
+    if len(seqs) > 1:
+        lines.append("merge " + " ".join(seqs) + " all")
+        seq = "all"
+    else:
+        seq = seqs[0]
+    lines += [f"register {seq}", f'stack r_{seq} {STACK_OPTIONS} -out={tmp}/master', "close"]
+    return "\n".join(lines) + "\n"
+
+
+def _robust_noise(path: Path) -> float:
+    from file_io.generic import read_image
+    from metadata.visibility import _noise
+    a = np.asarray(read_image(path), np.float64).squeeze()
+    return _noise(np.where(np.isfinite(a) & (a > 0), a, np.nan))
+
+
+@node(display="Master", final=True, cache_key_narrow=_stack_files_narrow,
+      resources={"Siril": 1}, scheduling_strategy="SPREAD", auto_memory=True)
+def integrate_with_siril(
+    stack: BaseStack,
+    config: ProcessingConfig,
+    *cal_masters: ImageMetadata,
+) -> WithSidecar[FitsFilePath]:
+    """Calibrate, register and integrate `stack` with Siril. The peer of
+    `stack_files`: pipelines call it with the same arguments."""
+    from file_io.generic import read_header, update_header
+    stack = resolve_calibration(stack, config.get_calibration_stacks(), config.decisions)
+    if config.decisions and isinstance(stack, Stack):
+        stack = resolve_decisions(stack, ALL_EXCLUSION_TYPES, config.decisions, config.min_frames_in_stack)
+        if stack is None:
+            raise ValueError("stack has no frames after applying decisions")
+    n = sum(len(r.frames) for r in stack.contents.values())
+    if n < config.min_frames_in_stack:
+        raise ValueError(f"Stack {stack} contains only {n} files")
+    dest = Path(integrate_with_siril.filename_fn(stack, config, *cal_masters))
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    cal_by_id = {str(read_header(m.filename)["STBLHASH"]): Path(m.filename) for m in cal_masters}
+    with tempfile.TemporaryDirectory(prefix="siril-") as d:
+        tmp = Path(d)
+        (tmp / "proc").mkdir()
+        (tmp / "stack.ssf").write_text(_script(stack, cal_by_id, tmp))
+        log.info("Running Siril", stack=str(stack), frames=n)
+        r = subprocess.run([siril_cli(), "-d", str(tmp), "-s", str(tmp / "stack.ssf")],
+                           capture_output=True, text=True, timeout=6 * 3600)
+        out = tmp / "master.fit"
+        if r.returncode != 0 or not out.exists():
+            raise RuntimeError(f"Siril exited {r.returncode} without a master.\n{r.stdout[-3000:]}\n{r.stderr[-1500:]}")
+        shutil.copy(out, dest)
+    update_header(dest, {"IMAGETYP": f"Master {stack.image_type}", "STBLHASH": stack.stable_hash,
+                         "NOISE00": _robust_noise(dest), "NOISEEST": "robust high-pass (AstroFlow)"})
+    return WithSidecar(FitsFilePath(dest))

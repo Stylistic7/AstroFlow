@@ -83,8 +83,9 @@ def post_processed_master(stack, config):
 
 
 @workflow_group
-def channels_for_target(target, config):
-    """Per-filter HDR-combined channel masters."""
+def channels_for_target(target, config, post_processed_master=post_processed_master):
+    """Per-filter HDR-combined channel masters. `post_processed_master` is
+    the per-stack recipe — this module's (WBPP), or a fork's (Siril)."""
     channels = {}
     for filter in target.filters:
         stacks = target.stacks_for(filter)
@@ -93,34 +94,6 @@ def channels_for_target(target, config):
             target, filter, stacks, config, *masters,
         )
     return channels
-
-
-@pipeline(PIPELINE, processes=Stack)
-def for_stack(stack, config):
-    """One stack's GraXpert-corrected master."""
-    return post_processed_master(stack, config)
-
-
-@pipeline(PIPELINE, processes=Target)
-def for_target(target, config):
-    """Per-filter channel masters plus the full colour tail — a Target IS a
-    single-panel mosaic, so it runs the same machinery `for_mosaic` does."""
-    channels = {
-        (target.id, filter): sink
-        for filter, sink in channels_for_target(target, config).items()
-    }
-    viewbox = _measured_viewbox(channels, single_panel=True)
-    starless, stars = _merged_channels(target, {target.id: target}, channels,
-                                       config, viewbox)
-    # Per-panel pre-merge identity — this is what keeps THIS pipeline's colour
-    # tail distinct from the MGC pipeline's on the same target (see panels.py).
-    panel_sources = {
-        f: panel_source_manifest({target.id: target}, f, config, channels)
-        for f in starless
-    }
-    color = color_post_process(target, starless, stars, config, viewbox,
-                               panel_sources)
-    return {**starless, **{f"{f} Stars": h for f, h in stars.items()}, **color}
 
 
 @ray.remote(num_cpus=0.1)
@@ -151,28 +124,6 @@ def merge_polish_scope(mosaic, filter, viewbox, config, targets, *corrected,
         return polish_background(mosaic, filter, merged)
 
     return Graph(trace(_body))
-
-
-@pipeline(PIPELINE, processes=Mosaic)
-def for_mosaic(mosaic, config):
-    """Per-filter mosaic layer channels plus the colour deliverables."""
-    targets_by_id = {t.id: t for t in mosaic.targets}
-    channels = {}
-    for target in mosaic.targets:
-        for filter, sink in channels_for_target(target, config).items():
-            channels[(target.id, filter)] = sink
-    viewbox = _measured_viewbox(channels,
-                                single_panel=len(targets_by_id) == 1)
-    starless, stars = _merged_channels(mosaic, targets_by_id, channels,
-                                       config, viewbox,
-                                       polish=len(targets_by_id) > 1)
-    panel_sources = {
-        f: panel_source_manifest(targets_by_id, f, config, channels)
-        for f in starless
-    }
-    color = color_post_process(mosaic, starless, stars, config, viewbox,
-                               panel_sources)
-    return {**starless, **{f"{f} Stars": h for f, h in stars.items()}, **color}
 
 
 def _measured_viewbox(channels, single_panel: bool):
@@ -278,3 +229,61 @@ def _merged_channels(mosaic, targets_by_id, channels, config,
         stars_out[filter] = present_terminal(
             handle, merge_images_stars, path=stars_path)
     return starless_out, stars_out
+
+
+def register(name: str, post_processed_master) -> tuple:
+    """Register this pipeline's three entry points (Stack, Target, Mosaic)
+    under `name`, with `post_processed_master` as the per-stack recipe.
+    Everything after stacking — channel combine, BXT, placement, the merge,
+    the colour tail — is shared; only the recipe differs between forks."""
+    @pipeline(name, processes=Stack)
+    def for_stack(stack, config):
+        """One stack's GraXpert-corrected master."""
+        return post_processed_master(stack, config)
+
+    @pipeline(name, processes=Target)
+    def for_target(target, config):
+        """Per-filter channel masters plus the full colour tail — a Target IS a
+        single-panel mosaic, so it runs the same machinery `for_mosaic` does."""
+        channels = {
+            (target.id, filter): sink
+            for filter, sink in channels_for_target(target, config, post_processed_master).items()
+        }
+        viewbox = _measured_viewbox(channels, single_panel=True)
+        starless, stars = _merged_channels(target, {target.id: target}, channels,
+                                           config, viewbox)
+        # Per-panel pre-merge identity — this is what keeps THIS pipeline's colour
+        # tail distinct from the MGC pipeline's on the same target (see panels.py).
+        panel_sources = {
+            f: panel_source_manifest({target.id: target}, f, config, channels)
+            for f in starless
+        }
+        color = color_post_process(target, starless, stars, config, viewbox,
+                                   panel_sources)
+        return {**starless, **{f"{f} Stars": h for f, h in stars.items()}, **color}
+
+    @pipeline(name, processes=Mosaic)
+    def for_mosaic(mosaic, config):
+        """Per-filter mosaic layer channels plus the colour deliverables."""
+        targets_by_id = {t.id: t for t in mosaic.targets}
+        channels = {}
+        for target in mosaic.targets:
+            for filter, sink in channels_for_target(target, config, post_processed_master).items():
+                channels[(target.id, filter)] = sink
+        viewbox = _measured_viewbox(channels,
+                                    single_panel=len(targets_by_id) == 1)
+        starless, stars = _merged_channels(mosaic, targets_by_id, channels,
+                                           config, viewbox,
+                                           polish=len(targets_by_id) > 1)
+        panel_sources = {
+            f: panel_source_manifest(targets_by_id, f, config, channels)
+            for f in starless
+        }
+        color = color_post_process(mosaic, starless, stars, config, viewbox,
+                                   panel_sources)
+        return {**starless, **{f"{f} Stars": h for f, h in stars.items()}, **color}
+
+    return for_stack, for_target, for_mosaic
+
+
+for_stack, for_target, for_mosaic = register(PIPELINE, post_processed_master)
