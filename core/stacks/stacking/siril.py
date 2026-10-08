@@ -47,6 +47,11 @@ from stacks.types import FilenameDependency, StackIdDependency
 log = structlog.get_logger()
 
 SIRIL_APP = "/Applications/Siril.app/Contents/MacOS/siril-cli"
+# Concurrent Siril integrations per node (the node's "Siril" Ray resource).
+# One instance kept only ~8 of 24 cores busy, so several run side by side;
+# each may take an equal share of free memory for stacking (Siril's default
+# ratio is 0.9 of free memory, which three instances would oversubscribe).
+SIRIL_SLOTS = 3
 # The integration recipe, chosen by measurement (2026-10-08, panel 6 OIII,
 # 45 subs, uncalibrated; "revealed" = % of the field at >=3 sigma after
 # GraXpert): winsorized 3/3 sigma clipping, additive + scaling normalisation,
@@ -86,7 +91,7 @@ def _script(stack: BaseStack, cal_by_id: dict[str, Path], tmp: Path) -> str:
     """The siril-cli script. Paths are written bare: Siril keeps quote marks
     as part of an option's value, so `tmp` must contain no spaces."""
     assert " " not in str(tmp), tmp
-    lines = ["requires 1.4.0", "setext fit"]
+    lines = ["requires 1.4.0", "setext fit", f"setmem {0.9 / SIRIL_SLOTS:.2f}"]
     seqs = []
     for i, run in enumerate(stack.contents.values()):
         run_dir = tmp / f"run_{i}"
