@@ -25,6 +25,7 @@ from stacks.post_processing.pixinsight import post_process_stack
 from stacks.stacking.pixinsight import stack_files
 from targets.merging.pixinsight import merge_target_channel
 from targets.types import Target
+from metadata.master_analysis import analyze_master
 
 
 @workflow_group
@@ -35,6 +36,7 @@ def post_processed_master(stack, config):
     mosaic entry points."""
     cal_masters = calibrate(stack, config)
     master = stack_files(stack, config, *cal_masters)
+    analyze_master(master)   # leaf: writes the master's `analysis` sidecar section
     return post_process_stack(stack, config, master)
 
 

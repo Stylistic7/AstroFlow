@@ -59,6 +59,7 @@ from stacks.post_processing.graxpert_stack import post_stack_calibrate
 from stacks.stacking.pixinsight import stack_files
 from targets.merging.pixinsight import merge_target_channel
 from targets.types import Target
+from metadata.master_analysis import analyze_master
 
 PIPELINE = "Hybrid: WBPP + GraXpert + OSS Mosaic"
 
@@ -77,6 +78,7 @@ def post_processed_master(stack, config):
     REFUSED, not merged; the SPFC certificate rides in the sidecar."""
     cal_masters = calibrate(stack, config)
     master = stack_files(stack, config, *cal_masters)
+    analyze_master(master)   # leaf: writes the master's `analysis` sidecar section
     return post_stack_calibrate(stack, config, master)
 
 
