@@ -335,11 +335,25 @@ def _passes(quality: dict) -> bool:
                        max_uncertainty=GATE_UNCERTAINTY_MAX)
 
 
-# How much a rebuilt flat may differ from the standing one and still count as
-# the same thing. The flats' own per-cell uncertainty is 0.06-0.22%, so a
-# change below this is smaller than the measurement's noise. Above it, the new
-# flat is published and its train re-stacks — deliberately, once.
+# When a rebuilt flat counts as a DIFFERENT flat — publishing a new identity
+# and re-stacking its whole train, deliberately, once — rather than the same
+# one re-solved. Both must hold (2026-10-08, Stylistic7: "if the star flats really
+# are getting better, I really do want to restack the world with them"):
+#   significant: the RMS of the relative change over the field is at least
+#     STAR_FLAT_SIGNIFICANCE times the two solves' combined per-cell
+#     uncertainty — a change the measurement can actually distinguish from
+#     re-solved noise;
+#   material: that RMS change exceeds STAR_FLAT_CHANGE — big enough to matter
+#     against the 0.3-1% patterns these flats correct.
+# Measured on the two cases that motivated this: the RedCat OIII flat re-solved
+# with 5% more subs changed 0.04% RMS at 0.45x its uncertainty (the same flat;
+# carry forward) while the young FLT156 OIII flat changed 1.1% RMS at 2.7x with
+# its uncertainty down 3x (a better flat; re-stack). Until then the gate was
+# the MAX over the field against 0.2%: with 35 cells at 0.06% uncertainty the
+# maximum crossed it on noise alone whenever a night's subs were added, and the
+# RedCat train (100 stacks, 276 h) re-stacked on consecutive mornings.
 STAR_FLAT_CHANGE = 0.002
+STAR_FLAT_SIGNIFICANCE = 2.0
 
 
 def _unit(response: np.ndarray) -> np.ndarray:
@@ -357,7 +371,7 @@ def response_identity(response: np.ndarray) -> str:
     return hash_list([xxhash.xxh64(np.ascontiguousarray(r)).hexdigest()])
 
 
-def _standing_flat(dest: Path, star_flat: StarFlatStack) -> tuple[np.ndarray, str] | None:
+def _standing_flat(dest: Path, star_flat: StarFlatStack) -> tuple[np.ndarray, str, dict] | None:
     """The flat this group most recently published — its pixels and its
     declared identity — or None when it has never built one.
 
@@ -388,7 +402,8 @@ def _standing_flat(dest: Path, star_flat: StarFlatStack) -> tuple[np.ndarray, st
     identity = read_declared_content_hash(best[1])
     if identity is None:
         return None
-    return np.asarray(read_image(best[1]), np.float32).squeeze(), identity
+    return (np.asarray(read_image(best[1]), np.float32).squeeze(), identity,
+            get_section(best[1], SECTION) or {})
 
 
 def _pointing_of_sub(members: list[Path]) -> dict[int, int]:
@@ -467,20 +482,23 @@ def solve_and_write(star_flat: StarFlatStack, dest, *, cells=CELLS, mag_window=M
     # pixels — so the declared identity is literally the same content, and
     # every consumer's key holds still.
     standing = _standing_flat(dest, star_flat)
-    if standing is not None:
-        old_response, old_identity = standing
-        if old_response.shape == response.shape:
-            change = float(np.nanmax(np.abs(_unit(response) / _unit(old_response) - 1.0)))
-            quality["change_vs_standing"] = change
-            if change <= STAR_FLAT_CHANGE:
-                response, identity = old_response, old_identity
-                quality["carried_forward"] = True
-            else:
-                identity = None
-        else:
-            identity = None
-    else:
-        identity = None
+    identity = None
+    if standing is not None and standing[0].shape == response.shape:
+        old_response, old_identity, old_quality = standing
+        change = float(np.sqrt(np.nanmean(np.square(_unit(response) / _unit(old_response) - 1.0))))
+        unc_new = float(quality.get("per_cell_uncertainty") or 0.0)
+        unc_old = float(old_quality.get("per_cell_uncertainty") or 0.0)
+        noise = float(np.hypot(unc_new, unc_old))
+        pattern = float(np.sqrt(np.nanmean(np.square(_unit(old_response) - 1.0))))
+        quality.update(
+            change_vs_standing=change,
+            change_significance=change / noise if noise > 0 else float("inf"),
+            change_vs_pattern=change / pattern if pattern > 0 else float("inf"),
+            uncertainty_ratio=unc_new / unc_old if unc_old > 0 else None,
+        )
+        if not (quality["change_significance"] >= STAR_FLAT_SIGNIFICANCE and change > STAR_FLAT_CHANGE):
+            response, identity = old_response, old_identity
+            quality["carried_forward"] = True
     Path(dest).parent.mkdir(parents=True, exist_ok=True)
     write_master_flat(response, dest, {
         "IMAGETYP": "Master Flat", "FILTER": star_flat.filter or "", "INSTRUME": star_flat.camera,
