@@ -48,14 +48,18 @@ from stacks.types import FilenameDependency, StackIdDependency
 log = structlog.get_logger()
 
 SIRIL_APP = "/Applications/Siril.app/Contents/MacOS/siril-cli"
-# Threads per Siril instance, and the CPUs its Ray task reserves. Siril's
-# file I/O is serial, so one instance leaves cores idle; but two instances
-# at 24 threads each spin-wait in OpenMP. Measured on 45 x 61 MP subs with
-# the app running (2026-10-08), seconds per stack: one at a time x 24
-# threads 38.5, two at once x 12 threads 32.5, three x 8 38, two x 24 43.
-# 8, not 12: at 12 the 10-CPU MacBook Pro could take no integration at all;
-# at 8 the Studio runs three and the MacBook Pro one.
-SIRIL_CPUS = 8
+# Threads per Siril instance. Siril's file I/O is serial, so one instance
+# leaves cores idle; but two instances at 24 threads each spin-wait in
+# OpenMP. Measured on 45 x 61 MP subs with the app running (2026-10-08),
+# seconds per stack: one at a time x 24 threads 38.5, two at once x 12
+# threads 32.5, three x 8 38, two x 24 43.
+SIRIL_THREADS = 8
+# The CPUs its Ray task reserves: fewer than its threads, because an
+# instance spends much of a stack in serial phases (sampled 1-4 cores,
+# bursting to 14). Reserving all 8 left the Studio ~50% busy with two
+# instances admitted (2026-10-09); at 6 it admits a third or fourth, whose
+# bursts fill the others' serial gaps, and the 10-CPU MacBook Pro one.
+SIRIL_CPUS = 6
 # The integration recipe, chosen by measurement (2026-10-08, panel 6 OIII,
 # 45 subs, uncalibrated; "revealed" = % of the field at >=3 sigma after
 # GraXpert): winsorized 3/3 sigma clipping, additive + scaling normalisation,
@@ -96,7 +100,7 @@ def _calibration_script(stack: BaseStack, cal_by_id: dict[str, Path], tmp: Path)
     pp_r{i}_NNNNN.fit. None when no run has any. Paths are written bare:
     Siril splits arguments on spaces (masters are linked under `tmp`)."""
     assert " " not in str(tmp), tmp
-    lines = ["requires 1.4.0", "setext fit", f"setcpu {SIRIL_CPUS}"]
+    lines = ["requires 1.4.0", "setext fit", f"setcpu {SIRIL_THREADS}"]
     for i, run in enumerate(stack.contents.values()):
         cal = {}
         for kind, dep in run.dependencies.items():
@@ -152,7 +156,7 @@ def _stack_script(all_dir: Path, tmp: Path, mem_gb: float, image_type: str = "li
     integrated as they lie, flats scaled to a common level, bias and darks
     left unnormalised (Siril's own master recipes)."""
     assert " " not in str(tmp), tmp
-    head = ["requires 1.4.0", "setext fit", f"setcpu {SIRIL_CPUS}", "set core.mem_mode=1",
+    head = ["requires 1.4.0", "setext fit", f"setcpu {SIRIL_THREADS}", "set core.mem_mode=1",
             f"set core.mem_amount={mem_gb:.1f}", f"cd {all_dir}"]
     if image_type != "light":
         norm = "-norm=mul" if image_type == "flat" else "-nonorm"

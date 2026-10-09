@@ -92,9 +92,12 @@ _FIXED_MEMORY_BY_OP = {
     "compute_image_metadata": 1 * _GB,
     # siril-cli's memory is elastic: it stacks in as much as it is given, so a
     # measured peak only echoes the budget. The budget is this number instead:
-    # integrate_with_siril hands Siril its own reservation. 12 GB holds ~45
-    # full-frame 61 MP subs in one pass, and three fit under the gate at once.
-    "integrate_with_siril": 12 * _GB,
+    # integrate_with_siril hands Siril its own reservation. 12 GB held ~45
+    # full-frame 61 MP subs in one pass but RSS sat at 5.5-7.7 GB, and it
+    # capped the Studio at three instances; at 8 GB the Studio's 24 CPUs
+    # (4 x SIRIL_CPUS 6) bind first, and bigger stacks just integrate in a
+    # few more row blocks (2026-10-09).
+    "integrate_with_siril": 8 * _GB,
 }
 
 # Ops whose only sizing arg is a *filename* (e.g. `compute_image_metadata`)
