@@ -481,6 +481,9 @@ def make_cached_decorator(
         # so this single assignment covers both `@node` and direct
         # `@cached.remote` ops.
         wrapper._ray_resources = dict(ray_opts.get("resources") or {})
+        # Read by run_graph's placement gate: a task PINNED to a node must fit
+        # that node's total CPUs, or Ray rejects it as unschedulable.
+        wrapper._ray_num_cpus = float(ray_opts.get("num_cpus") or 0)
 
         def is_cached(*args, injected_context=None, **kwargs) -> bool:
             bound = _bind_args(func, args, kwargs, injected_context)

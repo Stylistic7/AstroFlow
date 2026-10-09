@@ -214,3 +214,16 @@ def test_estimate_is_zero_when_task_missing():
     class _NoTask:
         pass
     assert _estimate_node_memory(_RT([]), _NoTask()) == 0
+
+
+def test_a_node_with_too_few_cpus_is_never_chosen():
+    """A placed task is pinned; a node whose TOTAL CPUs are below the request
+    can never run it (Ray: unschedulable, which restarted the whole graph,
+    2026-10-08). Roomier in memory or not, it is skipped — even by the
+    idle-escape."""
+    from dependency_graph.dependency_graph import _select_node
+    capacity = {"MBP": {"CPU": 10.0}, "Studio": {"CPU": 24.0}}
+    assert _select_node(20, {}, {"MBP": 90, "Studio": 50}, {"MBP": 100, "Studio": 100}, {},
+                        capacity, {}, any_in_flight=True, margin=10, need_cpus=12) == "Studio"
+    assert _select_node(20, {}, {"MBP": 90}, {"MBP": 100}, {}, {"MBP": {"CPU": 10.0}}, {},
+                        any_in_flight=False, margin=10, need_cpus=12) is None

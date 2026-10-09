@@ -415,6 +415,7 @@ def _select_node(
     any_in_flight: bool,
     pressure_by_node: "dict | None" = None,
     margin: int = _MEM_SAFETY_MARGIN_BYTES,
+    need_cpus: float = 0.0,
 ) -> "str | None":
     """Pick a node that can run a task needing ``need_mem`` bytes and
     ``need_custom`` resources RIGHT NOW, or ``None`` to hold it for a later pass.
@@ -452,6 +453,15 @@ def _select_node(
     It then runs alone and OOMs loudly if genuinely too big — traceable, unlike a
     silent hang."""
     pressure = pressure_by_node or {}
+
+    # A placed task is PINNED (NodeAffinity, soft=False): Ray cannot move it,
+    # so a node whose TOTAL CPUs are below the request can never run it, and
+    # Ray fails it as unschedulable — which aborted and restarted the whole
+    # graph (2026-10-08: 12-CPU Siril integrations pinned to the 10-CPU MBP).
+    # Free CPUs stay Ray's business; only feasibility is checked here.
+    def _cpus_fit(nid) -> bool:
+        return float(capacity_by_node.get(nid, {}).get("CPU", float("inf"))) >= need_cpus
+
     # UNMEASURED nodes are still candidates, on the RESERVED leg alone
     # (capacity − reserved, no psutil truth): before this, a node whose
     # probe timed out was dropped from candidacy entirely, which — combined
@@ -470,6 +480,8 @@ def _select_node(
               f"admitting on reserved-ledger leg only")
     scored = []  # (effective_free, node_id)
     for nid, avail in free_by_node.items():
+        if not _cpus_fit(nid):
+            continue
         if not _custom_fits(
             need_custom,
             capacity_by_node.get(nid, {}),
@@ -507,6 +519,8 @@ def _select_node(
     # required resource at all, i.e. a genuine misconfiguration).
     fallback, fallback_cap = None, -1.0
     for nid, capacity in capacity_by_node.items():
+        if not _cpus_fit(nid):
+            continue
         if not _custom_fits(need_custom, capacity, reserved_custom_by_node.get(nid, {})):
             continue
         cap_mem = float(capacity.get("memory", 0))
@@ -687,6 +701,7 @@ def run_graph(
                         capacity_by_node, reserved_custom_by_node,
                         any_in_flight=bool(pending),
                         pressure_by_node=pressure_by_node,
+                        need_cpus=float(getattr(node.task, "_ray_num_cpus", 0) or 0),
                     )
                     if node_id is None:  # fits nowhere now — hold for a later pass
                         # FAIL FAST on an UNSATISFIABLE demand: a declared
