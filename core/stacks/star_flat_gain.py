@@ -56,8 +56,14 @@ GAIN_RANGE = (0.5, 2.5)      # a believable etalon amplitude for a stack's own s
 # CORRELATION, not k: a fit that could not be measured has |corr| near 0,
 # while a fit that measured the flat and found it wrong has |corr| near 1.
 #   |corr| >= GAIN_CORR_TRUSTED and k below range -> the flat's pattern is
-#       not in this stack's sky. Withhold it (k = 0) and raise a Concern;
-#       the stack falls back to its panel flat.
+#       weaker in this stack's sky than in the flat. Apply it AS BUILT (k = 1)
+#       and raise a Concern. Withholding it (k = 0, 2026-09-22 .. 10-09) threw
+#       away its vignetting and dust correction too, though the fit only
+#       measures the 256-1024 px band: 54 masters went out with no flat at
+#       all (26 of them B, whose star flat carries 0.1% rms in that band).
+#       The goal of the flat is a result GraXpert can finish; a flat that is
+#       too strong in that band leaves far less than no flat (Stylistic7,
+#       2026-10-09: "always apply the star flat").
 #   |corr| >= GAIN_CORR_TRUSTED and k above range -> the sky wants more than
 #       the flat has. Clamp to the range and warn.
 #   |corr| below it -> nothing was measured; leave the group's flat as built.
@@ -205,9 +211,9 @@ def fit_gain(sub_paths, flat: np.ndarray, dark: np.ndarray | None, *,
                                           f"the flat is applied as built")
         return out
     if k < gain_range[0]:
-        out.update(k=0.0, k_fit=k, withheld=True,
-                   reason=f"fitted k={k:.2f} at |corr|={abs(corr):.2f} — this stack's sky does "
-                          f"not contain the flat's pattern, so no star flat is applied")
+        out.update(k=1.0, k_fit=k,
+                   reason=f"fitted k={k:.2f} at |corr|={abs(corr):.2f} — this stack's sky shows "
+                          f"less of the flat's pattern than the flat has; applied as built")
         return out
     out.update(k=gain_range[1], k_fit=k,
                reason=f"fitted k={k:.2f} above {gain_range[1]} at |corr|={abs(corr):.2f}; clamped")

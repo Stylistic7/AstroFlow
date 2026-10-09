@@ -562,8 +562,9 @@ def fit_flat_gain(stack: Stack, star_flat: ImageMetadata, dark: ImageMetadata | 
     backfill night, re-fitted after every restart because it used to write
     the 245 MB scaled flat itself and was reclaimed with it. The fit
     settings are arguments so they sit in the cache key. Head-pinned: it
-    reads the stack's raw subs. An unusual or unfittable gain becomes a
-    Concern; a withheld one is k = 0 (a unity flat).
+    reads the stack's raw subs. An unusual gain becomes a Concern; one that
+    cannot be fitted, or fits below range, applies the flat as built (k = 1)
+    with a STAR_FLAT_AS_BUILT Concern — the flat is never withheld.
 
     `star_flat` / `dark` arrive as `ImageMetadata` — a producer's result reaches
     its consumer through the metadata wrap — and `@node` enforces the hint
@@ -585,18 +586,16 @@ def fit_flat_gain(stack: Stack, star_flat: ImageMetadata, dark: ImageMetadata | 
     log.info("star flat gain", stack=str(stack), k=round(k, 3), n_used=fit["n_used"],
              median_corr=round(float(np.median(fit["corrs"])), 2) if fit["corrs"] else None,
              reason=fit.get("reason"))
-    if fit.get("withheld"):
-        warn("Star flat withheld — it does not match this stack's sky",
-             f"{fit['reason']}. Applying it would print its own structure into the master "
-             f"(2026-09-22: at k = 1 this punched holes into the galaxy masters). The stack "
-             f"falls back to its panel or sky flat; the star flat for this group may be built "
-             f"from too few pointings to describe the sensor.",
+    if fit.get("reason"):
+        # STAR_FLAT_AS_BUILT: a stable token to grep logs and Concerns for.
+        warn("STAR_FLAT_AS_BUILT: the star flat's gain was not fitted to this stack; applied as built (k = 1)",
+             f"{fit['reason']}. The flat is applied whole, so vignetting and dust are always "
+             f"corrected; if the flat's own structure shows in the master (2026-09-22: a star "
+             f"flat from too few pointings printed holes into the Triangulum L master), the "
+             f"star flat for this group needs more pointings.",
              stack=stack.stable_hash, **{k_: v for k_, v in fit.items() if k_ not in ("slopes", "corrs")})
-    elif fit.get("reason"):
-        warn("Star flat gain could not be fitted; applied as built (k = 1)",
-             f"{fit['reason']}. The stack's sky did not yield a believable amplitude for the "
-             f"star flat's etalon pattern, so the group's flat is used unchanged.",
-             stack=stack.stable_hash, **{k_: v for k_, v in fit.items() if k_ not in ("slopes", "corrs")})
+        log.warning("STAR_FLAT_AS_BUILT", stack=str(stack.stable_hash), k_fit=fit.get("k_fit"),
+                    reason=fit["reason"])
     elif not (unusual[0] <= k <= unusual[1]):
         warn(f"Star flat gain k = {k:.2f} is unusual",
              "The stack's sky sees the sensor's etalon pattern at an amplitude far from what "
