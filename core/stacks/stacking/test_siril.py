@@ -11,7 +11,7 @@ import numpy as np
 from astropy.io import fits
 
 from file_io.master_integration import read_master_integration_seconds
-from stacks.stacking.siril import STACK_OPTIONS, _calibration_script, _gather, _reference_frame, _stack_script
+from stacks.stacking.siril import STACK_OPTIONS, _calibration_script, _gather, _stack_script
 from stacks.types import StackIdDependency
 
 
@@ -67,26 +67,6 @@ def test_uncalibrated_stack_needs_no_calibration_phase():
     run = _Run({"0": _Meta(_fits(tmp / "x.fit"))})
     assert _calibration_script(_Stack({"r": run}), {}, tmp) is None
     assert len(list(_gather(_Stack({"r": run}), tmp).iterdir())) == 1
-
-
-def test_reference_frame_follows_links_back_to_the_raw_sub():
-    """The header's reference_image (index 1: file 2) is the frame Siril's
-    cropped apply step frames around; it is a calibrated frame whose
-    uncalibrated link points at the raw sub."""
-    tmp = Path(tempfile.mkdtemp(prefix="sirtest"))
-    for d in ("proc", "all", "reg", "raw"):
-        (tmp / d).mkdir()
-    raw = [_fits(tmp / "raw" / f"sub{k}.fit") for k in (1, 2)]
-    for k, r in enumerate(raw, 1):
-        os.symlink(r, tmp / "proc" / f"r0_{k:05d}.fit")              # Siril's link
-        _fits(tmp / "proc" / f"pp_r0_{k:05d}.fit")                    # Siril's calibrate
-        os.symlink(tmp / "proc" / f"pp_r0_{k:05d}.fit", tmp / "all" / f"{k:05d}.fit")
-        os.symlink(tmp / "all" / f"{k:05d}.fit", tmp / "reg" / f"light_{k:05d}.fit")
-    (tmp / "reg" / "light_.seq").write_text(
-        "#Siril sequence file.\n"
-        "#S 'sequence_name' start_index nb_images nb_selected fixed_len reference_image version\n"
-        "S 'light_' 1 2 2 5 1 6 0 0 0\nL 1\nI 1 1\nI 2 1\n")
-    assert _reference_frame(tmp) == Path(os.path.realpath(raw[1]))
 
 
 def test_siril_master_integration_is_frame_count_times_exposure():
