@@ -12,7 +12,7 @@ and fringes far less (by `sinc(W / dlambda)` for a top-hat passband). The
 night sky is dominated by emission lines; a flat panel and the twilight sky
 are continuum. So a night-sky flat captures the etalon at the SAME spectral
 weighting the science frames see it, and a panel or twilight flat does not —
-which is precisely the deficit `scale_star_flat`'s k (~1.33 H, ~1.41 S) was
+which is precisely the deficit the star flat's fitted k (~1.33 H, ~1.41 S) was
 invented to patch on the star flat, and which this needs no patch for.
 
 WHY DIVIDE, when the literature says fringes are additive. Write a frame as

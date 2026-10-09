@@ -108,8 +108,7 @@ def test_canvas_contains_every_channel():
 
 
 def test_resolution_is_the_reference_channels_measured_scale():
-    """No DOWNSCALE_FACTORS multiplier: a measured scale already IS the
-    file's scale, downscaled or not."""
+    """A measured scale already IS the file's scale: no multiplier."""
     vb = compute_viewbox_measured._function(
         "Master", True, tuple(c.content_hash for c in _HEART), *_HEART)
     actual = np.rad2deg(vb.resolution) * 3600
@@ -117,11 +116,13 @@ def test_resolution_is_the_reference_channels_measured_scale():
         float(_HEART[0].plate_solution.image_scale), rel=1e-3)
 
 
-def test_mercator_for_multi_panel():
-    from geometry.projections.mercator import MercatorProjection
+def test_stereographic_for_multi_panel_centred_on_the_channels():
+    from geometry.projections.stereographic import StereographicProjection
     vb = compute_viewbox_measured._function(
         "Master", False, tuple(c.content_hash for c in _HEART), *_HEART)
-    assert isinstance(vb.projection, MercatorProjection)
+    assert isinstance(vb.projection, StereographicProjection)
+    ra, dec = _HEART[0].plate_solution.center
+    assert abs(np.degrees(vb.projection.lat_0) - dec) < 2.0   # centred on the field, not on (0, 0)
 
 
 def test_subframe_canvas_is_fixed_width():

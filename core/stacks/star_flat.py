@@ -51,7 +51,7 @@ from metadata.star_photometry import SCHEMA as PHOTOMETRY_SCHEMA
 from stacks.composite_stack import CalibrationStack, CalibrationStacksDict, Stack, _camera_id_hash_from
 from stacks.run import RunsDict
 from stacks.star_flat_gain import (
-    GAIN_BAND_PX, GAIN_LIMITS, GAIN_MAX_SUBS, GAIN_METHOD, GAIN_SCALE, apply_gain, fit_gain,
+    GAIN_BAND_PX, GAIN_LIMITS, GAIN_MAX_SUBS, GAIN_METHOD, GAIN_SCALE, FlatGain, fit_gain,
 )
 from stacks.starflat import (
     gather_star_photometry, response_image, solve_star_flat, split_half, write_master_flat,
@@ -75,7 +75,7 @@ CELLS = (256, 512, 1024)      # fine-to-coarse candidates; the FINEST whose cell
                               # fine one fitted on a dozen stars per cell.
                               # 128 was tried in production (2026-09-12..14) and reverted: Stylistic7 judged
                               # its masters splotchier at medium scales than 256's; the per-stack gain
-                              # (scale_star_flat) carries the amplitude, so 256 with fitted k is the choice.
+                              # (fit_flat_gain) carries the amplitude, so 256 with fitted k is the choice.
                               # 128 px re-admitted 2026-09-12: the Cygnus strength x smoothing sweep
                               # (memory project_star_flat_undercorrects_by_scale) put the lowest etalon
                               # residual at 128 px / 0.7 cell on S and equal on H, with thousands of
@@ -173,8 +173,7 @@ def _group_content_hash(frames) -> str:
     hierarchy is deliberately blind to metadata and re-solving a frame moves
     nothing. That is what keeps the library from re-deriving itself.
 
-    The schema is the one extra term, the same shape as `DownscaledStack`'s
-    `downscale_stack._fn_hash`: unlike a Stack, whose product depends only on
+    The schema is the one extra term: unlike a Stack, whose product depends only on
     its frames' pixels, a star flat's product depends on their PHOTOMETRY,
     which is a function of the pixels, the WCS and the measuring code. The
     schema names that code. Without it the 2026-09-21 re-solve changed every
@@ -551,32 +550,28 @@ def build_star_flat(star_flat: StarFlatStack, cells: tuple, mag_window: tuple) -
     return WithSidecar(XisfFilePath(dest))
 
 
-GAIN_SECTION = "star_flat_gain"   # the scaled master's sidecar section: the fit, for the record
-
-
-@node(num_cpus=2, ephemeral=True, resources={"diskcache": 0.001})
-def scale_star_flat(stack: Stack, star_flat: ImageMetadata, dark: ImageMetadata | None,
-                    band: tuple, scale: int, max_subs: int, method: int,
-                    kind: str = "star") -> WithSidecar[XisfFilePath]:
-    """The star flat re-scaled to THIS stack's sky: 1 + k * (F - 1), with k fitted
-    on the stack's own subs in sensor coordinates (`stacks.star_flat_gain`).
-    Handed to WBPP in place of the group's star flat, so the per-frame
-    division — and every meridian flip — is handled exactly as before.
-
-    Ephemeral: a 61 MP float32 per stack that is a few seconds of arithmetic
-    on the group's flat; reclaimed once `stack_files` has consumed it. The
-    fit settings are arguments so they sit in the cache key. Head-pinned for
-    the same reason as `build_star_flat`: it reads the stack's raw subs.
-    The fitted k and per-sub slopes go to the master's sidecar (`GAIN_SECTION`)
-    and to a Concern when the gain is unusual.
+@node(num_cpus=2, resources={"diskcache": 0.001})
+def fit_flat_gain(stack: Stack, star_flat: ImageMetadata, dark: ImageMetadata | None,
+                  band: tuple, scale: int, max_subs: int, method: int,
+                  kind: str = "star") -> FlatGain:
+    """The gain k in 1 + k * (F - 1) that matches the group's flat to THIS
+    stack's sky, fitted on the stack's own subs in sensor coordinates
+    (`stacks.star_flat_gain`). The expensive half of re-scaling a flat:
+    it reads up to `max_subs` raw subs (~5 GB), so it is CACHED, never
+    ephemeral — 2026-10-09 it ran 943 times for ~500 distinct fits in one
+    backfill night, re-fitted after every restart because it used to write
+    the 245 MB scaled flat itself and was reclaimed with it. The fit
+    settings are arguments so they sit in the cache key. Head-pinned: it
+    reads the stack's raw subs. An unusual or unfittable gain becomes a
+    Concern; a withheld one is k = 0 (a unity flat).
 
     `star_flat` / `dark` arrive as `ImageMetadata` — a producer's result reaches
-    its consumer through the metadata wrap, exactly as `stack_files` receives
-    its `*cal_masters` — and `@node` enforces the hint (boot 81 failed all 286
-    calls on a `WithSidecar` hint)."""
+    its consumer through the metadata wrap — and `@node` enforces the hint
+    (boot 81 failed all 286 calls on a `WithSidecar` hint)."""
+    import json
+
     from concerns import warn
     from file_io.generic import read_image
-    from file_io.xisf_file_io import read_xisf_header
     paths = sorted(str(m.filename) for m in stack.all_metadata().values())
     missing = [p for p in paths if not Path(p).exists()]
     if missing:
@@ -608,24 +603,12 @@ def scale_star_flat(stack: Stack, star_flat: ImageMetadata, dark: ImageMetadata 
              "its neighbours do — often thin cloud or moonlight changing the sky's spectrum. "
              "The flat is applied at this gain; check the subs' transparency.",
              stack=stack.stable_hash, k=round(k, 3), n_used=fit["n_used"])
-    dest = scale_star_flat.filename_fn(stack, star_flat, dark, band, scale, max_subs, method)
-    Path(dest).parent.mkdir(parents=True, exist_ok=True)
-    # The group's identity keywords ride along — WBPP matches the master to
-    # the stack by STBLHASH (`str`: the XISF reader literal_evals an all-digit
-    # hash into an int) — and IMAGETYP is written afresh: `normalize_header`
-    # rewrites it, and WBPP recognises a pre-built master only as 'Master Flat'.
-    hdr = read_xisf_header(Path(star_flat.filename))
-    keywords = {key: hdr[key] for key in ("FILTER", "INSTRUME", "FOCALLEN", "XBINNING", "YBINNING",
-                                          "EXPOSURE", "EXPTIME", "SFLATSUB", "SFLATCEL") if key in hdr}
-    keywords.update({"IMAGETYP": "Master Flat", "STBLHASH": str(hdr.get("STBLHASH", "")),
-                     "SFLATK": round(k, 4)})
-    write_master_flat(apply_gain(flat, k), dest, keywords)
-    set_section(Path(dest), GAIN_SECTION, fit)
-    return WithSidecar(XisfFilePath(dest))
+    return FlatGain(k=float(k), flat_id=str(star_flat.stable_hash),
+                    fit_json=json.dumps(fit, sort_keys=True))
 
 
 def gain_args(stack: Stack, flat, dark, kind: str = "star") -> tuple:
-    """`scale_star_flat`'s arguments for `stack` — the fit settings ride in
+    """`fit_flat_gain`'s arguments for `stack` — the fit settings ride in
     the cache key the same way `build_args` puts the solve settings there.
     `kind` selects the gain limits (`GAIN_LIMITS`): "star" or "sky"."""
     return (stack, flat, dark, GAIN_BAND_PX, GAIN_SCALE, GAIN_MAX_SUBS, GAIN_METHOD, kind)

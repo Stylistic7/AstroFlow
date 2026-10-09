@@ -104,7 +104,7 @@ def test_add_fourth_pane_only_stacks_new(test_context):
     assert len(new_stacks) >= 1
 
     stack_file_misses = sum(v for fn, v in misses.items() if "stack_files" in fn)
-    max_expected = len(new_stacks) * 2  # Master + DownscaledMaster
+    max_expected = len(new_stacks)
     assert stack_file_misses <= max_expected, \
         f"stack_files ran {stack_file_misses} times but only " \
         f"{len(new_stacks)} new stacks added. All misses: {dict(misses)}"

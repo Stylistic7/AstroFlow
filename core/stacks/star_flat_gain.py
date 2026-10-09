@@ -31,13 +31,14 @@ own; k is the MEDIAN of the per-sub slopes, so a cloudy or moonlit sub is a
 vote, not a bias. The per-sub slopes are kept in the sidecar: their scatter
 is the night-to-night transparency signal.
 
-`fit_gain` is pure numpy; `scale_star_flat` (stacks/star_flat.py) is the
+`fit_gain` is pure numpy; `fit_flat_gain` (stacks/star_flat.py) is the
 @node around it. Edits here do not re-key that node (helpers are outside
 its source hash — see project_color_scrgb_and_helper_eviction); bump
 `GAIN_METHOD` to force a rebuild.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -218,3 +219,42 @@ def apply_gain(flat: np.ndarray, k: float) -> np.ndarray:
     F = np.asarray(flat, np.float64)
     F = F / float(np.nanmedian(F))
     return (1.0 + k * (F - 1.0)).astype(np.float32)
+
+
+GAIN_SECTION = "star_flat_gain"   # the master's sidecar section: each scaled flat's fit, by flat id
+
+
+@dataclass(frozen=True)
+class FlatGain:
+    """The gain `k` one stack's sky wants on a group flat's pattern
+    (`stacks.star_flat.fit_flat_gain`, cached), naming the flat it scales by
+    its STBLHASH (`flat_id`), with the whole fit as JSON for the record. A
+    dataclass with `content_hash` so `@node` stamps it with its call hash.
+    Stackers receive it among their `*cal_masters` and write the scaled flat
+    into their own scratch (`with_scaled_flats`)."""
+    k: float
+    flat_id: str
+    fit_json: str
+    content_hash: str = ""
+
+
+def with_scaled_flats(cal_by_id: dict, gains, tmp) -> dict:
+    """`cal_by_id` (STBLHASH -> master path) with each gained flat replaced by
+    its copy scaled to this stack, 1 + k (F - 1), written into `tmp` — the
+    stacker's scratch, deleted with it, so no scaled flat outlives the stack
+    (2026-10-09: 705 orphaned scaled flats, 157 GB, in the processed folder).
+    The group flat's keywords ride along: WBPP matches the master to the
+    stack by STBLHASH and recognises a pre-built one only as 'Master Flat'."""
+    from file_io.generic import read_header, read_image
+    from stacks.starflat import write_master_flat
+    out = dict(cal_by_id)
+    for g in gains:
+        src = Path(out[g.flat_id])
+        hdr = read_header(src)
+        keywords = {key: hdr[key] for key in ("FILTER", "INSTRUME", "FOCALLEN", "XBINNING", "YBINNING",
+                                              "EXPOSURE", "EXPTIME", "SFLATSUB", "SFLATCEL") if key in hdr}
+        keywords.update({"IMAGETYP": "Master Flat", "STBLHASH": g.flat_id, "SFLATK": round(g.k, 4)})
+        dest = Path(tmp) / f"scaled_flat_{g.flat_id}.xisf"
+        write_master_flat(apply_gain(np.asarray(read_image(src)).squeeze(), g.k), dest, keywords)
+        out[g.flat_id] = dest
+    return out

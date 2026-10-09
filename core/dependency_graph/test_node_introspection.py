@@ -50,9 +50,9 @@ def test_stack_as_literal():
 
 
 def test_stack_via_resolved_dep():
-    """The downscaled/hybrid case: stack_files's stack is the resolved
-    result of a downscale_stack dep (not a literal), placed at position 0
-    by make_fn_args. filter_of must still find it."""
+    """stack_files's stack as the resolved result of a dep (not a
+    literal), placed at position 0 by make_fn_args. filter_of must still
+    find it."""
     s = _Stack("O")
     n = _Node(_stack_files, ("cfg",))           # literals only — stack was a dep
     resolved = [s, "cfg"]                         # make_fn_args puts the dep result first

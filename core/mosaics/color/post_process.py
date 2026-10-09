@@ -488,7 +488,7 @@ def linear_sho(
 
     `viewbox` supplies the trace-time canvas geometry (the panel grid is built
     before any node runs); it's the mosaic viewbox at the pipeline's quality
-    (`mosaic.viewbox("Master")` / `"DownscaledMaster"`)."""
+    (`mosaic.viewbox("Master")`)."""
     # The SHO band-join is cheap × big — ephemeral. The NXT tiles are
     # ephemeral too (2026-09-03): their keys fold the merged raster's
     # identity, so any re-merge invalidates all of them — persistence

@@ -99,7 +99,7 @@ def test_shared_op_distinct_outputs_per_pipeline(test_context):
     # Pass 2: process both pipelines for the same stack.
     context.shopping_cart = [
         ("stack", stack_id, "Shared-Op Test Master"),
-        ("stack", stack_id, "Shared-Op Test Downscaled"),
+        ("stack", stack_id, "Shared-Op Test Siril"),
     ]
     run_graph(build_compute_graph(), debug=True)
 
@@ -107,7 +107,7 @@ def test_shared_op_distinct_outputs_per_pipeline(test_context):
     from file_io.generic import read_header
 
     # Both pipelines call the UNIFIED `stack_files` op (Master on the
-    # stack itself, Downscaled on its `DownscaledStack` view). Outputs land
+    # stack itself, Siril on the same stack). Outputs land
     # under the same `Stack/stack_files/` dir, distinguished by call_hash:
     # same stable_hash, different content_hash → different call_hash →
     # different filename.

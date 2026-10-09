@@ -50,3 +50,17 @@ def test_inherit_refuses_an_image_on_another_grid():
     d = Path(tempfile.mkdtemp())
     with pytest.raises(AssertionError):
         inherit_plate_solution._function(_image(d / "a.fits", w=8), _image(d / "b.fits", solution=SOLUTION))
+
+
+def test_inherit_passes_a_synthetic_dontsolv_image_through():
+    d = Path(tempfile.mkdtemp())
+    image = _image(d / "out.fits")
+    assert inherit_plate_solution._function(image, _image(d / "in.fits", header={"DONTSOLV": True})) is image
+
+
+def test_solved_channel_inherits_for_one_stack_and_solves_for_more(monkeypatch):
+    import metadata.solve_nodes as sn
+    monkeypatch.setattr(sn, "inherit_plate_solution", lambda img, donor: ("inherit", img, donor))
+    monkeypatch.setattr(sn, "plate_solve_image", lambda img: ("solve", img))
+    assert sn.solved_channel("ch", ["m1"]) == ("inherit", "ch", "m1")
+    assert sn.solved_channel("ch", ["m1", "m2"]) == ("solve", "ch")

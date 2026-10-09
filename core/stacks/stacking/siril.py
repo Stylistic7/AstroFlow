@@ -42,6 +42,7 @@ from file_io.types import FitsFilePath, WithSidecar
 from metadata.classes import ImageMetadata
 from stacks.composite_stack import BaseStack, Stack
 from stacks.stacking.pixinsight import _stack_files_narrow
+from stacks.star_flat_gain import GAIN_SECTION, FlatGain, with_scaled_flats
 from stacks.types import FilenameDependency, StackIdDependency
 
 log = structlog.get_logger()
@@ -192,7 +193,7 @@ def _robust_noise(path: Path) -> float:
 def integrate_with_siril(
     stack: BaseStack,
     config: ProcessingConfig,
-    *cal_masters: ImageMetadata,
+    *cal_masters: ImageMetadata | FlatGain,
 ) -> WithSidecar[FitsFilePath]:
     """Calibrate, register and integrate `stack` with Siril. The peer of
     `stack_files`: pipelines call it with the same arguments."""
@@ -207,13 +208,18 @@ def integrate_with_siril(
         raise ValueError(f"Stack {stack} contains only {n} files")
     dest = Path(integrate_with_siril.filename_fn(stack, config, *cal_masters))
     dest.parent.mkdir(parents=True, exist_ok=True)
-    cal_by_id = {str(read_header(m.filename)["STBLHASH"]): Path(m.filename) for m in cal_masters}
+    cal_by_id = {str(read_header(m.filename)["STBLHASH"]): Path(m.filename)
+                 for m in cal_masters if not isinstance(m, FlatGain)}
+    gains = [m for m in cal_masters if isinstance(m, FlatGain)]
     # Scratch beside the output, on the big processed volume: one stack
     # writes ~2 x frames x 245 MB (calibrated + registered, 61 MP, 32-bit),
     # 170 GB for the largest, more than the boot volume holds.
     with tempfile.TemporaryDirectory(prefix=".siril-", dir=dest.parent) as d:
         tmp = Path(d)
         (tmp / "proc").mkdir()
+        # A star / night-sky flat comes with this stack's gain: its scaled
+        # copy lives in the scratch and goes with it.
+        cal_by_id = with_scaled_flats(cal_by_id, gains, tmp)
         log.info("Running Siril", stack=str(stack), frames=n)
         script = _calibration_script(stack, cal_by_id, tmp)
         if script:
@@ -222,6 +228,10 @@ def integrate_with_siril(
         out = tmp / "master.fit"
         assert out.exists(), f"Siril wrote no master for {stack}"
         os.replace(out, dest)
+    if gains:
+        import json
+        from file_io.sidecar import set_section
+        set_section(dest, GAIN_SECTION, {g.flat_id: json.loads(g.fit_json) for g in gains})
     update_header(dest, {"IMAGETYP": f"Master {stack.image_type}", "STBLHASH": stack.stable_hash,
                          "NOISE00": _robust_noise(dest), "NOISEEST": "robust high-pass (AstroFlow)"})
     return WithSidecar(FitsFilePath(dest))

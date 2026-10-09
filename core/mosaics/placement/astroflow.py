@@ -416,11 +416,10 @@ def place_image(
     """Project one panel's master into the mosaic's viewbox, then erode
     its valid-data edge.
 
-    Pipeline-agnostic: the downscaling — if any — is fully captured
-    by the `viewbox` size and by the upstream master (already
-    downscaled for the PixInsight Downscaled pipeline). place_image
-    just projects whatever it's given. The on-disk filename includes
-    a viewbox content-hash prefix so PI Master and PI Downscaled outputs land in
+    Pipeline-agnostic: the canvas is fully captured by the `viewbox`
+    and the pixels by the upstream master. place_image just projects
+    whatever it's given. The on-disk filename includes a viewbox
+    content-hash prefix, so pipelines on different canvases land in
     distinct files.
 
     Takes the whole `config`; the cache key is narrowed to just
@@ -452,8 +451,8 @@ def place_image(
     _assert_footprint_within_bbox(image, y0_px, x0_px, viewbox)
     image = _erode_edges(image, config.edge_erosion_px)
 
-    # `image_metadata` MUST flow into the call_hash. Three
-    # pipelines (Subframe, PI Master, PI Downscaled) place the
+    # `image_metadata` MUST flow into the call_hash. Several
+    # pipelines (Subframe, PI Master, Siril, ...) place the
     # same target panel into the same viewbox at the same filter,
     # differing only in their upstream master. Omitting
     # `image_metadata` here collapses all three onto a single

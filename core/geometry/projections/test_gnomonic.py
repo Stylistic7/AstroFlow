@@ -315,16 +315,19 @@ class TestEndToEndPlacement:
 
 
 class TestViewboxSelection:
-    """Targets get gnomonic; real mosaics stay on Mercator."""
+    """Targets get gnomonic; real mosaics get stereographic, centred on themselves."""
 
-    def test_mosaic_keeps_mercator(self):
+    def test_mosaic_gets_a_centred_stereographic(self):
+        from types import SimpleNamespace
+        from geometry.projections.stereographic import StereographicProjection
         from mosaics.viewbox import _projection_for
-        from attributes import AstrometricAttributes
 
-        # A bare AstrometricAttributes stands in for anything that isn't a
-        # Target — `_projection_for` branches on the type, nothing else.
-        attrs = object.__new__(AstrometricAttributes)
-        assert isinstance(_projection_for(attrs), MercatorProjection)
+        # Anything that isn't a Target is treated as a mosaic; one straddling
+        # RA 0h must stay compact (the old Mercator canvas went 360 deg wide).
+        proj = _projection_for(SimpleNamespace(center=(359.5, 60.0)))
+        assert isinstance(proj, StereographicProjection)
+        x, _ = proj.project(np.radians(np.array([358.5, 0.5])), np.radians(np.array([60.0, 60.0])))
+        assert abs(np.degrees(x[1] - x[0])) < 1.1
 
 
 class TestHashability:

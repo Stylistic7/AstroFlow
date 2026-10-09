@@ -22,7 +22,7 @@ from compute_graph import build_compute_graph
 from context import context
 from decisions.settings import ProcessingConfig
 from dependency_graph import run_graph
-from dependency_graph.classes import Graph, Node
+from dependency_graph.classes import Node
 from dependency_graph.graph_runtime import GraphRuntime
 from dependency_graph.tracing import trace
 from dependency_graph.workflow_graph_adapter import node_to_id
@@ -500,22 +500,6 @@ def test_pi_master_runtime_mark_done_propagates_to_snapshot(test_context):
 
 
 @pytest.mark.exhaustive
-def test_pi_downscaled_pipeline_sets_status_callbacks(test_context):
-    """Same wiring check on the Downscaled pipeline — confirms the
-    @pipeline runner behaviour isn't accidentally pixinsight_master-
-    specific."""
-    mosaic = _identify(test_context)
-    config = _make_config()
-
-    import pipelines.pixinsight_master_downscaled as pid
-    graph = pid.for_mosaic(mosaic, config)
-
-    assert graph is not None
-    assert graph.node_status_fn is not None
-    assert graph.graph_update_fn is not None
-
-
-@pytest.mark.exhaustive
 def test_pi_master_callbacks_survive_ray_serialization(test_context):
     """`run_pipeline` is a `@ray.remote` task that returns the
     pipeline Graph. That return value is serialized via cloudpickle,
@@ -730,90 +714,6 @@ def test_pi_master_pipeline_callbacks_are_fresh_per_call(test_context):
     assert g1 is not g2
     assert g1.node_status_fn is not None
     assert g2.node_status_fn is not None
-
-
-_DOWNSCALE_OPS = {"downscale_stack", "downscale_master"}
-
-
-def _stack_files_nodes(g):
-    seen, out = set(), []
-    for k, deps in g.items():
-        for n in [k, *deps]:
-            if isinstance(n, Node) and n not in seen and n.task._function.__name__ == "stack_files":
-                seen.add(n)
-                out.append(n)
-    return out
-
-
-@pytest.mark.exhaustive
-@pytest.mark.parametrize("full, downscaled", [
-    ("pipelines.pixinsight_master", "pipelines.pixinsight_master_downscaled"),
-    ("pipelines.hybrid_pi_oss_mosaic", "pipelines.hybrid_pi_oss_mosaic_downscaled"),
-])
-def test_downscaled_pipeline_is_the_full_pipeline_plus_downscale_calls(
-    test_context, full, downscaled,
-):
-    """A downscaled pipeline IS its full-resolution twin with the downscale
-    calls added — nothing else may differ. Per light stack one
-    `downscale_stack` (writing the frames of its `DownscaledStack` view);
-    per distinct master a light consumes one `downscale_master` (the
-    full-res master, shared with the twin, downscaled at the boundary);
-    every other op appears exactly as often as in the twin."""
-    import importlib
-    from stacks.composite_stack import CalibrationStack
-    from stacks.downscale import DownscaledStack
-
-    mosaic = _identify(test_context)
-    config = _make_config()
-    g_full = trace(importlib.import_module(full).for_mosaic._function, mosaic, config)
-    g_ds = trace(importlib.import_module(downscaled).for_mosaic._function, mosaic, config)
-    c_full, c_ds = _count_by_op(g_full), _count_by_op(g_ds)
-    print(f"\n{full}: {c_full}\n{downscaled}: {c_ds}")
-
-    assert not _DOWNSCALE_OPS & set(c_full), c_full
-    assert {k: v for k, v in c_ds.items() if k not in _DOWNSCALE_OPS} == c_full
-
-    lights = [n for n in _stack_files_nodes(g_full) if not isinstance(n.args[0], CalibrationStack)]
-    # the masters the lights consume — shared cal masters and per-stack
-    # scaled star flats alike — each downscaled once
-    masters = {d for n in lights for d in g_full[n] if isinstance(d, Node)}
-    assert lights and c_ds["downscale_stack"] == len(lights)
-    assert masters and c_ds["downscale_master"] == len(masters)
-
-
-@pytest.mark.exhaustive
-def test_downscaled_view_keeps_identity_and_keys_at_trace_time(test_context):
-    """The stack `stack_files` receives in the downscaled pipeline is a
-    `DownscaledStack`: the same entity as the source (stable_hash) with its
-    own content — so its master lands in a distinct file — and a real value
-    at trace time, so every handle downstream is stamped with the content
-    hash its runtime result will carry (a handle that fails to stamp is how
-    the pipeline was unroutable, 2026-09-17)."""
-    from stacks.composite_stack import CalibrationStack
-    from stacks.downscale import DownscaledStack
-    import pipelines.pixinsight_master as pi
-    import pipelines.pixinsight_master_downscaled as pid
-
-    mosaic = _identify(test_context)
-    config = _make_config()
-    g_full = trace(pi.for_mosaic._function, mosaic, config)
-    g_ds = trace(pid.for_mosaic._function, mosaic, config)
-
-    full_by_id = {n.args[0].stable_hash: n for n in _stack_files_nodes(g_full)
-                  if not isinstance(n.args[0], CalibrationStack)}
-    views = [n for n in _stack_files_nodes(g_ds) if isinstance(n.args[0], DownscaledStack)]
-    assert len(views) == len(full_by_id) > 0
-    for n in views:
-        ds = n.args[0]
-        twin = full_by_id[ds.stable_hash].args[0]
-        assert ds.source == twin and ds.content_hash != twin.content_hash
-        assert ds.width_pixels == twin.width_pixels // ds.factor
-        assert n.content_hash != full_by_id[ds.stable_hash].content_hash
-        # ordered after the frames that write its view
-        assert any(d.task._function.__name__ == "downscale_stack" for d in g_ds[n])
-
-    unstamped = [n for n in g_ds if isinstance(n, Node) and not getattr(n, "content_hash", "")]
-    assert not unstamped, [n.task._function.__name__ for n in unstamped]
 
 
 @pytest.mark.exhaustive

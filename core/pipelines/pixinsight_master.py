@@ -13,7 +13,7 @@ change the `@pipeline("…")` display name, and edit the call you
 want to replace.
 """
 from astroflow.pipeline import pipeline
-from metadata.solve_nodes import plate_solve_image
+from metadata.solve_nodes import inherit_plate_solution, plate_solve_image, solved_channel
 from dependency_graph.tracing import workflow_group
 from mosaics.post_process_channel import post_process_mosaic_color_channel
 from mosaics.merging.pixinsight import merge_images
@@ -38,24 +38,22 @@ def post_processed_master(stack, config):
     cal_masters = calibrate(stack, config)
     master = plate_solve_image(stack_files(stack, config, *cal_masters))
     analyze_master(master)   # leaf: writes the master's `analysis` sidecar section
-    return plate_solve_image(post_process_stack(stack, config, master))
+    return inherit_plate_solution(post_process_stack(stack, config, master), master)
 
 
 @workflow_group
 def channels_for_target(target, config, post_processed_master=post_processed_master):
     """Per-filter HDR-combined channel masters for one target.
 
-    `post_processed_master` is the per-stack recipe: this module's, or a
-    twin's that adds a transform in front of it (`PixInsight Downscaled`
-    passes its own). Everything from here up is shared with the twin, so
-    the two pipelines cannot drift apart except in that one call."""
+    `post_processed_master` is the per-stack recipe: this module's, or
+    one a pipeline that shares everything from here up passes in."""
     channels = {}
     for filter in target.filters:
         stacks = target.stacks_for(filter)
         masters = [post_processed_master(s, config) for s in stacks]
-        channels[filter] = plate_solve_image(merge_target_channel(
+        channels[filter] = solved_channel(merge_target_channel(
             target, filter, stacks, config, *masters,
-        ))
+        ), masters)
     return channels
 
 

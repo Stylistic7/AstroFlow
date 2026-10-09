@@ -92,12 +92,3 @@ def test_viewbox_wider_fov_more_pixels():
     vb_narrow = compute_viewbox("Master", narrow)
     vb_wide = compute_viewbox("Master", wide)
     assert vb_wide.num_pixels_x > vb_narrow.num_pixels_x
-
-
-def test_viewbox_downscaled_master_fewer_pixels():
-    obj = _make_object(image_scale=2.21)
-    vb_master = compute_viewbox("Master", obj)
-    vb_downscaled = compute_viewbox("DownscaledMaster", obj)
-    # 8x downscale should produce ~1/8th the pixels in each dimension.
-    ratio = vb_master.num_pixels_x / vb_downscaled.num_pixels_x
-    assert 7 < ratio < 9

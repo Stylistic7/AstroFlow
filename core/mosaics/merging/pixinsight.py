@@ -160,7 +160,7 @@ def merge_images(
 ) -> WithSidecar[XisfFilePath]:
     """Pairwise PhotometricMosaic merge across all panel inputs.
 
-    Pipeline-agnostic. PI Master and PI Downscaled both call this
+    Pipeline-agnostic. Every pipeline that merges with PixInsight calls this
     with their own placed-image inputs; `*inputs` differs between
     them, so the call_hash differs, so the on-disk filename
     differs. The framework's runtime tap-path hook captures the

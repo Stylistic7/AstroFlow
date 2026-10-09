@@ -1,4 +1,4 @@
-"""`scale_star_flat` and `stack_files` together, on real frames, through the
+"""`fit_flat_gain` and `stack_files` together, on real frames, through the
 graph — the way the pipeline runs them.
 
 Setup (as `test_orion_pane`): the three real Orion Pane 1 subs (ZWO
@@ -10,10 +10,10 @@ pattern written as a WBPP Master Flat for the sensor (a real solve needs
 that pattern printed in at 1.3x, so the fit has a known answer on real sky.
 
 Covered:
-  * `calibrate()` on the real Stack traces build_star_flat -> scale_star_flat
+  * `calibrate()` on the real Stack traces build_star_flat -> fit_flat_gain
     -> stack_files, with the dark master as the fit's pedestal input;
-  * the node body executes as a Ray task (beartype on the real types, the
-    ephemeral flag, the filename_fn) and records k ~ 1.3 in its sidecar;
+  * the fit node executes as a Ray task (beartype on the real types) and
+    returns k ~ 1.3; the stacker scales the flat in its own scratch;
   * `stack_files` (mock WBPP) consumes the scaled flat — matched by the
     group's STBLHASH that the scaled file carries — and produces the master;
   * the scaled flat, being ephemeral and interior, is reclaimed once the
@@ -21,6 +21,7 @@ Covered:
     runtime was given — `run_pipeline`'s shape), while the master stays.
 """
 import datetime
+import json
 from pathlib import Path
 
 import numpy as np
@@ -142,8 +143,9 @@ def _ops(graph):
 @pytest.mark.exhaustive
 def test_calibrate_traces_the_scaled_star_flat_on_a_real_stack(test_context):
     """With the group's star flat in the calibration stacks, `calibrate()` on
-    the real Orion stack traces build_star_flat -> scale_star_flat ->
-    stack_files, and the fit node gets the dark master."""
+    the real Orion stack traces build_star_flat -> fit_flat_gain -> stack_files:
+    the fit node gets the dark master, and the light stack's stack_files gets
+    the group flat AND its gain (it scales the flat in its own scratch)."""
     from dependency_graph.tracing import trace
     from stacks.calibration_selection import calibrate
     from stacks.stacking.pixinsight import stack_files
@@ -161,29 +163,29 @@ def test_calibrate_traces_the_scaled_star_flat_on_a_real_stack(test_context):
     by_op = {}
     for n, name in ops.items():
         by_op.setdefault(name, []).append(n)
-    assert set(by_op) >= {"build_star_flat", "scale_star_flat", "stack_files"}, set(by_op)
-    scale = by_op["scale_star_flat"][0]
-    scale_deps = {ops[d] for d in graph[scale]}
-    assert scale_deps == {"build_star_flat", "stack_files"}, scale_deps   # the flat, and the dark's master
-    light = [n for n in by_op["stack_files"] if scale in graph[n]]
-    assert len(light) == 1, "the light stack's stack_files takes the SCALED flat, not the group's"
-    assert not any(by_op["build_star_flat"][0] in graph[n] for n in by_op["stack_files"]), (
-        "no stack_files may divide by the unscaled group flat")
+    assert set(by_op) >= {"build_star_flat", "fit_flat_gain", "stack_files"}, set(by_op)
+    assert "scale_star_flat" not in by_op, "no scaled flat is a node any more"
+    fit = by_op["fit_flat_gain"][0]
+    assert {ops[d] for d in graph[fit]} == {"build_star_flat", "stack_files"}   # the flat, and the dark's master
+    light = [n for n in by_op["stack_files"] if fit in graph[n]]
+    assert len(light) == 1, "the light stack's stack_files takes the gain"
+    assert by_op["build_star_flat"][0] in graph[light[0]], "...and the group flat it scales"
 
 
 @pytest.mark.exhaustive
 def test_scaled_star_flat_runs_into_stack_files_on_real_frames(test_context, tmp_path):
-    """The node body and mock WBPP on the real subs with a known printed
-    gain: k ~ 1.3 in the scaled flat's sidecar, the group's STBLHASH carried
-    into the file WBPP matches on, the master produced, and the ephemeral
-    scaled flat reclaimed once the graph that consumed it completes."""
+    """The fit node and mock WBPP on the real subs with a known printed
+    gain: k ~ 1.3 from the cached fit, the master produced with the fit in
+    its sidecar, and no scaled flat anywhere in the processed folder — the
+    stacker wrote it into its own scratch."""
     from dependency_graph import run_graph
     from dependency_graph.trace_paths import resolve_output_paths
     from dependency_graph.tracing import trace
     from file_io.generic import read_header
     from file_io.sidecar import get_section
     from stacks.calibration_selection import calibrate
-    from stacks.star_flat import GAIN_SECTION, gain_args, scale_star_flat
+    from stacks.star_flat import fit_flat_gain, gain_args
+    from stacks.star_flat_gain import GAIN_SECTION
     from stacks.stacking.pixinsight import stack_files
 
     pattern = _sensor_pattern((6388, 9576))
@@ -191,21 +193,16 @@ def test_scaled_star_flat_runs_into_stack_files_on_real_frames(test_context, tmp
     flat_meta = _write_star_flat(pattern, tmp_path / "group_flat.xisf", stack)
     config = _config()
 
-    # Phase 1: the scale node as a graph TERMINAL, so its output survives to be read.
-    def scale_only(stack, config):
+    # Phase 1: the fit node as a graph TERMINAL, so its value can be read.
+    def fit_only(stack, config):
         dark_master = calibrate(stack, config)[0]
-        return scale_star_flat(*gain_args(stack, flat_meta, dark_master))
+        return fit_flat_gain(*gain_args(stack, flat_meta, dark_master))
 
-    g1 = trace(scale_only, stack, config)
-    run_graph(g1, debug=True)
-    ops1 = _ops(g1)
-    scaled_path = next(p for n, p in resolve_output_paths(g1).items() if ops1[n] == "scale_star_flat")
-    assert Path(scaled_path).exists()
-    fit = get_section(Path(scaled_path), GAIN_SECTION)
+    g1 = trace(fit_only, stack, config)
+    gain, _stats = run_graph(g1, debug=True)
+    fit = json.loads(gain.fit_json)
     assert fit["n_used"] == 3 and fit["dark"] is True and "reason" not in fit, fit
-    assert abs(fit["k"] - K_TRUE) < 0.12, fit
-    hdr = read_header(Path(scaled_path))
-    assert str(hdr["STBLHASH"]) == STAR_FLAT_ID and hdr["IMAGETYP"] == "master flat"   # normalised on read
+    assert abs(gain.k - K_TRUE) < 0.12 and gain.flat_id == STAR_FLAT_ID, fit
 
     # Phase 2: the same node INTERIOR to stack_files, inside a graph that is a
     # CHILD of the one run_graph is given — the shape `run_pipeline` gives every
@@ -221,13 +218,13 @@ def test_scaled_star_flat_runs_into_stack_files_on_real_frames(test_context, tmp
         del dry_run
         from dependency_graph.tracing import trace as _trace
         from stacks.calibration_selection import calibrate as _calibrate
-        from stacks.star_flat import gain_args as _gain_args, scale_star_flat as _scale
+        from stacks.star_flat import fit_flat_gain as _fit, gain_args as _gain_args
         from stacks.stacking.pixinsight import stack_files as _stack_files
 
         def _body():
             dark_master = _calibrate(stack, config)[0]
-            scaled = _scale(*_gain_args(stack, flat, dark_master))
-            return _stack_files(stack, config, dark_master, scaled)
+            gain = _fit(*_gain_args(stack, flat, dark_master))
+            return _stack_files(stack, config, dark_master, flat, gain)
         return Graph(_trace(_body))
 
     def top(stack, config):
@@ -238,5 +235,6 @@ def test_scaled_star_flat_runs_into_stack_files_on_real_frames(test_context, tmp
     master = next(p for p in Path(context.output_dir).rglob("stack_files/*.xisf")
                   if str(read_header(p).get("STBLHASH")) == stack.stable_hash)
     assert master.exists(), "mock WBPP produced no master for the light stack"
-    assert not Path(scaled_path).exists(), (
-        "the ephemeral scaled flat must be reclaimed once the pipeline graph that consumed it concluded")
+    assert abs(get_section(master, GAIN_SECTION)[STAR_FLAT_ID]["k"] - gain.k) < 1e-9
+    assert not list(Path(context.output_dir).rglob("scale_star_flat/*")), (
+        "a scaled flat lives only in the stacker's scratch")

@@ -46,7 +46,8 @@ h_content = hash_list(sorted(target_ids))
 s = set(target_ids)
 all_points = np.concatenate([polys[t].points[:-1] for t in s])
 footprint = SingleSphericalPolygon.convex_hull(all_points)
-vb = compute_viewbox("Master", SimpleNamespace(footprint=footprint, image_scale=1.5))
+vb = compute_viewbox("Master", SimpleNamespace(footprint=footprint, image_scale=1.5,
+                                                center=(101.5, 0.5)))
 h_viewbox = hash_list([vb.x_min, vb.x_span, vb.y_min, vb.y_span,
                        vb.resolution, vb.num_pixels_x, vb.num_pixels_y])
 

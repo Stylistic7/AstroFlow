@@ -40,7 +40,7 @@ from pathlib import Path
 import ray
 
 from astroflow.pipeline import pipeline, record
-from metadata.solve_nodes import plate_solve_image
+from metadata.solve_nodes import inherit_plate_solution, plate_solve_image, solved_channel
 from dependency_graph.tracing import (
     IdentityRef, present_terminal, workflow_group,
 )
@@ -80,7 +80,7 @@ def post_processed_master(stack, config):
     cal_masters = calibrate(stack, config)
     master = plate_solve_image(stack_files(stack, config, *cal_masters))
     analyze_master(master)   # leaf: writes the master's `analysis` sidecar section
-    return plate_solve_image(post_stack_calibrate(stack, config, master))
+    return inherit_plate_solution(post_stack_calibrate(stack, config, master), master)
 
 
 @workflow_group
@@ -91,9 +91,9 @@ def channels_for_target(target, config, post_processed_master=post_processed_mas
     for filter in target.filters:
         stacks = target.stacks_for(filter)
         masters = [post_processed_master(s, config) for s in stacks]
-        channels[filter] = plate_solve_image(merge_target_channel(
+        channels[filter] = solved_channel(merge_target_channel(
             target, filter, stacks, config, *masters,
-        ))
+        ), masters)
     return channels
 
 

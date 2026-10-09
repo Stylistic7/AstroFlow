@@ -1,21 +1,20 @@
-import ray
 import numpy as np
 
 from attributes import AstrometricAttributes
 from geometry.projection import Projection
 from mosaics.types import Viewbox
-from geometry.projections import mercator
 from geometry.projections.gnomonic import GnomonicProjection
+from geometry.projections.stereographic import StereographicProjection
 
 # TODO: Rename or unify geometry_compute_viewbox
 from geometry.viewbox import compute_viewbox as geometry_compute_viewbox
 from geometry.polygons import project_polygon
-from previews.types import DOWNSCALE_FACTORS, SUBFRAME
+from previews.types import SUBFRAME
 
 
 
 def _projection_for(object: AstrometricAttributes) -> Projection:
-    """Gnomonic for a single field, Mercator for a real mosaic.
+    """Gnomonic for a single field, stereographic for a real mosaic.
 
     A Target is one telescope pointing, so the projection that reproduces what
     the camera saw is TAN tangent at its own centre, rotated to its own position
@@ -38,13 +37,16 @@ def _projection_for(object: AstrometricAttributes) -> Projection:
     for 1.00x native at every declination in the library; summed over all 442
     masters the canvas drops from 44.4 to 24.3 gigapixels.
 
-    Multi-panel mosaics keep Mercator. TAN's distortion grows as tan(distance
-    from the tangent point), which is negligible over one field but not over a
-    mosaic, and a mosaic has no single position angle to be tangent to. Giving
-    the user real control here — centre of projection, projection family — is
-    deliberate future work, gated behind a preview: switching a projection
-    re-keys `compute_viewbox` and so rebuilds every placement and colour product
-    downstream of it, which is GPU-hours, not seconds.
+    Multi-panel mosaics use STEREOGRAPHIC, centred on the mosaic (2026-10-09).
+    TAN's distortion grows as sec^2 of the distance from the tangent point
+    (1.17 at 22.5 deg, the edge of the 45 deg span cap); STG's grows as
+    sec^2(c/2) (1.04 there), and it is conformal, so stars stay round. Mosaics
+    used to keep Mercator, centred at its default meridian RA 0h with no wrap:
+    a mosaic straddling RA 0h (Sh2-171) got a 360-deg-wide, 586,150 px canvas,
+    and its merges were memory-killed at 250-380 GB eleven times in one night.
+    A centred projection has no wrap and no pole. Switching it re-keys
+    `compute_viewbox` and rebuilds every placement and colour product
+    downstream.
 
     The rotation is NEGATED, and that sign is measured rather than derived.
     Over all 1,589 plate solutions in the library — every one of which has a
@@ -62,7 +64,13 @@ def _projection_for(object: AstrometricAttributes) -> Projection:
     from targets.types import Target
 
     if not isinstance(object, Target):
-        return mercator.MercatorProjection()
+        # A mosaic: centred, north-up unless it records a position angle.
+        ra, dec = object.center
+        return StereographicProjection(
+            float(np.deg2rad(float(ra))),
+            float(np.deg2rad(float(dec))),
+            -float(getattr(object, "rotation_angle", 0.0) or 0.0),
+        )
 
     # Plain floats, not np.float64: the Viewbox's cache key is built from this
     # projection's REPR (`hashing.hash_list`), so the numbers in it have to
@@ -73,6 +81,19 @@ def _projection_for(object: AstrometricAttributes) -> Projection:
         float(np.deg2rad(float(dec))),
         -float(object.rotation_angle),
     )
+
+
+# A mosaic canvas this large is a geometry bug, not a mosaic: a 45-deg mosaic at
+# 2.2"/px is ~5 Gpx. The merge holds three full-canvas float32 arrays, so a
+# runaway canvas (the RA-wrap bug: 35 Gpx, 141 GB each) must fail here, loudly,
+# instead of as a memory kill an hour into the merge.
+MAX_CANVAS_PIXELS = 10_000_000_000
+
+
+def check_canvas(nx: int, ny: int, what) -> None:
+    assert nx * ny <= MAX_CANVAS_PIXELS, (
+        f"canvas {nx} x {ny} px ({nx * ny / 1e9:.1f} Gpx) for {what} exceeds "
+        f"{MAX_CANVAS_PIXELS / 1e9:.0f} Gpx: a projection or footprint bug, not a mosaic")
 
 
 def compute_viewbox(
@@ -86,13 +107,11 @@ def compute_viewbox(
     x_min, y_min, x_span, y_span = geometry_compute_viewbox(list(zip(xs, ys)))
 
     # Compute the number of pixels along the x axis. Non-subframe modes use
-    # the object's image scale (adjusted by the quality's downscale factor);
-    # subframe mode makes a fixed-size thumbnail.
+    # the object's image scale; subframe mode makes a fixed-size thumbnail.
     if quality == SUBFRAME:
         num_pixels_x = 2048
     else:
-        effective_scale = object.image_scale * DOWNSCALE_FACTORS[quality]
-        num_pixels_x = x_span / np.deg2rad(effective_scale / 3600)
+        num_pixels_x = x_span / np.deg2rad(object.image_scale / 3600)
     finished_pixels_x = int(np.ceil(num_pixels_x))
 
     # Resolution follows the canvas actually returned. This used to divide
@@ -113,6 +132,7 @@ def compute_viewbox(
     resolution = x_span / finished_pixels_x
 
     finished_pixels_y = int(np.ceil(y_span / resolution))
+    check_canvas(finished_pixels_x, finished_pixels_y, object)
 
     return Viewbox(
         projection=projection,

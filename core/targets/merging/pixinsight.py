@@ -40,7 +40,7 @@ def _merge_target_channel_impl(
     output_filename: XisfFilePath,
 ) -> WithSidecar[XisfFilePath]:
     """Shared body for the per-pipeline `merge_target_channel_*`
-    variants. The split exists because PI Master and PI Downscaled
+    variants. The split exists because pipelines with different stackers
     call this with identical literal args (target, filter, stacks,
     config) — only the data-dep `*masters` differ. Identical
     literals → identical call_hash → same filename → collision.
@@ -108,7 +108,7 @@ def merge_target_channel(
 ) -> WithSidecar[XisfFilePath]:
     """HDR-combine per-stack masters into one (target, filter) channel.
 
-    Pipeline-agnostic. PI Master and PI Downscaled both call this
+    Pipeline-agnostic. Every pipeline that combines with PixInsight calls this
     with their own per-stack post-processed masters as `*masters`;
     those masters' content_hashes differ between pipelines, so the
     call_hash (literals + masters) differs, so the output filename

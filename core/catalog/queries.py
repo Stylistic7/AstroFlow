@@ -29,8 +29,6 @@ from products.product import Product, resolve_entity  # noqa: F401 — re-export
 _PIPELINE_PREFERENCE = (
     "PixInsight Master",
     "Hybrid: PI Master + OSS Mosaic",
-    "PixInsight Downscaled",
-    "Hybrid: PI Downscaled + OSS Mosaic",
     "Hybrid: OSS Stack + OSS Mosaic",
 )
 

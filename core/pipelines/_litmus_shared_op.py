@@ -11,31 +11,26 @@ registered in every process, including Ray workers running the
 dispatcher.
 """
 from astroflow.pipeline import pipeline
-from metadata.solve_nodes import plate_solve_image
+from metadata.solve_nodes import inherit_plate_solution, plate_solve_image
 from stacks.calibration_selection import calibrate
 from stacks.composite_stack import Stack
-from stacks.downscale import (
-    DownscaledStack, downscale_dest_dir, downscale_master, downscale_stack,
-)
 from stacks.post_processing.pixinsight import post_process_stack
 from stacks.stacking.pixinsight import stack_files
+from stacks.stacking.siril import integrate_with_siril
 
 
 @pipeline("Shared-Op Test Master", processes=Stack)
 def shared_op_test_master(stack, config):
     cal_masters = calibrate(stack, config)
     master = plate_solve_image(stack_files(stack, config, *cal_masters))
-    return plate_solve_image(post_process_stack(stack, config, master))
+    return inherit_plate_solution(post_process_stack(stack, config, master), master)
 
 
-@pipeline("Shared-Op Test Downscaled", processes=Stack)
-def shared_op_test_downscaled(stack, config):
-    # SAME `post_process_stack` op as the Master pipeline. Only
-    # the upstream master differs (downscaled vs full-res). The
-    # framework must distinguish the two calls via call_hash and
-    # write to distinct files.
-    ds = DownscaledStack.of(stack, 8, downscale_dest_dir())
-    frames = downscale_stack(ds)
-    cal_masters = [downscale_master(8, m) for m in calibrate(stack, config)]
-    master = plate_solve_image(stack_files(ds, config, *cal_masters, _after=(frames,)))
-    return plate_solve_image(post_process_stack(ds, config, master))
+@pipeline("Shared-Op Test Siril", processes=Stack)
+def shared_op_test_siril(stack, config):
+    # SAME `post_process_stack` op as the Master pipeline, same literals.
+    # Only the upstream master differs (Siril vs WBPP). The framework must
+    # distinguish the two calls via call_hash and write to distinct files.
+    cal_masters = calibrate(stack, config)
+    master = plate_solve_image(integrate_with_siril(stack, config, *cal_masters))
+    return inherit_plate_solution(post_process_stack(stack, config, master), master)

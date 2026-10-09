@@ -25,8 +25,7 @@ def filter_of(node, input_values) -> str | None:
        to the function's signature and read it (this is how per-channel
        ops like ``place_image`` / ``merge_*`` / ``store_*`` carry it); then
     2. the first input value exposing a truthy ``.filter`` — e.g. the
-       ``BaseStack`` handed to ``stack_files`` (a ``DownscaledStack`` view
-       included).
+       ``BaseStack`` handed to ``stack_files``.
 
     A node may also DECLARE a fixed tap filter via ``@node(filter="RGB")``
     (``_tap_filter``) — colour composites use this so their otherwise

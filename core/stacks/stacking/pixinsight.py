@@ -16,6 +16,7 @@ from stacks.types import StackIdDependency, FilenameDependency
 from stacks.composite_stack import BaseStack, Stack
 from pix.tasks import run_wbpp, solver_geometry
 from metadata.classes import ImageMetadata, MetadataDict
+from stacks.star_flat_gain import GAIN_SECTION, FlatGain, with_scaled_flats
 from decorators import node
 from decisions.settings import ProcessingConfig, DevelopmentSettings
 from decisions.resolve import resolve_calibration, resolve_decisions
@@ -41,10 +42,7 @@ def _copy_frames_with_plate_solution(
 ) -> None:
     """Stage input frames into the WBPP working dir.
 
-    Resolution-agnostic — `stack_files` no longer knows whether
-    frames are full-res or already-downscaled (the pipeline hands it a
-    `DownscaledStack` view when it wants smaller frames). For
-    each frame: copy the file, drop a stale BAYERPAT, and write
+    Reads the frames the stack names, as they are. For each frame: copy the file, drop a stale BAYERPAT, and write
     plate-solution header info — full WCS when the frame's
     `width_pixels` matches the plate-solution NAXIS1 (lossless
     re-use); otherwise just RA/DEC hints (the frame was
@@ -217,14 +215,46 @@ def _stack_files_narrow(args, kwargs):
     stack, config, *rest = args
     return (stack, narrow_stack_config(stack, config), *rest), kwargs
 
+def _wbpp(stack, tmp_dir, dest_filename, metadata):
+    """Run WBPP on the stack set up in `tmp_dir` and copy its master to `dest_filename`."""
+    # WBPP groups by EXPOSURE and emits one master per group; if a
+    # stale stack ever sneaks through with mixed exposures, fail
+    # loud here rather than letting WBPP produce duplicate masters
+    # downstream. Stack identification should make this unreachable.
+    from attributes.imaging_attributes import EXPOSURE_TOLERANCE_SECONDS
+    exposures = [
+        float(m.header["EXPOSURE"])
+        for m in stack.all_metadata().values()
+        if "EXPOSURE" in m.header
+    ]
+    if exposures:
+        spread = max(exposures) - min(exposures)
+        assert spread < EXPOSURE_TOLERANCE_SECONDS, (
+            f"Stack {stack.stable_hash} has mixed exposures "
+            f"(spread={spread:.4f}s, distinct={sorted(set(exposures))}); "
+            "WBPP would produce one master per exposure."
+        )
+
+    # Tell WBPP's image solver the camera's real geometry. Left to its
+    # defaults it assumes a 5.4 um pixel and writes that back into the
+    # master's XPIXSZ/FOCALLEN (see `solver_geometry`).
+    geometry = solver_geometry(
+        [m.header for m in stack.all_metadata().values()]
+    )
+    log.info("Running WBPP", stack=str(stack), **geometry)
+    run_wbpp(Path(tmp_dir), Path(tmp_dir), **geometry)
+    result = _copy_wbpp_result(tmp_dir, dest_filename, metadata)
+    _check_integration_time(stack, dest_filename)
+    return result
+
+
 def _run_wbpp_stacking(
     stack: BaseStack, config: ProcessingConfig,
     cal_masters: tuple,
     dest_filename: Path,
 ) -> WithSidecar[XisfFilePath]:
     """Shared body for `stack_files`. Resolution-agnostic — reads
-    `stack.contents` frame paths AS-IS (the pipeline calls
-    `DownscaledStack` view if it wants smaller frames). Cal
+    `stack.contents` frame paths AS-IS. Cal
     master file paths come from `cal_masters`; each master's
     `STBLHASH` header (written by `_run_wbpp_stacking` on the
     upstream call) names the cal stack it was built from, so the
@@ -270,11 +300,16 @@ def _run_wbpp_stacking(
         # ast.literal_eval on keyword values, so an all-digit stable_hash
         # round-trips as an int. Force str so the str-keyed lookup matches
         # (see get_dependency_filename, which also str()s the dep id).
-        str(read_header(m.filename)["STBLHASH"]): m.filename for m in cal_masters
+        str(read_header(m.filename)["STBLHASH"]): m.filename
+        for m in cal_masters if not isinstance(m, FlatGain)
     }
+    gains = [m for m in cal_masters if isinstance(m, FlatGain)]
 
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
         log.debug("Using temporary directory", tmp_dir=tmp_dir)
+        # A star / night-sky flat comes with this stack's gain: its scaled
+        # copy lives in the scratch and goes with it.
+        cal_master_by_id = with_scaled_flats(cal_master_by_id, gains, tmp_dir)
 
         filenames = _setup_stack(stack, cal_master_by_id, tmp_dir)
 
@@ -285,37 +320,14 @@ def _run_wbpp_stacking(
             )
 
         if development_settings.mock_pixinsight:
-            return _mock_stacking(filenames[0], dest_filename, metadata)
+            result = _mock_stacking(filenames[0], dest_filename, metadata)
+        else:
+            result = _wbpp(stack, tmp_dir, dest_filename, metadata)
 
-        # WBPP groups by EXPOSURE and emits one master per group; if a
-        # stale stack ever sneaks through with mixed exposures, fail
-        # loud here rather than letting WBPP produce duplicate masters
-        # downstream. Stack identification should make this unreachable.
-        from attributes.imaging_attributes import EXPOSURE_TOLERANCE_SECONDS
-        exposures = [
-            float(m.header["EXPOSURE"])
-            for m in stack.all_metadata().values()
-            if "EXPOSURE" in m.header
-        ]
-        if exposures:
-            spread = max(exposures) - min(exposures)
-            assert spread < EXPOSURE_TOLERANCE_SECONDS, (
-                f"Stack {stack.stable_hash} has mixed exposures "
-                f"(spread={spread:.4f}s, distinct={sorted(set(exposures))}); "
-                "WBPP would produce one master per exposure."
-            )
-
-        # Tell WBPP's image solver the camera's real geometry. Left to its
-        # defaults it assumes a 5.4 um pixel and writes that back into the
-        # master's XPIXSZ/FOCALLEN (see `solver_geometry`).
-        geometry = solver_geometry(
-            [m.header for m in stack.all_metadata().values()]
-        )
-        log.info("Running WBPP", stack=str(stack), **geometry)
-        run_wbpp(Path(tmp_dir), Path(tmp_dir), **geometry)
-        result = _copy_wbpp_result(tmp_dir, dest_filename, metadata)
-
-    _check_integration_time(stack, dest_filename)
+    if gains:
+        import json
+        from file_io.sidecar import set_section
+        set_section(Path(dest_filename), GAIN_SECTION, {g.flat_id: json.loads(g.fit_json) for g in gains})
     return result
 
 @node(
@@ -329,15 +341,11 @@ def _run_wbpp_stacking(
 def stack_files(
     stack: BaseStack,
     config: ProcessingConfig,
-    *cal_masters: ImageMetadata,
+    *cal_masters: ImageMetadata | FlatGain,
 ) -> WithSidecar[XisfFilePath]:
     """Resolution-agnostic PixInsight WBPP master.
 
-    Frame paths are read from `stack.contents` AS-IS — if the
-    pipeline wants downscaled frames it passes a `DownscaledStack`
-    view (same `stable_hash`, so this op's `@makes_image` identity
-    routes to the same user-facing stack regardless of resolution)
-    and orders this call after `downscale_stack` with `_after=`.
+    Frame paths are read from `stack.contents` AS-IS.
 
     Signature follows the tracer's "literals first, deps trailing"
     convention: `stack` and `config` are literals, and `*cal_masters`

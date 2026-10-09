@@ -1,5 +1,5 @@
-"""End-to-end test: place_image + merge_images on the Orion mosaic at
-DownscaledMaster quality. Verifies that the pipeline produces real
+"""End-to-end test: place_image + merge_images on the Orion mosaic with the
+PixInsight Master pipeline. Verifies that the pipeline produces real
 pixel data (not all-black), that place_tile subtasks actually run,
 and that the merged mosaic has non-zero content.
 """
@@ -14,8 +14,8 @@ from file_io.generic import read_image
 
 
 @pytest.mark.exhaustive
-def test_downscaled_mosaic_has_real_pixels(test_context):
-    """Build the Orion mosaic with PixInsight Downscaled and verify
+def test_mosaic_has_real_pixels(test_context):
+    """Build the Orion mosaic with PixInsight Master and verify
     that placed images and merged outputs contain real pixel data —
     not just empty arrays slipped through by a graph that ran but
     didn't actually composite anything.
@@ -26,7 +26,7 @@ def test_downscaled_mosaic_has_real_pixels(test_context):
 
     add_orion_mosaic_images()
     context.shopping_cart = [
-        ("mosaic", "2e5e69b75efbc277", "PixInsight Downscaled"),
+        ("mosaic", "2e5e69b75efbc277", "PixInsight Master"),
     ]
     run_graph(build_compute_graph())
 
@@ -39,7 +39,7 @@ def test_downscaled_mosaic_has_real_pixels(test_context):
 
     # The placements themselves are gone by now: they are multi-GB, feed only
     # the merge, and the pipeline wraps them in a block that "cleans up once
-    # it's been consumed" (see `pipelines/pixinsight_master_downscaled.py`).
+    # it's been consumed" (see `pipelines/pixinsight_master.py`).
     # So this checks the SURVIVING artifacts for real pixels instead — which
     # is the point of the test either way: a graph that ran but composited
     # nothing yields zeros here.

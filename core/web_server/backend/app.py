@@ -180,8 +180,7 @@ def get_shopping_cart():
 def get_pipelines():
     """Pipelines available for cart selection. Returns every distinct
     display name in the `@pipeline` registry — built-ins in
-    `core/pipelines/*.py` (`PixInsight Master`, `PixInsight Downscaled`,
-    `Subframe`) and any user-registered pipelines in
+    `core/pipelines/*.py` (`PixInsight Master`, `Subframe`, the hybrids) and any user-registered pipelines in
     `~/AstroFlow/pipelines/`. A pipeline may register multiple entry
     points (per Stack / Target / Mosaic class it processes); they
     collapse to the single display name in this listing.
@@ -222,7 +221,7 @@ def add_to_shopping_cart(object_type, object_id, pipeline_name):
     persisted in `context.shopping_cart`.
 
     Uses `<path:pipeline_name>` because pipeline display names contain
-    spaces ('PixInsight Downscaled').
+    spaces ('PixInsight Master').
     """
     from web_server.backend.announcer import announce
     from state.actor import state as state_handle

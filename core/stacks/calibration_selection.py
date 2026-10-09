@@ -23,10 +23,11 @@ WBPP, never wrong pixels.
   recipe: the producer a calibration stack is built by (solved from
   photometry for a star flat, combined from blank sky for a night-sky flat,
   integrated from frames for everything else).
-* `master_for(stack, cs, master, dark)` — the master `stack` is actually
-  calibrated with: a star flat is re-scaled to the stack's own sky first
-  (`scale_star_flat`, ephemeral, per light stack); anything else as built.
-* `calibrate(stack, config)` — common case, no per-stack transform.
+* `master_for(stack, cs, master, dark)` — what `stack` is calibrated with: a
+  star or night-sky flat travels with its gain for this stack (`fit_flat_gain`,
+  cached), and the stacker writes the scaled flat into its own scratch;
+  anything else as built.
+* `calibrate(stack, config)` — the masters plus any gains.
 """
 from file_io.types import WithSidecar
 from stacks.composite_stack import BaseStack, CalibrationStack
@@ -63,21 +64,15 @@ def calibration_plan(
         call. Per CALIBRATION_TOPOLOGY a light's ids name its darks and
         flats — never a bias (Landmann §8.2: no master bias for lights).
 
-    Typical per-stack-transform loop:
+    Typical loop (`calibrate` is this, with each flat's gain added):
 
         steps, top_ids = calibration_plan(stack, config)
         masters = {}
         for cs, dep_ids in steps:
             masters[cs.stable_hash] = stack_files(
-                my_transform(cs), config,
-                *(masters[i] for i in dep_ids),
+                cs, config, *(masters[i] for i in dep_ids),
             )
-        master = stack_files(
-            my_transform(stack), config, *(masters[i] for i in top_ids),
-        )
-
-    (A `DownscaledStack` view keeps its source's `stable_hash`, so the
-    id-keyed indexing is transform-agnostic.)
+        master = stack_files(stack, config, *(masters[i] for i in top_ids))
     """
     cal_stacks = config.get_calibration_stacks()
     decisions = config.decisions
@@ -162,34 +157,37 @@ def _masters_by_type(
 
 def master_for(
     stack: BaseStack, cs: CalibrationStack, master: WithSidecar, dark: WithSidecar | None,
-) -> WithSidecar:
-    """The master `stack` divides by. A star flat's or a night-sky flat's
-    pattern has the right shape for every stack in its group but its own
-    amplitude for each one (the stack's sky sees the sensor's etalon at its
-    own contrast), so the group's flat is re-scaled to this stack before WBPP
-    sees it; an integrated master is used as built. `dark` lets the fit
-    remove the pedestal first."""
+) -> tuple:
+    """What `stack` is calibrated with, as `(master, gain or None)`. A star
+    flat's or a night-sky flat's pattern has the right shape for every stack
+    in its group but its own amplitude for each one (the stack's sky sees the
+    sensor's etalon at its own contrast), so the group's flat travels with
+    the gain fitted for THIS stack, and the stacker divides by the scaled
+    copy it writes into its scratch; an integrated master is used as built.
+    `dark` lets the fit remove the pedestal first."""
     from stacks.sky_flat import SkyFlatStack
-    from stacks.star_flat import StarFlatStack, gain_args, scale_star_flat
+    from stacks.star_flat import StarFlatStack, fit_flat_gain, gain_args
     if isinstance(cs, StarFlatStack):
-        return scale_star_flat(*gain_args(stack, master, dark, kind="star"))
+        return master, fit_flat_gain(*gain_args(stack, master, dark, kind="star"))
     if isinstance(cs, SkyFlatStack):
         # Same fit, wider limits: a night-sky flat is diluted by its members'
         # continuum and wants k ~ 5-6 (see GAIN_LIMITS).
-        return scale_star_flat(*gain_args(stack, master, dark, kind="sky"))
-    return master
+        return master, fit_flat_gain(*gain_args(stack, master, dark, kind="sky"))
+    return master, None
 
 
 def calibrate(
     stack: BaseStack, config: ProcessingConfig,
-) -> list[WithSidecar]:
-    """Build `stack`'s cal masters with no per-stack transformation.
+) -> list:
+    """Build `stack`'s cal masters, each flat's gain for this stack after it.
 
         cal_masters = calibrate(stack, config)
         master = stack_files(stack, config, *cal_masters)
 
     Returns the masters for `stack`'s OWN dependencies (sorted id order)
-    — the exact set `_run_wbpp_stacking` will match by STBLHASH."""
+    — the exact set `_run_wbpp_stacking` will match by STBLHASH — with a
+    `FlatGain` after each star / night-sky flat (it names its flat by
+    STBLHASH; the stacker scales that flat in its own scratch)."""
     steps, top_ids = calibration_plan(stack, config)
     cal_stacks: dict[str, CalibrationStack] = {}
     masters: dict[str, WithSidecar] = {}
@@ -198,4 +196,10 @@ def calibrate(
         masters[str(cs.stable_hash)] = calibration_master(
             cs, config, [masters[i] for i in dep_ids], dep_ids)
     dark = next((masters[i] for i in top_ids if getattr(cal_stacks[i], "image_type", None) == "dark"), None)
-    return [master_for(stack, cal_stacks[i], masters[i], dark) for i in top_ids]
+    out = []
+    for i in top_ids:
+        master, gain = master_for(stack, cal_stacks[i], masters[i], dark)
+        out.append(master)
+        if gain is not None:
+            out.append(gain)
+    return out

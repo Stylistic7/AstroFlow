@@ -2,6 +2,7 @@
 and quality gate, the master written for WBPP, the calibrate dispatch, and
 the decision default. Pure — no Ray, no context."""
 import dataclasses
+import json
 import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -68,7 +69,7 @@ def test_identity_follows_the_stack_conventions():
     assert sf.stable_hash == "c0000"                                  # the oldest member's content hash
     # the house convention — membership — plus the one term a Stack does not
     # need: the photometry schema, because the flat's pixels come from the
-    # members' MEASUREMENTS, not their pixels (cf. DownscaledStack's _fn_hash)
+    # members' MEASUREMENTS, not their pixels
     from metadata.star_photometry import SCHEMA as PHOTOMETRY_SCHEMA
     assert sf.content_hash == hash_list(sorted(f"c{i:04d}" for i in range(30)) + [PHOTOMETRY_SCHEMA])
     # re-solving a member must NOT move it — that would re-stack the whole train
@@ -215,13 +216,13 @@ def test_calibrate_dispatches_the_star_flat_producer(monkeypatch):
     monkeypatch.setattr(sel, "resolve_calibration", lambda s, c, d: s)
     monkeypatch.setattr(sel, "stack_files", lambda s, config, *m: calls.append(("wbpp", s.stable_hash)) or f"master:{s.stable_hash}")
     monkeypatch.setattr(sfm, "build_star_flat", lambda s, cells, window: calls.append(("star", s.stable_hash, cells)) or f"master:{s.stable_hash}")
-    monkeypatch.setattr(sfm, "scale_star_flat",
-                        lambda stack, master, dark_, *settings: calls.append(("scale", stack.stable_hash, master, dark_)) or f"scaled:{master}")
+    monkeypatch.setattr(sfm, "fit_flat_gain",
+                        lambda stack, master, dark_, *settings: calls.append(("fit", stack.stable_hash, master, dark_)) or f"gain:{master}")
     config = SimpleNamespace(get_calibration_stacks=lambda: {"dark1": dark, "sf1": sf}, decisions={})
     masters = sel.calibrate(light, config)
-    assert masters == ["master:dark1", "scaled:master:sf1"]
+    assert masters == ["master:dark1", "master:sf1", "gain:master:sf1"]   # the group flat, then its gain
     assert ("star", "sf1", CELLS) in calls and ("wbpp", "dark1") in calls and ("wbpp", "sf1") not in calls
-    assert ("scale", "light1", "master:sf1", "master:dark1") in calls
+    assert ("fit", "light1", "master:sf1", "master:dark1") in calls
 
 
 def test_calibrate_scales_without_a_dark_when_the_stack_has_none(monkeypatch):
@@ -231,10 +232,10 @@ def test_calibrate_scales_without_a_dark_when_the_stack_has_none(monkeypatch):
     calls = []
     monkeypatch.setattr(sel, "resolve_calibration", lambda s, c, d: s)
     monkeypatch.setattr(sfm, "build_star_flat", lambda s, cells, window: f"master:{s.stable_hash}")
-    monkeypatch.setattr(sfm, "scale_star_flat",
-                        lambda stack, master, dark_, *settings: calls.append(dark_) or f"scaled:{master}")
+    monkeypatch.setattr(sfm, "fit_flat_gain",
+                        lambda stack, master, dark_, *settings: calls.append(dark_) or f"gain:{master}")
     config = SimpleNamespace(get_calibration_stacks=lambda: {"sf1": sf}, decisions={})
-    assert sel.calibrate(light, config) == ["scaled:master:sf1"]
+    assert sel.calibrate(light, config) == ["master:sf1", "gain:master:sf1"]
     assert calls == [None]
 
 
@@ -373,14 +374,16 @@ def test_star_flat_master_is_a_display_product_like_every_other_master():
     assert getattr(stack_files, "_display", None) is not None
 
 
-def test_scale_star_flat_body_runs_on_the_runtime_types(tmp_path, monkeypatch):
-    """The node's body, driven the way the runtime drives it: the group's flat
-    and the dark arrive as `ImageMetadata` (a producer's result reaches its
-    consumer through the metadata wrap, like `stack_files`' `*cal_masters`),
+def test_fit_body_then_scaled_flat_in_scratch_on_the_runtime_types(tmp_path, monkeypatch):
+    """The fit node's body, driven the way the runtime drives it: the group's
+    flat and the dark arrive as `ImageMetadata` (a producer's result reaches
+    its consumer through the metadata wrap, like `stack_files`' `*cal_masters`),
     and `@node` enforces the hints — boot 81 failed all 286 calls on a
-    `WithSidecar` hint. Real files in, a WBPP-ready scaled master out, with
-    the fit in its sidecar and the group's STBLHASH carried over."""
-    from stacks.star_flat import GAIN_SECTION, scale_star_flat
+    `WithSidecar` hint. Real files in: a `FlatGain` naming the group flat,
+    then the WBPP-ready scaled flat a stacker writes into its scratch, with
+    the group's STBLHASH carried over."""
+    from stacks.star_flat import FlatGain, fit_flat_gain
+    from stacks.star_flat_gain import with_scaled_flats
     from stacks.starflat import write_master_flat
     from stacks.star_flat_gain import GAIN_BAND_PX, GAIN_MAX_SUBS, GAIN_METHOD, GAIN_SCALE
 
@@ -404,20 +407,23 @@ def test_scale_star_flat_body_runs_on_the_runtime_types(tmp_path, monkeypatch):
                                     content_hash="flat-c", stable_hash="1234567890123456")
     dark = dataclasses.replace(_meta(91, image_type="Master Dark", w=w, h=h), filename=dark_path,
                                content_hash="dark-c", stable_hash="dark1")
-    out = tmp_path / "out" / "scaled.xisf"
-    monkeypatch.setattr(scale_star_flat, "filename_fn", lambda *a: out)
 
     # The hints are the contract the runtime enforces: the masters are ImageMetadata.
     import inspect, typing
-    hints = typing.get_type_hints(inspect.unwrap(scale_star_flat._function))
+    hints = typing.get_type_hints(inspect.unwrap(fit_flat_gain._function))
     assert hints["star_flat"] is ImageMetadata and hints["dark"] == typing.Optional[ImageMetadata]
+    assert hints["return"] is FlatGain
     # ...and the body, unwrapped (the fake light stack is not a `Stack`).
-    body = inspect.unwrap(scale_star_flat._function)
-    result = body(stack, star_flat, dark, GAIN_BAND_PX, GAIN_SCALE, GAIN_MAX_SUBS, GAIN_METHOD)
+    gain = inspect.unwrap(fit_flat_gain._function)(stack, star_flat, dark, GAIN_BAND_PX, GAIN_SCALE,
+                                                   GAIN_MAX_SUBS, GAIN_METHOD)
+    assert isinstance(gain, FlatGain) and abs(gain.k - 1.4) < 0.08 and gain.flat_id == "1234567890123456"
+    fit = json.loads(gain.fit_json)
+    assert fit["n_used"] == 4 and fit["dark"] is True
+    scratch = tmp_path / "scratch"; scratch.mkdir()
+    by_id = with_scaled_flats({"1234567890123456": flat_path, "dark1": dark_path}, [gain], scratch)
+    out = by_id["1234567890123456"]
+    assert out.parent == scratch and by_id["dark1"] == dark_path
 
-    assert Path(str(result)) == out and out.exists()
-    fit = get_section(out, GAIN_SECTION)
-    assert abs(fit["k"] - 1.4) < 0.08 and fit["n_used"] == 4 and fit["dark"] is True
     hdr = read_header(out)
     assert str(hdr["STBLHASH"]) == "1234567890123456" and abs(float(hdr["SFLATK"]) - fit["k"]) < 1e-3
     scaled = read_image(out); scaled = scaled / np.median(scaled)

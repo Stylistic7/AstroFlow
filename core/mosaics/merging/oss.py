@@ -457,8 +457,8 @@ def merge_images_oss(
     the overlap level solve reads pure sky + nebulosity, with no star
     flux biasing the pair statistics.
 
-    Pipeline-agnostic: PI Master and PI Downscaled hybrid variants both
-    call this with their own placed inputs. One call per mosaic per
+    Pipeline-agnostic: every OSS-merging pipeline (WBPP or Siril stacks)
+    calls this with their own placed inputs. One call per mosaic per
     filter; no row/strip decomposition (see `_blend_many` for why)."""
     return _merge_layer(merge_images_oss, mosaic, filter, inputs,
                         level_solve="overlap", skyver="overlap-3-ivw",

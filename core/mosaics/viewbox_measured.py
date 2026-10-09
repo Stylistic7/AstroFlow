@@ -19,11 +19,8 @@ prediction working at trace time, and the runtime resolves them to real
 `ImageMetadata` before the body runs. The viewbox therefore re-keys exactly
 when a channel master changes, which is the point.
 
-Quality here is only "Subframe" (fixed 2048 px thumbnail canvas) or native.
-The declared path multiplied the object's native scale by
-`DOWNSCALE_FACTORS[quality]` because it couldn't see the files; a measured
-channel's scale already IS the downscaled scale for downscaled pipelines,
-so applying a factor again would double it.
+Quality here is only "Subframe" (fixed 2048 px thumbnail canvas) or native:
+the measured channel's scale IS the file's scale.
 """
 import astropy.io.fits
 import numpy as np
@@ -34,8 +31,8 @@ from attributes.astrometric_attributes import (
     covering_polygon, spherical_centroid_deg, _to_spherical_polygon,
 )
 from decorators import node
-from geometry.projections import mercator
 from geometry.projections.gnomonic import GnomonicProjection
+from geometry.projections.stereographic import StereographicProjection
 from geometry.polygons import project_polygon
 from geometry.viewbox import compute_viewbox as geometry_compute_viewbox
 from metadata.classes import ImageMetadata
@@ -105,11 +102,11 @@ def compute_viewbox_measured(
       downstream — a display concern, not a reason to crop);
     * center: the spherical centroid of the channels' plate centers;
     * projection: TAN at the center, rotated to the reference (a Target —
-      one pointing — reproduces what the camera saw); Mercator for a real
-      multi-panel mosaic, which has no single position angle to be tangent
-      to. Same reasoning, measured inputs — see `_projection_for`'s
-      docstring in mosaics/viewbox.py for the sign convention and the
-      sec(delta) cost argument.
+      one pointing — reproduces what the camera saw); STEREOGRAPHIC at the
+      center for a real multi-panel mosaic, also rotated to the reference
+      (its panels usually share the camera angle), conformal and with no RA
+      wrap. See `_projection_for`'s docstring in mosaics/viewbox.py for the
+      sign convention and why not Mercator.
 
     `channels` must all carry plate solutions; a channel without one cannot
     be placed anyway, and silently dropping it here would size a canvas that
@@ -142,7 +139,11 @@ def compute_viewbox_measured(
             -rotation,
         )
     else:
-        projection = mercator.MercatorProjection()
+        projection = StereographicProjection(
+            float(np.deg2rad(center_raw[0])),
+            float(np.deg2rad(center_raw[1])),
+            -rotation,
+        )
 
     xs, ys = project_polygon(footprint, projection)
     x_min, y_min, x_span, y_span = geometry_compute_viewbox(list(zip(xs, ys)))
@@ -150,9 +151,7 @@ def compute_viewbox_measured(
     if quality == SUBFRAME:
         num_pixels_x = 2048.0
     else:
-        # The measured scale IS the file's scale — downscaled masters carry
-        # their downscaled solution, so no DOWNSCALE_FACTORS multiplier
-        # (applying one here would double-count the downscale).
+        # The measured scale IS the file's scale.
         num_pixels_x = x_span / np.deg2rad(image_scale / 3600)
     finished_pixels_x = int(np.ceil(num_pixels_x))
 
@@ -161,6 +160,8 @@ def compute_viewbox_measured(
     # `x_span / resolution` pixels of field on both axes.
     resolution = x_span / finished_pixels_x
     finished_pixels_y = int(np.ceil(y_span / resolution))
+    from mosaics.viewbox import check_canvas
+    check_canvas(finished_pixels_x, finished_pixels_y, [c.filename for c in channels][:3])
 
     return Viewbox(
         projection=projection,

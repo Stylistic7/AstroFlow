@@ -27,8 +27,7 @@ from astroscrappy import detect_cosmics
 from decorators import node
 from file_io.generic import read_image, read_header
 from file_io.types import FitsFilePath, WithSidecar
-from previews.types import DOWNSCALED_MASTER, DOWNSCALE_FACTORS
-from stacks.composite_stack import BaseStack, Stack, CalibrationStack
+from stacks.composite_stack import BaseStack, Stack
 from stacks.types import StackIdDependency
 from decisions.resolve import resolve_calibration, resolve_decisions
 from decisions.compute_graph import ALL_EXCLUSION_TYPES
@@ -186,9 +185,7 @@ def stack_files_oss(
     stack: BaseStack,
     config: ProcessingConfig,
 ) -> WithSidecar[FitsFilePath]:
-    """OSS stacker producing a full-resolution master. A future
-    downscaled OSS pipeline would compose `downscale_master` on top
-    (only the PI backend has the downscale op registered today)."""
+    """OSS stacker producing a full-resolution master."""
     stack = resolve_calibration(stack, config.get_calibration_stacks(), config.decisions)
     if config.decisions and isinstance(stack, Stack):
         filtered = resolve_decisions(stack, ALL_EXCLUSION_TYPES, config.decisions, config.min_frames_in_stack)

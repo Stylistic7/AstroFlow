@@ -23,19 +23,10 @@ metadata_bp = Blueprint("metadata", __name__)
 
 def _viewbox_quality_for_pipeline(pipeline: str) -> str:
     """Map a pipeline name to the viewbox-quality the pipeline's
-    outputs are computed at. `compute_viewbox` needs one of
-    ("Subframe", "Master", "DownscaledMaster") — these are the
-    on-disk canvas sizes the pipelines produce.
-
-    Heuristic on the pipeline display name: "Subframe" → Subframe,
-    contains "Downscaled" → DownscaledMaster, else Master. User
-    pipelines that produce different-sized canvases would want to
-    declare their viewbox quality explicitly via @pipeline; that's
-    a follow-up."""
+    outputs are computed at: "Subframe" for the Subframe pipeline,
+    "Master" (native scale) for every other."""
     if pipeline == "Subframe":
         return "Subframe"
-    if "Downscaled" in pipeline:
-        return "DownscaledMaster"
     return "Master"
 
 
