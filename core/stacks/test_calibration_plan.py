@@ -124,3 +124,21 @@ def test_plan_steps_are_dependency_ordered(monkeypatch):
         assert all(d in seen for d in dep_ids), (cs.stable_hash, dep_ids)
         seen.add(str(cs.stable_hash))
     assert top_ids == ("flat1",)
+
+
+def test_a_pipeline_integrator_builds_every_master(monkeypatch):
+    """`integrate` replaces WBPP for the whole chain: the Siril pipeline's
+    bias, dark and flat masters never touch `stack_files`."""
+    entities = {"bias1": _stack("bias1"), "dark1": _stack("dark1"),
+                "flat1": _stack("flat1", deps=("bias1",))}
+    wbpp_calls, config = _wire(monkeypatch, entities)
+    own = []
+
+    def integrate(s, config, *masters):
+        own.append((s.stable_hash, masters))
+        return f"own:{s.stable_hash}"
+
+    cal = sel.calibrate(_stack("light1", deps=("dark1", "flat1")), config, integrate=integrate)
+    assert wbpp_calls == []
+    assert dict(own)["flat1"] == ("own:bias1",)
+    assert cal == ["own:dark1", "own:flat1"]

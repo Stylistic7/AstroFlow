@@ -103,6 +103,18 @@ def test_scratch_is_local_only_when_the_output_is_on_a_network_volume(monkeypatc
     assert where("smbfs", 110 * 2**30) == dest.parent       # no room for the stack + headroom
 
 
+def test_calibration_frames_are_integrated_unregistered_by_their_kind():
+    """Bias and darks integrate unnormalised, flats scaled to a common level;
+    neither is registered (no stars) nor wFWHM-weighted."""
+    tmp = Path(tempfile.mkdtemp(prefix="sirtest"))
+    dark = _stack_script(tmp / "all", tmp, 4.0, "dark")
+    flat = _stack_script(tmp / "all", tmp, 4.0, "flat")
+    assert f"stack cal rej w 3 3 -nonorm -out={tmp}/master" in dark
+    assert f"stack cal rej w 3 3 -norm=mul -out={tmp}/master" in flat
+    for script in (dark, flat):
+        assert "register" not in script and "wfwhm" not in script
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

@@ -116,7 +116,7 @@ def has_own_producer(cs: CalibrationStack) -> bool:
 
 def calibration_master(
     cs: CalibrationStack, config: ProcessingConfig, dep_masters: list[WithSidecar],
-    dep_ids: tuple[str, ...] = (),
+    dep_ids: tuple[str, ...] = (), integrate=None,
 ) -> WithSidecar:
     """One calibration stack's master, by the producer its kind is built by.
 
@@ -126,7 +126,8 @@ def calibration_master(
         the user promoted, dark-subtracted only — dividing by a flat first
         would make it that flat's RESIDUAL instead of a flat in its own right;
       * everything else is INTEGRATED from its frames with the masters of its
-        own dependencies.
+        own dependencies, by `integrate` (`stack_files`, WBPP, unless the
+        pipeline stacks with another integrator).
 
     `dep_ids` name `dep_masters` positionally (the sorted ids
     `calibration_plan` returns), which is how the sky-flat build picks out
@@ -139,7 +140,7 @@ def calibration_master(
     if isinstance(cs, SkyFlatStack):
         by_type = _masters_by_type(config, dep_ids, dep_masters)
         return build_sky_flat(cs, by_type.get("dark"))
-    return stack_files(cs, config, *dep_masters)
+    return (integrate or stack_files)(cs, config, *dep_masters)
 
 
 def _masters_by_type(
@@ -177,7 +178,7 @@ def master_for(
 
 
 def calibrate(
-    stack: BaseStack, config: ProcessingConfig,
+    stack: BaseStack, config: ProcessingConfig, integrate=None,
 ) -> list:
     """Build `stack`'s cal masters, each flat's gain for this stack after it.
 
@@ -187,14 +188,16 @@ def calibrate(
     Returns the masters for `stack`'s OWN dependencies (sorted id order)
     — the exact set `_run_wbpp_stacking` will match by STBLHASH — with a
     `FlatGain` after each star / night-sky flat (it names its flat by
-    STBLHASH; the stacker scales that flat in its own scratch)."""
+    STBLHASH; the stacker scales that flat in its own scratch). `integrate`
+    builds the bias, dark and flat masters: a pipeline passes its own
+    stacker so its masters never involve another one."""
     steps, top_ids = calibration_plan(stack, config)
     cal_stacks: dict[str, CalibrationStack] = {}
     masters: dict[str, WithSidecar] = {}
     for cs, dep_ids in steps:
         cal_stacks[str(cs.stable_hash)] = cs
         masters[str(cs.stable_hash)] = calibration_master(
-            cs, config, [masters[i] for i in dep_ids], dep_ids)
+            cs, config, [masters[i] for i in dep_ids], dep_ids, integrate)
     dark = next((masters[i] for i in top_ids if getattr(cal_stacks[i], "image_type", None) == "dark"), None)
     out = []
     for i in top_ids:

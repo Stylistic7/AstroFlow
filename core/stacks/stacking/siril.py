@@ -145,14 +145,22 @@ def _gather(stack: BaseStack, tmp: Path) -> Path:
     return all_dir
 
 
-def _stack_script(all_dir: Path, tmp: Path, mem_gb: float) -> str:
-    """Phase 2: register and integrate the gathered frames within `mem_gb`
-    (Siril's default, 0.9 of free memory, would let concurrent instances
-    each claim the machine)."""
+def _stack_script(all_dir: Path, tmp: Path, mem_gb: float, image_type: str = "light") -> str:
+    """Phase 2: integrate the gathered frames within `mem_gb` (Siril's
+    default, 0.9 of free memory, would let concurrent instances each claim
+    the machine). Lights are registered first; calibration frames are
+    integrated as they lie, flats scaled to a common level, bias and darks
+    left unnormalised (Siril's own master recipes)."""
     assert " " not in str(tmp), tmp
-    return "\n".join([
-        "requires 1.4.0", "setext fit", f"setcpu {SIRIL_CPUS}", "set core.mem_mode=1", f"set core.mem_amount={mem_gb:.1f}",
-        f"cd {all_dir}", f"link light -out={tmp}/reg", f"cd {tmp}/reg",
+    head = ["requires 1.4.0", "setext fit", f"setcpu {SIRIL_CPUS}", "set core.mem_mode=1",
+            f"set core.mem_amount={mem_gb:.1f}", f"cd {all_dir}"]
+    if image_type != "light":
+        norm = "-norm=mul" if image_type == "flat" else "-nonorm"
+        return "\n".join(head + [
+            f"link cal -out={tmp}/reg", f"cd {tmp}/reg",
+            f"stack cal rej w 3 3 {norm} -out={tmp}/master", "close"]) + "\n"
+    return "\n".join(head + [
+        f"link light -out={tmp}/reg", f"cd {tmp}/reg",
         # Register, then re-apply cropped to the area EVERY frame covers, so
         # no consumer can include ragged, partly covered edges. -2pass would
         # skip the first write but picks its own reference, which cost
@@ -243,7 +251,7 @@ def integrate_with_siril(
         script = _calibration_script(stack, cal_by_id, tmp)
         if script:
             _run_siril(tmp, "calibrate.ssf", script)
-        _run_siril(tmp, "stack.ssf", _stack_script(_gather(stack, tmp), tmp, _memory_budget_gb()))
+        _run_siril(tmp, "stack.ssf", _stack_script(_gather(stack, tmp), tmp, _memory_budget_gb(), stack.image_type))
         out = tmp / "master.fit"
         assert out.exists(), f"Siril wrote no master for {stack}"
         part = dest.with_name(f".siril-{dest.name}.part")

@@ -2,10 +2,10 @@
 
 An A/B fork of `hybrid_graxpert_oss_mosaic.py`. **One thing differs**: each
 stack is integrated by Siril (`stacks.stacking.siril.integrate_with_siril`)
-instead of PixInsight's WBPP (`stack_files`). Calibration masters, the
-post-stack calibration (SPFC + GraXpert), the channel combine, BXT,
-placement, the merge and the colour tail are the same code — registered
-through that module's `register`.
+instead of PixInsight's WBPP (`stack_files`), and so are its bias, dark and
+flat masters: nothing in this pipeline runs WBPP. The post-stack calibration
+(SPFC + GraXpert), the channel combine, BXT, placement, the merge and the
+colour tail are the same code — registered through that module's `register`.
 
 WHY (measured 2026-10-08 on panel 6 OIII, 45 subs, uncalibrated): Siril
 integrated in 26 s on an idle machine, where WBPP took 12.5 min with the app
@@ -28,10 +28,10 @@ PIPELINE = "Hybrid: Siril + GraXpert + OSS Mosaic"
 
 @workflow_group
 def post_processed_master(stack, config):
-    """Calibrate → Siril-integrate → plate-solve → post-stacking calibration.
+    """Calibrate (Siril masters) → Siril-integrate → plate-solve → post-stacking calibration.
     The solve is its own light node so the integration's CPUs and memory
     are free while solve-field runs on one core."""
-    cal_masters = calibrate(stack, config)
+    cal_masters = calibrate(stack, config, integrate=integrate_with_siril)
     master = plate_solve_image(integrate_with_siril(stack, config, *cal_masters))
     analyze_master(master)   # leaf: writes the master's `analysis` sidecar section
     return inherit_plate_solution(post_stack_calibrate(stack, config, master), master)
