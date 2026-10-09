@@ -265,10 +265,41 @@ def post_stack_calibrate(
     return WithSidecar(XisfFilePath(output_filename))
 
 
+# FITS cards that describe the FITS container or its WCS, not the image: the
+# XISF writer derives its own geometry, and the output is re-solved by the
+# pipeline's plate-solve node (a FITS WCS is bottom-up; XISF is top-down).
+_FITS_STRUCTURE = ("SIMPLE", "BITPIX", "NAXIS", "EXTEND", "BZERO", "BSCALE", "END")
+_FITS_WCS = ("CTYPE", "CRPIX", "CRVAL", "CDELT", "CUNIT", "CD1_", "CD2_", "PC1_", "PC2_",
+             "A_", "B_", "AP_", "BP_", "LONPOLE", "LATPOLE", "EQUINOX", "RADESYS", "WCSAXES",
+             "PLTSOLVD", "IMAGEW", "IMAGEH")
+
+
+def _fits_as_xisf_parts(source: Path) -> tuple:
+    """`(pixels, images_metadata, file_metadata)` for a FITS master (a
+    Siril stack), shaped like the xisf reader's, so the same writer applies:
+    pixels as `read_image` gives them (HxWx1), every descriptive keyword
+    carried as a FITS keyword of the XISF image."""
+    from astropy.io import fits
+
+    from file_io.generic import read_image
+    header = fits.getheader(source)
+    image = np.asarray(read_image(source), np.float32)
+    if image.ndim == 2:
+        image = image[:, :, None]
+    keywords = {}
+    for card in header.cards:
+        k = card.keyword
+        if not k or k in ("COMMENT", "HISTORY") or k.startswith(_FITS_STRUCTURE) or k.startswith(_FITS_WCS):
+            continue
+        keywords[k] = [{"value": str(card.value), "comment": str(card.comment)}]
+    return image, [{"FITSKeywords": keywords}], {}
+
+
 def _write_pixels_preserving_metadata(
     source: Path, dest: Path, pixels: "np.ndarray | None",
 ) -> None:
-    """Write `source`'s XISF to `dest`, swapping in `pixels` when given.
+    """Write `source` (an XISF, or a FITS master such as Siril's) to `dest`
+    as XISF, swapping in `pixels` when given.
 
     Same read-modify-write shape as
     `background_pedestal.apply_background_pedestal_to_xisf`: the file and image
@@ -278,11 +309,14 @@ def _write_pixels_preserving_metadata(
     """
     from xisf import XISF  # type: ignore
 
-    xisf = XISF(str(source))
-    image = xisf.read_image(0)
-    file_meta = xisf.get_file_metadata()
-    ims_meta = xisf.get_images_metadata()
-    del xisf
+    if source.suffix.lower() in (".fit", ".fits"):
+        image, ims_meta, file_meta = _fits_as_xisf_parts(source)
+    else:
+        xisf = XISF(str(source))
+        image = xisf.read_image(0)
+        file_meta = xisf.get_file_metadata()
+        ims_meta = xisf.get_images_metadata()
+        del xisf
 
     if pixels is not None:
         if pixels.shape != image.shape[:pixels.ndim]:

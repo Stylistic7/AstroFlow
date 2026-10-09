@@ -107,11 +107,19 @@ def _calibration_script(stack: BaseStack, cal_by_id: dict[str, Path], tmp: Path)
                 cal[kind] = _as_fits(Path(src), tmp / f"r{i}_{kind}.fit")
         if not cal:
             continue
+        args = " ".join(f"-{k}={v}" for k, v in sorted(cal.items()))
+        if len(run.metadata) == 1:
+            # Siril won't load a one-image sequence ("invalid input
+            # sequence"); calibrate the lone frame directly, under the name
+            # the sequence path would have given it.
+            (m,) = run.metadata.values()
+            os.symlink(m.filename, tmp / "proc" / f"r{i}_00001.fit")
+            lines += [f"cd {tmp}/proc", f"calibrate_single r{i}_00001.fit {args} -prefix=pp_"]
+            continue
         run_dir = tmp / f"run_{i}"
         run_dir.mkdir()
         for m in run.metadata.values():
             os.symlink(m.filename, run_dir / Path(m.filename).name)
-        args = " ".join(f"-{k}={v}" for k, v in sorted(cal.items()))
         lines += [f"cd {run_dir}", f"link r{i} -out={tmp}/proc", f"cd {tmp}/proc",   # Siril names it r{i}_
                   f"calibrate r{i} {args} -prefix=pp_"]
     return "\n".join(lines) + "\n" if len(lines) > 3 else None

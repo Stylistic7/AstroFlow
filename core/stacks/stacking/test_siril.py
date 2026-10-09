@@ -90,3 +90,15 @@ def test_integrate_with_siril_is_an_artifact_producer():
     silently drop it (boot141: every integration failed on it)."""
     from stacks.stacking.siril import integrate_with_siril
     assert callable(getattr(integrate_with_siril, "filename_fn", None))
+
+
+def test_a_single_frame_run_is_calibrated_alone():
+    """Siril won't load a one-image sequence; the lone frame goes through
+    calibrate_single under the name the sequence path would give it."""
+    tmp = Path(tempfile.mkdtemp(prefix="sirtest"))
+    (tmp / "proc").mkdir()
+    dark = _fits(tmp / "dark.fits")
+    run = _Run({"0": _Meta(_fits(tmp / "only.fit"))}, {"dark": StackIdDependency("d1")})
+    script = _calibration_script(_Stack({"r": run}), {"d1": dark}, tmp)
+    assert f"calibrate_single r0_00001.fit -dark={tmp}/r0_dark.fit -prefix=pp_" in script
+    assert "link" not in script and (tmp / "proc" / "r0_00001.fit").resolve() == (tmp / "only.fit").resolve()
