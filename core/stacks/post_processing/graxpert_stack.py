@@ -135,6 +135,19 @@ def post_stack_calibrate(
     Pixels are written back into a copy of the gain-true XISF so FITS
     keywords and the astrometric solution survive (without that,
     compute_image_metadata would re-solve from scratch)."""
+    output_filename = post_stack_calibrate.filename_fn(stack, config, master)
+    return calibrate_master(master, stack.filter, f"stack {stack.stable_hash}", config,
+                            Path(output_filename))
+
+
+def calibrate_master(
+    master: ImageMetadata, filter: str, subject: str, config: ProcessingConfig,
+    output_filename: Path,
+) -> WithSidecar[XisfFilePath]:
+    """`post_stack_calibrate`'s work on any linear master with a plate
+    solution — one stack's, or a target channel HDR-combined from several
+    (`targets.merging.oss.calibrate_channel`): SPFC gain, GraXpert, pedestal.
+    `subject` names the master in errors and logs."""
     if master.plate_solution is None:
         # compute_image_metadata already raises when solve-field fails on
         # a light frame, so a master with no solution here is an upstream
@@ -144,7 +157,6 @@ def post_stack_calibrate(
             f"plate_solution; SPFC cannot match catalogue stars without a WCS"
         )
 
-    output_filename = post_stack_calibrate.filename_fn(stack, config, master)
     os.makedirs(os.path.dirname(output_filename), exist_ok=True)
 
     mock = config.development_settings.mock_pixinsight
@@ -177,21 +189,21 @@ def post_stack_calibrate(
     # SIP left the right third of the frame 10-20 px off).
     from photometry.harvest import passband_key
     from photometry.solution_check import check_solution
-    key = passband_key(stack.filter)
+    key = passband_key(filter)
     verdict = check_solution(image, wcs, key) if key else None
     if verdict is not None and not verdict.ok:
         raise ValueError(
             f"post_stack_calibrate: the plate solution of {master.filename} "
-            f"(stack {stack.stable_hash}, filter {stack.filter}) does not place the "
+            f"({subject}, filter {filter}) does not place the "
             f"stars: {verdict}. REFUSING to calibrate against apertures that miss "
             f"their stars — re-solve the master (a stale or under-fitted SIP)."
         )
     try:
-        scale, n_stars, sigma = spfc_scale(image, wcs, filter=stack.filter)
+        scale, n_stars, sigma = spfc_scale(image, wcs, filter=filter)
     except ValueError as e:
         raise ValueError(
             f"post_stack_calibrate: too few calibratable stars on "
-            f"{stack.stable_hash} filter {stack.filter} ({master.filename}). "
+            f"{subject} filter {filter} ({master.filename}). "
             f"REFUSING to pass uncalibrated data downstream — quarantine or "
             f"reshoot this panel."
         ) from e
@@ -200,7 +212,7 @@ def post_stack_calibrate(
         raise ValueError(
             f"post_stack_calibrate: gain {gain:.3e} is outside the sane band "
             f"{_SANE_GAIN} (scale={scale:.6g}, reference="
-            f"{float(_SPFC_REFERENCE_SCALE):.6g}, filter={stack.filter}, "
+            f"{float(_SPFC_REFERENCE_SCALE):.6g}, filter={filter}, "
             f"{master.filename}). A gain this far from 1 means the reference "
             f"and the measured scale are in DIFFERENT UNITS, not that the "
             f"image is unusual. REFUSING to scale pixels by it."
@@ -259,8 +271,8 @@ def post_stack_calibrate(
 
     if cert:
         set_section(Path(output_filename), "spfc_calibration", cert)
-        log.info("post_stack_calibrate complete", stack=stack.stable_hash,
-                 filter=stack.filter, gain=cert["reference"] / cert["scale"],
+        log.info("post_stack_calibrate complete", subject=subject,
+                 filter=filter, gain=cert["reference"] / cert["scale"],
                  n_stars=cert["n_stars"], output=str(output_filename))
     return WithSidecar(XisfFilePath(output_filename))
 

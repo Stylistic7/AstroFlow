@@ -1,5 +1,6 @@
 """Target-level merging: HDR-combine per-stack masters into one per-
-(target, filter) channel master. PixInsight default; OSS available.
+(target, filter) channel master: PixInsight's HDRComposition, or the
+PixInsight-free OSS combine the Siril pipeline uses.
 
 `from targets.merging import merge_target_channel` re-exports the
 PixInsight variant; pipeline code should pick a backend explicitly via

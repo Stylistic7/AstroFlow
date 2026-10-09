@@ -84,12 +84,19 @@ def post_processed_master(stack, config):
 
 
 @workflow_group
-def channels_for_target(target, config, post_processed_master=post_processed_master):
+def channels_for_target(target, config, post_processed_master=post_processed_master,
+                        channel=None):
     """Per-filter HDR-combined channel masters. `post_processed_master` is
-    the per-stack recipe — this module's (WBPP), or a fork's (Siril)."""
+    the per-stack recipe — this module's (WBPP), or a fork's (Siril). A fork
+    with its own `channel(target, filter, stacks, config)` recipe builds each
+    channel with it; otherwise PixInsight HDR-combines the post-processed
+    masters."""
     channels = {}
     for filter in target.filters:
         stacks = target.stacks_for(filter)
+        if channel is not None:
+            channels[filter] = channel(target, filter, stacks, config)
+            continue
         masters = [post_processed_master(s, config) for s in stacks]
         channels[filter] = solved_channel(merge_target_channel(
             target, filter, stacks, config, *masters,
@@ -232,11 +239,11 @@ def _merged_channels(mosaic, targets_by_id, channels, config,
     return starless_out, stars_out
 
 
-def register(name: str, post_processed_master) -> tuple:
+def register(name: str, post_processed_master, channel=None) -> tuple:
     """Register this pipeline's three entry points (Stack, Target, Mosaic)
-    under `name`, with `post_processed_master` as the per-stack recipe.
-    Everything after stacking — channel combine, BXT, placement, the merge,
-    the colour tail — is shared; only the recipe differs between forks."""
+    under `name`, with `post_processed_master` as the per-stack recipe and
+    `channel` as the per-filter one (see `channels_for_target`). Everything
+    else — BXT, placement, the mosaic merge, the colour tail — is shared."""
     @pipeline(name, processes=Stack)
     def for_stack(stack, config):
         """One stack's GraXpert-corrected master."""
@@ -248,7 +255,7 @@ def register(name: str, post_processed_master) -> tuple:
         single-panel mosaic, so it runs the same machinery `for_mosaic` does."""
         channels = {
             (target.id, filter): sink
-            for filter, sink in channels_for_target(target, config, post_processed_master).items()
+            for filter, sink in channels_for_target(target, config, post_processed_master, channel).items()
         }
         viewbox = _measured_viewbox(channels, single_panel=True)
         starless, stars = _merged_channels(target, {target.id: target}, channels,
@@ -269,7 +276,7 @@ def register(name: str, post_processed_master) -> tuple:
         targets_by_id = {t.id: t for t in mosaic.targets}
         channels = {}
         for target in mosaic.targets:
-            for filter, sink in channels_for_target(target, config, post_processed_master).items():
+            for filter, sink in channels_for_target(target, config, post_processed_master, channel).items():
                 channels[(target.id, filter)] = sink
         viewbox = _measured_viewbox(channels,
                                     single_panel=len(targets_by_id) == 1)

@@ -14,8 +14,9 @@ and this whole tail can run in parallel with WBPP.
 """
 import inspect
 
-from stacks.post_processing.graxpert_stack import post_stack_calibrate
+from stacks.post_processing.graxpert_stack import calibrate_master, post_stack_calibrate
 from stacks.post_processing.pixinsight import post_process_stack
+from targets.merging.oss import calibrate_channel
 
 
 def _declared_resources(op):
@@ -30,12 +31,12 @@ def test_post_stack_calibrate_declares_no_pixinsight():
     )
 
 
-def _body_without_docstring(op) -> str:
-    """Source of the op's body with the docstring removed — the docstring
-    NAMES the PI calls it no longer makes, so a naive substring check would
-    match its own explanation."""
+def _body_without_docstring(fn) -> str:
+    """Source of a function's (or op's) body with the docstring removed — the
+    docstring NAMES the PI calls it no longer makes, so a naive substring
+    check would match its own explanation."""
     import ast, textwrap
-    tree = ast.parse(textwrap.dedent(inspect.getsource(op._function)))
+    tree = ast.parse(textwrap.dedent(inspect.getsource(getattr(fn, "_function", fn))))
     fn = tree.body[0]
     body = fn.body[1:] if (isinstance(fn.body[0], ast.Expr)
                            and isinstance(fn.body[0].value, ast.Constant)
@@ -45,11 +46,16 @@ def _body_without_docstring(op) -> str:
 
 def test_post_stack_calibrate_body_calls_no_pixinsight():
     """The resource declaration and the body must agree — declaring no slot
-    while still launching PI would oversubscribe the real PI instances."""
-    src = _body_without_docstring(post_stack_calibrate)
+    while still launching PI would oversubscribe the real PI instances. The
+    work lives in `calibrate_master`, which the target-channel op
+    `calibrate_channel` shares."""
+    for op in (post_stack_calibrate, calibrate_channel):
+        assert "PixInsight" not in _declared_resources(op)
+        assert "calibrate_master" in _body_without_docstring(op)
+    src = _body_without_docstring(calibrate_master)
     for forbidden in ("from pix.", "pix.image", "SpectrophotometricFluxCalibration",
                       "WriteAstrometricSolution", "PixInsightError"):
-        assert forbidden not in src, f"post_stack_calibrate still reaches PixInsight: {forbidden}"
+        assert forbidden not in src, f"calibrate_master still reaches PixInsight: {forbidden}"
     assert "spfc_scale" in src, "it should compute the SPFC scale in-house"
 
 

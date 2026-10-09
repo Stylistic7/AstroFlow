@@ -6,8 +6,8 @@ one stack at one exposure or multiple stacks across exposures (HDR).
 
 The sentinel dataclass exists only so `@makes_image(TargetChannel, ...)`
 can register the merge producer. The actual merge implementation lives
-in `merge_target_channel.py` (PIXINSIGHT) and `merge_target_channel_oss.py`
-(OSS).
+in `targets/merging/pixinsight.py` (PixInsight HDRComposition) and
+`targets/merging/oss.py` (the PixInsight-free HDR combine).
 
 The graph-building that pipelines do (stack + merge per channel) is in
 each `@pipeline` body now — see `core/pipelines/*.py`.

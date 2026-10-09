@@ -173,7 +173,9 @@ def start_ray_subordinate_node(head_node_address, node_ip_address: str | None = 
     # TODO: Put these resources in the UI.
     resources = _resources({"PixInsight": 1, "gpu_slots": 2})
     bind = node_ip_address or get_ip()
-    command = f"""ulimit -n 10000 && RAY_num_workers_soft_limit={_workers_soft_limit()} {ray_path} start --address {head_node_address}:6379 --node-ip-address {bind} --memory {_ray_memory_bytes()} --resources {resources}"""
+    # Ray refuses multi-node clusters on macOS without the opt-in; set here, not
+    # in a shell profile (fish universals are invisible to zsh/ssh launches).
+    command = f"""ulimit -n 10000 && RAY_ENABLE_WINDOWS_OR_OSX_CLUSTER=1 RAY_num_workers_soft_limit={_workers_soft_limit()} {ray_path} start --address {head_node_address}:6379 --node-ip-address {bind} --memory {_ray_memory_bytes()} --resources {resources}"""
     print(f'### Starting Ray subordinate node with command "{command}"')
     process = subprocess.Popen(
         command,
