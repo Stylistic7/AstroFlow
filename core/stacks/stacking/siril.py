@@ -145,6 +145,22 @@ def _stack_script(all_dir: Path, tmp: Path, mem_gb: float) -> str:
         "register light", f"stack r_light {STACK_OPTIONS} -out={tmp}/master", "close"]) + "\n"
 
 
+def _reference_frame(tmp: Path) -> Path:
+    """The raw sub Siril registered everything onto. The master shares its
+    pixel grid exactly (registration framing is the reference's), so its
+    plate solution is the master's. Read from the sequence header's
+    reference index, then followed back through the symlinks: reg/light_ ->
+    all/ -> a calibrated pp_ file, whose own link (same name less the
+    prefix) leads to the raw frame."""
+    lines = (tmp / "reg" / "light_.seq").read_text().splitlines()
+    ref = int(next(x for x in lines if x.startswith("S ")).split()[6])
+    filenums = [int(x.split()[1]) for x in lines if x.startswith("I ")]
+    real = Path(os.path.realpath(tmp / "reg" / f"light_{filenums[ref]:05d}.fit"))
+    if real.name.startswith("pp_"):
+        real = Path(os.path.realpath(real.parent / real.name[len("pp_"):]))
+    return real
+
+
 def _run_siril(tmp: Path, name: str, script: str) -> None:
     (tmp / name).write_text(script)
     r = subprocess.run([siril_cli(), "-d", str(tmp), "-s", str(tmp / name)],
@@ -207,6 +223,19 @@ def integrate_with_siril(
         out = tmp / "master.fit"
         assert out.exists(), f"Siril wrote no master for {stack}"
         os.replace(out, dest)
+        ref = _reference_frame(tmp)
+    # The master inherits its reference sub's plate solution (seeded into the
+    # sidecar, which the decorator's solve consults first): one master solve
+    # costs ~45 s on one core while this task holds SIRIL_CPUS. A reference
+    # sub without a solution leaves the master to be solved.
+    donor = next((m for run in stack.contents.values() for m in run.metadata.values()
+                  if Path(os.path.realpath(m.filename)) == ref), None)
+    if donor is not None and donor.plate_solution is not None:
+        from file_io.sidecar import set_section
+        from plate_solving import _plate_solution_to_obj
+        set_section(dest, "plate_solution", _plate_solution_to_obj(donor.plate_solution))
+    else:
+        log.info("Siril reference sub has no plate solution; solving the master", ref=str(ref))
     update_header(dest, {"IMAGETYP": f"Master {stack.image_type}", "STBLHASH": stack.stable_hash,
                          "NOISE00": _robust_noise(dest), "NOISEEST": "robust high-pass (AstroFlow)"})
     return WithSidecar(FitsFilePath(dest))
