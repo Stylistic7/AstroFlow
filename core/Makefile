@@ -181,7 +181,7 @@ start: sweep-pi-swap sweep-vips-scratch sweep-staging sweep-siril-scratch
 .PHONY: sweep-siril-scratch
 sweep-siril-scratch:
 	@d="$$(PYTHONPATH=. uv run python -c 'from context import local_context as c; print(c.output_dir)' 2>/dev/null)/integrate_with_siril"; \
-	for x in $$(find "$$d" -maxdepth 1 -name '.siril-*' -type d 2>/dev/null); do \
+	for x in $$(find "$$d" "$${TMPDIR:-/tmp}" -maxdepth 1 -name '.siril-*' 2>/dev/null); do \
 		echo "→ swept orphaned Siril scratch $$x ($$(du -sh $$x | cut -f1))"; rm -rf "$$x"; \
 	done
 

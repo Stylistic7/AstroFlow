@@ -221,6 +221,7 @@ def run_nxt(
     denoise_color_lf: float = 1.00,       # LF colour: 100% (kills large-scale colour blotches)
     frequency_scale: float = 5.0,         # HF/LF transition scale (rc-astro default)
     iterations: int = 2,                  # successive-approximation steps (AI3)
+    overlap: float = 0.2,
     timeout: float | None = 1800.0,
 ) -> None:
     """NoiseXTerminator `input_image` → `output_xisf` (32-bit float).
@@ -238,7 +239,7 @@ def run_nxt(
         produced = Path(td) / f"{input_image.stem}-nxt.xisf"
         args = ["nxt", str(input_image), "-o", str(produced),
                 "--depth", "32F", "--overwrite",
-                "--iterations", str(iterations),
+                "--iterations", str(iterations), "--overlap", str(overlap),
                 "--frequency-scale", str(frequency_scale),
                 "--denoise-intensity-high-freq", str(denoise_intensity_hf),
                 "--denoise-intensity-low-freq", str(denoise_intensity_lf),

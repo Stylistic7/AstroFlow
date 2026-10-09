@@ -79,6 +79,30 @@ def test_siril_master_integration_is_frame_count_times_exposure():
     assert read_master_integration_seconds(p, {"EXPTIME": 300.0}) is None      # a raw sub
 
 
+def test_scratch_is_local_only_when_the_output_is_on_a_network_volume(monkeypatch):
+    """A network output volume would carry every intermediate copy twice;
+    a local one keeps the scratch beside the output, and so does a node
+    whose own disk is too small for the stack."""
+    from collections import namedtuple
+
+    import psutil
+    from stacks.stacking import siril
+    Part = namedtuple("Part", "mountpoint fstype")
+    Usage = namedtuple("Usage", "free")
+    dest = Path("/Volumes/AstroProcessed/Processed/integrate_with_siril/m.fits")
+    local = Path(tempfile.gettempdir())
+
+    def where(fstype, free):
+        monkeypatch.setattr(psutil, "disk_partitions", lambda all: [
+            Part("/", "apfs"), Part("/Volumes/AstroProcessed", fstype)])
+        monkeypatch.setattr(siril.shutil, "disk_usage", lambda p: Usage(free))
+        return siril._scratch_parent(dest, 100 * 2**30)
+
+    assert where("apfs", 10**15) == dest.parent
+    assert where("smbfs", 10**15) == local
+    assert where("smbfs", 110 * 2**30) == dest.parent       # no room for the stack + headroom
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

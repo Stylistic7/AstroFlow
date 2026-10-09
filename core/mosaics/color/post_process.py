@@ -440,7 +440,8 @@ def nxt(
                     denoise_color_hf=config.nxt.denoise_color_hf,
                     denoise_color_lf=config.nxt.denoise_color_lf,
                     frequency_scale=config.nxt.frequency_scale,
-                    iterations=config.nxt.iterations)
+                    iterations=config.nxt.iterations,
+                    overlap=config.nxt.overlap)
             result = np.atleast_3d(read_image(Path(tout))).copy()
             result[empty] = 0
             write_tiff_image(Path(out), result, {"PIPELINE": "AstroFlow-OSS"})

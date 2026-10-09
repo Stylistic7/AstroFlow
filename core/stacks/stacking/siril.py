@@ -187,6 +187,26 @@ def _robust_noise(path: Path) -> float:
     return _noise(np.where(np.isfinite(a) & (a > 0), a, np.nan))
 
 
+
+_NETWORK_FS = {"smbfs", "nfs", "afpfs", "webdav"}
+_HEADROOM = 20 * 2**30
+
+
+def _scratch_parent(dest: Path, need_bytes: int) -> Path:
+    """Where a stack's scratch goes. Beside the output when that volume is
+    local: the big processed volume, one rename to publish. On a network
+    volume every calibrated and registered copy would cross the wire twice
+    (~4-5x the raw data), so this node's own disk takes the scratch when it
+    has room: one stack peaks at 2 x frames x 4 bytes x pixels, 170 GB for
+    the largest."""
+    import psutil
+    mount = max((p for p in psutil.disk_partitions(all=True) if dest.is_relative_to(p.mountpoint)),
+                key=lambda p: len(p.mountpoint))
+    local = Path(tempfile.gettempdir())
+    if mount.fstype in _NETWORK_FS and shutil.disk_usage(local).free > need_bytes + _HEADROOM:
+        return local
+    return dest.parent
+
 @node(display="Master", final=True, cache_key_narrow=_stack_files_narrow,
       num_cpus=SIRIL_CPUS, resources={"Siril": 0.001}, scheduling_strategy="SPREAD",
       auto_memory=True)
@@ -211,10 +231,9 @@ def integrate_with_siril(
     cal_by_id = {str(read_header(m.filename)["STBLHASH"]): Path(m.filename)
                  for m in cal_masters if not isinstance(m, FlatGain)}
     gains = [m for m in cal_masters if isinstance(m, FlatGain)]
-    # Scratch beside the output, on the big processed volume: one stack
-    # writes ~2 x frames x 245 MB (calibrated + registered, 61 MP, 32-bit),
-    # 170 GB for the largest, more than the boot volume holds.
-    with tempfile.TemporaryDirectory(prefix=".siril-", dir=dest.parent) as d:
+    need = sum(2 * 4 * int(m.header["NAXIS1"]) * int(m.header["NAXIS2"])      # calibrated + registered float32
+               for m in stack.all_metadata().values())
+    with tempfile.TemporaryDirectory(prefix=".siril-", dir=_scratch_parent(dest, need)) as d:
         tmp = Path(d)
         (tmp / "proc").mkdir()
         # A star / night-sky flat comes with this stack's gain: its scaled
@@ -227,7 +246,9 @@ def integrate_with_siril(
         _run_siril(tmp, "stack.ssf", _stack_script(_gather(stack, tmp), tmp, _memory_budget_gb()))
         out = tmp / "master.fit"
         assert out.exists(), f"Siril wrote no master for {stack}"
-        os.replace(out, dest)
+        part = dest.with_name(f".siril-{dest.name}.part")
+        shutil.move(out, part)                  # a copy when the scratch is on another volume
+        os.replace(part, dest)
     if gains:
         import json
         from file_io.sidecar import set_section
