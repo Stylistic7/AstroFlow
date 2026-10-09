@@ -354,16 +354,6 @@ def _fits(need: dict, avail: dict) -> bool:
     return all(avail.get(name, 0.0) >= amt for name, amt in need.items())
 
 
-# Headroom kept free above what a task is predicted to need, so the machine can
-# drift into "yellow" pressure but not run-and-crash. Absolute (not a fraction):
-# the danger is PixInsight, a SEPARATE persistent process whose RSS Ray can't
-# see and that spikes fast — a fixed buffer covers that estimation blind spot on
-# any machine size. Override live (frozen-SHA deploys still read env at launch)
-# via ASTROFLOW_MEM_SAFETY_MARGIN_GB.
-_MEM_SAFETY_MARGIN_BYTES = int(
-    float(os.environ.get("ASTROFLOW_MEM_SAFETY_MARGIN_GB", "6")) * (1024 ** 3)
-)
-
 # Only tasks estimated at/above this (or declaring a custom resource) go through
 # the per-node placement gate + NodeAffinity pin. Below it, a task dispatches
 # unpinned/SPREAD as before — Ray still reserves its `memory=` estimate, which
@@ -414,7 +404,6 @@ def _select_node(
     *,
     any_in_flight: bool,
     pressure_by_node: "dict | None" = None,
-    margin: int = _MEM_SAFETY_MARGIN_BYTES,
     need_cpus: float = 0.0,
 ) -> "str | None":
     """Pick a node that can run a task needing ``need_mem`` bytes and
@@ -427,7 +416,7 @@ def _select_node(
     workers, since only the head's capacity carries them.
 
     Memory admission for a candidate ``n`` uses the two-leg min:
-        effective_free(n) = min(free_by_node[n], ceiling(n) - reserved_by_node[n]) - margin
+        effective_free(n) = min(free_by_node[n], ceiling(n) - reserved_by_node[n])
         ceiling(n) = min(total_by_node[n], capacity_by_node[n]["memory"])
     * ACTUAL leg (measured psutil free) sees PixInsight's out-of-process RSS and
       anything else Ray never reserved.
@@ -500,7 +489,7 @@ def _select_node(
         ray_cap = capacity_by_node.get(nid, {}).get("memory")
         if ray_cap:
             ceiling = min(ceiling, int(ray_cap))
-        eff = min(avail, ceiling - reserved_by_node.get(nid, 0)) - margin
+        eff = min(avail, ceiling - reserved_by_node.get(nid, 0))
         scored.append((eff, nid))
 
     if scored:

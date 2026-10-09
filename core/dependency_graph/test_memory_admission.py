@@ -17,7 +17,7 @@ _GB = 1024 ** 3
 # --- node selection: the two-leg memory decision --------------------------------
 
 def _sel(need_mem, *, free, total=None, reserved=None, capacity=None,
-         reserved_custom=None, need_custom=None, any_in_flight=True, margin=10,
+         reserved_custom=None, need_custom=None, any_in_flight=True,
          pressure=None):
     """Thin wrapper with small-integer 'units' so the arithmetic is obvious.
     `free`/`total`/`reserved` are {node: int}; capacity/reserved_custom/pressure
@@ -28,12 +28,12 @@ def _sel(need_mem, *, free, total=None, reserved=None, capacity=None,
         free, total, reserved or {},
         capacity if capacity is not None else {n: {} for n in free},
         reserved_custom or {},
-        any_in_flight=any_in_flight, margin=margin, pressure_by_node=pressure,
+        any_in_flight=any_in_flight, pressure_by_node=pressure,
     )
 
 
 def test_picks_the_roomiest_node():
-    # eff_A = min(50,100)-10 = 40 ; eff_B = min(30,100)-10 = 20 ; both fit 20 → A
+    # eff_A = min(50,100) = 50 ; eff_B = min(30,100) = 30 ; both fit 20 → A
     assert _sel(20, free={"A": 50, "B": 30}) == "A"
 
 
@@ -43,15 +43,15 @@ def test_none_when_nothing_fits_and_work_is_in_flight():
 
 
 def test_actual_leg_blocks_low_free():
-    # eff = min(15,100)-10 = 5 ; need 20 > 5 → hold
+    # eff = min(15,100) = 15 ; need 20 > 15 → hold
     assert _sel(20, free={"A": 15}, any_in_flight=True) is None
-    # eff = min(50,100)-10 = 40 ; need 20 ≤ 40 → place
+    # eff = min(50,100) = 50 ; need 20 ≤ 50 → place
     assert _sel(20, free={"A": 50}, any_in_flight=True) == "A"
 
 
 def test_reserved_leg_blocks_despite_stale_high_free():
     # The lag/herd guard: psutil still reads 90 free (just-launched tasks haven't
-    # allocated), but reservations (85) say no room. min(90,100-85=15)-10 = 5.
+    # allocated), but reservations (85) say no room. min(90,100-85) = 15.
     assert _sel(20, free={"A": 90}, reserved={"A": 85}, any_in_flight=True) is None
 
 
@@ -59,29 +59,29 @@ def test_reserved_leg_is_capped_at_the_nodes_ray_memory():
     # RAM says 100 total / 90 free, but Ray's `memory` capacity for the node
     # is 70 (ray start --memory): a 40-unit lease with 40 already reserved
     # would be held by Ray (70-40=30 < 40) while our ledger called it running.
-    # eff = min(90, min(100, 70) - 40) - 10 = 20 → hold.
+    # eff = min(90, min(100, 70) - 40) = 30 → hold.
     assert _sel(40, free={"A": 90}, reserved={"A": 40},
                 capacity={"A": {"memory": 70}}, any_in_flight=True) is None
-    # Without the Ray cap the same lease is admitted: min(90, 100-40)-10 = 50.
+    # Without the Ray cap the same lease is admitted: min(90, 100-40) = 60.
     assert _sel(40, free={"A": 90}, reserved={"A": 40}, any_in_flight=True) == "A"
 
 
 def test_boundary_is_inclusive():
-    # eff = min(40,100)-10 = 30
-    assert _sel(30, free={"A": 40}, any_in_flight=True) == "A"   # need == free
-    assert _sel(31, free={"A": 40}, any_in_flight=True) is None  # one over
+    # eff = min(40,100) = 40
+    assert _sel(40, free={"A": 40}, any_in_flight=True) == "A"   # need == free
+    assert _sel(41, free={"A": 40}, any_in_flight=True) is None  # one over
 
 
 def test_reserve_before_next_prevents_the_herd():
     # Two sequential admissions on ONE node, with the caller's in-pass decrement
-    # (free-=need, reserved+=need) applied between them (margin 0 for clarity).
+    # (free-=need, reserved+=need) applied between them.
     free = {"A": 40}
     assert _select_node(30, {}, free, {"A": 100}, {"A": 0}, {"A": {}}, {},
-                        any_in_flight=True, margin=0) == "A"
+                        any_in_flight=True) == "A"
     # caller reserves the grant before considering the next task:
     free["A"] -= 30
     assert _select_node(30, {}, free, {"A": 100}, {"A": 30}, {"A": {}}, {},
-                        any_in_flight=True, margin=0) is None  # second denied
+                        any_in_flight=True) is None  # second denied
 
 
 # --- the OS memory-pressure veto ------------------------------------------------
@@ -143,14 +143,17 @@ def test_idle_escape_places_roomiest_when_nothing_in_flight():
 
 
 def test_idle_escape_falls_back_to_capacity_when_unmeasured():
-    # No psutil measurement at all (fan-out failed), but capacity is known.
-    # With work in flight → hold; with nothing in flight → largest-capacity node
-    # that satisfies the custom resource.
+    # No psutil measurement at all (fan-out failed), but capacity is known:
+    # unmeasured nodes are admitted on their reserved leg alone. A demand no
+    # node's capacity holds waits while work is in flight; with nothing in
+    # flight the idle-escape takes the largest-capacity node.
     cap = {"head": {"memory": 64, "PixInsight": 1}, "worker": {"memory": 32, "PixInsight": 1}}
     assert _select_node(10, {"PixInsight": 1}, {}, {}, {}, cap, {},
+                        any_in_flight=True) == "head"   # fits; 64 > 32
+    assert _select_node(70, {"PixInsight": 1}, {}, {}, {}, cap, {},
                         any_in_flight=True) is None
-    assert _select_node(10, {"PixInsight": 1}, {}, {}, {}, cap, {},
-                        any_in_flight=False) == "head"  # 64 > 32
+    assert _select_node(70, {"PixInsight": 1}, {}, {}, {}, cap, {},
+                        any_in_flight=False) == "head"
 
 
 # --- _custom_fits ---------------------------------------------------------------
@@ -224,6 +227,6 @@ def test_a_node_with_too_few_cpus_is_never_chosen():
     from dependency_graph.dependency_graph import _select_node
     capacity = {"MBP": {"CPU": 10.0}, "Studio": {"CPU": 24.0}}
     assert _select_node(20, {}, {"MBP": 90, "Studio": 50}, {"MBP": 100, "Studio": 100}, {},
-                        capacity, {}, any_in_flight=True, margin=10, need_cpus=12) == "Studio"
+                        capacity, {}, any_in_flight=True, need_cpus=12) == "Studio"
     assert _select_node(20, {}, {"MBP": 90}, {"MBP": 100}, {}, {"MBP": {"CPU": 10.0}}, {},
-                        any_in_flight=False, margin=10, need_cpus=12) is None
+                        any_in_flight=False, need_cpus=12) is None
