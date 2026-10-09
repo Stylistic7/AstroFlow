@@ -52,29 +52,13 @@ _DEFAULT_MEMORY_BY_OP = {
 }
 _DEFAULT_MEMORY_UNKNOWN = 16 * _GB
 
-# Ops that shell out to rc-astro (BXT/SXT/NXT). Until 2026-10-08 the profiler
-# sampled only the Python WORKER, never the CLI child (see rc_astro_cli.py), so
-# these were given fixed values; the profile now includes child processes, but
-# they keep them. The `auto_memory=True` on their decorators just routes them
-# through `estimate_memory`, which short-circuits to this fixed value — keeping the
-# admission gate and Ray's `memory=` reservation reading the SAME number. Kept as a
-# side-table (not `@node(memory=)`) so the value can change WITHOUT a decorator edit
-# re-running every cached tile.
-#
-# The old value was 26 GB — one RGB copy of a 2.25-Gpx WHOLE mosaic — deliberately
-# inflated (2 × 26 > pool) to SERIALIZE BXT/SXT to one-at-a-time, after two
-# gigapixel children ran together and swap-thrashed the machine (live 2026-07-06).
-# Every rc-astro op now runs on a <=100 Mpx PANEL (process_in_panels): measured child
-# RSS ~1.8 GB + ~0.5 GB worker ≈ 2.3 GB (live 2026-07-24), so 5 GB is the honest
-# reservation (~2× headroom). Serialization is no longer smuggled through an
-# inflated memory number — a `{"gpu_slots": 1}` request on each op, against the
-# `gpu_slots` each node advertises (state/ray_control), caps GPU parallelism per
-# machine to that node's real capacity. The macOS memory-pressure veto backstops
-# any per-tile spike the 5 GB estimate misses.
+# Ops sized by a fixed number instead of their profile. The rc-astro ops
+# (BXT/SXT/NXT) were here at 5 GB, set when the profiler sampled only the
+# Python worker; since it counts child processes (2026-10-08) their measured
+# p95 is the reservation like any other op's (full-size channels ~4.7 GB, so
+# 5 GB rounded; smaller inputs 3-4 GB, measured 2026-10-09). `gpu_slots` caps
+# their GPU parallelism; the macOS memory-pressure veto backstops a spike.
 _FIXED_MEMORY_BY_OP = {
-    "bxt_channel":      5 * _GB,  # full BXT on a native channel master (pre-placement)
-    "sxt_channel":      5 * _GB,  # SXT starless on the BXT'd native channel
-    "nxt":              5 * _GB,  # NoiseXTerminator on a panel — same rc-astro CLI path
     # Other fixed-memory panel ops (process_in_panels), NOT rc-astro: pyvips/numpy,
     # each memory-BOUNDED to one <=100 Mpx panel. Fixed (not auto) so they keep worker
     # reuse — excluded from the max_calls=1 fresh-worker rule (see decorators.py).

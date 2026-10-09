@@ -126,10 +126,10 @@ def test_fixed_auto_memory_ops_keep_worker_reuse():
     def compute_image_metadata(x) -> int:   # fixed -> excluded from max_calls
         return x
     @node(auto_memory=True)
-    def bxt_channel(x) -> int:              # fixed -> excluded from max_calls
+    def bxt_channel(x) -> int:              # rc-astro: measured since 2026-10-09 -> profiled
         return x
     assert _baked_max_calls(compute_image_metadata) is None
-    assert _baked_max_calls(bxt_channel) is None
+    assert _baked_max_calls(bxt_channel) == 1
 
 
 def test_non_auto_memory_op_keeps_worker_reuse():
