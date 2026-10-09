@@ -80,7 +80,7 @@ def _mosaic(footprint) -> Mosaic:
         projected_footprints=frozendict())
 
 
-@node(auto_memory=True, plate_solve="none")
+@node(auto_memory=True)
 def identity_tile(mosaic: Mosaic, config: ProcessingConfig,
                   image: ImageMetadata) -> WithSidecar[TiffFilePath]:
     """Copy the panel tile through UNCHANGED, dropping a unique per-EXECUTION

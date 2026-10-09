@@ -292,7 +292,7 @@ def _crop_panel_narrow(args, kwargs):
 
 # ephemeral: a materialized VIEW of the merged raster, written only because
 # rc-astro needs a file path. Re-cropping is seconds; keeping it cost 235 GB.
-@node(cache_key_narrow=_crop_panel_narrow, auto_memory=True, plate_solve="none",
+@node(cache_key_narrow=_crop_panel_narrow, auto_memory=True,
       ephemeral=True)
 def crop_panel(mosaic: Mosaic, panel: Target, viewbox: Viewbox, pad: int,
                source: ImageMetadata,
@@ -332,7 +332,7 @@ def _blend_panels_narrow(args, kwargs):
 # It is consumed only by the next stage's crops inside the same pipeline graph,
 # so it is reclaimed when that graph concludes. Measured 2026-08-17: 181 GB,
 # 72 GB per compute-hour — the worst disk-for-compute trade in the tail.
-@node(cache_key_narrow=_blend_panels_narrow, auto_memory=True, plate_solve="none",
+@node(cache_key_narrow=_blend_panels_narrow, auto_memory=True,
       ephemeral=True)
 def blend_panels(mosaic: Mosaic, config: ProcessingConfig, viewbox: Viewbox,
                  panels: tuple,

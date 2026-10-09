@@ -18,6 +18,7 @@ full-resolution run.
 Three entry points, matching the PI Downscaled pipeline.
 """
 from astroflow.pipeline import pipeline
+from metadata.solve_nodes import plate_solve_image
 from dependency_graph.tracing import workflow_group
 from mosaics.types import Mosaic
 import pipelines.hybrid_pi_oss_mosaic as hybrid
@@ -44,8 +45,8 @@ def post_processed_master(stack, config):
     ds = DownscaledStack.of(stack, FACTOR, downscale_dest_dir())
     frames = downscale_stack(ds)
     cal_masters = [downscale_master(FACTOR, m) for m in calibrate(stack, config)]
-    master = stack_files(ds, config, *cal_masters, _after=(frames,))
-    return post_process_stack(ds, config, master)
+    master = plate_solve_image(stack_files(ds, config, *cal_masters, _after=(frames,)))
+    return plate_solve_image(post_process_stack(ds, config, master))
 
 
 @pipeline("Hybrid: PI Downscaled + OSS Mosaic", processes=Stack)

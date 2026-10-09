@@ -116,7 +116,7 @@ def image_metadata_from_obj(
     # Restore the plate solution from the same sidecar file (not via
     # solve_field, which would redundantly re-read the sidecar or worse,
     # re-run the solver) whenever one was persisted — gated ONLY on its
-    # existence, never on frame type. Solving (`@node(plate_solve=)`) and
+    # existence, never on frame type. Solving (`metadata.solve_nodes`) and
     # frame type (`image_type`/IMAGETYP) are orthogonal axes: a reprojected
     # mosaic is a light frame with NO solution; a solved master carries one
     # regardless of how it's typed. Inferring "has a solution" from

@@ -11,6 +11,7 @@ registered in every process, including Ray workers running the
 dispatcher.
 """
 from astroflow.pipeline import pipeline
+from metadata.solve_nodes import plate_solve_image
 from stacks.calibration_selection import calibrate
 from stacks.composite_stack import Stack
 from stacks.downscale import (
@@ -23,8 +24,8 @@ from stacks.stacking.pixinsight import stack_files
 @pipeline("Shared-Op Test Master", processes=Stack)
 def shared_op_test_master(stack, config):
     cal_masters = calibrate(stack, config)
-    master = stack_files(stack, config, *cal_masters)
-    return post_process_stack(stack, config, master)
+    master = plate_solve_image(stack_files(stack, config, *cal_masters))
+    return plate_solve_image(post_process_stack(stack, config, master))
 
 
 @pipeline("Shared-Op Test Downscaled", processes=Stack)
@@ -36,5 +37,5 @@ def shared_op_test_downscaled(stack, config):
     ds = DownscaledStack.of(stack, 8, downscale_dest_dir())
     frames = downscale_stack(ds)
     cal_masters = [downscale_master(8, m) for m in calibrate(stack, config)]
-    master = stack_files(ds, config, *cal_masters, _after=(frames,))
-    return post_process_stack(ds, config, master)
+    master = plate_solve_image(stack_files(ds, config, *cal_masters, _after=(frames,)))
+    return plate_solve_image(post_process_stack(ds, config, master))

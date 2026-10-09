@@ -455,13 +455,12 @@ def read_sky_flat(path) -> np.ndarray:
     return (img / (m if abs(m) > 1e-12 else 1.0) - 1.0).astype(np.float32)
 
 
-# `plate_solve="none"`: a fringe map is a zero-mean residual with the stars
+# Never plate-solve a fringe map: it is a zero-mean residual with the stars
 # median-filtered out and no detail finer than a block — there is nothing to
 # solve, and the solver raising `PlateSolveFailedException` fails the node and
 # sends it round again forever. The OLD map solved only because its star
 # rejection leaked 16k residuals; removing them properly exposed this.
-@node(num_cpus=4, display="Fringe Frame", resources={"diskcache": 0.001},
-      plate_solve="none")
+@node(num_cpus=4, display="Fringe Frame", resources={"diskcache": 0.001})
 def build_sky_flat(
     sky_flat: SkyFlatStack, dark: ImageMetadata | None,
 ) -> WithSidecar[XisfFilePath]:

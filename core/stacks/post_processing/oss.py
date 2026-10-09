@@ -88,9 +88,9 @@ def post_process_stack_oss(
 
     Like every image producer, this body is a *pure writer*: it writes the
     corrected pixels and returns. The `@node` decorator owns the rest of the
-    image lifecycle — stamping the content-hash and plate-solving
-    (`plate_solve="solve"` by default, via `compute_image_metadata`). The body
-    must NOT call `solve_field` or stamp hashes itself: a manual solve runs
+    image lifecycle (stamping the content-hash, via `compute_image_metadata`),
+    and the pipeline solves it in its own node (`metadata.solve_nodes`). The
+    body must NOT call `solve_field` or stamp hashes itself: a manual solve runs
     BEFORE the decorator stamps CONTHASH and double-solves the file, which is
     exactly the pattern that let OSS color composites vanish after a run.
 

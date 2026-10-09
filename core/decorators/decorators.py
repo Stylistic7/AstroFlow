@@ -91,26 +91,16 @@ def _looks_like_file_return(func) -> bool:
     return False
 
 
-def _metadata_wrap(func, plate_solve="solve"):
+def _metadata_wrap(func):
     """Run `func`, then synchronously extract image metadata from its
     return value and yield the resulting `ImageMetadata` to callers.
 
-    `plate_solve` (from the `@node(plate_solve=...)` declaration, default
-    "solve") is an ENUM (booleans retired 2026-09-02):
-      * "solve"   — every produced image is plate-solved anew;
-      * "none"    — no solution (an image with no solvable star field
-                    AND no geometric identity to any input);
-      * "inherit" — the op declares GEOMETRIC IDENTITY with its first
-                    `ImageMetadata` argument ("I do not move pixels"):
-                    the donor's solution is written into the output's
-                    sidecar BEFORE metadata extraction, so the solve
-                    path resolves it from the sidecar — file-level and
-                    graph-level consumers see the same truth. Required
-                    for images that cannot blind-solve (starless, star
-                    layers) yet must be placeable.
-    Calibration masters are never solved regardless —
-    `compute_image_metadata` skips bias/dark/flat by their IMAGETYP, so
-    the shared stacker needs no special-casing.
+    Produced images are NEVER plate-solved here. Solving costs ~45 s on one
+    core, and inside the producer's task it holds the producer's whole
+    reservation (12 CPUs for a Siril stack, a GPU slot for BXT) while the
+    rest sits idle. A pipeline that needs a solution says so in the graph:
+    `metadata.solve_nodes.plate_solve_image` after an op that moves pixels,
+    `inherit_plate_solution` after one that doesn't (starless / star layers).
 
     Folds the `compute_image_metadata` step into every
     `@node(identity=...)` producer in place of the trace-time chain-
@@ -126,37 +116,11 @@ def _metadata_wrap(func, plate_solve="solve"):
     import functools
     from metadata.classes import ImageMetadata
 
-    if plate_solve == "inherit" and "ImageMetadata" not in str(func.__annotations__):
-        raise ValueError(
-            f"@node plate_solve='inherit' on {func.__qualname__}, but its "
-            f"signature declares no ImageMetadata argument to inherit from"
-        )
-
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         result = func(*args, **kwargs)
         from metadata.image_metadata import compute_image_metadata
-        if plate_solve != "inherit":
-            return compute_image_metadata._function(
-                result, plate_solve=(plate_solve == "solve"))
-        donor = next((a for a in args if isinstance(a, ImageMetadata)), None)
-        if donor is None or donor.plate_solution is None:
-            raise ValueError(
-                f"{func.__qualname__}: plate_solve='inherit' but "
-                + ("no ImageMetadata argument was passed" if donor is None
-                   else f"donor {donor.filename} carries no plate_solution")
-            )
-        # Seed the OUTPUT's sidecar with the donor's solution BEFORE
-        # metadata extraction: the solve path consults the sidecar first,
-        # so the "solve" below resolves to the inherited solution, and
-        # any later file-level reader agrees with graph consumers.
-        from pathlib import Path
-
-        from file_io.sidecar import set_section
-        from plate_solving import _plate_solution_to_obj
-        set_section(Path(str(result)), "plate_solution",
-                    _plate_solution_to_obj(donor.plate_solution))
-        return compute_image_metadata._function(result, plate_solve=True)
+        return compute_image_metadata._function(result, plate_solve=False)
 
     # `functools.wraps` copies the wrapped function's `__annotations__`,
     # including its `WithSidecar[...]` return annotation. After this
@@ -303,26 +267,11 @@ class _Node:
         tap_filter = ray_opts.pop("filter", None)
         custom_filename_fn = ray_opts.pop("filename_fn", None)
         cache_key_narrow = ray_opts.pop("cache_key_narrow", None)
-        # Plate-solve every produced image by default (amateur pipelines lean
-        # on the solution being present). Ops whose output has no solvable star
-        # field pick "none" (nothing to inherit either: color composites on
-        # the canvas) or "inherit" (geometric identity with an input: starless
-        # / star layers). Calibration masters need no opt-out: the solver
-        # skips bias/dark/flat by IMAGETYP (so the shared stacker is untouched).
-        plate_solve = ray_opts.pop("plate_solve", "solve")
-        if plate_solve not in ("solve", "none", "inherit"):
-            raise ValueError(
-                f"@node plate_solve must be 'solve', 'none' or 'inherit'; "
-                f"got {plate_solve!r} on {func.__qualname__} (booleans "
-                f"retired 2026-09-02: True -> 'solve', False -> 'none')"
-            )
         # The kind of frame this op emits, stamped into the output's IMAGETYP
         # header — but only when the body didn't already write one (so the
         # shared stacker's calibration masters keep "Master Dark" etc.). The
         # default "light" makes `is_light_frame` uniformly true for produced
-        # images. Orthogonal to `plate_solve`: a reprojected mosaic is a light
-        # frame we nonetheless can't solve (non-square pixels), so it keeps
-        # image_type="light" yet sets plate_solve="none".
+        # images.
         image_type = ray_opts.pop("image_type", "light")
         # This op's output is a WORKING VALUE, not a deliverable: reclaimed as
         # soon as the graph that consumes it completes. The author of the op is
@@ -429,7 +378,7 @@ class _Node:
                 makes_tiff=display is not None,
                 image_type=image_type,
             )
-            wrapped = _metadata_wrap(wrapped, plate_solve=plate_solve)
+            wrapped = _metadata_wrap(wrapped)
 
         wrapped = capture_logs(wrapped, cache_key_narrow=cache_key_narrow)
         wrapped = measure_performance(wrapped, ray_opts=ray_opts)
@@ -465,10 +414,6 @@ class _Node:
         # the same on every op; a node that produces no file simply has nothing
         # to reclaim.
         wrapper._ephemeral = ephemeral
-        # Exposed so a producer can be asserted not to solve: a map with no
-        # stars in it fails the solver, and a failing solve reschedules the
-        # node forever (build_sky_flat, 2026-09-24).
-        wrapper._plate_solve = plate_solve
         if display_name is not None:
             wrapper._display_name = display_name
 

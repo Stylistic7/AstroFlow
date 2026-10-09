@@ -230,8 +230,7 @@ def test_stars_channel_is_the_exact_residual(test_context, tmp_path):
             dtype=np.dtype("float32"))
 
     t = _target("panel", "panel_ch", _FOOTPRINT)
-    # inspect.unwrap: the RAW body, below the plate-solve "inherit" wrap
-    # (which would demand a solved donor — covered by the decorator tests).
+    # inspect.unwrap: the RAW body, below the decorator's metadata wrap.
     import inspect
     out = inspect.unwrap(pp.stars_channel._function)(
         t, "H", _meta(p_ch, "ch"), _meta(p_sl, "sl"))

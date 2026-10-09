@@ -18,6 +18,7 @@ before the dark/flat that consumes it), and the light master runs only
 once they are all on disk.
 """
 from astroflow.pipeline import pipeline
+from metadata.solve_nodes import plate_solve_image
 from dependency_graph.tracing import workflow_group
 from mosaics.color.post_process import (
     color_post_process, native_star_separation, panel_source_manifest,
@@ -62,14 +63,14 @@ def post_processed_master(stack, config):
              else stack_files_oss(cs, config, _after=tuple(cal_masters)))
         masters[str(cs.stable_hash)] = m
         cal_masters.append(m)
-    master = stack_files_oss(stack, config, _after=tuple(cal_masters))
+    master = plate_solve_image(stack_files_oss(stack, config, _after=tuple(cal_masters)))
     # OSS post-processing (GraXpert background correction + solve) — NOT PI's
     # post_process_stack, whose SPFC/MGC need flux-cal metadata the OSS FITS
     # master lacks. `mock_pixinsight=True` skips GraXpert in fast tests.
-    return post_process_stack_oss(
+    return plate_solve_image(post_process_stack_oss(
         stack, config.development_settings.mock_pixinsight,
         config.background_pedestal, master,
-    )
+    ))
 
 
 @workflow_group
@@ -79,9 +80,9 @@ def channels_for_target(target, config):
     for filter in target.filters:
         stacks = target.stacks_for(filter)
         masters = [post_processed_master(s, config) for s in stacks]
-        channels[filter] = merge_target_channel(
+        channels[filter] = plate_solve_image(merge_target_channel(
             target, filter, stacks, config, *masters,
-        )
+        ))
     return channels
 
 

@@ -13,6 +13,7 @@ change the `@pipeline("…")` display name, and edit the call you
 want to replace.
 """
 from astroflow.pipeline import pipeline
+from metadata.solve_nodes import plate_solve_image
 from dependency_graph.tracing import workflow_group
 from mosaics.post_process_channel import post_process_mosaic_color_channel
 from mosaics.merging.pixinsight import merge_images
@@ -35,9 +36,9 @@ def post_processed_master(stack, config):
     building in one call. Shared across the stack / target /
     mosaic entry points."""
     cal_masters = calibrate(stack, config)
-    master = stack_files(stack, config, *cal_masters)
+    master = plate_solve_image(stack_files(stack, config, *cal_masters))
     analyze_master(master)   # leaf: writes the master's `analysis` sidecar section
-    return post_process_stack(stack, config, master)
+    return plate_solve_image(post_process_stack(stack, config, master))
 
 
 @workflow_group
@@ -52,9 +53,9 @@ def channels_for_target(target, config, post_processed_master=post_processed_mas
     for filter in target.filters:
         stacks = target.stacks_for(filter)
         masters = [post_processed_master(s, config) for s in stacks]
-        channels[filter] = merge_target_channel(
+        channels[filter] = plate_solve_image(merge_target_channel(
             target, filter, stacks, config, *masters,
-        )
+        ))
     return channels
 
 

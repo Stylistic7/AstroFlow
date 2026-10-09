@@ -287,7 +287,7 @@ _MASTER_KEEP = (
 )
 
 
-@node(plate_solve="none")
+@node()
 def downscale_master(factor: int, master: ImageMetadata) -> WithSidecar[XisfFilePath]:
     """A calibration master at 1/`factor` resolution: the block mean of the
     full-resolution master, header identity kept (`STBLHASH` is how

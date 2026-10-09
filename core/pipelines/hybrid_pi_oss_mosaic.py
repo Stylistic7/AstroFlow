@@ -26,6 +26,7 @@ Three entry points, matching the PI Master pipeline:
 * `for_mosaic(mosaic, config)` → per-filter mosaic outputs (headline).
 """
 from astroflow.pipeline import pipeline
+from metadata.solve_nodes import plate_solve_image
 from dependency_graph.tracing import workflow_group
 from mosaics.viewbox_measured import compute_viewbox_measured
 from mosaics.color.post_process import (
@@ -49,9 +50,9 @@ from metadata.master_analysis import analyze_master
 def post_processed_master(stack, config):
     """Calibrate → WBPP-stack → post-process. Same as PI Master."""
     cal_masters = calibrate(stack, config)
-    master = stack_files(stack, config, *cal_masters)
+    master = plate_solve_image(stack_files(stack, config, *cal_masters))
     analyze_master(master)   # leaf: writes the master's `analysis` sidecar section
-    return post_process_stack(stack, config, master)
+    return plate_solve_image(post_process_stack(stack, config, master))
 
 
 @workflow_group
@@ -63,9 +64,9 @@ def channels_for_target(target, config, post_processed_master=post_processed_mas
     for filter in target.filters:
         stacks = target.stacks_for(filter)
         masters = [post_processed_master(s, config) for s in stacks]
-        channels[filter] = merge_target_channel(
+        channels[filter] = plate_solve_image(merge_target_channel(
             target, filter, stacks, config, *masters,
-        )
+        ))
     return channels
 
 

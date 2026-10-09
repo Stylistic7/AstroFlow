@@ -153,7 +153,6 @@ def _merge_images_narrow(args, kwargs):
     cache_key_narrow=_merge_images_narrow,
     resources={"PixInsight": 1},
     auto_memory=True,
-    plate_solve="none",  # mosaic projection — non-square pixels, can't solve
 )
 def merge_images(
     mosaic: Mosaic, filter: str, config: ProcessingConfig,

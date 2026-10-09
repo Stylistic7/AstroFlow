@@ -442,7 +442,7 @@ def _merge_layer(op, mosaic: Mosaic, filter: str, inputs, level_solve, skyver,
     return WithSidecar(output_filename)
 
 
-@node(display="Mosaic Starless", final=True, auto_memory=True, plate_solve="none")  # mosaic projection — non-square pixels
+@node(display="Mosaic Starless", final=True, auto_memory=True)  # mosaic projection — non-square pixels
 def merge_images_oss(
     mosaic: Mosaic, filter: str, *inputs: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
@@ -465,7 +465,7 @@ def merge_images_oss(
                         layer="starless", depth_weighted=True)
 
 
-@node(display="Mosaic Stars", final=True, auto_memory=True, plate_solve="none")  # mosaic projection — non-square pixels
+@node(display="Mosaic Stars", final=True, auto_memory=True)  # mosaic projection — non-square pixels
 def merge_images_stars(
     mosaic: Mosaic, filter: str, *inputs: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
@@ -563,7 +563,6 @@ def merge_stars_scope(mosaic, filter, viewbox, config, targets, *stars,
 @node(
     display="Mosaic",
     resources={"fastest_storage": 0.001},
-    plate_solve="none",  # mosaic projection — non-square pixels, can't solve
 )
 def merge_images_subframe(
     mosaic: Mosaic, filter: str, *inputs,

@@ -206,7 +206,7 @@ def _sxt_channel_narrow(args, kwargs):
     return (target, filter, (mock, config.sxt), channel), kwargs
 
 
-@node(cache_key_narrow=_bxt_channel_narrow, auto_memory=True, resources={"gpu_slots": 1}, plate_solve="solve")  # RE-SOLVE: deconvolution shifts geometry (Croman)
+@node(cache_key_narrow=_bxt_channel_narrow, auto_memory=True, resources={"gpu_slots": 1})
 def bxt_channel(
     target: Target, filter: str, config: ProcessingConfig, channel: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
@@ -218,8 +218,9 @@ def bxt_channel(
     resampled blends, and aberration correction per panel before assembly
     is Croman's own mosaic guidance (a corner of one frame is the OPPOSITE
     corner of the next, so canvas-level correction can't match both).
-    `plate_solve="solve"` RE-solves the output — correction shifts the
-    geometry, and `place_image` projects from this WCS."""
+    Its output is unsolved: correction shifts the geometry, so
+    `native_star_separation` re-solves it in its own node (outside this
+    task's GPU slot), and `place_image` projects from that WCS."""
     out = bxt_channel.filename_fn(target, filter, config, channel)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     if config.development_settings.mock_pixinsight:
@@ -235,16 +236,16 @@ def bxt_channel(
     return WithSidecar(TiffFilePath(out))
 
 
-@node(cache_key_narrow=_sxt_channel_narrow, auto_memory=True, resources={"gpu_slots": 1}, plate_solve="inherit")  # starless can't blind-solve; geometry ≡ input
+@node(cache_key_narrow=_sxt_channel_narrow, auto_memory=True, resources={"gpu_slots": 1})
 def sxt_channel(
     target: Target, filter: str, config: ProcessingConfig, channel: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
     """StarXTerminator the BXT'd native mono channel; keep the starless
     body (linear, 32F). The STARLESS layer's per-panel source.
 
-    `plate_solve="inherit"`: a starless image has nothing to solve
-    against, but SXT moves no pixels, so the output adopts `channel`'s
-    solution (written into its sidecar) — which `place_image` requires.
+    A starless image has nothing to solve against, but SXT moves no
+    pixels: `native_star_separation` gives it `channel`'s solution
+    (`inherit_plate_solution`), which `place_image` requires.
 
     The mock skims 10% of the flux above the pedestal (footprint zeros
     stay zero): dimensionally a star removal — background preserved, some
@@ -267,7 +268,7 @@ def sxt_channel(
     return WithSidecar(TiffFilePath(out))
 
 
-@node(auto_memory=True, plate_solve="inherit")  # pure subtraction; geometry ≡ input
+@node(auto_memory=True)
 def stars_channel(
     target: Target, filter: str, channel: ImageMetadata, starless: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
@@ -293,11 +294,17 @@ def native_star_separation(target, filter, config, channel, bxt=True):
     `(starless, stars)` layer pair the pipelines place and merge.
     `bxt=False` (labs only) skips deconvolution — BXT is PSF cosmetics,
     orthogonal to what the labs gate on, and its rc-astro launches were
-    the largest lab compute lane (Stylistic7, 2026-09-02)."""
-    corrected = (bxt_channel(target, filter, config, channel)
+    the largest lab compute lane (Stylistic7, 2026-09-02).
+
+    BXT shifts the geometry, so its output is re-solved; the starless and
+    stars layers sit on the corrected channel's grid and inherit its
+    solution (nothing to solve in a starless image)."""
+    from metadata.solve_nodes import inherit_plate_solution, plate_solve_image
+    corrected = (plate_solve_image(bxt_channel(target, filter, config, channel))
                  if bxt else channel)
-    starless = sxt_channel(target, filter, config, corrected)
-    return starless, stars_channel(target, filter, corrected, starless)
+    starless = inherit_plate_solution(sxt_channel(target, filter, config, corrected), corrected)
+    stars = inherit_plate_solution(stars_channel(target, filter, corrected, starless), corrected)
+    return starless, stars
 
 
 def _rgb_join(r: ImageMetadata, g: ImageMetadata, b: ImageMetadata) -> pyvips.Image:
@@ -308,7 +315,7 @@ def _rgb_join(r: ImageMetadata, g: ImageMetadata, b: ImageMetadata) -> pyvips.Im
     return monos[0].bandjoin([monos[1], monos[2]])
 
 
-@node(display="Linear RGB Starless", filter="RGB", final=True, auto_memory=True, plate_solve="none")  # pure bandjoin
+@node(display="Linear RGB Starless", filter="RGB", final=True, auto_memory=True)  # pure bandjoin
 def linear_rgb_starless(
     mosaic: Mosaic, r: ImageMetadata, g: ImageMetadata, b: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
@@ -323,7 +330,7 @@ def linear_rgb_starless(
     return WithSidecar(TiffFilePath(out))
 
 
-@node(display="Linear RGB Stars", filter="RGB", final=True, auto_memory=True, plate_solve="none")  # pure bandjoin
+@node(display="Linear RGB Stars", filter="RGB", final=True, auto_memory=True)  # pure bandjoin
 def linear_rgb_stars(
     mosaic: Mosaic, r: ImageMetadata, g: ImageMetadata, b: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
@@ -367,7 +374,7 @@ def _blend_sho_narrow(args, kwargs):
             tuple(p.stable_hash for p in panels), *tiles), kwargs   # stable_hash: no cross-panel churn
 
 
-@node(auto_memory=True, plate_solve="none")  # streaming bandjoin of the 3 starless channels
+@node(auto_memory=True)  # streaming bandjoin of the 3 starless channels
 def stack_sho_channels(
     mosaic: Mosaic, sii: ImageMetadata, ha: ImageMetadata, oiii: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
@@ -388,7 +395,7 @@ def stack_sho_channels(
     return WithSidecar(TiffFilePath(out))
 
 
-@node(cache_key_narrow=_nxt_narrow, auto_memory=True, resources={"gpu_slots": 1}, plate_solve="none", ephemeral=True)  # NXT on an image (whole OR one tile)
+@node(cache_key_narrow=_nxt_narrow, auto_memory=True, resources={"gpu_slots": 1}, ephemeral=True)  # NXT on an image (whole OR one tile)
 def nxt(
     mosaic: Mosaic, config: ProcessingConfig, image: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
@@ -440,7 +447,7 @@ def nxt(
     return WithSidecar(TiffFilePath(out))
 
 
-@node(cache_key_narrow=_blend_sho_narrow, display=LINEAR_SHO_DISPLAY, filter="RGB", final=True, auto_memory=True, plate_solve="none")  # 3-channel LINEAR, NXT-denoised
+@node(cache_key_narrow=_blend_sho_narrow, display=LINEAR_SHO_DISPLAY, filter="RGB", final=True, auto_memory=True)  # 3-channel LINEAR, NXT-denoised
 def blend_linear_sho(
     mosaic: Mosaic, config: ProcessingConfig, viewbox, panels: tuple,
     *tiles: ImageMetadata,
@@ -517,7 +524,7 @@ def _nb_threeband(channels: dict) -> pyvips.Image:
     return bands[0].bandjoin(bands[1:])
 
 
-@node(display="Linear Narrowband Starless", filter="RGB", final=True, auto_memory=True, plate_solve="none")  # 3-band linear
+@node(display="Linear Narrowband Starless", filter="RGB", final=True, auto_memory=True)  # 3-band linear
 def linear_narrowband_starless(
     mosaic: Mosaic, filters: tuple, *channels: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
@@ -533,7 +540,7 @@ def linear_narrowband_starless(
     return WithSidecar(TiffFilePath(out))
 
 
-@node(display="Linear L Starless", filter="L", final=True, auto_memory=True, plate_solve="none")  # mono linear
+@node(display="Linear L Starless", filter="L", final=True, auto_memory=True)  # mono linear
 def linear_lum(
     mosaic: Mosaic, lum: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:
@@ -544,7 +551,7 @@ def linear_lum(
     return WithSidecar(TiffFilePath(out))
 
 
-@node(display="Linear L Stars", filter="L", final=True, auto_memory=True, plate_solve="none")  # mono linear
+@node(display="Linear L Stars", filter="L", final=True, auto_memory=True)  # mono linear
 def linear_lum_stars(
     mosaic: Mosaic, stars: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:

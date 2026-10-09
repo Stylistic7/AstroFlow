@@ -20,6 +20,7 @@ GraXpert, or change the downscale factor), copy this file to
 replace.
 """
 from astroflow.pipeline import pipeline
+from metadata.solve_nodes import plate_solve_image
 from dependency_graph.tracing import workflow_group
 from mosaics.types import Mosaic
 import pipelines.pixinsight_master as pi
@@ -46,8 +47,8 @@ def post_processed_master(stack, config):
     ds = DownscaledStack.of(stack, FACTOR, downscale_dest_dir())
     frames = downscale_stack(ds)
     cal_masters = [downscale_master(FACTOR, m) for m in calibrate(stack, config)]
-    master = stack_files(ds, config, *cal_masters, _after=(frames,))
-    return post_process_stack(ds, config, master)
+    master = plate_solve_image(stack_files(ds, config, *cal_masters, _after=(frames,)))
+    return plate_solve_image(post_process_stack(ds, config, master))
 
 
 @pipeline("PixInsight Downscaled", processes=Stack)

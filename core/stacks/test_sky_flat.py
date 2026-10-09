@@ -295,16 +295,6 @@ def test_the_producer_is_wired_as_an_artifact_producer():
     )
 
 
-def test_the_producer_does_not_try_to_plate_solve():
-    """A night-sky flat has its stars median-rejected by construction, so a
-    solve can only fail — and a failing solve raises
-    `PlateSolveFailedException`, which fails the node and reschedules it
-    forever. Cost a live rebuild loop on 2026-09-24."""
-    from stacks.sky_flat import build_sky_flat
-    assert getattr(build_sky_flat, "_plate_solve", None) == "none", (
-        "build_sky_flat must declare plate_solve='none'")
-
-
 def test_the_producer_takes_no_flat():
     """Dark only. A flat argument would quietly reintroduce the residual
     map — the thing that lost the 2026-09-25 comparison."""

@@ -25,6 +25,7 @@ Three entry points, matching the pipeline it forks.
 from pathlib import Path
 
 from astroflow.pipeline import pipeline, record
+from metadata.solve_nodes import plate_solve_image
 from dependency_graph.tracing import (
     IdentityRef, present_terminal, workflow_group,
 )
@@ -54,9 +55,9 @@ def post_processed_master(stack, config):
     """Calibrate → WBPP-stack → GraXpert. The ONE divergence from
     `hybrid_pi_oss_mosaic`, which calls `post_process_stack` here."""
     cal_masters = calibrate(stack, config)
-    master = stack_files(stack, config, *cal_masters)
+    master = plate_solve_image(stack_files(stack, config, *cal_masters))
     analyze_master(master)   # leaf: writes the master's `analysis` sidecar section
-    return post_stack_calibrate(stack, config, master)
+    return plate_solve_image(post_stack_calibrate(stack, config, master))
 
 
 @workflow_group
@@ -66,9 +67,9 @@ def channels_for_target(target, config):
     for filter in target.filters:
         stacks = target.stacks_for(filter)
         masters = [post_processed_master(s, config) for s in stacks]
-        channels[filter] = merge_target_channel(
+        channels[filter] = plate_solve_image(merge_target_channel(
             target, filter, stacks, config, *masters,
-        )
+        ))
     return channels
 
 

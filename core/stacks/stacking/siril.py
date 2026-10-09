@@ -178,7 +178,7 @@ def _robust_noise(path: Path) -> float:
 
 @node(display="Master", final=True, cache_key_narrow=_stack_files_narrow,
       num_cpus=SIRIL_CPUS, resources={"Siril": 0.001}, scheduling_strategy="SPREAD",
-      auto_memory=True, plate_solve="none")
+      auto_memory=True)
 def integrate_with_siril(
     stack: BaseStack,
     config: ProcessingConfig,

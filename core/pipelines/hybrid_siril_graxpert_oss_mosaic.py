@@ -17,7 +17,7 @@ and compare whole mosaics.
 """
 from dependency_graph.tracing import workflow_group
 from metadata.master_analysis import analyze_master
-from metadata.plate_solve_master import plate_solve_master
+from metadata.solve_nodes import plate_solve_image
 from pipelines.hybrid_graxpert_oss_mosaic import register
 from stacks.calibration_selection import calibrate
 from stacks.post_processing.graxpert_stack import post_stack_calibrate
@@ -32,9 +32,9 @@ def post_processed_master(stack, config):
     The solve is its own light node so the integration's CPUs and memory
     are free while solve-field runs on one core."""
     cal_masters = calibrate(stack, config)
-    master = plate_solve_master(integrate_with_siril(stack, config, *cal_masters))
+    master = plate_solve_image(integrate_with_siril(stack, config, *cal_masters))
     analyze_master(master)   # leaf: writes the master's `analysis` sidecar section
-    return post_stack_calibrate(stack, config, master)
+    return plate_solve_image(post_stack_calibrate(stack, config, master))
 
 
 for_stack, for_target, for_mosaic = register(PIPELINE, post_processed_master)

@@ -49,7 +49,7 @@ def _stretch_nonzero(arr: "np.ndarray") -> "np.ndarray":
     return out
 
 
-@node(auto_memory=True, plate_solve="none")
+@node(auto_memory=True)
 def autostretch_panel(
     mosaic: Mosaic, target, filter: str, viewbox, config: ProcessingConfig,
     placed: ImageMetadata,
@@ -71,7 +71,7 @@ def autostretch_panel(
     return WithSidecar(TiffFilePath(out))
 
 
-@node(display="Mosaic Starless", final=True, auto_memory=True, plate_solve="none")  # mosaic projection — non-square pixels
+@node(display="Mosaic Starless", final=True, auto_memory=True)  # mosaic projection — non-square pixels
 def merge_images_stretched(
     mosaic: Mosaic, filter: str, *inputs: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:

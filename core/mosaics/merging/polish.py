@@ -104,7 +104,7 @@ def _lazy_polish(img: pyvips.Image, model_small: np.ndarray,
 # auto_memory dropped with the streaming rewrite (Stylistic7, 2026-09-02):
 # the op's peak RSS is now ~the 2k model, so a profiled reservation
 # would only re-teach the scheduler yesterday's ~3x-canvas appetite.
-@node(display="Mosaic Starless", final=True, plate_solve="none")  # mosaic projection — non-square pixels
+@node(display="Mosaic Starless", final=True)  # mosaic projection — non-square pixels
 def polish_background(
     mosaic: Mosaic, filter: str, merged: ImageMetadata,
 ) -> WithSidecar[TiffFilePath]:

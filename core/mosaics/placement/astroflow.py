@@ -408,7 +408,6 @@ def _place_image_narrow(args, kwargs):
     # solve. (A Target's viewbox is now gnomonic-with-rotation, which IS a valid
     # TAN frame with square pixels, so single-field placements could carry a
     # real WCS — worth revisiting, but flipping this re-keys every placement.)
-    plate_solve="none",
 )
 def place_image(
     mosaic: Mosaic, target: Target, filter: str, viewbox: Viewbox,
@@ -428,8 +427,8 @@ def place_image(
     `edge_erosion_px` (the only field this op depends on)."""
     assert image_metadata.plate_solution is not None, (
         f"place_image requires a plate solution on {image_metadata.filename}, "
-        "but it has none. Its producer must plate-solve (the default); only "
-        "ops with no solvable star field set plate_solve='none'."
+        "but it has none. The pipeline must pass it through "
+        "metadata.solve_nodes.plate_solve_image (or inherit_plate_solution)."
     )
     log.info("Placing image", mosaic=str(mosaic), target=str(target),
              filter=filter, filename=image_metadata.filename, viewbox=str(viewbox))
