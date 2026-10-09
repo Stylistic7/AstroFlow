@@ -52,7 +52,9 @@ SIRIL_APP = "/Applications/Siril.app/Contents/MacOS/siril-cli"
 # at 24 threads each spin-wait in OpenMP. Measured on 45 x 61 MP subs with
 # the app running (2026-10-08), seconds per stack: one at a time x 24
 # threads 38.5, two at once x 12 threads 32.5, three x 8 38, two x 24 43.
-SIRIL_CPUS = 12
+# 8, not 12: at 12 the 10-CPU MacBook Pro could take no integration at all;
+# at 8 the Studio runs three and the MacBook Pro one.
+SIRIL_CPUS = 8
 # The integration recipe, chosen by measurement (2026-10-08, panel 6 OIII,
 # 45 subs, uncalibrated; "revealed" = % of the field at >=3 sigma after
 # GraXpert): winsorized 3/3 sigma clipping, additive + scaling normalisation,
