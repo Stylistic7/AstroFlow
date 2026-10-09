@@ -15,8 +15,8 @@ SOLUTION = plate_solving.PlateSolution(header={"CRPIX1": 2.0}, num_stars=10, cen
                                        image_scale=2.2, rotation_angle=0.1)
 
 
-def _image(path: Path, w: int = 4, solution=None) -> ImageMetadata:
-    return ImageMetadata(content_hash="c", stable_hash="s", filename=path, header={},
+def _image(path: Path, w: int = 4, solution=None, header=None) -> ImageMetadata:
+    return ImageMetadata(content_hash="c", stable_hash="s", filename=path, header=header or {},
                          width_pixels=w, height_pixels=4, channels=1, dtype=np.dtype("float32"),
                          plate_solution=solution)
 
@@ -30,6 +30,12 @@ def test_an_image_that_will_not_solve_fails(monkeypatch):
     monkeypatch.setattr(plate_solving, "solve_field", lambda path: None)
     with pytest.raises(plate_solving.PlateSolveFailedException):
         plate_solve_image._function(_image(Path("/m.fits")))
+
+
+def test_a_synthetic_dontsolv_image_passes_through_unsolved(monkeypatch):
+    monkeypatch.setattr(plate_solving, "solve_field", lambda path: None)
+    image = _image(Path("/m.fits"), header={"DONTSOLV": True})
+    assert plate_solve_image._function(image) is image
 
 
 def test_inherit_copies_the_donor_solution_into_the_sidecar():

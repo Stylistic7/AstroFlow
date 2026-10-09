@@ -26,9 +26,12 @@ from metadata.classes import ImageMetadata
 @node(num_cpus=1)
 def plate_solve_image(image: ImageMetadata) -> ImageMetadata:
     """`image` with the app's plate solution; fails if it won't solve (a
-    deliverable that can't be placed is a real failure)."""
+    deliverable that can't be placed is a real failure). A synthetic test
+    frame marked DONTSOLV legitimately has none and passes through."""
     import plate_solving
     solution = plate_solving.solve_field(Path(image.filename))
+    if solution is None and image.header.get("DONTSOLV"):
+        return image
     if solution is None:
         raise plate_solving.PlateSolveFailedException(f"Failed to plate-solve: {image.filename}")
     return dataclasses.replace(image, plate_solution=solution)
