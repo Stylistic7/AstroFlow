@@ -70,8 +70,9 @@ def test_uncalibrated_stack_needs_no_calibration_phase():
 
 
 def test_reference_frame_follows_links_back_to_the_raw_sub():
-    """Sequence header says image index 1 is the reference: file number 2,
-    a calibrated frame whose uncalibrated link points at the raw sub."""
+    """The header's reference_image (index 1: file 2) is the frame Siril's
+    cropped apply step frames around; it is a calibrated frame whose
+    uncalibrated link points at the raw sub."""
     tmp = Path(tempfile.mkdtemp(prefix="sirtest"))
     for d in ("proc", "all", "reg", "raw"):
         (tmp / d).mkdir()
