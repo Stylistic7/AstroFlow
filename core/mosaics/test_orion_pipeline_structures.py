@@ -738,3 +738,37 @@ def test_subframe_orion_op_counts(test_context):
     assert counts["compute_viewbox_measured"] == 1, counts
     assert counts["subframe_scope"] == 1, counts
     assert counts["store_mosaic_color_channel_subframe"] == 1, counts
+
+
+def _ancestor_ops(graph, node) -> set[str]:
+    """Op names of everything `node` (transitively) depends on."""
+    seen, stack, ops = set(), [node], set()
+    while stack:
+        n = stack.pop()
+        for d in graph.get(n, ()):
+            if isinstance(d, Node) and d not in seen:
+                seen.add(d)
+                stack.append(d)
+                fn = getattr(d.task, "_function", d.task)
+                ops.add(getattr(fn, "__name__", str(fn)))
+    return ops
+
+
+def test_siril_canvas_never_waits_on_calibration(test_context):
+    """The Siril pipeline measures its shared canvas on each channel's RAW
+    solved master, so an SPFC refusal (too few calibratable stars) at
+    `post_stack_calibrate` / `calibrate_channel` blocks only that channel's
+    merges — not the viewbox every channel of the object is placed on
+    (2026-10-09: one refused B panel left all 17 Coalsack finishes absent)."""
+    mosaic = _identify(test_context)
+    config = _make_config()
+
+    import pipelines.hybrid_siril_graxpert_oss_mosaic as siril
+    g = trace(siril.for_mosaic._function, mosaic, config)
+    viewboxes = [n for n in {*g, *(d for ds in g.values() for d in ds)}
+                 if isinstance(n, Node)
+                 and getattr(getattr(n.task, "_function", n.task), "__name__", "") == "compute_viewbox_measured"]
+    assert len(viewboxes) == 1, viewboxes
+    ops = _ancestor_ops(g, viewboxes[0])
+    assert "integrate_with_siril" in ops and "plate_solve_image" in ops, ops
+    assert not ops & {"post_stack_calibrate", "calibrate_channel", "hdr_merge_masters"}, ops

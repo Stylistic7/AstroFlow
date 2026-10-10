@@ -149,7 +149,20 @@ def _gather(stack: BaseStack, tmp: Path) -> Path:
     return all_dir
 
 
-def _stack_script(all_dir: Path, tmp: Path, mem_gb: float, image_type: str = "light") -> str:
+# Registration transform. NOT Siril's default homography, nor affine: a stack
+# spanning both sides of the meridian holds frames 180 deg apart, whose lens
+# distortion runs opposite ways; those fits chased it and left the two groups'
+# stars apart at the top and bottom of the frame, which the rejection turned
+# into a +-40% photometric bowl (Fish on the Platter B, 5 nights Oct-Apr:
+# SPFC scatter 0.29, refused; FWHM 3.2 px at the edges vs 2.4 mid). Rotation,
+# shift and uniform scale are all one optical setup can do between frames:
+# similarity passed (scatter 0.12, FWHM 2.4 everywhere); plate-solve
+# distortion terms (-disto) added nothing (2026-10-10).
+REGISTRATION = "-transf=similarity"
+
+
+def _stack_script(all_dir: Path, tmp: Path, mem_gb: float, image_type: str = "light",
+                  registration: str = REGISTRATION) -> str:
     """Phase 2: integrate the gathered frames within `mem_gb` (Siril's
     default, 0.9 of free memory, would let concurrent instances each claim
     the machine). Lights are registered first; calibration frames are
@@ -169,7 +182,7 @@ def _stack_script(all_dir: Path, tmp: Path, mem_gb: float, image_type: str = "li
         # no consumer can include ragged, partly covered edges. -2pass would
         # skip the first write but picks its own reference, which cost
         # depth (revealed 19.3% vs 20.6%, panel 6 OIII, 2026-10-08).
-        "register light", "seqapplyreg light -framing=min -interp=la",
+        f"register light {registration}", "seqapplyreg light -framing=min -interp=la",
         f"stack r_light {STACK_OPTIONS} -out={tmp}/master", "close"]) + "\n"
 
 
@@ -255,7 +268,8 @@ def integrate_with_siril(
         script = _calibration_script(stack, cal_by_id, tmp)
         if script:
             _run_siril(tmp, "calibrate.ssf", script)
-        _run_siril(tmp, "stack.ssf", _stack_script(_gather(stack, tmp), tmp, _memory_budget_gb(), stack.image_type))
+        _run_siril(tmp, "stack.ssf", _stack_script(_gather(stack, tmp), tmp, _memory_budget_gb(),
+                                                   stack.image_type, REGISTRATION))
         out = tmp / "master.fit"
         assert out.exists(), f"Siril wrote no master for {stack}"
         part = dest.with_name(f".siril-{dest.name}.part")

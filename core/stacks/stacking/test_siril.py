@@ -59,6 +59,7 @@ def test_runs_calibrate_with_their_own_masters_then_stack_as_one_sequence():
     script = _stack_script(all_dir, tmp, 7.25)
     assert "setcpu 8\nset core.mem_mode=1\nset core.mem_amount=7.2\n" in script and "merge" not in script
     assert f"stack r_light {STACK_OPTIONS} -out={tmp}/master" in script
+    assert "register light -transf=similarity" in script      # never the default homography
 
 
 def test_uncalibrated_stack_needs_no_calibration_phase():

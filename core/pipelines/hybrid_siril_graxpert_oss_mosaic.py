@@ -47,6 +47,12 @@ def post_processed_master(stack, config):
     return inherit_plate_solution(post_stack_calibrate(stack, config, master), master)
 
 
+def _by_exposure(stacks):
+    """Longest exposure first, ties by stable hash: the first is the HDR
+    reference, whose grid and plate solution the channel keeps."""
+    return tuple(sorted(stacks, key=lambda s: (-float(s.exposure), str(s.stable_hash))))
+
+
 def channel(target, filter, stacks, config):
     """One stack: its post-processed master. Several: their RAW masters
     HDR-combined (longest exposure first, on its grid), then calibrated once
@@ -55,10 +61,18 @@ def channel(target, filter, stacks, config):
         master = post_processed_master(stacks[0], config)
         return inherit_plate_solution(
             merge_target_channel_oss(target, filter, tuple(stacks), config, master), master)
-    ordered = tuple(sorted(stacks, key=lambda s: (-float(s.exposure), str(s.stable_hash))))
+    ordered = _by_exposure(stacks)
     raws = [solved_master(s, config) for s in ordered]
     merged = inherit_plate_solution(hdr_merge_masters(target, filter, ordered, config, *raws), raws[0])
     return inherit_plate_solution(calibrate_channel(target, filter, ordered, config, merged), raws[0])
 
 
-for_stack, for_target, for_mosaic = register(PIPELINE, post_processed_master, channel=channel)
+def geometry(target, filter, stacks, config):
+    """The master `channel` takes its plate solution from, before any
+    calibration: the canvas is measured on these, so an SPFC refusal blocks
+    only that channel's merges."""
+    return solved_master(_by_exposure(stacks)[0], config)
+
+
+for_stack, for_target, for_mosaic = register(PIPELINE, post_processed_master,
+                                             channel=channel, geometry=geometry)

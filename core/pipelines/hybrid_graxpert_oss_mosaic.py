@@ -239,11 +239,24 @@ def _merged_channels(mosaic, targets_by_id, channels, config,
     return starless_out, stars_out
 
 
-def register(name: str, post_processed_master, channel=None) -> tuple:
+def register(name: str, post_processed_master, channel=None, geometry=None) -> tuple:
     """Register this pipeline's three entry points (Stack, Target, Mosaic)
     under `name`, with `post_processed_master` as the per-stack recipe and
     `channel` as the per-filter one (see `channels_for_target`). Everything
-    else — BXT, placement, the mosaic merge, the colour tail — is shared."""
+    else — BXT, placement, the mosaic merge, the colour tail — is shared.
+
+    `geometry(target, filter, stacks, config)`, when given, is the master a
+    channel takes its plate solution from BEFORE calibration; the shared
+    canvas is measured on those instead of on the calibrated channels, so a
+    channel refused at calibration (SPFC: too few calibratable stars) loses
+    only its own merges, not the canvas every channel of the object shares
+    (2026-10-09: one refused B panel left all 17 Coalsack finishes absent)."""
+    def _viewbox(targets, channels, config, single_panel):
+        if geometry is None:
+            return _measured_viewbox(channels, single_panel)
+        return _measured_viewbox({(t.id, f): geometry(t, f, t.stacks_for(f), config)
+                                  for t in targets for f in t.filters}, single_panel)
+
     @pipeline(name, processes=Stack)
     def for_stack(stack, config):
         """One stack's GraXpert-corrected master."""
@@ -257,7 +270,7 @@ def register(name: str, post_processed_master, channel=None) -> tuple:
             (target.id, filter): sink
             for filter, sink in channels_for_target(target, config, post_processed_master, channel).items()
         }
-        viewbox = _measured_viewbox(channels, single_panel=True)
+        viewbox = _viewbox([target], channels, config, single_panel=True)
         starless, stars = _merged_channels(target, {target.id: target}, channels,
                                            config, viewbox)
         # Per-panel pre-merge identity — this is what keeps THIS pipeline's colour
@@ -278,8 +291,8 @@ def register(name: str, post_processed_master, channel=None) -> tuple:
         for target in mosaic.targets:
             for filter, sink in channels_for_target(target, config, post_processed_master, channel).items():
                 channels[(target.id, filter)] = sink
-        viewbox = _measured_viewbox(channels,
-                                    single_panel=len(targets_by_id) == 1)
+        viewbox = _viewbox(mosaic.targets, channels, config,
+                           single_panel=len(targets_by_id) == 1)
         starless, stars = _merged_channels(mosaic, targets_by_id, channels,
                                            config, viewbox,
                                            polish=len(targets_by_id) > 1)
