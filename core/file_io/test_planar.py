@@ -13,18 +13,19 @@ import pyvips
 import pytest
 
 from file_io.planar import (
-    is_tiled_tiff, planar_path_for, reconstruct_planar_tiff,
+    is_tiled_tiff, needs_planar, planar_path_for, reconstruct_planar_tiff,
 )
 
 _DESC = '{"PIPELINE": "AstroFlow-OSS", "CONTHASH": "deadbeef", "FILTER": "Ha"}'
 
 
-def _write(path, *, tile, pyramid=False, bands=3, w=600, h=400, desc=_DESC):
+def _write(path, *, tile, pyramid=False, bands=3, w=600, h=400, desc=_DESC,
+           compression="deflate"):
     a = (np.arange(h * w * bands, dtype=np.float32).reshape(h, w, bands) / 1e5)
     im = pyvips.Image.new_from_memory(a.tobytes(), w, h, bands, "float")
     if desc:
         im.set_type(pyvips.GValue.gstr_type, "image-description", desc)
-    im.tiffsave(str(path), compression="deflate", tile=tile, pyramid=pyramid,
+    im.tiffsave(str(path), compression=compression, tile=tile, pyramid=pyramid,
                 tile_width=128, tile_height=128, bigtiff=True)
     return a
 
@@ -97,3 +98,52 @@ def test_missing_source_does_not_raise_on_path_computation(tmp_path):
     """`planar_path_for` is used for reporting too — it must tolerate a
     vanished file rather than blowing up the caller."""
     assert planar_path_for(tmp_path / "gone.tiff").name.endswith(".planar.tiff")
+
+
+def test_stripped_zstd_needs_a_portable_copy(tmp_path):
+    """AstroFlow writes zstd; PixInsight, rc-astro and astrometry.net can't
+    decode it, so even a STRIPPED zstd TIFF is rewritten — pixel-identical,
+    uncompressed, description intact."""
+    src = tmp_path / "zstd.tiff"
+    expected = _write(src, tile=False, compression="zstd")
+    assert needs_planar(src) is True
+    assert needs_planar(tmp_path / "missing.xisf") is False
+
+    out = reconstruct_planar_tiff(src)
+
+    assert out != src and needs_planar(out) is False
+    import tifffile
+    with tifffile.TiffFile(str(out)) as tf:
+        assert tf.pages[0].compression.name == "NONE"
+    got = pyvips.Image.tiffload(str(out), page=0, unlimited=True)
+    arr = np.ndarray(buffer=got.write_to_memory(), dtype=np.float32,
+                     shape=(got.height, got.width, got.bands))
+    assert np.array_equal(arr, expected)
+    assert got.get("image-description") == _DESC
+
+
+def test_rc_astro_reads_a_portable_copy_under_the_same_name(tmp_path):
+    """rc-astro names products after its input's stem, so the copy keeps the
+    name — in a subdirectory `_locate` never globs."""
+    from rc_astro_cli import _readable
+    src = tmp_path / "abc123.tiff"
+    _write(src, tile=False, compression="zstd")
+    td = tmp_path / "td"
+    td.mkdir()
+    copy = _readable(src, td)
+    assert copy.name == src.name and copy.parent != td and not needs_planar(copy)
+    plain = tmp_path / "plain.tiff"
+    _write(plain, tile=False)
+    assert _readable(plain, td) == plain
+
+
+def test_pixinsight_recipe_opens_portable_copies_with_unchanged_view_ids(tmp_path):
+    from pix.image import view_id_for
+    from pix.recipe import _pi_readable
+    from pix.tasks.open_images import generate_open_images_js
+    src = tmp_path / "m.tiff"
+    _write(src, tile=False, compression="zstd")
+    copy = _pi_readable(src, tmp_path / "input0")
+    assert copy != src and not needs_planar(copy)
+    js = generate_open_images_js([src], {src: copy})
+    assert f'ImageWindow.open("{copy}")' in js and view_id_for(src) in js

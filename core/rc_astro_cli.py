@@ -104,6 +104,20 @@ def _move(produced: Path, dest: Path) -> None:
     publish_atomically(produced, dest, consume=True)
 
 
+def _readable(image: Path, td: Path) -> Path:
+    """`image` as rc-astro can read it. Its TIFF reader takes stripped
+    none/deflate/LZW only, and AstroFlow writes zstd; a TIFF that needs it gets
+    a stripped uncompressed copy under the SAME name (products are named after
+    the input's stem) in a subdirectory, so `_locate` never globs it."""
+    from file_io.planar import needs_planar, write_planar
+    if not needs_planar(image):
+        return image
+    copy = td / "input" / image.name
+    copy.parent.mkdir()
+    write_planar(image, copy)
+    return copy
+
+
 def _locate(td: Path, base: str) -> Path:
     """Find rc-astro's product file `<base>.<ext>` in `td`. rc-astro names each
     product `<input-stem>-<product>` and sets the extension from the format it
@@ -149,6 +163,7 @@ def run_bxt(
     always passed so the model + tiling are pinned, not left to CLI defaults."""
     input_image, output = Path(input_image), Path(output)
     with tempfile.TemporaryDirectory(prefix="rcastro_bxt_") as td:
+        input_image = _readable(input_image, Path(td))
         # Extension drives rc-astro's output format; mirror the caller's request.
         produced = Path(td) / f"{input_image.stem}-bxt{output.suffix}"
         args = ["bxt", str(input_image), "-o", str(produced),
@@ -187,6 +202,7 @@ def run_sxt(
         raise ValueError("run_sxt needs starless_out and/or stars_out")
     input_image = Path(input_image)
     with tempfile.TemporaryDirectory(prefix="rcastro_sxt_") as td:
+        input_image = _readable(input_image, Path(td))
         if stars_out is None:
             # Single product: name it explicitly so the CLI writes the
             # FORMAT the caller's extension requests (as run_bxt does).
@@ -236,6 +252,7 @@ def run_nxt(
     FITS writer overflows on huge images)."""
     input_image, output_xisf = Path(input_image), Path(output_xisf)
     with tempfile.TemporaryDirectory(prefix="rcastro_nxt_") as td:
+        input_image = _readable(input_image, Path(td))
         produced = Path(td) / f"{input_image.stem}-nxt.xisf"
         args = ["nxt", str(input_image), "-o", str(produced),
                 "--depth", "32F", "--overwrite",

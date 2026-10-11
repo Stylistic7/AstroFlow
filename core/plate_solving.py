@@ -20,6 +20,7 @@ from collections.abc import Mapping
 from beartype import beartype
 
 from file_io.conversion import convert_xisf_to_fits
+from file_io.planar import needs_planar, write_planar
 from file_io.sidecar import get_section, set_section, sidecar_path_for
 from units import Degrees, Radians, ArcsecondsPerPixel
 _PLATESOLUTION_SCHEMA = "astroflow.platesolution.v2"
@@ -125,7 +126,10 @@ def _solve_field(
             dest_filename = Path(
                 os.path.join(temp_dir, os.path.basename(filename))
             )
-            os.symlink(Path(filename).resolve(), dest_filename)
+            if needs_planar(filename):   # zstd/tiled TIFF: astrometry.net can't decode it
+                write_planar(filename, dest_filename)
+            else:
+                os.symlink(Path(filename).resolve(), dest_filename)
 
         if verify is not None:
             # a header-only FITS carrying the WCS keywords (NAXISn are what

@@ -334,7 +334,8 @@ def open_node_result_path(node_id):
     node_id = node_id.partition("@")[0]
     status = context[("node_status", node_id)]
     if "path" in status:
-        filename = str(status["path"])
+        from file_io.planar import reconstruct_planar_tiff
+        filename = str(reconstruct_planar_tiff(status["path"]))
         print(f"### opening filename {filename}")
         subprocess.Popen(
             [

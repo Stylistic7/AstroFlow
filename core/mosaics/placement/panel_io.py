@@ -53,6 +53,12 @@ def read_placed_panel(
     return arr, (int(hdr[_BBOX_X]), int(hdr[_BBOX_Y])), (int(hdr[_CANVAS_W]), int(hdr[_CANVAS_H]))
 
 
+def is_placed_panel(path: Path) -> bool:
+    """Whether `path` is a bbox-on-disk placed panel (a TIFF carrying BBOX_*)."""
+    path = Path(path)
+    return path.suffix.lower() in (".tif", ".tiff") and _BBOX_X in read_tiff_header(path)
+
+
 def rehydrate_placed_panel(src_path: Path, dst_path: Path) -> None:
     """Reconstruct the full-canvas deflate TIFF a PixInsight consumer needs
     (PhotometricMosaic infers placement from each image's canvas rect, and PI

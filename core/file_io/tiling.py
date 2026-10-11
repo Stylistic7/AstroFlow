@@ -30,7 +30,7 @@ from pathlib import Path
 import numpy as np
 import pyvips
 
-from file_io.tiff_file_io import _DESC, _atomic_tiffsave, COMPATIBLE_COMPRESSION
+from file_io.tiff_file_io import _DESC, _atomic_tiffsave
 
 # A tile's placement in the source/canvas: (x0, y0, width, height), all in px.
 TileRect = tuple
@@ -180,6 +180,5 @@ def feather_blend_to_bigtiff(
                  json.dumps(metadata or {}, ensure_ascii=True))
     # Clamp the tile to the canvas (libvips rejects a tile larger than the image).
     target = min(tile) if tile else 512
-    _atomic_tiffsave(out, Path(dest), tile=tile_size_for(canvas_w, canvas_h, target),
-                     compression=COMPATIBLE_COMPRESSION)
+    _atomic_tiffsave(out, Path(dest), tile=tile_size_for(canvas_w, canvas_h, target))
     del keepalive  # explicit: window buffers no longer referenced after the save

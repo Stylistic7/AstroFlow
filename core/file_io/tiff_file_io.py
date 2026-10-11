@@ -44,20 +44,18 @@ _DESC = "image-description"
 # Classic TIFF offsets are 32-bit (4 GB); force BigTIFF well before that. libvips
 # does NOT auto-enable BigTIFF, so we decide from the pixel budget.
 _BIGTIFF_THRESHOLD = 2 * 1024**3
-# DEFAULT TIFF codec. deflate/ZIP is the widely-compatible one — essentially every
-# TIFF reader ever written handles it (uncompressed, LZW, and deflate are the
-# universal codecs), so a TIFF we write can be consumed by anything, including
-# external/legacy tools. This matters because a node generally can't know whether
-# its output will later feed, say, PixInsight — whose reader (PhotometricMosaic,
-# ImageIntegration, …) CANNOT decode zstd. So we default to the compatible codec
-# and let the few provably-pyvips-only paths opt into the faster one below.
-COMPATIBLE_COMPRESSION = "deflate"
-# Multi-core codec, ~18x faster than deflate's single-threaded zlib on dense
-# gigapixel data (deflate pegs one core for ~12 min on a 27 GB color TIFF; zstd
-# ~40 s). NOT universally readable — PixInsight errors on it — so opt into this
-# ONLY where the output is provably terminal and pyvips-only: the OSS color mosaic
-# path (color deliverable + mono channels). libvips reads it back transparently.
+# DEFAULT TIFF codec: zstd, multi-core — ~18x faster than deflate's
+# single-threaded zlib on dense gigapixel data (deflate pegs one core for ~12 min
+# on a 27 GB color TIFF; zstd ~40 s; a 1.3 Gpx SHO join went 33 min -> 3.4 min)
+# and smaller on our float data. libvips reads it transparently; external tools
+# (PixInsight, rc-astro, astrometry.net) cannot, so every hand-off to one goes
+# through `file_io.planar` (`needs_planar` / `write_planar`): a stripped
+# uncompressed copy written at the boundary (Stylistic7 2026-10-11: AstroFlow runs
+# fast, the PixInsight export may take a minute).
 FAST_COMPRESSION = "zstd"
+# deflate: what an external consumer that needs a COMPRESSED full file gets
+# (the PhotometricMosaic re-hydration in mosaics/placement/panel_io.py).
+COMPATIBLE_COMPRESSION = "deflate"
 
 
 def _open(filename: Path) -> pyvips.Image:
@@ -105,12 +103,11 @@ def _atomic_tiffsave(
     img: pyvips.Image,
     filename: Path,
     tile: tuple[int, int] | None = None,
-    compression: str = COMPATIBLE_COMPRESSION,
+    compression: str = FAST_COMPRESSION,
 ) -> None:
     """Save via a sibling tmp + atomic rename (readers never see a half-written
-    file). deflate (widely compatible) by default; pass `compression=FAST_COMPRESSION`
-    for dense, pyvips-only writes that need the multi-core speed. BigTIFF forced for
-    large images."""
+    file). zstd by default (see FAST_COMPRESSION). BigTIFF forced for large
+    images."""
     filename = Path(filename)
     filename.parent.mkdir(parents=True, exist_ok=True)
     tmp = filename.with_name(f".{filename.name}.{uuid.uuid4().hex}.tmp")
@@ -158,7 +155,7 @@ def write_tiff_image(
     image: np.ndarray,
     metadata: dict[str, Any] | None = None,
     tile: tuple[int, int] | None = None,
-    compression: str = COMPATIBLE_COMPRESSION,
+    compression: str = FAST_COMPRESSION,
     **_legacy: Any,  # absorbs old tifffile-only kwargs (e.g. bigtiff); ignored
 ) -> None:
     metadata = metadata or {}
@@ -175,7 +172,7 @@ def write_tiff_image_streaming(
     image: "pyvips.Image",
     metadata: dict[str, Any] | None = None,
     tile: tuple[int, int] | None = None,
-    compression: str = COMPATIBLE_COMPRESSION,
+    compression: str = FAST_COMPRESSION,
 ) -> None:
     """`write_tiff_image` for a LAZY pyvips image: tiffsave pulls the
     pipeline tile-by-tile, so a gigapixel result never materializes in
@@ -195,7 +192,7 @@ def write_tiff_embedded(
     offset_xy: tuple[int, int],
     canvas_size: tuple[int, int],
     metadata: dict[str, Any] | None = None,
-    compression: str = COMPATIBLE_COMPRESSION,
+    compression: str = FAST_COMPRESSION,
 ) -> None:
     """Write a full `canvas_size` (W, H) TIFF holding `image` at `offset_xy`
     (x, y) with the rest black — WITHOUT ever materializing the full canvas.

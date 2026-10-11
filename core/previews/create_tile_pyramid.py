@@ -119,11 +119,10 @@ def default_make_tile_pyramid(source_path: Path, dest_path: Path, *,
     image.tiffsave(
         str(tmp),
         tile=True, pyramid=True,
-        # Deflate is lossless and works well on float data; the
-        # alternative (`lzw`) gives slightly larger files. `none`
-        # would mean a 4× larger on-disk size, which we'd prefer
-        # to avoid even though tiles aren't disk-bound at serve time.
-        compression="deflate",
+        # zstd: lossless, multi-core, and smaller than deflate on our float
+        # data. Read only by libvips (tile server, previews); PixInsight gets
+        # a planar export copy (file_io.planar).
+        compression="zstd",
         tile_width=_TILE_SIZE, tile_height=_TILE_SIZE,
         # bigtiff so multi-GB linear-float mosaics save cleanly.
         bigtiff=True,

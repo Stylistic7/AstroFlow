@@ -28,11 +28,15 @@ def _emit(pairs: list[tuple[str, Path]]) -> str:
     return '\n'.join(lines)
 
 
-def generate_open_images_js(filenames: list[Path]) -> str:
-    """Generate JavaScript to open image files in PixInsight."""
+def generate_open_images_js(filenames: list[Path],
+                            readable: dict[Path, Path] | None = None) -> str:
+    """Generate JavaScript to open image files in PixInsight. `readable` maps
+    an input to the copy PixInsight actually opens; the view id stays the
+    input's, so steps addressing it are unaffected."""
     from pix.image import view_id_for
 
-    return _emit([(view_id_for(f), f) for f in filenames])
+    readable = readable or {}
+    return _emit([(view_id_for(f), readable.get(f, f)) for f in filenames])
 
 
 def generate_named_open_js(views: dict[str, Path]) -> str:

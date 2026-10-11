@@ -427,7 +427,7 @@ def open_finish(object_type, object_id, pipeline, finish):
     wait on — the windows appear in PixInsight as they land."""
     import threading
     from catalog import resolve_finish
-    from file_io.planar import is_tiled_tiff
+    from file_io.planar import needs_planar
 
     b = resolve_finish(object_type, object_id, pipeline, finish)
     if b is None:
@@ -438,6 +438,6 @@ def open_finish(object_type, object_id, pipeline, finish):
     threading.Thread(target=_export_and_open, args=(views,), daemon=True).start()
     return jsonify({
         "opening": sorted(views),
-        "exporting": sorted(n for n, p in views.items() if is_tiled_tiff(p)),
+        "exporting": sorted(n for n, p in views.items() if needs_planar(p)),
         "missing": missing,
     }), 202

@@ -31,7 +31,7 @@ from decorators import node
 from dependency_graph.tracing import workflow_group
 from file_io.generic import read_image
 from file_io.tiff_file_io import (write_tiff_image, _atomic_tiffsave,
-                                  FAST_COMPRESSION, COMPATIBLE_COMPRESSION)
+                                  FAST_COMPRESSION)
 from file_io.tiling import feather_blend_to_bigtiff, tile_size_for
 from file_io.types import TiffFilePath, WithSidecar
 from file_io.xisf_file_io import write_xisf_image
@@ -169,11 +169,8 @@ def _save_color_vips(path: str, img: pyvips.Image, name: str,
     img.set_type(pyvips.GValue.gstr_type, "image-description",
                  json.dumps(desc))
     tmp = f"{path}.{os.getpid()}.tmp.tiff"
-    # deflate, NOT zstd: these named colour images are the user-facing
-    # deliverables, opened directly in PixInsight and other tools — and PI can't
-    # read zstd ("ZSTD compression support is not configured"). Widest
-    # compatibility wins over zstd's speed/size for a final deliverable.
-    img.tiffsave(tmp, compression=COMPATIBLE_COMPRESSION, tile=True, bigtiff=True)
+    # zstd like every AstroFlow TIFF; PixInsight gets a planar export copy.
+    img.tiffsave(tmp, compression=FAST_COMPRESSION, tile=True, bigtiff=True)
     os.replace(tmp, path)
 
 

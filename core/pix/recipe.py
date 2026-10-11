@@ -108,6 +108,24 @@ class Step:
     success_pattern: re.Pattern | None = None
 
 
+def _pi_readable(path: Path, dest_dir: Path) -> Path:
+    """`path` as PixInsight can open it. A bbox-on-disk placed panel is
+    re-hydrated to its full canvas (PixInsight infers placement from it); any
+    other zstd or tiled TIFF gets a stripped uncompressed copy. Everything
+    else (XISF, FITS, a stripped deflate TIFF) opens as-is."""
+    from file_io.planar import needs_planar, write_planar
+    from mosaics.placement.panel_io import is_placed_panel, rehydrate_placed_panel
+    if not needs_planar(path) and not is_placed_panel(path):
+        return path
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / Path(path).name
+    if is_placed_panel(path):
+        rehydrate_placed_panel(path, dest)
+    else:
+        write_planar(path, dest)
+    return dest
+
+
 class Recipe:
     """A lazy collection of PixInsight operations.
 
@@ -121,6 +139,7 @@ class Recipe:
         self.outputs: list[Image] = []
         self.is_materialized = False
         self.log: str | None = None
+        self._readable: dict[Path, Path] = {}
         self._recipe_id = uuid.uuid4().hex[:12]
         self._tmp_dir_obj = tempfile.TemporaryDirectory(
             prefix=f"pix-{self._recipe_id}-"
@@ -195,7 +214,7 @@ class Recipe:
         lines.append('')
 
         # Open input images
-        lines.append(generate_open_images_js(self.input_filenames))
+        lines.append(generate_open_images_js(self.input_filenames, self._readable))
         lines.append('')
 
         # All processing steps (inline JS only)
@@ -256,7 +275,7 @@ class Recipe:
         # Open images as first JS step
         open_js = (
             'console.beginLog();\n\n'
-            + generate_open_images_js(self.input_filenames)
+            + generate_open_images_js(self.input_filenames, self._readable)
         )
         open_path = self.tmp_dir / f"{self._recipe_id}_open.js"
         open_path.write_text(with_engine_directive(open_js))
@@ -313,6 +332,8 @@ class Recipe:
                     from file_io.publish import publish_atomically
                     publish_atomically(src, dest)
         else:
+            self._readable = {f: _pi_readable(f, self.tmp_dir / f"input{i}")
+                              for i, f in enumerate(self.input_filenames)}
             save_all = {
                 image: self._output_path_in_tmp(image)
                 for image in self.outputs
