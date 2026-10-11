@@ -19,6 +19,7 @@ from typing import Any
 
 import numpy as np
 import pyvips
+import tifffile
 
 from file_io.normalize_header import normalize_header
 from file_io.types import ImageGeometry
@@ -222,13 +223,20 @@ def write_tiff_embedded(
 
 
 def update_tiff_header(filename: Path, metadata_in: dict[str, Any]) -> None:
-    """Merge `metadata_in` into the TIFF's description. Re-encodes the file (as
-    the tifffile version did — there's no in-place tag edit), so used only for
-    small stamps like the content hash."""
+    """Merge `metadata_in` into the TIFF's description, editing the tag IN
+    PLACE: tifffile writes the new string (appended at EOF when longer) and
+    then repoints the tag, so the pixel data, codec and tile layout are left
+    exactly as written. Re-encoding instead cost a single-threaded deflate of
+    the whole file per stamp (15 min on a 9.4 GB SHO join) and silently
+    turned tiled outputs into strips. A file with no description tag (only
+    the untagged exports/previews) has no tag to edit and is re-encoded."""
     img = _open(filename)
     metadata = normalize_header(json.loads(_get_description(img)))
     metadata |= metadata_in
-    img = img.copy()
-    img.set_type(pyvips.GValue.gstr_type, _DESC, json.dumps(metadata, ensure_ascii=True))
-    _atomic_tiffsave(img, Path(filename))
-    assert Path(filename).exists()
+    description = json.dumps(metadata, ensure_ascii=True)
+    try:
+        tifffile.tiffcomment(filename, description)
+    except ValueError:  # no ImageDescription tag
+        img = img.copy()
+        img.set_type(pyvips.GValue.gstr_type, _DESC, description)
+        _atomic_tiffsave(img, Path(filename))

@@ -390,8 +390,9 @@ def stack_sho_channels(
     monos = [_open_mono_vips(m) for m in (sii, ha, oiii)]
     stacked = monos[0].bandjoin([monos[1], monos[2]]).copy()
     stacked.set_type(pyvips.GValue.gstr_type, "image-description", json.dumps(meta))
-    _atomic_tiffsave(stacked, Path(out),
-                     tile=tile_size_for(stacked.width, stacked.height))
+    _atomic_tiffsave(stacked, Path(out),   # zstd: read only by pyvips (the NXT crops)
+                     tile=tile_size_for(stacked.width, stacked.height),
+                     compression=FAST_COMPRESSION)
     return WithSidecar(TiffFilePath(out))
 
 
