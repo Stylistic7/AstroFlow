@@ -44,7 +44,11 @@ from collections import defaultdict
 
 from planner.model import Candidate, Rig
 
-VISIBLE_GAIN_UNIT = 0.02      # 2% of the object climbing a quality level per hour ≈ weight 1
+# 10% of the object climbing a quality level per hour ≈ weight 1. Measured
+# 2026-10-12 over 315 re-analysed stacks: the median narrowband panel climbs
+# 8-11% an hour, the best ~20-30%, a brand-new RGB stack 70%+ (its first half
+# hour); at the old 2% unit 80% of stacks sat on MAX_WEIGHT and ranked alike.
+VISIBLE_GAIN_UNIT = 0.10
 MIN_OBJECT = 0.05             # an object is at least 5% of the field, so an empty field cannot blow up
 MIN_GAIN = 0.001              # below 0.1% of the field per hour, no more hours would improve it
 # A curve that says more than this of the field is ALREADY visible is not
