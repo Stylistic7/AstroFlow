@@ -81,11 +81,11 @@ def _greedy(night: Night, cands: list[Candidate], tracks: dict, eff: dict,
             length = s - t
             # Never a visit under the minimum, with two exceptions that keep
             # every dark minute assigned (Stylistic7, 2026-10-12): continuing the
-            # previous target costs no slew, so it may run however short; and
+            # previous stack costs no slew and no re-stack, so it may run however short; and
             # the night's last visit may be short, at least `tail_min_slots`.
             # The flip gets no exemption: it is the planner's own choice, so it
             # moves instead of minting a sliver.
-            same = prev is not None and prev.target_id == c.target_id
+            same = prev is not None and (prev.target_id, prev.filter) == (c.target_id, c.filter)
             if length == 0 or (length < costs.min_block_slots and not same and
                                not (s >= night.n and length >= costs.tail_min_slots)):
                 continue

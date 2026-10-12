@@ -36,6 +36,7 @@ class DecisionType(str, Enum):
     # not just its own). It therefore keeps the value it was first stored
     # under. Rename it only with a migration that rewrites the stored keys.
     SKY_FLAT_SOURCE = "fringe_source"
+    PROJECT_KIND = "project_kind"          # planner: "lrgb" or "narrowband" (R/G/B = star colour)
 
 
 # Lower precedence = applied first by resolve_decisions.
@@ -116,6 +117,14 @@ class DecisionKey:
         return cls(
             DecisionType.SKY_FLAT_SOURCE, ObjectType.STACK, stack_id, stack_id,
         )
+
+    @classmethod
+    def project_kind(cls, object_type: "ObjectType", object_id: str) -> "DecisionKey":
+        """What a target or mosaic is for: "lrgb", or "narrowband" with R/G/B
+        as star colour. The planner infers it from the hours shot
+        (`planner.inventory.project_kind`); this override says otherwise.
+        The choice is the kind string."""
+        return cls(DecisionType.PROJECT_KIND, object_type, object_id, object_id)
 
     @classmethod
     def rotation_outlier(cls, stack_id: str, run_id: str) -> "DecisionKey":

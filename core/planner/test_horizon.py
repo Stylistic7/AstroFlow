@@ -22,8 +22,17 @@ def test_dark_blocks_cover_two_nights_of_astronomical_darkness():
     assert set(h.night) == {0, 1}
     per_night = np.bincount(h.night)
     assert 16 <= per_night[0] <= 24 and 16 <= per_night[1] <= 24     # ~10 h of darkness in October
-    assert h.block_h == 0.5
+    assert (h.hours == 0.5).all()
     assert horizon.night_dates(NOON_UTC, LON, 2)[0].isoformat() == "2026-10-12"
+
+
+def test_coarse_blocks_after_the_fine_nights():
+    h = horizon.dark_blocks(LON, LAT, NOON_UTC, nights=33, fine_nights=30)
+    assert (h.hours[h.night < 30] == 0.5).all() and (h.hours[h.night >= 30] == 2.0).all()
+    per_night = np.bincount(h.night)
+    assert 3 <= per_night[31] <= 6                                    # ~10 dark hours in 2-hour blocks
+    slots, cap = horizon.supply([RIG], h, [1.0] * h.n)
+    assert cap[-1] == 2.0
 
 
 def test_edges_only_where_usable():

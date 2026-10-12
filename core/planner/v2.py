@@ -1,7 +1,7 @@
 """Planner v2: the month decides tonight.
 
-Layer 1 (`allocate`) spreads every need's hours over the next
-`HORIZON_NIGHTS` of weather-weighted sky; Layer 2 (`schedule`, v1's greedy)
+Layer 1 (`allocate`) spreads every need's hours over the coming season of
+weather-weighted sky (`horizon`: a month in fine blocks, then coarse ones); Layer 2 (`schedule`, v1's greedy)
 orders tonight's share into visits. Only tonight's quotas cross between
 them. The month's plan is kept for the explanation and thrown away: it is
 re-solved tomorrow from whatever was actually shot.
@@ -29,13 +29,18 @@ from pathlib import Path
 import numpy as np
 
 from planner import allocate, explain, horizon, inventory, schedule, sky
-from planner.horizon import BLOCK_MIN, HORIZON_NIGHTS
+from planner.horizon import BLOCK_MIN, COARSE_BLOCK_MIN, FINE_NIGHTS, SEASON_NIGHTS
 from planner.model import Candidate, Rig
 from weather import cache, climatology, probability, sources
 
 MIN_QUOTA_H = 0.5          # a smaller share of tonight is a fragment: no priority, no slew
 QUOTA_BOOST = 3.0          # tonight's reserved hours outrank everything v1 values alone
-DEADLINE_BOOST = 4.0       # a finish-by mosaic: its depth counts like another's seam, its seams above all
+# Time preference: an hour's value falls 1% per night into the future. A
+# finished image sooner is worth more, and without this an LP with a season
+# of spare sky is indifferent to WHEN — it spreads every need thinly and
+# tonight gets fragments. With it, tonight fills with the best of what is
+# usable tonight, then tomorrow, and so on: "shoot the best thing now".
+NIGHT_DISCOUNT = 0.99
 
 
 def quota_tiers(tiers: list[list[float]], quota_h: float, boost: float = QUOTA_BOOST) -> list[list[float]]:
@@ -83,18 +88,6 @@ def _climatology(lat: float, lon: float, status: dict[str, str]):
     return climatology.lookup(table)
 
 
-def _deadline_nights(context, dates: list[date]) -> dict[str, int]:
-    """mosaic id -> last night index its hours may land on (soft finish-by)."""
-    out = {}
-    for mosaic_id, day in (context.get("planner_deadlines") or {}).items():
-        try:
-            last = (date.fromisoformat(str(day)) - dates[0]).days
-        except ValueError:
-            continue
-        out[mosaic_id] = max(0, min(len(dates) - 1, last))
-    return out
-
-
 def plan(context, now: datetime | None = None) -> dict:
     now = now or datetime.now(timezone.utc)
     lon, lat = inventory.site(context)
@@ -104,24 +97,19 @@ def plan(context, now: datetime | None = None) -> dict:
     depths = inventory.master_depths(context.output_dir)
 
     # --- the month: supply, weather, demand, edges, one solve -------------
-    hz = horizon.dark_blocks(lon, lat, noon_utc, HORIZON_NIGHTS)
-    dates = horizon.night_dates(noon_utc, lon, HORIZON_NIGHTS)
+    hz = horizon.dark_blocks(lon, lat, noon_utc)
+    dates = horizon.night_dates(noon_utc, lon, SEASON_NIGHTS)
     forecasts, weather_status = _forecasts(lat, lon)
     clim = _climatology(lat, lon, weather_status)
     overrides = {str(k): v for k, v in (context.get("planner_overrides") or {}).items()}
     p = probability.p_clear(hz.utc(), now, forecasts, clim,
                             override=lambda t: overrides.get(night_key(t, lon).isoformat()))
     slots, capacity = horizon.supply(rigs, hz, p)
-    deadlines = _deadline_nights(context, dates)
     pairs: list[tuple[str, Candidate]] = [(rig.key, c) for rig in rigs for c in cands_by_rig.get(rig.key, [])]
-    needs, last_night = [], {}
-    for i, (rig_key, c) in enumerate(pairs):
-        boost = DEADLINE_BOOST if c.mosaic_id in deadlines else 1.0
-        needs.append(allocate.Need(f"{rig_key}|{c.target_id}|{c.filter}",
-                                   tuple((h, w * boost) for h, w in c.tiers)))
-        if c.mosaic_id in deadlines:
-            last_night[i] = deadlines[c.mosaic_id]
-    es = horizon.edges(slots, hz, pairs, last_night)
+    needs = [allocate.Need(f"{rig_key}|{c.target_id}|{c.filter}", tuple((h, w) for h, w in c.tiers))
+             for rig_key, c in pairs]
+    es = [replace(e, efficiency=e.efficiency * NIGHT_DISCOUNT ** int(hz.night[slots[e.slot].block]))
+          for e in horizon.edges(slots, hz, pairs)]
     alloc = allocate.solve(capacity, needs, es)
 
     # --- tonight's quotas: expected hours back to real hours ---------------
@@ -130,6 +118,7 @@ def plan(context, now: datetime | None = None) -> dict:
     quota = {}
     for i, (rig_key, c) in enumerate(pairs):
         real = sum(alloc.hours.get((slot_of[(rig_key, b)], i), 0.0) / p[b] for b in tonight if p[b] > 0)
+        real = min(real, c.need_h)         # expected hours back to real ones, never past the need
         if real >= MIN_QUOTA_H:
             quota[i] = real
 
@@ -146,9 +135,10 @@ def plan(context, now: datetime | None = None) -> dict:
     out = {**explain.night_header(now, lon, lat, night), "version": 2,
            "weather": {"sources": weather_status,
                        "tonight_p_clear": round(float(np.mean([p[b] for b in tonight])), 2) if tonight else None},
-           "horizon": {"block_min": BLOCK_MIN, "nights": _month(hz, dates, p, rigs, slots, alloc, pairs)},
+           "horizon": {"block_min": BLOCK_MIN, "coarse_block_min": COARSE_BLOCK_MIN, "fine_nights": FINE_NIGHTS,
+                       "nights": _month(hz, dates, p, rigs, slots, alloc, pairs)},
            "layer1": {"objective": round(alloc.objective, 2), "needs": len(needs), "edges": len(es),
-                      "slots": len(slots), "deadlines": {m: dates[k].isoformat() for m, k in deadlines.items()}},
+                      "slots": len(slots)},
            "rigs": [], "mosaics": {}, "unassignable": unassignable}
 
     # --- tonight: Layer 2 on the quotas ----------------------------------
@@ -168,7 +158,7 @@ def plan(context, now: datetime | None = None) -> dict:
         for b in rig_plan.blocks:
             c = b.candidate
             i = by_need.get((c.target_id, c.filter))
-            visits.append({**explain.visit_json(b, tracks),
+            visits.append({**explain.visit_json(b, tracks), "kind": c.kind,
                            "quota_h": round(quota.get(i, 0.0), 2) if i is not None else None,
                            "why_tonight": _why_tonight(c, i, future.get(i), dates, alloc, needs, p, tonight)})
             key = f"{c.mosaic_id}|{c.filter}"
@@ -208,9 +198,9 @@ def _why_tonight(c: Candidate, i: int | None, fut: dict | None, dates: list[date
     if i is None:
         return f"not in the month's allocation; tonight p(clear) {p_tonight:.0%}"
     if not fut:
-        return f"tonight is its last usable night in the next {HORIZON_NIGHTS}; p(clear) {p_tonight:.0%}"
+        return f"tonight is its last usable night this season; p(clear) {p_tonight:.0%}"
     price = max((v for (n, _), v in alloc.need_price.items() if n == i), default=0.0)
-    window = ("usable all month" if fut["last_night"] >= len(dates) - 1
+    window = ("usable all season" if fut["last_night"] >= len(dates) - 1
               else f"usable until {dates[fut['last_night']]:%b %d}")
     room = ("the month has room for all of it" if price < 1e-6
             else f"wants {price:.2f}/h more than the month can give")
@@ -235,8 +225,8 @@ def _month(hz, dates, p, rigs, slots, alloc, pairs) -> list[dict]:
             per_rig[rig.key] = {f: round(h, 2) for f, h in sorted(hours.items())}
         rows.append({"date": day.isoformat(),
                      "p_clear": round(float(np.mean([p[b] for b in blocks])), 2) if blocks else None,
-                     "dark_h": round(len(blocks) * hz.block_h, 1),
-                     "moon_up_h": round(float(np.sum(hz.moon_alt[blocks] > 0)) * hz.block_h, 1) if blocks else 0.0,
+                     "dark_h": round(float(np.sum(hz.hours[blocks])), 1) if blocks else 0.0,
+                     "moon_up_h": round(float(np.sum(hz.hours[blocks] * (hz.moon_alt[blocks] > 0))), 1) if blocks else 0.0,
                      "rigs": per_rig})
     return rows
 
@@ -252,8 +242,8 @@ def text(plan_json: dict) -> str:
         for v in rig["visits"]:
             lines.append(f"  {t(v['start'])}–{t(v['end'])}  {v['label']:<24} {v['filter']}  {v['subs']:3d} × {v['exposure']:.0f} s"
                          f"   quota {v['quota_h']} h   [{v['why']}]  [{v['why_tonight']}]")
-    lines.append("month (expected hours by filter):")
-    for n in plan_json["horizon"]["nights"]:
+    lines.append("the next 35 nights (expected hours by filter):")
+    for n in plan_json["horizon"]["nights"][:35]:
         rigs = "  ".join(f"{k[:4]}:{v}" for k, v in n["rigs"].items() if v)
         lines.append(f"  {n['date']}  p {n['p_clear']}  dark {n['dark_h']} h  moon-up {n['moon_up_h']} h  {rigs}")
     return "\n".join(lines)

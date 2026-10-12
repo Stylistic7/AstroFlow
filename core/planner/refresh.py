@@ -47,7 +47,8 @@ def inputs_key(context, now: datetime | None = None) -> list:
     now = now or datetime.now(timezone.utc)
     return [repr(sorted(map(tuple, context.shopping_cart or []))), round(newest),
             repr(sorted((context.get("planner_overrides") or {}).items())),
-            repr(sorted((context.get("planner_deadlines") or {}).items())),
+            repr(sorted((str(k), str(v.choice)) for k, v in (context.settings.decision_overrides or {}).items()
+                        if k.decision_type.value == "project_kind")),
             f"{now:%Y-%m-%d}/{now.hour // 6}"]
 
 

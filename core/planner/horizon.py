@@ -1,11 +1,15 @@
-"""Supply for Layer 1: the dark sky of the next nights in blocks, per rig,
+"""Supply for Layer 1: the dark sky of the coming season in blocks, per rig,
 and which (panel, filter) each block can serve.
 
-One astropy pass covers the whole horizon: the sun and moon on a block
-grid, then one track per target over every dark block. `efficiency` (the
-v1 altitude and moon factors) decides whether a block can serve a need and
-how much an hour there is worth; `weather.probability` decides how much of
-the block is expected to exist.
+Fine blocks (BLOCK_MIN) for the next FINE_NIGHTS, so a night's moon-down
+and altitude windows are resolved; coarse blocks (COARSE_BLOCK_MIN) from
+there to SEASON_NIGHTS, enough to see a target's hours run out for the
+season without anyone typing a date. One astropy pass covers the whole
+horizon: the sun and moon on the block grid, then one track per target
+over every dark block. `efficiency` (the v1 altitude and moon factors)
+decides whether a block can serve a need and how much an hour there is
+worth; `weather.probability` decides how much of the block is expected to
+exist.
 """
 from __future__ import annotations
 
@@ -23,8 +27,10 @@ from planner.efficiency import efficiency
 from planner.model import Candidate, Rig
 from planner.sky import Track
 
-HORIZON_NIGHTS = 30       # a lunar cycle: moonlit nights are in view
+FINE_NIGHTS = 30          # a lunar cycle at full resolution: moonlit nights are in view
+SEASON_NIGHTS = 180       # half a year: every cart target's season ends inside it
 BLOCK_MIN = 30
+COARSE_BLOCK_MIN = 120
 DARK_SUN_ALT_DEG = -18.0
 
 
@@ -32,7 +38,7 @@ DARK_SUN_ALT_DEG = -18.0
 class Horizon:
     location: EarthLocation
     times: Time               # dark block centres across the horizon
-    block_h: float
+    hours: np.ndarray         # per block: its length in hours (fine or coarse)
     night: np.ndarray         # per block: 0 = the first night
     moon_alt: np.ndarray
     moon_illum: np.ndarray
@@ -55,16 +61,21 @@ class Horizon:
 
 
 def dark_blocks(lon_deg: float, lat_deg: float, noon_utc: datetime,
-                nights: int = HORIZON_NIGHTS, block_min: int = BLOCK_MIN) -> Horizon:
-    """Every block of astronomical darkness in the `nights` after `noon_utc`."""
+                nights: int = SEASON_NIGHTS, fine_nights: int = FINE_NIGHTS,
+                block_min: int = BLOCK_MIN, coarse_block_min: int = COARSE_BLOCK_MIN) -> Horizon:
+    """Every block of astronomical darkness in the `nights` after `noon_utc`:
+    `block_min` long for the first `fine_nights`, `coarse_block_min` after."""
     loc = EarthLocation(lon=lon_deg * u.deg, lat=lat_deg * u.deg)
-    offsets = np.arange(0, nights * 24 * 60, block_min) + block_min / 2
+    fine = np.arange(0, min(nights, fine_nights) * 24 * 60, block_min) + block_min / 2
+    coarse = np.arange(fine_nights * 24 * 60, nights * 24 * 60, coarse_block_min) + coarse_block_min / 2
+    offsets = np.concatenate([fine, coarse])
+    length_h = np.concatenate([np.full(len(fine), block_min / 60.0), np.full(len(coarse), coarse_block_min / 60.0)])
     grid = Time(noon_utc) + offsets * u.min
     sun = get_sun(grid)
     dark = sun.transform_to(AltAz(obstime=grid, location=loc)).alt.deg < DARK_SUN_ALT_DEG
     times = grid[dark]
     moon = get_body("moon", times, loc)
-    return Horizon(location=loc, times=times, block_h=block_min / 60.0,
+    return Horizon(location=loc, times=times, hours=length_h[dark],
                    night=(offsets[dark] // (24 * 60)).astype(int),
                    moon_alt=moon.transform_to(AltAz(obstime=times, location=loc)).alt.deg,
                    moon_illum=(1 - np.cos(sun[dark].separation(moon).rad)) / 2,
@@ -89,7 +100,7 @@ def supply(rigs: Sequence[Rig], horizon: Horizon, p_clear: Sequence[float]) -> t
     for rig in rigs:
         for b in range(horizon.n):
             slots.append(Slot(rig.key, b))
-            capacity.append(horizon.block_h * float(p_clear[b]))
+            capacity.append(float(horizon.hours[b]) * float(p_clear[b]))
     return slots, capacity
 
 
@@ -97,7 +108,7 @@ def edges(slots: Sequence[Slot], horizon: Horizon, cands: Sequence[tuple[str, Ca
           last_night: dict[int, int] | None = None) -> list[Edge]:
     """Which slot can serve which candidate, at what efficiency. `cands` pairs
     each candidate with the rig key that shoots it; `last_night` caps a
-    candidate's edges at a night index (a soft finish-by date)."""
+    candidate's edges at a night index (tests only)."""
     by_rig: dict[str, list[tuple[int, int]]] = {}
     for si, s in enumerate(slots):
         by_rig.setdefault(s.rig, []).append((si, s.block))

@@ -35,7 +35,8 @@ def test_one_flip_at_most_minimum_visits_and_sides():
     assert all(a.end_slot == b.start_slot for a, b in zip(plan.blocks, plan.blocks[1:]))
     for b in plan.blocks:
         prev = next((p for p in plan.blocks if p.end_slot == b.start_slot), None)
-        continues = prev is not None and prev.candidate.target_id == b.candidate.target_id
+        continues = prev is not None and (prev.candidate.target_id, prev.candidate.filter) == \
+            (b.candidate.target_id, b.candidate.filter)
         assert b.end_slot - b.start_slot >= schedule.Costs().min_block_slots or continues or \
             (b.end_slot == night.n and b.end_slot - b.start_slot >= schedule.Costs().tail_min_slots)
     # one pier side, then the other: every east visit starts before the flip,

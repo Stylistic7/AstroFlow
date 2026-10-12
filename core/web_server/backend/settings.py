@@ -22,6 +22,30 @@ def _update_settings(updater):
     return new_settings
 
 
+@settings_bp.route("/api/project_kind/<object_type>/<object_id>", methods=["PUT", "DELETE"])
+def put_project_kind(object_type, object_id):
+    """Override what a target or mosaic is for: `{"kind": "lrgb" |
+    "narrowband"}` (narrowband: R/G/B are star colour, capped at their goal).
+    DELETE returns it to the planner's own classification from the hours
+    shot. Planner-only: no graph restart."""
+    from decisions.decisions import DecisionKey, DecisionOverride, ObjectType
+    try:
+        key = DecisionKey.project_kind(ObjectType(object_type), object_id)
+    except ValueError:
+        return jsonify({"error": "object_type must be target or mosaic"}), 400
+    current = dict(context.settings.decision_overrides)
+    if request.method == "DELETE":
+        current.pop(key, None)
+    else:
+        kind = (request.get_json(silent=True) or {}).get("kind")
+        if kind not in ("lrgb", "narrowband"):
+            return jsonify({"error": "kind must be lrgb or narrowband"}), 400
+        current[key] = DecisionOverride(choice=kind)
+    _update_settings(lambda s: replace(s, decision_overrides=frozendict(current)))
+    return jsonify({"object_type": object_type, "object_id": object_id,
+                    "kind": None if request.method == "DELETE" else kind})
+
+
 @settings_bp.route("/api/quarantine/<object_type>/<object_id>", methods=["POST"])
 def toggle_quarantine(object_type, object_id):
     """Toggle quarantine for a stack, target, or mosaic.
