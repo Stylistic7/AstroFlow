@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 
 from metadata import visibility as V
-from metadata.master_analysis import FACTORS, visible_gain_per_hour
+from metadata.master_analysis import FACTORS
 
 
 def _field(rng, sigma, faint=3e-4, h=600, w=800):
@@ -28,6 +28,11 @@ def test_more_hours_reveal_more_and_noise_is_not_structure():
     fractions = [V.visible_fraction(dv, dm, f) for f in FACTORS]
     assert all(b >= a for a, b in zip(fractions, fractions[1:]))
     assert V.visible_fraction(sv, sm, 1.0) < V.visible_fraction(dv, dm, 1.0)
+    # quality levels nest: what is clean is also usable and detected, and
+    # deeper data lifts every level
+    levels = V.quality_fractions(dv, dm, 1.0)
+    assert levels == sorted(levels, reverse=True)
+    assert all(b >= a for a, b in zip(levels, V.quality_fractions(dv, dm, 4.0)))
     empty = (0.005 + rng.normal(0, 2e-4, (600, 800))).astype(np.float32)
     ev, em = V.snr_maps(empty)
     assert V.visible_fraction(ev, em, 1.0) < 0.02
@@ -44,19 +49,14 @@ def test_analyze_master_writes_the_sidecar_section(tmp_path):
         filename, stable_hash, header, master_integration_s = path, "abc", {"FILTER": "O"}, 36000.0
     out = inspect.unwrap(analyze_master._function)(_M())
     assert get_section(path, SECTION) == out
-    assert out["stack"] == "abc" and out["filter"] == "O" and len(out["visibility"]["fraction"]) == len(FACTORS)
-    g = visible_gain_per_hour(out, hours_now=10.0)
-    assert g is not None and g >= 0
-
-
-def test_gain_reads_the_curve_relative_to_the_library_hours():
-    a = {"integration_s": 36000.0, "visibility": {"factors": [1, 2, 4], "fraction": [0.10, 0.20, 0.30]}}
-    assert abs(visible_gain_per_hour(a, hours_now=10.0, added_h=10.0) - 0.01) < 1e-9     # 10 h → 20 h: +10%
-    assert visible_gain_per_hour({}, 10.0) is None
+    assert out["stack"] == "abc" and out["filter"] == "O"
+    curves = out["visibility"]["fraction"]
+    assert out["visibility"]["thresholds"] == list(V.THRESHOLDS)
+    assert len(curves) == len(V.THRESHOLDS) and all(len(c) == len(FACTORS) for c in curves)
+    assert all(b >= a for c in curves for a, b in zip(c, c[1:]))    # more hours never reveal less
 
 
 if __name__ == "__main__":
     import tempfile
     test_more_hours_reveal_more_and_noise_is_not_structure(); print("ok more hours / noise")
     test_analyze_master_writes_the_sidecar_section(Path(tempfile.mkdtemp())); print("ok sidecar section")
-    test_gain_reads_the_curve_relative_to_the_library_hours(); print("ok gain from curve")

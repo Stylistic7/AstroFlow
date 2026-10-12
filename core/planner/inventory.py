@@ -6,11 +6,17 @@ Need comes in tiers, each a run of hours at a value, spent in order. The
 value of an hour is the IMPROVEMENT it buys, in one unit for everything
 (weight 1 = VISIBLE_GAIN_UNIT of the field newly visible per hour):
 
-  * depth: read off the master's measured visibility curve
-    (`metadata.master_analysis`: the fraction of the field visible after
-    1x..4x the current integration). Concave by construction, so the first
-    hour is worth more than the tenth, and a panel drops out when its next
-    tier is worth less than MIN_GAIN — "no more hours would improve it".
+  * depth: read off the master's measured quality curves
+    (`metadata.master_analysis`: the fraction of the field at or above SNR
+    3, 10, 30 and 100 after 1x..4x the current integration). An hour is
+    worth the fraction of the OBJECT that climbs a level, summed over the
+    levels: the field fractions climbing, divided by the fraction of the
+    field detectable at 4x (what is there to improve; a small nebula on a
+    long focal length is not penalised for the empty sky around it). A
+    panel is not done at SNR 3 (detected); a portfolio image carries its
+    nebulosity at 30 and up. Concave by construction, so the
+    first hour is worth more than the tenth, and a panel drops out when its
+    next tier is worth less than MIN_GAIN — "no more hours would improve it".
     Until a master is analysed, a flat FALLBACK_H goal at weight 1. On a
     NARROWBAND project (`project_kind`: more narrowband hours than broadband
     across the target or mosaic), R/G/B are star colour: their tiers stop at
@@ -38,7 +44,8 @@ from collections import defaultdict
 
 from planner.model import Candidate, Rig
 
-VISIBLE_GAIN_UNIT = 0.02      # 2% of the field per hour ≈ weight 1 (a strong deep target)
+VISIBLE_GAIN_UNIT = 0.02      # 2% of the object climbing a quality level per hour ≈ weight 1
+MIN_OBJECT = 0.05             # an object is at least 5% of the field, so an empty field cannot blow up
 MIN_GAIN = 0.001              # below 0.1% of the field per hour, no more hours would improve it
 # A curve that says more than this of the field is ALREADY visible is not
 # trusted (the flat fallback applies). Measured 2026-10-12 on 118 stacks
@@ -113,23 +120,28 @@ def master_depths(output_dir) -> dict[str, tuple[float, float, dict | None]]:
 
 
 def curve_tiers(analysis: dict | None, hours_now: float) -> list[list[float]] | None:
-    """Tiers read off the master's measured visibility curve: tier k is the
-    hours from factor k to factor k+1 of the master's integration, at
-    (fraction gained) / (hours added) in weight units, from `hours_now`
-    (the library's integration, which may exceed the master's). Stops at
-    the first tier under MIN_GAIN. None without a usable curve."""
+    """Tiers read off the master's measured quality curves: tier k is the
+    hours from factor k to factor k+1 of the master's integration, valued at
+    the fraction of the object climbing a level per hour (field fractions
+    summed over the levels, divided by the field fraction detectable at the
+    last factor) in weight units, from `hours_now` (the library's
+    integration, which may exceed the master's). Stops at the first tier
+    under MIN_GAIN. None without a usable curve — a version-1 analysis (one
+    threshold) is not one; the leaf node re-analyses on the next pass."""
     vis = (analysis or {}).get("visibility") or {}
     t_m = (analysis or {}).get("integration_s")
-    if not vis.get("fraction") or not t_m or vis["fraction"][0] > MAX_PLAUSIBLE_VISIBLE:
+    curves = vis.get("fraction") if vis.get("thresholds") else None
+    if not curves or not t_m or curves[0][0] > MAX_PLAUSIBLE_VISIBLE:
         return None
     t_m_h = t_m / 3600.0
+    factors = vis["factors"]
+    extent = max(curves[0][-1], MIN_OBJECT)         # the object: detectable at the deepest factor
     tiers = []
-    for (f0, p0), (f1, p1) in zip(zip(vis["factors"], vis["fraction"]),
-                                  zip(vis["factors"][1:], vis["fraction"][1:])):
+    for k, (f0, f1) in enumerate(zip(factors, factors[1:])):
         start = max(f0, hours_now / t_m_h)
         if f1 <= start:
             continue
-        gain = (p1 - p0) / ((f1 - f0) * t_m_h)          # fraction of the field per hour
+        gain = sum(c[k + 1] - c[k] for c in curves) / extent / ((f1 - f0) * t_m_h)   # object-levels per hour
         if gain < MIN_GAIN:
             break
         tiers.append([(f1 - start) * t_m_h, min(MAX_WEIGHT, gain / VISIBLE_GAIN_UNIT)])
@@ -284,7 +296,7 @@ def candidates(context, rig_list: list[Rig]) -> tuple[dict[str, list[Candidate]]
                     if cap is not None:
                         depth_tiers = cap_tiers(depth_tiers, cap)
                     tiers += depth_tiers
-                    why = why or (f"+{100 * depth_tiers[0][1] * VISIBLE_GAIN_UNIT:.2f}% of field visible per hour"
+                    why = why or (f"+{100 * depth_tiers[0][1] * VISIBLE_GAIN_UNIT:.2f}% of the object climbs a level per hour"
                                   if depth_tiers else "no more hours would improve it")
                 tiers = [t for t in tiers if t[0] > 0 and t[1] > 0]
                 if not tiers:

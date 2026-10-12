@@ -8,9 +8,19 @@ is tested with its OWN measured noise (registration correlates the noise, so
 k is not assumed). A pixel is visible when, at any scale, its block's signal
 is at least THRESHOLD times that scale's noise.
 
-    visible_fraction(img, factor)   the fraction of the field visible after
-                                    `factor` times the current integration
-    gain_per_hour(img, hours, dh)   the fraction newly revealed per added hour
+    visible_fraction(valid, maps, factor, threshold)
+                                    the fraction of the field at or above
+                                    `threshold` SNR after `factor` times the
+                                    current integration
+    quality_fractions(valid, maps, factor)
+                                    the same at every level in THRESHOLDS
+
+Detection is not quality. SNR 3 says "there is something there"; a
+portfolio image carries its nebulosity at SNR 30 and up (Stylistic7,
+2026-10-12), and since noise falls as 1/sqrt(t) the climb from 10 to 30
+costs 9x the hours. THRESHOLDS are the quality levels a pixel climbs
+through — detected, usable, clean, portfolio — and an hour's worth is the
+fraction of the field that gains a level, summed over levels.
 
 Limits, said plainly: "visible" here is SNR, not perception — denoising
 (NXT) and the stretch change what the eye sees, so THRESHOLD wants
@@ -23,7 +33,8 @@ from __future__ import annotations
 import numpy as np
 
 SCALES = (1, 2, 4, 8)
-THRESHOLD = 3.0
+THRESHOLD = 3.0                       # detection
+THRESHOLDS = (3.0, 10.0, 30.0, 100.0)  # detected, usable, clean, portfolio
 BACKGROUND_PX = 256
 
 
@@ -69,16 +80,17 @@ def snr_maps(img: np.ndarray) -> tuple[np.ndarray, list[tuple[int, np.ndarray]]]
     return valid, out
 
 
-def visible_fraction(valid: np.ndarray, maps, factor: float) -> float:
-    """Fraction of the valid field visible after `factor` x the integration."""
+def visible_fraction(valid: np.ndarray, maps, factor: float, threshold: float = THRESHOLD) -> float:
+    """Fraction of the valid field at or above `threshold` SNR, at some scale,
+    after `factor` x the integration."""
     gain = np.sqrt(factor)
     vis = np.zeros(valid.shape, bool)
     for k, snr in maps:
-        hit = np.repeat(np.repeat(snr * gain >= THRESHOLD, k, axis=0), k, axis=1)
+        hit = np.repeat(np.repeat(snr * gain >= threshold, k, axis=0), k, axis=1)
         vis[:hit.shape[0], :hit.shape[1]] |= hit
     return float(np.mean(vis[valid]))
 
 
-def gain_per_hour(valid, maps, hours: float, added: float = 5.0) -> float:
-    """Fraction of the field newly visible per hour over the next `added` hours."""
-    return (visible_fraction(valid, maps, (hours + added) / hours) - visible_fraction(valid, maps, 1.0)) / added
+def quality_fractions(valid: np.ndarray, maps, factor: float) -> list[float]:
+    """`visible_fraction` at every level in THRESHOLDS, in order."""
+    return [visible_fraction(valid, maps, factor, t) for t in THRESHOLDS]

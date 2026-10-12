@@ -12,11 +12,16 @@ dashboard) read the sidecar, never the graph.
       "filter": FILTER,
       "integration_s": master_integration_s,     # what the curve is relative to
       "visibility": {                            # metadata.visibility
-        "threshold": 3.0, "scales": [1, 2, 4, 8], "bin": 2,
+        "thresholds": [3, 10, 30, 100],          # SNR: detected, usable, clean, portfolio
+        "scales": [1, 2, 4, 8], "bin": 2,
         "factors":  [1, 1.25, 1.5, 2, 3, 4],     # x the master's integration
-        "fraction": [...],                       # field visible at each factor
+        "fraction": [[...], ...],                # per threshold: field at or above it, at each factor
       },
     }
+
+    Version 2 (2026-10-12) replaced the single detection threshold with the
+    quality levels: a panel is not done at SNR 3, and an hour's worth is
+    the fraction of the field that climbs a level.
 
 More analyses belong here as further keys. If one becomes expensive, give
 it its own leaf node so the others stay cached when it changes.
@@ -30,7 +35,7 @@ import numpy as np
 from decorators import node
 from metadata.classes import ImageMetadata
 
-ANALYSIS_VERSION = 1
+ANALYSIS_VERSION = 2
 SECTION = "analysis"
 FACTORS = (1.0, 1.25, 1.5, 2.0, 3.0, 4.0)
 BIN = 2
@@ -50,23 +55,10 @@ def analyze_master(master: ImageMetadata) -> dict:
         "filter": str((master.header or {}).get("FILTER", "")),
         "integration_s": master.master_integration_s,
         "visibility": {
-            "threshold": V.THRESHOLD, "scales": list(V.SCALES), "bin": BIN,
+            "thresholds": list(V.THRESHOLDS), "scales": list(V.SCALES), "bin": BIN,
             "factors": list(FACTORS),
-            "fraction": [V.visible_fraction(valid, maps, f) for f in FACTORS],
+            "fraction": [[V.visible_fraction(valid, maps, f, t) for f in FACTORS] for t in V.THRESHOLDS],
         },
     }
     set_section(Path(master.filename), SECTION, result)
     return result
-
-
-def visible_gain_per_hour(analysis: dict, hours_now: float, added_h: float = 5.0) -> float | None:
-    """Fraction of the field newly visible per added hour, from `hours_now`
-    (the library's integration, which may exceed the master's) over the next
-    `added_h` hours, read off the stored curve. None without a usable curve."""
-    vis = (analysis or {}).get("visibility") or {}
-    t_m = (analysis or {}).get("integration_s")
-    if not vis.get("fraction") or not t_m:
-        return None
-    t_m_h = t_m / 3600.0
-    f = np.interp([hours_now / t_m_h, (hours_now + added_h) / t_m_h], vis["factors"], vis["fraction"])
-    return float(f[1] - f[0]) / added_h
