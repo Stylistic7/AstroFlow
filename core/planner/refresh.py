@@ -25,6 +25,10 @@ def plan_path() -> Path:
     return app_support_dir() / "planner_next.json"
 
 
+def plan_path_v2() -> Path:
+    return plan_path().with_name("planner_next_v2.json")
+
+
 def upcoming_night_start(context, now: datetime | None = None) -> str:
     """ISO start of the dark window a plan made now would be for."""
     from planner.explain import _upcoming
@@ -34,14 +38,21 @@ def upcoming_night_start(context, now: datetime | None = None) -> str:
     return night.times[0].to_datetime(timezone=timezone.utc).replace(microsecond=0).isoformat()
 
 
-def inputs_key(context) -> list:
+def inputs_key(context, now: datetime | None = None) -> list:
+    """What a plan was made from. The 6-hour bucket is for v2's weather: a
+    forecast a day old is stale, so the shadow plan is remade four times a
+    day even when nothing else moved."""
     masters = Path(context.output_dir, "stack_files")
     newest = max((p.stat().st_mtime for p in masters.glob("*.xisf.json")), default=0.0)
-    return [repr(sorted(map(tuple, context.shopping_cart or []))), round(newest)]
+    now = now or datetime.now(timezone.utc)
+    return [repr(sorted(map(tuple, context.shopping_cart or []))), round(newest),
+            repr(sorted((context.get("planner_overrides") or {}).items())),
+            repr(sorted((context.get("planner_deadlines") or {}).items())),
+            f"{now:%Y-%m-%d}/{now.hour // 6}"]
 
 
-def stored() -> dict | None:
-    p = plan_path()
+def stored(path: Path | None = None) -> dict | None:
+    p = path or plan_path()
     try:
         return json.loads(p.read_text()) if p.exists() else None
     except (OSError, ValueError):

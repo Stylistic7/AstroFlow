@@ -98,6 +98,28 @@ def _seam_map(context, mosaic_id: str, filt: str, depths) -> dict:
     return {"name": m.name, "short": mosaic_id[:4], "panels": panels}
 
 
+def night_header(now: datetime, lon: float, lat: float, night: sky.Night) -> dict:
+    """The keys every plan JSON starts with: when, where, the slot grid, the moon."""
+    step = timedelta(minutes=sky.SLOT_MIN)
+    start = night.times[0].to_datetime(timezone=timezone.utc) - step / 2
+    return {"computed_at": now.isoformat(), "site": [lon, lat], "slot_min": sky.SLOT_MIN,
+            "night_start": night.times[0].to_datetime(timezone=timezone.utc).replace(microsecond=0).isoformat(),
+            "times": [(start + i * step).isoformat() for i in range(night.n + 1)],
+            "moon_alt": [round(float(a), 1) for a in night.moon_alt],
+            "moon_illum": round(float(np.mean(night.moon_illum)), 3)}
+
+
+def visit_json(b: schedule.Block, tracks: dict) -> dict:
+    """One visit as the page shows it; the caller adds what its planner knows."""
+    c = b.candidate
+    return {"start": b.start_slot, "end": b.end_slot, "label": c.label, "filter": c.filter,
+            "mosaic": c.mosaic_id, "target": c.target_id, "side": b.side,
+            "subs": max(1, int(((b.end_slot - b.start_slot) * sky.SLOT_MIN * 60 - 180) // (c.exposure_s + 15))),
+            "exposure": c.exposure_s, "hours_so_far": round(c.hours, 1), "why": c.why,
+            "value": round(b.value, 2), "floor": _floor(c.filter),
+            "alt": [round(float(a), 1) for a in tracks[c.target_id].alt]}
+
+
 def next_night(context, now: datetime | None = None) -> dict:
     now = now or datetime.now(timezone.utc)
     lon, lat = inventory.site(context)
@@ -106,13 +128,7 @@ def next_night(context, now: datetime | None = None) -> dict:
     cands, unassignable = inventory.candidates(context, rigs)
     rarity = efficiency.scarcity(efficiency.availability(lon, lat, noon_utc))
     depths = inventory.master_depths(context.output_dir)
-    step = timedelta(minutes=sky.SLOT_MIN)
-    start = night.times[0].to_datetime(timezone=timezone.utc) - step / 2
-    out = {"computed_at": now.isoformat(), "site": [lon, lat], "slot_min": sky.SLOT_MIN,
-           "night_start": night.times[0].to_datetime(timezone=timezone.utc).replace(microsecond=0).isoformat(),
-           "times": [(start + i * step).isoformat() for i in range(night.n + 1)],
-           "moon_alt": [round(float(a), 1) for a in night.moon_alt],
-           "moon_illum": round(float(np.mean(night.moon_illum)), 3),
+    out = {**night_header(now, lon, lat, night),
            "scarcity": {f: round(v, 2) for f, v in rarity.items()},
            "rigs": [], "mosaics": {}, "unassignable": unassignable}
     for rig in rigs:
@@ -123,16 +139,9 @@ def next_night(context, now: datetime | None = None) -> dict:
         visits = []
         for b in plan.blocks:
             c = b.candidate
-            visits.append({
-                "start": b.start_slot, "end": b.end_slot, "label": c.label, "filter": c.filter,
-                "mosaic": c.mosaic_id, "target": c.target_id, "side": b.side,
-                "subs": max(1, int(((b.end_slot - b.start_slot) * sky.SLOT_MIN * 60 - 180) // (c.exposure_s + 15))),
-                "exposure": c.exposure_s, "hours_so_far": round(c.hours, 1), "why": c.why,
-                "urgency": round(c.urgency, 2), "scarcity": rarity.get(c.filter, 1.0),
-                "value": round(b.value, 2), "floor": _floor(c.filter),
-                "alt": [round(float(a), 1) for a in tracks[c.target_id].alt],
-                "runners_up": _runners_up(night, plan, cs, tracks, rarity, b),
-            })
+            visits.append({**visit_json(b, tracks),
+                           "urgency": round(c.urgency, 2), "scarcity": rarity.get(c.filter, 1.0),
+                           "runners_up": _runners_up(night, plan, cs, tracks, rarity, b)})
             key = f"{c.mosaic_id}|{c.filter}"
             if c.mosaic_id and key not in out["mosaics"]:
                 out["mosaics"][key] = _seam_map(context, c.mosaic_id, c.filter, depths)

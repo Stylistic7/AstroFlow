@@ -39,6 +39,8 @@ class Costs:
     slew_per_90deg: float = 0.3
     flip: float = 0.5
     min_block_slots: int = 6     # 60 min: a visit is never shorter (slew, solve, guide, re-stack)
+    tail_min_slots: int = 3      # 30 min: except the night's last on a new target
+    idle_per_hour: float = 1.0   # an idle dark hour: so a flip moves rather than leave a gap
 
 
 def _separation_deg(a: Candidate, b: Candidate) -> float:
@@ -58,6 +60,7 @@ def _greedy(night: Night, cands: list[Candidate], tracks: dict, eff: dict,
     touched_stacks: set = set()
     touched_tails: set = set()
     prev: Candidate | None = None
+    idle = 0
     t = 0
     while t < night.n:
         east = t < flip
@@ -76,7 +79,15 @@ def _greedy(night: Night, cands: list[Candidate], tracks: dict, eff: dict,
                 gained += e[s] * SLOT_H
                 s += 1
             length = s - t
-            if length < costs.min_block_slots:
+            # Never a visit under the minimum, with two exceptions that keep
+            # every dark minute assigned (Stylistic7, 2026-10-12): continuing the
+            # previous target costs no slew, so it may run however short; and
+            # the night's last visit may be short, at least `tail_min_slots`.
+            # The flip gets no exemption: it is the planner's own choice, so it
+            # moves instead of minting a sliver.
+            same = prev is not None and prev.target_id == c.target_id
+            if length == 0 or (length < costs.min_block_slots and not same and
+                               not (s >= night.n and length >= costs.tail_min_slots)):
                 continue
             gained = min(gained, c.need_h)
             stack_key, tail_key = (c.target_id, c.filter), (c.mosaic_id or c.target_id, c.filter)
@@ -89,6 +100,7 @@ def _greedy(night: Night, cands: list[Candidate], tracks: dict, eff: dict,
             if value > 0 and (best is None or rate > best[0]):
                 best = (rate, i, s, gained, value)
         if best is None:
+            idle += 1
             t += 1
             continue
         _, i, s, gained, value = best
@@ -99,7 +111,8 @@ def _greedy(night: Night, cands: list[Candidate], tracks: dict, eff: dict,
         touched_tails.add((c.mosaic_id or c.target_id, c.filter))
         prev, t = c, s
     sides = {b.side for b in blocks}
-    total = sum(b.value for b in blocks) - (costs.flip if len(sides) == 2 else 0.0)
+    total = sum(b.value for b in blocks) - (costs.flip if len(sides) == 2 else 0.0) \
+        - idle * SLOT_H * costs.idle_per_hour
     return blocks, total
 
 
@@ -115,4 +128,21 @@ def plan_rig(night: Night, rig: Rig, cands: list[Candidate], rarity: dict[str, f
         if best is None or key > best[0]:
             best = (key, flip if flips else None, blocks)
     _, flip, blocks = best
-    return RigPlan(rig=rig, flip_slot=flip, blocks=blocks)
+    return RigPlan(rig=rig, flip_slot=flip, blocks=_fill_gaps(blocks, night.n))
+
+
+def _fill_gaps(blocks: list[Block], n: int) -> list[Block]:
+    """A plan has no gaps. The ASIAir has no way to idle in Plan mode: it
+    keeps shooting the previous target until the next one starts, so a
+    stretch the greedy could not assign (nothing usable, the mount waiting
+    at the flip) stays on the previous target — the night's first target
+    takes any wait before it. Values are unchanged: the stretch earned
+    nothing, it is just where the rig will be."""
+    if not blocks:
+        return blocks
+    out = [copy.copy(b) for b in sorted(blocks, key=lambda b: b.start_slot)]
+    out[0].start_slot = 0
+    for prev, nxt in zip(out, out[1:]):
+        prev.end_slot = nxt.start_slot
+    out[-1].end_slot = n
+    return out

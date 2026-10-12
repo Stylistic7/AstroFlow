@@ -18,6 +18,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--json", type=Path, help="write the explanation JSON here instead of printing text")
     ap.add_argument("--inputs", default=None, help="the inputs key to stamp on the plan (planner.refresh)")
+    ap.add_argument("--v2", action="store_true", help="also print the v2 (month-aware, weather-aware) plan")
     a = ap.parse_args()
 
     import ray
@@ -37,6 +38,8 @@ def main() -> int:
         tmp = a.json.with_suffix(".partial")
         tmp.write_text(json.dumps(plan))
         tmp.replace(a.json)
+        from planner.v2 import write_shadow
+        write_shadow(context, a.json.with_name("planner_next_v2.json"), inputs=plan.get("inputs"))
         return 0
     from datetime import datetime
     t = lambda i: datetime.fromisoformat(plan["times"][i]).astimezone().strftime("%H:%M")
@@ -47,6 +50,10 @@ def main() -> int:
             print(f"  {t(v['start'])}–{t(v['end'])}  {v['label']:<24} {v['filter']}  {v['subs']:3d} × {v['exposure']:.0f} s   [{v['why']}]")
     if plan["unassignable"]:
         print("in the cart but no rig shoots it:", ", ".join(plan["unassignable"]))
+    if a.v2:
+        from planner.v2 import plan as plan_v2, text as text_v2
+        print()
+        print(text_v2(plan_v2(context)))
     return 0
 
 

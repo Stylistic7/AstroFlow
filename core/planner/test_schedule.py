@@ -30,10 +30,29 @@ def test_one_flip_at_most_minimum_visits_and_sides():
     assert plan.blocks
     flips = sum(1 for a, b in zip(plan.blocks, plan.blocks[1:]) if a.side != b.side)
     assert flips <= 1
+    # no gaps: the ASIAir cannot idle, so the plan tiles the whole night
+    assert plan.blocks[0].start_slot == 0 and plan.blocks[-1].end_slot == night.n
+    assert all(a.end_slot == b.start_slot for a, b in zip(plan.blocks, plan.blocks[1:]))
     for b in plan.blocks:
-        assert b.end_slot - b.start_slot >= schedule.Costs().min_block_slots
-        ha = sky.track(night, b.candidate.ra_deg, b.candidate.dec_deg).hour_angle[b.start_slot:b.end_slot]
-        assert (ha < 0).all() if b.side == "east" else (ha >= 0).all()
+        prev = next((p for p in plan.blocks if p.end_slot == b.start_slot), None)
+        continues = prev is not None and prev.candidate.target_id == b.candidate.target_id
+        assert b.end_slot - b.start_slot >= schedule.Costs().min_block_slots or continues or \
+            (b.end_slot == night.n and b.end_slot - b.start_slot >= schedule.Costs().tail_min_slots)
+    # one pier side, then the other: every east visit starts before the flip,
+    # every west visit ends after it (a filled gap may lean across it)
+    if plan.flip_slot is not None:
+        assert all(b.start_slot < plan.flip_slot for b in plan.blocks if b.side == "east")
+        assert all(b.end_slot > plan.flip_slot for b in plan.blocks if b.side == "west")
+    assert [b.side for b in plan.blocks] == sorted((b.side for b in plan.blocks), key=lambda s: s != "east")
+
+
+def test_no_dark_minute_is_left_idle_when_a_target_is_up():
+    """One target up all night: the visits tile the whole dark window, the
+    last one however short."""
+    night, plan = _plan([_cand("cas", "H", 15.0, 62.0, 40.0, mosaic=None)])
+    covered = sorted((b.start_slot, b.end_slot) for b in plan.blocks)
+    assert covered[0][0] == 0 and covered[-1][1] == night.n
+    assert all(a[1] == b[0] for a, b in zip(covered, covered[1:]))
 
 
 def test_scarce_filter_wins_a_dark_night():

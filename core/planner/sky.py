@@ -10,6 +10,10 @@ from astropy.coordinates import AltAz, EarthLocation, SkyCoord, get_body, get_su
 from astropy.time import Time
 
 SLOT_MIN = 10
+# Plan past the end of astronomical darkness: the hour before dawn is often
+# the stillest and clearest, and the ASIAir stops the plan at its own dawn
+# setting anyway (Stylistic7, 2026-10-12).
+DAWN_OVERRUN_MIN = 30
 
 
 @dataclass(frozen=True)
@@ -31,12 +35,13 @@ class Night:
 
 def tonight(lon_deg: float, lat_deg: float, local_noon_utc: datetime) -> Night:
     """Slots of SLOT_MIN minutes from the sun reaching −18° in the evening to
-    −18° in the morning following `local_noon_utc`."""
+    DAWN_OVERRUN_MIN past −18° in the morning following `local_noon_utc`."""
     loc = EarthLocation(lon=lon_deg * u.deg, lat=lat_deg * u.deg)
     grid = Time(local_noon_utc) + np.arange(0, 24 * 60, SLOT_MIN) * u.min
     sun_alt = get_sun(grid).transform_to(AltAz(obstime=grid, location=loc)).alt.deg
     dark = np.where(sun_alt < -18)[0]
-    times = grid[dark[0]:dark[-1] + 1] + (SLOT_MIN / 2) * u.min
+    end = min(len(grid), dark[-1] + 1 + DAWN_OVERRUN_MIN // SLOT_MIN)
+    times = grid[dark[0]:end] + (SLOT_MIN / 2) * u.min
     frame = AltAz(obstime=times, location=loc)
     moon = get_body("moon", times, loc)
     sun = get_sun(times)
