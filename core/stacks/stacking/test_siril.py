@@ -48,7 +48,8 @@ def test_runs_calibrate_with_their_own_masters_then_stack_as_one_sequence():
     stack = _Stack({"r0": run0, "r1": run1})
     script = _calibration_script(stack, {"d1": dark, "f1": flat}, tmp)
     assert f"calibrate r0 -dark={tmp}/r0_dark.fit -flat={tmp}/r0_flat.fit -prefix=pp_" in script
-    assert "r1" not in script                                   # nothing to calibrate
+    assert "calibrate r1" not in script and "link r1" not in script   # nothing to calibrate
+    # (not a bare "r1": the temp dir's random name can contain it — a 2026-10-12 flake)
     assert (tmp / "r0_dark.fit").resolve() == dark.resolve()
     for k in (1, 2):                                            # what Siril's calibrate writes
         _fits(tmp / "proc" / f"pp_r0_{k:05d}.fit")
