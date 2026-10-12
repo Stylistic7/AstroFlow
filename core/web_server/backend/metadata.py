@@ -30,6 +30,19 @@ def _viewbox_quality_for_pipeline(pipeline: str) -> str:
     return "Master"
 
 
+def _canvas_viewbox(pipeline: str, obj) -> Viewbox:
+    """The canvas `pipeline` places `obj`'s pixels on: the cached measured
+    viewbox filed at graph-build time (`compute_graph._store_measured_viewbox`),
+    else the declared one (a pipeline not in the current graph, or a stack)."""
+    from dependency_graph.trace_paths import _snapshot_key
+    key = _snapshot_key((type(obj).__name__.lower(), obj.stable_hash, pipeline))
+    call_hash = context.get(("measured_viewbox", *key)) if key else None
+    measured = context.get(("compute_viewbox_measured", call_hash)) if call_hash else None
+    if isinstance(measured, Viewbox):
+        return measured
+    return compute_viewbox(_viewbox_quality_for_pipeline(pipeline), obj)
+
+
 def _get_polygons(pipeline: str, *args) -> list[dict[str, Any]]:
     """Compute projected polygons for an object at the pipeline's
     output canvas resolution."""
@@ -37,7 +50,7 @@ def _get_polygons(pipeline: str, *args) -> list[dict[str, Any]]:
     if isinstance(obj, CalibrationStack):
         return []
 
-    viewbox = compute_viewbox(_viewbox_quality_for_pipeline(pipeline), obj)
+    viewbox = _canvas_viewbox(pipeline, obj)
 
     def project(object: Any, viewbox: Viewbox) -> dict[str, Any]:
         polygon = project_to_viewbox(object.footprint, viewbox)
