@@ -48,28 +48,42 @@ def _by_hour(hours: Sequence[SkyHour]) -> dict[datetime, float]:
             for h in hours if h.cloud is not None}
 
 
-def p_clear(times: Sequence[datetime], now: datetime,
-            forecasts: dict[str, Sequence[SkyHour]],
-            climatology: Callable[[datetime], float],
-            override: Callable[[datetime], str | None] = lambda t: None) -> list[float]:
-    """One probability per time (UTC), by the ladder.
+OVERRIDE = "override"
+CLIMATOLOGY = "climatology"
+
+
+def forecast(times: Sequence[datetime], now: datetime,
+             forecasts: dict[str, Sequence[SkyHour]],
+             climatology: Callable[[datetime], float],
+             override: Callable[[datetime], str | None] = lambda t: None) -> list[tuple[float, str]]:
+    """Per time (UTC): (p(clear), the rung that answered) by the ladder.
 
     `forecasts` maps a model id to its hours; `climatology(t)` is the site's
     clear fraction for that week of the year; `override(t)` returns the
-    user's word for that night ("clear" / "cloudy" / "away") or None."""
+    user's word for that night ("clear" / "cloudy" / "away") or None. The
+    rung is the model id, OVERRIDE or CLIMATOLOGY: a planner may trust an
+    expected hour from a forecast more than one from the climate."""
     tables = {model: _by_hour(hours) for model, hours in forecasts.items()}
     out = []
     for t in times:
         word = override(t)
         if word in OVERRIDE_P:
-            out.append(OVERRIDE_P[word])
+            out.append((OVERRIDE_P[word], OVERRIDE))
             continue
         lead_days = (t - now) / timedelta(days=1)
         key = t.replace(minute=0, second=0, microsecond=0)
-        p = None
+        answer = None
         for max_lead, model in LADDER:
             if lead_days <= max_lead and key in tables.get(model, {}):
-                p = calibrate(model, tables[model][key])
+                answer = (calibrate(model, tables[model][key]), model)
                 break
-        out.append(climatology(t) if p is None else p)
+        out.append(answer or (climatology(t), CLIMATOLOGY))
     return out
+
+
+def p_clear(times: Sequence[datetime], now: datetime,
+            forecasts: dict[str, Sequence[SkyHour]],
+            climatology: Callable[[datetime], float],
+            override: Callable[[datetime], str | None] = lambda t: None) -> list[float]:
+    """`forecast` without the rungs."""
+    return [p for p, _ in forecast(times, now, forecasts, climatology, override)]

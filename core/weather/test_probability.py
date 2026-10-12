@@ -2,7 +2,7 @@
 from datetime import datetime, timedelta, timezone
 
 from weather.climatology import by_week, lookup
-from weather.probability import calibrate, p_clear
+from weather.probability import CLIMATOLOGY, OVERRIDE, calibrate, forecast, p_clear
 from weather.sources import SkyHour
 
 NOW = datetime(2026, 10, 12, 20, tzinfo=timezone.utc)
@@ -26,6 +26,8 @@ def test_ladder_hrrr_first_then_ecmwf_then_climatology():
                  "ecmwf_ifs025": _hours("ecmwf_ifs025", NOW, 24 * 8, 25)}
     p = p_clear([t0, t3, t20], NOW, forecasts, climatology=lambda t: 0.3)
     assert p == [0.50, 0.22, 0.3]
+    rungs = [r for _, r in forecast([t0, t3, t20], NOW, forecasts, climatology=lambda t: 0.3)]
+    assert rungs == ["ncep_hrrr_conus", "ecmwf_ifs025", CLIMATOLOGY]
 
 
 def test_missing_rung_falls_to_the_next():
@@ -39,6 +41,7 @@ def test_override_wins_over_every_source():
     forecasts = {"ncep_hrrr_conus": _hours("ncep_hrrr_conus", NOW, 48, 100)}
     assert p_clear([t0], NOW, forecasts, lambda t: 0.3, override=lambda t: "clear") == [1.0]
     assert p_clear([t0], NOW, forecasts, lambda t: 0.3, override=lambda t: "away") == [0.0]
+    assert forecast([t0], NOW, forecasts, lambda t: 0.3, override=lambda t: "clear") == [(1.0, OVERRIDE)]
 
 
 def test_climatology_by_week_averages_calibrated_dark_hours_only():

@@ -35,12 +35,21 @@ from weather import cache, climatology, probability, sources
 
 MIN_QUOTA_H = 0.5          # a smaller share of tonight is a fragment: no priority, no slew
 QUOTA_BOOST = 3.0          # tonight's reserved hours outrank everything v1 values alone
-# Time preference: an hour's value falls 1% per night into the future. A
+# Time preference: an hour's value falls 3% per night into the future. A
 # finished image sooner is worth more, and without this an LP with a season
 # of spare sky is indifferent to WHEN — it spreads every need thinly and
 # tonight gets fragments. With it, tonight fills with the best of what is
 # usable tonight, then tomorrow, and so on: "shoot the best thing now".
-NIGHT_DISCOUNT = 0.99
+# 1% (2026-10-12) was too mild: a sure moonless hour tonight lost to an
+# expected one in November.
+NIGHT_DISCOUNT = 0.97
+# How much of an expected hour the plan may count on, by the rung that
+# forecast it. The climate promises ~25% clear nights for six months, which
+# made moonless OIII hours look abundant and tonight's unspecial; counting
+# the climate at half makes them scarce, as Stylistic7 knows them to be. The
+# probability itself is untouched (the month view shows it); only the sky
+# the LP is allowed to sell.
+CAPACITY_TRUST = {probability.CLIMATOLOGY: 0.5}
 
 
 def quota_tiers(tiers: list[list[float]], quota_h: float, boost: float = QUOTA_BOOST) -> list[list[float]]:
@@ -102,9 +111,11 @@ def plan(context, now: datetime | None = None) -> dict:
     forecasts, weather_status = _forecasts(lat, lon)
     clim = _climatology(lat, lon, weather_status)
     overrides = {str(k): v for k, v in (context.get("planner_overrides") or {}).items()}
-    p = probability.p_clear(hz.utc(), now, forecasts, clim,
-                            override=lambda t: overrides.get(night_key(t, lon).isoformat()))
-    slots, capacity = horizon.supply(rigs, hz, p)
+    answers = probability.forecast(hz.utc(), now, forecasts, clim,
+                                   override=lambda t: overrides.get(night_key(t, lon).isoformat()))
+    p = [pr for pr, _ in answers]
+    trusted = [pr * CAPACITY_TRUST.get(rung, 1.0) for pr, rung in answers]
+    slots, capacity = horizon.supply(rigs, hz, trusted)
     pairs: list[tuple[str, Candidate]] = [(rig.key, c) for rig in rigs for c in cands_by_rig.get(rig.key, [])]
     needs = [allocate.Need(f"{rig_key}|{c.target_id}|{c.filter}", tuple((h, w) for h, w in c.tiers))
              for rig_key, c in pairs]
@@ -115,12 +126,25 @@ def plan(context, now: datetime | None = None) -> dict:
     # --- tonight's quotas: expected hours back to real hours ---------------
     slot_of = {(s.rig, s.block): i for i, s in enumerate(slots)}
     tonight = [b for b in range(hz.n) if hz.night[b] == 0]
-    quota = {}
+    # Layer 1 decides how much of each FILTER tonight — the moon-dependent
+    # part; which need gets it is value's call. An LP is indifferent among
+    # equal needs and splits a filter's hours into fragments under the
+    # minimum, which then vanish; consolidating them by value keeps the
+    # filter mix and loses nothing.
+    by_filter: dict[tuple[str, str], float] = {}
     for i, (rig_key, c) in enumerate(pairs):
-        real = sum(alloc.hours.get((slot_of[(rig_key, b)], i), 0.0) / p[b] for b in tonight if p[b] > 0)
-        real = min(real, c.need_h)         # expected hours back to real ones, never past the need
-        if real >= MIN_QUOTA_H:
-            quota[i] = real
+        real = sum(alloc.hours.get((slot_of[(rig_key, b)], i), 0.0) / trusted[b] for b in tonight if trusted[b] > 0)
+        by_filter[(rig_key, c.filter)] = by_filter.get((rig_key, c.filter), 0.0) + real
+    quota = {}
+    for (rig_key, f), hours in by_filter.items():
+        best_first = sorted((i for i, (rk, c) in enumerate(pairs) if rk == rig_key and c.filter == f),
+                            key=lambda i: -max(w for _, w in pairs[i][1].tiers))
+        for i in best_first:
+            take = min(hours, pairs[i][1].need_h)
+            if take < MIN_QUOTA_H:
+                break
+            quota[i] = take
+            hours -= take
 
     # --- what each need has left in the month, for the explanation --------
     future = {}
@@ -136,7 +160,7 @@ def plan(context, now: datetime | None = None) -> dict:
            "weather": {"sources": weather_status,
                        "tonight_p_clear": round(float(np.mean([p[b] for b in tonight])), 2) if tonight else None},
            "horizon": {"block_min": BLOCK_MIN, "coarse_block_min": COARSE_BLOCK_MIN, "fine_nights": FINE_NIGHTS,
-                       "nights": _month(hz, dates, p, rigs, slots, alloc, pairs)},
+                       "nights": _month(hz, dates, p, trusted, rigs, slots, alloc, pairs)},
            "layer1": {"objective": round(alloc.objective, 2), "needs": len(needs), "edges": len(es),
                       "slots": len(slots)},
            "rigs": [], "mosaics": {}, "unassignable": unassignable}
@@ -208,7 +232,7 @@ def _why_tonight(c: Candidate, i: int | None, fut: dict | None, dates: list[date
             f"above its floor); {room}; tonight p(clear) {p_tonight:.0%}")
 
 
-def _month(hz, dates, p, rigs, slots, alloc, pairs) -> list[dict]:
+def _month(hz, dates, p, trusted, rigs, slots, alloc, pairs) -> list[dict]:
     """Per night: the chance of clear sky, the dark hours, and the expected
     hours Layer 1 placed on each rig by filter."""
     rows = []
@@ -225,6 +249,7 @@ def _month(hz, dates, p, rigs, slots, alloc, pairs) -> list[dict]:
             per_rig[rig.key] = {f: round(h, 2) for f, h in sorted(hours.items())}
         rows.append({"date": day.isoformat(),
                      "p_clear": round(float(np.mean([p[b] for b in blocks])), 2) if blocks else None,
+                     "trusted": round(float(np.mean([trusted[b] for b in blocks])), 2) if blocks else None,
                      "dark_h": round(float(np.sum(hz.hours[blocks])), 1) if blocks else 0.0,
                      "moon_up_h": round(float(np.sum(hz.hours[blocks] * (hz.moon_alt[blocks] > 0))), 1) if blocks else 0.0,
                      "rigs": per_rig})
@@ -245,7 +270,7 @@ def text(plan_json: dict) -> str:
     lines.append("the next 35 nights (expected hours by filter):")
     for n in plan_json["horizon"]["nights"][:35]:
         rigs = "  ".join(f"{k[:4]}:{v}" for k, v in n["rigs"].items() if v)
-        lines.append(f"  {n['date']}  p {n['p_clear']}  dark {n['dark_h']} h  moon-up {n['moon_up_h']} h  {rigs}")
+        lines.append(f"  {n['date']}  p {n['p_clear']} (counted {n['trusted']})  dark {n['dark_h']} h  moon-up {n['moon_up_h']} h  {rigs}")
     return "\n".join(lines)
 
 
