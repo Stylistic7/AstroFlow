@@ -221,6 +221,13 @@ function App() {
 
   const quarantineCount = quarantinedSet.size;
 
+  // Targets the user keeps out of every mosaic (decision "mosaic_membership").
+  const standaloneTargets = useMemo(() => new Set(
+    decisionOverrides
+      .filter(({ key, choice }) => key.decision_type === "mosaic_membership" && choice === "standalone")
+      .map(({ key }) => key.subject_id)
+  ), [decisionOverrides]);
+
   // Stacks the user has promoted to night-sky flat sources. Nothing in a
   // header says a stack is blank sky, so this override is the only record of
   // it. The decision_type VALUE is still "fringe_source": it is the key the
@@ -278,6 +285,7 @@ function App() {
             asiairDevices,
             refreshAsiairDevices,
             isQuarantined,
+            standaloneTargets,
             isSkyFlatSource,
             showQuarantined,
             toggleShowQuarantined,

@@ -7,6 +7,7 @@ import DecisionBadge from "./DecisionBadge.jsx";
 import ConcernsBadge from "./ConcernsBadge.jsx";
 import SuggestionBadge from "./suggestions/SuggestionBadge.jsx";
 import QuarantineToggle from "./QuarantineToggle.jsx";
+import MosaicMembershipToggle from "./MosaicMembershipToggle.jsx";
 import ShoppingCartMenu from "./ShoppingCartMenu.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
 import { PipelineSection } from './MosaicDashboard.jsx';
@@ -46,6 +47,7 @@ export default function TargetPanel() {
 			<div style={{ display: "flex", alignItems: "center", marginLeft: "2em", marginBottom: "0.5em" }}>
 				<ShoppingCartMenu objectType="target" objectId={params.target_id} />
 				<QuarantineToggle objectType="target" objectId={params.target_id} />
+				<MosaicMembershipToggle targetId={params.target_id} />
 				<SuggestionBadge objectType="target" objectId={params.target_id} />
 			</div>
 			<div style={{

@@ -7,7 +7,7 @@ from frozendict import frozendict
 from context import local_context as context
 from decisions.settings import Settings
 from decisions.decisions import ObjectType, BinaryChoice, DecisionType
-from decisions.decisions import DecisionKey
+from decisions.decisions import DecisionKey, DecisionOverride
 from decisions.helpers import exclude
 from web_server.backend.announcer import announce
 
@@ -28,7 +28,6 @@ def put_project_kind(object_type, object_id):
     "narrowband"}` (narrowband: R/G/B are star colour, capped at their goal).
     DELETE returns it to the planner's own classification from the hours
     shot. Planner-only: no graph restart."""
-    from decisions.decisions import DecisionKey, DecisionOverride, ObjectType
     try:
         key = DecisionKey.project_kind(ObjectType(object_type), object_id)
     except ValueError:
@@ -44,6 +43,27 @@ def put_project_kind(object_type, object_id):
     _update_settings(lambda s: replace(s, decision_overrides=frozendict(current)))
     return jsonify({"object_type": object_type, "object_id": object_id,
                     "kind": None if request.method == "DELETE" else kind})
+
+
+@settings_bp.route("/api/mosaic_membership/target/<target_id>", methods=["PUT", "DELETE"])
+def put_mosaic_membership(target_id):
+    """PUT keeps a target out of every mosaic ("standalone"), however its
+    footprint overlaps; DELETE lets identification group it again. The
+    mosaic re-identifies — and if the target held its oldest frames, the
+    mosaic comes back under a new id (its stable hash is its oldest
+    panel's)."""
+    from mosaics.identification import STANDALONE
+    key = DecisionKey.mosaic_membership(target_id)
+    current = dict(context.settings.decision_overrides)
+    if request.method == "DELETE":
+        current.pop(key, None)
+    else:
+        current[key] = DecisionOverride(choice=STANDALONE)
+    _update_settings(lambda s: replace(s, decision_overrides=frozendict(current)))
+    announce("reload_data")
+    from state.actor import state
+    state.drain_and_restart()
+    return jsonify({"target_id": target_id, "standalone": request.method == "PUT"})
 
 
 @settings_bp.route("/api/quarantine/<object_type>/<object_id>", methods=["POST"])

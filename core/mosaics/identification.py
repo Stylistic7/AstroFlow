@@ -26,6 +26,7 @@ from beartype import beartype
 from collections import defaultdict
 from itertools import combinations
 
+from decisions.decisions import DecisionType
 from mosaics.types import Mosaic, MosaicsDict
 from catalogs import position_string
 from geometry import footprints
@@ -189,13 +190,26 @@ def _identify_overlapping_targets(
     return mosaics
 
 
+STANDALONE = "standalone"
+
+
+def standalone_targets(decision_overrides) -> frozenset[str]:
+    """The targets the user keeps out of every mosaic (DecisionType.MOSAIC_MEMBERSHIP)."""
+    return frozenset(k.subject_id for k, v in (decision_overrides or {}).items()
+                     if k.decision_type is DecisionType.MOSAIC_MEMBERSHIP and v.choice == STANDALONE)
+
+
 @node
 def identify_mosaics(
+    standalone: frozenset[str],
     targets: dict[TargetHash, ContextRef[Target]],
     debug: bool = False,
 ) -> MosaicsDict:
+    """Mosaics = groups of overlapping targets, less the `standalone` ones,
+    which the user has said are projects of their own however they overlap."""
+    targets = {k: ref for k, ref in targets.items() if k not in standalone}
     resolved: dict[str, Target] = {k: ref.get() for k, ref in targets.items()}
-    log.info("Identifying mosaics", num_targets=len(resolved))
+    log.info("Identifying mosaics", num_targets=len(resolved), num_standalone=len(standalone))
 
     mosaics = _identify_overlapping_targets(targets)
     if not mosaics:

@@ -13,6 +13,7 @@ from stacks.types import StackHash
 from stacks.composite_stack import StacksDict
 from targets.types import Target, TargetHash, TargetsDict
 from mosaics.identification import identify_mosaics
+from decisions.decisions import ObjectType
 from attributes.astrometric_attributes import healpix_cells_from_poly
 from cache.context_ref import ContextRef
 from units import Degrees, Radians, ArcsecondsPerPixel
@@ -74,7 +75,7 @@ def test_two_targets(test_context) -> None:
     context.targets = _make_targets_dict(foo, bar)
 
     mosaics = ray.get(
-        identify_mosaics.remote(context.targets)
+        identify_mosaics.remote(frozenset(), context.targets)
     )
     assert len(mosaics) == 1
     mosaic = next(iter(mosaics.values())).get()
@@ -154,7 +155,7 @@ def test_three_targets(test_context) -> None:
     context.targets = _make_targets_dict(foo, bar, baz)
 
     mosaics = ray.get(
-        identify_mosaics.remote(context.targets)
+        identify_mosaics.remote(frozenset(), context.targets)
     )
 
     assert len(mosaics) == 1
@@ -237,7 +238,7 @@ def test_three_out_of_order_targets(test_context) -> None:
     context.targets = _make_targets_dict(foo, bar, baz)
 
     mosaics = ray.get(
-        identify_mosaics.remote(context.targets)
+        identify_mosaics.remote(frozenset(), context.targets)
     )
 
     assert len(mosaics) == 1
@@ -331,7 +332,7 @@ def test_off_grid_pane_joins_the_mosaic(test_context) -> None:
     context.targets = _make_targets_dict(foo, bar, baz, outlier)
 
     mosaics = ray.get(
-        identify_mosaics.remote(context.targets)
+        identify_mosaics.remote(frozenset(), context.targets)
     )
 
     assert len(mosaics) == 1
@@ -409,7 +410,7 @@ def test_ic1318(test_context) -> None:
     context.targets = _make_targets_dict(foo, bar)
 
     mosaics = ray.get(
-        identify_mosaics.remote(context.targets)
+        identify_mosaics.remote(frozenset(), context.targets)
     )
 
     assert len(mosaics) == 1
@@ -424,7 +425,7 @@ def test_big_cygnus_pano(with_real_testdata) -> None:
     copy_testdata_into_cache()
 
     mosaics = ray.get(
-        identify_mosaics.remote(context.targets)
+        identify_mosaics.remote(frozenset(), context.targets)
     )
 
     mosaic = mosaics["333742eced99004e"].get()
@@ -432,3 +433,33 @@ def test_big_cygnus_pano(with_real_testdata) -> None:
 
     target_ids = mosaic.target_ids
     print("### target_ids", target_ids)
+
+
+def test_a_standalone_target_stays_out_of_the_mosaic(test_context) -> None:
+    """The user's word beats overlap: a target marked standalone is not
+    grouped, and the mosaic is identified from the rest (none, here)."""
+    def target(name, ra_lo, ra_hi, oldest):
+        footprint = SingleSphericalPolygon.from_radec([ra_lo, ra_hi, ra_hi, ra_lo], [-1, -1, 1, 1])
+        return Target(
+            name=name, stable_hash=TargetHash(f"geometric_{name}"), content_hash=f"content_{name}",
+            oldest_date=oldest, newest_date=oldest + datetime.timedelta(days=30),
+            stack_ids=(StackHash(name),), center=(Degrees((ra_lo + ra_hi) / 2), Degrees(0.0)),
+            image_scale=ArcsecondsPerPixel(1.0), rotation_angle=Radians(0.0), footprint=footprint,
+            healpix_cells=healpix_cells_from_poly(footprint), projected_footprints=frozendict(),
+        )
+    foo = target("foo", 98, 102, datetime.datetime(2023, 12, 6))
+    bar = target("bar", 95, 99, datetime.datetime(2024, 2, 6))
+    context.stacks = StacksDict({n: make_composite_stack(stable_hash=n, image_scale=ArcsecondsPerPixel(1.0)) for n in ("foo", "bar")})
+    context.targets = _make_targets_dict(foo, bar)
+
+    assert len(ray.get(identify_mosaics.remote(frozenset(), context.targets))) == 1
+    assert len(ray.get(identify_mosaics.remote(frozenset({foo.stable_hash}), context.targets))) == 0
+
+
+def test_standalone_targets_reads_the_decision() -> None:
+    from decisions.decisions import DecisionKey, DecisionOverride
+    from mosaics.identification import STANDALONE, standalone_targets
+    overrides = {DecisionKey.mosaic_membership("t1"): DecisionOverride(choice=STANDALONE),
+                 DecisionKey.quarantine(ObjectType.TARGET, "t2"): DecisionOverride(choice="exclude")}
+    assert standalone_targets(overrides) == frozenset({"t1"})
+    assert standalone_targets(None) == frozenset()

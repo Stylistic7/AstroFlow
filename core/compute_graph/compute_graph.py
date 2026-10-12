@@ -14,7 +14,7 @@ from calibration import (
     associate_calibration_stacks,
 )
 from previews.stack_thumbnails import scatter_stack_thumbnails
-from mosaics.identification import identify_mosaics
+from mosaics.identification import identify_mosaics, standalone_targets
 from stacks.compute_graph import (
     prepare_stack_for_ui,
     process_stacks_for_ui,
@@ -327,7 +327,7 @@ def scatter_spatial_groups(
     graph[process_targets_for_ui] = {gather_targets_task}
     graph[store_ui_targets] = {process_targets_for_ui}
 
-    mosaics_task = Node(identify_mosaics)
+    mosaics_task = (identify_mosaics, standalone_targets(decision_overrides))
     graph[mosaics_task] = {gather_targets_task}
     graph[store_mosaics] = {mosaics_task}
     graph[process_mosaics_for_ui] = {mosaics_task}

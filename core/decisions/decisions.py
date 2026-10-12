@@ -37,6 +37,7 @@ class DecisionType(str, Enum):
     # under. Rename it only with a migration that rewrites the stored keys.
     SKY_FLAT_SOURCE = "fringe_source"
     PROJECT_KIND = "project_kind"          # planner: "lrgb" or "narrowband" (R/G/B = star colour)
+    MOSAIC_MEMBERSHIP = "mosaic_membership"  # "standalone": kept out of every mosaic however it overlaps
 
 
 # Lower precedence = applied first by resolve_decisions.
@@ -125,6 +126,14 @@ class DecisionKey:
         (`planner.inventory.project_kind`); this override says otherwise.
         The choice is the kind string."""
         return cls(DecisionType.PROJECT_KIND, object_type, object_id, object_id)
+
+    @classmethod
+    def mosaic_membership(cls, target_id: str) -> "DecisionKey":
+        """Whether a target may be folded into a mosaic. Membership is
+        inferred from footprint overlap alone, and only the user knows two
+        overlapping fields are different projects: the choice "standalone"
+        keeps the target out of every mosaic (`mosaics.identification`)."""
+        return cls(DecisionType.MOSAIC_MEMBERSHIP, ObjectType.TARGET, target_id, target_id)
 
     @classmethod
     def rotation_outlier(cls, stack_id: str, run_id: str) -> "DecisionKey":
