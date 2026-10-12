@@ -55,6 +55,30 @@ class Allocation:
         return {s: h for (s, n), h in self.hours.items() if n == need}
 
 
+def solve_by_rank(capacity: Sequence[float], needs: Sequence[Need], edges: Sequence[Edge],
+                  ranks: Sequence[int]) -> Allocation:
+    """Tiers: the lowest rank is solved first over all the sky, the next
+    over what it left, and so on. A higher-tier need takes an hour whenever
+    it can still use it, however much a lower one wanted it; efficiency,
+    the moon and MIN_GAIN still decide what "can use" means. Shadow prices
+    are each rank's own."""
+    remaining = list(float(c) for c in capacity)
+    hours: dict[tuple[int, int], float] = {}
+    need_price: dict[tuple[int, int], float] = {}
+    slot_price = [0.0] * len(remaining)
+    objective = 0.0
+    for rank in sorted(set(ranks)):
+        mine = {i for i, r in enumerate(ranks) if r == rank}
+        a = solve(remaining, needs, [e for e in edges if e.need in mine])
+        for (s, n), h in a.hours.items():
+            hours[(s, n)] = hours.get((s, n), 0.0) + h
+            remaining[s] = max(0.0, remaining[s] - h)
+        need_price.update({k: v for k, v in a.need_price.items() if k[0] in mine})
+        slot_price = [max(p, q) for p, q in zip(slot_price, a.slot_price)]
+        objective += a.objective
+    return Allocation(hours=hours, slot_price=tuple(slot_price), need_price=need_price, objective=objective)
+
+
 def solve(capacity: Sequence[float], needs: Sequence[Need], edges: Sequence[Edge]) -> Allocation:
     cap = np.asarray(capacity, dtype=float)
     cols: list[tuple[int, int]] = []          # variable -> (edge index, tier index)

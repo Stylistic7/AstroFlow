@@ -6,7 +6,9 @@ before the target reaches it; after T only targets already west of it.
 T = 0 or T = n means no flip at all. Every T is tried and the best plan
 kept, ties going to no flip (Stylistic7: flips are when cables snag).
 
-Within each side, the next block is the candidate with the best value per
+Within each side, the next block goes to a STARRED candidate while any is
+usable (`Candidate.rank` 0 — Stylistic7: unstarred ones only when no starred
+one is in a reasonable position), and within the tier to the best value per
 hour: the need it closes, minus fixed costs that reward staying put —
 re-stacking a (panel, filter) touched tonight, re-running a mosaic
 channel's colour tail, and slewing. Value is scaled by the filter's
@@ -97,8 +99,8 @@ def _greedy(night: Night, cands: list[Candidate], tracks: dict, eff: dict,
                 cost += costs.slew_per_90deg * _separation_deg(prev, c) / 90.0
             value = c.worth(gained) * rarity.get(c.filter, 1.0) * c.urgency - cost
             rate = value / (length * SLOT_H)
-            if value > 0 and (best is None or rate > best[0]):
-                best = (rate, i, s, gained, value)
+            if value > 0 and (best is None or (-c.rank, rate) > best[0]):
+                best = ((-c.rank, rate), i, s, gained, value)
         if best is None:
             idle += 1
             t += 1

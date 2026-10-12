@@ -47,6 +47,20 @@ def test_shadow_prices_name_the_contested_slot():
     assert a.need_price[(0, 0)] == pytest.approx(1.0)  # A: its 2.0 minus the slot's 1.0
 
 
+def test_rank_takes_the_sky_first_whatever_the_values():
+    """The cart's first entry (rank 0) is worth 1/h, the second 9/h; one slot
+    of sky: rank 0 gets it, rank 1 the leftover (none)."""
+    from planner.allocate import solve_by_rank
+    needs = [Need("first", ((1.0, 1.0),)), Need("second", ((1.0, 9.0),))]
+    edges = [Edge(0, 0, 1.0), Edge(0, 1, 1.0), Edge(1, 1, 1.0)]
+    a = solve_by_rank([1.0, 1.0], needs, edges, ranks=[0, 1])
+    assert a.hours == {(0, 0): pytest.approx(1.0), (1, 1): pytest.approx(1.0)}
+    assert a.objective == pytest.approx(10.0)
+    # ... but only hours it can still use: a satisfied first entry leaves the rest
+    a = solve_by_rank([3.0], needs, edges[:2], ranks=[0, 1])
+    assert a.hours == {(0, 0): pytest.approx(1.0), (0, 1): pytest.approx(1.0)}
+
+
 def test_no_edges_solves_to_nothing():
     a = solve([1.0], [Need("A", ((1.0, 1.0),))], [])
     assert a.hours == {} and a.objective == 0.0

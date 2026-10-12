@@ -19,16 +19,27 @@ value of an hour is the IMPROVEMENT it buys, in one unit for everything
     next tier is worth less than MIN_GAIN — "no more hours would improve it".
     Until a master is analysed, a flat FALLBACK_H goal at weight 1. On a
     NARROWBAND project (`project_kind`: more narrowband hours than broadband
-    across the target or mosaic), R/G/B are star colour: their tiers stop at
-    STAR_COLOUR_H (20 min a channel) however much the curve says more stars
-    would show. An LRGB project keeps the curve for every filter.
+    across the target or mosaic), R/G/B are star colour: every tier — seam,
+    hole or depth — stops at STAR_COLOUR_H (20 min a channel) however much
+    the curve or the neighbours say. An LRGB project keeps the curve for
+    every filter.
   * seam (mosaic panels): the hours that bring this panel's noise within
     EQUAL_TOLERANCE of the MEDIAN of its overlapping neighbours' (σ² ∝ 1/t),
-    valued by the size of the step (SEAM_WEIGHT per unit of excess noise).
-    The median, not the deepest neighbour: one odd neighbour must not set
-    the target for everything around it. A panel missing a filter its
-    neighbours have needs their median hours at a full step's value (at
-    weight 1 when the missing filter is star colour).
+    valued at the panel's own improvement rate times the size of the step
+    (1 + σ/median − 1): the same unit as depth, scaled by how visible the
+    step is. The depth tiers then continue from the end of the seam hours,
+    so no hour is counted twice. The median, not the deepest neighbour: one
+    odd neighbour must not set the target for everything around it. A panel
+    missing a filter its neighbours have needs their median hours at a full
+    step's value (at weight 1 when the missing filter is star colour).
+
+Priority is the STAR (`Candidate.rank`: 0 for a starred cart entry, 1 for
+the rest): improvement per hour alone never finishes an image — a fresh
+panel always beats a deep one — so which projects matter now is said, not
+inferred. The starred projects get every hour they can still use, planned
+together by improvement; the unstarred are planned the same way from the
+hours the stars cannot use (`planner.allocate.solve_by_rank`). Two tiers,
+not a ranking: nobody can order 36 projects, and a value-based rest is honest.
 
 Noise is the master's RAW NOISE00. Scaling it by the flux calibration
 (post_stack_calibrate's reference / scale) was tried on 2026-10-12 and
@@ -61,7 +72,6 @@ MIN_GAIN = 0.001              # below 0.1% of the field per hour, no more hours 
 MAX_PLAUSIBLE_VISIBLE = 0.6
 MAX_WEIGHT = 3.0              # a freak curve cannot outrank everything
 EQUAL_TOLERANCE = 1.1         # a seam: noise more than 10% above the neighbours' median
-SEAM_WEIGHT = 4.0             # per unit of excess noise: a 1.5x step ≈ weight 2
 FALLBACK_H = {"H": 20.0, "S": 20.0, "O": 20.0, "L": 20.0, "R": 4.0, "G": 4.0, "B": 4.0}
 STAR_COLOUR_H = 20.0 / 60.0   # star colour on a narrowband project: 20 min per channel is plenty (Stylistic7, 2026-10-12)
 # Raw masters, in order of preference: one family per stack, so neighbours
@@ -196,12 +206,13 @@ def star_colour_cap(filt: str, kind: str, hours: float) -> float | None:
     return None
 
 
-def seam_tier(sigma: float, ref: float, hours: float) -> list[float] | None:
+def seam_tier(sigma: float, ref: float, hours: float, rate: float = 1.0) -> list[float] | None:
     """The hours that bring a panel's noise within EQUAL_TOLERANCE of its
-    neighbours' median (σ² ∝ 1/t), valued by the size of the step."""
+    neighbours' median (σ² ∝ 1/t), valued at the panel's own improvement
+    `rate` times the size of the step."""
     if sigma <= EQUAL_TOLERANCE * ref:
         return None
-    return [hours * ((sigma / (EQUAL_TOLERANCE * ref)) ** 2 - 1), SEAM_WEIGHT * (sigma / ref - 1)]
+    return [hours * ((sigma / (EQUAL_TOLERANCE * ref)) ** 2 - 1), rate * (sigma / ref)]
 
 
 def _sigma_now(stack, depths) -> float | None:
@@ -238,7 +249,9 @@ def candidates(context, rig_list: list[Rig]) -> tuple[dict[str, list[Candidate]]
             groups.setdefault(oid, (None, [oid]))
     per_rig: dict[str, list[Candidate]] = defaultdict(list)
     unassignable = []
+    starred = {(t, str(i)) for t, i in context.get("planner_stars") or []}
     for oid, (mosaic_id, panel_ids) in groups.items():
+        rank = 0 if ("mosaic" if mosaic_id else "target", oid) in starred else 1
         targets = {t: context.targets[t].get() for t in panel_ids if t in context.targets}
         if not targets:
             continue
@@ -273,6 +286,10 @@ def candidates(context, rig_list: list[Rig]) -> tuple[dict[str, list[Candidate]]
             for f in filters:
                 hours, sigma = depth.get((tid, f), (0.0, None))
                 tiers, why = [], ""
+                # the panel's own improvement rate: the curve from where the library stands
+                depth_tiers = curve_tiers(analysis.get((tid, f)), hours) if hours > 0 else None
+                rate = depth_tiers[0][1] if depth_tiers else 1.0
+                seam_h = 0.0
                 if mosaic_id:
                     nbr = [depth[(n, f)] for n in neighbours[tid] if (n, f) in depth]
                     ref = [s for _, s in nbr if s]
@@ -281,34 +298,36 @@ def candidates(context, rig_list: list[Rig]) -> tuple[dict[str, list[Candidate]]
                         star_colour = star_colour_cap(f, kind, 0.0) is not None
                         if star_colour:
                             need = min(need, STAR_COLOUR_H)
-                        tiers.append([need, 1.0 if star_colour else SEAM_WEIGHT])
+                        tiers.append([need, 1.0 if star_colour else 2.0])
                         why = f"no {f} yet; neighbours median {need:.1f} h"
                     elif sigma and ref:
                         typical = statistics.median(ref)
-                        seam = seam_tier(sigma, typical, hours)
+                        seam = seam_tier(sigma, typical, hours, rate)
                         if seam:
                             tiers.append(seam)
+                            seam_h = seam[0]
                             why = f"σ {sigma / typical:.2f}x its neighbours' median"
-                depth_tiers = curve_tiers(analysis.get((tid, f)), hours) if hours > 0 else None
                 if depth_tiers is None:
                     deepen = max(0.0, FALLBACK_H[f] - hours - sum(h for h, _ in tiers))
                     if deepen > 0:
                         tiers.append([deepen, 1.0])
                     why = why or f"{hours:.1f} h of {FALLBACK_H[f]:.0f} h goal (master not yet analysed)"
                 else:
-                    cap = star_colour_cap(f, kind, hours)
-                    if cap is not None:
-                        depth_tiers = cap_tiers(depth_tiers, cap)
+                    if seam_h:                       # the seam hours are spent first; depth continues after them
+                        depth_tiers = curve_tiers(analysis.get((tid, f)), hours + seam_h) or []
                     tiers += depth_tiers
                     why = why or (f"+{100 * depth_tiers[0][1] * VISIBLE_GAIN_UNIT:.2f}% of the object climbs a level per hour"
                                   if depth_tiers else "no more hours would improve it")
-                tiers = [t for t in tiers if t[0] > 0 and t[1] > 0]
+                cap = star_colour_cap(f, kind, hours)
+                if cap is not None:                  # star colour: seams, holes and depth alike stop at 20 min
+                    tiers = cap_tiers(tiers, cap)
+                tiers = [[h, w] for h, w in tiers if h > 0 and w > 0]
                 if not tiers:
                     continue
                 per_rig[rig.key].append(Candidate(
                     target_id=tid, label=label, mosaic_id=mosaic_id, filter=f,
                     ra_deg=float(t.center[0]), dec_deg=float(t.center[1]), hours=hours,
-                    tiers=tiers, why=why, kind=kind,
+                    tiers=tiers, why=why, kind=kind, rank=rank,
                     exposure_s=exposure.get((tid, f), DEFAULT_EXPOSURE_S.get(f, 300.0))))
     return dict(per_rig), unassignable
 

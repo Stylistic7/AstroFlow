@@ -6,10 +6,16 @@ orders tonight's share into visits. Only tonight's quotas cross between
 them. The month's plan is kept for the explanation and thrown away: it is
 re-solved tomorrow from whatever was actually shot.
 
-Tonight's quota is a PRIORITY, not a cap: Layer 2 sees every candidate with
+Priority is the star: the starred cart entries' needs are allocated over
+the whole season's sky first, the unstarred over what is left
+(`allocate.solve_by_rank`) — two tiers, said by the user, because
+improvement per hour alone never finishes an image. Tonight's quota is a
+PRIORITY, not a cap: Layer 2 sees every candidate with
 its full need, and the hours Layer 1 reserved for tonight count
-`QUOTA_BOOST` times their value. The greedy therefore places the month's
-choices first and fills the rest of the night with the best of the rest —
+`QUOTA_BOOST` times their value — enough that any reserved hour beats any
+unreserved one, so the cart's order survives into the night's sequence.
+The greedy places the reserved hours first and fills the rest of the night
+with the best of the rest —
 an LP spreads hours thinly, and a night with gaps is no plan. When Layer 1
 reserved nothing for a rig (the forecast says cloudy, or no weather at all)
 the night is planned on v1's values alone and says so (`fallback`): v2
@@ -34,7 +40,7 @@ from planner.model import Candidate, Rig
 from weather import cache, climatology, probability, sources
 
 MIN_QUOTA_H = 0.5          # a smaller share of tonight is a fragment: no priority, no slew
-QUOTA_BOOST = 3.0          # tonight's reserved hours outrank everything v1 values alone
+QUOTA_BOOST = 100.0        # a reserved hour outranks ANY unreserved one: Layer 1 decided, Layer 2 orders
 # Time preference: an hour's value falls 3% per night into the future. A
 # finished image sooner is worth more, and without this an LP with a season
 # of spare sky is indifferent to WHEN — it spreads every need thinly and
@@ -121,7 +127,7 @@ def plan(context, now: datetime | None = None) -> dict:
              for rig_key, c in pairs]
     es = [replace(e, efficiency=e.efficiency * NIGHT_DISCOUNT ** int(hz.night[slots[e.slot].block]))
           for e in horizon.edges(slots, hz, pairs)]
-    alloc = allocate.solve(capacity, needs, es)
+    alloc = allocate.solve_by_rank(capacity, needs, es, [c.rank for _, c in pairs])
 
     # --- tonight's quotas: expected hours back to real hours ---------------
     slot_of = {(s.rig, s.block): i for i, s in enumerate(slots)}
@@ -138,7 +144,7 @@ def plan(context, now: datetime | None = None) -> dict:
     quota = {}
     for (rig_key, f), hours in by_filter.items():
         best_first = sorted((i for i, (rk, c) in enumerate(pairs) if rk == rig_key and c.filter == f),
-                            key=lambda i: -max(w for _, w in pairs[i][1].tiers))
+                            key=lambda i: (pairs[i][1].rank, -max(w for _, w in pairs[i][1].tiers)))  # rank, then value
         for i in best_first:
             take = min(hours, pairs[i][1].need_h)
             if take < MIN_QUOTA_H:
@@ -162,7 +168,7 @@ def plan(context, now: datetime | None = None) -> dict:
            "horizon": {"block_min": BLOCK_MIN, "coarse_block_min": COARSE_BLOCK_MIN, "fine_nights": FINE_NIGHTS,
                        "nights": _month(hz, dates, p, trusted, rigs, slots, alloc, pairs)},
            "layer1": {"objective": round(alloc.objective, 2), "needs": len(needs), "edges": len(es),
-                      "slots": len(slots)},
+                      "slots": len(slots), "stars": context.get("planner_stars") or []},
            "rigs": [], "mosaics": {}, "unassignable": unassignable}
 
     # --- tonight: Layer 2 on the quotas ----------------------------------
@@ -182,7 +188,7 @@ def plan(context, now: datetime | None = None) -> dict:
         for b in rig_plan.blocks:
             c = b.candidate
             i = by_need.get((c.target_id, c.filter))
-            visits.append({**explain.visit_json(b, tracks), "kind": c.kind,
+            visits.append({**explain.visit_json(b, tracks), "kind": c.kind, "rank": c.rank,
                            "quota_h": round(quota.get(i, 0.0), 2) if i is not None else None,
                            "why_tonight": _why_tonight(c, i, future.get(i), dates, alloc, needs, p, tonight)})
             key = f"{c.mosaic_id}|{c.filter}"

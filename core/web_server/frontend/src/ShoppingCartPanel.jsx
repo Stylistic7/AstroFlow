@@ -16,7 +16,7 @@ import {
   Tooltip,
 } from "@mui/material";
 import {
-  Delete, Unarchive, Archive,
+  Delete, Unarchive, Archive, Star, StarBorder,
 } from "@mui/icons-material";
 import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
 import ShoppingCartOutlinedIcon from "@mui/icons-material/ShoppingCartOutlined";
@@ -111,7 +111,7 @@ function RemoveArchiveItemDialog({ item, open, onClose, onConfirm }) {
 
 
 export default function ShoppingCartPanel() {
-  const { shoppingCart, archive, stacks, targets, mosaics } =
+  const { shoppingCart, archive, stacks, targets, mosaics, plannerStars } =
     useContext(AstroFlowContext);
   const navigate = useNavigate();
   const [removeCartTarget, setRemoveCartTarget] = useState(null);
@@ -175,6 +175,14 @@ export default function ShoppingCartPanel() {
     });
   };
 
+  // Two tiers: the planner gives starred objects every hour they can still
+  // use and plans the unstarred, by improvement, from the hours the stars
+  // cannot use. Stars, not a ranking.
+  const isStarred = (g) => (plannerStars || []).some(([t, id]) => t === g.type && id === g.id);
+  const toggleStar = async (g) => {
+    await fetch(`/api/planner/star/${g.type}/${g.id}`, { method: isStarred(g) ? "DELETE" : "PUT" });
+  };
+
   const moveArchiveToCart = async (item) => {
     await fetch(`${archiveUrl(item.type, item.id, item.pipeline)}/to_cart`, {
       method: "POST",
@@ -233,9 +241,23 @@ export default function ShoppingCartPanel() {
                     onClick={() => { close(); navigate(`/${g.type}/${g.id}`); }}
                   >
                     <Box sx={{ display: "flex", alignItems: "center", width: "100%", justifyContent: "space-between" }}>
-                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                        {g.name}
-                      </Typography>
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                        <Tooltip title={isStarred(g)
+                          ? "Starred: the planner shoots this before anything unstarred, whenever it is up"
+                          : "Star: shoot this before anything unstarred"}>
+                          <IconButton
+                            size="small"
+                            color={isStarred(g) ? "warning" : "default"}
+                            onClick={(e) => { e.stopPropagation(); toggleStar(g); }}
+                          >
+                            {isStarred(g) ? <Star fontSize="small" /> : <StarBorder fontSize="small" />}
+                          </IconButton>
+                        </Tooltip>
+                        <Typography variant="body2" sx={{ fontWeight: isStarred(g) ? 700 : 500 }}>
+                          {g.name}
+                        </Typography>
+                      </Box>
+                      <Box sx={{ display: "flex", alignItems: "center" }}>
                       {!multi && (
                         <Tooltip title="Remove…">
                           <IconButton
@@ -249,6 +271,7 @@ export default function ShoppingCartPanel() {
                           </IconButton>
                         </Tooltip>
                       )}
+                      </Box>
                     </Box>
                     <Box sx={{ display: "flex", gap: 0.5, mt: 0.5, flexWrap: "wrap" }}>
                       <Chip size="small" label={g.type} variant="outlined" />

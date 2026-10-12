@@ -46,6 +46,7 @@ def inputs_key(context, now: datetime | None = None) -> list:
     newest = max((p.stat().st_mtime for p in masters.glob("*.xisf.json")), default=0.0)
     now = now or datetime.now(timezone.utc)
     return [repr(sorted(map(tuple, context.shopping_cart or []))), round(newest),
+            repr(sorted(tuple(s) for s in context.get("planner_stars") or [])),
             repr(sorted((context.get("planner_overrides") or {}).items())),
             repr(sorted((str(k), str(v.choice)) for k, v in (context.settings.decision_overrides or {}).items()
                         if k.decision_type.value == "project_kind")),

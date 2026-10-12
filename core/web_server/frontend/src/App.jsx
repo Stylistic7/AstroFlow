@@ -36,6 +36,7 @@ function App() {
   const [targets, setTargets] = useState({});
   const [mosaics, setMosaics] = useState({});
   const [shoppingCart, setShoppingCart] = useState([]);
+  const [plannerStars, setPlannerStars] = useState([]);    // [type, id] cart entries the planner shoots first
   const [archive, setArchive] = useState([]);
   const [catalogEntries, setCatalogEntries] = useState([]);
   const [computeGraph, setComputeGraph] = useState({});
@@ -69,7 +70,7 @@ function App() {
       // emptied the starmap + cart despite a fully healthy backend.)
       const guarded = (url, fallback) =>
         fetch(url).then(r => r.ok ? r.json() : fallback).catch(() => fallback);
-      const [s, c, t, m, cart, arch, catalog] = await Promise.all([
+      const [s, c, t, m, cart, arch, catalog, stars] = await Promise.all([
         guarded('/api/stacks', {}),
         guarded('/api/calibration_stacks', {}),
         guarded('/api/targets', {}),
@@ -77,6 +78,7 @@ function App() {
         guarded('/api/shopping_cart', []),
         guarded('/api/archive', []),
         guarded('/api/catalog/entries', []),
+        guarded('/api/planner/stars', []),
       ]);
 
       setStacks(s);
@@ -84,6 +86,7 @@ function App() {
       setTargets(t);
       setMosaics(m);
       setShoppingCart(cart);
+      setPlannerStars(stars);
       setArchive(arch);
       setCatalogEntries(catalog);
 
@@ -267,6 +270,7 @@ function App() {
             mosaics,
             catalogEntries,
             shoppingCart,
+            plannerStars,
             archive,
             computeGraph,
             computeGraphStatus,

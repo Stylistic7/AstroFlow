@@ -3,7 +3,7 @@ by their step. Pure — no context, no masters on disk."""
 import pytest
 
 from planner.inventory import (
-    EQUAL_TOLERANCE, MAX_WEIGHT, MIN_GAIN, SEAM_WEIGHT, STAR_COLOUR_H, VISIBLE_GAIN_UNIT, cap_tiers,
+    EQUAL_TOLERANCE, MAX_WEIGHT, MIN_GAIN, STAR_COLOUR_H, VISIBLE_GAIN_UNIT, cap_tiers,
     curve_tiers, project_kind, seam_tier, star_colour_cap,
 )
 
@@ -76,12 +76,12 @@ def test_an_implausible_curve_is_not_trusted():
     assert curve_tiers(bad, 4.0) is None                            # the Siril-pedestal failure
 
 
-def test_seam_hours_close_the_step_and_value_grows_with_it():
+def test_seam_hours_close_the_step_and_value_is_the_rate_times_the_step():
     assert seam_tier(1.0, 1.0, 5.0) is None                          # within tolerance
-    hours, value = seam_tier(1.5, 1.0, 4.0)
+    hours, value = seam_tier(1.5, 1.0, 4.0, rate=2.0)
     assert hours == pytest.approx(4.0 * ((1.5 / EQUAL_TOLERANCE) ** 2 - 1))
-    assert value == pytest.approx(SEAM_WEIGHT * 0.5)
-    assert seam_tier(2.0, 1.0, 4.0)[1] > value
+    assert value == pytest.approx(2.0 * 1.5)                         # the panel's own rate, times the step
+    assert seam_tier(2.0, 1.0, 4.0, rate=2.0)[1] > value
 
 
 def test_project_kind_from_the_hours_shot():
