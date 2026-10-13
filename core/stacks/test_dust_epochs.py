@@ -208,3 +208,18 @@ def test_a_change_seen_in_one_filter_is_the_rig_s_boundary():
     old, new = epochs
     assert _at(old.models["H"], 600, 400) is not None and _at(old.models["H"], 300, 1000) is None
     assert _at(new.models["H"], 300, 1000) is not None and _at(new.models["H"], 600, 400) is None
+
+
+def test_a_landing_is_dated_by_another_filter_s_absent_runs():
+    """O resumes only after the dust landed, so O alone would call the mote
+    "always there"; H ran before and shows it absent, so the boundary is at
+    O's first run and the earlier H runs keep a clean model."""
+    h = _tag(_steady(4, dust=[], pointings=[0, 1, 2, 3], day=0), "H")
+    o = _tag(_steady(6, start=10, day=10), "O")
+    h_after = _tag(_steady(1, start=30, pointings=[9], day=20), "H")
+    runs = sorted(h + o + h_after, key=lambda r: r.date)
+    epochs = fold("rig", runs, BLOCK)
+    assert [e.start for e in epochs] == [0, 4], [(e.start, len(e.runs)) for e in epochs]
+    assert epochs[0].models["H"].motes == () and epochs[0].models["O"].motes == ()
+    assert len(epochs[1].models["O"].motes) == 2
+    assert len(epochs[1].models["H"].motes) == 2          # the H run after the change inherits them
