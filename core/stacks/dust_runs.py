@@ -20,8 +20,9 @@ Graph: `identify_dust_runs` (one node over the library) -> `scatter_dust_runs`
 system, `merge_dust_epochs`) -> `store_dust_epochs` into the context, where
 `calibrate` and the stackers look each stack run up by its frames.
 """
-from __future__ import annotations
-
+# NO `from __future__ import annotations`: the @node decorator reads the
+# return annotation to recognise a file PRODUCER (`WithSidecar[FitsFilePath]`
+# → filename_fn + the metadata wrap); as a string it is not one (boot181).
 import datetime as _dt
 from collections import defaultdict
 from dataclasses import dataclass

@@ -129,3 +129,11 @@ def test_a_scaled_flat_variant_carries_the_epoch_s_motes(tmp_path):
     assert np.allclose(plain, norm(scaled), atol=5e-4)
     assert np.allclose(variant, norm(scaled * render_motes(model, flat.shape, BLOCK)), atol=5e-4)
     assert variant[80, 100] < plain[80, 100] * 0.92 and np.isclose(variant[10, 10], plain[10, 10], atol=2e-3)
+
+
+def test_the_measurement_node_is_a_file_producer():
+    """The decorator must see the real return annotation: as a string (a
+    postponed annotation) the node had no `filename_fn` and every
+    measurement failed on the first deploy (boot181)."""
+    from stacks.dust_runs import measure_dust_run
+    assert hasattr(measure_dust_run, "filename_fn")
