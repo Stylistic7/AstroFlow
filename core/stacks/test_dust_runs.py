@@ -149,3 +149,11 @@ def test_a_run_hashes_by_its_content_hash():
     "unhashable type: 'dict'" from the run's frozendict fields)."""
     from stacks.run import BaseRun, Run
     assert Run.__hash__ is BaseRun.__hash__
+
+
+def test_the_map_s_image_type_is_one_the_header_normaliser_admits():
+    """boot186: an IMAGETYP outside bias/dark/flat/light wordings made the
+    metadata wrap mark every freshly written map as broken."""
+    from file_io.normalize_header import normalize_header
+    from stacks.dust_runs import IMAGE_TYPE
+    assert normalize_header({"IMAGETYP": IMAGE_TYPE})["IMAGETYP"] == "flat"

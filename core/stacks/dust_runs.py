@@ -62,6 +62,10 @@ FLATTEN_PX = 800.0        # a sub is divided by this broad smooth of itself firs
 STAR_RATIO = 1.05         # above the smooth by this much is a star or nebula: masked
 PEDESTAL_PER_OFFSET = 10.0
 SECTION = "dust_run"
+# the header normaliser admits only bias/dark/flat/light wordings (boot186:
+# "Dust Map" broke every map in the metadata wrap); a dust map IS a flat-like
+# multiplicative map of the lights' shadows
+IMAGE_TYPE = "Dust Flat"
 
 
 @dataclass(frozen=True)
@@ -184,7 +188,7 @@ def measure_dust_run(run: Run) -> WithSidecar[FitsFilePath]:
     dest.parent.mkdir(parents=True, exist_ok=True)
     out, n = combine_dust_map(files)
     hdu = fits.PrimaryHDU(data=out)
-    hdu.header["IMAGETYP"] = "Dust Map"
+    hdu.header["IMAGETYP"] = IMAGE_TYPE
     hdu.header["DUSTRUN"] = run.content_hash
     hdu.header["DATE-OBS"] = _utc(run.oldest_date).isoformat()
     hdu.header["NSUBS"] = n
