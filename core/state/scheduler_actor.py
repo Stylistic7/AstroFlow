@@ -277,131 +277,65 @@ class SchedulerActor:
                 pass
 
 
-_last_sun_alt: float | None = None
-
-# Astronomical twilight: the sun this far below the horizon bounds the
-# observing window at both ends.
-ASTRONOMICAL_TWILIGHT_DEG = -18.0
-
-
-def _sun_altitude_deg() -> float | None:
-    """The sun's altitude at the observer; None when it can't be computed."""
-    try:
-        import astropy.units as u
-        from astropy.coordinates import AltAz, EarthLocation, get_sun
-        from astropy.time import Time
-        from context import context
-        lat, lon, elev = context.settings.observer_location
-        t = Time.now()
-        loc = EarthLocation(lat=lat * u.deg, lon=lon * u.deg, height=elev * u.m)
-        return get_sun(t).transform_to(AltAz(obstime=t, location=loc)).alt.deg
-    except Exception as e:
-        print(f"### download poller: sun altitude failed (non-fatal): {e}")
-        return None
-
-
-def _morning_kick_due(sun_alt: float | None) -> bool:
-    """One extra drain as the sun rises through -18 deg: astronomical dawn.
-
-    By then every rig is done shooting, the newest frame on disk is
-    already older than the quiesce gate, and the builder's frontier
-    nudge closes the night's final runs — this kick is what turns the
-    accumulated night into the morning bake. Detected as a crossing
-    between consecutive polls, so it fires within one poll interval of
-    dawn and never at boot: a fresh process has no previous sample, and
-    its own plan already covers everything on disk. (The once-a-day
-    latch this replaces lived in process memory, so every pre-noon
-    restart re-fired it — a drain minutes into each morning boot.)
-    """
-    global _last_sun_alt
-    if sun_alt is None:
-        return False
-    previous, _last_sun_alt = _last_sun_alt, sun_alt
-    return previous is not None and previous <= ASTRONOMICAL_TWILIGHT_DEG < sun_alt
-
-
-def _drain_due(new_files: int, kick: bool, sun_alt: float | None) -> bool:
-    """Whether this poll's arrivals warrant a drain-and-restart now.
-
-    Frames that land while the sun is below -18 deg wait on disk for the
-    dawn kick — one re-plan for the whole night. Each mid-night drain
-    closed admissions cluster-wide until the WBPP already in flight
-    finished (5.2 h of a 10.3 h night, 2026-09-14) and then re-keyed the
-    hot target anyway; the morning bake delivers the same master at the
-    same time with the rest of the cluster free all night. Daytime
-    arrivals (manual pulls, archive copies) still drain as they land, as
-    does anything landing while the sun's altitude is unknown.
-    """
-    if kick:
-        return True
-    night = sun_alt is not None and sun_alt <= ASTRONOMICAL_TWILIGHT_DEG
-    return new_files > 0 and not night
+def _drain_due(new_files: int) -> bool:
+    """Whether this poll's arrivals warrant a drain-and-restart: any new
+    frame does. Stylistic7, 2026-10-13: "now that stacking is fast, go back to
+    processing the subs each time a new batch has been downloaded". The
+    night-time hold for a dawn kick (2026-09-15) existed because each
+    drain closed admissions behind a 2 h WBPP re-stack; Siril stacks in
+    minutes, so a pass per hourly batch costs little and the masters,
+    seams and the planner's curves follow the night as it happens."""
+    return new_files > 0
 
 
 def _run_asiair_download_and_maybe_restart() -> None:
     """Download from all ASIAir devices in parallel; if new files landed
-    on disk by day — or the once-a-day astronomical-dawn kick is due —
-    ask the StateActor to drain and restart the compute graph. Night-time
-    arrivals wait on disk for the kick (see `_drain_due`)."""
+    on disk, ask the StateActor to drain and restart the compute graph
+    (see `_drain_due`)."""
     from context import context
     from file_io.find_image_files import find_image_files
     from asiair.download_asiair import download_from_asiair
 
-    # Checked before the device early-returns: the kick must fire even
-    # with every rig powered off and unplugged (the usual morning state).
-    sun_alt = _sun_altitude_deg()
-    kick = _morning_kick_due(sun_alt)
-
     # The live poller's rig list: found by port scan, keyed by serial.
     rigs = list(context.asiair_devices or [])
-
-    if not rigs and not kick:
+    if not rigs:
         return
 
     input_dirs = context.input_dirs or []
     if not input_dirs:
         return
 
-    new_files = 0
-    if rigs:
-        dest = input_dirs[0]
-        files_before = sum(len(find_image_files(str(d))) for d in input_dirs)
+    dest = input_dirs[0]
+    files_before = sum(len(find_image_files(str(d))) for d in input_dirs)
 
-        # Fan out one Ray task per device so downloads parallelize across
-        # whichever cluster nodes have a path to the ASIAir.
-        refs = [
-            # The first arg is only a FALLBACK label: the downloader names
-            # the per-rig folder from the frames' FOCALLEN (see
-            # RIG_NAMES_BY_FOCAL_LENGTH); the rig's own name stands in when
-            # a frame has no mapped focal length.
-            download_from_asiair.remote(rig.get("name") or rig["ip"], rig["ip"], dest)
-            for rig in rigs
-        ]
-        ray.get(refs)
+    # Fan out one Ray task per device so downloads parallelize across
+    # whichever cluster nodes have a path to the ASIAir.
+    refs = [
+        # The first arg is only a FALLBACK label: the downloader names
+        # the per-rig folder from the frames' FOCALLEN (see
+        # RIG_NAMES_BY_FOCAL_LENGTH); the rig's own name stands in when
+        # a frame has no mapped focal length.
+        download_from_asiair.remote(rig.get("name") or rig["ip"], rig["ip"], dest)
+        for rig in rigs
+    ]
+    ray.get(refs)
 
-        # Tell connected web clients to refetch the ASIAir panel — the
-        # newest-file mtime / active-state dot are derived from on-disk
-        # Stack state, so any newly downloaded frames may shift the
-        # rendering. Fires even when no new files arrived, so the panel
-        # can show the dot dimming when the cycle completes without
-        # producing anything new.
-        try:
-            from web_server.backend.announcer import announce
-            announce("asiair_devices")
-        except Exception as e:
-            print(f"### scheduler_actor: asiair_devices announce failed: {e}")
+    # Tell connected web clients to refetch the ASIAir panel — the
+    # newest-file mtime / active-state dot are derived from on-disk
+    # Stack state, so any newly downloaded frames may shift the
+    # rendering. Fires even when no new files arrived, so the panel
+    # can show the dot dimming when the cycle completes without
+    # producing anything new.
+    try:
+        from web_server.backend.announcer import announce
+        announce("asiair_devices")
+    except Exception as e:
+        print(f"### scheduler_actor: asiair_devices announce failed: {e}")
 
-        files_after = sum(len(find_image_files(str(d))) for d in input_dirs)
-        new_files = files_after - files_before
+    files_after = sum(len(find_image_files(str(d))) for d in input_dirs)
+    new_files = files_after - files_before
 
-    if _drain_due(new_files, kick, sun_alt):
-        reason = (
-            f"astronomical-dawn kick, {new_files} new files" if kick
-            else f"{new_files} new files"
-        )
-        print(f"### ASIAir poller draining graph: {reason}")
+    if _drain_due(new_files):
+        print(f"### ASIAir poller draining graph: {new_files} new files")
         state = ray.get_actor("state", namespace=_get_namespace())
         ray.get(state.drain_and_restart.remote())
-    elif new_files > 0:
-        print(f"### download poller: {new_files} new files held for the "
-              f"dawn kick (sun at {sun_alt:.1f} deg)")
