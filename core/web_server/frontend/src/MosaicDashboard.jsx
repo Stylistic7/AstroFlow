@@ -201,7 +201,7 @@ export default function MosaicDashboard() {
 
             {pipelines.length === 0 ? (
                 <Typography sx={{ color: 'text.secondary' }}>
-                    No pipelines registered.
+                    Nothing produced for this mosaic yet — the compute graph is still working on it.
                 </Typography>
             ) : (
                 pipelines.map((p) => (

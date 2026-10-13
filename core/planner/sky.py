@@ -66,15 +66,3 @@ def track(night: Night, ra_deg: float, dec_deg: float) -> Track:
     ha = (lst - ra_deg / 15.0 + 12.0) % 24.0 - 12.0
     return Track(alt=alt, hour_angle=ha, moon_sep=night.moon.separation(c).deg)
 
-
-def season_hours(lon_deg: float, lat_deg: float, start_utc, ra_deg: float, dec_deg: float,
-                 floor_deg: float, days: int = 60) -> float:
-    """Astronomically dark hours over the next `days` with the target above
-    `floor_deg` — how much sky it has left this season (moon ignored: the
-    filter's scarcity covers that). Sampled every 30 minutes."""
-    loc = EarthLocation(lon=lon_deg * u.deg, lat=lat_deg * u.deg)
-    t = Time(start_utc) + np.arange(0, days * 24, 0.5) * u.hour
-    frame = AltAz(obstime=t, location=loc)
-    dark = get_sun(t).transform_to(frame).alt.deg < -18
-    alt = SkyCoord(ra_deg * u.deg, dec_deg * u.deg).transform_to(frame).alt.deg
-    return float(np.sum(dark & (alt >= floor_deg)) * 0.5)

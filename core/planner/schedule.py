@@ -14,10 +14,7 @@ any is usable (`Candidate.rank` 0 — unstarred ones only when no starred
 one is in a reasonable position), and within the tier to the best value per
 hour: the need it closes, minus fixed costs that reward staying put —
 re-stacking a (panel, filter) touched tonight, re-running a mosaic
-channel's colour tail, and slewing. Value is scaled by the filter's
-scarcity (`efficiency.scarcity`), so dark hours go to the filters only dark
-hours can give, and by the target's urgency (`inventory.set_urgency`), so
-a target leaving the sky this season is shot while it still can be. A block runs as long as the panel
+channel's colour tail, and slewing. A block runs as long as the panel
 needs and stays usable, so a night becomes a few long visits.
 """
 from __future__ import annotations
@@ -59,7 +56,7 @@ def _usable(night: Night, c: Candidate, tr: Track) -> np.ndarray:
 
 
 def _greedy(night: Night, cands: list[Candidate], tracks: dict, eff: dict,
-            flip: int, costs: Costs, rarity: dict[str, float]) -> tuple[list[Block], float]:
+            flip: int, costs: Costs) -> tuple[list[Block], float]:
     cands = copy.deepcopy(cands)
     blocks: list[Block] = []
     touched_stacks: set = set()
@@ -100,7 +97,7 @@ def _greedy(night: Night, cands: list[Candidate], tracks: dict, eff: dict,
                    ((costs.tail_mosaic if c.mosaic_id else costs.tail_target) if tail_key not in touched_tails else 0.0)
             if prev is not None and prev.target_id != c.target_id:
                 cost += costs.slew_per_90deg * _separation_deg(prev, c) / 90.0
-            value = c.worth(gained) * rarity.get(c.filter, 1.0) * c.urgency - cost
+            value = c.worth(gained) - cost
             rate = value / (length * SLOT_H)
             key = (-moon_rank(c.filter, c.kind), -c.rank, rate)   # moonless work, star, value
             if value > 0 and (best is None or key > best[0]):
@@ -122,13 +119,13 @@ def _greedy(night: Night, cands: list[Candidate], tracks: dict, eff: dict,
     return blocks, total
 
 
-def plan_rig(night: Night, rig: Rig, cands: list[Candidate], rarity: dict[str, float],
+def plan_rig(night: Night, rig: Rig, cands: list[Candidate],
              costs: Costs = Costs()) -> RigPlan:
     tracks = {c.target_id: track(night, c.ra_deg, c.dec_deg) for c in cands}
     eff = {i: _usable(night, c, tracks[c.target_id]) for i, c in enumerate(cands)}
     best = None
     for flip in range(night.n + 1):
-        blocks, total = _greedy(night, cands, tracks, eff, flip, costs, rarity)
+        blocks, total = _greedy(night, cands, tracks, eff, flip, costs)
         flips = len({b.side for b in blocks}) == 2
         key = (round(total, 6), not flips)
         if best is None or key > best[0]:

@@ -59,28 +59,3 @@ def efficiency(filt: str, alt, moon_alt, illum, sep, kind: str = "narrowband") -
     return altitude_factor(np.asarray(alt), filt) * \
         moon_factor(filt, np.asarray(moon_alt), np.asarray(illum), np.asarray(sep), kind)
 
-
-def availability(lon_deg: float, lat_deg: float, start_utc, days: int = 29) -> dict[str, float]:
-    """For each filter, the mean moon factor over the dark hours of the next
-    lunation (a target 90° from the moon, high): how often an hour of this
-    filter can be had at all. OIII and L need dark nights; SII almost any."""
-    import astropy.units as u
-    from astropy.coordinates import AltAz, EarthLocation, get_body, get_sun
-    from astropy.time import Time
-    loc = EarthLocation(lon=lon_deg * u.deg, lat=lat_deg * u.deg)
-    t = Time(start_utc) + np.arange(0, days * 24, 0.5) * u.hour
-    frame = AltAz(obstime=t, location=loc)
-    sun = get_sun(t)
-    dark = sun.transform_to(frame).alt.deg < -18
-    moon = get_body("moon", t, loc)
-    moon_alt = moon.transform_to(frame).alt.deg[dark]
-    illum = ((1 - np.cos(sun.separation(moon).rad)) / 2)[dark]
-    sep = np.full(illum.shape, 90.0)
-    return {f: float(np.mean(moon_factor(f, moon_alt, illum, sep))) for f in ("H", "S", "O", "L", "R", "G", "B")}
-
-
-def scarcity(avail: dict[str, float]) -> dict[str, float]:
-    """1 for the most available filter, more for rarer ones: an hour of a
-    filter that only dark nights give is worth spending on a dark night."""
-    best = max(avail.values())
-    return {f: best / max(a, 0.05) for f, a in avail.items()}

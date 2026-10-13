@@ -179,12 +179,12 @@ def plan(context, now: datetime | None = None) -> dict:
     for rig in rigs:
         cs = cands_by_rig.get(rig.key, [])
         mine = [(i, c) for i, (rk, c) in enumerate(pairs) if rk == rig.key]
-        quoted = [replace(c, tiers=quota_tiers(c.tiers, quota.get(i, 0.0)), urgency=1.0) for i, c in mine]
+        quoted = [replace(c, tiers=quota_tiers(c.tiers, quota.get(i, 0.0))) for i, c in mine]
         fallback = None
         if not any(i in quota for i, _ in mine):
             fallback = ("Layer 1 reserved nothing for this rig tonight "
-                        f"(p(clear) {out['weather']['tonight_p_clear']}); planned on v1's values alone")
-        rig_plan = schedule.plan_rig(night, rig, quoted, rarity={})
+                        f"(p(clear) {out['weather']['tonight_p_clear']}); planned on value alone")
+        rig_plan = schedule.plan_rig(night, rig, quoted)
         rig_plan.blocks = _merge_contiguous(rig_plan.blocks)
         tracks = {c.target_id: sky.track(night, c.ra_deg, c.dec_deg) for c in quoted}
         by_need = {(c.target_id, c.filter): i for i, c in mine}
@@ -283,16 +283,3 @@ def text(plan_json: dict) -> str:
         lines.append(f"  {n['date']}  p {n['p_clear']} (counted {n['trusted']})  dark {n['dark_h']} h  moon-up {n['moon_up_h']} h  {rigs}")
     return "\n".join(lines)
 
-
-def write_shadow(context, path: Path, inputs=None) -> None:
-    """The v2 plan beside v1's; an error becomes the file, never an exception
-    (v1's plan must land whatever v2 does)."""
-    try:
-        out = plan(context)
-    except Exception as e:
-        out = {"error": f"{type(e).__name__}: {e}", "computed_at": datetime.now(timezone.utc).isoformat()}
-    if inputs is not None:
-        out["inputs"] = inputs
-    tmp = path.with_suffix(".partial")
-    tmp.write_text(json.dumps(out))
-    tmp.replace(path)

@@ -1,5 +1,4 @@
 """`GET /api/planner/next` — the next night's plan with its explanation.
-`GET /api/planner/next_v2` — the v2 shadow plan (month-aware, weather-aware).
 `PUT|DELETE /api/planner/override/<day>` — the user's word for one night.
 `GET /api/planner/stars`, `PUT|DELETE /api/planner/star/<type>/<id>` — the starred (shoot-first) cart entries.
 
@@ -27,16 +26,6 @@ def next_plan():
     if state == "stale":
         return jsonify({"status": "computing"}), 202
     return jsonify({**refresh.stored(), "refreshing": state == "refreshing"})
-
-
-@planner_bp.route("/api/planner/next_v2")
-def next_plan_v2():
-    """The shadow plan (planner.v2), written beside every v1 plan."""
-    state = refresh.refresh_if_stale(context)
-    plan = refresh.stored(refresh.plan_path_v2())
-    if plan is None:
-        return jsonify({"status": "computing"}), 202
-    return jsonify({**plan, "refreshing": state != "current"})
 
 
 OVERRIDE_WORDS = ("clear", "cloudy", "away")

@@ -1,15 +1,9 @@
-"""The next night's plan, with everything needed to explain it.
-
-`next_night(context, now)` plans the upcoming dark window — tonight's if it
-has not ended yet, otherwise tomorrow's — from what is on disk right now.
-It takes no date: a plan is only valid for the next night, because whatever
-the weather does to it changes every later plan, and the planner re-runs
-from the masters after each night anyway.
-
-The result is plain JSON for `/api/planner/next` and the planner page:
-slot times (UTC ISO), the moon, per-filter scarcity, and per rig its visits,
-each with the reason it was chosen, its altitude track, the runners-up with
-the one reason each lost, and a seam map for mosaic panels.
+"""What every plan JSON carries to explain itself (`planner.v2.plan` builds
+the plan): the upcoming dark window — tonight's if it has not ended yet,
+otherwise tomorrow's — slot times (UTC ISO), the moon, each visit with the
+reason it was chosen and its altitude track, and a seam map for mosaic
+panels. A plan takes no date: it is only valid for the next night, because
+whatever the weather does to it changes every later plan.
 """
 from __future__ import annotations
 
@@ -19,8 +13,8 @@ from datetime import datetime, timedelta, timezone
 
 import numpy as np
 
-from planner import efficiency, inventory, schedule, sky
-from planner.efficiency import DEFAULT_FLOOR_DEG, FLOOR_DEG, moon_factor
+from planner import inventory, schedule, sky
+from planner.efficiency import DEFAULT_FLOOR_DEG, FLOOR_DEG
 
 
 def _floor(f: str) -> float:
@@ -36,36 +30,6 @@ def _upcoming(lon: float, lat: float, now: datetime) -> tuple[sky.Night, datetim
         if night.times[-1].to_datetime(timezone=timezone.utc) > now:
             return night, noon_utc
     raise RuntimeError("no dark window in the next two days")
-
-
-def _runners_up(night, plan, cands, tracks, rarity, block, k=4) -> list[dict]:
-    t, out, seen = block.start_slot, [], set()
-    chosen = (block.candidate.target_id, block.candidate.filter)
-    scored = []
-    for o in cands:
-        if (o.target_id, o.filter) == chosen or o.need_h <= 0:
-            continue
-        tr = tracks[o.target_id]
-        alt, ha = float(tr.alt[t]), float(tr.hour_angle[t])
-        moon = float(moon_factor(o.filter, night.moon_alt[t:t + 1], night.moon_illum[t:t + 1], tr.moon_sep[t:t + 1], o.kind)[0])
-        side_ok = (ha < 0) if block.side == "east" else (ha >= 0)
-        if alt < _floor(o.filter):
-            reason = f"below its {_floor(o.filter):.0f}° floor ({alt:.0f}°)"
-        elif moon == 0:
-            reason = "moon up"
-        elif not side_ok:
-            reason = "other side of the meridian: would need a flip"
-        else:
-            reason = "smaller payoff per hour"
-        scored.append((o.worth(1.0) * rarity.get(o.filter, 1.0) * o.urgency, o, reason))
-    for score, o, reason in sorted(scored, key=lambda x: -x[0]):
-        if o.label in seen:
-            continue
-        seen.add(o.label)
-        out.append({"label": o.label, "filter": o.filter, "reason": reason, "score": round(score, 2), "why": o.why})
-        if len(out) == k:
-            break
-    return out
 
 
 def _seam_map(context, mosaic_id: str, filt: str, depths) -> dict:
@@ -118,33 +82,3 @@ def visit_json(b: schedule.Block, tracks: dict) -> dict:
             "exposure": c.exposure_s, "hours_so_far": round(c.hours, 1), "why": c.why,
             "value": round(b.value, 2), "floor": _floor(c.filter),
             "alt": [round(float(a), 1) for a in tracks[c.target_id].alt]}
-
-
-def next_night(context, now: datetime | None = None) -> dict:
-    now = now or datetime.now(timezone.utc)
-    lon, lat = inventory.site(context)
-    night, noon_utc = _upcoming(lon, lat, now)
-    rigs = inventory.rigs(context)
-    cands, unassignable = inventory.candidates(context, rigs)
-    rarity = efficiency.scarcity(efficiency.availability(lon, lat, noon_utc))
-    depths = inventory.master_depths(context.output_dir)
-    out = {**night_header(now, lon, lat, night),
-           "scarcity": {f: round(v, 2) for f, v in rarity.items()},
-           "rigs": [], "mosaics": {}, "unassignable": unassignable}
-    for rig in rigs:
-        cs = cands.get(rig.key, [])
-        inventory.set_urgency(cs, lon, lat, noon_utc)
-        plan = schedule.plan_rig(night, rig, cs, rarity)
-        tracks = {c.target_id: sky.track(night, c.ra_deg, c.dec_deg) for c in cs}
-        visits = []
-        for b in plan.blocks:
-            c = b.candidate
-            visits.append({**visit_json(b, tracks),
-                           "urgency": round(c.urgency, 2), "scarcity": rarity.get(c.filter, 1.0),
-                           "runners_up": _runners_up(night, plan, cs, tracks, rarity, b)})
-            key = f"{c.mosaic_id}|{c.filter}"
-            if c.mosaic_id and key not in out["mosaics"]:
-                out["mosaics"][key] = _seam_map(context, c.mosaic_id, c.filter, depths)
-        out["rigs"].append({"key": rig.key, "name": rig.name, "focal": rig.focal_mm, "scale": round(rig.image_scale, 2),
-                            "flip": plan.flip_slot, "visits": visits, "score": round(plan.score, 2)})
-    return out

@@ -12,8 +12,6 @@ function reason(v) {
   else if (/no .* yet/.test(v.why)) parts.push(`it has no ${f} yet while its neighbours have ${v.why.match(/[\d.]+ h/)[0]}, so the mosaic has a hole there`);
   else if (/visible/.test(v.why)) parts.push(`more ${f} would reveal ${v.why.replace('+', '')}`);
   else parts.push(`it has ${v.hours_so_far} h of ${f} and nothing more pressing could use this stretch of sky`);
-  if (v.urgency > 1.05) parts.push(`it is leaving the sky for the season (×${v.urgency.toFixed(1)})`);
-  if (v.scarcity > 1.3) parts.push(`a dark ${f} hour is scarce (×${v.scarcity.toFixed(2)})`);
   return `Chosen because ${parts.join('; ')}.`;
 }
 
@@ -34,20 +32,14 @@ export default function VisitCard({ plan, visit: v }) {
           {clock(plan.times[v.start])}–{clock(plan.times[v.end])} · {v.subs} × {Math.round(v.exposure)} s · {hours} h · {v.side} of the meridian
         </Typography>
         <Typography variant="body1" sx={{ my: 1, maxWidth: '62ch' }}>{reason(v)}</Typography>
+        {v.why_tonight && (
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1, maxWidth: '62ch' }}>Tonight rather than later: {v.why_tonight}.</Typography>
+        )}
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, mb: 1.25 }}>
+          {v.rank === 0 && <Chip size="small" color="warning" variant="outlined" label="starred" />}
           <Chip size="small" label={`${v.hours_so_far} h so far`} />
-          <Chip size="small" label={`urgency ×${v.urgency.toFixed(1)}`} />
+          {v.quota_h > 0 && <Chip size="small" label={`${v.quota_h} h reserved tonight`} />}
           <Chip size="small" label={`floor ${v.floor}°`} />
-        </Box>
-        <Typography variant="overline" color="text.secondary">Considered instead</Typography>
-        <Box component="ul" sx={{ m: 0, p: 0, listStyle: 'none', display: 'grid', gap: 0.5 }}>
-          {v.runners_up.map((r) => (
-            <Box component="li" key={`${r.label}${r.filter}`} sx={{ display: 'grid', gridTemplateColumns: 'minmax(0,9.5em) 1.6em minmax(0,1fr)', gap: 1, alignItems: 'baseline' }}>
-              <Typography variant="body2" sx={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.label}</Typography>
-              <Typography variant="body2" sx={{ fontFamily: 'monospace', color: filterColor(theme, r.filter) }}>{r.filter}</Typography>
-              <Typography variant="body2" color="text.secondary">{r.reason}</Typography>
-            </Box>
-          ))}
         </Box>
       </Box>
       {map && (

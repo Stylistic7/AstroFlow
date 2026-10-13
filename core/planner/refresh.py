@@ -25,10 +25,6 @@ def plan_path() -> Path:
     return app_support_dir() / "planner_next.json"
 
 
-def plan_path_v2() -> Path:
-    return plan_path().with_name("planner_next_v2.json")
-
-
 def upcoming_night_start(context, now: datetime | None = None) -> str:
     """ISO start of the dark window a plan made now would be for."""
     from planner.explain import _upcoming
@@ -39,9 +35,11 @@ def upcoming_night_start(context, now: datetime | None = None) -> str:
 
 
 def inputs_key(context, now: datetime | None = None) -> list:
-    """What a plan was made from. The 6-hour bucket is for v2's weather: a
-    forecast a day old is stale, so the shadow plan is remade four times a
-    day even when nothing else moved."""
+    """What a plan was made from. The 6-hour bucket is for the weather: a
+    forecast a day old is stale, so the plan is remade four times a day
+    even when nothing else moved. The code version is in it so a deploy
+    never serves yesterday's planner as current."""
+    from state.code_version import deployed_code_version
     masters = Path(context.output_dir, "stack_files")
     newest = max((p.stat().st_mtime for p in masters.glob("*.xisf.json")), default=0.0)
     now = now or datetime.now(timezone.utc)
@@ -50,7 +48,7 @@ def inputs_key(context, now: datetime | None = None) -> list:
             repr(sorted((context.get("planner_overrides") or {}).items())),
             repr(sorted((str(k), str(v.choice)) for k, v in (context.settings.decision_overrides or {}).items()
                         if k.decision_type.value == "project_kind")),
-            f"{now:%Y-%m-%d}/{now.hour // 6}"]
+            f"{now:%Y-%m-%d}/{now.hour // 6}", deployed_code_version()]
 
 
 def stored(path: Path | None = None) -> dict | None:

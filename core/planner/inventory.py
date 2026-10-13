@@ -331,21 +331,3 @@ def candidates(context, rig_list: list[Rig]) -> tuple[dict[str, list[Candidate]]
                     exposure_s=exposure.get((tid, f), DEFAULT_EXPOSURE_S.get(f, 300.0))))
     return dict(per_rig), unassignable
 
-
-def set_urgency(cands: list[Candidate], lon: float, lat: float, start_utc, cap: float = 3.0) -> None:
-    """Scale each candidate by how little sky its target has left this
-    season relative to the others on the same rig: median remaining hours /
-    its remaining hours, between 1 and `cap`. Floors as in `efficiency`."""
-    from planner.efficiency import DEFAULT_FLOOR_DEG, FLOOR_DEG
-    from planner.sky import season_hours
-    remaining = {}
-    for c in cands:
-        key = (c.target_id, FLOOR_DEG.get(c.filter, DEFAULT_FLOOR_DEG))
-        if key not in remaining:
-            remaining[key] = season_hours(lon, lat, start_utc, c.ra_deg, c.dec_deg, key[1])
-    if not remaining:
-        return
-    median = statistics.median(remaining.values())
-    for c in cands:
-        left = remaining[(c.target_id, FLOOR_DEG.get(c.filter, DEFAULT_FLOOR_DEG))]
-        c.urgency = min(cap, max(1.0, median / max(left, 1.0)))

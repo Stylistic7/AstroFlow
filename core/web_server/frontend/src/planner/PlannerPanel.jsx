@@ -6,8 +6,9 @@ import VisitCard from './VisitCard.jsx';
 import { FILTER_NAME, clock, filterColor } from './planColors.js';
 
 // The next night's plan, explained. Informational only: what each rig will
-// shoot, and why — read from /api/planner/next, which plans from what is on
-// disk now and recomputes when the cart or the masters change.
+// shoot, and why — read from /api/planner/next, which plans the season from
+// what is on disk now and recomputes when the cart, the masters, the stars,
+// the weather or the code change.
 export default function PlannerPanel() {
   const theme = useTheme();
   const [plan, setPlan] = useState(null);
@@ -40,22 +41,22 @@ export default function PlannerPanel() {
   }
   const n = plan.moon_alt.length;
   const moonRise = plan.moon_alt.findIndex((a) => a > 0);
-  const scarce = Object.entries(plan.scarcity).filter(([f]) => ['O', 'H', 'S', 'L'].includes(f)).sort((a, b) => b[1] - a[1]);
+  const pClear = plan.weather?.tonight_p_clear;
+  const stars = plan.layer1?.stars || [];
 
   return (
     <Box sx={{ maxWidth: 980, mx: 'auto', px: 2, py: 2.5 }}>
       <Typography variant="h4" sx={{ fontWeight: 700 }}>Next night</Typography>
       <Typography color="text.secondary" sx={{ maxWidth: '62ch', mb: 1.5 }}>
         Dark {clock(plan.times[0])}–{clock(plan.times[n])}. The moon is {Math.round(plan.moon_illum * 100)}% lit
-        {moonRise >= 0 ? ` and rises at ${clock(plan.times[moonRise])}` : ' and stays down all night'}. Each rig gets a few long visits,
-        chosen to level mosaic seams first and to spend dark hours on the filters only dark hours give.
+        {moonRise >= 0 ? ` and rises at ${clock(plan.times[moonRise])}` : ' and stays down all night'}. Each rig gets a few long visits:
+        moonless hours go to OIII and faint broadband, starred projects come first, and within that the largest measured
+        improvement per hour wins, with the whole season's sky and weather in view.
         {plan.refreshing ? ' Updating for new data…' : ''}
       </Typography>
       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 3 }}>
-        {scarce.map(([f, v]) => (
-          <Chip key={f} size="small" label={`${FILTER_NAME[f]} hour worth ×${v.toFixed(2)}`}
-                icon={<Box component="span" sx={{ width: 9, height: 9, borderRadius: '50%', bgcolor: filterColor(theme, f), ml: '8px !important' }} />} />
-        ))}
+        {pClear != null && <Chip size="small" label={`tonight ${Math.round(pClear * 100)}% likely clear`} />}
+        {stars.map(([type, id]) => <Chip key={id} size="small" color="warning" variant="outlined" label={`★ ${id.slice(0, 4)} ${type}`} />)}
       </Box>
       {plan.rigs.map((rig) => (
         <Paper key={rig.key} variant="outlined" sx={{ p: 2, mb: 3.5 }}>
@@ -65,6 +66,15 @@ export default function PlannerPanel() {
               {rig.visits.length} visits · {rig.flip === null ? 'no meridian flip' : `one flip at ${clock(plan.times[rig.flip])}`} · {rig.scale}"/px
             </Typography>
           </Box>
+          {(rig.quotas?.length > 0 || rig.fallback) && (
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, mb: 1.25 }}>
+              {rig.quotas.map((q) => (
+                <Chip key={`${q.label}${q.filter}`} size="small" variant="outlined" label={`${q.label} ${FILTER_NAME[q.filter] || q.filter} · ${q.hours} h reserved`}
+                      icon={<Box component="span" sx={{ width: 9, height: 9, borderRadius: '50%', bgcolor: filterColor(theme, q.filter), ml: '8px !important' }} />} />
+              ))}
+              {rig.fallback && <Typography variant="body2" color="text.secondary">{rig.fallback}</Typography>}
+            </Box>
+          )}
           <NightTimeline plan={plan} rig={rig} />
           <Box sx={{ display: 'grid', gap: 1.5, mt: 1.75 }}>
             {rig.visits.map((v) => <VisitCard key={`${v.start}-${v.label}`} plan={plan} visit={v} />)}

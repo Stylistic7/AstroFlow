@@ -26,7 +26,6 @@ class Candidate:
     tiers: list[list[float]]  # [[hours, weight], ...]: what each further hour is worth,
                               # spent in order (equalisation before deepening)
     why: str                  # one line: where the tiers came from
-    urgency: float = 1.0      # >1 when the target is leaving the sky this season
     exposure_s: float = 300.0 # one sub, from the panel's own stack (the push unit)
     kind: str = "lrgb"        # inventory.project_kind: "lrgb" or "narrowband" (R/G/B = star colour)
     rank: int = 1             # 0 for a starred cart entry (shot first wherever it is up), 1 for the rest
