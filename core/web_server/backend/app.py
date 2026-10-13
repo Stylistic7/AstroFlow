@@ -28,6 +28,7 @@ from web_server.backend.files import files_bp
 from web_server.backend.tiles import tiles_bp
 from web_server.backend.metadata import metadata_bp
 from web_server.backend.settings import settings_bp
+from web_server.backend.dust import dust_bp
 from web_server.backend.thumbnails import thumbnails_bp
 from web_server.backend.compute_graphs import compute_graphs_bp
 from web_server.backend.performance import performance_bp
@@ -96,6 +97,7 @@ app.register_blueprint(files_bp)
 app.register_blueprint(tiles_bp)
 app.register_blueprint(metadata_bp)
 app.register_blueprint(settings_bp)
+app.register_blueprint(dust_bp)
 app.register_blueprint(thumbnails_bp)
 app.register_blueprint(compute_graphs_bp)
 

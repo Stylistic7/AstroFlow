@@ -5,6 +5,7 @@ from typing import Any
 from beartype import beartype
 
 from context import context
+from stacks.dust_runs import DustEpochs
 from cache.context_ref import ContextRef
 from metadata.classes import DefectsDict, MetadataDict
 from metadata.image_metadata import scatter_compute_image_metadata
@@ -253,6 +254,15 @@ def scatter_spatial_groups(
     associate_cal_task = (associate_calibration_stacks, decision_overrides)
     graph[associate_cal_task] = {merge_star_flats_task}
 
+    # Dust-mote epochs per optical system, from the lights themselves
+    # (stacks/dust_runs.py): one cached map per night and pointing, folded
+    # per system, stored for `calibrate` and the stackers to look up.
+    from stacks.dust_runs import identify_dust_runs, scatter_dust_runs, store_dust_epochs
+    dust_runs_task = (identify_dust_runs, metadata_ref, fingerprint_map_ref)
+    graph[dust_runs_task] = {}
+    graph[scatter_dust_runs] = [dust_runs_task]
+    graph[store_dust_epochs] = {scatter_dust_runs}
+
     # ORDERED lists, not sets: these deps feed value-consuming nodes
     # (combine_dicts takes *ancestor_results), and dep order is part of the
     # cache key — canonicalize_graph now raises on unordered value-deps.
@@ -338,6 +348,7 @@ def scatter_spatial_groups(
     graph[gather_objects] = {
         store_stacks, store_targets, store_mosaics, store_calibration_stacks,
         store_ui_stacks, store_ui_targets, store_ui_mosaics, store_ui_calibration_stacks,
+        store_dust_epochs,
     }
 
     return graph
@@ -407,6 +418,7 @@ def gather_objects() -> Objects:
         targets=context.targets or TargetsDict(),
         mosaics=context.mosaics or MosaicsDict({}),
         calibration_stacks=context.calibration_stacks or CalibrationStacksDict({}),
+        dust_epochs=context.dust_epochs or DustEpochs.empty(),
     )
 
 
@@ -903,6 +915,7 @@ def build_main_processing_graph(
     mosaics = objects.mosaics
     from cache.context_ref import ContextRef
     cal_stacks_ref = ContextRef.store_large(objects.calibration_stacks)
+    dust_ref = ContextRef.store_large(objects.dust_epochs)
 
     log.info("Building main processing graph", shopping_cart=shopping_cart)
 
@@ -943,6 +956,7 @@ def build_main_processing_graph(
             development_settings=development_settings,
             min_frames_in_stack=min_frames_in_stack,
             decisions=decisions,
+            dust_epochs=dust_ref,
         )
 
     from pipelines.registry import registered_pipelines

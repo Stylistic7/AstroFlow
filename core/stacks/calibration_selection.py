@@ -188,7 +188,11 @@ def calibrate(
     Returns the masters for `stack`'s OWN dependencies (sorted id order)
     — the exact set `_run_wbpp_stacking` will match by STBLHASH — with a
     `FlatGain` after each star / night-sky flat (it names its flat by
-    STBLHASH; the stacker scales that flat in its own scratch). `integrate`
+    STBLHASH; the stacker scales that flat in its own scratch), then the
+    distinct dust-mote models of the stack's runs (`stacks/dust_epochs.py`)
+    when such a synthetic flat is in play: the stacker multiplies each run's
+    model into its scaled flat. Only models WITH motes travel, so a stack in
+    a mote-free epoch, or on a real flat, keeps the key it had. `integrate`
     builds the bias, dark and flat masters: a pipeline passes its own
     stacker so its masters never involve another one."""
     steps, top_ids = calibration_plan(stack, config)
@@ -205,4 +209,9 @@ def calibrate(
         out.append(master)
         if gain is not None:
             out.append(gain)
+    table = config.get_dust_epochs()
+    if table is not None and any(has_own_producer(cal_stacks[i]) for i in top_ids):
+        models = {m.content_hash: m for run in stack.contents.values()
+                  if (m := table.model_for(run.frames)) is not None and m.motes}
+        out += [models[k] for k in sorted(models)]
     return out

@@ -41,6 +41,7 @@ from decorators import node
 from file_io.types import FitsFilePath, WithSidecar
 from metadata.classes import ImageMetadata
 from stacks.composite_stack import BaseStack, Stack
+from stacks.dust_epochs import MoteModel
 from stacks.stacking.pixinsight import _stack_files_narrow
 from stacks.star_flat_gain import GAIN_SECTION, FlatGain, with_scaled_flats
 from stacks.types import FilenameDependency, StackIdDependency
@@ -95,17 +96,23 @@ def _as_fits(src: Path, dst: Path) -> Path:
     return dst
 
 
-def _calibration_script(stack: BaseStack, cal_by_id: dict[str, Path], tmp: Path) -> str | None:
+def _calibration_script(stack: BaseStack, cal_by_id: dict[str, Path], tmp: Path,
+                        model_of_run: dict[str, str] | None = None) -> str | None:
     """Phase 1: calibrate each run that has masters into `tmp/proc` as
     pp_r{i}_NNNNN.fit. None when no run has any. Paths are written bare:
-    Siril splits arguments on spaces (masters are linked under `tmp`)."""
+    Siril splits arguments on spaces (masters are linked under `tmp`).
+    `model_of_run` (run hash -> dust-mote model hash) picks the flat variant
+    `"<flat id>:<model hash>"` for a run in that epoch, when the stack
+    carries it; every other run takes the flat as scaled."""
     assert " " not in str(tmp), tmp
     lines = ["requires 1.4.0", "setext fit", f"setcpu {SIRIL_THREADS}"]
-    for i, run in enumerate(stack.contents.values()):
+    for i, (run_hash, run) in enumerate(stack.contents.items()):
         cal = {}
+        model = (model_of_run or {}).get(run_hash)
         for kind, dep in run.dependencies.items():
             if isinstance(dep, StackIdDependency):
-                src = cal_by_id.get(str(dep.stack_id))
+                src = (cal_by_id.get(f"{dep.stack_id}:{model}") if kind == "flat" and model else None) \
+                    or cal_by_id.get(str(dep.stack_id))
             elif isinstance(dep, FilenameDependency):
                 src = Path(dep.filename) if dep.filename else None
             else:
@@ -130,6 +137,20 @@ def _calibration_script(stack: BaseStack, cal_by_id: dict[str, Path], tmp: Path)
         lines += [f"cd {run_dir}", f"link r{i} -out={tmp}/proc", f"cd {tmp}/proc",   # Siril names it r{i}_
                   f"calibrate r{i} {args} -prefix=pp_"]
     return "\n".join(lines) + "\n" if len(lines) > 3 else None
+
+
+def _models_of_runs(stack: BaseStack, config: ProcessingConfig, models: list) -> dict[str, str]:
+    """Run hash -> the hash of the carried dust-mote model its epoch has.
+    Only models that arrived as arguments count (they are in the key); a run
+    whose epoch the stack does not carry is calibrated without motes."""
+    table = config.get_dust_epochs()
+    carried = {m.content_hash for m in models}
+    out = {}
+    for run_hash, run in stack.contents.items():
+        model = table.model_for(run.frames) if table is not None else None
+        if model is not None and model.content_hash in carried:
+            out[run_hash] = model.content_hash
+    return out
 
 
 def _gather(stack: BaseStack, tmp: Path) -> Path:
@@ -230,10 +251,12 @@ def _scratch_parent(dest: Path, need_bytes: int) -> Path:
 def integrate_with_siril(
     stack: BaseStack,
     config: ProcessingConfig,
-    *cal_masters: ImageMetadata | FlatGain,
+    *cal_masters: ImageMetadata | FlatGain | MoteModel,
 ) -> WithSidecar[FitsFilePath]:
     """Calibrate, register and integrate `stack` with Siril. The peer of
-    `stack_files`: pipelines call it with the same arguments."""
+    `stack_files`: pipelines call it with the same arguments. A `MoteModel`
+    among them is an epoch's dust (`stacks/dust_epochs.py`): each run in that
+    epoch is calibrated with its scaled flat times the model's mote map."""
     from file_io.generic import read_header, update_header
     stack = resolve_calibration(stack, config.get_calibration_stacks(), config.decisions)
     if config.decisions and isinstance(stack, Stack):
@@ -246,8 +269,10 @@ def integrate_with_siril(
     dest = Path(integrate_with_siril.filename_fn(stack, config, *cal_masters))
     dest.parent.mkdir(parents=True, exist_ok=True)
     cal_by_id = {str(read_header(m.filename)["STBLHASH"]): Path(m.filename)
-                 for m in cal_masters if not isinstance(m, FlatGain)}
+                 for m in cal_masters if not isinstance(m, (FlatGain, MoteModel))}
     gains = [m for m in cal_masters if isinstance(m, FlatGain)]
+    models = [m for m in cal_masters if isinstance(m, MoteModel)]
+    model_of_run = _models_of_runs(stack, config, models)
     need = sum(2 * 4 * int(m.header["NAXIS1"]) * int(m.header["NAXIS2"])      # calibrated + registered float32
                for m in stack.all_metadata().values())
     with tempfile.TemporaryDirectory(prefix=".siril-", dir=_scratch_parent(dest, need)) as d:
@@ -255,9 +280,10 @@ def integrate_with_siril(
         (tmp / "proc").mkdir()
         # A star / night-sky flat comes with this stack's gain: its scaled
         # copy lives in the scratch and goes with it.
-        cal_by_id = with_scaled_flats(cal_by_id, gains, tmp)
-        log.info("Running Siril", stack=str(stack), frames=n)
-        script = _calibration_script(stack, cal_by_id, tmp)
+        cal_by_id = with_scaled_flats(cal_by_id, gains, tmp, models)
+        log.info("Running Siril", stack=str(stack), frames=n,
+                 dust_models=[m.content_hash for m in models], runs_with_motes=len(model_of_run))
+        script = _calibration_script(stack, cal_by_id, tmp, model_of_run)
         if script:
             _run_siril(tmp, "calibrate.ssf", script)
         _run_siril(tmp, "stack.ssf", _stack_script(_gather(stack, tmp), tmp, _memory_budget_gb(), stack.image_type))

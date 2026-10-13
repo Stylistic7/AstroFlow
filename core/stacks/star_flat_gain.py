@@ -244,13 +244,20 @@ class FlatGain:
     content_hash: str = ""
 
 
-def with_scaled_flats(cal_by_id: dict, gains, tmp) -> dict:
+def with_scaled_flats(cal_by_id: dict, gains, tmp, models=()) -> dict:
     """`cal_by_id` (STBLHASH -> master path) with each gained flat replaced by
     its copy scaled to this stack, 1 + k (F - 1), written into `tmp` — the
     stacker's scratch, deleted with it, so no scaled flat outlives the stack
     (2026-10-09: 705 orphaned scaled flats, 157 GB, in the processed folder).
     The group flat's keywords ride along: WBPP matches the master to the
-    stack by STBLHASH and recognises a pre-built one only as 'Master Flat'."""
+    stack by STBLHASH and recognises a pre-built one only as 'Master Flat'.
+
+    Each dust-mote `model` (`stacks/dust_epochs.py`) adds a variant per gained
+    flat under `"<flat id>:<model hash>"`: the scaled flat times the model's
+    mote map, for the runs of that epoch — a synthetic flat is mote-free, the
+    lights are not."""
+    from stacks.dust_epochs import render_motes
+    from stacks.dust_runs import BLOCK
     from file_io.generic import read_header, read_image
     from stacks.starflat import write_master_flat
     out = dict(cal_by_id)
@@ -261,6 +268,12 @@ def with_scaled_flats(cal_by_id: dict, gains, tmp) -> dict:
                                               "EXPOSURE", "EXPTIME", "SFLATSUB", "SFLATCEL") if key in hdr}
         keywords.update({"IMAGETYP": "Master Flat", "STBLHASH": g.flat_id, "SFLATK": round(g.k, 4)})
         dest = Path(tmp) / f"scaled_flat_{g.flat_id}.xisf"
-        write_master_flat(apply_gain(np.asarray(read_image(src)).squeeze(), g.k), dest, keywords)
+        scaled = apply_gain(np.asarray(read_image(src)).squeeze(), g.k)
+        write_master_flat(scaled, dest, keywords)
         out[g.flat_id] = dest
+        for model in models:
+            variant = Path(tmp) / f"scaled_flat_{g.flat_id}_{model.content_hash}.xisf"
+            write_master_flat(scaled * render_motes(model, scaled.shape, BLOCK), variant,
+                              {**keywords, "DUSTMDL": model.content_hash})
+            out[f"{g.flat_id}:{model.content_hash}"] = variant
     return out

@@ -16,6 +16,7 @@ from stacks.types import StackIdDependency, FilenameDependency
 from stacks.composite_stack import BaseStack, Stack
 from pix.tasks import run_wbpp, solver_geometry
 from metadata.classes import ImageMetadata, MetadataDict
+from stacks.dust_epochs import MoteModel
 from stacks.star_flat_gain import GAIN_SECTION, FlatGain, with_scaled_flats
 from decorators import node
 from decisions.settings import ProcessingConfig, DevelopmentSettings
@@ -301,15 +302,28 @@ def _run_wbpp_stacking(
         # round-trips as an int. Force str so the str-keyed lookup matches
         # (see get_dependency_filename, which also str()s the dep id).
         str(read_header(m.filename)["STBLHASH"]): m.filename
-        for m in cal_masters if not isinstance(m, FlatGain)
+        for m in cal_masters if not isinstance(m, (FlatGain, MoteModel))
     }
     gains = [m for m in cal_masters if isinstance(m, FlatGain)]
+    models = [m for m in cal_masters if isinstance(m, MoteModel)]
 
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
         log.debug("Using temporary directory", tmp_dir=tmp_dir)
         # A star / night-sky flat comes with this stack's gain: its scaled
         # copy lives in the scratch and goes with it.
-        cal_master_by_id = with_scaled_flats(cal_master_by_id, gains, tmp_dir)
+        cal_master_by_id = with_scaled_flats(cal_master_by_id, gains, tmp_dir, models[:1] if len(models) == 1 else ())
+        if len(models) == 1:
+            # WBPP attaches one flat per filter group by keyword, so one
+            # epoch's mote map is applied whole; a stack spanning epochs
+            # is calibrated without motes (Siril calibrates run by run).
+            for g in gains:
+                cal_master_by_id[g.flat_id] = cal_master_by_id[f"{g.flat_id}:{models[0].content_hash}"]
+        elif models:
+            from concerns import warn
+            warn("Dust motes not corrected: the stack spans several dust epochs",
+                 "WBPP takes one flat per filter, so a stack whose runs saw different dust is "
+                 "calibrated without the mote correction. The Siril pipeline calibrates run by run.",
+                 stack=stack.stable_hash, epochs=[m.content_hash for m in models])
 
         filenames = _setup_stack(stack, cal_master_by_id, tmp_dir)
 
@@ -341,7 +355,7 @@ def _run_wbpp_stacking(
 def stack_files(
     stack: BaseStack,
     config: ProcessingConfig,
-    *cal_masters: ImageMetadata | FlatGain,
+    *cal_masters: ImageMetadata | FlatGain | MoteModel,
 ) -> WithSidecar[XisfFilePath]:
     """Resolution-agnostic PixInsight WBPP master.
 

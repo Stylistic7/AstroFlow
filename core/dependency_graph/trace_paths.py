@@ -332,12 +332,14 @@ def _resolve_pipeline_call(
     # full overrides set here; narrow_stack_config filters it to per-
     # stack relevant entries inside stack_files's narrow hook.
     settings = context.settings
+    from stacks.dust_runs import DustEpochs
     cal_stacks_ref = ContextRef.store_large(context.calibration_stacks or {})
     config = ProcessingConfig(
         calibration_stacks=cal_stacks_ref,
         development_settings=settings.development_settings,
         min_frames_in_stack=settings.clustering_settings.min_frames_in_stack,
         decisions=settings.decision_overrides,
+        dust_epochs=ContextRef.store_large(context.dust_epochs or DustEpochs.empty()),
     )
     return fn, entity, config
 

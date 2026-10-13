@@ -191,6 +191,15 @@ class ProcessingConfig:
     # memory-bounded tiles for the rc-astro ops). Narrowed into each rc-astro
     # op's cache key. See TilingSettings and file_io/tiling.py.
     tiling: "TilingSettings" = field(default_factory=lambda: TilingSettings())
+    # Dust-mote epochs (stacks/dust_runs.py), a ContextRef like the
+    # calibration library and, like it, OUTSIDE every stacking key: a stack
+    # carries the mote models its own runs resolved to as arguments.
+    dust_epochs: Any = None
+
+    def get_dust_epochs(self):
+        if hasattr(self.dust_epochs, 'cache_key'):
+            return self.dust_epochs.get()
+        return self.dust_epochs
 
     def get_calibration_stacks(self):
         """Dereference calibration_stacks (may be a ContextRef or a plain dict)."""

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import numpy as np
 from scipy import ndimage
+from scipy.signal import fftconvolve
 
 SIGNIFICANCE = 8.0            # matched-filter sigma to call a dip a mote
 MAX_MOTES = 5
@@ -43,7 +44,7 @@ def _detect(flat_b: np.ndarray, block: int, flatten_px: float, radii_px: tuple, 
     best_sig = np.full(dip.shape, -np.inf, np.float32); best_r = np.zeros(dip.shape, np.float32)
     for r_px in radii_px:
         r = r_px / block
-        resp = ndimage.convolve(dip, _disk(r), mode="nearest")
+        resp = fftconvolve(dip, _disk(r), mode="same")      # the soft kernels are 80 blocks wide: direct is 10x slower
         # significance against the response map's own spread: whatever broad
         # structure the flatten left raises it honestly, and a mote is an
         # outlier of that map, not of the per-pixel noise
@@ -97,47 +98,71 @@ def find_motes(flat_b: np.ndarray, block: int) -> list[dict]:
     return sharp + soft[:MAX_MOTES - len(sharp)]
 
 
-def _shadow(flat_b: np.ndarray, x: float, y: float, r0: float) -> tuple[np.ndarray, tuple[int, int, int, int], float, tuple[float, float]]:
-    """One mote's multiplicative shadow S (<= 1) on a local patch of the block
-    image: a radial profile (azimuthal median per half-block of radius: the
-    noise averaged over a ring, the edge kept) about a centroid-refined centre
-    — the detector's grid position leaves a dipole ring — then one gentle 2D
-    pass on what the radial model missed. Returns S, the patch bounds, the
-    shadow's extent and the centre, all in block units."""
+STEP = 0.5   # profile radius step, blocks
+
+
+def _patch(flat_b: np.ndarray, x: float, y: float, r0: float):
+    """The local patch about (x, y), its coordinate grids, its masked-smooth
+    reference (the mote does not dent its own reference) and the dip."""
     R = int(4 * r0) + 6
     y0, y1 = max(0, int(y) - R), min(flat_b.shape[0], int(y) + R)
     x0, x1 = max(0, int(x) - R), min(flat_b.shape[1], int(x) + R)
-    patch = flat_b[y0:y1, x0:x1].astype(np.float32)
+    patch = np.nan_to_num(flat_b[y0:y1, x0:x1], nan=1.0).astype(np.float32)
     yy, xx = np.mgrid[y0:y1, x0:x1]
     far = (np.sqrt((xx - x) ** 2 + (yy - y) ** 2) > 2.0 * r0).astype(np.float32)
     sig = max(2.0 * r0, 2.0)
     ref = ndimage.gaussian_filter(patch * far, sig) / np.maximum(ndimage.gaussian_filter(far, sig), 1e-6)
-    dip = 1.0 - patch / np.maximum(ref, 1e-6)
+    return patch, (y0, y1, x0, x1), yy, xx, ref, 1.0 - patch / np.maximum(ref, 1e-6)
+
+
+def radial_profile(flat_b: np.ndarray, x: float, y: float, r0: float, recentre: bool = True
+                   ) -> tuple[np.ndarray, float, tuple[float, float]]:
+    """One mote's shadow as a radial profile of the dip (azimuthal median per
+    STEP blocks of radius: the noise averaged over a ring, the edge kept)
+    about a centroid-refined centre — a grid position leaves a dipole ring —
+    with the extent where the shadow ends. Block units."""
+    patch, _, yy, xx, ref, dip = _patch(flat_b, x, y, r0)
     cx, cy = float(x), float(y)
     pos = np.clip(dip, 0, None)
-    for _ in range(3):
+    for _ in range(3 if recentre else 0):
         d = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2)
         m = pos * (d <= 1.5 * r0); tot = float(m.sum())
         if tot <= 0:
             break
         cx, cy = float((m * xx).sum() / tot), float((m * yy).sum() / tot)
     d = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2)
-    step = 0.5
-    nb = int(d.max() / step) + 2
-    rb = np.minimum((d / step).astype(int), nb - 1)
-    prof = np.array([float(np.median(dip[rb == i])) if np.any(rb == i) else 0.0 for i in range(nb)], np.float32)
-    core = float(prof[: max(int(0.5 * r0 / step), 2)].mean())
+    nb = int(d.max() / STEP) + 2
+    rb = np.minimum((d / STEP).astype(int), nb - 1)
+    prof = np.array([float(np.median(dip[rb == i])) if np.any(rb == i) else np.nan for i in range(nb)], np.float32)
+    # a ring with no block in it (the centre sits between blocks) takes
+    # its neighbours' value, never 0: the core would read half as deep
+    ok = np.isfinite(prof)
+    prof = np.interp(np.arange(nb), np.flatnonzero(ok), prof[ok]).astype(np.float32) if ok.any() else np.zeros(nb, np.float32)
+    core = float(prof[: max(int(0.5 * r0 / STEP), 2)].mean())
     ext = 3.0 * r0
-    for i in range(int(0.6 * r0 / step), nb - 4):
+    for i in range(int(0.6 * r0 / STEP), nb - 4):
         if prof[i: i + 4].max() < 0.02 * core:
-            ext = i * step
+            ext = i * STEP
             break
-    prof = np.clip(prof, 0, None); prof[int(ext / step):] = 0.0
-    taper = np.clip((ext + 0.3 * r0 - np.arange(nb) * step) / max(0.3 * r0, 1.0), 0, 1)
+    prof = np.clip(prof, 0, None); prof[int(ext / STEP):] = 0.0
+    return prof, ext, (cx, cy)
+
+
+def _shadow(flat_b: np.ndarray, x: float, y: float, r0: float) -> tuple[np.ndarray, tuple[int, int, int, int], float, tuple[float, float]]:
+    """One mote's multiplicative shadow S (<= 1) on a local patch of the block
+    image: the radial profile, tapered at its extent, then one gentle 2D
+    pass on what the radial model missed. Returns S, the patch bounds, the
+    shadow's extent and the centre, all in block units."""
+    prof, ext, (cx, cy) = radial_profile(flat_b, x, y, r0)
+    patch, bounds, yy, xx, ref, _ = _patch(flat_b, x, y, r0)
+    d = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2)
+    nb = len(prof)
+    rb = np.minimum((d / STEP).astype(int), nb - 1)
+    taper = np.clip((ext + 0.3 * r0 - np.arange(nb) * STEP) / max(0.3 * r0, 1.0), 0, 1)
     s1 = 1.0 - (prof * taper)[rb]
     resid = ndimage.gaussian_filter(1.0 - (patch / s1) / np.maximum(ref, 1e-6), 1.0)
     resid *= np.clip((ext + 0.3 * r0 - d) / max(0.3 * r0, 1.0), 0, 1)
-    return (s1 * (1.0 - resid)).astype(np.float32), (y0, y1, x0, x1), ext, (cx, cy)
+    return (s1 * (1.0 - resid)).astype(np.float32), bounds, ext, (cx, cy)
 
 
 def divide_motes(flat_b: np.ndarray, motes: list[dict], block: int) -> np.ndarray:
