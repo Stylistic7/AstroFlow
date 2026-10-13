@@ -46,6 +46,15 @@ def test_rigs_are_camera_and_focal_cluster_per_filter():
     assert out["3a15ec99@351/O"]["filter"] == "O"
 
 
+def test_filters_are_grouped_by_role_and_the_rig_label_is_the_commonest():
+    stacks = [_stack("a", filt="OIII"), _stack("b", filt="O"), _stack("c", filt="Ha")]
+    stacks[2].camera = "ASI Camera (1)"
+    out = rigs(stacks)
+    assert sorted(out) == ["3a15ec99@351/H", "3a15ec99@351/O"]
+    assert len(out["3a15ec99@351/O"]["runs"]) == 4
+    assert out["3a15ec99@351/H"]["rig"].camera == "ZWO ASI6200MM Pro"
+
+
 def test_the_dust_graph_keys_are_hashable_and_runs_are_in_date_order():
     """Every task key holds a Run and the rig (boot184/185: an unhashable
     field-wise Run hash, then a dict rig, each killed the builder)."""

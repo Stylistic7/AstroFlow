@@ -31,7 +31,7 @@ Graph: `scatter_dust_runs` (a builder over the identified stacks: one
 # NO `from __future__ import annotations`: the @node decorator reads the
 # return annotation to recognise a file PRODUCER (`WithSidecar[FitsFilePath]`
 # → filename_fn + the metadata wrap); as a string it is not one (boot181).
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -51,6 +51,7 @@ from file_io.sidecar import set_section
 from file_io.types import FitsFilePath, WithSidecar
 from hashing import hash_list
 from metadata.classes import ImageMetadata
+from pix.tasks.filters import normalize_filter
 from stacks.dust_epochs import Epoch, MoteModel, RunMap, fold
 from stacks.run import Run
 from stacks.star_flat import _focal_clusters
@@ -134,17 +135,26 @@ def rigs(stacks) -> dict[str, dict]:
         cam = stack.camera_id_hash or f"{stack.width_pixels}x{stack.height_pixels}"
         by_cam[cam].append((focal, stack))
     out: dict[str, dict] = {}
+    labels: dict[str, Counter] = defaultdict(Counter)
     for cam, items in by_cam.items():
         for idx in _focal_clusters([f for f, _ in items]):
             focal = int(round(float(np.median([items[i][0] for i in idx]))))
             for i in idx:
                 stack = items[i][1]
-                filt = str(stack.filter or "").strip()
+                # by ROLE ("OIII" and "O" are one filter), raw when unknown
+                filt = normalize_filter(stack.filter) or str(stack.filter or "").strip()
                 system = f"{cam[:8]}@{focal}/{filt}"
                 entry = out.setdefault(system, {
                     "rig": Rig(cam[:8], stack.camera, focal, stack.width_pixels, stack.height_pixels),
                     "filter": filt, "runs": []})
                 entry["runs"].extend(stack.contents.values())
+                labels[f"{cam[:8]}@{focal}"][str(stack.camera)] += 1
+    for system, entry in out.items():
+        # one label per rig — the commonest INSTRUME wording of its stacks
+        # (a driver reports "ASI Camera (1)" on some nights)
+        rig = entry["rig"]
+        entry["rig"] = Rig(rig.camera_id, labels[f"{rig.camera_id}@{rig.focal_length}"].most_common(1)[0][0],
+                           rig.focal_length, rig.width, rig.height)
     return out
 
 
