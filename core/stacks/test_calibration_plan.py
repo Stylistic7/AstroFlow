@@ -40,6 +40,7 @@ def _wire(monkeypatch, entities):
     monkeypatch.setattr(sel, "resolve_calibration", fake_resolve)
     monkeypatch.setattr(sel, "stack_files", fake_stack_files)
     config = SimpleNamespace(
+        get_dust_epochs=lambda: None,
         get_calibration_stacks=lambda: entities, decisions={})
     return calls, config
 

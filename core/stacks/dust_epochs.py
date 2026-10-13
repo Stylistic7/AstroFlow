@@ -247,8 +247,10 @@ class _Pool:
     def pooled(self, points: list[int]) -> np.ndarray | None:
         if not points:
             return None
-        stack = np.stack([self._mean(p) for p in points])
-        return np.nan_to_num(np.nanmedian(stack, axis=0), nan=1.0).astype(np.float32)
+        # a block no run of a pointing measured is flat (1.0) for the median:
+        # np.median partitions, np.nanmedian sorts — 3x slower on 50 maps
+        stack = np.stack([np.nan_to_num(self._mean(p), nan=1.0) for p in points])
+        return np.median(stack, axis=0).astype(np.float32)
 
     def halves(self) -> tuple[np.ndarray | None, np.ndarray | None]:
         return self.pooled(self.order[0::2]), self.pooled(self.order[1::2])
@@ -328,17 +330,18 @@ def fold(system: str, runs: list[RunMap], block: int) -> list[Epoch]:
         if not cur.final:
             refit()
         elif due and len(pool.order) >= 3:
-            # a landing: a mote the frozen model lacks, seen by the epoch's
-            # pooled pointings, placed at the run it appeared on
+            # a landing: a mote the frozen model lacks that a full refit of
+            # the epoch ADMITS (in both halves, split error under half its
+            # depth — the same bar as any mote; a marginal detection on the
+            # pool is not a landing), placed at the run it appeared on
             last_check = i
-            pooled = pool.pooled(pool.order)
+            odd, even = pool.halves()
             known = cur.model.motes
-            new = [m for m in find_motes(pooled, block)
-                   if not any(abs(k.x - m["x"]) < 3 * block and abs(k.y - m["y"]) < 3 * block for k in known)]
+            fitted = fit_model(pool.pooled(pool.order), odd, even, known, block, cur.model.epoch)
+            new = [m for m in fitted.motes
+                   if not any(abs(k.x - m.x) < 3 * block and abs(k.y - m.y) < 3 * block for k in known)]
             if new:
-                m0 = new[0]
-                prof, ext, (cx, cy) = radial_profile(pooled, m0["x"] / block, m0["y"] / block, max(m0["radius_px"] / block, 2.0))
-                mote = _quantized(cx, cy, ext, prof, block)
+                mote = new[0]
                 j = _landing_index(dips, cur.runs, mote, block)
                 log.info("dust epoch boundary: mote landed", system=system, at=runs[j].run[:8], date=str(runs[j].date),
                          mote=(mote.x, mote.y, round(mote.depth, 4)), epoch=cur.model.epoch)

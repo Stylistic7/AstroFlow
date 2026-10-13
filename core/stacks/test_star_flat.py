@@ -218,7 +218,7 @@ def test_calibrate_dispatches_the_star_flat_producer(monkeypatch):
     monkeypatch.setattr(sfm, "build_star_flat", lambda s, cells, window: calls.append(("star", s.stable_hash, cells)) or f"master:{s.stable_hash}")
     monkeypatch.setattr(sfm, "fit_flat_gain",
                         lambda stack, master, dark_, *settings: calls.append(("fit", stack.stable_hash, master, dark_)) or f"gain:{master}")
-    config = SimpleNamespace(get_calibration_stacks=lambda: {"dark1": dark, "sf1": sf}, decisions={})
+    config = SimpleNamespace(get_calibration_stacks=lambda: {"dark1": dark, "sf1": sf}, decisions={}, get_dust_epochs=lambda: None)
     masters = sel.calibrate(light, config)
     assert masters == ["master:dark1", "master:sf1", "gain:master:sf1"]   # the group flat, then its gain
     assert ("star", "sf1", CELLS) in calls and ("wbpp", "dark1") in calls and ("wbpp", "sf1") not in calls
@@ -234,7 +234,7 @@ def test_calibrate_scales_without_a_dark_when_the_stack_has_none(monkeypatch):
     monkeypatch.setattr(sfm, "build_star_flat", lambda s, cells, window: f"master:{s.stable_hash}")
     monkeypatch.setattr(sfm, "fit_flat_gain",
                         lambda stack, master, dark_, *settings: calls.append(dark_) or f"gain:{master}")
-    config = SimpleNamespace(get_calibration_stacks=lambda: {"sf1": sf}, decisions={})
+    config = SimpleNamespace(get_calibration_stacks=lambda: {"sf1": sf}, decisions={}, get_dust_epochs=lambda: None)
     assert sel.calibrate(light, config) == ["master:sf1", "gain:master:sf1"]
     assert calls == [None]
 
