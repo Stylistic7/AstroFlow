@@ -32,7 +32,7 @@ Graph: `scatter_dust_runs` (a builder over the identified stacks: one
 # return annotation to recognise a file PRODUCER (`WithSidecar[FitsFilePath]`
 # → filename_fn + the metadata wrap); as a string it is not one (boot181).
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import numpy as np
@@ -91,6 +91,17 @@ class DustEpochs:
 
 
 # ------------------------------------------------------------------ rigs
+@dataclass(frozen=True)
+class Rig:
+    """A camera (its identity's first 8 hex) at a focal length, with its
+    sensor size. Hashable: it rides in the fold's task key."""
+    camera_id: str
+    camera: str
+    focal_length: int
+    width: int
+    height: int
+
+
 def _focal_length_of(stack) -> float | None:
     values = []
     for run in stack.contents.values():
@@ -127,8 +138,7 @@ def rigs(stacks) -> dict[str, dict]:
                 filt = str(stack.filter or "").strip()
                 system = f"{cam[:8]}@{focal}/{filt}"
                 entry = out.setdefault(system, {
-                    "rig": {"camera_id": cam[:8], "camera": stack.camera, "focal_length": focal,
-                            "width": stack.width_pixels, "height": stack.height_pixels},
+                    "rig": Rig(cam[:8], stack.camera, focal, stack.width_pixels, stack.height_pixels),
                     "filter": filt, "runs": []})
                 entry["runs"].extend(stack.contents.values())
     return out
@@ -190,8 +200,8 @@ def measure_dust_run(run: Run) -> WithSidecar[FitsFilePath]:
 
 
 # ------------------------------------------------------------------ fold
-def _report(system: str, rig: dict, filt: str, runs: tuple, epochs: list[Epoch]) -> dict:
-    return {"system": system, "rig": rig, "filter": filt, "runs": len(runs),
+def _report(system: str, rig: Rig, filt: str, runs: tuple, epochs: list[Epoch]) -> dict:
+    return {"system": system, "rig": asdict(rig), "filter": filt, "runs": len(runs),
             "epochs": [{"from": _utc(runs[e.runs[0]].oldest_date).isoformat(),
                         "to": _utc(runs[e.runs[-1]].newest_date).isoformat(),
                         "runs": len(e.runs), "pointings": e.pointings, "model": e.model.summary()}
@@ -199,7 +209,7 @@ def _report(system: str, rig: dict, filt: str, runs: tuple, epochs: list[Epoch])
 
 
 @node(num_cpus=2, resources={"diskcache": 0.001})
-def dust_epochs(system: str, rig: dict, filt: str, runs: tuple, *maps: ImageMetadata) -> DustEpochs:
+def dust_epochs(system: str, rig: Rig, filt: str, runs: tuple, *maps: ImageMetadata) -> DustEpochs:
     """The epochs of one rig and filter from its runs' maps (`runs` and
     `maps` in the same date order). A pure fold, recomputed whole on every
     pass: a closed epoch's model comes out identical whatever follows it."""
@@ -225,16 +235,13 @@ def merge_dust_epochs(*tables: DustEpochs) -> DustEpochs:
     return DustEpochs.of(model_of_run, run_of_frame, report)
 
 
-@ray.remote(num_cpus=0.1)
-def scatter_dust_runs(stacks: dict) -> Graph:
+def dust_graph(stacks) -> Graph:
     """One measurement per run, one fold per rig and filter (its runs in
     date order, the value-consuming collector's deps in the same order),
-    merged into one table. `stacks` is the identified light stacks, their
-    values ContextRefs."""
-    resolved = [v.get() if hasattr(v, "get") else v for v in stacks.values()]
+    merged into one table."""
     graph = Graph({})
     collectors = []
-    groups = rigs(resolved)
+    groups = rigs(stacks)
     for system in sorted(groups):
         g = groups[system]
         ordered = tuple(sorted(g["runs"], key=lambda r: (_utc(r.oldest_date), r.content_hash)))
@@ -247,6 +254,12 @@ def scatter_dust_runs(stacks: dict) -> Graph:
     log.info("dust runs scattered", systems=len(groups), runs=sum(len(g["runs"]) for g in groups.values()))
     graph[merge_dust_epochs] = collectors
     return graph
+
+
+@ray.remote(num_cpus=0.1)
+def scatter_dust_runs(stacks: dict) -> Graph:
+    """`stacks` is the identified light stacks, their values ContextRefs."""
+    return dust_graph([v.get() if hasattr(v, "get") else v for v in stacks.values()])
 
 
 @ray.remote(num_cpus=0.1)

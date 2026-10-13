@@ -10,19 +10,27 @@ from types import SimpleNamespace
 import numpy as np
 from astropy.io import fits
 
-from stacks.dust_runs import BLOCK, PEDESTAL_PER_OFFSET, DustEpochs, combine_dust_map, rigs
+from stacks.dust_runs import BLOCK, PEDESTAL_PER_OFFSET, DustEpochs, Rig, combine_dust_map, dust_graph, rigs
 from stacks.dust_epochs import MoteModel
 
 T0 = _dt.datetime(2026, 10, 1, 4, 0, 0)
+
+
+class _R:
+    """A Run stand-in that is hashable (SimpleNamespace defines __eq__ and
+    is not), as a task key must be."""
+
+    def __init__(self, **kw):
+        self.__dict__.update(kw)
 
 
 def _stack(name, *, cam="3a15ec99ffff", focal=351.0, filt="H", runs=2, image_type="light", w=9576, h=6388):
     contents = {}
     for i in range(runs):
         meta = {f"{name}f{i}{j}": SimpleNamespace(header={"FOCALLEN": focal}) for j in range(3)}
-        contents[f"{name}r{i}"] = SimpleNamespace(content_hash=f"{name}r{i}", frames=tuple(meta), metadata=meta,
-                                                 oldest_date=T0 + _dt.timedelta(days=i), newest_date=T0 + _dt.timedelta(days=i, hours=1),
-                                                 center=(10.0 + i, 20.0))
+        contents[f"{name}r{i}"] = _R(content_hash=f"{name}r{i}", frames=tuple(meta), metadata=meta,
+                                     oldest_date=T0 + _dt.timedelta(days=i), newest_date=T0 + _dt.timedelta(days=i, hours=1),
+                                     center=(10.0 + i, 20.0))
     return SimpleNamespace(camera_id_hash=cam, camera="ZWO ASI6200MM Pro", filter=filt, image_type=image_type,
                            width_pixels=w, height_pixels=h, contents=contents)
 
@@ -34,9 +42,24 @@ def test_rigs_are_camera_and_focal_cluster_per_filter():
     assert sorted(out) == ["19ea9805@351/H", "3a15ec99@1230/H", "3a15ec99@351/H", "3a15ec99@351/O", "9576x638@351/H"]
     h = out["3a15ec99@351/H"]
     assert sorted(r.content_hash for r in h["runs"]) == ["ar0", "ar1", "br0", "br1"]     # 351 and 349 are one rig
-    assert h["rig"] == {"camera_id": "3a15ec99", "camera": "ZWO ASI6200MM Pro", "focal_length": 351,
-                        "width": 9576, "height": 6388}
+    assert h["rig"] == Rig("3a15ec99", "ZWO ASI6200MM Pro", 351, 9576, 6388)
     assert out["3a15ec99@351/O"]["filter"] == "O"
+
+
+def test_the_dust_graph_keys_are_hashable_and_runs_are_in_date_order():
+    """Every task key holds a Run and the rig (boot184/185: an unhashable
+    field-wise Run hash, then a dict rig, each killed the builder)."""
+    from stacks.dust_runs import dust_epochs, measure_dust_run, merge_dust_epochs
+    graph = dust_graph([_stack("a"), _stack("b", filt="O")])
+    keys = list(graph)
+    assert all(hash(k) is not None for k in keys)
+    folds = [k for k in keys if isinstance(k, tuple) and k[0] is dust_epochs]
+    assert sorted(k[1] for k in folds) == ["3a15ec99@351/H", "3a15ec99@351/O"]
+    runs = next(k for k in folds if k[1] == "3a15ec99@351/H")[4]
+    assert [r.content_hash for r in runs] == ["ar0", "ar1"]
+    assert [k[1].content_hash for k in graph[next(k for k in folds if k[1] == "3a15ec99@351/H")]] == ["ar0", "ar1"]
+    assert sum(1 for k in keys if isinstance(k, tuple) and k[0] is measure_dust_run) == 4
+    assert merge_dust_epochs in keys
 
 
 def _write_sub(path: Path, mote, seed, sky=2000.0, offset=50):
