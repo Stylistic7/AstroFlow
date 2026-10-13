@@ -22,7 +22,10 @@ planner_bp = Blueprint("planner", __name__)
 
 @planner_bp.route("/api/planner/next")
 def next_plan():
-    state = refresh.refresh_if_stale(context)
+    try:
+        state = refresh.refresh_if_stale(context)
+    except RuntimeError as e:   # the first seconds after boot: no rig has reported its location yet
+        return jsonify({"status": "waiting", "detail": str(e)}), 202
     if state == "stale":
         return jsonify({"status": "computing"}), 202
     return jsonify({**refresh.stored(), "refreshing": state == "refreshing"})

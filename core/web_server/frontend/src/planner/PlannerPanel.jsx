@@ -12,6 +12,7 @@ import { FILTER_NAME, clock, filterColor } from './planColors.js';
 export default function PlannerPanel() {
   const theme = useTheme();
   const [plan, setPlan] = useState(null);
+  const [waiting, setWaiting] = useState(null);   // a 202's reason, e.g. no rig has reported its location yet
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -19,10 +20,13 @@ export default function PlannerPanel() {
     const load = async () => {
       try {
         const r = await fetch('/api/planner/next');
-        const body = await r.json();
+        // A 5xx while the server is starting is an HTML page, not JSON.
+        const body = r.ok || r.status === 202 ? await r.json() : {};
         if (!alive) return;
         if (r.status === 200) setPlan(body);
-        timer = setTimeout(load, r.status === 202 || body.refreshing ? 5000 : 60000);
+        setWaiting(r.status === 202 ? body.detail || null : null);
+        setError(r.status >= 400 ? `HTTP ${r.status}` : null);
+        timer = setTimeout(load, r.status === 200 && !body.refreshing ? 60000 : 5000);
       } catch (e) {
         if (alive) { setError(String(e)); timer = setTimeout(load, 15000); }
       }
@@ -35,7 +39,9 @@ export default function PlannerPanel() {
     return (
       <Box sx={{ p: 4, display: 'flex', alignItems: 'center', gap: 2 }}>
         <CircularProgress size={22} />
-        <Typography color="text.secondary">{error ? `Planner unavailable: ${error}` : 'Planning tonight from what is on disk — about a minute…'}</Typography>
+        <Typography color="text.secondary">
+          {error ? `Planner unavailable (${error}), retrying…` : waiting ? `Waiting: ${waiting}…` : 'Planning tonight from what is on disk — about a minute…'}
+        </Typography>
       </Box>
     );
   }
