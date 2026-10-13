@@ -313,16 +313,16 @@ def fold(rig: str, runs: list[RunMap], block: int) -> list[Epoch]:
     epochs: list[Epoch] = []
     cur: Epoch | None = None
     pools: dict[str, _Pool] = {}
-    last_check: dict[str, int] = {}
+    checked: dict[str, int] = {}      # filter -> pointings in its pool at the last landing check
 
     def open_epoch(at: int, survivors: dict) -> None:
-        nonlocal cur, pools, last_check
+        nonlocal cur, pools, checked
         eid = f"{rig}:{runs[at].run[:8]}"
         cur = Epoch(start=at, models={f: MoteModel.of(survivors.get(f, ()), epoch=eid) for f in filters},
                     final={f: False for f in filters}, pointings={f: 0 for f in filters},
                     absent={f: set() for f in filters})
         pools = {f: _Pool(shape) for f in filters}
-        last_check = {f: at for f in filters}
+        checked = {f: 0 for f in filters}
 
     def propagate() -> None:
         """Every mote of the epoch, tested on each other filter's runs."""
@@ -394,7 +394,9 @@ def fold(rig: str, runs: list[RunMap], block: int) -> list[Epoch]:
         new_pointing = pointings[i] not in pool.order
         pool.add(pointings[i], run.map)
         cur.pointings[f] = len(pool.order)
-        due = new_pointing or i == len(runs) - 1 or i - last_check[f] >= max(1, len(cur.runs) // 10)
+        # a landing check costs two refits (~3 s): only when the filter has
+        # two new pointings to show, and always on the newest run
+        due = len(pool.order) - checked[f] >= 2 or i == len(runs) - 1
         if not cur.final[f]:
             if new_pointing or i == len(runs) - 1:
                 refit(f)
@@ -403,7 +405,7 @@ def fold(rig: str, runs: list[RunMap], block: int) -> list[Epoch]:
             # both halves, split error under half its depth), on the whole
             # epoch or on its newest pointings alone; placed at the run of
             # this filter it appeared on, and the epoch splits there for the rig
-            last_check[f] = i
+            checked[f] = len(pool.order)
             known = cur.models[f].motes
             found = list(fit_model(pool.pooled(pool.order), *pool.halves(), known, block, cur.models[f].epoch).motes)
             tail = pool.order[-TRAILING:]
@@ -423,6 +425,14 @@ def fold(rig: str, runs: list[RunMap], block: int) -> list[Epoch]:
                 else:
                     survivors = {g: cur.models[g].motes for g in filters}
                     cur.runs = [k for k in cur.runs if k < j]
+                    for g in filters:
+                        # the runs from j on replay into the new epoch: the closed one
+                        # keeps only the pointings its remaining runs made, and a
+                        # filter with none left has no model there
+                        cur.pointings[g] = len({pointings[k] for k in cur.filter_runs(runs, g)})
+                        if not cur.filter_runs(runs, g):
+                            cur.models[g] = MoteModel.of((), epoch=cur.models[g].epoch)
+                            cur.final[g] = False
                     propagate()
                     epochs.append(cur)
                     open_epoch(j, survivors)
