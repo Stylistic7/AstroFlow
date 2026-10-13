@@ -47,9 +47,9 @@ def _run(i, pointing, dust, seed, day=None, n_subs=30, noise=0.0025):
                   centre=(ra, 20.0), n_subs=n_subs, map=m.astype(np.float32))
 
 
-def _steady(n, dust=DUST_A, pointings=None, start=0):
+def _steady(n, dust=DUST_A, pointings=None, start=0, day=None):
     pts = pointings or list(range(n))
-    return [_run(start + i, pts[i], dust, start + i) for i in range(n)]
+    return [_run(start + i, pts[i], dust, start + i, day=None if day is None else day + i) for i in range(n)]
 
 
 def _at(model: MoteModel, x, y):
@@ -68,7 +68,7 @@ def test_steady_dust_is_one_epoch_that_converges_and_freezes():
     epochs = fold("sys", _steady(6), BLOCK)
     assert len(epochs) == 1
     e = epochs[0]
-    assert e.final and e.model.final
+    assert e.final[""] and e.model.final
     assert e.model.error is not None and e.model.error < TOLERANCE
     assert len(e.model.motes) == 2
     for x, y, _, depth in DUST_A:
@@ -92,7 +92,7 @@ def test_a_single_pointing_never_converges_and_admits_no_mote():
     that field can never be mistaken for dust."""
     runs = _steady(8, pointings=[0] * 8)
     (e,) = fold("sys", runs, BLOCK)
-    assert not e.final
+    assert not e.final[""]
     assert e.model.motes == ()
 
 
@@ -105,7 +105,7 @@ def test_dust_that_moves_opens_a_new_epoch_and_leaves_the_old_one_untouched():
     old, new = epochs
     assert old.model == before[0].model                   # frozen: identical to before the change
     assert old.runs == list(range(6)) and new.runs == list(range(6, 12))
-    assert new.final
+    assert new.final[""]
     assert _at(new.model, 600, 400) is None               # the vanished mote
     assert _at(new.model, 1300, 900) is not None          # the survivor
     assert _at(new.model, 300, 1000) is not None          # the newcomer
@@ -118,7 +118,7 @@ def test_the_survivor_is_known_from_the_boundary_run_on():
     epochs = fold("sys", runs, BLOCK)
     assert len(epochs) == 2
     new = epochs[1]
-    assert not new.final
+    assert not new.final[""]
     assert [(m.x, m.y) for m in new.model.motes] == [(m.x, m.y) for m in epochs[0].model.motes if abs(m.x - 1300) < 16]
 
 
@@ -165,3 +165,46 @@ def test_a_shadow_never_divides_by_nearly_nothing():
     M = render_motes(deep, (600, 800), BLOCK)
     assert float(M.min()) == MIN_SHADOW
     assert float((1.0 / M).max()) <= 1.0 / MIN_SHADOW + 1e-6
+
+
+# ------------------------------------------------------------------ filters
+def _tag(runs, filt):
+    for r in runs:
+        r.filter = filt
+    return runs
+
+
+def test_sensor_dust_proven_in_one_filter_reaches_a_filter_with_a_single_run():
+    """Six O pointings carry the motes; one H run after the change sees them
+    too — its model gets them without any H pointings to split."""
+    o = _tag(_steady(6), "O")
+    h = _tag(_steady(1, start=20, pointings=[7]), "H")
+    runs = sorted(o + h, key=lambda r: r.date)
+    epochs = fold("rig", runs, BLOCK)
+    assert len(epochs) == 1
+    e = epochs[0]
+    assert len(e.models["O"].motes) == 2
+    assert e.models["H"].content_hash == e.models["O"].content_hash     # the same motes: one identity
+
+
+def test_filter_dust_stays_in_its_filter():
+    """A mote the H runs decidedly lack is O's alone."""
+    o = _tag(_steady(6), "O")
+    h = _tag(_steady(3, dust=[], start=20, pointings=[7, 8, 9]), "H")
+    runs = sorted(o + h, key=lambda r: r.date)
+    (e,) = fold("rig", runs, BLOCK)
+    assert len(e.models["O"].motes) == 2
+    assert e.models["H"].motes == ()
+
+
+def test_a_change_seen_in_one_filter_is_the_rig_s_boundary():
+    """O sees the dust move; the H run after the change belongs to the new
+    epoch and carries the new motes, the H runs before keep the old."""
+    o = _tag(_steady(6) + _steady(6, dust=DUST_B, start=6), "O")
+    h = _tag(_steady(1, start=20, pointings=[8], day=3) + _steady(1, dust=DUST_B, start=21, pointings=[9], day=9), "H")
+    runs = sorted(o + h, key=lambda r: r.date)
+    epochs = fold("rig", runs, BLOCK)
+    assert len(epochs) == 2
+    old, new = epochs
+    assert _at(old.models["H"], 600, 400) is not None and _at(old.models["H"], 300, 1000) is None
+    assert _at(new.models["H"], 300, 1000) is not None and _at(new.models["H"], 600, 400) is None

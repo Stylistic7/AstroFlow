@@ -51,6 +51,8 @@ STEP = 0.5               # profile radius step, blocks (what `radial_profile` fi
 MIN_SHADOW = 0.5         # a rendered shadow never falls below this: dividing by it gains at most
                          # 2x; a mote darker than that is an occultation, not a correctable shadow
 MIN_SURVIVOR_DEPTH = 0.005
+TRAILING = 10            # a landing is also sought on the newest pointings alone: a whole epoch's
+                         # median hides a change that is still a minority of its pointings
 
 
 @dataclass(frozen=True)
@@ -96,21 +98,35 @@ class MoteModel:
 
 @dataclass
 class RunMap:
-    """One dust run's measurement: the block image (1.0 = flat) of its subs."""
+    """One run's measurement: the block image (1.0 = flat) of its subs."""
     run: str
     date: _dt.datetime
     centre: tuple[float, float]
     n_subs: int
     map: np.ndarray
+    filter: str = ""
 
 
 @dataclass
 class Epoch:
+    """One epoch of a RIG: its boundaries are shared by every filter, its
+    model is per filter (sensor dust is in all of them, filter dust in one)."""
     start: int                       # index of the run it opens at
     runs: list[int] = field(default_factory=list)
-    model: MoteModel = field(default_factory=lambda: MoteModel.of(()))
-    final: bool = False
-    pointings: int = 0
+    models: dict = field(default_factory=dict)       # filter -> MoteModel
+    final: dict = field(default_factory=dict)        # filter -> converged?
+    pointings: dict = field(default_factory=dict)    # filter -> distinct pointings
+    absent: dict = field(default_factory=dict)       # filter -> mote keys its runs lack
+
+    @property
+    def model(self) -> MoteModel:
+        """The model of a one-filter rig (tests); a rig's filters otherwise
+        each have their own in `models`."""
+        (only,) = self.models.values()
+        return only
+
+    def filter_runs(self, runs: list, f: str) -> list[int]:
+        return [i for i in self.runs if runs[i].filter == f]
 
 
 # ------------------------------------------------------------------ geometry
@@ -150,7 +166,7 @@ def presence(dip: np.ndarray, sigma: float, mote: Mote, block: int) -> int:
     n = int(disc.sum())
     if n == 0:
         return 0
-    resp = float(dip[disc].mean())
+    resp = float(dip[disc].astype(np.float32).mean())
     margin = DECIDE_SIGMA * sigma / np.sqrt(n)
     half = mote.depth / 2
     if resp - margin > half:
@@ -274,92 +290,147 @@ def _landing_index(dips: list, members: list[int], mote: Mote, block: int) -> in
     return members[min(k, len(members) - 1)]
 
 
-def fold(system: str, runs: list[RunMap], block: int) -> list[Epoch]:
-    """The epochs of `runs` (date order), each with its model."""
+def _near(a: Mote, b: Mote, block: int) -> bool:
+    return abs(a.x - b.x) < 3 * block and abs(a.y - b.y) < 3 * block
+
+
+def fold(rig: str, runs: list[RunMap], block: int) -> list[Epoch]:
+    """The epochs of one rig from its runs (every filter, date order).
+
+    Boundaries are the rig's: a mote decidedly absent from a run of a filter
+    whose model has it, or a landing found in any filter, closes the epoch
+    for all. Models are per filter, each fitted on its own pointings; a mote
+    admitted in one filter is tested on every other filter's runs of the
+    epoch and joins that filter's model when present in at least one run
+    and absent in none — sensor-window dust reaches a filter with a single
+    run since the change, while filter dust stays where it was seen."""
     if not runs:
         return []
     pointings = assign_pointings(runs)
-    dips = [_dip(r.map, block) for r in runs]
+    dips = [(d.astype(np.float16), s) for d, s in (_dip(r.map, block) for r in runs)]
     shape = runs[0].map.shape
+    filters = sorted({r.filter for r in runs})
     epochs: list[Epoch] = []
     cur: Epoch | None = None
-    pool: _Pool | None = None
-    last_check = -1
+    pools: dict[str, _Pool] = {}
+    last_check: dict[str, int] = {}
 
-    def open_epoch(at: int, survivors: tuple[Mote, ...]) -> None:
-        nonlocal cur, pool, last_check
-        cur = Epoch(start=at, model=MoteModel.of(survivors, epoch=f"{system}:{runs[at].run[:8]}"))
-        pool = _Pool(shape)
-        last_check = at
+    def open_epoch(at: int, survivors: dict) -> None:
+        nonlocal cur, pools, last_check
+        eid = f"{rig}:{runs[at].run[:8]}"
+        cur = Epoch(start=at, models={f: MoteModel.of(survivors.get(f, ()), epoch=eid) for f in filters},
+                    final={f: False for f in filters}, pointings={f: 0 for f in filters},
+                    absent={f: set() for f in filters})
+        pools = {f: _Pool(shape) for f in filters}
+        last_check = {f: at for f in filters}
 
-    def refit() -> None:
-        assert cur is not None and pool is not None
+    def propagate() -> None:
+        """Every mote of the epoch, tested on each other filter's runs."""
+        assert cur is not None
+        union: dict[tuple, Mote] = {}
+        for f in filters:
+            for m in cur.models[f].motes:
+                if not any(_near(m, u, block) for u in union.values()):
+                    union[(m.x, m.y)] = m
+        for g in filters:
+            have = cur.models[g].motes
+            g_runs = cur.filter_runs(runs, g)
+            add = []
+            for key, m in union.items():
+                if key in cur.absent[g] or any(_near(m, h, block) for h in have):
+                    continue
+                scores = [presence(dips[i][0], dips[i][1], m, block) for i in g_runs]
+                if any(sc < 0 for sc in scores):
+                    cur.absent[g].add(key)
+                elif any(sc > 0 for sc in scores):
+                    add.append(m)
+            if add:
+                before = cur.models[g]
+                cur.models[g] = MoteModel.of(before.motes + tuple(add), epoch=before.epoch, final=before.final, error=before.error)
+                log.info("dust motes shared across filters", rig=rig, epoch=before.epoch, filter=g,
+                         motes=[(m.x, m.y, round(m.depth, 4)) for m in add])
+
+    def refit(f: str) -> None:
+        assert cur is not None
+        pool = pools[f]
         odd, even = pool.halves()
-        pooled = pool.pooled(pool.order)
-        before = cur.model
-        cur.model = fit_model(pooled, odd, even, before.motes, block, before.epoch)
-        if cur.model.content_hash != before.content_hash:
-            log.info("dust model refit", system=system, epoch=before.epoch, runs=len(cur.runs),
-                     pointings=len(pool.order), was=before.summary()["motes"], now=cur.model.summary()["motes"],
-                     error=cur.model.error)
-        if odd is not None and even is not None and cur.model.error is not None and cur.model.error < TOLERANCE:
-            cur.final = True
-            cur.model = MoteModel.of(cur.model.motes, epoch=cur.model.epoch, final=True, error=cur.model.error)
-            log.info("dust epoch final", system=system, epoch=cur.model.epoch, runs=len(cur.runs),
-                     pointings=len(pool.order), error=cur.model.error, motes=cur.model.summary()["motes"])
+        before = cur.models[f]
+        model = fit_model(pool.pooled(pool.order), odd, even, before.motes, block, before.epoch)
+        if odd is not None and even is not None and model.error is not None and model.error < TOLERANCE:
+            cur.final[f] = True
+            model = MoteModel.of(model.motes, epoch=model.epoch, final=True, error=model.error)
+            log.info("dust epoch final", rig=rig, filter=f, epoch=model.epoch, runs=len(cur.filter_runs(runs, f)),
+                     pointings=len(pool.order), error=model.error, motes=model.summary()["motes"])
+        if model.content_hash != before.content_hash:
+            log.info("dust model refit", rig=rig, filter=f, epoch=before.epoch, pointings=len(pool.order),
+                     was=before.summary()["motes"], now=model.summary()["motes"], error=model.error)
+            cur.models[f] = model
+            propagate()
+        else:
+            cur.models[f] = model
 
     i = 0
     while i < len(runs):
-        run, (dip, sigma) = runs[i], dips[i]
-        if cur is not None and cur.model.motes:
-            gone = [m for m in cur.model.motes if presence(dip, sigma, m, block) < 0]
+        run, f, (dip, sigma) = runs[i], runs[i].filter, dips[i]
+        if cur is not None and cur.models[f].motes:
+            gone = [m for m in cur.models[f].motes if presence(dip, sigma, m, block) < 0]
             if gone:
-                survivors = tuple(m for m in cur.model.motes if presence(dip, sigma, m, block) > 0)
-                log.info("dust epoch boundary: motes vanished", system=system, run=run.run[:8], date=str(run.date),
-                         vanished=[(m.x, m.y) for m in gone], survivors=[(m.x, m.y) for m in survivors],
-                         closed=cur.model.summary())
+                survivors = {g: tuple(m for m in cur.models[g].motes
+                                      if not any(_near(m, v, block) for v in gone)
+                                      and (g != f or presence(dip, sigma, m, block) > 0))
+                             for g in filters}
+                log.info("dust epoch boundary: motes vanished", rig=rig, filter=f, run=run.run[:8], date=str(run.date),
+                         vanished=[(m.x, m.y) for m in gone],
+                         survivors={g: [(m.x, m.y) for m in v] for g, v in survivors.items() if v},
+                         closed={g: m.summary()["motes"] for g, m in cur.models.items() if m.motes})
+                propagate()
                 epochs.append(cur)
                 open_epoch(i, survivors)
         if cur is None:
-            open_epoch(i, ())
-        assert cur is not None and pool is not None
+            open_epoch(i, {})
+        assert cur is not None
         cur.runs.append(i)
+        pool = pools[f]
         new_pointing = pointings[i] not in pool.order
         pool.add(pointings[i], run.map)
-        cur.pointings = len(pool.order)
-        # a landing check on a frozen epoch costs a pooled median and a
-        # detection (~1 s): every run while the epoch is young, then every
-        # tenth of its length, every new pointing, and always the newest run
-        due = new_pointing or i == len(runs) - 1 or i - last_check >= max(1, len(cur.runs) // 10)
-        if not cur.final:
-            refit()
+        cur.pointings[f] = len(pool.order)
+        due = new_pointing or i == len(runs) - 1 or i - last_check[f] >= max(1, len(cur.runs) // 10)
+        if not cur.final[f]:
+            if new_pointing or i == len(runs) - 1:
+                refit(f)
         elif due and len(pool.order) >= 3:
-            # a landing: a mote the frozen model lacks that a full refit of
-            # the epoch ADMITS (in both halves, split error under half its
-            # depth — the same bar as any mote; a marginal detection on the
-            # pool is not a landing), placed at the run it appeared on
-            last_check = i
-            odd, even = pool.halves()
-            known = cur.model.motes
-            fitted = fit_model(pool.pooled(pool.order), odd, even, known, block, cur.model.epoch)
-            new = [m for m in fitted.motes
-                   if not any(abs(k.x - m.x) < 3 * block and abs(k.y - m.y) < 3 * block for k in known)]
+            # a landing: a mote the frozen model lacks that a refit ADMITS (in
+            # both halves, split error under half its depth), on the whole
+            # epoch or on its newest pointings alone; placed at the run of
+            # this filter it appeared on, and the epoch splits there for the rig
+            last_check[f] = i
+            known = cur.models[f].motes
+            found = list(fit_model(pool.pooled(pool.order), *pool.halves(), known, block, cur.models[f].epoch).motes)
+            tail = pool.order[-TRAILING:]
+            if 2 <= len(tail) < len(pool.order):
+                found += fit_model(pool.pooled(tail), pool.pooled(tail[0::2]), pool.pooled(tail[1::2]),
+                                   known, block, cur.models[f].epoch).motes
+            new = [m for m in found if not any(_near(m, k, block) for k in known)]
             if new:
                 mote = new[0]
-                j = _landing_index(dips, cur.runs, mote, block)
-                log.info("dust epoch boundary: mote landed", system=system, at=runs[j].run[:8], date=str(runs[j].date),
-                         mote=(mote.x, mote.y, round(mote.depth, 4)), epoch=cur.model.epoch)
-                if j == cur.start:
-                    cur.final = False          # it was always there: the epoch refits itself
-                    refit()
+                f_runs = cur.filter_runs(runs, f)
+                j = _landing_index(dips, f_runs, mote, block)
+                log.info("dust epoch boundary: mote landed", rig=rig, filter=f, at=runs[j].run[:8], date=str(runs[j].date),
+                         mote=(mote.x, mote.y, round(mote.depth, 4)), epoch=cur.models[f].epoch)
+                if j == f_runs[0]:
+                    cur.final[f] = False       # it was always there: this filter refits
+                    refit(f)
                 else:
+                    survivors = {g: cur.models[g].motes for g in filters}
                     cur.runs = [k for k in cur.runs if k < j]
+                    propagate()
                     epochs.append(cur)
-                    open_epoch(j, known)
+                    open_epoch(j, survivors)
                     i = j                      # replay the runs from the landing into the new epoch
                     continue
         i += 1
     if cur is not None:
+        propagate()
         epochs.append(cur)
     return epochs
 

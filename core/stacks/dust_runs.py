@@ -120,11 +120,11 @@ def _focal_length_of(stack) -> float | None:
 
 
 def rigs(stacks) -> dict[str, dict]:
-    """The light stacks' runs by rig and filter: `{system: {"rig": {...},
-    "filter": f, "runs": [Run, ...]}}` with `system` = `<camera>@<focal>/<filter>`.
-    A rig is the camera identity (defect fingerprint, else sensor geometry)
-    at a focal-length cluster (2 %, single-link — one 350 mm rig reports
-    346-352)."""
+    """The light stacks' runs by rig: `{"<camera>@<focal>": {"rig": Rig,
+    "runs": [(filter, Run), ...]}}`. A rig is the camera identity (defect
+    fingerprint, else sensor geometry) at a focal-length cluster (2 %,
+    single-link — one 350 mm rig reports 346-352); the filter rides with
+    each run, by role ("OIII" and "O" are one filter)."""
     by_cam: dict[str, list] = defaultdict(list)
     for stack in stacks:
         if getattr(stack, "image_type", "light") != "light":
@@ -141,20 +141,17 @@ def rigs(stacks) -> dict[str, dict]:
             focal = int(round(float(np.median([items[i][0] for i in idx]))))
             for i in idx:
                 stack = items[i][1]
-                # by ROLE ("OIII" and "O" are one filter), raw when unknown
                 filt = normalize_filter(stack.filter) or str(stack.filter or "").strip()
-                system = f"{cam[:8]}@{focal}/{filt}"
-                entry = out.setdefault(system, {
-                    "rig": Rig(cam[:8], stack.camera, focal, stack.width_pixels, stack.height_pixels),
-                    "filter": filt, "runs": []})
-                entry["runs"].extend(stack.contents.values())
-                labels[f"{cam[:8]}@{focal}"][str(stack.camera)] += 1
-    for system, entry in out.items():
+                key = f"{cam[:8]}@{focal}"
+                entry = out.setdefault(key, {
+                    "rig": Rig(cam[:8], stack.camera, focal, stack.width_pixels, stack.height_pixels), "runs": []})
+                entry["runs"].extend((filt, r) for r in stack.contents.values())
+                labels[key][str(stack.camera)] += 1
+    for key, entry in out.items():
         # one label per rig — the commonest INSTRUME wording of its stacks
         # (a driver reports "ASI Camera (1)" on some nights)
         rig = entry["rig"]
-        entry["rig"] = Rig(rig.camera_id, labels[f"{rig.camera_id}@{rig.focal_length}"].most_common(1)[0][0],
-                           rig.focal_length, rig.width, rig.height)
+        entry["rig"] = Rig(rig.camera_id, labels[key].most_common(1)[0][0], rig.focal_length, rig.width, rig.height)
     return out
 
 
@@ -214,29 +211,41 @@ def measure_dust_run(run: Run) -> WithSidecar[FitsFilePath]:
 
 
 # ------------------------------------------------------------------ fold
-def _report(system: str, rig: Rig, filt: str, runs: tuple, epochs: list[Epoch]) -> dict:
-    return {"system": system, "rig": asdict(rig), "filter": filt, "runs": len(runs),
-            "epochs": [{"from": _utc(runs[e.runs[0]].oldest_date).isoformat(),
-                        "to": _utc(runs[e.runs[-1]].newest_date).isoformat(),
-                        "runs": len(e.runs), "pointings": e.pointings, "model": e.model.summary()}
-                       for e in epochs]}
+def _report(key: str, rig: Rig, filters: tuple, runs: tuple, epochs: list[Epoch]) -> tuple:
+    """One row per filter of the rig: the rig's epochs this filter has runs
+    in, each with the filter's model — the Rigs page's timeline."""
+    rows = []
+    for f in sorted(set(filters)):
+        mine = [i for i, g in enumerate(filters) if g == f]
+        eps = []
+        for e in epochs:
+            idx = [i for i in e.runs if filters[i] == f]
+            if not idx:
+                continue
+            eps.append({"from": _utc(runs[idx[0]].oldest_date).isoformat(),
+                        "to": _utc(runs[idx[-1]].newest_date).isoformat(),
+                        "runs": len(idx), "pointings": e.pointings.get(f, 0), "model": e.models[f].summary()})
+        rows.append({"system": f"{key}/{f}", "rig": asdict(rig), "filter": f, "runs": len(mine), "epochs": eps})
+    return tuple(rows)
 
 
 @node(num_cpus=2, resources={"diskcache": 0.001})
-def dust_epochs(system: str, rig: Rig, filt: str, runs: tuple, *maps: ImageMetadata) -> DustEpochs:
-    """The epochs of one rig and filter from its runs' maps (`runs` and
+def dust_epochs(key: str, rig: Rig, filters: tuple, runs: tuple, *maps: ImageMetadata) -> DustEpochs:
+    """The epochs of one rig from its runs' maps (`filters`, `runs` and
     `maps` in the same date order). A pure fold, recomputed whole on every
     pass: a closed epoch's model comes out identical whatever follows it."""
-    assert len(runs) == len(maps), (len(runs), len(maps))
+    assert len(runs) == len(maps) == len(filters), (len(runs), len(maps), len(filters))
     run_maps = [RunMap(run=r.content_hash, date=_utc(r.oldest_date), centre=tuple(float(c) for c in r.center),
-                       n_subs=len(r.frames), map=np.asarray(read_image(Path(m.filename)), np.float32).squeeze())
-                for r, m in zip(runs, maps)]
-    epochs = fold(system, run_maps, BLOCK)
-    model_of_run = {runs[i].content_hash: e.model for e in epochs for i in e.runs}
-    run_of_frame = {f: r.content_hash for r in runs for f in r.frames}
-    report = _report(system, rig, filt, runs, epochs)
-    log.info("dust epochs folded", **report)
-    return DustEpochs.of(model_of_run, run_of_frame, (report,))
+                       n_subs=len(r.frames), map=np.asarray(read_image(Path(m.filename)), np.float32).squeeze(),
+                       filter=f)
+                for r, m, f in zip(runs, maps, filters)]
+    epochs = fold(key, run_maps, BLOCK)
+    model_of_run = {runs[i].content_hash: e.models[filters[i]] for e in epochs for i in e.runs}
+    run_of_frame = {fr: r.content_hash for r in runs for fr in r.frames}
+    report = _report(key, rig, filters, runs, epochs)
+    for row in report:
+        log.info("dust epochs folded", **row)
+    return DustEpochs.of(model_of_run, run_of_frame, report)
 
 
 @node
@@ -250,22 +259,24 @@ def merge_dust_epochs(*tables: DustEpochs) -> DustEpochs:
 
 
 def dust_graph(stacks) -> Graph:
-    """One measurement per run, one fold per rig and filter (its runs in
-    date order, the value-consuming collector's deps in the same order),
+    """One measurement per run, one fold per rig (its runs of every filter
+    in date order, the value-consuming collector's deps in the same order),
     merged into one table."""
     graph = Graph({})
     collectors = []
     groups = rigs(stacks)
-    for system in sorted(groups):
-        g = groups[system]
-        ordered = tuple(sorted(g["runs"], key=lambda r: (_utc(r.oldest_date), r.content_hash)))
-        measures = [(measure_dust_run, r) for r in ordered]
+    for key in sorted(groups):
+        g = groups[key]
+        ordered = sorted(g["runs"], key=lambda fr: (_utc(fr[1].oldest_date), fr[1].content_hash))
+        runs = tuple(r for _, r in ordered)
+        filters = tuple(f for f, _ in ordered)
+        measures = [(measure_dust_run, r) for r in runs]
         for m in measures:
             graph[m] = {}
-        collector = (dust_epochs, system, g["rig"], g["filter"], ordered)
+        collector = (dust_epochs, key, g["rig"], filters, runs)
         graph[collector] = measures
         collectors.append(collector)
-    log.info("dust runs scattered", systems=len(groups), runs=sum(len(g["runs"]) for g in groups.values()))
+    log.info("dust runs scattered", rigs=len(groups), runs=sum(len(g["runs"]) for g in groups.values()))
     graph[merge_dust_epochs] = collectors
     return graph
 

@@ -39,20 +39,20 @@ def test_rigs_are_camera_and_focal_cluster_per_filter():
     stacks = [_stack("a"), _stack("b", focal=349.0), _stack("c", filt="O"), _stack("d", focal=1230.0),
               _stack("e", cam="19ea9805aaaa"), _stack("f", image_type="dark"), _stack("g", cam=None)]
     out = rigs(stacks)
-    assert sorted(out) == ["19ea9805@351/H", "3a15ec99@1230/H", "3a15ec99@351/H", "3a15ec99@351/O", "9576x638@351/H"]
-    h = out["3a15ec99@351/H"]
-    assert sorted(r.content_hash for r in h["runs"]) == ["ar0", "ar1", "br0", "br1"]     # 351 and 349 are one rig
-    assert h["rig"] == Rig("3a15ec99", "ZWO ASI6200MM Pro", 351, 9576, 6388)
-    assert out["3a15ec99@351/O"]["filter"] == "O"
+    assert sorted(out) == ["19ea9805@351", "3a15ec99@1230", "3a15ec99@351", "9576x638@351"]
+    rc = out["3a15ec99@351"]
+    assert sorted((f, r.content_hash) for f, r in rc["runs"]) == [
+        ("H", "ar0"), ("H", "ar1"), ("H", "br0"), ("H", "br1"), ("O", "cr0"), ("O", "cr1")]   # 351 and 349 are one rig
+    assert rc["rig"] == Rig("3a15ec99", "ZWO ASI6200MM Pro", 351, 9576, 6388)
 
 
-def test_filters_are_grouped_by_role_and_the_rig_label_is_the_commonest():
+def test_filters_are_by_role_and_the_rig_label_is_the_commonest():
     stacks = [_stack("a", filt="OIII"), _stack("b", filt="O"), _stack("c", filt="Ha")]
     stacks[2].camera = "ASI Camera (1)"
-    out = rigs(stacks)
-    assert sorted(out) == ["3a15ec99@351/H", "3a15ec99@351/O"]
-    assert len(out["3a15ec99@351/O"]["runs"]) == 4
-    assert out["3a15ec99@351/H"]["rig"].camera == "ZWO ASI6200MM Pro"
+    (rig,) = rigs(stacks).values()
+    assert sorted({f for f, _ in rig["runs"]}) == ["H", "O"]
+    assert sum(1 for f, _ in rig["runs"] if f == "O") == 4
+    assert rig["rig"].camera == "ZWO ASI6200MM Pro"
 
 
 def test_the_dust_graph_keys_are_hashable_and_runs_are_in_date_order():
@@ -63,10 +63,11 @@ def test_the_dust_graph_keys_are_hashable_and_runs_are_in_date_order():
     keys = list(graph)
     assert all(hash(k) is not None for k in keys)
     folds = [k for k in keys if isinstance(k, tuple) and k[0] is dust_epochs]
-    assert sorted(k[1] for k in folds) == ["3a15ec99@351/H", "3a15ec99@351/O"]
-    runs = next(k for k in folds if k[1] == "3a15ec99@351/H")[4]
-    assert [r.content_hash for r in runs] == ["ar0", "ar1"]
-    assert [k[1].content_hash for k in graph[next(k for k in folds if k[1] == "3a15ec99@351/H")]] == ["ar0", "ar1"]
+    assert [k[1] for k in folds] == ["3a15ec99@351"]
+    (fold_key,) = folds
+    assert fold_key[3] == ("H", "O", "H", "O")                      # filters ride with the runs, in date order
+    assert [r.content_hash for r in fold_key[4]] == ["ar0", "br0", "ar1", "br1"]
+    assert [k[1].content_hash for k in graph[fold_key]] == ["ar0", "br0", "ar1", "br1"]
     assert sum(1 for k in keys if isinstance(k, tuple) and k[0] is measure_dust_run) == 4
     assert merge_dust_epochs in keys
 
