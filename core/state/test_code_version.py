@@ -131,6 +131,16 @@ def test_deployed_code_version_is_the_working_tree_hash(repo, monkeypatch):
     assert deployed_code_version() == working_tree_version(repo)
 
 
+def test_deployed_code_version_prefers_the_version_the_head_shipped(repo, monkeypatch):
+    """A Ray worker runs from Ray's packaged copy of the tree (no .git) and
+    must key snapshots exactly as the head does: the shipped value wins."""
+    import base_path
+    monkeypatch.setattr(base_path, "get_base_path", lambda: str(repo))
+    monkeypatch.setattr(cv, "_deployed_version_cache", None)
+    monkeypatch.setenv(cv.CODE_VERSION_ENV, "wt:shipped-by-the-head")
+    assert deployed_code_version() == "wt:shipped-by-the-head"
+
+
 def test_deployed_code_version_caches_per_process(repo, monkeypatch):
     import base_path
     monkeypatch.setattr(base_path, "get_base_path", lambda: str(repo))

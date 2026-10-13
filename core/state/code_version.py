@@ -25,6 +25,7 @@ Versions:
     worker refuses loudly, which is the point.
 """
 import hashlib
+import os
 import subprocess
 from pathlib import Path
 
@@ -165,26 +166,37 @@ def require_clean_and_pushed(repo: Path) -> tuple[bool, str]:
 
 
 _deployed_version_cache: "str | None" = None
+CODE_VERSION_ENV = "ASTROFLOW_CODE_VERSION"   # the head ships its version to every Ray worker
 
 
 def deployed_code_version() -> str:
-    """The code version this process is executing — folded into the pipeline
+    """The code version this CLUSTER is executing — folded into the pipeline
     trace / tap-snapshot cache keys so that editing ANY op or helper a
     pipeline calls re-derives the trace (see
     `trace_paths.pipeline_source_version`).
 
-    Always the WORKING-TREE hash: it changes on any deployable edit (a strict
-    superset of committed-SHA invalidation) and is identical across the
-    cluster whenever the join fence holds (equal trees hash equal). Computed
-    once per process; a mid-run edit re-keys only processes spawned after it —
-    which is the mixed-code hazard the fence exists to make loud, not
-    something to paper over.
+    The head computes it once, as the WORKING-TREE hash of its checkout (it
+    changes on any deployable edit, a strict superset of committed-SHA
+    invalidation), and ships it to every Ray worker in the job's runtime env
+    (`CODE_VERSION_ENV`, `ray_infra.ray_init`). A worker must not hash its
+    own view: a remote node runs tasks from Ray's packaged copy of the tree,
+    which has no `.git` and hashes to "" — so a graph builder that landed on
+    the MacBook filed every tap snapshot under a key the head's web never
+    computed, and every mosaic page read "nothing produced" (2026-10-12,
+    boots 177-178). Computed once per process; a mid-run edit re-keys only
+    processes spawned after it — the mixed-code hazard the fence exists to
+    make loud, not something to paper over.
 
-    Returns "" when the checkout isn't a git repo (bundles, bare test dirs) —
-    trace keys then simply lose their code-version component, as before.
+    Without the shipped value: "" when the checkout isn't a git repo
+    (bundles, bare test dirs) — trace keys then simply lose their
+    code-version component.
     """
     global _deployed_version_cache
     if _deployed_version_cache is None:
+        shipped = os.environ.get(CODE_VERSION_ENV)
+        if shipped is not None:
+            _deployed_version_cache = shipped
+            return shipped
         try:
             from base_path import get_base_path
             _deployed_version_cache = working_tree_version(

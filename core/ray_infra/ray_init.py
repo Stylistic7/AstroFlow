@@ -39,13 +39,17 @@ def connect_to_ray_cluster(create_orchestrator_actors: bool = True):
         working_dir = get_ray_working_dir()
         print(f"### calling ray.init() with working_dir {working_dir}")
 
-        from state.code_version import RAY_WORKING_DIR_EXCLUDES
+        from state.code_version import CODE_VERSION_ENV, RAY_WORKING_DIR_EXCLUDES, deployed_code_version
 
         ray_context = ray.init(
             address="auto",
             namespace="AstroFlow",
             runtime_env={
                 "working_dir": working_dir,
+                # One code version for the whole job: a remote worker runs
+                # from Ray's packaged copy (no .git) and would hash its own
+                # tree to "", keying trace/tap snapshots the head can't read.
+                "env_vars": {CODE_VERSION_ENV: deployed_code_version()},
                 # web_server/backend Python is needed at runtime (the
                 # announcer is imported by status callbacks inside
                 # actors). We only want to skip the heavy artifacts:
