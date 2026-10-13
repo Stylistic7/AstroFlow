@@ -22,23 +22,26 @@ from stacks.sky_flat import (
 H, W = 600, 900
 
 
-def _pattern(seed=3, amp=0.02, sigma=45):
+def _pattern(seed=3, amp=0.02, sigma=150):
     """A smooth sensor-fixed ripple, unit-normalised, mean 0.
 
     `sigma` is the etalon's own scale — broad, smooth blobs, not fine
     structure — so the synthetic sensor prints something the combine can
-    actually recover from dithered frames."""
+    actually recover from dithered frames. 150 px: the real OIII flat's
+    fringes are ~1000 px, and what it holds at mote scales (< 100 px) is
+    ~0.1 %; a 2 % pattern at 45 px would be mote-sized dips the dust
+    cleaner is right to take out (2026-10-13)."""
     from scipy.ndimage import gaussian_filter
     rng = np.random.default_rng(seed)
     f = gaussian_filter(rng.standard_normal((H, W)), sigma)
     return amp * (f - f.mean()) / f.std()
 
 
-def _response(seed=4):
+def _response(seed=4, depth=0.18):
     """Vignetting: a smooth bowl, median 1."""
     yy, xx = np.mgrid[:H, :W]
     r = ((xx - W/2)/(W/2))**2 + ((yy - H/2)/(H/2))**2
-    v = 1.0 - 0.18*r
+    v = 1.0 - depth*r
     return v / np.median(v)
 
 
@@ -303,3 +306,58 @@ def test_the_producer_takes_no_flat():
     assert "flat" not in inspect.signature(combine_sky_flat).parameters
     inner = getattr(build_sky_flat, "__wrapped__", build_sky_flat)
     assert "flat" not in inspect.signature(inner).parameters
+
+
+
+def _mote(shape, x, y, r, depth):
+    """A sharp multiplicative shadow with a soft 3 px rim."""
+    from scipy.ndimage import gaussian_filter
+    yy, xx = np.mgrid[:shape[0], :shape[1]]
+    disk = (((xx - x) ** 2 + (yy - y) ** 2) <= r * r).astype(np.float64)
+    return 1.0 - depth * gaussian_filter(disk, 1.5)
+
+
+def _write(tmp_path, frames):
+    import astropy.io.fits as pf
+    paths = []
+    for i, f in enumerate(frames):
+        q = tmp_path / f"blank{i:03d}.fits"
+        pf.PrimaryHDU(f.astype(np.float32)).writeto(q)
+        paths.append(str(q))
+    return paths
+
+
+def test_the_flat_s_own_dust_motes_are_divided_out(tmp_path):
+    """Two motes printed on the synthetic sensor (4 % and 2 %, r 40 and 30 px)
+    on top of a broad pattern. The built flat reports both, carries neither,
+    and still recovers the pattern."""
+    rng = np.random.default_rng(1)
+    # the sensor pattern's mote-scale content: the real OIII flat holds 0.1 %
+    # at these scales once its broad fringes are divided out (2026-10-13)
+    g = _pattern(amp=0.005, sigma=300)      # on a 112-block frame this is the real fringes' ~1000 px
+    motes = [(300, 200, 40, 0.04), (650, 420, 30, 0.02)]
+    shadow = np.ones((H, W))
+    for x, y, r, depth in motes:
+        shadow *= _mote((H, W), x, y, r, depth)
+    # no vignetting here: at 112 blocks across, any bowl is many times
+    # steeper per block than the real sensor's, and this test is about dust
+    frames = _blank_sky(rng, g, shadow, a=1.0)
+    flat, q = combine_sky_flat(_write(tmp_path, frames), np.full((H, W), 500.0))
+    assert len(q["motes"]) == 2, q["motes"]
+    for x, y, r, depth in motes:
+        m = min(q["motes"], key=lambda m: (m["x"] - x) ** 2 + (m["y"] - y) ** 2)
+        assert abs(m["x"] - x) < 12 and abs(m["y"] - y) < 12, (m, (x, y))
+        yy, xx = np.ogrid[:H, :W]
+        inside = ((xx - x) ** 2 + (yy - y) ** 2) <= (0.6 * r) ** 2
+        ring = (((xx - x) ** 2 + (yy - y) ** 2) > (1.6 * r) ** 2) & (((xx - x) ** 2 + (yy - y) ** 2) <= (2.2 * r) ** 2)
+        left = float(np.mean(1 + flat[ring]) - np.mean(1 + flat[inside]))
+        assert abs(left) < 0.004, f"{depth:.0%} mote at {(x, y)} leaves {left:+.2%}"
+    r = np.corrcoef(flat.ravel(), g.ravel())[0, 1]
+    assert r > 0.95, f"pattern still recovered: {r:.3f}"
+
+
+def test_a_clean_flat_reports_no_motes(tmp_path):
+    rng = np.random.default_rng(2)
+    frames = _blank_sky(rng, _pattern(amp=0.005, sigma=300), _response(depth=0.04), a=1.0)
+    _, q = combine_sky_flat(_write(tmp_path, frames), np.full((H, W), 500.0))
+    assert q["motes"] == []

@@ -343,6 +343,11 @@ def combine_sky_flat(
     the vignetting it exists to measure. Per-frame sky gradients are
     suppressed by dither and rotation diversity instead.
 
+    4. Divide out the flat's own DUST MOTES (`stacks.flat_motes`): a few
+         round, compact, significant dips. The flat is reused across epochs;
+         its dust is not. Real panel/twilight flats are never cleaned — their
+         dust is supposed to be there.
+
     Then resample back to full resolution. The map carries no detail finer
     than a block by construction, so the upsample invents nothing — it
     restores the grid the map has to be subtracted on. Working small is the
@@ -398,6 +403,19 @@ def combine_sky_flat(
     small = median_filter(small, size=MEDIAN_FOOTPRINT)   # light residual cleanup
     small = small / float(np.nanmedian(small)) - 1.0
 
+    # The flat's own dust goes: a night-sky flat is shot once and reused
+    # across epochs, and its motes would print into later lights as bright
+    # inverse motes. The etalon and vignetting stay exact; each epoch's dust
+    # is the lights' business (the mote map). Done here, at block
+    # resolution, because the upsample below invents the lattice a model
+    # fitted at full resolution would imprint.
+    from stacks.flat_motes import divide_motes, find_motes
+    flat_b = 1.0 + small
+    motes = find_motes(flat_b, BLOCK)
+    if motes:
+        flat_b = divide_motes(flat_b, motes, BLOCK)
+        small = flat_b / float(np.nanmedian(flat_b)) - 1.0
+
     # back to the grid the map is subtracted on; order 1 is enough for a map
     # that holds nothing finer than a block
     full = zoom(small, (shape[0] / small.shape[0], shape[1] / small.shape[1]), order=1)
@@ -416,6 +434,7 @@ def combine_sky_flat(
         "object_pad": OBJECT_PAD,
         "combine": "masked-median-across-frames",
         "dark_subtracted": dark is not None,
+        "motes": motes,      # the flat's own dust, divided out (full-res px)
     }
     return fringe.astype(np.float32), quality
 
