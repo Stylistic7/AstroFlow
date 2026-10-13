@@ -218,6 +218,8 @@ def fit_model(pooled: np.ndarray, odd: np.ndarray | None, even: np.ndarray | Non
             continue
         if any(presence(d, s, mote, block) < 0 for d, s in dips):
             continue
+        if any(abs(a.x - mote.x) < 3 * block and abs(a.y - mote.y) < 3 * block for a in admitted):
+            continue              # a detector hit and a survivor centroid onto the same mote
         err = _split_error(odd, even, mote, block)
         errors.append(err)        # a candidate still too noisy to admit also holds the epoch open
         if err >= mote.depth / 2:
@@ -325,7 +327,10 @@ def fold(system: str, runs: list[RunMap], block: int) -> list[Epoch]:
     i = 0
     while i < len(runs):
         run = runs[i]
-        if cur is not None and cur.model.motes:
+        # only a FINAL model's motes can vanish: a provisional one is still
+        # being refitted, and its marginal motes come and go with the noise
+        # (the FLT156 R row split into a dozen one-run epochs without this)
+        if cur is not None and cur.final and cur.model.motes:
             gone = [m for m in cur.model.motes if score(i, m) < 0]
             if gone:
                 survivors = tuple(m for m in cur.model.motes if score(i, m) > 0)
