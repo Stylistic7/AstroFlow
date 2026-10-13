@@ -118,3 +118,11 @@ def test_the_measurement_node_is_a_file_producer():
     measurement failed on the first deploy (boot181)."""
     from stacks.dust_runs import measure_dust_run
     assert hasattr(measure_dust_run, "filename_fn")
+
+
+def test_a_run_hashes_by_its_content_hash():
+    """A measurement task is keyed by its Run; the dataclass must not have
+    replaced BaseRun's content-hash __hash__ with a field-wise one (boot184:
+    "unhashable type: 'dict'" from the run's frozendict fields)."""
+    from stacks.run import BaseRun, Run
+    assert Run.__hash__ is BaseRun.__hash__

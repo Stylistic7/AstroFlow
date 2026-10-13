@@ -48,7 +48,11 @@ CalibrationRun = BaseRun
 @dataclass(frozen=True)
 class Run(BaseRun, AstrometricAttributes):
     """A run of light frames — includes astrometry from plate solutions."""
-    pass
+    # `@dataclass(frozen=True)` would generate a field-wise __hash__ here and
+    # override BaseRun's — and a Run's fields are not hashable (boot184: a
+    # measurement task keyed by its Run raised "unhashable type: 'dict'").
+    # A Run's identity is its content hash, like every other entity.
+    __hash__ = BaseRun.__hash__
 
 
 class RunsDict(dict[str, BaseRun]):
