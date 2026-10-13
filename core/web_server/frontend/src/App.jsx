@@ -26,6 +26,7 @@ import PerformanceExplorer from './PerformanceExplorer.jsx';
 import { FolderProvider } from './FolderContext';
 import constellationPolylines from './constellationPolylines.json';
 import PlannerPanel from './planner/PlannerPanel.jsx';
+import RigsPanel from './RigsPanel.jsx';
 
 function App() {
   const isPageVisible = usePageVisibility();
@@ -457,6 +458,11 @@ function App() {
                 <Route path="/planner" element={
                   <AppLayout>
                     <PlannerPanel />
+                  </AppLayout>
+                } />
+                <Route path="/rigs" element={
+                  <AppLayout>
+                    <RigsPanel />
                   </AppLayout>
                 } />
                 <Route path="/recent" element={

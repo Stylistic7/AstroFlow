@@ -13,6 +13,7 @@ import ScheduleIcon from '@mui/icons-material/Schedule';
 import NightsStayIcon from '@mui/icons-material/NightsStay';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import PaletteIcon from '@mui/icons-material/Palette';
+import CameraAltIcon from '@mui/icons-material/CameraAlt';
 
 
 export default function LeftDrawer() {
@@ -80,6 +81,14 @@ export default function LeftDrawer() {
                   <PaletteIcon />
                 </ListItemIcon>
                 <ListItemText primary="Finishes" />
+              </ListItemButton>
+            </ListItem>
+            <ListItem key="rigs" disablePadding>
+              <ListItemButton onClick={() => navigate('/rigs')}>
+                <ListItemIcon>
+                  <CameraAltIcon />
+                </ListItemIcon>
+                <ListItemText primary="Rigs" />
               </ListItemButton>
             </ListItem>
           </List>
