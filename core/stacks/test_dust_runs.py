@@ -63,11 +63,10 @@ def test_the_dust_graph_keys_are_hashable_and_runs_are_in_date_order():
     keys = list(graph)
     assert all(hash(k) is not None for k in keys)
     folds = [k for k in keys if isinstance(k, tuple) and k[0] is dust_epochs]
-    assert [k[1] for k in folds] == ["3a15ec99@351"]
-    (fold_key,) = folds
-    assert fold_key[3] == ("H", "O", "H", "O")                      # filters ride with the runs, in date order
-    assert [r.content_hash for r in fold_key[4]] == ["ar0", "br0", "ar1", "br1"]
-    assert [k[1].content_hash for k in graph[fold_key]] == ["ar0", "br0", "ar1", "br1"]
+    assert [k[1] for k in folds] == ["3a15ec99@351/H", "3a15ec99@351/O"]     # one fold per rig AND filter
+    h = next(k for k in folds if k[1].endswith("/H"))
+    assert h[3] == "H" and [r.content_hash for r in h[4]] == ["ar0", "ar1"]
+    assert [k[1].content_hash for k in graph[h]] == ["ar0", "ar1"]
     assert sum(1 for k in keys if isinstance(k, tuple) and k[0] is measure_dust_run) == 4
     assert merge_dust_epochs in keys
 
