@@ -108,6 +108,7 @@ class Epoch:
     runs: list[int] = field(default_factory=list)
     model: MoteModel = field(default_factory=lambda: MoteModel.of(()))
     final: bool = False
+    pointings: int = 0
 
 
 # ------------------------------------------------------------------ geometry
@@ -323,6 +324,7 @@ def fold(system: str, runs: list[RunMap], block: int) -> list[Epoch]:
         cur.runs.append(i)
         new_pointing = pointings[i] not in pool.order
         pool.add(pointings[i], run.map)
+        cur.pointings = len(pool.order)
         # a landing check on a frozen epoch costs a pooled median and a
         # detection (~1 s): every run while the epoch is young, then every
         # tenth of its length, every new pointing, and always the newest run

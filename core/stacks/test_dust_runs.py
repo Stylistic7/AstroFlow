@@ -1,62 +1,42 @@
-"""Dust runs (`stacks/dust_runs.py`): the grouping of a library into
-(optical system, night, pointing) runs, and the measurement of one run's
-map from synthetic subs on disk."""
+"""Dust runs (`stacks/dust_runs.py`): the grouping of the identified
+stacks' runs into rigs and filters, and the measurement of one run's map
+from synthetic subs on disk."""
 from __future__ import annotations
 
 import datetime as _dt
-from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 from astropy.io import fits
 
-from metadata.classes import FrameHash, ImageMetadata, MetadataDict
-from plate_solving import PlateSolution
-from stacks.dust_runs import (
-    BLOCK, PEDESTAL_PER_OFFSET, DustEpochs, combine_dust_map, dust_runs,
-)
+from stacks.dust_runs import BLOCK, PEDESTAL_PER_OFFSET, DustEpochs, combine_dust_map, rigs
 from stacks.dust_epochs import MoteModel
 
 T0 = _dt.datetime(2026, 10, 1, 4, 0, 0)
 
 
-def _meta(i, *, centre=(10.0, 20.0), focal=351.0, when=None, w=960, h=640, solved=True, image_type="Light", filt="H"):
-    hdr = {"IMAGETYP": image_type, "FILTER": filt, "FOCALLEN": focal, "INSTRUME": "ZWO ASI6200MM Pro",
-           "NAXIS1": w, "NAXIS2": h, "BITPIX": 16, "EXPOSURE": 300.0, "OFFSET": 50,
-           "DATE-OBS": when if when is not None else T0 + _dt.timedelta(minutes=5 * i)}
-    ps = PlateSolution(header={}, num_stars=100, center=centre, image_scale=2.2, rotation_angle=0.0) if solved else None
-    return ImageMetadata(content_hash=f"f{i:04d}", stable_hash=f"f{i:04d}", filename=Path(f"/raw/L{i:04d}.fit"),
-                         header=hdr, width_pixels=w, height_pixels=h, channels=1, dtype=np.dtype("uint16"),
-                         plate_solution=ps)
+def _stack(name, *, cam="3a15ec99ffff", focal=351.0, filt="H", runs=2, image_type="light", w=9576, h=6388):
+    contents = {}
+    for i in range(runs):
+        meta = {f"{name}f{i}{j}": SimpleNamespace(header={"FOCALLEN": focal}) for j in range(3)}
+        contents[f"{name}r{i}"] = SimpleNamespace(content_hash=f"{name}r{i}", frames=tuple(meta), metadata=meta,
+                                                 oldest_date=T0 + _dt.timedelta(days=i), newest_date=T0 + _dt.timedelta(days=i, hours=1),
+                                                 center=(10.0 + i, 20.0))
+    return SimpleNamespace(camera_id_hash=cam, camera="ZWO ASI6200MM Pro", filter=filt, image_type=image_type,
+                           width_pixels=w, height_pixels=h, contents=contents)
 
 
-def _library(metas) -> MetadataDict:
-    return MetadataDict({FrameHash(m.content_hash): m for m in metas})
-
-
-def test_runs_split_by_system_night_and_pointing():
-    metas = [_meta(i) for i in range(6)]                                            # night 1, pointing A
-    metas += [_meta(10 + i, centre=(12.0, 20.0)) for i in range(4)]                 # night 1, pointing B
-    metas += [_meta(20 + i, when=T0 + _dt.timedelta(days=1, minutes=5 * i)) for i in range(5)]   # night 2, A
-    metas += [_meta(30 + i, focal=1230.0) for i in range(4)]                        # another train
-    metas += [_meta(40 + i, centre=(10.01, 20.01)) for i in range(2)]               # dithered A, too few alone
-    metas += [_meta(50, solved=False), _meta(51, image_type="Flat")]                # never
-    metas += [_meta(60 + i, filt="O") for i in range(3)]                            # night 1, A, another FILTER
-    runs = dust_runs(_library(metas), {})
-    by = sorted((r.system.split("@")[1], len(r.frames), r.date.day) for r in runs.values())
-    assert by == [("1230/H", 4, 1), ("351/H", 4, 1), ("351/H", 5, 2), ("351/H", 8, 1), ("351/O", 3, 1)]
-    a = next(r for r in runs.values() if len(r.frames) == 8)
-    assert set(a.frames) == {f"f{i:04d}" for i in range(6)} | {"f0040", "f0041"}   # the dithers join A
-    assert a.centre[0] == np.mean([10.0] * 6 + [10.01] * 2)
-
-
-def test_identity_is_the_frames_not_the_paths():
-    a = dust_runs(_library([_meta(i) for i in range(4)]), {})
-    moved = [replace(_meta(i), filename=Path("/elsewhere") / f"L{i:04d}.fit") for i in range(4)]
-    b = dust_runs(_library(moved), {})
-    assert next(iter(b.values())).files[0].startswith("/elsewhere/")
-    assert set(a) == set(b)
-    assert hash(next(iter(a.values()))) == hash(next(iter(b.values())))
+def test_rigs_are_camera_and_focal_cluster_per_filter():
+    stacks = [_stack("a"), _stack("b", focal=349.0), _stack("c", filt="O"), _stack("d", focal=1230.0),
+              _stack("e", cam="19ea9805aaaa"), _stack("f", image_type="dark"), _stack("g", cam=None)]
+    out = rigs(stacks)
+    assert sorted(out) == ["19ea9805@351/H", "3a15ec99@1230/H", "3a15ec99@351/H", "3a15ec99@351/O", "9576x638@351/H"]
+    h = out["3a15ec99@351/H"]
+    assert sorted(r.content_hash for r in h["runs"]) == ["ar0", "ar1", "br0", "br1"]     # 351 and 349 are one rig
+    assert h["rig"] == {"camera_id": "3a15ec99", "camera": "ZWO ASI6200MM Pro", "focal_length": 351,
+                        "width": 9576, "height": 6388}
+    assert out["3a15ec99@351/O"]["filter"] == "O"
 
 
 def _write_sub(path: Path, mote, seed, sky=2000.0, offset=50):

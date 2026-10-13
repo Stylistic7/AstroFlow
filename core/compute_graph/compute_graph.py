@@ -254,14 +254,7 @@ def scatter_spatial_groups(
     associate_cal_task = (associate_calibration_stacks, decision_overrides)
     graph[associate_cal_task] = {merge_star_flats_task}
 
-    # Dust-mote epochs per optical system, from the lights themselves
-    # (stacks/dust_runs.py): one cached map per night and pointing, folded
-    # per system, stored for `calibrate` and the stackers to look up.
-    from stacks.dust_runs import identify_dust_runs, scatter_dust_runs, store_dust_epochs
-    dust_runs_task = (identify_dust_runs, metadata_ref, fingerprint_map_ref)
-    graph[dust_runs_task] = {}
-    graph[scatter_dust_runs] = [dust_runs_task]
-    graph[store_dust_epochs] = {scatter_dust_runs}
+    from stacks.dust_runs import scatter_dust_runs, store_dust_epochs
 
     # ORDERED lists, not sets: these deps feed value-consuming nodes
     # (combine_dicts takes *ancestor_results), and dep order is part of the
@@ -300,6 +293,12 @@ def scatter_spatial_groups(
     gather_stacks_task = Node(combine_dicts, name="combine_stacks")
     graph[gather_stacks_task] = stack_tasks
     graph[store_stacks] = {gather_stacks_task}
+
+    # Dust-mote epochs per rig and filter, from the lights themselves
+    # (stacks/dust_runs.py): one cached map per RUN, folded per rig and
+    # filter, stored for `calibrate` and the stackers to look up.
+    graph[scatter_dust_runs] = [gather_stacks_task]
+    graph[store_dust_epochs] = {scatter_dust_runs}
 
     # Night-sky flats close the loop the other calibration types do not:
     # their source is a LIGHT stack the user promoted, so the calibration

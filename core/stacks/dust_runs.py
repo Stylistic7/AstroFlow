@@ -1,19 +1,20 @@
-"""Dust maps from the science frames: one per optical system, FILTER, night
-and pointing (a DUST RUN), measured once and cached for ever; folded into
-mote epochs per system and filter by `stacks/dust_epochs.py`.
-
-The filter is part of the system (Stylistic7, 2026-10-13): dust on the sensor
-window is common to every filter, dust on a filter is that filter's alone,
-and a map pooled over filters would hold a filter mote in a minority of its
-subs and lose it in the median. So each filter folds its own epochs — a
-sensor change shows as a boundary in every filter's fold, a filter change
-in one.
+"""Dust maps from the science frames: one per RUN (a stack's run — one
+night, one pointing, one filter), measured once and cached for ever, folded
+into mote epochs per RIG and filter by `stacks/dust_epochs.py`. A rig is a
+camera (its defect-fingerprint identity, as every stack uses) at a focal
+length (clustered within 2 %, as star flats do).
 
 Why the subs and not the flats (Stylistic7, 2026-10-13): flats are shot rarely
 and the dust moves with every reassembly, so the frames themselves are the
 only record of which motes each night saw. A mote is fixed in pixel
 coordinates while the sky is not: the temporal median of many flattened,
 star-masked subs keeps the dust and loses the sky.
+
+Per FILTER (Stylistic7): dust on the sensor window is common to every filter,
+dust on a filter is that filter's alone, and a map pooled over filters would
+hold a filter mote in a minority of its subs and lose it in the median. So
+each rig and filter folds its own epochs — a sensor change shows as a
+boundary in every filter's fold, a filter change in one.
 
 The pedestal is the camera's OFFSET: on both ZWO cameras here a master dark
 sits at exactly 10 x OFFSET ADU whatever the exposure (50 -> 501-502 ADU,
@@ -22,15 +23,14 @@ map depends on nothing but its own subs. A percentile pedestal sits above
 the bias and inflates every depth ~2x — the rule is a measurement, not a
 guess.
 
-Graph: `identify_dust_runs` (one node over the library) -> `scatter_dust_runs`
-(a builder: one `measure_dust_run` per run, one `dust_epochs` collector per
-system, `merge_dust_epochs`) -> `store_dust_epochs` into the context, where
+Graph: `scatter_dust_runs` (a builder over the identified stacks: one
+`measure_dust_run` per run, one `dust_epochs` collector per rig and filter,
+`merge_dust_epochs`) -> `store_dust_epochs` into the context, where
 `calibrate` and the stackers look each stack run up by its frames.
 """
 # NO `from __future__ import annotations`: the @node decorator reads the
 # return annotation to recognise a file PRODUCER (`WithSidecar[FitsFilePath]`
 # → filename_fn + the metadata wrap); as a string it is not one (boot181).
-import datetime as _dt
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -42,8 +42,6 @@ from astropy.io import fits
 from frozendict import frozendict
 from scipy import ndimage
 
-from cache.content_hashed import ContentHashed
-from cache.context_ref import ContextRef
 from clustering.quiesce import _utc
 from context import context
 from decorators import node
@@ -51,11 +49,10 @@ from dependency_graph import Graph
 from file_io.generic import read_image
 from file_io.sidecar import set_section
 from file_io.types import FitsFilePath, WithSidecar
-from hashing import hash_list, hash_list_int
-from metadata.classes import FrameHash, ImageMetadata, MetadataDict
-from metadata.image_types import is_light_frame, is_master
-from stacks.composite_stack import _camera_id_hash_from
+from hashing import hash_list
+from metadata.classes import ImageMetadata
 from stacks.dust_epochs import Epoch, MoteModel, RunMap, fold
+from stacks.run import Run
 from stacks.star_flat import _focal_clusters
 
 log = structlog.get_logger()
@@ -63,37 +60,14 @@ log = structlog.get_logger()
 BLOCK = 8                 # px per block: the map's resolution (the sky flat's too)
 FLATTEN_PX = 800.0        # a sub is divided by this broad smooth of itself first
 STAR_RATIO = 1.05         # above the smooth by this much is a star or nebula: masked
-MIN_SUBS = 3
-NIGHT_GAP = _dt.timedelta(hours=8)
 PEDESTAL_PER_OFFSET = 10.0
 SECTION = "dust_run"
 
 
-@dataclass(frozen=True, kw_only=True)
-class DustRun(ContentHashed):
-    """The lights of one optical system and filter on one night at one
-    pointing. Identity is the frames (`content_hash`); the paths ride along
-    to be read."""
-    system: str
-    frames: tuple[str, ...]
-    files: tuple[str, ...]
-    date: _dt.datetime
-    centre: tuple[float, float]
-    width_pixels: int
-    height_pixels: int
-
-    def __hash__(self) -> int:
-        return hash_list_int([self.content_hash])
-
-
-class DustRuns(dict[str, DustRun]):
-    def __hash__(self):
-        return hash_list_int([self[k].content_hash for k in sorted(self)])
-
-
 @dataclass(frozen=True)
 class DustEpochs:
-    """Every dust run's model, by run and by frame, for all optical systems."""
+    """Every run's model, by run and by frame, for all rigs and filters;
+    `report` is the fold's record per rig and filter (the UI's timeline)."""
     model_of_run: frozendict
     run_of_frame: frozendict
     report: tuple
@@ -109,85 +83,55 @@ class DustEpochs:
         return cls(frozendict(model_of_run), frozendict(run_of_frame), report, identity)
 
     def model_for(self, frames) -> MoteModel | None:
-        """The model of the dust run most of `frames` belong to, or None."""
+        """The model of the run most of `frames` belong to, or None."""
         runs = [self.run_of_frame[f] for f in frames if f in self.run_of_frame]
         if not runs:
             return None
         return self.model_of_run[max(set(runs), key=runs.count)]
 
 
-# ------------------------------------------------------------------ identify
-def _system_of(m: ImageMetadata, fingerprints: dict, h: str) -> str | None:
-    header = m.header
-    if not is_light_frame(header) or is_master(header) or m.plate_solution is None:
-        return None
-    try:
-        focal = float(header.get("FOCALLEN") or 0)
-    except (TypeError, ValueError):
-        return None
-    if focal <= 0:
-        return None
-    return _camera_id_hash_from(m, fingerprints.get(FrameHash(h), ())) or f"{m.width_pixels}x{m.height_pixels}"
+# ------------------------------------------------------------------ rigs
+def _focal_length_of(stack) -> float | None:
+    values = []
+    for run in stack.contents.values():
+        for m in run.metadata.values():
+            try:
+                values.append(float(m.header.get("FOCALLEN") or 0))
+            except (TypeError, ValueError):
+                pass
+    values = [v for v in values if v > 0]
+    return float(np.median(values)) if values else None
 
 
-def dust_runs(metadata: MetadataDict, fingerprints: dict) -> DustRuns:
-    """Lights grouped by optical system (camera identity x focal-length
-    cluster, as star flats are) and filter, then by night (an 8 h gap in
-    the capture times), then by pointing (`assign_pointings`' separation)."""
-    from stacks.dust_epochs import POINTING_SEP_DEG
-    by_cam: dict[tuple[str, str], list] = defaultdict(list)
-    for h, m in metadata.items():
-        cam = _system_of(m, fingerprints, h)
-        if cam is not None:
-            filt = str(m.header.get("FILTER", "") or "").strip()
-            by_cam[(cam, filt)].append((float(m.header["FOCALLEN"]), h, m))
-    out = DustRuns()
-    for (cam, filt), items in by_cam.items():
-        for idx in _focal_clusters([f for f, _, _ in items]):
-            members = sorted((items[i] for i in idx), key=lambda t: (_utc(t[2].header["DATE-OBS"]), t[1]))
-            system = f"{cam[:8]}@{int(round(np.median([f for f, _, _ in members])))}/{filt}"
-            nights: list[list] = []
-            for f, h, m in members:
-                if nights and _utc(m.header["DATE-OBS"]) - _utc(nights[-1][-1][2].header["DATE-OBS"]) <= NIGHT_GAP:
-                    nights[-1].append((f, h, m))
-                else:
-                    nights.append([(f, h, m)])
-            for night in nights:
-                pointings: list[list] = []
-                for f, h, m in night:
-                    ra, dec = m.plate_solution.center
-                    for p in pointings:
-                        ra0, dec0 = p[0][2].plate_solution.center
-                        dra = (ra - ra0 + 180.0) % 360.0 - 180.0
-                        if np.hypot(dra * np.cos(np.radians(dec0)), dec - dec0) < POINTING_SEP_DEG:
-                            p.append((f, h, m))
-                            break
-                    else:
-                        pointings.append([(f, h, m)])
-                for p in pointings:
-                    if len(p) < MIN_SUBS:
-                        continue
-                    frames = tuple(sorted(h for _, h, _ in p))
-                    first = p[0][2]
-                    run = DustRun(
-                        content_hash=hash_list(list(frames)), system=system, frames=frames,
-                        files=tuple(str(m.filename) for _, _, m in p), date=_utc(first.header["DATE-OBS"]),
-                        centre=(float(np.mean([m.plate_solution.center[0] for _, _, m in p])),
-                                float(np.mean([m.plate_solution.center[1] for _, _, m in p]))),
-                        width_pixels=first.width_pixels, height_pixels=first.height_pixels)
-                    out[run.content_hash] = run
+def rigs(stacks) -> dict[str, dict]:
+    """The light stacks' runs by rig and filter: `{system: {"rig": {...},
+    "filter": f, "runs": [Run, ...]}}` with `system` = `<camera>@<focal>/<filter>`.
+    A rig is the camera identity (defect fingerprint, else sensor geometry)
+    at a focal-length cluster (2 %, single-link — one 350 mm rig reports
+    346-352)."""
+    by_cam: dict[str, list] = defaultdict(list)
+    for stack in stacks:
+        if getattr(stack, "image_type", "light") != "light":
+            continue
+        focal = _focal_length_of(stack)
+        if focal is None:
+            continue
+        cam = stack.camera_id_hash or f"{stack.width_pixels}x{stack.height_pixels}"
+        by_cam[cam].append((focal, stack))
+    out: dict[str, dict] = {}
+    for cam, items in by_cam.items():
+        for idx in _focal_clusters([f for f, _ in items]):
+            focal = int(round(float(np.median([items[i][0] for i in idx]))))
+            for i in idx:
+                stack = items[i][1]
+                filt = str(stack.filter or "").strip()
+                system = f"{cam[:8]}@{focal}/{filt}"
+                entry = out.setdefault(system, {
+                    "rig": {"camera_id": cam[:8], "camera": stack.camera, "focal_length": focal,
+                            "width": stack.width_pixels, "height": stack.height_pixels},
+                    "filter": filt, "runs": []})
+                entry["runs"].extend(stack.contents.values())
     return out
-
-
-@node
-def identify_dust_runs(metadata_ref: ContextRef[MetadataDict], fingerprint_map_ref: ContextRef) -> DustRuns:
-    runs = dust_runs(metadata_ref.get(), fingerprint_map_ref.get())
-    systems = defaultdict(int)
-    for r in runs.values():
-        systems[r.system] += 1
-    log.info("dust runs identified", runs=len(runs), subs=sum(len(r.frames) for r in runs.values()),
-             systems=dict(systems))
-    return runs
 
 
 # ------------------------------------------------------------------ measure
@@ -218,27 +162,27 @@ def combine_dust_map(files, block: int = BLOCK) -> tuple[np.ndarray, int]:
 
 
 @node(num_cpus=1, resources={"diskcache": 0.001})
-def measure_dust_run(run: DustRun) -> WithSidecar[FitsFilePath]:
+def measure_dust_run(run: Run) -> WithSidecar[FitsFilePath]:
     """The dust map of one run: the temporal median of its flattened,
     star-masked subs at BLOCK resolution. Head-pinned like every reader of
     raw subs (a joining worker briefly reports existing files as missing)."""
-    missing = [f for f in run.files if not Path(f).exists()]
+    files = [str(m.filename) for m in run.metadata.values()]
+    missing = [f for f in files if not Path(f).exists()]
     if missing:
-        raise FileNotFoundError(f"{len(missing)} of {len(run.files)} subs unreadable here, e.g. {missing[0]}")
+        raise FileNotFoundError(f"{len(missing)} of {len(files)} subs unreadable here, e.g. {missing[0]}")
     dest = Path(measure_dust_run.filename_fn(run))
     dest.parent.mkdir(parents=True, exist_ok=True)
-    out, n = combine_dust_map(run.files)
+    out, n = combine_dust_map(files)
     hdu = fits.PrimaryHDU(data=out)
     hdu.header["IMAGETYP"] = "Dust Map"
-    hdu.header["DUSTSYS"] = run.system
     hdu.header["DUSTRUN"] = run.content_hash
-    hdu.header["DATE-OBS"] = run.date.isoformat()
+    hdu.header["DATE-OBS"] = _utc(run.oldest_date).isoformat()
     hdu.header["NSUBS"] = n
     hdu.header["BLOCK"] = BLOCK
-    hdu.header["DUSTRA"] = run.centre[0]
-    hdu.header["DUSTDEC"] = run.centre[1]
+    hdu.header["DUSTRA"] = float(run.center[0])
+    hdu.header["DUSTDEC"] = float(run.center[1])
     hdu.writeto(dest, overwrite=True)
-    quality = {"system": run.system, "n_subs": n, "date": run.date.isoformat(), "centre": list(run.centre),
+    quality = {"n_subs": n, "date": _utc(run.oldest_date).isoformat(), "centre": [float(c) for c in run.center],
                "block": BLOCK, "flat_rms": round(float(np.std(out)), 5)}
     set_section(dest, SECTION, quality)
     log.info("dust map measured", run=run.content_hash[:8], **quality)
@@ -246,25 +190,27 @@ def measure_dust_run(run: DustRun) -> WithSidecar[FitsFilePath]:
 
 
 # ------------------------------------------------------------------ fold
-def _report(system: str, runs: tuple[DustRun, ...], epochs: list[Epoch]) -> dict:
-    return {"system": system, "runs": len(runs),
-            "epochs": [{"from": runs[e.start].date.isoformat(), "runs": len(e.runs),
-                        "model": e.model.summary()} for e in epochs]}
+def _report(system: str, rig: dict, filt: str, runs: tuple, epochs: list[Epoch]) -> dict:
+    return {"system": system, "rig": rig, "filter": filt, "runs": len(runs),
+            "epochs": [{"from": _utc(runs[e.runs[0]].oldest_date).isoformat(),
+                        "to": _utc(runs[e.runs[-1]].newest_date).isoformat(),
+                        "runs": len(e.runs), "pointings": e.pointings, "model": e.model.summary()}
+                       for e in epochs]}
 
 
 @node(num_cpus=2, resources={"diskcache": 0.001})
-def dust_epochs(system: str, runs: tuple, *maps: ImageMetadata) -> DustEpochs:
-    """The epochs of one optical system from its runs' maps (`runs` and
+def dust_epochs(system: str, rig: dict, filt: str, runs: tuple, *maps: ImageMetadata) -> DustEpochs:
+    """The epochs of one rig and filter from its runs' maps (`runs` and
     `maps` in the same date order). A pure fold, recomputed whole on every
     pass: a closed epoch's model comes out identical whatever follows it."""
     assert len(runs) == len(maps), (len(runs), len(maps))
-    run_maps = [RunMap(run=r.content_hash, date=r.date, centre=r.centre, n_subs=len(r.frames),
-                       map=np.asarray(read_image(Path(m.filename)), np.float32).squeeze())
+    run_maps = [RunMap(run=r.content_hash, date=_utc(r.oldest_date), centre=tuple(float(c) for c in r.center),
+                       n_subs=len(r.frames), map=np.asarray(read_image(Path(m.filename)), np.float32).squeeze())
                 for r, m in zip(runs, maps)]
     epochs = fold(system, run_maps, BLOCK)
     model_of_run = {runs[i].content_hash: e.model for e in epochs for i in e.runs}
     run_of_frame = {f: r.content_hash for r in runs for f in r.frames}
-    report = _report(system, runs, epochs)
+    report = _report(system, rig, filt, runs, epochs)
     log.info("dust epochs folded", **report)
     return DustEpochs.of(model_of_run, run_of_frame, (report,))
 
@@ -280,23 +226,25 @@ def merge_dust_epochs(*tables: DustEpochs) -> DustEpochs:
 
 
 @ray.remote(num_cpus=0.1)
-def scatter_dust_runs(runs: DustRuns) -> Graph:
-    """One measurement per dust run, one fold per optical system (its runs
-    in date order, the value-consuming collector's deps in the same order),
-    merged into one table."""
-    by_system: dict[str, list[DustRun]] = defaultdict(list)
-    for r in runs.values():
-        by_system[r.system].append(r)
+def scatter_dust_runs(stacks: dict) -> Graph:
+    """One measurement per run, one fold per rig and filter (its runs in
+    date order, the value-consuming collector's deps in the same order),
+    merged into one table. `stacks` is the identified light stacks, their
+    values ContextRefs."""
+    resolved = [v.get() if hasattr(v, "get") else v for v in stacks.values()]
     graph = Graph({})
     collectors = []
-    for system in sorted(by_system):
-        ordered = tuple(sorted(by_system[system], key=lambda r: (r.date, r.content_hash)))
+    groups = rigs(resolved)
+    for system in sorted(groups):
+        g = groups[system]
+        ordered = tuple(sorted(g["runs"], key=lambda r: (_utc(r.oldest_date), r.content_hash)))
         measures = [(measure_dust_run, r) for r in ordered]
         for m in measures:
             graph[m] = {}
-        collector = (dust_epochs, system, ordered)
+        collector = (dust_epochs, system, g["rig"], g["filter"], ordered)
         graph[collector] = measures
         collectors.append(collector)
+    log.info("dust runs scattered", systems=len(groups), runs=sum(len(g["runs"]) for g in groups.values()))
     graph[merge_dust_epochs] = collectors
     return graph
 
