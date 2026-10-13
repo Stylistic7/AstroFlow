@@ -20,8 +20,8 @@ from stacks.dust_epochs import MoteModel
 T0 = _dt.datetime(2026, 10, 1, 4, 0, 0)
 
 
-def _meta(i, *, centre=(10.0, 20.0), focal=351.0, when=None, w=960, h=640, solved=True, image_type="Light"):
-    hdr = {"IMAGETYP": image_type, "FILTER": "H", "FOCALLEN": focal, "INSTRUME": "ZWO ASI6200MM Pro",
+def _meta(i, *, centre=(10.0, 20.0), focal=351.0, when=None, w=960, h=640, solved=True, image_type="Light", filt="H"):
+    hdr = {"IMAGETYP": image_type, "FILTER": filt, "FOCALLEN": focal, "INSTRUME": "ZWO ASI6200MM Pro",
            "NAXIS1": w, "NAXIS2": h, "BITPIX": 16, "EXPOSURE": 300.0, "OFFSET": 50,
            "DATE-OBS": when if when is not None else T0 + _dt.timedelta(minutes=5 * i)}
     ps = PlateSolution(header={}, num_stars=100, center=centre, image_scale=2.2, rotation_angle=0.0) if solved else None
@@ -41,9 +41,10 @@ def test_runs_split_by_system_night_and_pointing():
     metas += [_meta(30 + i, focal=1230.0) for i in range(4)]                        # another train
     metas += [_meta(40 + i, centre=(10.01, 20.01)) for i in range(2)]               # dithered A, too few alone
     metas += [_meta(50, solved=False), _meta(51, image_type="Flat")]                # never
+    metas += [_meta(60 + i, filt="O") for i in range(3)]                            # night 1, A, another FILTER
     runs = dust_runs(_library(metas), {})
     by = sorted((r.system.split("@")[1], len(r.frames), r.date.day) for r in runs.values())
-    assert by == [("1230", 4, 1), ("351", 4, 1), ("351", 5, 2), ("351", 8, 1)]
+    assert by == [("1230/H", 4, 1), ("351/H", 4, 1), ("351/H", 5, 2), ("351/H", 8, 1), ("351/O", 3, 1)]
     a = next(r for r in runs.values() if len(r.frames) == 8)
     assert set(a.frames) == {f"f{i:04d}" for i in range(6)} | {"f0040", "f0041"}   # the dithers join A
     assert a.centre[0] == np.mean([10.0] * 6 + [10.01] * 2)

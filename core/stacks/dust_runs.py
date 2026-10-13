@@ -1,6 +1,13 @@
-"""Dust maps from the science frames: one per optical system, night and
-pointing (a DUST RUN), measured once and cached for ever; folded into mote
-epochs per optical system by `stacks/dust_epochs.py`.
+"""Dust maps from the science frames: one per optical system, FILTER, night
+and pointing (a DUST RUN), measured once and cached for ever; folded into
+mote epochs per system and filter by `stacks/dust_epochs.py`.
+
+The filter is part of the system (Stylistic7, 2026-10-13): dust on the sensor
+window is common to every filter, dust on a filter is that filter's alone,
+and a map pooled over filters would hold a filter mote in a minority of its
+subs and lose it in the median. So each filter folds its own epochs — a
+sensor change shows as a boundary in every filter's fold, a filter change
+in one.
 
 Why the subs and not the flats (Stylistic7, 2026-10-13): flats are shot rarely
 and the dust moves with every reassembly, so the frames themselves are the
@@ -64,8 +71,9 @@ SECTION = "dust_run"
 
 @dataclass(frozen=True, kw_only=True)
 class DustRun(ContentHashed):
-    """The lights of one optical system on one night at one pointing.
-    Identity is the frames (`content_hash`); the paths ride along to be read."""
+    """The lights of one optical system and filter on one night at one
+    pointing. Identity is the frames (`content_hash`); the paths ride along
+    to be read."""
     system: str
     frames: tuple[str, ...]
     files: tuple[str, ...]
@@ -124,19 +132,20 @@ def _system_of(m: ImageMetadata, fingerprints: dict, h: str) -> str | None:
 
 def dust_runs(metadata: MetadataDict, fingerprints: dict) -> DustRuns:
     """Lights grouped by optical system (camera identity x focal-length
-    cluster, as star flats are), then by night (an 8 h gap in the capture
-    times), then by pointing (`assign_pointings`' separation)."""
+    cluster, as star flats are) and filter, then by night (an 8 h gap in
+    the capture times), then by pointing (`assign_pointings`' separation)."""
     from stacks.dust_epochs import POINTING_SEP_DEG
-    by_cam: dict[str, list] = defaultdict(list)
+    by_cam: dict[tuple[str, str], list] = defaultdict(list)
     for h, m in metadata.items():
         cam = _system_of(m, fingerprints, h)
         if cam is not None:
-            by_cam[cam].append((float(m.header["FOCALLEN"]), h, m))
+            filt = str(m.header.get("FILTER", "") or "").strip()
+            by_cam[(cam, filt)].append((float(m.header["FOCALLEN"]), h, m))
     out = DustRuns()
-    for cam, items in by_cam.items():
+    for (cam, filt), items in by_cam.items():
         for idx in _focal_clusters([f for f, _, _ in items]):
             members = sorted((items[i] for i in idx), key=lambda t: (_utc(t[2].header["DATE-OBS"]), t[1]))
-            system = f"{cam[:8]}@{int(round(np.median([f for f, _, _ in members])))}"
+            system = f"{cam[:8]}@{int(round(np.median([f for f, _, _ in members])))}/{filt}"
             nights: list[list] = []
             for f, h, m in members:
                 if nights and _utc(m.header["DATE-OBS"]) - _utc(nights[-1][-1][2].header["DATE-OBS"]) <= NIGHT_GAP:
