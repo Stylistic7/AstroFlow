@@ -162,7 +162,9 @@ def _shadow(flat_b: np.ndarray, x: float, y: float, r0: float) -> tuple[np.ndarr
     s1 = 1.0 - (prof * taper)[rb]
     resid = ndimage.gaussian_filter(1.0 - (patch / s1) / np.maximum(ref, 1e-6), 1.0)
     resid *= np.clip((ext + 0.3 * r0 - d) / max(0.3 * r0, 1.0), 0, 1)
-    return (s1 * (1.0 - resid)).astype(np.float32), bounds, ext, (cx, cy)
+    # never divide a flat by (nearly) nothing: a shadow this deep is not a
+    # mote a flat can carry (stacks/dust_epochs.MIN_SHADOW is the same floor)
+    return np.maximum(s1 * (1.0 - resid), 0.5).astype(np.float32), bounds, ext, (cx, cy)
 
 
 def divide_motes(flat_b: np.ndarray, motes: list[dict], block: int) -> np.ndarray:

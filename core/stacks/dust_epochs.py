@@ -48,6 +48,8 @@ POINTING_SEP_DEG = 0.25  # closer than this is the same pointing (dithers are ~0
 FLATTEN_PX = 256.0       # the detector's scale: what is smoother than this is sky, vignetting, etalon
 DECIDE_SIGMA = 4.0       # present/absent in a run only this far from the half-depth line
 STEP = 0.5               # profile radius step, blocks (what `radial_profile` fits at)
+MIN_SHADOW = 0.5         # a rendered shadow never falls below this: dividing by it gains at most
+                         # 2x; a mote darker than that is an occultation, not a correctable shadow
 MIN_SURVIVOR_DEPTH = 0.005
 
 
@@ -378,5 +380,5 @@ def render_motes(model: MoteModel, shape: tuple[int, int], block: int) -> np.nda
         yy, xx = np.mgrid[y0:y1, x0:x1]
         d = np.sqrt((xx - m.x) ** 2 + (yy - m.y) ** 2) / (STEP * block)
         p = np.interp(d, np.arange(len(m.profile)), m.profile, right=0.0)
-        out[y0:y1, x0:x1] *= (1.0 - p).astype(np.float32)
+        out[y0:y1, x0:x1] *= np.maximum(1.0 - p, MIN_SHADOW).astype(np.float32)
     return out

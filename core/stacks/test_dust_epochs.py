@@ -155,3 +155,13 @@ def test_the_rendered_map_divides_the_dust_out_of_a_light():
         inside = (xx - x) ** 2 + (yy - y) ** 2 <= (0.6 * r) ** 2
         assert abs(float(np.median(light[inside])) - (1 - depth)) < 0.01
         assert abs(float(np.median(corrected[inside])) - 1.0) < TOLERANCE, (x, y, float(np.median(corrected[inside])))
+
+
+def test_a_shadow_never_divides_by_nearly_nothing():
+    """A mote measured as 90 % deep renders a shadow floored at MIN_SHADOW:
+    the correction gains at most 2x, never the 10x a literal division would."""
+    from stacks.dust_epochs import MIN_SHADOW
+    deep = MoteModel.of((Mote(400.0, 300.0, 64.0, (0.9, 0.9, 0.9, 0.6, 0.2, 0.0)),))
+    M = render_motes(deep, (600, 800), BLOCK)
+    assert float(M.min()) == MIN_SHADOW
+    assert float((1.0 / M).max()) <= 1.0 / MIN_SHADOW + 1e-6
