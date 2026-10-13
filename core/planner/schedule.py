@@ -6,8 +6,11 @@ before the target reaches it; after T only targets already west of it.
 T = 0 or T = n means no flip at all. Every T is tried and the best plan
 kept, ties going to no flip (Stylistic7: flips are when cables snag).
 
-Within each side, the next block goes to a STARRED candidate while any is
-usable (`Candidate.rank` 0 — Stylistic7: unstarred ones only when no starred
+Within each side, the next block goes to MOONLESS work while the moon is
+down and any is usable (`efficiency.moonless`: OIII and faint broadband,
+which have no other hours; Hα/SII have every night — Stylistic7: "dark work
+requires dark hours", above the star), then to a STARRED candidate while
+any is usable (`Candidate.rank` 0 — unstarred ones only when no starred
 one is in a reasonable position), and within the tier to the best value per
 hour: the need it closes, minus fixed costs that reward staying put —
 re-stacking a (panel, filter) touched tonight, re-running a mosaic
@@ -25,7 +28,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from planner.efficiency import efficiency
+from planner.efficiency import efficiency, moon_rank
 from planner.model import Block, Candidate, Rig, RigPlan
 from planner.sky import SLOT_MIN, Night, Track, track
 
@@ -52,7 +55,7 @@ def _separation_deg(a: Candidate, b: Candidate) -> float:
 
 
 def _usable(night: Night, c: Candidate, tr: Track) -> np.ndarray:
-    return efficiency(c.filter, tr.alt, night.moon_alt, night.moon_illum, tr.moon_sep)
+    return efficiency(c.filter, tr.alt, night.moon_alt, night.moon_illum, tr.moon_sep, c.kind)
 
 
 def _greedy(night: Night, cands: list[Candidate], tracks: dict, eff: dict,
@@ -99,8 +102,9 @@ def _greedy(night: Night, cands: list[Candidate], tracks: dict, eff: dict,
                 cost += costs.slew_per_90deg * _separation_deg(prev, c) / 90.0
             value = c.worth(gained) * rarity.get(c.filter, 1.0) * c.urgency - cost
             rate = value / (length * SLOT_H)
-            if value > 0 and (best is None or (-c.rank, rate) > best[0]):
-                best = ((-c.rank, rate), i, s, gained, value)
+            key = (-moon_rank(c.filter, c.kind), -c.rank, rate)   # moonless work, star, value
+            if value > 0 and (best is None or key > best[0]):
+                best = (key, i, s, gained, value)
         if best is None:
             idle += 1
             t += 1

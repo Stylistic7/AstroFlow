@@ -61,6 +61,22 @@ def test_scarce_filter_wins_a_dark_night():
     assert plan.blocks[0].candidate.filter == "O"
 
 
+def test_moonless_work_is_a_tier_above_ha_sii_without_scarcity_prices():
+    """v2 passes no scarcity: a dark night still goes to OIII (and to RGB
+    on an LRGB project) before a far more valuable SII; star colour on a
+    narrowband project is not moonless work."""
+    night = sky.tonight(LON, LAT, NOON_UTC)
+    o, s = _cand("cas", "O", 15.0, 62.0, 4.0, weight=1.0, mosaic=None), _cand("cas", "S", 15.0, 62.0, 4.0, weight=9.0, mosaic=None)
+    plan = schedule.plan_rig(night, RIG, [o, s], rarity={})
+    assert plan.blocks[0].candidate.filter == "O"
+    b = _cand("cas", "B", 15.0, 62.0, 4.0, weight=1.0, mosaic=None)
+    from dataclasses import replace
+    assert schedule.plan_rig(night, RIG, [replace(b, kind="lrgb"), s], rarity={}).blocks[0].candidate.filter == "B"
+    assert schedule.plan_rig(night, RIG, [replace(b, kind="narrowband"), s], rarity={}).blocks[0].candidate.filter == "S"
+    # ... and above the star: unstarred OIII beats a starred SII on a dark night
+    assert schedule.plan_rig(night, RIG, [o, replace(s, rank=0)], rarity={}).blocks[0].candidate.filter == "O"
+
+
 if __name__ == "__main__":
     test_one_flip_at_most_minimum_visits_and_sides(); print("ok flip / visits / sides")
     test_scarce_filter_wins_a_dark_night(); print("ok scarcity")

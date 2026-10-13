@@ -64,3 +64,14 @@ def test_rank_takes_the_sky_first_whatever_the_values():
 def test_no_edges_solves_to_nothing():
     a = solve([1.0], [Need("A", ((1.0, 1.0),))], [])
     assert a.hours == {} and a.objective == 0.0
+
+
+def test_moonless_work_takes_the_dark_slot_first_whatever_the_values():
+    """Tiers as tuples (moonless, star): unstarred OIII (1/h) has only the
+    dark slot, starred Hα (9/h) can use both. OIII takes the dark slot;
+    Hα gets the moonlit one — dark work requires dark hours, above the star."""
+    from planner.allocate import solve_by_rank
+    needs = [Need("oiii", ((1.0, 1.0),)), Need("ha", ((2.0, 9.0),))]
+    edges = [Edge(0, 0, 1.0), Edge(0, 1, 1.0), Edge(1, 1, 1.0)]
+    a = solve_by_rank([1.0, 1.0], needs, edges, ranks=[(0, 1), (1, 0)])
+    assert a.hours == {(0, 0): pytest.approx(1.0), (1, 1): pytest.approx(1.0)}

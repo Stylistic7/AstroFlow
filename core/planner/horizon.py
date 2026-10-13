@@ -119,7 +119,7 @@ def edges(slots: Sequence[Slot], horizon: Horizon, cands: Sequence[tuple[str, Ca
         if key not in tracks:
             tracks[key] = horizon.track(*key)
         tr = tracks[key]
-        eff = efficiency(c.filter, tr.alt, horizon.moon_alt, horizon.moon_illum, tr.moon_sep)
+        eff = efficiency(c.filter, tr.alt, horizon.moon_alt, horizon.moon_illum, tr.moon_sep, c.kind)
         stop = (last_night or {}).get(ci)
         for si, b in by_rig.get(rig_key, []):
             if eff[b] > 0 and (stop is None or horizon.night[b] <= stop):

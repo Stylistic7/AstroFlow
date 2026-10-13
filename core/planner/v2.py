@@ -6,10 +6,13 @@ orders tonight's share into visits. Only tonight's quotas cross between
 them. The month's plan is kept for the explanation and thrown away: it is
 re-solved tomorrow from whatever was actually shot.
 
-Priority is the star: the starred cart entries' needs are allocated over
-the whole season's sky first, the unstarred over what is left
-(`allocate.solve_by_rank`) — two tiers, said by the user, because
-improvement per hour alone never finishes an image. Tonight's quota is a
+Priority is the moon, then the star: moonless work (OIII, faint broadband
+— `efficiency.moonless`) is allocated over the whole season's sky first,
+so a moonless hour goes to what only a moonless hour can give (Hα and SII
+have every night); within each, the starred cart entries' needs before
+the unstarred (`allocate.solve_by_rank`). Stylistic7, 2026-10-12: "dark work
+requires dark hours" supersedes the star. The star is said by the user,
+because improvement per hour alone never finishes an image. Tonight's quota is a
 PRIORITY, not a cap: Layer 2 sees every candidate with
 its full need, and the hours Layer 1 reserved for tonight count
 `QUOTA_BOOST` times their value — enough that any reserved hour beats any
@@ -34,7 +37,7 @@ from pathlib import Path
 
 import numpy as np
 
-from planner import allocate, explain, horizon, inventory, schedule, sky
+from planner import allocate, efficiency, explain, horizon, inventory, schedule, sky
 from planner.horizon import BLOCK_MIN, COARSE_BLOCK_MIN, FINE_NIGHTS, SEASON_NIGHTS
 from planner.model import Candidate, Rig
 from weather import cache, climatology, probability, sources
@@ -127,7 +130,8 @@ def plan(context, now: datetime | None = None) -> dict:
              for rig_key, c in pairs]
     es = [replace(e, efficiency=e.efficiency * NIGHT_DISCOUNT ** int(hz.night[slots[e.slot].block]))
           for e in horizon.edges(slots, hz, pairs)]
-    alloc = allocate.solve_by_rank(capacity, needs, es, [c.rank for _, c in pairs])
+    tier = lambda c: (efficiency.moon_rank(c.filter, c.kind), c.rank)  # noqa: E731  moonless work, then the star
+    alloc = allocate.solve_by_rank(capacity, needs, es, [tier(c) for _, c in pairs])
 
     # --- tonight's quotas: expected hours back to real hours ---------------
     slot_of = {(s.rig, s.block): i for i, s in enumerate(slots)}
@@ -144,7 +148,7 @@ def plan(context, now: datetime | None = None) -> dict:
     quota = {}
     for (rig_key, f), hours in by_filter.items():
         best_first = sorted((i for i, (rk, c) in enumerate(pairs) if rk == rig_key and c.filter == f),
-                            key=lambda i: (pairs[i][1].rank, -max(w for _, w in pairs[i][1].tiers)))  # rank, then value
+                            key=lambda i: (tier(pairs[i][1]), -max(w for _, w in pairs[i][1].tiers)))  # tier, then value
         for i in best_first:
             take = min(hours, pairs[i][1].need_h)
             if take < MIN_QUOTA_H:

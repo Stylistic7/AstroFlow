@@ -47,7 +47,7 @@ def _runners_up(night, plan, cands, tracks, rarity, block, k=4) -> list[dict]:
             continue
         tr = tracks[o.target_id]
         alt, ha = float(tr.alt[t]), float(tr.hour_angle[t])
-        moon = float(moon_factor(o.filter, night.moon_alt[t:t + 1], night.moon_illum[t:t + 1], tr.moon_sep[t:t + 1])[0])
+        moon = float(moon_factor(o.filter, night.moon_alt[t:t + 1], night.moon_illum[t:t + 1], tr.moon_sep[t:t + 1], o.kind)[0])
         side_ok = (ha < 0) if block.side == "east" else (ha >= 0)
         if alt < _floor(o.filter):
             reason = f"below its {_floor(o.filter):.0f}° floor ({alt:.0f}°)"
