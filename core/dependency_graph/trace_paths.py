@@ -344,6 +344,22 @@ def _resolve_pipeline_call(
     return fn, entity, config
 
 
+def _declared_or_stem(node, path) -> str:
+    """The identity a node's consumers key on: the call hash (the file's
+    stem), unless its op declares an identity and the file already carries
+    one on disk."""
+    if getattr(node.task, "_declares_identity", False):
+        try:
+            from file_io.generic import read_declared_content_hash
+            if Path(path).exists():
+                declared = read_declared_content_hash(Path(path))
+                if declared:
+                    return str(declared)
+        except Exception:
+            pass
+    return Path(path).stem
+
+
 def resolve_output_paths(graph) -> dict:
     """Node -> absolute expected output path for every filename_fn node.
 
@@ -375,7 +391,13 @@ def resolve_output_paths(graph) -> dict:
                 continue
             # Filename is `<output_dir>/.../<call_hash>.<ext>`; the
             # stem is exactly the call_hash.
-            node_hash[n] = Path(path).stem
+            # A `declares_identity` op's consumers key on the identity its
+            # output DECLARED (CONTHASH), not its call hash — exactly as the
+            # run and the trace-time handle stamp do. Propagating the call
+            # hash here mispredicted every stack downstream of a star flat:
+            # all 71 of 75a1's broadband stacks, so its R, G, B and RGB
+            # finishes read "out of date" forever (2026-10-14).
+            node_hash[n] = _declared_or_stem(n, path)
             paths[n] = str(path)
         else:
             # A PRESENTED subgraph builder (builder ≡ terminal,

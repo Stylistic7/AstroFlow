@@ -334,3 +334,40 @@ def test_the_default_never_traces(monkeypatch):
     monkeypatch.setattr(tp, "_resolve_pipeline_call", _boom)
 
     assert tp.traced_paths_for(("mosaic", "m", "P")) == []
+
+
+def test_a_consumer_of_a_declared_identity_is_predicted_from_the_declaration(tmp_path, monkeypatch):
+    """A `declares_identity` producer's consumers key on the identity its
+    file declares (CONTHASH), as the run does — not on its call hash. The
+    walk propagated the call hash, so every stack downstream of a star flat
+    was predicted under a key the run never used (75a1's R, G, B "out of
+    date", 2026-10-14)."""
+    from dependency_graph.classes import Node
+    from dependency_graph import trace_paths
+    import file_io.generic as generic
+
+    flat_file = tmp_path / "flat" / "callhash00000000.xisf"
+    flat_file.parent.mkdir()
+    flat_file.write_bytes(b"x")
+    monkeypatch.setattr(generic, "read_declared_content_hash", lambda p: "declared1111111" if p == flat_file else None)
+
+    seen = {}
+
+    class _Producer(_FakeTask):
+        def filename_fn(self, *args):
+            return flat_file
+
+    class _Consumer(_FakeTask):
+        def filename_fn(self, *args):
+            seen["arg"] = getattr(args[-1], "content_hash", args[-1])
+            return f"/out/consumer/{seen['arg']}.fits"
+
+    def build(stack): ...
+    def consume(stack, flat): ...
+    producer = _Producer(build); producer._declares_identity = True
+    flat = Node(producer, _FakeEntity("sf", "B"), name="flat")
+    stacked = Node(_Consumer(consume), _FakeEntity("st", "B"), name="stack")
+    stacked._dep_positions = (1,)
+    graph = {flat: [], stacked: [flat]}
+    trace_paths.resolve_output_paths(graph)
+    assert str(seen["arg"]).startswith("declared1111111")
