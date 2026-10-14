@@ -15,6 +15,11 @@ import '@google/workflow-graph/web-component/registerWorkflowGraphWebComponent';
 import './WorkflowGraph.css';
 
 const NODE_VERTICAL_SPACING = 60;
+// The library lays the graph out synchronously on the main thread, and its
+// cost grows faster than the node count: the 75a1 Hubble graph (2,243 nodes,
+// 2026-10-13) froze the browser for minutes. Above this, the graph waits
+// for an explicit click so the rest of the page stays usable.
+const AUTO_LAYOUT_MAX_NODES = 400;
 const NODE_HORIZONTAL_SPACING = 40;
 
 const logger: Logger = { logEvent: (event) => { console.log(event) } };
@@ -33,6 +38,8 @@ export default function WorkflowGraph({ theme, url }) {
   const [computeGraph, setComputeGraph] = useState();
   const [nodeId, setNodeId] = useState(null);
   const [nodeLabel, setNodeLabel] = useState(null);
+  const [showLarge, setShowLarge] = useState(false);   // the user asked for a big graph anyway
+  useEffect(() => setShowLarge(false), [url]);
 
   useEffect(() => {
     // Guard against non-OK responses: under the dev server, a 404
@@ -1017,7 +1024,7 @@ export default function WorkflowGraph({ theme, url }) {
     // TODO: Better typing for the ref
     const graphComponent = graphRef.current;
 
-    if (!graphComponent) {
+    if (!graphComponent || !computeGraph) {
       return;
     }
 
@@ -1062,7 +1069,7 @@ export default function WorkflowGraph({ theme, url }) {
     return () => {
       graphComponent?.removeEventListener("selectedNodeChange", onSelectedNodeChange);
     }
-  }, [computeGraph])
+  }, [computeGraph, showLarge])
 
   React.useEffect(() => {
     document.body.classList.add('workflow-graph-theme-dark');
@@ -1071,6 +1078,16 @@ export default function WorkflowGraph({ theme, url }) {
 
   if (!computeGraph) {
     return;
+  }
+
+  const nodeCount = Object.keys(computeGraph.state || {}).length;
+  if (nodeCount > AUTO_LAYOUT_MAX_NODES && !showLarge) {
+    return (
+      <div className="WorkflowGraph" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24, color: '#bbb' }}>
+        <div>This workflow graph has {nodeCount.toLocaleString()} nodes. Laying it out can freeze the page for several minutes.</div>
+        <button type="button" onClick={() => setShowLarge(true)}>Show workflow graph</button>
+      </div>
+    );
   }
 
   return <>
