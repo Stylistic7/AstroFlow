@@ -5,11 +5,10 @@ from pathlib import Path
 from xisf import XISF  # type: ignore
 import numpy as np
 from typing import Dict, Any, Optional
-import shutil
 
 from file_io.tiff_file_io import read_tiff_header, read_tiff_image
 from file_io.types import FitsFilePath, XisfFilePath, TiffFilePath, WithSidecar
-from file_io.sidecar import sidecar_path_for
+from file_io.sidecar import copy_sidecar
 
 
 # TODO: Add a round-trip unit test.
@@ -48,7 +47,7 @@ def convert_xisf_to_fits(
     hdu.writeto(fits_filename, overwrite=True)
 
     if isinstance(fits_filename, WithSidecar):
-        shutil.copy(sidecar_path_for(xisf_filename), sidecar_path_for(fits_filename))
+        copy_sidecar(xisf_filename, fits_filename)
         return WithSidecar(FitsFilePath(fits_filename))
 
     return FitsFilePath(fits_filename)
@@ -97,7 +96,7 @@ def convert_fits_to_xisf(
     )
 
     if isinstance(fits_filename, WithSidecar):
-        shutil.copy(sidecar_path_for(fits_filename), sidecar_path_for(xisf_filename))
+        copy_sidecar(fits_filename, xisf_filename)
         return WithSidecar(XisfFilePath(xisf_filename))
 
     return XisfFilePath(xisf_filename)
@@ -139,7 +138,7 @@ def convert_tiff_to_xisf(
     )
 
     if isinstance(tiff_filename, WithSidecar):
-        shutil.copy(sidecar_path_for(tiff_filename), sidecar_path_for(xisf_filename))
+        copy_sidecar(tiff_filename, xisf_filename)
         return WithSidecar(XisfFilePath(xisf_filename))
 
     return XisfFilePath(xisf_filename)

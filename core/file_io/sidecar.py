@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 import os
 import time
+import uuid
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
 
 _SCHEMA = "astroflow.sidecar.v2"
 _LOCK_WAIT_S = 30.0  # a sidecar write takes milliseconds; longer is a wedged holder
@@ -18,12 +20,17 @@ def sidecar_path_for(data_path: Path) -> Path:
 
 def _atomic_write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
-        f.write(text)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp, path)
+    # a private staging name: two writers can never share (and truncate)
+    # each other's temp file, lock or no lock
+    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}.{uuid.uuid4().hex}")
+    try:
+        with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def load_sidecar(path: Path) -> dict[str, Any]:
@@ -84,6 +91,20 @@ def _acquire_lock(lock: Path) -> None:
         delay = min(delay * 1.5, 0.5)
 
 
+@contextmanager
+def sidecar_lock(sc_path: Path) -> Iterator[None]:
+    """Hold the sidecar's lock file. EVERY write to a sidecar goes through
+    this — `update_sidecar`, `copy_sidecar` — so no writer can load, change
+    and save over another's change."""
+    sc_path = Path(sc_path)
+    lock = sc_path.with_name(sc_path.name + ".lock")
+    _acquire_lock(lock)
+    try:
+        yield
+    finally:
+        lock.unlink(missing_ok=True)
+
+
 def update_sidecar(
     data_path: Path, updater: Callable[[dict[str, Any]], None]
 ) -> dict[str, Any]:
@@ -92,16 +113,32 @@ def update_sidecar(
     # cluster nodes) each loaded, added their own section and saved; the
     # later save dropped the earlier section from 99 masters.
     sc_path = sidecar_path_for(data_path)
-    lock = sc_path.with_name(sc_path.name + ".lock")
-    _acquire_lock(lock)
-    try:
+    with sidecar_lock(sc_path):
         root = load_sidecar(sc_path)
         updater(root)
         _stamp_file_size(root, data_path)
         save_sidecar(sc_path, root)
-    finally:
-        lock.unlink(missing_ok=True)
     return root
+
+
+def copy_sidecar(src_data: Path, dst_data: Path) -> None:
+    """Give `dst_data` the sidecar of `src_data` (a converted or published
+    copy of the same image) WITHOUT losing what the destination already
+    records: the destination's sections are kept and the source's laid over
+    them, under the destination's lock, atomically. A whole-file copy used
+    to replace the destination's sidecar, dropping any section written to it
+    before (a plate solution, an analysis)."""
+    src = load_sidecar(sidecar_path_for(Path(src_data)))
+    sc_path = sidecar_path_for(Path(dst_data))
+    with sidecar_lock(sc_path):
+        root = load_sidecar(sc_path)
+        for k, v in src.items():
+            if isinstance(v, dict) and isinstance(root.get(k), dict):
+                root[k] = {**root[k], **v}
+            else:
+                root[k] = v
+        _stamp_file_size(root, Path(dst_data))
+        save_sidecar(sc_path, root)
 
 
 def get_section(data_path: Path, key: str) -> Any | None:

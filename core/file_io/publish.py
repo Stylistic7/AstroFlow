@@ -66,5 +66,8 @@ def publish_pair_atomically(
     rather than a payload whose sidecar is missing.
     """
     if sidecar_src is not None and sidecar_dest is not None and Path(sidecar_src).exists():
-        publish_atomically(Path(sidecar_src), Path(sidecar_dest))
+        # merged under the destination's sidecar lock, never replaced
+        # wholesale: a section already recorded for the destination stays
+        from file_io.sidecar import copy_sidecar
+        copy_sidecar(Path(primary_src), Path(primary_dest))
     publish_atomically(primary_src, primary_dest)

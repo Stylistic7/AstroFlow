@@ -92,3 +92,50 @@ class TestUpdateSidecar:
         with pytest.raises(TimeoutError):
             set_section(frame, "analysis", 1)
         assert get_section(frame, "analysis") is None
+
+
+class TestEveryWriterKeepsSections:
+    """2026-10-14: every path that writes a sidecar goes through the lock and
+    merges, so no writer can drop another's section."""
+
+    def test_header_update_keeps_sections(self, tmp_path):
+        from file_io.generic import update_header
+        from file_io.sidecar import get_section, load_sidecar, set_section, sidecar_path_for
+        from file_io.types import FitsFilePath, WithSidecar
+        data = tmp_path / "m.fits"; data.write_bytes(b"x")
+        set_section(data, "plate_solution", {"ok": 1})
+        update_header(WithSidecar(FitsFilePath(data)), {"STBLHASH": "abc"})
+        update_header(WithSidecar(FitsFilePath(data)), {"FILTER": "O"})
+        assert get_section(data, "plate_solution") == {"ok": 1}
+        assert load_sidecar(sidecar_path_for(data))["header"] == {"STBLHASH": "abc", "FILTER": "O"}
+
+    def test_concurrent_header_and_section_writers_keep_both(self, tmp_path):
+        import threading
+        from file_io.generic import update_header
+        from file_io.sidecar import get_section, load_sidecar, set_section, sidecar_path_for
+        from file_io.types import FitsFilePath, WithSidecar
+        data = tmp_path / "m.fits"; data.write_bytes(b"x")
+        def hdr(i): update_header(WithSidecar(FitsFilePath(data)), {f"K{i}": i})
+        def sec(i): set_section(data, f"s{i}", i)
+        ts = [threading.Thread(target=f, args=(i,)) for i in range(20) for f in (hdr, sec)]
+        [t.start() for t in ts]; [t.join() for t in ts]
+        root = load_sidecar(sidecar_path_for(data))
+        assert all(get_section(data, f"s{i}") == i for i in range(20))
+        assert all(root["header"][f"K{i}"] == i for i in range(20))
+
+    def test_copy_sidecar_merges_into_the_destination(self, tmp_path):
+        from file_io.sidecar import copy_sidecar, get_section, set_section
+        src = tmp_path / "a.xisf"; dst = tmp_path / "a.fits"
+        src.write_bytes(b"x"); dst.write_bytes(b"yy")
+        set_section(src, "image_metadata", {"from": "src"})
+        set_section(dst, "plate_solution", {"from": "dst"})
+        copy_sidecar(src, dst)
+        assert get_section(dst, "image_metadata") == {"from": "src"}
+        assert get_section(dst, "plate_solution") == {"from": "dst"}
+
+    def test_no_temp_files_are_left_behind(self, tmp_path):
+        from file_io.sidecar import set_section
+        data = tmp_path / "m.fits"; data.write_bytes(b"x")
+        for i in range(5):
+            set_section(data, "k", i)
+        assert sorted(p.name for p in tmp_path.iterdir()) == ["m.fits", "m.fits.json"]

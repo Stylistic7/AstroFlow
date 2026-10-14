@@ -200,20 +200,16 @@ def _(filename: TiffFilePath, metadata: dict[str, Any]) -> dict[str, Any]:
 
 @update_header.register
 def _(wrapped: WithSidecar, metadata_in: dict[str, Any]) -> dict[str, Any]:
-    sidecar_path = sidecar_path_for(wrapped.path)
+    # Through the locked read-modify-write: this used to load, change and
+    # rewrite the whole sidecar with a plain open("w") — unlocked and
+    # non-atomic, so a concurrent section writer could lose its section, and
+    # a crash mid-write left a truncated sidecar.
+    from file_io.sidecar import update_sidecar
 
-    try:
-        with open(sidecar_path, "r") as f:
-            sidecar = json.load(f)
-    except FileNotFoundError:
-        sidecar = {}
+    def _upd(root: dict[str, Any]) -> None:
+        root["header"] = {**root.get("header", {}), **metadata_in}
 
-    header = sidecar.get("header", {})
-    header |= metadata_in
-    sidecar["header"] = header
-
-    with open(sidecar_path, "w") as f:
-        json.dump(sidecar, f, indent=2)
+    return update_sidecar(wrapped.path, _upd)["header"]
 
 
 # Full-pixel hashing is the CONTHASH fallback of last resort — on a gigapixel
