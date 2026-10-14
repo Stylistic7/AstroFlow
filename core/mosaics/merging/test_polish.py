@@ -8,6 +8,7 @@ materialize). Tests evaluate the lazy pipeline on small arrays where
 `.numpy()` is cheap, and compute the pedestal shift exactly the way the
 op does (from the model-scale corrected field)."""
 import numpy as np
+import pytest
 
 from file_io.tiff_file_io import _vips_from_numpy
 from mosaics.merging.polish import _lazy_polish
@@ -57,3 +58,48 @@ def test_lazy_polish_never_zeroes_covered_pixels():
     if out.ndim == 3:
         out = out[..., 0]
     assert np.all(out > 0)
+
+
+def _fake_graxpert(behaviour):
+    """A stand-in for GraXpert's background extraction on the small image:
+    writes `behaviour(image)` as the corrected output."""
+    def run(fin, fout, **_):
+        from astropy.io import fits
+        fits.PrimaryHDU(behaviour(fits.getdata(fin).astype(np.float32))).writeto(fout)
+    return run
+
+
+def _sparse_small():
+    """One panel's worth of data (about 10%) on an otherwise empty canvas,
+    with a gentle gradient and noise — 7098's lone H panel, in miniature."""
+    rng = np.random.default_rng(0)
+    small = np.zeros((200, 300), np.float32)
+    yy, xx = np.mgrid[:60, :90]
+    small[20:80, 30:120] = 0.005 + 1e-5 * xx + 2e-6 * rng.standard_normal((60, 90))
+    return small
+
+
+def test_a_sparse_channel_gets_a_finite_model(monkeypatch):
+    """GraXpert normalises by the image's spread and returns NaN when it is
+    zero. A single median fill made 90% of a one-panel channel one constant
+    (spread exactly 0); the nearest-pixel fill keeps it real."""
+    import graxpert_cli
+    from mosaics.merging.polish import _background_model_small
+
+    def like_graxpert(img):
+        mad = float(np.median(np.abs(img - np.median(img))))
+        return np.full_like(img, np.nan) if mad == 0 else img - np.median(img)
+
+    monkeypatch.setattr(graxpert_cli, "run_background_extraction", _fake_graxpert(like_graxpert))
+    small = _sparse_small()
+    model = _background_model_small(small)
+    assert np.isfinite(model[small > 0]).all()
+
+
+def test_a_non_finite_model_is_refused(monkeypatch):
+    import graxpert_cli
+    from mosaics.merging.polish import _background_model_small
+    monkeypatch.setattr(graxpert_cli, "run_background_extraction",
+                        _fake_graxpert(lambda img: np.full_like(img, np.nan)))
+    with pytest.raises(RuntimeError, match="non-finite model"):
+        _background_model_small(_sparse_small())

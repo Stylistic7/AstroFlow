@@ -23,8 +23,13 @@ boundary. Mono-replicated is the validated mode.
 
 ZERO HANDLING: the canvas is mostly no-data (ragged coverage). GraXpert
 reads zeros as background (the 14x over-subtraction lesson,
-2026-08-12), so no-data pixels are median-filled before modelling and
-re-zeroed after. The correction applies only inside the coverage mask.
+2026-08-12), so no-data pixels are filled before modelling, each with its
+NEAREST covered pixel, and re-zeroed after. A single median fill broke
+sparse channels: one panel of H on a 15-panel canvas left 86% of the
+small image one constant, its median absolute deviation exactly 0, and
+GraXpert returned an all-NaN model that turned the channel — and every NXT
+tile it fed — into NaN (7098 and 549ed678, 2026-10-14). The correction
+applies only inside the coverage mask.
 """
 from pathlib import Path
 
@@ -47,8 +52,9 @@ _MODEL_INPUT_PX = 2048
 
 def _background_model_small(small: np.ndarray) -> np.ndarray:
     """GraXpert's smooth background model of `small` (2D float32, zeros =
-    no data), at `small`'s own size. Median-fills no-data before the CLI
-    call; the returned model is meaningful only inside the coverage mask."""
+    no data), at `small`'s own size. Fills no-data with the nearest covered
+    pixel before the CLI call; the returned model is meaningful only inside
+    the coverage mask, and is refused if GraXpert left it non-finite there."""
     import tempfile
     from astropy.io import fits as pyfits
     from graxpert_cli import run_background_extraction
@@ -56,8 +62,10 @@ def _background_model_small(small: np.ndarray) -> np.ndarray:
         GRAXPERT_AI_VERSION, GRAXPERT_CORRECTION, GRAXPERT_SMOOTHING,
     )
 
+    from scipy import ndimage
     mask = small > 0
-    filled = np.where(mask, small, np.float32(np.median(small[mask])))
+    nearest = ndimage.distance_transform_edt(~mask, return_distances=False, return_indices=True)
+    filled = small[tuple(nearest)]
     with tempfile.TemporaryDirectory(prefix="polish_bg_") as td:
         fin = Path(td) / "in.fits"
         fout = Path(td) / "out.fits"
@@ -71,7 +79,13 @@ def _background_model_small(small: np.ndarray) -> np.ndarray:
         out = pyfits.getdata(fout).astype(np.float32)
     if out.ndim == 3:
         out = out[0] if out.shape[0] in (1, 3) else out[..., 0]
-    return filled - out
+    model = filled - out
+    if not np.isfinite(model[mask]).all():
+        raise RuntimeError(
+            f"background polish: GraXpert returned a non-finite model over "
+            f"{int((~np.isfinite(model[mask])).sum())} covered pixels of "
+            f"{int(mask.sum())} — refusing to subtract it")
+    return model
 
 
 def _lazy_polish(img: pyvips.Image, model_small: np.ndarray,
@@ -136,7 +150,7 @@ def polish_background(
     # makes each small pixel the mean of ONLY its covered full-res pixels
     # — equivalent to a locally-exact fill before the downscale — with a
     # ringless kernel. Small pixels under 25% coverage go to zero and are
-    # median-filled inside _background_model_small as before.
+    # filled from their nearest covered pixel inside _background_model_small.
     k = max(img.width, img.height) / _MODEL_INPUT_PX
     cov = (img > 0).cast("float") / 255.0  # vips relational is 0/255
     small_sum = img.shrink(k, k).numpy().astype(np.float32)
@@ -166,7 +180,7 @@ def polish_background(
                                 "STBLHASH": str(merged.stable_hash),
                                 "PIPELINE": "AstroFlow-OSS",
                                 "LAYER": "starless",
-                                "POLISHVER": "gx-mono-3-covnorm"})
+                                "POLISHVER": "gx-mono-4-nearest"})
     _set_panel_count(output_filename, _panel_count(merged))
 
     log.info("background polish complete", output=str(output_filename),
