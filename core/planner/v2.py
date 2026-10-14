@@ -200,7 +200,7 @@ def plan(context, now: datetime | None = None) -> dict:
                 out["mosaics"][key] = explain._seam_map(context, c.mosaic_id, c.filter, depths)
         out["rigs"].append({
             "key": rig.key, "name": rig.name, "focal": rig.focal_mm, "scale": round(rig.image_scale, 2),
-            "flip": rig_plan.flip_slot, "score": round(rig_plan.score, 2), "fallback": fallback,
+            "flips": rig_plan.flips, "score": round(rig_plan.score, 2), "fallback": fallback,
             "quotas": [{"label": c.label, "filter": c.filter, "target": c.target_id, "hours": round(quota[i], 2)}
                        for i, c in mine if i in quota],
             "unplaced_quota_h": round(sum(quota[i] for i, c in mine if i in quota
@@ -272,8 +272,8 @@ def text(plan_json: dict) -> str:
     lines = [f"v2 · tonight p(clear) {plan_json['weather']['tonight_p_clear']} · "
              f"sources {plan_json['weather']['sources']}"]
     for rig in plan_json["rigs"]:
-        flip = t(rig["flip"]) if rig["flip"] is not None else "none"
-        lines.append(f"{rig['name']} · {rig['focal']:.0f} mm   flip: {flip}" + (f"   [{rig['fallback']}]" if rig["fallback"] else ""))
+        flips = ", ".join(t(f) for f in rig["flips"]) or "none"
+        lines.append(f"{rig['name']} · {rig['focal']:.0f} mm   side changes: {flips}" + (f"   [{rig['fallback']}]" if rig["fallback"] else ""))
         for v in rig["visits"]:
             lines.append(f"  {t(v['start'])}–{t(v['end'])}  {v['label']:<24} {v['filter']}  {v['subs']:3d} × {v['exposure']:.0f} s"
                          f"   quota {v['quota_h']} h   [{v['why']}]  [{v['why_tonight']}]")

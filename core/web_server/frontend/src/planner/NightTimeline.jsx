@@ -61,12 +61,12 @@ export default function NightTimeline({ plan, rig }) {
           </g>
         );
       })}
-      {rig.flip !== null && (
-        <g>
-          <line x1={x(rig.flip)} x2={x(rig.flip)} y1={top - 4} y2={altTop + altH} stroke={theme.palette.text.primary} strokeWidth={1.5} strokeDasharray="2 3" />
-          <text x={x(rig.flip) + 4} y={altTop + 12} style={{ ...label, fill: theme.palette.text.primary }}>meridian flip {clock(plan.times[rig.flip])}</text>
+      {(rig.flips || []).map((f) => (
+        <g key={f}>
+          <line x1={x(f)} x2={x(f)} y1={top - 4} y2={altTop + altH} stroke={theme.palette.text.primary} strokeWidth={1.5} strokeDasharray="2 3" />
+          <text x={x(f) + 4} y={altTop + 12} style={{ ...label, fill: theme.palette.text.primary }}>pier side change {clock(plan.times[f])}</text>
         </g>
-      )}
+      ))}
     </svg>
   );
 }

@@ -69,7 +69,7 @@ export default function PlannerPanel() {
           <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', justifyContent: 'space-between', gap: '4px 14px', mb: 1 }}>
             <Typography variant="h5" sx={{ fontWeight: 600 }}>{rig.name.replace('ASIAIR_', '')} · {Math.round(rig.focal)} mm</Typography>
             <Typography variant="body2" color="text.secondary">
-              {rig.visits.length} visits · {rig.flip === null ? 'no meridian flip' : `one flip at ${clock(plan.times[rig.flip])}`} · {rig.scale}"/px
+              {rig.visits.length} visits · {(rig.flips || []).length === 0 ? 'no pier side change' : `pier side changes at ${rig.flips.map((f) => clock(plan.times[f])).join(', ')}`} · {rig.scale}"/px
             </Typography>
           </Box>
           {(rig.quotas?.length > 0 || rig.fallback) && (

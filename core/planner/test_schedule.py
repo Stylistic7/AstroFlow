@@ -1,6 +1,6 @@
-"""The scheduler on a real night with synthetic candidates: at most one
-meridian flip, never a visit under the minimum, east before the flip and
-west after, and dark hours for dark work. Runs as a script too."""
+"""The scheduler on a real night with synthetic candidates: at most
+MAX_SIDE_CHANGES pier-side changes, no visit crossing the meridian, never a
+visit under the minimum, and dark hours for dark work. Runs as a script too."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -23,12 +23,12 @@ def _plan(cands):
     return night, schedule.plan_rig(night, RIG, cands)
 
 
-def test_one_flip_at_most_minimum_visits_and_sides():
+def test_side_changes_minimum_visits_and_sides():
     night, plan = _plan([_cand("cyg", "O", 310.0, 45.0, 3.0), _cand("cas", "O", 15.0, 62.0, 3.0),
                          _cand("ori", "H", 85.0, 0.0, 3.0)])
     assert plan.blocks
-    flips = sum(1 for a, b in zip(plan.blocks, plan.blocks[1:]) if a.side != b.side)
-    assert flips <= 1
+    changes = sum(1 for a, b in zip(plan.blocks, plan.blocks[1:]) if a.side != b.side)
+    assert changes == len(plan.flips) <= schedule.MAX_SIDE_CHANGES
     # no gaps: the ASIAir cannot idle, so the plan tiles the whole night
     assert plan.blocks[0].start_slot == 0 and plan.blocks[-1].end_slot == night.n
     assert all(a.end_slot == b.start_slot for a, b in zip(plan.blocks, plan.blocks[1:]))
@@ -38,12 +38,26 @@ def test_one_flip_at_most_minimum_visits_and_sides():
             (b.candidate.target_id, b.candidate.filter)
         assert b.end_slot - b.start_slot >= schedule.Costs().min_block_slots or continues or \
             (b.end_slot == night.n and b.end_slot - b.start_slot >= schedule.Costs().tail_min_slots)
-    # one pier side, then the other: every east visit starts before the flip,
-    # every west visit ends after it (a filled gap may lean across it)
-    if plan.flip_slot is not None:
-        assert all(b.start_slot < plan.flip_slot for b in plan.blocks if b.side == "east")
-        assert all(b.end_slot > plan.flip_slot for b in plan.blocks if b.side == "west")
-    assert [b.side for b in plan.blocks] == sorted((b.side for b in plan.blocks), key=lambda s: s != "east")
+
+
+def test_each_visit_is_on_the_side_its_target_starts_on():
+    """A visit takes its target's pier side at the visit's start (the first
+    visit may have been stretched back to dusk to fill a wait)."""
+    night, plan = _plan([_cand("cyg", "O", 310.0, 45.0, 6.0), _cand("cas", "O", 15.0, 62.0, 6.0),
+                         _cand("ori", "H", 85.0, 0.0, 6.0)])
+    for b in plan.blocks[1:]:
+        ha = sky.track(night, b.candidate.ra_deg, b.candidate.dec_deg).hour_angle
+        assert b.side == ("east" if ha[b.start_slot] < 0 else "west")
+
+
+def test_the_night_can_start_on_a_setting_target_in_the_west():
+    """A target already west at dusk — leaving for the season — gets the dusk
+    hours; the old single flip (east, then west) could not start west."""
+    night, plan = _plan([_cand("setting", "O", 270.0, 30.0, 2.0, weight=5.0),
+                         _cand("rising", "O", 60.0, 30.0, 6.0, weight=2.0)])
+    first = plan.blocks[0]
+    assert first.candidate.target_id == "setting" and first.side == "west"
+    assert any(b.candidate.target_id == "rising" for b in plan.blocks)
 
 
 def test_no_dark_minute_is_left_idle_when_a_target_is_up():
@@ -77,5 +91,15 @@ def test_moonless_work_is_a_tier_above_ha_sii():
 
 
 if __name__ == "__main__":
-    test_one_flip_at_most_minimum_visits_and_sides(); print("ok flip / visits / sides")
+    test_side_changes_minimum_visits_and_sides(); print("ok side changes / visits")
     test_scarce_filter_wins_a_dark_night(); print("ok scarcity")
+
+
+def test_an_unstarred_visit_never_holds_dusk_from_starred_work():
+    """In twilight only broadband is usable; starred OIII becomes usable a
+    few minutes later. The night must not open with a full unstarred visit."""
+    from dataclasses import replace
+    night, plan = _plan([replace(_cand("star", "O", 300.0, 40.0, 4.0, weight=2.0), rank=0),
+                         replace(_cand("filler", "G", 300.0, 40.0, 4.0, weight=2.0, mosaic=None), rank=1, kind="lrgb")])
+    starred = [b for b in plan.blocks if b.candidate.target_id == "star"]
+    assert starred and starred[0].start_slot < schedule.Costs().min_block_slots

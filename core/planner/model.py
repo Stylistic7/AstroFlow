@@ -62,13 +62,13 @@ class Block:
     end_slot: int             # exclusive
     effective_h: float        # sky-hours after the efficiency discount
     value: float              # need closed × weight, minus costs, in sky-hours
-    side: str                 # "east" (before the flip) or "west"
+    side: str                 # the pier side: "east" or "west" of the meridian at the visit's start
 
 
 @dataclass
 class RigPlan:
     rig: Rig
-    flip_slot: int | None     # None: no meridian flip tonight
+    flips: list[int] = field(default_factory=list)   # slots where the pier side changes
     blocks: list[Block] = field(default_factory=list)
     unassignable: list[str] = field(default_factory=list)
 
