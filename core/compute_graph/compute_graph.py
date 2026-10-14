@@ -554,19 +554,22 @@ def _store_tap_snapshot(pipeline_fn, pipeline_name: str, entity, graph) -> None:
     object (new content_hash) yields a NEW key, so the web UI — which computes
     the SAME key from the live object + pipeline source — always reads the
     current trace; stale snapshots are harmless orphans, never requested, aged
-    out by LRU. One atomic write (no two-phase `record_path` to drift). The web
+    out by LRU. Every build REWRITES its key, because the key does not cover
+    decisions. One atomic write (no two-phase `record_path` to drift). The web
     worker filters the full list to the queried routing entity on read."""
     from cache.context_ref import ContextRef
     from dependency_graph.trace_paths import (
         _walk_and_resolve_filenames_tagged, pipeline_source_version,
     )
 
-    # Compute the content-addressed key FIRST and skip the walk when a snapshot
-    # for this exact (source, stable, content, pipeline) is already present AND
-    # still resolves (not LRU-evicted). So `run_pipeline` on a restart with an
-    # unchanged cart confirms presence in ~ms instead of re-walking — the walk
-    # is cheap (~0.5 s) but this makes a warm restart free, and the expensive
-    # part (the ~25 s trace) was already a `trace_pipeline` @node cache hit.
+    # ALWAYS re-walk and re-store, even when a snapshot sits under this key.
+    # The key cannot see everything the trace reads: a run quarantine (any
+    # decision override, any context the trace consults) leaves source,
+    # stable and content hash unchanged while changing the paths. The old
+    # skip-if-present kept the pre-quarantine paths forever — 7098 Panels 2
+    # and 4 rebuilt correctly and still read "out of date" with no master
+    # outline (2026-10-14). The walk costs 0.2-0.3 s; the graph is already
+    # traced.
     #
     # This cart-item snapshot is the COMPLETE trace (every filename node) for
     # the sweep, archive, discard and polygon readers. The display taps in it
@@ -583,11 +586,6 @@ def _store_tap_snapshot(pipeline_fn, pipeline_name: str, entity, graph) -> None:
         entity.stable_hash, entity.content_hash, pipeline_name,
     )
     _store_measured_viewbox(key, graph)
-    existing = (context.get("tap_snapshots") or {}).get(key)
-    if existing is not None and (
-        existing.get() if hasattr(existing, "get") else existing
-    ):
-        return
 
     # The COMPLETE trace (every filename node, not just display-taps): the web
     # server reads it for the dashboard taps (display+filter), the mosaic

@@ -103,6 +103,42 @@ def test_tap_snapshot_writer_and_reader_share_version_helper():
     assert "pipeline_source_version(" in inspect.getsource(tp._snapshot_key)
 
 
+
+def test_tap_snapshot_is_rewritten_on_every_build(monkeypatch):
+    """A rebuild under the SAME key must replace the snapshot. The key
+    (code version, stable hash, content hash, pipeline) cannot see a run
+    quarantine, which changes the paths: skipping a present key kept 7098
+    Panels 2 and 4 on their pre-quarantine masters (2026-10-14)."""
+    import types
+    import compute_graph.compute_graph as cg
+    from cache import context_ref
+    from dependency_graph import trace_paths as tp
+
+    store: dict = {}
+
+    class _Ctx:
+        def get(self, key, default=None):
+            return store.get(key, default)
+
+        def or_equals(self, key, value):
+            store[key] = {**store.get(key, {}), **value}
+
+    walks = iter([[{"path": "/old/a.fits"}], [{"path": "/new/b.fits"}]])
+    monkeypatch.setattr(cg, "context", _Ctx())
+    monkeypatch.setattr(cg, "_store_measured_viewbox", lambda key, graph: None)
+    monkeypatch.setattr(cg, "_store_product_taps", lambda name, entries: None)
+    monkeypatch.setattr(tp, "_walk_and_resolve_filenames_tagged", lambda graph: next(walks))
+    monkeypatch.setattr(tp, "pipeline_source_version", lambda fn: "v1")
+    monkeypatch.setattr(context_ref.ContextRef, "store",
+                        classmethod(lambda cls, key, obj, content_hash=None: obj))
+
+    fn = types.SimpleNamespace(_function=lambda: None)
+    entity = types.SimpleNamespace(stable_hash="s", content_hash="c")
+    cg._store_tap_snapshot(fn, "P", entity, graph={})
+    cg._store_tap_snapshot(fn, "P", entity, graph={})
+    assert store["tap_snapshots"][("v1", "s", "c", "P")] == [{"path": "/new/b.fits"}]
+
+
 # --- display/filter tagging of the walk (the output_index replacement) ---
 
 
