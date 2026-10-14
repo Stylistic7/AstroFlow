@@ -42,7 +42,8 @@ from stacks.flat_motes import find_motes, radial_profile
 log = structlog.get_logger()
 
 TOLERANCE = 0.005        # the one knob: a correction error below this is invisible (fraction of sky)
-QUANTUM = TOLERANCE / 2  # a profile value is rounded to this ...
+QUANTUM = 0.0005         # a profile value is rounded to this (0.05 % of sky; TOLERANCE/2 rounded the
+                         # RC71's 0.4-0.5 % soft mote to 0.25 % and left half of every disc in 75a1) ...
 POS_QUANTUM = 2.0        # ... a centre to this many px, an extent to one block
 POINTING_SEP_DEG = 0.25  # closer than this is the same pointing (dithers are ~0.02 deg)
 FLATTEN_PX = 256.0       # the detector's scale: what is smoother than this is sky, vignetting, etalon
