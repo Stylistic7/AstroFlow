@@ -102,7 +102,7 @@ export function stfSeed(channelStats, bandRoles, colorspace, boundsFor = null, t
     per.forEach((p, i) => {
         const s = bandRoles?.[i] ?? String(i);
         seed[`black${s}`] = p.bp; seed[`white${s}`] = p.wp; seed[`mid${s}`] = p.mid;
-        // Data anchors for the pinned-GHS finishes (Hubble Pinned GHS): sky median,
+        // Data anchors for the pinned-GHS finishes (Hubble and the channel finishes): sky median,
         // sky noise and the bright level, measured on the STARLESS primary --
         // the stretch never sees the stars. Twin of `_stf_values` (preview.py).
         const c = (starlessStats ?? channelStats)[i] ?? channelStats[i];

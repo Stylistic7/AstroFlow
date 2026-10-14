@@ -19,9 +19,8 @@ def _srcs(n, seed=7, scale=0.05, size=16):
             for _ in range(n)]
 
 
-STOCK = [("RGB", 2), ("LRGB", 4), ("HaLRGB", 4), ("Hubble", 2), ("Hubble Pinned GHS", 2), ("Emission Hues", 2), ("Foraxx", 2),
-         ("H", 1), ("S", 1), ("O", 1), ("R", 1), ("G", 1), ("B", 1), ("L", 1),
-         ("Master", 1)] + [(f"{r} Pinned GHS", 1) for r in "HSORGBL"]
+STOCK = [("RGB", 2), ("LRGB", 4), ("HaLRGB", 4), ("Hubble", 2), ("Emission Hues", 2), ("Foraxx", 2),
+         ("H", 1), ("S", 1), ("O", 1), ("R", 1), ("G", 1), ("B", 1), ("L", 1), ("Master", 1)]
 
 
 class TestParity:
@@ -325,7 +324,7 @@ class TestChannelFinishes:
         assert prim["L"][0] == "Linear L Starless"
         assert prim["Master"] == ["Master"]
         for f in all_finishes():
-            assert (f.role is None) == (f.name in {"Hubble", "Hubble Pinned GHS", "Emission Hues", "Foraxx", "RGB", "LRGB", "HaLRGB"})
+            assert (f.role is None) == (f.name in {"Hubble", "Emission Hues", "Foraxx", "RGB", "LRGB", "HaLRGB"})
 
     def test_h_reads_band_g_of_the_join_and_the_whole_mono_tap(self):
         """`nb.g` is Hα in the S,H,O layout; a 1-band source is broadcast so
@@ -376,7 +375,7 @@ class TestChannelFinishes:
 def test_hubble_ghs_pins_sky_and_nebula_independently():
     """Each channel's sky median lands exactly on its sky level and its bright
     anchor exactly on its nebula level, whatever the stretch (2026-10-02)."""
-    f = get_finish("Hubble Pinned GHS")
+    f = get_finish("Hubble")
     rng = np.random.default_rng(1)
     sky, sig, top = 0.005, 3e-5, 0.0089
     nb = (sky + rng.normal(0, sig, (16, 16, 3))).astype(np.float32)
@@ -395,7 +394,7 @@ def test_hubble_ghs_pins_sky_and_nebula_independently():
 def test_pinned_ghs_shows_three_controls_per_channel():
     """The anchors are measured from the image (kind="data"), so each channel
     offers only sky level, nebula level and stretch (Stylistic7, 2026-10-02)."""
-    f = get_finish("Hubble Pinned GHS")
+    f = get_finish("Hubble")
     for r in "SHO":
         shown = [p.name for p in f.params if p.kind != "data" and p.name[-1] == r and not p.builtin]
         assert sorted(shown) == sorted([f"level{r}", f"neb{r}", f"str{r}"]), shown
@@ -532,7 +531,7 @@ def test_channel_pinned_ghs_pins_sky_and_nebula_on_its_band():
     from finishes.registry import all_finishes
     sky, sig, top = 0.005, 3e-5, 0.0089
     for role, band in (("H", 1), ("S", 0), ("O", 2)):
-        f = get_finish(f"{role} Pinned GHS", primary="Linear SHO")
+        f = get_finish(role, primary="Linear SHO")
         assert f.role == role and f.inputs[0] == "Linear SHO"
         nb = np.full((2, 2, 3), 0.02, np.float32)          # other bands bright
         nb[..., band] = sky
@@ -543,7 +542,7 @@ def test_channel_pinned_ghs_pins_sky_and_nebula_on_its_band():
         assert np.allclose(out[0, 1], 0.07, atol=1e-5) and np.allclose(out[0, 0], 0.9, atol=1e-5)
         shown = [p.name for p in f.params if not p.builtin and p.kind != "data"]
         assert shown == [f"level{role}", f"neb{role}", f"str{role}"]
-    prim = [f.inputs[0] for f in all_finishes() if f.name == "L Pinned GHS"]
+    prim = [f.inputs[0] for f in all_finishes() if f.name == "L"]
     assert prim[0] == "Linear L Starless" and "Post-Processed" in prim
 
 
@@ -572,6 +571,6 @@ def test_background_desaturation_fades_colour_below_the_level_keeping_luminance(
 
 
 def test_channel_finishes_get_no_background_desaturation():
-    for name in ("H", "O Pinned GHS", "Master"):
+    for name in ("H", "O", "Master"):
         names = [p.name for p in get_finish(name).params]
         assert "bg_desat" not in names and "bg_level" not in names, name

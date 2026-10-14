@@ -7,7 +7,7 @@ import pytest
 from context.cache import is_durable_key
 from web_server.backend import finish_saves
 
-URL = "/api/finish_saves/target/abc/Hybrid%3A%20P/Hubble%20Pinned%20GHS"
+URL = "/api/finish_saves/target/abc/Hybrid%3A%20P/Hubble"
 
 
 class _Store(dict):
@@ -38,7 +38,7 @@ def test_save_list_and_delete(client):
     c.post(URL, json={"params": {"strS": 7.0}})
     listed = c.get(URL).get_json()["saves"]
     assert [s["params"]["strS"] for s in listed] == [6.15, 7.0]
-    assert ("finish_saves", "target", "abc", "Hybrid: P", "Hubble Pinned GHS") in store
+    assert ("finish_saves", "target", "abc", "Hybrid: P", "Hubble") in store
     left = c.delete(f"{URL}/{listed[0]['id']}").get_json()["saves"]
     assert [s["params"]["strS"] for s in left] == [7.0]
 

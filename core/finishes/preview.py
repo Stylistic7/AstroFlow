@@ -118,7 +118,7 @@ def _stf_values(arr: "np.ndarray", suffixes: "tuple[str, ...] | None",
         anchors.append((med, max(sigma, 1e-7), bright))
     for (bp, wp, mid), (med, sigma, bright), s_ in zip(per, anchors, suffixes or ()):
         out[f"black{s_}"], out[f"white{s_}"], out[f"mid{s_}"] = bp, wp, mid
-        # Data anchors for the pinned-GHS finishes (Hubble Pinned GHS): the sky
+        # Data anchors for the pinned-GHS finishes (Hubble and the channel finishes): the sky
         # median and noise the stretch pins, and the bright level it maps
         # to the nebula level. Twin of finish_seed.js.
         out[f"sky{s_}"], out[f"sig{s_}"], out[f"top{s_}"] = med, sigma, bright

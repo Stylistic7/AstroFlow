@@ -39,7 +39,7 @@ def _values(f):
 
 def test_strip_bake_is_exact_profiled_and_unclipped(scene, tmp_path):
     path, nb = scene
-    f = get_finish("Hubble Pinned GHS", primary="Linear SHO")
+    f = get_finish("Hubble", primary="Linear SHO")
     v = _values(f)
     r = export.bake_to_tiff(NS(finish=f, inputs=[NS(path=path), NS(path=None)]), v, tmp_path / "o.tif")
     assert (r["level"], r["width"], r["height"]) == (0, 520, 600)
@@ -66,10 +66,10 @@ def test_eight_bit_pyramids_are_rescaled(tmp_path):
 
 def test_job_opens_the_file_or_reports_the_error(scene, tmp_path, monkeypatch):
     path, _ = scene
-    f = get_finish("Hubble Pinned GHS", primary="Linear SHO")
+    f = get_finish("Hubble", primary="Linear SHO")
     calls = []
     monkeypatch.setattr(export.subprocess, "run", lambda cmd, **k: calls.append(cmd))
-    job = {"finish": "Hubble Pinned GHS", "primary": "Linear SHO", "paths": [path, None],
+    job = {"finish": "Hubble", "primary": "Linear SHO", "paths": [path, None],
            "params": _values(f), "dest": str(tmp_path / "x.tif"), "status": str(tmp_path / "s.json"),
            "app": "/Applications/Adobe Photoshop 2026/Adobe Photoshop 2026.app"}
     (tmp_path / "j.job").write_text(json.dumps(job))

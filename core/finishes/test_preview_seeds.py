@@ -87,7 +87,7 @@ def test_per_band_and_linked_keys_are_both_emitted():
 
 
 def test_seeds_carry_the_pinned_ghs_data_anchors():
-    """Hubble Pinned GHS reads each channel's sky median, sky noise and bright level
+    """Hubble reads each channel's sky median, sky noise and bright level
     from the seed (`sky<R>`, `sig<R>`, `top<R>`), twin of finish_seed.js."""
     from finishes.preview import _stf_values
     rng = np.random.default_rng(2)
