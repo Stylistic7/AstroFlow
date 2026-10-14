@@ -25,13 +25,26 @@ from scipy.signal import fftconvolve
 SIGNIFICANCE = 8.0            # matched-filter sigma to call a dip a mote
 MAX_MOTES = 5
 SHARP = dict(flatten_px=256.0, radii_px=(24.0, 40.0, 64.0, 100.0), min_depth=0.010)
-SOFT = dict(flatten_px=1200.0, radii_px=(160.0, 250.0, 320.0), min_depth=0.005)
+SOFT = dict(flatten_px=1200.0, radii_px=(160.0, 250.0, 320.0), min_depth=0.002)
 
 
 def _disk(r: float) -> np.ndarray:
     n = int(np.ceil(r)); yy, xx = np.mgrid[-n:n + 1, -n:n + 1]
     d = (xx ** 2 + yy ** 2 <= r ** 2).astype(np.float32)
     return d / d.sum()
+
+
+def _compensated(r: float) -> np.ndarray:
+    """The mean over a disc of radius r minus the mean over the ring
+    1.2-1.6 r around it: zero for anything smooth across the pair (the
+    etalon, vignetting, gradients), the dip's depth for a disc. A plain
+    disc scored the RC71's 580 px, 0.4 % soft mote at ~2 sigma against the
+    etalon's own large-scale structure; this kernel scores it at 12, the
+    strongest feature in the map (2026-10-13, the 75a1 grid of dark discs)."""
+    n = int(np.ceil(1.6 * r)); yy, xx = np.mgrid[-n:n + 1, -n:n + 1]
+    d = np.sqrt(xx ** 2 + yy ** 2)
+    disc = (d <= r).astype(np.float32); ring = ((d > 1.2 * r) & (d <= 1.6 * r)).astype(np.float32)
+    return disc / disc.sum() - ring / ring.sum()
 
 
 def _detect(flat_b: np.ndarray, block: int, flatten_px: float, radii_px: tuple, min_depth: float) -> list[dict]:
@@ -44,13 +57,14 @@ def _detect(flat_b: np.ndarray, block: int, flatten_px: float, radii_px: tuple, 
     best_sig = np.full(dip.shape, -np.inf, np.float32); best_r = np.zeros(dip.shape, np.float32)
     for r_px in radii_px:
         r = r_px / block
-        resp = fftconvolve(dip, _disk(r), mode="same")      # the soft kernels are 80 blocks wide: direct is 10x slower
+        resp = fftconvolve(dip, _compensated(r), mode="same")   # FFT: the soft kernels are 100+ blocks wide
         # significance against the response map's own spread: whatever broad
         # structure the flatten left raises it honestly, and a mote is an
         # outlier of that map, not of the per-pixel noise
         sig = resp / (1.4826 * float(np.median(np.abs(resp - np.median(resp)))) or 1e-6)
-        # the whole compactness ring (2 r) must be inside the frame: at the
-        # edge the broad smooth misreads the vignetting and prints dips
+        # the kernel's ring (1.6 r) and the compactness ring (2 r) must be
+        # inside the frame: at the edge the broad smooth misreads the
+        # vignetting and prints dips
         e = int(2 * r) + 2
         sig[:e, :] = sig[-e:, :] = sig[:, :e] = sig[:, -e:] = -np.inf
         better = sig > best_sig

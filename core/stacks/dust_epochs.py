@@ -51,6 +51,8 @@ STEP = 0.5               # profile radius step, blocks (what `radial_profile` fi
 MIN_SHADOW = 0.5         # a rendered shadow never falls below this: dividing by it gains at most
                          # 2x; a mote darker than that is an occultation, not a correctable shadow
 MIN_SURVIVOR_DEPTH = 0.005
+MIN_DEPTH = 0.002        # the soft detector's floor: a 0.4 % shadow 580 px wide is a visible
+                         # grid of dark discs in a stretched OIII mosaic (75a1, 2026-10-13)
 TRAILING = 10            # a landing is also sought on the newest pointings alone: a whole epoch's
                          # median hides a change that is still a minority of its pointings
 
@@ -214,7 +216,7 @@ def fit_model(pooled: np.ndarray, odd: np.ndarray | None, even: np.ndarray | Non
         prof, ext, (cx, cy) = radial_profile(pooled, x, y, r0)
         mote = _quantized(cx, cy, ext, prof, block)
         survivor = any(abs(s.x - mote.x) < 3 * block and abs(s.y - mote.y) < 3 * block for s in survivors)
-        if mote.depth < (MIN_SURVIVOR_DEPTH if survivor else 0.01):
+        if mote.depth < (MIN_SURVIVOR_DEPTH if survivor else MIN_DEPTH):
             continue
         if any(presence(d, s, mote, block) < 0 for d, s in dips):
             continue
