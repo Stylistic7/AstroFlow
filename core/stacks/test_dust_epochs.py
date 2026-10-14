@@ -113,13 +113,15 @@ def test_dust_that_moves_opens_a_new_epoch_and_leaves_the_old_one_untouched():
 
 def test_the_survivor_is_known_from_the_boundary_run_on():
     """At the boundary the new epoch's provisional model is the survivors:
-    the first run after the change is already corrected for them."""
-    runs = _steady(6) + _steady(1, dust=DUST_B, start=6)
+    the first run after the change is already corrected for them. (A change
+    needs two pointings to be told from sky, so two runs follow it.)"""
+    runs = _steady(6) + _steady(2, dust=DUST_B, start=6, pointings=[7, 8])
     epochs = fold("sys", runs, BLOCK)
     assert len(epochs) == 2
     new = epochs[1]
-    assert not new.final
-    assert [(m.x, m.y) for m in new.model.motes] == [(m.x, m.y) for m in epochs[0].model.motes if abs(m.x - 1300) < 16]
+    assert new.start == 6 and new.runs == [6, 7]
+    assert _at(new.model, 1300, 900) is not None          # the survivor carried over
+    assert _at(new.model, 600, 400) is None               # the vanished mote is gone
 
 
 def test_a_mote_that_lands_splits_the_epoch_at_its_first_run():
@@ -165,3 +167,21 @@ def test_a_shadow_never_divides_by_nearly_nothing():
     M = render_motes(deep, (600, 800), BLOCK)
     assert float(M.min()) == MIN_SHADOW
     assert float((1.0 / M).max()) <= 1.0 / MIN_SHADOW + 1e-6
+
+
+def test_one_pointing_that_hides_a_mote_does_not_end_the_epoch():
+    """A bright nebula over the mote's pixels in ONE field reads as "absent";
+    one pointing cannot tell dust from sky, so the epoch must go on."""
+    runs = _steady(6)
+    fake = _run(6, 9, [DUST_A[1]], 6)             # the big mote hidden in this field only
+    runs += [fake] + _steady(3, start=7, pointings=[1, 2, 3])
+    epochs = fold("sys", runs, BLOCK)
+    assert len(epochs) == 1, [(e.start, len(e.runs)) for e in epochs]
+    assert len(epochs[0].runs) == 10
+
+
+def test_absent_at_two_pointings_ends_the_epoch_at_the_first():
+    runs = _steady(6) + _steady(3, dust=[DUST_A[1]], start=6, pointings=[1, 2, 3])
+    epochs = fold("sys", runs, BLOCK)
+    assert [e.start for e in epochs] == [0, 6]
+    assert _at(epochs[1].model, 600, 400) is None and _at(epochs[1].model, 1300, 900) is not None

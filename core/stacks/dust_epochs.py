@@ -305,8 +305,11 @@ def fold(system: str, runs: list[RunMap], block: int) -> list[Epoch]:
             scores[key] = presence(dips[i][0], dips[i][1], m, block)
         return scores[key]
 
+    absent: dict[tuple, tuple[int, set]] = {}   # mote -> (first absent run, pointings absent at) since its last sighting
+
     def open_epoch(at: int, survivors: tuple[Mote, ...]) -> None:
         nonlocal cur, pool, checked
+        absent.clear()
         cur = Epoch(start=at, model=MoteModel.of(survivors, epoch=f"{system}:{runs[at].run[:8]}"))
         pool = _Pool(shape)
         checked = 0
@@ -330,18 +333,39 @@ def fold(system: str, runs: list[RunMap], block: int) -> list[Epoch]:
     i = 0
     while i < len(runs):
         run = runs[i]
-        # only a FINAL model's motes can vanish: a provisional one is still
-        # being refitted, and its marginal motes come and go with the noise
-        # (the FLT156 R row split into a dozen one-run epochs without this)
+        # A mote is gone only when it is decidedly absent at TWO different
+        # pointings with no sighting in between: one pointing cannot tell dust
+        # from sky (the method's own premise), and a nebula filling the
+        # mote's pixels in one field faked "absent" and split the RC71's
+        # OIII into empty fragments (May 18, Sep 15). Only a FINAL model's
+        # motes are tested: a provisional one's flicker with the noise.
         if cur is not None and cur.final and cur.model.motes:
-            gone = [m for m in cur.model.motes if score(i, m) < 0]
-            if gone:
-                survivors = tuple(m for m in cur.model.motes if score(i, m) > 0)
-                log.info("dust epoch boundary: motes vanished", system=system, run=run.run[:8], date=str(run.date),
+            gone_at = None
+            for m in cur.model.motes:
+                key = (m.x, m.y)
+                sc = score(i, m)
+                if sc > 0:
+                    absent.pop(key, None)
+                elif sc < 0:
+                    first, seen = absent.setdefault(key, (i, set()))
+                    seen.add(pointings[i])
+                    if len(seen) >= 2:
+                        gone_at = first if gone_at is None else min(gone_at, first)
+            if gone_at is not None:
+                j = gone_at
+                gone = [m for m in cur.model.motes if (m.x, m.y) in absent and len(absent[(m.x, m.y)][1]) >= 2]
+                survivors = tuple(m for m in cur.model.motes if m not in gone)
+                log.info("dust epoch boundary: motes vanished", system=system, run=runs[j].run[:8], date=str(runs[j].date),
                          vanished=[(m.x, m.y) for m in gone], survivors=[(m.x, m.y) for m in survivors],
                          closed=cur.model.summary())
-                epochs.append(cur)
-                open_epoch(i, survivors)
+                if j > cur.start:
+                    cur.runs = [k for k in cur.runs if k < j]
+                    cur.pointings = len({pointings[k] for k in cur.runs})
+                    epochs.append(cur)
+                open_epoch(j, survivors)
+                if j != i:
+                    i = j                      # replay from the first absent run into the new epoch
+                    continue
         if cur is None:
             open_epoch(i, ())
         assert cur is not None and pool is not None
