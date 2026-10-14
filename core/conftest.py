@@ -108,10 +108,10 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if "exhaustive" in item.keywords:
             item.add_marker(pytest.mark.timeout(0))
-        elif "identified_testdata" in getattr(item, "fixturenames", ()):
-            # The session fixture identifies ALL real testdata, which since
+        elif {"identified_testdata", "orion_mosaic_snapshot"} & set(getattr(item, "fixturenames", ())):
+            # These session fixtures identify real testdata, which since
             # 2026-10-13 includes measuring every run's dust map: ~70 s alone,
-            # past 120 s under the six parallel shards. Its first test pays.
+            # past 120 s under the six parallel shards. Their first test pays.
             item.add_marker(pytest.mark.timeout(300))
 
     exclusive = [item for item in items if "exclusive" in item.keywords]
