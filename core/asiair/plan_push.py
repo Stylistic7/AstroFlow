@@ -11,9 +11,19 @@ them at their fresh-target values.
             close_cooler, wait_cooling, focuser_go_home, caa_go_home,
             shutdown_pi, start_time {type: "dusk"|"date", hour}, end_time
             {type: "dawn"}, targets: [...]}
-    target {id, enable, target_name, target_coord [RA_HOURS, DEC_DEG],
+    target {id, enable, target_name, target_coord [RA_HOURS, DEC_DEG] (JNow),
             seqs: [{id, type: "light", filter: WHEEL_SLOT, exp, repeat,
                     gain: -10000 (= "camera's current"), bin, ...}]}
+
+COORDINATES ARE JNow. The device stores and slews to `target_coord` as
+equinox-of-date coordinates; its own Telescopius CSV import converts J2000
+on the way in (Panes 8-21 of Stylistic7's Cassiopeia plan read back exactly
+at their J2000 values precessed to 2026-10, 0.0'). AstroFlow's centres are
+J2000 plate solves, so `build_target` precesses them to the plan's night.
+Until 2026-10-14 they were sent raw: every pushed panel landed one
+precession (~10-15' at Dec +45..+70) south-west of its Target, and a
+re-push aimed at that drifted Target compounded it (7098 Panels 2 and 4
+on 2026-10-11 landed two precessions off).
 
 A pushed plan is created DISABLED under its own name: the plan that is
 armed for tonight stays armed, and enabling the new one is a tap on the
@@ -23,6 +33,7 @@ write semantics of `set_plan` are reverse-engineered, not documented.
 """
 from __future__ import annotations
 
+import datetime as _dt
 from dataclasses import dataclass
 
 from asiair.rpc_session import AsiairSession
@@ -40,9 +51,19 @@ class ExposureRow:
 @dataclass(frozen=True)
 class PlanTarget:
     name: str
-    ra_deg: float
+    ra_deg: float        # J2000 (ICRS), like every AstroFlow centre
     dec_deg: float
     rows: tuple[ExposureRow, ...]
+
+
+def jnow(ra_deg: float, dec_deg: float, night: _dt.date) -> tuple[float, float]:
+    """J2000 -> the mean equinox of `night`: what the ASIAir's goto expects."""
+    import astropy.units as u
+    from astropy.coordinates import FK5, SkyCoord
+    from astropy.time import Time
+    c = SkyCoord(ra_deg * u.deg, dec_deg * u.deg, frame="icrs").transform_to(
+        FK5(equinox=Time(night.isoformat())))
+    return float(c.ra.deg), float(c.dec.deg)
 
 
 def wheel_slots(session: AsiairSession) -> dict[str, int]:
@@ -57,18 +78,19 @@ def device_name(name: str) -> str:
     return " ".join(name.replace(":", " ").split())
 
 
-def build_target(index: int, target: PlanTarget, slots: dict[str, int]) -> dict:
+def build_target(index: int, target: PlanTarget, slots: dict[str, int], night: _dt.date) -> dict:
     missing = [r.filter for r in target.rows if r.filter not in slots]
     if missing:
         raise KeyError(f"filter(s) {missing} not in the wheel {sorted(slots)}")
     name = device_name(target.name)
+    ra, dec = jnow(target.ra_deg, target.dec_deg, night)
     return {
         "id": index,
         "enable": True,
         "target_name": name,
         "target_original_name": name,
         "target_original_img": "",
-        "target_coord": [round(target.ra_deg / 15.0, 6), round(target.dec_deg, 6)],
+        "target_coord": [round(ra / 15.0, 6), round(dec, 6)],
         "group_by_slot": True,
         "delay_first": 0,
         "delay_between_frame": 0,
@@ -100,9 +122,10 @@ def build_target(index: int, target: PlanTarget, slots: dict[str, int]) -> dict:
 
 
 def build_plan(plan_id: int, name: str, targets: list[PlanTarget], slots: dict[str, int],
-               like: dict | None = None) -> dict:
-    """A whole plan. `like` is an existing plan whose session conventions
-    (meridian flip, end action, guiding, cooler) are carried over."""
+               night: _dt.date, like: dict | None = None) -> dict:
+    """A whole plan for `night` (the equinox its coordinates are precessed
+    to). `like` is an existing plan whose session conventions (meridian
+    flip, end action, guiding, cooler) are carried over."""
     like = like or {}
     return {
         "id": plan_id,
@@ -118,7 +141,7 @@ def build_plan(plan_id: int, name: str, targets: list[PlanTarget], slots: dict[s
         "shutdown_pi": False,
         "start_time": {"type": "dusk"},
         "end_time": {"type": "dawn"},
-        "targets": [build_target(i, t, slots) for i, t in enumerate(targets, 1)],
+        "targets": [build_target(i, t, slots, night) for i, t in enumerate(targets, 1)],
     }
 
 

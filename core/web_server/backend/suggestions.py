@@ -270,7 +270,7 @@ def send_plan_to_asiair():
         like = next((p for p in existing if p.get("enable")), existing[0] if existing else None)
         device_plan = build_plan(
             1 if replace else next_plan_id(session), body.get("plan_name") or f"AstroFlow {plan.for_date}",
-            targets, wheel_slots(session), like=like,
+            targets, wheel_slots(session), plan.for_date, like=like,
         )
         summary = [{"id": p.get("id"), "plan_name": p.get("plan_name"), "enable": p.get("enable"),
                     "targets": len(p.get("targets", []))} for p in existing]
