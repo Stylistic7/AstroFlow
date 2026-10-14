@@ -16,6 +16,10 @@ from dependency_graph import run_graph
 from testing import make_synthetic_frames, copy_testdata_frames
 from stacks.composite_stack import Stack
 
+# Every test here identifies real frames, which now includes measuring each
+# Run's dust (~50 s alone; past 120 s beside five sibling shards).
+pytestmark = pytest.mark.timeout(300)
+
 
 def test_quarantine_run(test_context) -> None:
     """Quarantining a run via DecisionKey.quarantine(parent_stack_id=...)
