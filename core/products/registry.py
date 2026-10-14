@@ -321,15 +321,20 @@ def _inherited_cards(header, args) -> dict:
     if not missing:
         return hints
     from metadata.classes import ImageMetadata
-    for arg in args:
-        if not isinstance(arg, ImageMetadata):
+    images = [getattr(a, "header", None) or {} for a in args if isinstance(a, ImageMetadata)]
+    for key in missing:
+        if key == "FILTER":
+            # A band is inherited only from inputs that AGREE on one: an
+            # H+O narrowband composite is neither (it read FILTER='H' from
+            # its first input, 2026-10-14).
+            bands = {str(h["FILTER"]) for h in images if not _missing(h, "FILTER")}
+            if len(bands) == 1:
+                hints[key] = bands.pop()
             continue
-        src = getattr(arg, "header", None) or {}
-        for key in missing:
-            if not _missing(src, key) and key not in hints:
+        for src in images:
+            if not _missing(src, key):
                 hints[key] = src.get(key)
-        if len(hints) == len(missing):
-            break
+                break
     return hints
 
 

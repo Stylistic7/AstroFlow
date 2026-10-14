@@ -48,3 +48,9 @@ def test_filter_is_inherited_when_the_output_reads_none():
     assert _inherited_cards({"FILTER": "none"}, (src,))["FILTER"] == "O"
     assert "FILTER" not in _inherited_cards({"FILTER": "H"}, (src,))
     assert "FILTER" not in _inherited_cards({"FILTER": "none"}, (_meta(FILTER="none"),))
+
+
+def test_a_composite_of_different_bands_inherits_no_filter():
+    h, o = _meta(FILTER="H", RA=1.0), _meta(FILTER="O", RA=1.0)
+    assert "FILTER" not in _inherited_cards({"FILTER": "none"}, ("m", (), h, o))
+    assert _inherited_cards({"FILTER": "none"}, (h, _meta(FILTER="H")))["FILTER"] == "H"
