@@ -15,6 +15,14 @@ import plate_solving
 from file_io.sidecar import get_section
 
 
+@pytest.fixture(autouse=True)
+def _no_gaia_check(monkeypatch):
+    """These tests drive the solve ladder with FAKE solutions on a synthetic
+    frame; the Gaia check-and-refit after it judges real geometry against
+    real pixels and is tested in photometry/test_solution_check.py."""
+    monkeypatch.setattr(plate_solving, "_gaia_checked", lambda filename, header, result: result)
+
+
 @pytest.fixture
 def frame(tmp_path) -> Path:
     f = tmp_path / "sub.fits"

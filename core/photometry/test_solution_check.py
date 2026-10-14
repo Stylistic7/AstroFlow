@@ -164,3 +164,52 @@ def test_master_calibration_raises_on_a_bad_solution(frame, monkeypatch, tmp_pat
     monkeypatch.setattr("photometry.harvest.spfc_scale", lambda *a, **k: (_ for _ in ()).throw(AssertionError("photometry must not run")))
     with pytest.raises(ValueError, match="does not place the stars"):
         gs.post_stack_calibrate._function(stack, config, meta)
+
+
+def test_the_gaia_refit_repairs_a_distorted_solution(frame, monkeypatch):
+    """The solver's cubic left unconstrained past an index-tile edge is a
+    smooth error a few pixels deep at the edge (LBN 522 OIII, 2026-10-14:
+    3.5 px in one corner). Refitting against the catalogue stars actually in
+    the image recovers the true projection everywhere."""
+    img, wcs, cat = frame
+    monkeypatch.setattr("photometry.harvest.catalog", lambda: cat)
+    bad = _with_radial_distortion(wcs, 1.5e-10)
+    assert not sc.check_solution(img, bad, "H").ok
+    fixed = sc.refit(img, bad, "H")
+    v = sc.check_solution(img, fixed, "H")
+    assert v.ok and v.max_shift_px < 0.5, str(v)
+
+
+def _solution(wcs: WCS):
+    from plate_solving import PlateSolution
+    return PlateSolution(header=dict(wcs.to_header(relax=True)), num_stars=600,
+                         center=(0.0, 0.0), image_scale=1.0, rotation_angle=0.0)
+
+
+def test_a_solution_that_passes_is_never_refit(frame, monkeypatch):
+    import plate_solving
+    img, wcs, cat = frame
+    monkeypatch.setattr("photometry.harvest.catalog", lambda: cat)
+    good = _solution(wcs)
+    assert plate_solving._gaia_checked(SUB, {"FILTER": "Ha"}, good) is good
+
+
+def test_a_failing_solution_is_replaced_by_the_refit(frame, monkeypatch):
+    import plate_solving
+    img, wcs, cat = frame
+    monkeypatch.setattr("photometry.harvest.catalog", lambda: cat)
+    out = plate_solving._gaia_checked(SUB, {"FILTER": "Ha"}, _solution(_with_radial_distortion(wcs, 1.5e-10)))
+    from astropy.wcs import WCS as _W
+    from astropy.io.fits import Header
+    v = sc.check_solution(img, _W(Header(out.header)), "H")
+    assert v.ok and v.max_shift_px < 0.5, str(v)
+    mid = wcs.pixel_to_world((img.shape[1] - 1) / 2, (img.shape[0] - 1) / 2)
+    assert abs(out.center[0] - mid.ra.deg) * 3600 < 1 and abs(out.center[1] - mid.dec.deg) * 3600 < 1
+
+
+def test_a_frame_without_a_known_filter_fails_loudly(frame, monkeypatch):
+    import plate_solving
+    img, wcs, cat = frame
+    monkeypatch.setattr("photometry.harvest.catalog", lambda: cat)
+    with pytest.raises(ValueError, match="not a known passband"):
+        plate_solving._gaia_checked(SUB, {"FILTER": "Dual"}, _solution(wcs))

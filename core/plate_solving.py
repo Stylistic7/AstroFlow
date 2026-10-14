@@ -11,7 +11,7 @@ from astropy.wcs import FITSFixedWarning  # type: ignore
 import astropy.io.fits as pyfits  # type: ignore
 
 warnings.filterwarnings("ignore", category=FITSFixedWarning)
-from dataclasses import dataclass, is_dataclass, asdict
+from dataclasses import dataclass, is_dataclass, asdict, replace
 import numpy as np
 import traceback
 from typing import Any
@@ -303,6 +303,66 @@ def _solve_flattened(
     return None
 
 
+# A TAN-SIP's own keywords: replaced wholesale when the Gaia refit wins.
+_WCS_KEY_PREFIXES = ("CTYPE", "CUNIT", "CRVAL", "CRPIX", "CD1_", "CD2_", "PC1_", "PC2_",
+                     "CDELT", "A_", "B_", "AP_", "BP_", "LONPOLE", "LATPOLE",
+                     "WCSAXES", "RADESYS", "EQUINOX", "MJDREF")
+
+
+def _gaia_checked(filename: Path, header: Mapping[str, Any],
+                  result: PlateSolution) -> PlateSolution:
+    """`result`, or a Gaia refit of it when `result` fails the solution check.
+
+    solve-field fits its distortion only to the reference stars of the one
+    index tile that matched, so a field crossing a tile edge gets an
+    unconstrained corner: LBN 522 and LBN 521 OIII (2026-10-14) sat 3.5 and
+    1.6 px off there, and post_stack_calibrate refused both, blocking their
+    whole mosaic channel. The check is Gaia, against the pixels, over nine
+    cells. The refit replaces the solution ONLY when it then passes; a
+    solution that already passes is never touched."""
+    from astropy.wcs import WCS
+    from file_io.generic import read_image
+    from photometry.harvest import catalog, passband_key
+    from photometry.solution_check import check_solution, refit
+
+    key = passband_key(header.get("FILTER"))
+    if key not in catalog().filters:
+        raise ValueError(
+            f"plate-solve: {filename} has FILTER={header.get('FILTER')!r}, not a "
+            f"known passband {catalog().filters}; every master and sub carries one")
+    image = np.asarray(read_image(filename), np.float32)
+    if image.ndim == 3:
+        image = image[:, :, 0]
+    wcs = WCS(pyfits.Header({k: v for k, v in result.header.items()
+                             if isinstance(v, (int, float, str))}))
+    before = check_solution(image, wcs, key)
+    if before.ok:
+        return result
+    fitted = refit(image, wcs, key)
+    after = check_solution(image, fitted, key) if fitted is not None else None
+    if after is None or not after.ok:
+        print(f"### plate-solve: Gaia refit did not rescue {filename}: "
+              f"solver {before}; refit {after}")
+        return result
+    print(f"### plate-solve: Gaia refit replaced the solver's distortion for "
+          f"{filename}: {before} -> {after}")
+    fit = fitted.to_header(relax=True)
+    cd = fitted.wcs.cd if fitted.wcs.has_cd() else fitted.wcs.get_pc() * fitted.wcs.cdelt[:, None]
+    new = {k: v for k, v in result.header.items() if not k.startswith(_WCS_KEY_PREFIXES)}
+    new.update({k: fit[k] for k in fit
+                if not k.startswith(("PC1_", "PC2_", "CDELT", "DATE", "MJD")) and k not in ("COMMENT", "HISTORY")})
+    new.update({"CD1_1": float(cd[0, 0]), "CD1_2": float(cd[0, 1]),
+                "CD2_1": float(cd[1, 0]), "CD2_2": float(cd[1, 1])})
+    _ensure_naxis(new)
+    # The fit chooses its own reference point (pinning it to the image centre
+    # made the SIP solve diverge on LBN 521), so CRVAL is no longer the image
+    # centre; `center` stays what it means — the sky at the middle pixel.
+    mid = fitted.pixel_to_world((image.shape[1] - 1) / 2.0, (image.shape[0] - 1) / 2.0)
+    return replace(
+        result, header=new, center=(Degrees(float(mid.ra.deg)), Degrees(float(mid.dec.deg))),
+        image_scale=get_image_scale(new), rotation_angle=get_rotation_angle(new))
+
+
 def solve_field(
     filename: Path | str,
     debug: bool = False,
@@ -450,6 +510,7 @@ def solve_field(
         result = refined
     else:
         print(f"### plate-solve: refine failed, keeping the find: {filename}")
+    result = _gaia_checked(filename, header, result)
 
     set_section(
         filename, "plate_solution", _plate_solution_to_obj(result)

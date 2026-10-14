@@ -123,6 +123,54 @@ def check_solution(image: np.ndarray, wcs: WCS, filter_key: str) -> SolutionChec
     return SolutionCheck(int(ok.sum()), float(np.median(d[ok])), shifts[worst], worst)
 
 
+
+# The Gaia refit (`refit`): stars matched within this many pixels of their
+# predicted place, then sigma-clipped. The solutions it repairs are off by a
+# few pixels at worst (an unconstrained corner), and the solver's own fit
+# is right to ~0.3 px wherever it had stars, so a tight gate matches cleanly.
+REFIT_MATCH_PX = 6.0
+REFIT_SIP_ORDER = 3
+REFIT_ROUNDS = 4
+
+
+def refit(image: np.ndarray, wcs: WCS, filter_key: str) -> WCS | None:
+    """A TAN-SIP solution fitted to the Gaia stars actually in `image`,
+    seeded by `wcs`; None when too few stars match.
+
+    Why it exists: solve-field's distortion fit draws its reference stars
+    from the ONE index tile that matched (astrometry.net 5200-series healpix
+    tiles). A field crossing a tile edge has no reference stars past it, so
+    the cubic extrapolates there: LBN 522 OIII (2026-10-14) had 0 index
+    stars in two cells of nine and sat 3.5 px off in that corner, while
+    this fit put every cell within 0.15 px."""
+    from astropy.coordinates import SkyCoord
+    import astropy.units as u
+    from astropy.wcs.utils import fit_wcs_from_points
+    from scipy.spatial import cKDTree
+    from photometry.harvest import catalog
+    H, W = image.shape
+    st = catalog().stars_in_field(wcs, W, H, filter_key)
+    keep = st["G"] < MAX_G
+    pts = np.column_stack([st["x"][keep], st["y"][keep]])
+    sky = SkyCoord(st["ra"][keep] * u.deg, st["dec"][keep] * u.deg)
+    peaks = _peaks(np.asarray(image, np.float32))
+    d, i = cKDTree(peaks).query(pts, distance_upper_bound=REFIT_MATCH_PX)
+    ok = np.isfinite(d)
+    if ok.sum() < MIN_STARS:
+        return None
+    sky, xy = sky[ok], peaks[i[ok]] - 1.0          # 0-based pixels for astropy
+    use = np.ones(len(xy), bool)
+    fitted = None
+    for _ in range(REFIT_ROUNDS):
+        if use.sum() < MIN_STARS:
+            return None
+        fitted = fit_wcs_from_points((xy[use, 0], xy[use, 1]), sky[use],
+                                     projection="TAN", sip_degree=REFIT_SIP_ORDER)
+        x, y = fitted.all_world2pix(sky.ra.deg, sky.dec.deg, 0, quiet=True)
+        r = np.hypot(xy[:, 0] - x, xy[:, 1] - y)
+        use = r < max(3.0 * 1.4826 * float(np.median(r[use])), 0.5)
+    return fitted
+
 def check_file(path: Path, filter: str | None) -> SolutionCheck | None:
     """`check_solution` on a file with a solution in its sidecar; None when
     it has no solution or no known passband."""
