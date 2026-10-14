@@ -20,7 +20,7 @@ def _no_gaia_check(monkeypatch):
     """These tests drive the solve ladder with FAKE solutions on a synthetic
     frame; the Gaia check-and-refit after it judges real geometry against
     real pixels and is tested in photometry/test_solution_check.py."""
-    monkeypatch.setattr(plate_solving, "_gaia_checked", lambda filename, header, result: result)
+    monkeypatch.setattr(plate_solving, "_gaia_checked", lambda filename, result: result)
 
 
 @pytest.fixture

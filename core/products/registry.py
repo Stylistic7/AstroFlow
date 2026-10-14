@@ -284,14 +284,24 @@ def _primary_stable_hash(args: tuple) -> "str | None":
     return None
 
 
-# Cards the plate solver uses as SEARCH PRIORS (see plate_solving.
-# _header_hints). They cost nothing to carry and turn a blind all-sky quad
-# match into a 5-degree cone search.
-_SOLVER_HINT_KEYS = ("RA", "DEC", "FOCALLEN", "XPIXSZ")
+# Cards an output of the SAME field and filter shares with its input. RA,
+# DEC, FOCALLEN and XPIXSZ are the plate solver's SEARCH PRIORS (see
+# plate_solving._header_hints): they turn a blind all-sky quad match into a
+# 5-degree cone search. FILTER is the image's band: a deconvolved or
+# starless channel is still that channel (2026-10-14: every BXT and SXT
+# output read FILTER='none').
+_INHERITED_KEYS = ("FILTER", "RA", "DEC", "FOCALLEN", "XPIXSZ")
 
 
-def _inherited_solver_hints(header, args) -> dict:
-    """Solver hints copied from the producing op's INPUT image, for outputs
+def _missing(header, key: str) -> bool:
+    # A header read through `normalize_header` reports an absent FILTER as
+    # "none" — absent all the same.
+    value = header.get(key)
+    return value in (None, "") or (key == "FILTER" and str(value).lower() == "none")
+
+
+def _inherited_cards(header, args) -> dict:
+    """Cards copied from the producing op's INPUT image, for outputs
     written by external tools that drop them.
 
     rc-astro's BXT writes a TIFF with no RA/DEC/FOCALLEN/XPIXSZ, so
@@ -307,7 +317,7 @@ def _inherited_solver_hints(header, args) -> dict:
     Only fills cards the output is MISSING, so a producer that writes its
     own always wins."""
     hints: dict = {}
-    missing = [k for k in _SOLVER_HINT_KEYS if header.get(k) in (None, "")]
+    missing = [k for k in _INHERITED_KEYS if _missing(header, k)]
     if not missing:
         return hints
     from metadata.classes import ImageMetadata
@@ -316,9 +326,8 @@ def _inherited_solver_hints(header, args) -> dict:
             continue
         src = getattr(arg, "header", None) or {}
         for key in missing:
-            value = src.get(key)
-            if value not in (None, "") and key not in hints:
-                hints[key] = value
+            if not _missing(src, key) and key not in hints:
+                hints[key] = src.get(key)
         if len(hints) == len(missing):
             break
     return hints
@@ -367,7 +376,7 @@ def _stamp_header(
         stable = _primary_stable_hash(args)
         if stable is not None and not header.get("STBLHASH"):
             updates["STBLHASH"] = stable
-        updates |= _inherited_solver_hints(header, args)
+        updates |= _inherited_cards(header, args)
         update_header(target, updates)
     except (OSError, ValueError):
         pass

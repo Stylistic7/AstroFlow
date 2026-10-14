@@ -191,14 +191,14 @@ def test_a_solution_that_passes_is_never_refit(frame, monkeypatch):
     img, wcs, cat = frame
     monkeypatch.setattr("photometry.harvest.catalog", lambda: cat)
     good = _solution(wcs)
-    assert plate_solving._gaia_checked(SUB, {"FILTER": "Ha"}, good) is good
+    assert plate_solving._gaia_checked(SUB, good) is good
 
 
 def test_a_failing_solution_is_replaced_by_the_refit(frame, monkeypatch):
     import plate_solving
     img, wcs, cat = frame
     monkeypatch.setattr("photometry.harvest.catalog", lambda: cat)
-    out = plate_solving._gaia_checked(SUB, {"FILTER": "Ha"}, _solution(_with_radial_distortion(wcs, 1.5e-10)))
+    out = plate_solving._gaia_checked(SUB, _solution(_with_radial_distortion(wcs, 1.5e-10)))
     from astropy.wcs import WCS as _W
     from astropy.io.fits import Header
     v = sc.check_solution(img, _W(Header(out.header)), "H")
@@ -207,9 +207,11 @@ def test_a_failing_solution_is_replaced_by_the_refit(frame, monkeypatch):
     assert abs(out.center[0] - mid.ra.deg) * 3600 < 1 and abs(out.center[1] - mid.dec.deg) * 3600 < 1
 
 
-def test_a_frame_without_a_known_filter_fails_loudly(frame, monkeypatch):
+def test_the_check_needs_no_filter(frame, monkeypatch):
+    """Geometry only: a produced image whose FILTER says 'none' (a BXT'd
+    channel TIFF, 2026-10-14) is checked and refit like any other."""
     import plate_solving
     img, wcs, cat = frame
     monkeypatch.setattr("photometry.harvest.catalog", lambda: cat)
-    with pytest.raises(ValueError, match="not a known passband"):
-        plate_solving._gaia_checked(SUB, {"FILTER": "Dual"}, _solution(wcs))
+    good = _solution(wcs)
+    assert plate_solving._gaia_checked(SUB, good) is good

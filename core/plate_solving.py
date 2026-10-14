@@ -309,7 +309,7 @@ _WCS_KEY_PREFIXES = ("CTYPE", "CUNIT", "CRVAL", "CRPIX", "CD1_", "CD2_", "PC1_",
                      "WCSAXES", "RADESYS", "EQUINOX", "MJDREF")
 
 
-def _gaia_checked(filename: Path, header: Mapping[str, Any],
+def _gaia_checked(filename: Path,
                   result: PlateSolution) -> PlateSolution:
     """`result`, or a Gaia refit of it when `result` fails the solution check.
 
@@ -322,14 +322,14 @@ def _gaia_checked(filename: Path, header: Mapping[str, Any],
     solution that already passes is never touched."""
     from astropy.wcs import WCS
     from file_io.generic import read_image
-    from photometry.harvest import catalog, passband_key
+    from photometry.harvest import catalog
     from photometry.solution_check import check_solution, refit
 
-    key = passband_key(header.get("FILTER"))
-    if key not in catalog().filters:
-        raise ValueError(
-            f"plate-solve: {filename} has FILTER={header.get('FILTER')!r}, not a "
-            f"known passband {catalog().filters}; every master and sub carries one")
+    # Geometry only: the check and the refit read catalogue POSITIONS and the
+    # G-magnitude cut, never a passband's flux column, so any passband key
+    # will do. (Requiring the image's FILTER broke on BXT'd channel TIFFs,
+    # which carry FILTER='none' — 2026-10-14.)
+    key = catalog().filters[0]
     image = np.asarray(read_image(filename), np.float32)
     if image.ndim == 3:
         image = image[:, :, 0]
@@ -510,7 +510,7 @@ def solve_field(
         result = refined
     else:
         print(f"### plate-solve: refine failed, keeping the find: {filename}")
-    result = _gaia_checked(filename, header, result)
+    result = _gaia_checked(filename, result)
 
     set_section(
         filename, "plate_solution", _plate_solution_to_obj(result)
