@@ -190,7 +190,7 @@ def calibrate(
     `FlatGain` after each star / night-sky flat (it names its flat by
     STBLHASH; the stacker scales that flat in its own scratch), then the
     distinct dust-mote models of the stack's runs (`stacks/dust_epochs.py`)
-    when such a synthetic flat is in play: the stacker multiplies each run's
+    when a night-sky flat is in play (`carries_motes`): the stacker multiplies each run's
     model into its scaled flat. Only models WITH motes travel, so a stack in
     a mote-free epoch, or on a real flat, keeps the key it had. `integrate`
     builds the bias, dark and flat masters: a pipeline passes its own
@@ -210,8 +210,21 @@ def calibrate(
         if gain is not None:
             out.append(gain)
     table = config.get_dust_epochs()
-    if table is not None and any(has_own_producer(cal_stacks[i]) for i in top_ids):
+    if table is not None and carries_motes([cal_stacks[i] for i in top_ids]):
         models = {m.content_hash: m for run in stack.contents.values()
                   if (m := table.model_for(run.frames)) is not None and m.motes}
         out += [models[k] for k in sorted(models)]
     return out
+
+
+def carries_motes(cal_stacks: list) -> bool:
+    """Whether a stack calibrated with these masters gets its runs' dust
+    models: only with a night-sky flat (built mote-free) and no star flat.
+    A star flat is solved from the lights themselves, so it already holds
+    their dust, smeared over its cells; a model on top corrects the mote
+    twice (2026-10-13, the Lion Nebula OIII: the dark mote became a larger
+    bright smudge). A real flat carries its own dust and is never touched."""
+    from stacks.sky_flat import SkyFlatStack
+    from stacks.star_flat import StarFlatStack
+    return (any(isinstance(c, SkyFlatStack) for c in cal_stacks)
+            and not any(isinstance(c, StarFlatStack) for c in cal_stacks))

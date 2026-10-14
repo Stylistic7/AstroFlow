@@ -143,3 +143,19 @@ def test_a_pipeline_integrator_builds_every_master(monkeypatch):
     assert wbpp_calls == []
     assert dict(own)["flat1"] == ("own:bias1",)
     assert cal == ["own:dark1", "own:flat1"]
+
+
+def test_only_a_night_sky_flat_carries_dust_models():
+    """A star flat already holds the lights' dust; a real flat holds its own.
+    Only the mote-free night-sky flat takes the runs' mote models."""
+    from types import SimpleNamespace
+    from stacks.calibration_selection import carries_motes
+    from stacks.sky_flat import SkyFlatStack
+    from stacks.star_flat import StarFlatStack
+    sky = SkyFlatStack.__new__(SkyFlatStack)
+    star = StarFlatStack.__new__(StarFlatStack)
+    dark = SimpleNamespace(image_type="dark")
+    assert carries_motes([dark, sky])
+    assert not carries_motes([dark, star])
+    assert not carries_motes([dark, sky, star])
+    assert not carries_motes([dark, SimpleNamespace(image_type="flat")])
