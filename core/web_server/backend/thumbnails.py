@@ -274,7 +274,7 @@ def get_thumbnail(entity, *extra_args):
         # Prefer a pyramid — serve a small stored level instead of decoding
         # the (possibly multi-GB) source. It lives in one of two places:
         # the `_tiles.tiff` SIBLING, or, since "the pyramid IS the payload"
-        # (2026-08-17, `products/registry._publish_with_presentations`),
+        # (2026-08-17, `products/registry.makes_image_wrap`),
         # INSIDE the primary itself.
         #
         # Only the sibling was checked. That sibling is no longer written for

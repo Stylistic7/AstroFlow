@@ -1,25 +1,16 @@
-"""Recover or reap the staging files left behind by a killed publish.
+"""Reap the scratch files a killed producer leaves behind.
 
-Two publish protocols leave differently-shaped debris, and they need OPPOSITE
-treatment — which is the whole reason this module exists rather than a `find
--delete` in the Makefile.
+Every image producer writes to a SCRATCH name beside its product —
+`.{stem}.partial.{pid}.{tag}{suffix}`, plus `.pyr` for a pyramid built from it
+(`products.registry.makes_image_wrap`) — and the product appears only through
+one final `os.replace`. So a leftover scratch file is never the product, only
+an unfinished one, and is always safe to delete. (Until 2026-10-15 the
+payload was parked aside under a `.staging.` name while its pyramid was
+built, and a stranded one WAS the product: an 18.9 GB master was lost to a
+"litter" cleanup on 2026-08-17. The scratch protocol removed that case.)
 
-**Parked payloads** — `products/registry._publish_with_presentations` renames
-the payload ASIDE (`os.replace(source, staging)`) so the pyramid can be built
-before the payload lands, then republishes in a `finally`. The `finally` covers
-exceptions but NOT a killed process, and its own comment names the consequence:
-"the payload is stranded under its dot-name and the product vanishes entirely".
-So a leftover `.{stem}.staging.{pid}{suffix}` whose canonical name is MISSING is
-not garbage — it IS the product, and the correct action is to RESTORE it.
-
-    (learned the hard way on 2026-08-17: an 18.9 GB parked
-    `combine_broadband_rgb` payload was deleted as "obvious litter" during a
-    disk emergency. Its canonical file never existed again.)
-
-**Partial copies** — `file_io.publish.publish_atomically` copies to
-`{dest}.tmp.{pid}.{uuid}` and then replaces. The destination is untouched until
-the replace, so a leftover `.tmp.` file is only ever a half-written copy: always
-safe to delete, never something to restore.
+`file_io.publish.publish_atomically` leaves `{dest}.tmp.{pid}.{uuid}` copies
+the same way, with the destination untouched.
 
 SAFETY. Both actions move or unlink files another process might be writing, so
 every candidate must satisfy BOTH guards:
@@ -40,16 +31,15 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-# `.{stem}.staging.{pid}{suffix}` — registry.py's parked payload.
-_PARKED = re.compile(r"^\.(?P<stem>.+)\.staging\.(?P<pid>\d+)(?P<suffix>\.[^.]+)$")
+# `.{stem}.partial.{pid}.{tag}{suffix}[.pyr]` — makes_image_wrap's scratch.
+_SCRATCH = re.compile(r"^\..+\.partial\.(?P<pid>\d+)\.[0-9a-f]+\.[^.]+(\.pyr)?$")
 # `{dest.name}.tmp.{pid}.{uuid}` — publish.py's in-flight copy.
 _PARTIAL = re.compile(r"^(?P<dest>.+)\.tmp\.(?P<pid>\d+)\.[0-9a-f]+$")
 
-RESTORE, DELETE, SKIP = "restore", "delete", "skip"
+DELETE, SKIP = "delete", "skip"
 
-# One hour: longer than the gap between a park and its republish (header stamp
-# + pyramid build), short enough that debris from a crashed run is collected on
-# the next start rather than lingering for days.
+# One hour: longer than any write-then-publish, short enough that debris from
+# a crashed run is collected on the next start rather than lingering for days.
 DEFAULT_MIN_AGE_S = 3600.0
 
 
@@ -59,7 +49,6 @@ class Candidate:
     action: str
     reason: str
     size: int
-    target: "Path | None" = None   # where a RESTORE would land
 
 
 def _alive(pid: int) -> bool:
@@ -73,54 +62,32 @@ def _alive(pid: int) -> bool:
 
 def scan(roots, min_age_s: float = DEFAULT_MIN_AGE_S, now: float | None = None
          ) -> "list[Candidate]":
-    """Classify every staging file under `roots` without touching anything."""
+    """Classify every scratch file under `roots` without touching anything."""
     import time
     now = time.time() if now is None else now
     out: list[Candidate] = []
-
     for root in roots:
         root = Path(root)
         if not root.is_dir():
             continue
         for d in sorted(p for p in root.iterdir() if p.is_dir()):
             for f in sorted(d.iterdir()):
-                if not f.is_file():
-                    continue
-                m = _PARKED.match(f.name)
-                partial = None if m else _PARTIAL.match(f.name)
-                if not m and not partial:
+                m = _SCRATCH.match(f.name) or _PARTIAL.match(f.name)
+                if m is None or not f.is_file():
                     continue
                 try:
                     st = f.stat()
                 except OSError:
                     continue
-                pid = int((m or partial).group("pid"))
-                age = now - st.st_mtime
-
+                pid = int(m.group("pid"))
                 if _alive(pid):
-                    out.append(Candidate(f, SKIP, f"writer pid {pid} alive",
+                    out.append(Candidate(f, SKIP, f"writer pid {pid} alive", st.st_size))
+                elif now - st.st_mtime < min_age_s:
+                    out.append(Candidate(f, SKIP, f"only {(now - st.st_mtime) / 60:.0f} min old",
                                          st.st_size))
-                    continue
-                if age < min_age_s:
-                    out.append(Candidate(
-                        f, SKIP, f"only {age / 60:.0f} min old", st.st_size))
-                    continue
-
-                if partial:
-                    out.append(Candidate(
-                        f, DELETE, "partial copy; destination untouched",
-                        st.st_size))
-                    continue
-
-                canonical = f.with_name(m.group("stem") + m.group("suffix"))
-                if canonical.exists():
-                    out.append(Candidate(
-                        f, DELETE, "canonical present; stale duplicate",
-                        st.st_size, canonical))
                 else:
-                    out.append(Candidate(
-                        f, RESTORE, "canonical MISSING; this is the payload",
-                        st.st_size, canonical))
+                    out.append(Candidate(f, DELETE, "unfinished write; the product is untouched",
+                                         st.st_size))
     return out
 
 
@@ -128,33 +95,17 @@ def sweep(roots, min_age_s: float = DEFAULT_MIN_AGE_S, dry_run: bool = True
           ) -> dict:
     """Apply `scan`'s verdicts. Returns a report; `dry_run` decides nothing."""
     cands = scan(roots, min_age_s=min_age_s)
-    report = {"restored": 0, "deleted": 0, "skipped": 0,
-              "restored_bytes": 0, "deleted_bytes": 0,
+    report = {"deleted": 0, "skipped": 0, "deleted_bytes": 0,
               "candidates": cands, "dry_run": dry_run}
     for c in cands:
         if c.action == SKIP:
             report["skipped"] += 1
             continue
-        if dry_run:
-            report["restored" if c.action == RESTORE else "deleted"] += 1
-            report[("restored_bytes" if c.action == RESTORE
-                    else "deleted_bytes")] += c.size
-            continue
         try:
-            if c.action == RESTORE:
-                # Re-check under the race: if the canonical appeared since the
-                # scan, this parked copy is now redundant rather than the only
-                # copy, and restoring would clobber the newer file.
-                if c.target is not None and not c.target.exists():
-                    os.replace(c.path, c.target)
-                    report["restored"] += 1
-                    report["restored_bytes"] += c.size
-                else:
-                    report["skipped"] += 1
-            else:
+            if not dry_run:
                 os.unlink(c.path)
-                report["deleted"] += 1
-                report["deleted_bytes"] += c.size
+            report["deleted"] += 1
+            report["deleted_bytes"] += c.size
         except OSError:
             report["skipped"] += 1
     return report

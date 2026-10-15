@@ -64,33 +64,6 @@ measure_performance = make_measure_performance_decorator(context)
 capture_logs = make_capture_logs_decorator(context)
 
 
-# File-typed return annotations that signal "this is an artifact
-# producer." Listed locally rather than imported from products.registry
-# so bare `@node` decoration paths don't have to load that module.
-_FILE_RETURN_TYPE_NAMES = ('TiffFilePath', 'XisfFilePath', 'FitsFilePath')
-
-
-def _looks_like_file_return(func) -> bool:
-    """Return True iff `func`'s return annotation names a file-typed
-    result directly (`-> XisfFilePath`) or as a generic arg
-    (`-> WithSidecar[XisfFilePath]`)."""
-    import inspect, typing
-    raw = func.__wrapped__ if hasattr(func, '__wrapped__') else func
-    try:
-        sig = inspect.signature(raw)
-    except (TypeError, ValueError):
-        return False
-    ret = sig.return_annotation
-    if ret is inspect.Signature.empty:
-        return False
-    if getattr(ret, '__name__', None) in _FILE_RETURN_TYPE_NAMES:
-        return True
-    for a in typing.get_args(ret):
-        if getattr(a, '__name__', None) in _FILE_RETURN_TYPE_NAMES:
-            return True
-    return False
-
-
 def _metadata_wrap(func):
     """Run `func`, then synchronously extract image metadata from its
     return value and yield the resulting `ImageMetadata` to callers.
@@ -119,6 +92,8 @@ def _metadata_wrap(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         result = func(*args, **kwargs)
+        if result is None:
+            return None
         from metadata.image_metadata import compute_image_metadata
         return compute_image_metadata._function(result, plate_solve=False)
 
@@ -129,7 +104,7 @@ def _metadata_wrap(func):
     # `cached.remote`) rejects the call with a return-type violation.
     wrapper.__annotations__ = {
         **wrapper.__annotations__,
-        "return": ImageMetadata,
+        "return": ImageMetadata | None,
     }
     return wrapper
 
@@ -204,9 +179,9 @@ class _Node:
         @node(resources={"PixInsight": 1}, scheduling_strategy="SPREAD")
         def pi_op(...): ...
 
-        # Image producer: an op is an artifact producer iff its return
-        # annotation resolves to a file-typed result (XISF / TIFF /
-        # FITS). Routing on disk is
+        # Image producer: an op is an image producer iff it takes a
+        # keyword-only `out: <FileType>` (XISF / TIFF / FITS) — the scratch
+        # path it writes; it returns `Produced(out, ...)`. Routing on disk is
         # `<output_dir>/<op_name>/<call_hash>.<ext>`; the registry keys
         # by the type of the first parameter.
         @node(
@@ -217,8 +192,8 @@ class _Node:
             auto_memory=True,
         )
         def stack_files(
-            stack: BaseStack, config, *cal_masters,
-        ) -> WithSidecar[XisfFilePath]: ...
+            stack: BaseStack, config, *cal_masters, out: XisfFilePath,
+        ) -> Produced: ...
     """
 
     def __call__(self, func=None, **kwargs):
@@ -332,30 +307,20 @@ class _Node:
                 args, kwargs = cache_key_narrow(args, kwargs)
             return hash_call(fn_hash, *args, **kwargs)
 
-        # An op is an "artifact producer" iff it writes a file on disk:
-        # either its return annotation resolves to a file-typed result
-        # (TIFF, XISF, etc.), or it was given an explicit `filename_fn=`
-        # naming where its file lands (selection-style ops that return a
-        # `WithSidecar` pointing at a raw frame).
-        #
-        # Checked inline (rather than calling into `products.registry`)
-        # so a bare @node decoration on a non-artifact op never has
-        # to import the registry — avoids a circular-import chain
-        # during module load of `clustering/` / similar bare-@node
-        # modules.
-        is_artifact_producer = (
-            _looks_like_file_return(func) or custom_filename_fn is not None
-        )
+        # An IMAGE PRODUCER declares the file it writes as a keyword-only
+        # `out: <FileType>` parameter (`out: XisfFilePath`); the image wrap
+        # hands it a scratch path and publishes the result
+        # (`products.registry.makes_image_wrap`). A SELECTION op instead names
+        # an existing file with `filename_fn=` (a stack's best raw frame) and
+        # writes nothing. Both get a `filename_fn` and a registry entry.
+        from file_io.types import output_file_type
+        makes_image = output_file_type(func) is not None
+        is_artifact_producer = makes_image or custom_filename_fn is not None
 
         filename_fn = None
         if is_artifact_producer:
             from products.registry import build_filename_fn, fully_resolve
             if custom_filename_fn is not None:
-                # Caller passed an explicit `filename_fn=` (rare, used
-                # by selection-style ops that return absolute paths to
-                # raw frames). Wrap with `fully_resolve` so the routing
-                # prefix (`<output_dir>/<op_name>/`) still gets prepended
-                # for relative paths.
                 filename_fn = fully_resolve(custom_filename_fn, func.__name__)
             else:
                 filename_fn = build_filename_fn(func, canonical_call_hash)
@@ -366,10 +331,11 @@ class _Node:
         # explicit arguments below.
         wrapped = func
 
-        if is_artifact_producer:
+        if makes_image:
             from products.registry import makes_image_wrap
             wrapped = makes_image_wrap(
-                wrapped, canonical_call_hash=canonical_call_hash,
+                wrapped, filename_fn=filename_fn,
+                canonical_call_hash=canonical_call_hash,
                 # A tile-pyramid TIFF (the web-openable co-representation) is
                 # the human-facing artifact — built only for `display=` ops.
                 # Non-display intermediates write just their primary. (An
@@ -378,6 +344,7 @@ class _Node:
                 makes_tiff=display is not None,
                 image_type=image_type,
             )
+        if is_artifact_producer:
             wrapped = _metadata_wrap(wrapped)
 
         wrapped = capture_logs(wrapped, cache_key_narrow=cache_key_narrow)

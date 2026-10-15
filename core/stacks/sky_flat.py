@@ -87,8 +87,7 @@ from calibration.calibration_frames import focal_length_of
 from decisions.decisions import BinaryChoice, DecisionType
 from decorators import node
 from file_io.generic import read_header, read_image
-from file_io.sidecar import set_section
-from file_io.types import WithSidecar, XisfFilePath
+from file_io.types import Produced, XisfFilePath
 from hashing import hash_list, hash_list_int
 from metadata.classes import ImageMetadata, MetadataDict
 from stacks.composite_stack import CalibrationStack, CalibrationStacksDict, RunsDict
@@ -512,8 +511,8 @@ def read_sky_flat(path) -> np.ndarray:
 # rejection leaked 16k residuals; removing them properly exposed this.
 @node(num_cpus=4, display="Fringe Frame", resources={"diskcache": 0.001})
 def build_sky_flat(
-    sky_flat: SkyFlatStack, dark: ImageMetadata | None,
-) -> WithSidecar[XisfFilePath]:
+    sky_flat: SkyFlatStack, dark: ImageMetadata | None, *, out: XisfFilePath,
+) -> Produced:
     """The blank-sky residual for one promoted stack.
 
     Head-pinned for the same reason `build_star_flat` is: it reads every
@@ -528,7 +527,6 @@ def build_sky_flat(
     if missing:
         raise FileNotFoundError(
             f"{len(missing)} of {sky_flat.n_frames} member frames unreadable here, e.g. {missing[0]}")
-    dest = build_sky_flat.filename_fn(sky_flat, dark)
     d = np.asarray(read_image(Path(dark.filename)), np.float64) if dark is not None else None
     if d is not None and d.ndim == 3:
         d = d[:, :, 0]
@@ -538,19 +536,18 @@ def build_sky_flat(
         # Too few frames for the pattern to emerge from the noise. A map of
         # zeros subtracts nothing, which is the honest answer, and the reason
         # rides in the sidecar so the UI can say why.
-        out = np.zeros((sky_flat.height_pixels, sky_flat.width_pixels), np.float32)
+        pattern = np.zeros((sky_flat.height_pixels, sky_flat.width_pixels), np.float32)
         quality = {"n_frames": sky_flat.n_frames, "good": False,
                    "reason": f"only {sky_flat.n_frames} frames; need {MIN_FRAMES}"}
     else:
-        out, quality = combine_sky_flat(list(sky_flat.member_files), d)
+        pattern, quality = combine_sky_flat(list(sky_flat.member_files), d)
         quality["good"] = True
-    write_sky_flat(out, dest, {
+    write_sky_flat(pattern, out, {
         "IMAGETYP": IMAGE_TYPE, "FILTER": sky_flat.filter or "", "INSTRUME": sky_flat.camera,
         "FOCALLEN": sky_flat.focal_length, "XBINNING": 1, "YBINNING": 1,
         "EXPOSURE": float(sky_flat.exposure), "EXPTIME": float(sky_flat.exposure),
         "STBLHASH": str(sky_flat.stable_hash), "FRNGSRC": str(sky_flat.source_stack_id),
         "FRNGNUM": sky_flat.n_frames,
     })
-    set_section(Path(dest), SECTION, quality)
     log.info("fringe frame built", stack=str(sky_flat), **quality)
-    return WithSidecar(XisfFilePath(dest))
+    return Produced(out, sections={SECTION: quality})

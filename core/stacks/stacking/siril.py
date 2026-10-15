@@ -38,7 +38,7 @@ from decisions.compute_graph import ALL_EXCLUSION_TYPES
 from decisions.resolve import resolve_calibration, resolve_decisions
 from decisions.settings import ProcessingConfig
 from decorators import node
-from file_io.types import FitsFilePath, WithSidecar
+from file_io.types import FitsFilePath, Produced
 from metadata.classes import ImageMetadata
 from stacks.composite_stack import BaseStack, Stack
 from stacks.dust_epochs import MoteModel
@@ -251,13 +251,13 @@ def _scratch_parent(dest: Path, need_bytes: int) -> Path:
 def integrate_with_siril(
     stack: BaseStack,
     config: ProcessingConfig,
-    *cal_masters: ImageMetadata | FlatGain | MoteModel,
-) -> WithSidecar[FitsFilePath]:
+    *cal_masters: ImageMetadata | FlatGain | MoteModel, out: FitsFilePath,
+) -> Produced:
     """Calibrate, register and integrate `stack` with Siril. The peer of
     `stack_files`: pipelines call it with the same arguments. A `MoteModel`
     among them is an epoch's dust (`stacks/dust_epochs.py`): each run in that
     epoch is calibrated with its scaled flat times the model's mote map."""
-    from file_io.generic import read_header, update_header
+    from file_io.generic import read_header
     stack = resolve_calibration(stack, config.get_calibration_stacks(), config.decisions)
     if config.decisions and isinstance(stack, Stack):
         stack = resolve_decisions(stack, ALL_EXCLUSION_TYPES, config.decisions, config.min_frames_in_stack)
@@ -266,8 +266,6 @@ def integrate_with_siril(
     n = sum(len(r.frames) for r in stack.contents.values())
     if n < config.min_frames_in_stack:
         raise ValueError(f"Stack {stack} contains only {n} files")
-    dest = Path(integrate_with_siril.filename_fn(stack, config, *cal_masters))
-    dest.parent.mkdir(parents=True, exist_ok=True)
     cal_by_id = {str(read_header(m.filename)["STBLHASH"]): Path(m.filename)
                  for m in cal_masters if not isinstance(m, (FlatGain, MoteModel))}
     gains = [m for m in cal_masters if isinstance(m, FlatGain)]
@@ -275,7 +273,7 @@ def integrate_with_siril(
     model_of_run = _models_of_runs(stack, config, models)
     need = sum(2 * 4 * int(m.header["NAXIS1"]) * int(m.header["NAXIS2"])      # calibrated + registered float32
                for m in stack.all_metadata().values())
-    with tempfile.TemporaryDirectory(prefix=".siril-", dir=_scratch_parent(dest, need)) as d:
+    with tempfile.TemporaryDirectory(prefix=".siril-", dir=_scratch_parent(out, need)) as d:
         tmp = Path(d)
         (tmp / "proc").mkdir()
         # A star / night-sky flat comes with this stack's gain: its scaled
@@ -287,15 +285,12 @@ def integrate_with_siril(
         if script:
             _run_siril(tmp, "calibrate.ssf", script)
         _run_siril(tmp, "stack.ssf", _stack_script(_gather(stack, tmp), tmp, _memory_budget_gb(), stack.image_type))
-        out = tmp / "master.fit"
-        assert out.exists(), f"Siril wrote no master for {stack}"
-        part = dest.with_name(f".siril-{dest.name}.part")
-        shutil.move(out, part)                  # a copy when the scratch is on another volume
-        os.replace(part, dest)
-    if gains:
-        import json
-        from file_io.sidecar import set_section
-        set_section(dest, GAIN_SECTION, {g.flat_id: json.loads(g.fit_json) for g in gains})
-    update_header(dest, {"IMAGETYP": f"Master {stack.image_type}", "STBLHASH": stack.stable_hash,
-                         "NOISE00": _robust_noise(dest), "NOISEEST": "robust high-pass (AstroFlow)"})
-    return WithSidecar(FitsFilePath(dest))
+        master = tmp / "master.fit"
+        assert master.exists(), f"Siril wrote no master for {stack}"
+        shutil.move(master, out)                # a copy when the scratch is on another volume
+    import json
+    return Produced(
+        out,
+        header={"IMAGETYP": f"Master {stack.image_type}", "STBLHASH": stack.stable_hash,
+                "NOISE00": _robust_noise(out), "NOISEEST": "robust high-pass (AstroFlow)"},
+        sections={GAIN_SECTION: {g.flat_id: json.loads(g.fit_json) for g in gains}} if gains else {})

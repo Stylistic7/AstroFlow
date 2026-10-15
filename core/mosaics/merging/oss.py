@@ -23,10 +23,10 @@ import edt
 from decorators import node
 from mosaics.placement.panel_io import read_placed_panel
 from file_io.tiff_file_io import write_tiff_image
-from file_io.types import TiffFilePath, WithSidecar
+from file_io.types import Produced, TiffFilePath
 from hashing import hash_list
 from metadata.classes import ImageMetadata
-from mosaics.merging.pixinsight import _panel_count, _set_panel_count
+from mosaics.merging.pixinsight import PANEL_COUNT, _panel_count
 # MosaicLike bound as `Mosaic`: widens beartype to accept a Target acting as
 # its own single-panel mosaic WITHOUT touching the `mosaic: Mosaic`
 # annotations — those serialize into the op code hash, so editing them would
@@ -411,7 +411,7 @@ def _blend_many(paths: list[Path], level_solve: "str | None" = None,
     return numer / denom
 
 
-def _merge_layer(op, mosaic: Mosaic, filter: str, inputs, level_solve, skyver,
+def _merge_layer(out, filter: str, inputs, level_solve, skyver,
                  layer, depth_weighted=False):
     """Shared body of the two layer merges: variadic distance-weighted blend
     (`_blend_many`) + the house TIFF write with the layer's SKYVER stamp.
@@ -421,13 +421,10 @@ def _merge_layer(op, mosaic: Mosaic, filter: str, inputs, level_solve, skyver,
     ("starless"/"stars"), which until now was legible only from the op's
     output directory name plus SKYVER."""
     assert len(inputs) >= 1
-    output_filename = op.filename_fn(mosaic, filter, *inputs)
-    Path(output_filename).parent.mkdir(parents=True, exist_ok=True)
-
     paths = [inp.filename.resolve(strict=True) for inp in inputs]
     result = _blend_many(paths, level_solve=level_solve, depth_weighted=depth_weighted)
 
-    write_tiff_image(Path(output_filename), result.astype(np.float32),
+    write_tiff_image(Path(out), result.astype(np.float32),
                      {"FILTER": filter,
                       "STBLHASH": hash_list([inp.stable_hash for inp in inputs]),
                       "PIPELINE": "AstroFlow-OSS",
@@ -435,17 +432,14 @@ def _merge_layer(op, mosaic: Mosaic, filter: str, inputs, level_solve, skyver,
                       "SKYVER": skyver})
 
     new_count = sum(_panel_count(inp) for inp in inputs)
-    _set_panel_count(output_filename, new_count)
-
-    log.info("OSS merge complete", output=str(output_filename),
-             panel_count=new_count, n_inputs=len(inputs))
-    return WithSidecar(output_filename)
+    log.info("OSS merge complete", panel_count=new_count, n_inputs=len(inputs))
+    return Produced(out, sections={PANEL_COUNT: new_count})
 
 
 @node(display="Mosaic Starless", final=True, auto_memory=True)  # mosaic projection — non-square pixels
 def merge_images_oss(
-    mosaic: Mosaic, filter: str, *inputs: ImageMetadata,
-) -> WithSidecar[TiffFilePath]:
+    mosaic: Mosaic, filter: str, *inputs: ImageMetadata, out: TiffFilePath,
+) -> Produced:
     """Variadic distance-weighted OSS blend of the placed STARLESS panels.
 
     This single variadic call IS the finished per-filter starless mosaic
@@ -460,15 +454,15 @@ def merge_images_oss(
     Pipeline-agnostic: every OSS-merging pipeline (WBPP or Siril stacks)
     calls this with their own placed inputs. One call per mosaic per
     filter; no row/strip decomposition (see `_blend_many` for why)."""
-    return _merge_layer(merge_images_oss, mosaic, filter, inputs,
+    return _merge_layer(out, filter, inputs,
                         level_solve="overlap", skyver="overlap-3-ivw",
                         layer="starless", depth_weighted=True)
 
 
 @node(display="Mosaic Stars", final=True, auto_memory=True)  # mosaic projection — non-square pixels
 def merge_images_stars(
-    mosaic: Mosaic, filter: str, *inputs: ImageMetadata,
-) -> WithSidecar[TiffFilePath]:
+    mosaic: Mosaic, filter: str, *inputs: ImageMetadata, out: TiffFilePath,
+) -> Produced:
     """The STARS-layer twin of `merge_images_oss`: same distance-weighted
     blend, NO level matching (`level_solve=None`). A stars layer is
     `channel − starless` — additive panel offsets cancel in the
@@ -478,7 +472,7 @@ def merge_images_stars(
     per-panel lifts. With-stars views are never baked: the viewer's
     finishes add `starless + star_s·stars` live, and placement/merging
     are linear, so the layer sum reproduces the composite."""
-    return _merge_layer(merge_images_stars, mosaic, filter, inputs,
+    return _merge_layer(out, filter, inputs,
                         level_solve=None, skyver="stars-none-1",
                         layer="stars")
 
@@ -565,8 +559,8 @@ def merge_stars_scope(mosaic, filter, viewbox, config, targets, *stars,
     resources={"fastest_storage": 0.001},
 )
 def merge_images_subframe(
-    mosaic: Mosaic, filter: str, *inputs,
-) -> WithSidecar[TiffFilePath]:
+    mosaic: Mosaic, filter: str, *inputs, out: TiffFilePath,
+) -> Produced:
     """The Subframe preview pipeline's mosaic merge — the SAME distance-weighted
     blend as `merge_images_oss` (`_blend_many`), emitting the preview
     pipeline's per-filter mosaic (`display="Mosaic"`: the linear image the
@@ -579,9 +573,6 @@ def merge_images_subframe(
     assert len(inputs) >= 1
     # `*inputs` MUST flow into the call_hash so distinct panel sets get distinct
     # filenames (no writer races / half-written TIFFs).
-    output_filename = merge_images_subframe.filename_fn(mosaic, filter, *inputs)
-    Path(output_filename).parent.mkdir(parents=True, exist_ok=True)
-
     paths = [i.filename.resolve(strict=True) for i in inputs]
     # The panels are raw 16-bit lights (ADU), but the finishes read the 0-1
     # linear gauge (sky at the house pedestal, saturation at 1.0) and clamp
@@ -593,10 +584,8 @@ def merge_images_subframe(
     assert not np.isnan(np.min(acc))
 
     stable_hash = hash_list([i.stable_hash for i in inputs])
-    write_tiff_image(Path(output_filename), acc, {"FILTER": filter, "STBLHASH": stable_hash})
+    write_tiff_image(Path(out), acc, {"FILTER": filter, "STBLHASH": stable_hash})
 
     new_count = sum(_panel_count(i) for i in inputs)
-    _set_panel_count(output_filename, new_count)
-    log.info("Merge images (subframe) complete", output=output_filename,
-             panel_count=new_count, input_count=len(inputs))
-    return WithSidecar(output_filename)
+    log.info("Merge images (subframe) complete", panel_count=new_count, input_count=len(inputs))
+    return Produced(out, sections={PANEL_COUNT: new_count})

@@ -28,9 +28,6 @@ Graph: `scatter_dust_runs` (a builder over the identified stacks: one
 `merge_dust_epochs`) -> `store_dust_epochs` into the context, where
 `calibrate` and the stackers look each stack run up by its frames.
 """
-# NO `from __future__ import annotations`: the @node decorator reads the
-# return annotation to recognise a file PRODUCER (`WithSidecar[FitsFilePath]`
-# → filename_fn + the metadata wrap); as a string it is not one (boot181).
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -47,8 +44,7 @@ from context import context
 from decorators import node
 from dependency_graph import Graph
 from file_io.generic import read_image
-from file_io.sidecar import set_section
-from file_io.types import FitsFilePath, WithSidecar
+from file_io.types import FitsFilePath, Produced
 from hashing import hash_list
 from metadata.classes import ImageMetadata
 from pix.tasks.filters import normalize_filter
@@ -183,7 +179,7 @@ def combine_dust_map(files, block: int = BLOCK) -> tuple[np.ndarray, int]:
 
 
 @node(num_cpus=1, resources={"diskcache": 0.001})
-def measure_dust_run(run: Run) -> WithSidecar[FitsFilePath]:
+def measure_dust_run(run: Run, *, out: FitsFilePath) -> Produced:
     """The dust map of one run: the temporal median of its flattened,
     star-masked subs at BLOCK resolution. Head-pinned like every reader of
     raw subs (a joining worker briefly reports existing files as missing)."""
@@ -191,8 +187,6 @@ def measure_dust_run(run: Run) -> WithSidecar[FitsFilePath]:
     missing = [f for f in files if not Path(f).exists()]
     if missing:
         raise FileNotFoundError(f"{len(missing)} of {len(files)} subs unreadable here, e.g. {missing[0]}")
-    dest = Path(measure_dust_run.filename_fn(run))
-    dest.parent.mkdir(parents=True, exist_ok=True)
     out, n = combine_dust_map(files)
     hdu = fits.PrimaryHDU(data=out)
     hdu.header["IMAGETYP"] = IMAGE_TYPE
@@ -202,12 +196,11 @@ def measure_dust_run(run: Run) -> WithSidecar[FitsFilePath]:
     hdu.header["BLOCK"] = BLOCK
     hdu.header["DUSTRA"] = float(run.center[0])
     hdu.header["DUSTDEC"] = float(run.center[1])
-    hdu.writeto(dest, overwrite=True)
+    hdu.writeto(out, overwrite=True)
     quality = {"n_subs": n, "date": _utc(run.oldest_date).isoformat(), "centre": [float(c) for c in run.center],
                "block": BLOCK, "flat_rms": round(float(np.std(out)), 5)}
-    set_section(dest, SECTION, quality)
     log.info("dust map measured", run=run.content_hash[:8], **quality)
-    return WithSidecar(FitsFilePath(dest))
+    return Produced(out, sections={SECTION: quality})
 
 
 # ------------------------------------------------------------------ fold

@@ -22,7 +22,6 @@ first, the channel gets ONE background model (`calibrate_channel`).
 * `merge_target_channel_oss` — a one-stack channel: its post-processed
   master, published as the target's "Channel".
 """
-import os
 from pathlib import Path
 
 import numpy as np
@@ -30,7 +29,7 @@ import structlog
 
 from decisions.settings import ProcessingConfig
 from decorators import node
-from file_io.types import WithSidecar, XisfFilePath
+from file_io.types import Produced, XisfFilePath
 from metadata.classes import ImageMetadata
 from metadata.visibility import _background
 from stacks.composite_stack import Stack
@@ -148,8 +147,8 @@ def hdr_combine(images: list[np.ndarray], wcss: list, noises: list[float]) -> tu
 def hdr_merge_masters(
     target: Target, filter: str, stacks: tuple[Stack, ...],
     config: ProcessingConfig,
-    *masters,
-) -> WithSidecar[XisfFilePath]:
+    *masters, out: XisfFilePath,
+) -> Produced:
     """`hdr_combine` of raw, plate-solved per-stack masters, given longest
     exposure first (`stacks` in the same order). The output is on the first
     master's grid; the caller inherits that master's plate solution.
@@ -160,13 +159,10 @@ def hdr_merge_masters(
     from astropy.wcs import WCS
 
     from file_io.generic import read_image
-    from file_io.sidecar import set_section
     from metadata.visibility import _noise
     from stacks.post_processing.graxpert_stack import _write_pixels_preserving_metadata
 
     assert len(masters) >= 2 and len(stacks) == len(masters), (len(stacks), len(masters))
-    output_filename = Path(hdr_merge_masters.filename_fn(target, filter, stacks, config, *masters))
-    os.makedirs(output_filename.parent, exist_ok=True)
     images = [np.asarray(read_image(m.filename), np.float32).squeeze() for m in masters]
     wcss = [WCS(pyfits.Header(m.plate_solution.header)) if m.plate_solution else None for m in masters]
     noises = [_noise(np.where(a > 0, a, np.nan)) for a in images]
@@ -174,11 +170,10 @@ def hdr_merge_masters(
     for entry, stack in zip(report["masters"], stacks):
         entry.update(stack=str(stack.stable_hash), exposure=float(stack.exposure))
 
-    _write_pixels_preserving_metadata(Path(masters[0].filename), output_filename, combined)
-    set_section(output_filename, HDR_SECTION, report)
+    _write_pixels_preserving_metadata(Path(masters[0].filename), out, combined)
     log.info("HDR target-channel merge", target=target.stable_hash, filter=filter,
              masters=len(images), all_saturated=report["all_saturated_fraction"])
-    return WithSidecar(XisfFilePath(output_filename))
+    return Produced(out, sections={HDR_SECTION: report})
 
 
 def _calibrate_channel_narrow(args, kwargs):
@@ -198,14 +193,12 @@ def _calibrate_channel_narrow(args, kwargs):
 )
 def calibrate_channel(
     target: Target, filter: str, stacks: tuple[Stack, ...],
-    config: ProcessingConfig, merged: ImageMetadata,
-) -> WithSidecar[XisfFilePath]:
+    config: ProcessingConfig, merged: ImageMetadata, *, out: XisfFilePath,
+) -> Produced:
     """The HDR-combined channel made merge-ready: `post_stack_calibrate`'s
     SPFC gain, GraXpert and pedestal, once for the whole channel."""
     from stacks.post_processing.graxpert_stack import calibrate_master
-    output_filename = calibrate_channel.filename_fn(target, filter, stacks, config, merged)
-    return calibrate_master(merged, filter, f"target {target.stable_hash} {filter}", config,
-                            Path(output_filename))
+    return calibrate_master(merged, filter, f"target {target.stable_hash} {filter}", config, out)
 
 
 @node(
@@ -215,9 +208,7 @@ def calibrate_channel(
 def merge_target_channel_oss(
     target: Target, filter: str, stacks: tuple[Stack, ...],
     config: ProcessingConfig,
-    master,
-) -> WithSidecar[XisfFilePath]:
+    master, *, out: XisfFilePath,
+) -> Produced:
     """A one-stack channel: that stack's post-processed master, as is."""
-    output_filename = merge_target_channel_oss.filename_fn(target, filter, stacks, config, master)
-    os.makedirs(os.path.dirname(output_filename), exist_ok=True)
-    return publish_single_master(Path(master.filename), Path(output_filename))
+    return publish_single_master(Path(master.filename), out)

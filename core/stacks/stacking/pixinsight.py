@@ -8,7 +8,7 @@ from frozendict import frozendict
 import astropy.io.fits as pyfits  # type: ignore
 
 import file_io
-from file_io.types import XisfFilePath, WithSidecar
+from file_io.types import Produced, XisfFilePath
 from file_io.generic import update_header, copy_image
 from file_io.xisf_file_io import read_xisf_total_exposure_time
 from stacks.run import Run
@@ -122,7 +122,7 @@ def _setup_stack(
 
 def _mock_stacking(
     src_filename: str, dest_filename: str, metadata: dict[str, str]
-) -> WithSidecar[XisfFilePath]:
+) -> None:
     assert src_filename is not None
 
     print(
@@ -132,7 +132,6 @@ def _mock_stacking(
     file_io.conversion.convert_fits_to_xisf(
         src_filename, dest_filename, add_noise=True, metadata=metadata
     )
-    return WithSidecar(XisfFilePath(dest_filename))
 
 def _copy_wbpp_result(
     stacking_dir: str, dest_filename: str, metadata: dict[str, str]
@@ -155,8 +154,6 @@ def _copy_wbpp_result(
     print(f"last modified WBPP master {filename} -> {dest_filename}")
     copy_image(filename, dest_filename)
     update_header(dest_filename, metadata)
-
-    return WithSidecar(XisfFilePath(dest_filename))
 
 @dataclass(frozen=True)
 class _StackKey:
@@ -244,16 +241,15 @@ def _wbpp(stack, tmp_dir, dest_filename, metadata):
     )
     log.info("Running WBPP", stack=str(stack), **geometry)
     run_wbpp(Path(tmp_dir), Path(tmp_dir), **geometry)
-    result = _copy_wbpp_result(tmp_dir, dest_filename, metadata)
+    _copy_wbpp_result(tmp_dir, dest_filename, metadata)
     _check_integration_time(stack, dest_filename)
-    return result
 
 
 def _run_wbpp_stacking(
     stack: BaseStack, config: ProcessingConfig,
     cal_masters: tuple,
-    dest_filename: Path,
-) -> WithSidecar[XisfFilePath]:
+    out: XisfFilePath,
+) -> Produced:
     """Shared body for `stack_files`. Resolution-agnostic — reads
     `stack.contents` frame paths AS-IS. Cal
     master file paths come from `cal_masters`; each master's
@@ -275,20 +271,11 @@ def _run_wbpp_stacking(
 
     development_settings = config.development_settings
 
-    dest_filename_exists = os.path.exists(dest_filename)
-    os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
-    log.info("Entering stack_files", stack=str(stack),
-             dest_filename=dest_filename, dest_filename_exists=dest_filename_exists)
-
+    log.info("Entering stack_files", stack=str(stack))
     metadata = {
         "IMAGETYP": f"Master {stack.image_type}",
         "STBLHASH": stack.stable_hash,
     }
-
-    if development_settings.dangerously_accept_existing_files and dest_filename_exists:
-        log.info("Dangerously skipping stacking because file already exists", dest_filename=dest_filename)
-        update_header(dest_filename, metadata)
-        return WithSidecar(dest_filename)
 
     min_frames_in_stack = config.min_frames_in_stack
     # Each cal master file has STBLHASH (= the cal stack's stable_hash)
@@ -334,15 +321,13 @@ def _run_wbpp_stacking(
             )
 
         if development_settings.mock_pixinsight:
-            result = _mock_stacking(filenames[0], dest_filename, metadata)
+            _mock_stacking(filenames[0], out, metadata)
         else:
-            result = _wbpp(stack, tmp_dir, dest_filename, metadata)
+            _wbpp(stack, tmp_dir, out, metadata)
 
-    if gains:
-        import json
-        from file_io.sidecar import set_section
-        set_section(Path(dest_filename), GAIN_SECTION, {g.flat_id: json.loads(g.fit_json) for g in gains})
-    return result
+    import json
+    return Produced(out, sections={GAIN_SECTION: {g.flat_id: json.loads(g.fit_json) for g in gains}}
+                    if gains else {})
 
 @node(
     display="Master",
@@ -355,8 +340,8 @@ def _run_wbpp_stacking(
 def stack_files(
     stack: BaseStack,
     config: ProcessingConfig,
-    *cal_masters: ImageMetadata | FlatGain | MoteModel,
-) -> WithSidecar[XisfFilePath]:
+    *cal_masters: ImageMetadata | FlatGain | MoteModel, out: XisfFilePath,
+) -> Produced:
     """Resolution-agnostic PixInsight WBPP master.
 
     Frame paths are read from `stack.contents` AS-IS.
@@ -375,10 +360,7 @@ def stack_files(
     `_make_call_hash_filename_fn`, so calling this op with the
     same light stack but different cal masters produces distinct
     output files."""
-    return _run_wbpp_stacking(
-        stack, config, cal_masters,
-        stack_files.filename_fn(stack, config, *cal_masters),
-    )
+    return _run_wbpp_stacking(stack, config, cal_masters, out)
 
 def _check_integration_time(stack: BaseStack, master_path) -> None:
     """Compare WBPP's recorded integration time against the input frames'

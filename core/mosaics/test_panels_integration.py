@@ -39,7 +39,7 @@ from dependency_graph.tracing import trace
 from file_io.generic import get_content_hash, read_image
 from file_io.tiff_file_io import write_tiff_image
 from file_io.tiling import crop_source_region, feather_blend_to_bigtiff
-from file_io.types import TiffFilePath, WithSidecar
+from file_io.types import Produced, TiffFilePath
 from metadata.classes import ImageMetadata
 from mosaics.panels import (
     base_panel_mosaic, blend_panels, crop_panel, panel_tiles,
@@ -82,17 +82,15 @@ def _mosaic(footprint) -> Mosaic:
 
 @node(auto_memory=True)
 def identity_tile(mosaic: Mosaic, config: ProcessingConfig,
-                  image: ImageMetadata) -> WithSidecar[TiffFilePath]:
+                  image: ImageMetadata, *, out: TiffFilePath) -> Produced:
     """Copy the panel tile through UNCHANGED, dropping a unique per-EXECUTION
     marker so run 2's executed-op count is observable."""
-    out = identity_tile.filename_fn(mosaic, config, image)
-    os.makedirs(os.path.dirname(out), exist_ok=True)
     markers = Path(out).parent.parent / "_identity_exec"
     markers.mkdir(parents=True, exist_ok=True)
     (markers / f"{os.getpid()}_{time.time_ns()}_{os.urandom(4).hex()}.marker").write_text(str(out))
     write_tiff_image(Path(out), np.asarray(read_image(Path(image.filename)), dtype=np.float32),
                      {"PIPELINE": "AstroFlow-OSS"})
-    return WithSidecar(TiffFilePath(out))
+    return Produced(out)
 
 
 def _panel_pipeline(mosaic, config, src, viewbox):

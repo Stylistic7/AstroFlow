@@ -19,7 +19,7 @@ from pix.tasks import (
     LinearFit,
 )
 import plate_solving
-from file_io.types import XisfFilePath, WithSidecar
+from file_io.types import Produced, XisfFilePath
 from decorators import node
 from mosaics.types import Mosaic
 
@@ -55,8 +55,8 @@ def _post_process_mosaic(
 def post_process_mosaic(
     mosaic: Mosaic,
     channels,  # dict[str, WithSidecar]: per-filter mosaic-channel masters
-    mock_pixinsight: bool,
-) -> WithSidecar[XisfFilePath] | None:
+    mock_pixinsight: bool, *, out: XisfFilePath,
+) -> Produced | None:
     """Combine per-filter mosaic channels into an RGB / SHO master.
 
     `channels` is a dict keyed by filter, values are upstream
@@ -82,7 +82,5 @@ def post_process_mosaic(
     if result is None:
         return None
 
-    output_filename = post_process_mosaic.filename_fn(mosaic, channels, mock_pixinsight)
-    output_filename.parent.mkdir(parents=True, exist_ok=True)
-    result.save_to(output_filename, mock=mock_pixinsight)
-    return WithSidecar(output_filename)
+    result.save_to(out, mock=mock_pixinsight)
+    return Produced(out)

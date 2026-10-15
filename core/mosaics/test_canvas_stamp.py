@@ -7,7 +7,6 @@ import numpy as np
 from geometry.projections.stereographic import StereographicProjection
 from mosaics.canvas_stamp import SECTION, canvas_for_call, canvas_of, viewbox_from_obj, viewbox_to_obj
 from mosaics.types import Viewbox
-from products.registry import _stamp_canvas
 
 
 def _viewbox(rotation=0.0, content_hash="vb1"):
@@ -62,9 +61,18 @@ def test_unstamped_inputs_pass_nothing_on(tmp_path):
     assert canvas_for_call(("mosaic", _image(tmp_path, "a.tiff")), {}) is None
 
 
-def test_the_result_file_is_stamped(tmp_path):
+def test_a_producer_on_a_canvas_publishes_it(tmp_path):
+    """A producer whose input carries a canvas stamps it on its product."""
+    from file_io.types import Produced, TiffFilePath
+    from products import registry
     vb = _viewbox()
-    out = tmp_path / "merged.tiff"
-    out.write_bytes(b"y")
-    _stamp_canvas(out, ("mosaic", _image(tmp_path, "a.tiff", vb)), {})
-    assert _same(canvas_of(out), vb)
+
+    def merge(mosaic, placed, *, out: TiffFilePath) -> Produced:
+        from file_io.tiff_file_io import write_tiff_image
+        write_tiff_image(out, np.zeros((4, 4), np.float32), {})
+        return Produced(out)
+    op = registry.makes_image_wrap(
+        merge, filename_fn=lambda *a: TiffFilePath(tmp_path / "store" / "m.tiff"),
+        canonical_call_hash=lambda *a: "m", makes_tiff=False, image_type=None)
+    final = op("mosaic", _image(tmp_path, "a.tiff", vb))
+    assert _same(canvas_of(final), vb)

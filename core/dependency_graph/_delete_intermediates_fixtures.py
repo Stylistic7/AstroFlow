@@ -1,15 +1,8 @@
 """Real `@node` ops + a subgraph builder for `test_delete_intermediates`.
 
 These live in a normal (non-test) module — exactly like production pipeline
-ops — so cloudpickle ships them the way it ships real ops and the op body's
-`_di_*.filename_fn(...)` self-reference (the same idiom `crop_panel` uses)
-resolves to the decorated `@node` wrapper on the worker.
-
-NOTE: deliberately NO `from __future__ import annotations`. `@node`'s
-artifact-producer detection (`_looks_like_file_return`) reads the RUNTIME
-return annotation and matches the real `FitsFilePath` TYPE; under PEP 563 the
-annotation would be the bare string "FitsFilePath", detection would fail, and
-no `filename_fn` / CONTHASH stamping would be wired up.
+ops — so cloudpickle ships them the way it ships real ops, and
+each op writes the `out` scratch path the framework hands it.
 
 Shape — three ops so the test proves reclaim isn't merely "the immediate
 predecessor of the terminal":
@@ -28,7 +21,7 @@ from context import context
 from decorators import node
 from dependency_graph.classes import Graph
 from dependency_graph.tracing import trace
-from file_io.types import FitsFilePath
+from file_io.types import FitsFilePath, Produced
 
 
 # Each op body appends to a log under the shared output dir: a module-level
@@ -63,32 +56,26 @@ def _write_small_fits(path, seed) -> None:
 
 # Also interior to the scope, and also disposable.
 @node(ephemeral=True)
-def _di_source(seed: int) -> FitsFilePath:
+def _di_source(seed: int, *, out: FitsFilePath) -> Produced:
     _note_execution("_di_source")
-    out = _di_source.filename_fn(seed)
-    os.makedirs(os.path.dirname(out), exist_ok=True)
     _write_small_fits(out, seed)
-    return FitsFilePath(out)
+    return Produced(out)
 
 
 # The interior of the scope: declares itself disposable, so the runtime
 # reclaims it when the subgraph concludes.
 @node(ephemeral=True)
-def _di_middle(config: str, source) -> FitsFilePath:
+def _di_middle(config: str, source, *, out: FitsFilePath) -> Produced:
     _note_execution("_di_middle")
-    out = _di_middle.filename_fn(config, source)
-    os.makedirs(os.path.dirname(out), exist_ok=True)
     _write_small_fits(out, len(source.content_hash))
-    return FitsFilePath(out)
+    return Produced(out)
 
 
 @node()
-def _di_terminal(config: str, middle) -> FitsFilePath:
+def _di_terminal(config: str, middle, *, out: FitsFilePath) -> Produced:
     _note_execution("_di_terminal")
-    out = _di_terminal.filename_fn(config, middle)
-    os.makedirs(os.path.dirname(out), exist_ok=True)
     _write_small_fits(out, len(middle.content_hash))
-    return FitsFilePath(out)
+    return Produced(out)
 
 
 @ray.remote(num_cpus=0.1)

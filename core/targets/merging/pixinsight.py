@@ -4,7 +4,6 @@ PixInsight implementation: pre-register via StarAlignment, then run
 HDRComposition. n=1 short-circuits to a copy of the single stack's
 master — no PixInsight invocation needed.
 """
-import os
 from pathlib import Path
 
 from beartype import beartype
@@ -12,7 +11,7 @@ from beartype import beartype
 from cache.context_ref import ContextRef
 from decisions.settings import ProcessingConfig
 from decorators import node
-from file_io.types import XisfFilePath, WithSidecar
+from file_io.types import Produced, XisfFilePath
 from pix import Image
 from pix.tasks import HDRComposition, StarAlignment
 from stacks.composite_stack import Stack
@@ -34,26 +33,26 @@ def _merge_target_channel_narrow(args, kwargs):
     return (target, filter, stacks, narrowed, *masters), kwargs
 
 
-def publish_single_master(src: Path, output_filename: Path) -> WithSidecar[XisfFilePath]:
+def publish_single_master(src: Path, out: XisfFilePath) -> Produced:
     """n=1: a channel is just its single master. The output type is XISF, so
     a raw byte copy is correct ONLY when the master is already XISF; a FITS
     master (a Siril stack, `post_process_stack_oss`) copied into a .xisf name
     has no XISF signature and crashes the downstream metadata read, so it is
     converted (FITS keywords, incl. STBLHASH/FILTER, are preserved)."""
     if src.suffix.lower() == ".xisf":
-        from file_io.publish import publish_atomically
-        publish_atomically(src, output_filename)
+        import shutil
+        shutil.copyfile(src, out)
     else:
         from file_io.conversion import convert_fits_to_xisf
-        convert_fits_to_xisf(src, output_filename)
-    return WithSidecar(XisfFilePath(output_filename))
+        convert_fits_to_xisf(src, out)
+    return Produced(out)
 
 
 def _merge_target_channel_impl(
     target: Target, filter: str, stacks: tuple[Stack, ...],
     config: ProcessingConfig, masters: tuple,
-    output_filename: XisfFilePath,
-) -> WithSidecar[XisfFilePath]:
+    out: XisfFilePath,
+) -> Produced:
     """Shared body for the per-pipeline `merge_target_channel_*`
     variants. The split exists because pipelines with different stackers
     call this with identical literal args (target, filter, stacks,
@@ -61,12 +60,11 @@ def _merge_target_channel_impl(
     literals → identical call_hash → same filename → collision.
     Per-op-name split keeps each variant's output in its own dir."""
     assert len(stacks) >= 1, "merge_target_channel needs at least one stack"
-    os.makedirs(os.path.dirname(output_filename), exist_ok=True)
 
     master_paths = [m.filename for m in masters]
 
     if len(master_paths) == 1:
-        return publish_single_master(Path(master_paths[0]), Path(output_filename))
+        return publish_single_master(Path(master_paths[0]), out)
 
     stack_master_pairs = sorted(
         zip(stacks, master_paths), key=lambda p: -float(p[0].exposure),
@@ -76,10 +74,7 @@ def _merge_target_channel_impl(
     images = Image.open_many(list(sorted_masters), filters=[s.filter for s in sorted_stacks])
     aligned = StarAlignment(images)
     composed = HDRComposition(aligned)
-    composed.save_to(
-        output_filename,
-        mock=config.development_settings.mock_pixinsight,
-    )
+    composed.save_to(out, mock=config.development_settings.mock_pixinsight)
 
     # HDRComposition refits its inputs and rescales the result anchored near
     # zero, silently discarding the linear background-pedestal convention
@@ -90,9 +85,8 @@ def _merge_target_channel_impl(
     from stacks.post_processing.background_pedestal import (
         apply_background_pedestal_to_xisf,
     )
-    apply_background_pedestal_to_xisf(Path(output_filename))
-
-    return WithSidecar(XisfFilePath(output_filename))
+    apply_background_pedestal_to_xisf(out)
+    return Produced(out)
 
 
 @node(
@@ -105,8 +99,8 @@ def _merge_target_channel_impl(
 def merge_target_channel(
     target: Target, filter: str, stacks: tuple[Stack, ...],
     config: ProcessingConfig,
-    *masters,
-) -> WithSidecar[XisfFilePath]:
+    *masters, out: XisfFilePath,
+) -> Produced:
     """HDR-combine per-stack masters into one (target, filter) channel.
 
     Pipeline-agnostic. Every pipeline that combines with PixInsight calls this
@@ -115,9 +109,4 @@ def merge_target_channel(
     call_hash (literals + masters) differs, so the output filename
     differs. The framework's runtime tap-path recorder captures
     the actual path the body writes to."""
-    return _merge_target_channel_impl(
-        target, filter, stacks, config, masters,
-        merge_target_channel.filename_fn(
-            target, filter, stacks, config, *masters,
-        ),
-    )
+    return _merge_target_channel_impl(target, filter, stacks, config, masters, out)

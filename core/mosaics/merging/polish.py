@@ -38,9 +38,9 @@ import pyvips
 import structlog
 
 from decorators.decorators import node
-from file_io.types import TiffFilePath, WithSidecar
+from file_io.types import Produced, TiffFilePath
 from metadata.classes import ImageMetadata
-from mosaics.merging.pixinsight import _panel_count, _set_panel_count
+from mosaics.merging.pixinsight import PANEL_COUNT, _panel_count
 from mosaics.types import MosaicLike as Mosaic
 
 log = structlog.get_logger()
@@ -120,8 +120,8 @@ def _lazy_polish(img: pyvips.Image, model_small: np.ndarray,
 # would only re-teach the scheduler yesterday's ~3x-canvas appetite.
 @node(display="Mosaic Starless", final=True)  # mosaic projection — non-square pixels
 def polish_background(
-    mosaic: Mosaic, filter: str, merged: ImageMetadata,
-) -> WithSidecar[TiffFilePath]:
+    mosaic: Mosaic, filter: str, merged: ImageMetadata, *, out: TiffFilePath,
+) -> Produced:
     """The channel deliverable: `merged` minus its global background model,
     sky restored to the house pedestal. `merged` is the STARLESS layer
     merge (star removal is pre-placement since 2026-09-02) — GraXpert's
@@ -132,9 +132,6 @@ def polish_background(
     is identically zero)."""
     from file_io.tiff_file_io import write_tiff_image_streaming
     from stacks.post_processing.background_pedestal import DEFAULT_PEDESTAL
-
-    output_filename = polish_background.filename_fn(mosaic, filter, merged)
-    Path(output_filename).parent.mkdir(parents=True, exist_ok=True)
 
     src = Path(merged.filename).resolve(strict=True)
     img = pyvips.Image.new_from_file(str(src), unlimited=True)
@@ -175,14 +172,11 @@ def polish_background(
     shift = float(DEFAULT_PEDESTAL) - sky
 
     result = _lazy_polish(img, model_small, shift)
-    write_tiff_image_streaming(Path(output_filename), result,
+    write_tiff_image_streaming(Path(out), result,
                                {"FILTER": filter,
                                 "STBLHASH": str(merged.stable_hash),
                                 "PIPELINE": "AstroFlow-OSS",
                                 "LAYER": "starless",
                                 "POLISHVER": "gx-mono-4-nearest"})
-    _set_panel_count(output_filename, _panel_count(merged))
-
-    log.info("background polish complete", output=str(output_filename),
-             filter=filter)
-    return WithSidecar(output_filename)
+    log.info("background polish complete", filter=filter)
+    return Produced(out, sections={PANEL_COUNT: _panel_count(merged)})

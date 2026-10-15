@@ -9,6 +9,6 @@ a backend explicitly: `from mosaics.merging.pixinsight import …` or
 from mosaics.merging.pixinsight import *  # noqa: F401, F403
 # Underscore-prefixed re-exports needed by other modules.
 from mosaics.merging.pixinsight import (  # noqa: F401
-    _set_panel_count,
+    PANEL_COUNT,
     _panel_count,
 )

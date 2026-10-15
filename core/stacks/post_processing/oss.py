@@ -11,7 +11,6 @@ GraXpert install (in any environment on PATH, or pointed at by
 ASTROFLOW_GRAXPERT_BIN): `pip install "graxpert[cpuonly]"` on Apple Silicon
 (the bare `graxpert` is missing the onnxruntime AI library). See `graxpert_cli`.
 """
-import os
 import tempfile
 from pathlib import Path
 
@@ -22,7 +21,7 @@ import astropy.io.fits as pyfits
 
 from decorators import node
 from file_io.generic import read_image
-from file_io.types import FitsFilePath, WithSidecar
+from file_io.types import FitsFilePath, Produced
 from stacks.composite_stack import Stack
 
 log = structlog.get_logger()
@@ -82,8 +81,8 @@ def corrected_normalized_pixels(
     auto_memory=True,
 )
 def post_process_stack_oss(
-    stack: Stack, mock_pixinsight: bool, background_pedestal: float, master,
-) -> WithSidecar[FitsFilePath]:
+    stack: Stack, mock_pixinsight: bool, background_pedestal: float, master, *, out: FitsFilePath,
+) -> Produced:
     """GraXpert background-correct a stacked OSS master.
 
     Like every image producer, this body is a *pure writer*: it writes the
@@ -105,10 +104,6 @@ def post_process_stack_oss(
     post-processed headers — keeping the test suite free of the GraXpert
     install. Production runs GraXpert.
     """
-    output_filename = post_process_stack_oss.filename_fn(
-        stack, mock_pixinsight, background_pedestal, master,
-    )
-    os.makedirs(os.path.dirname(output_filename), exist_ok=True)
     log.info("OSS post-processing stack", stack=str(stack),
              master=str(master.filename), mock=mock_pixinsight)
 
@@ -123,7 +118,7 @@ def post_process_stack_oss(
     header["PIPELINE"] = "AstroFlow-OSS"
     header["RA"] = stack.center[0]
     header["DEC"] = stack.center[1]
-    pyfits.PrimaryHDU(data=data, header=header).writeto(str(output_filename), overwrite=True)
+    pyfits.PrimaryHDU(data=data, header=header).writeto(str(out), overwrite=True)
 
-    log.info("OSS post-processing complete", output=str(output_filename))
-    return WithSidecar(FitsFilePath(output_filename))
+    log.info("OSS post-processing complete", output=str(out))
+    return Produced(out)

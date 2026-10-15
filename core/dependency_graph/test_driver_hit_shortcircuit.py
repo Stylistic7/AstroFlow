@@ -19,18 +19,16 @@ from dependency_graph.tracing import trace
 from dependency_graph._delete_intermediates_fixtures import (
     _note_execution, _write_small_fits, executions,
 )
-from file_io.types import FitsFilePath
+from file_io.types import FitsFilePath, Produced
 
 
 @node()
-def _hit_probe_op(tag: str) -> FitsFilePath:
+def _hit_probe_op(tag: str, *, out: FitsFilePath) -> Produced:
     """Plain cached op with a persistent output — the canonical "should be a
     free hit on rerun" shape."""
     _note_execution("_hit_probe_op")
-    out = _hit_probe_op.filename_fn(tag)
-    os.makedirs(os.path.dirname(out), exist_ok=True)
     _write_small_fits(out, len(tag))
-    return FitsFilePath(out)
+    return Produced(out)
 
 
 def _count_submits(monkeypatch):

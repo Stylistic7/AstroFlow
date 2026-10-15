@@ -21,7 +21,7 @@ from stacks.composite_stack import Stack
 from targets.types import Target
 from file_io.generic import read_image
 from mosaics.placement.panel_io import write_placed_panel
-from file_io.types import TiffFilePath, WithSidecar
+from file_io.types import Produced, TiffFilePath
 from context import context
 # MosaicLike bound as `Mosaic`: widens beartype to accept a Target acting as
 # its own single-panel mosaic WITHOUT touching the `mosaic: Mosaic`
@@ -411,8 +411,8 @@ def _place_image_narrow(args, kwargs):
 )
 def place_image(
     mosaic: Mosaic, target: Target, filter: str, viewbox: Viewbox,
-    config: ProcessingConfig, image_metadata: ImageMetadata,
-) -> WithSidecar[TiffFilePath]:
+    config: ProcessingConfig, image_metadata: ImageMetadata, *, out: TiffFilePath,
+) -> Produced:
     """Project one panel's master into the mosaic's viewbox, then erode
     its valid-data edge.
 
@@ -451,17 +451,6 @@ def place_image(
     _assert_footprint_within_bbox(image, y0_px, x0_px, viewbox)
     image = _erode_edges(image, config.edge_erosion_px)
 
-    # `image_metadata` MUST flow into the call_hash. Several
-    # pipelines (Subframe, PI Master, Siril, ...) place the
-    # same target panel into the same viewbox at the same filter,
-    # differing only in their upstream master. Omitting
-    # `image_metadata` here collapses all three onto a single
-    # output filename — multiple writers race, downstream readers
-    # see half-written zlib streams (corrupt TIFF).
-    output_filename = place_image.filename_fn(
-        mosaic, target, filter, viewbox, config, image_metadata,
-    )
-
     if not np.any(image):
         raise ProjectionFailedException(
             f"Placed image for target {target.stable_hash} in mosaic "
@@ -476,17 +465,12 @@ def place_image(
     # deflate on demand (see panel_io). zstd is fine — place_image no longer feeds
     # PixInsight directly.
     write_placed_panel(
-        output_filename, image,
+        out, image,
         offset_xy=(x0_px, y0_px),
         canvas_size=(viewbox.num_pixels_x, viewbox.num_pixels_y),
         metadata={"FILTER": filter, "STBLHASH": target.stable_hash},
     )
-    # A placed image is one panel by definition. merge_images sums
-    # input counts to track "most complete merge so far." Stored in the
-    # context cache (not the file sidecar) because @makes_image wipes
-    # the sidecar after every producer run.
-    from mosaics.merging import _set_panel_count
-    _set_panel_count(output_filename, 1)
-    log.info("Place image complete", output_filename=output_filename)
-
-    return WithSidecar(output_filename)
+    # A placed image is one panel by definition; merges sum their inputs.
+    from mosaics.merging import PANEL_COUNT
+    log.info("Place image complete", target=target.stable_hash, filter=filter)
+    return Produced(out, sections={PANEL_COUNT: 1})

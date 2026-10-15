@@ -6,7 +6,7 @@ from pathlib import Path
 from dataclasses import dataclass
 
 from file_io.generic import update_header
-from file_io.sidecar import get_section, set_section
+from file_io.sidecar import get_section
 from pix import Image
 from pix.tasks import PhotometricMosaic
 from metadata.classes import ImageMetadata
@@ -14,7 +14,7 @@ from mosaics.types import Mosaic
 from previews.create_tile_pyramid import default_make_tile_pyramid
 from decorators import node
 from decisions.settings import ProcessingConfig
-from file_io.types import XisfFilePath, WithSidecar
+from file_io.types import Produced, XisfFilePath
 from hashing import hash_list
 from mosaics.placement.panel_io import rehydrate_placed_panel
 
@@ -33,28 +33,23 @@ class _PanelInput:
 class MergedImage:
     pass
 
+# Sidecar section: how many mosaic panels an image holds. A placed image
+# records 1, a merge the sum of its inputs (returned in `Produced(sections=)`).
+PANEL_COUNT = "panel_count"
+
+
 def _panel_count(image_metadata: ImageMetadata) -> int:
-    """Number of mosaic panels contained in this intermediate.
-
-    Placed images set `panel_count=1` in their sidecar; merges record
-    the sum of their inputs. The `@makes_image` lifecycle no longer
-    touches sidecars on producer body-run, so `panel_count` survives
-    across reruns by default. Missing entry defaults to 1, keeping the
-    chain monotonic for any pre-existing files left over from before
-    this mechanism existed.
-    """
-    return get_section(image_metadata.filename, "panel_count") or 1
-
-def _set_panel_count(path, count: int) -> None:
-    set_section(Path(path), "panel_count", count)
+    """Number of mosaic panels contained in this intermediate (1 when
+    unrecorded: a placed panel, or a pairwise merge's own intermediate)."""
+    return get_section(image_metadata.filename, PANEL_COUNT) or 1
 
 
 
 def _merge_images_pi_impl(
     mosaic: Mosaic, filter: str, mock_pixinsight: bool,
     inputs: tuple,
-    output_filename: Path,
-) -> WithSidecar[XisfFilePath]:
+    out: XisfFilePath,
+) -> Produced:
     """Pairwise PhotometricMosaic merge across all panel inputs at
     once. Returns a single merged output. The pairwise tree is done
     inside one Ray task — moving it out would create a chain of
@@ -63,9 +58,6 @@ def _merge_images_pi_impl(
     inside the merge tree (rare and bounded; mosaic panel counts are
     in the dozens, not thousands)."""
     assert len(inputs) >= 1
-    output_filename = Path(output_filename)
-    output_filename.parent.mkdir(parents=True, exist_ok=True)
-
     import tempfile
     work_dir = Path(tempfile.mkdtemp(prefix="merge_images_"))
     try:
@@ -82,9 +74,9 @@ def _merge_images_pi_impl(
         inputs = tuple(rehydrated)
 
         if len(inputs) == 1:
-            from file_io.publish import publish_atomically
-            publish_atomically(inputs[0].filename, output_filename)
-            return WithSidecar(output_filename)
+            import shutil
+            shutil.move(inputs[0].filename, out)
+            return Produced(out)
 
         # Pairwise tree: take pairs, merge each pair → next level.
         current = list(inputs)
@@ -100,7 +92,7 @@ def _merge_images_pi_impl(
                 path_b = b.filename.resolve(strict=True)
                 if i + 2 == len(current) and len(current) == 2:
                     # Final pair lands at the canonical output.
-                    out_path = output_filename
+                    out_path = out
                 else:
                     out_path = work_dir / f"step_{step}_{i // 2}.xisf"
                     step += 1
@@ -119,10 +111,8 @@ def _merge_images_pi_impl(
             current = next_level
 
         new_count = sum(_panel_count(i) for i in orig_inputs)
-        _set_panel_count(output_filename, new_count)
-        log.info("Merge images complete", output=str(output_filename),
-                 panel_count=new_count, input_count=len(inputs))
-        return WithSidecar(output_filename)
+        log.info("Merge images complete", panel_count=new_count, input_count=len(inputs))
+        return Produced(out, sections={PANEL_COUNT: new_count})
     finally:
         import shutil as _sh
         _sh.rmtree(work_dir, ignore_errors=True)
@@ -156,8 +146,8 @@ def _merge_images_narrow(args, kwargs):
 )
 def merge_images(
     mosaic: Mosaic, filter: str, config: ProcessingConfig,
-    *inputs,
-) -> WithSidecar[XisfFilePath]:
+    *inputs, out: XisfFilePath,
+) -> Produced:
     """Pairwise PhotometricMosaic merge across all panel inputs.
 
     Pipeline-agnostic. Every pipeline that merges with PixInsight calls this
@@ -166,7 +156,4 @@ def merge_images(
     differs. The framework's runtime tap-path hook captures the
     actual path."""
     mock_pixinsight = config.development_settings.mock_pixinsight
-    return _merge_images_pi_impl(
-        mosaic, filter, mock_pixinsight, inputs,
-        merge_images.filename_fn(mosaic, filter, config, *inputs),
-    )
+    return _merge_images_pi_impl(mosaic, filter, mock_pixinsight, inputs, out)

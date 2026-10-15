@@ -32,7 +32,6 @@ the op, feathers the results back, and threads an updated manifest. Crops key on
 the manifest — never on the merged image's whole-image `content_hash` (which
 would churn on any panel and re-derive the entire tail).
 """
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -45,7 +44,7 @@ from dependency_graph.classes import Graph
 from dependency_graph.tracing import IdentityRef, present_terminal, record
 from file_io.tiff_file_io import write_tiff_image
 from file_io.tiling import crop_source_region, feather_blend_to_bigtiff
-from file_io.types import TiffFilePath, WithSidecar
+from file_io.types import Produced, TiffFilePath
 from hashing import hash_list, hash_source_code
 from metadata.classes import ImageMetadata
 from mosaics.trimming import project_to_viewbox
@@ -296,7 +295,7 @@ def _crop_panel_narrow(args, kwargs):
       ephemeral=True)
 def crop_panel(mosaic: Mosaic, panel: Target, viewbox: Viewbox, pad: int,
                source: ImageMetadata,
-               scope_hashes: tuple) -> WithSidecar[TiffFilePath]:
+               scope_hashes: tuple, *, out: TiffFilePath) -> Produced:
     """One panel's padded bbox cropped out of the merged mosaic — streaming, so
     only the tile's pixels are read. Written STRIP-based so rc-astro reads it
     directly (it rejects tiled TIFF). Ephemeral: reclaimed after its op consumes
@@ -309,12 +308,9 @@ def crop_panel(mosaic: Mosaic, panel: Target, viewbox: Viewbox, pad: int,
     assert rect is not None, (
         f"panel {panel.stable_hash} projects off the canvas it was placed "
         f"on — viewbox/placement disagreement")
-    out = crop_panel.filename_fn(mosaic, panel, viewbox, pad, source,
-                                 scope_hashes)
-    os.makedirs(os.path.dirname(out), exist_ok=True)
     write_tiff_image(Path(out), crop_source_region(source.filename, rect),
                      {"PIPELINE": "AstroFlow-OSS"})
-    return WithSidecar(TiffFilePath(out))
+    return Produced(out)
 
 
 def _blend_panels_narrow(args, kwargs):
@@ -336,7 +332,7 @@ def _blend_panels_narrow(args, kwargs):
       ephemeral=True)
 def blend_panels(mosaic: Mosaic, config: ProcessingConfig, viewbox: Viewbox,
                  panels: tuple,
-                 *tiles: ImageMetadata) -> WithSidecar[TiffFilePath]:
+                 *tiles: ImageMetadata, out: TiffFilePath) -> Produced:
     """Feather the processed panel tiles back into one BigTIFF — streaming (never
     materializes the canvas). The generic INTERMEDIATE blend (no `display=`); a
     deliverable passes its own display-carrying blend to `process_in_panels`.
@@ -345,14 +341,12 @@ def blend_panels(mosaic: Mosaic, config: ProcessingConfig, viewbox: Viewbox,
     pad = config.tiling.overlap_px
     rects = [panel_rect(panel, viewbox, pad) for panel in panels]
     assert all(r is not None for r in rects), "panel projects off-canvas"
-    out = blend_panels.filename_fn(mosaic, config, viewbox, panels, *tiles)
-    os.makedirs(os.path.dirname(out), exist_ok=True)
     feather_blend_to_bigtiff(
         [tuple(r) for r in rects], [t.filename for t in tiles], out,
         taper_px=config.tiling.overlap_px, blend=config.tiling.blend,
         metadata={"PIPELINE": "AstroFlow-OSS"},
         canvas=(viewbox.num_pixels_x, viewbox.num_pixels_y))
-    return WithSidecar(TiffFilePath(out))
+    return Produced(out)
 
 
 # --------------------------------------------------------------------------- #

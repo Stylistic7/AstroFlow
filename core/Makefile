@@ -166,15 +166,11 @@ ray-status:
 start: sweep-pi-swap sweep-vips-scratch sweep-staging sweep-siril-scratch
 	uv run python main.py
 
-# Recover payloads stranded by a killed publish, and reap partial copies.
-# Runs at START, with the cluster DOWN, which is what makes it safe: staging
-# files are only ever touched when their writer is dead AND the file is stale,
-# and a shared filesystem means a PID from another node can look dead here.
-#
-# NOT a plain `find -delete`: `registry._publish_with_presentations` renames the
-# payload ASIDE while it builds the pyramid, so a leftover `.staging.` file
-# whose canonical name is missing IS the product. Deleting one cost an 18.9 GB
-# combine_broadband_rgb master on 2026-08-17. See file_io/staging.py.
+# Reap the scratch files a killed producer left (`.<stem>.partial.<pid>.*`,
+# `*.tmp.<pid>.*`). Runs at START, with the cluster DOWN, which is what makes it
+# safe: a file is only touched when its writer is dead AND it is stale, and a
+# shared filesystem means a PID from another node can look dead here. Scratch
+# is never the product — see file_io/staging.py.
 # Siril works in `.siril-*` beside its output (stacks/stacking/siril.py):
 # calibrated + registered frames, up to ~170 GB for one stack. A finished
 # integration deletes its own; a killed one leaves it. Nothing runs at start.

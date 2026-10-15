@@ -37,7 +37,6 @@ so it is PINNED rather than left as "latest".
 No PixInsight slot is taken — GraXpert is an external CLI — so these stacks no
 longer contend for the 2 PI slots.
 """
-import os
 import tempfile
 from pathlib import Path
 
@@ -46,7 +45,7 @@ import structlog
 
 from decorators import node
 from decisions.settings import ProcessingConfig
-from file_io.types import XisfFilePath, WithSidecar
+from file_io.types import Produced, XisfFilePath
 from metadata.classes import ImageMetadata
 from stacks.composite_stack import Stack
 
@@ -104,8 +103,8 @@ _SANE_GAIN = (1e-4, 1e4)
     auto_memory=True,
 )
 def post_stack_calibrate(
-    stack: Stack, config: ProcessingConfig, master: ImageMetadata,
-) -> WithSidecar[XisfFilePath]:
+    stack: Stack, config: ProcessingConfig, master: ImageMetadata, *, out: XisfFilePath,
+) -> Produced:
     """Post-stacking calibration: the WBPP master made merge-ready.
 
     ONE persisted artifact per stack (Stylistic7, 2026-09-01 — no cached copy
@@ -135,15 +134,13 @@ def post_stack_calibrate(
     Pixels are written back into a copy of the gain-true XISF so FITS
     keywords and the astrometric solution survive (without that,
     compute_image_metadata would re-solve from scratch)."""
-    output_filename = post_stack_calibrate.filename_fn(stack, config, master)
-    return calibrate_master(master, stack.filter, f"stack {stack.stable_hash}", config,
-                            Path(output_filename))
+    return calibrate_master(master, stack.filter, f"stack {stack.stable_hash}", config, out)
 
 
 def calibrate_master(
     master: ImageMetadata, filter: str, subject: str, config: ProcessingConfig,
-    output_filename: Path,
-) -> WithSidecar[XisfFilePath]:
+    out: XisfFilePath,
+) -> Produced:
     """`post_stack_calibrate`'s work on any linear master with a plate
     solution — one stack's, or a target channel HDR-combined from several
     (`targets.merging.oss.calibrate_channel`): SPFC gain, GraXpert, pedestal.
@@ -157,21 +154,16 @@ def calibrate_master(
             f"plate_solution; SPFC cannot match catalogue stars without a WCS"
         )
 
-    os.makedirs(os.path.dirname(output_filename), exist_ok=True)
-
     mock = config.development_settings.mock_pixinsight
     if mock:
-        _write_pixels_preserving_metadata(
-            Path(master.filename), Path(output_filename), None,
-        )
-        return WithSidecar(XisfFilePath(output_filename))
+        _write_pixels_preserving_metadata(Path(master.filename), out, None)
+        return Produced(out)
 
     from astropy.io import fits as pyfits
     from astropy.wcs import WCS
 
     from file_io.conversion import convert_xisf_to_fits
     from file_io.generic import read_image
-    from file_io.sidecar import set_section
     from photometry.harvest import spfc_scale
 
     image = np.asarray(read_image(Path(master.filename))).astype(np.float32)
@@ -248,33 +240,21 @@ def calibrate_master(
             if corrected.ndim == 3 and corrected.shape[2] == 1:
                 corrected = corrected[:, :, 0]
 
-        _write_pixels_preserving_metadata(
-            gain_xisf, Path(output_filename), corrected,
-        )
+        _write_pixels_preserving_metadata(gain_xisf, out, corrected)
 
     # Equalize the sky to the shared pedestal — adjacent mosaic panels
     # must land on the same baseline or the seam shows.
     from stacks.post_processing.background_pedestal import (
         apply_background_pedestal_to_xisf,
     )
-    apply_background_pedestal_to_xisf(
-        Path(output_filename), target=config.background_pedestal,
-    )
+    apply_background_pedestal_to_xisf(out, target=config.background_pedestal)
 
-    # Declare the gauge on the artifact itself: pixels are physical SPFC
-    # band flux scaled by PHOTREF. Any consumer can convert onward
-    # without asking us.
-    from file_io.xisf_file_io import update_xisf_header
-    update_xisf_header(Path(output_filename), {
-        "PHOTREF": float(_SPFC_REFERENCE_SCALE),
-    })
-
-    if cert:
-        set_section(Path(output_filename), "spfc_calibration", cert)
-        log.info("post_stack_calibrate complete", subject=subject,
-                 filter=filter, gain=cert["reference"] / cert["scale"],
-                 n_stars=cert["n_stars"], output=str(output_filename))
-    return WithSidecar(XisfFilePath(output_filename))
+    log.info("post_stack_calibrate complete", subject=subject, filter=filter,
+             gain=cert["reference"] / cert["scale"], n_stars=cert["n_stars"])
+    # PHOTREF declares the gauge on the artifact itself: pixels are physical
+    # SPFC band flux scaled by it, so any consumer can convert onward.
+    return Produced(out, header={"PHOTREF": float(_SPFC_REFERENCE_SCALE)},
+                    sections={"spfc_calibration": cert})
 
 
 # FITS cards that describe the FITS container or its WCS, not the image: the

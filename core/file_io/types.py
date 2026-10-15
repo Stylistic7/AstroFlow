@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TypeVar, Generic, Self, Any
 from abc import ABC
 import numpy as np
@@ -103,3 +103,30 @@ class WithSidecar(Generic[T], ContentHashable):
 
     def __repr__(self) -> str:
         return f"WithSidecar({self.path!r})"
+
+
+@dataclass(frozen=True)
+class Produced:
+    """What an image producer returns: the file it wrote at the `out` path the
+    framework handed it, plus any header cards and sidecar sections to record
+    with it. The body never learns its final name, locks a sidecar or
+    publishes anything: `products.registry.makes_image_wrap` stamps the
+    header, writes the sections and lands the file atomically."""
+    path: Path
+    header: dict = field(default_factory=dict)
+    sections: dict = field(default_factory=dict)
+
+
+def output_file_type(func) -> "type | None":
+    """The file type an image producer writes — the annotation of its `out`
+    parameter (`out: XisfFilePath`) — or None for every other op. Matched by
+    name, so a string annotation (`from __future__ import annotations`)
+    counts too."""
+    import inspect
+    raw = getattr(func, "__wrapped__", func)
+    try:
+        out = inspect.signature(raw).parameters.get("out")
+    except (TypeError, ValueError):
+        return None
+    types = {t.__name__: t for t in (FitsFilePath, XisfFilePath, TiffFilePath)}
+    return types.get(getattr(out.annotation, "__name__", out.annotation)) if out else None

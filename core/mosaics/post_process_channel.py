@@ -33,7 +33,6 @@ stitch already presents GradientCorrection the clean zero edge it wants.
 (An earlier version re-eroded the whole mosaic preventively "per PI docs";
 that just re-shaved an already-clean boundary, discarding valid data.)
 """
-import os
 from pathlib import Path
 
 from pix import Image
@@ -42,7 +41,7 @@ from decorators import node
 from decisions.settings import ProcessingConfig
 from metadata.classes import ImageMetadata
 from mosaics.types import Mosaic
-from file_io.types import XisfFilePath, WithSidecar
+from file_io.types import Produced, XisfFilePath
 import structlog
 
 log = structlog.get_logger()
@@ -66,8 +65,8 @@ def _post_process_channel_narrow(args, kwargs):
 )
 def post_process_mosaic_color_channel(
     mosaic: Mosaic, filter: str, config: ProcessingConfig,
-    merged: ImageMetadata,
-) -> WithSidecar[XisfFilePath]:
+    merged: ImageMetadata, *, out: XisfFilePath,
+) -> Produced:
     """Flatten the assembled per-filter mosaic channel and persist it.
 
     `merged` is the output of `merge_images`. One data-driven
@@ -78,13 +77,9 @@ def post_process_mosaic_color_channel(
     reaches GC with a clean pure-black boundary.
     """
     mock_pixinsight = config.development_settings.mock_pixinsight
-    output_filename = post_process_mosaic_color_channel.filename_fn(
-        mosaic, filter, config, merged,
-    )
-    os.makedirs(os.path.dirname(output_filename), exist_ok=True)
 
     image = Image.open(merged.filename, filter=filter)
-    GradientCorrection(image).save_to(output_filename, mock=mock_pixinsight)
+    GradientCorrection(image).save_to(out, mock=mock_pixinsight)
 
     # Re-equalize the flattened channel's sky to the common pedestal so the
     # final master sits at a known, positive sky floor (same additive step
@@ -94,6 +89,6 @@ def post_process_mosaic_color_channel(
         from stacks.post_processing.background_pedestal import (
             apply_background_pedestal_to_xisf,
         )
-        apply_background_pedestal_to_xisf(Path(output_filename))
+        apply_background_pedestal_to_xisf(Path(out))
 
-    return WithSidecar(XisfFilePath(output_filename))
+    return Produced(out)

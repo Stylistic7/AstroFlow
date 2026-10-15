@@ -66,16 +66,16 @@ def test_final_requires_display():
     """`final=True` is a deliverable, always user-facing — so it requires an
     explicit `display=`. A final op without display raises at decoration."""
     from decorators import node
-    from file_io.types import WithSidecar, XisfFilePath
+    from file_io.types import Produced, XisfFilePath
 
     with pytest.raises(ValueError, match="final=True requires"):
         @node(final=True)
-        def _bad(stack) -> WithSidecar[XisfFilePath]:
+        def _bad(stack, *, out: XisfFilePath) -> Produced:
             ...
 
     # final + display is fine.
     @node(final=True, display="Master")
-    def _ok(stack) -> WithSidecar[XisfFilePath]:
+    def _ok(stack, *, out: XisfFilePath) -> Produced:
         ...
     assert _ok._final is True and _ok._display == "Master"
 

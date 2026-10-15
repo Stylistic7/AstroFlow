@@ -56,13 +56,8 @@ def test_every_producer_has_fn_hash_and_filename_fn():
             f"{op_name}: _fn_hash must be a non-empty string, got "
             f"{w._fn_hash!r}"
         )
-        # `filename_fn` is None when `_infer_file_type` can't find a
-        # recognized return shape — currently the case for ops
-        # annotated `-> Optional[WithSidecar[...]]` (post_process_*
-        # variants), because the inferrer doesn't recurse into Union
-        # args. That's a separate footgun tracked outside A4; here we
-        # just scope the invariant to producers that actually carry a
-        # filename_fn (everyone else has nothing to predict).
+        # Only producers (an `out: <FileType>` parameter) and selection
+        # ops carry a filename_fn; everyone else has nothing to predict.
         if callable(getattr(w, "filename_fn", None)):
             n_with_filename_fn += 1
 

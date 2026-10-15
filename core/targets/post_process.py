@@ -18,7 +18,7 @@ from pix.tasks import (
     LRGBCombination,
 )
 import plate_solving
-from file_io.types import XisfFilePath, WithSidecar
+from file_io.types import Produced, XisfFilePath
 from decorators import node
 from targets.types import Target
 
@@ -62,8 +62,8 @@ def _post_process_target(
 def post_process_target(
     target: Target,
     channels,  # dict[str, WithSidecar]: per-filter channel masters
-    mock_pixinsight: bool = False,
-) -> WithSidecar[XisfFilePath] | None:
+    mock_pixinsight: bool = False, *, out: XisfFilePath,
+) -> Produced | None:
     """Combine per-filter target channels into a single target master.
 
     `channels` is a dict keyed by filter, values are upstream
@@ -91,19 +91,17 @@ def post_process_target(
     if result is None:
         return None
 
-    output_filename = post_process_target.filename_fn(target, channels, mock_pixinsight)
-    output_filename.parent.mkdir(parents=True, exist_ok=True)
 
     stars, starless = result
     # We only have one filename_fn output but two artifacts. Drop the
     # stars layer for now (the starless body is what mosaics consume);
     # if a workflow needs both, split into two @node ops.
     if starless is not None:
-        starless.save_to(output_filename, mock=mock_pixinsight)
-        return WithSidecar(output_filename)
+        starless.save_to(out, mock=mock_pixinsight)
+        return Produced(out)
     if stars is not None:
-        stars.save_to(output_filename, mock=mock_pixinsight)
-        return WithSidecar(output_filename)
+        stars.save_to(out, mock=mock_pixinsight)
+        return Produced(out)
     return None
 
 

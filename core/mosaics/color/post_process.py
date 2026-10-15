@@ -33,7 +33,7 @@ from file_io.generic import read_image
 from file_io.tiff_file_io import (write_tiff_image, _atomic_tiffsave,
                                   FAST_COMPRESSION)
 from file_io.tiling import feather_blend_to_bigtiff, tile_size_for
-from file_io.types import TiffFilePath, WithSidecar
+from file_io.types import Produced, TiffFilePath
 from file_io.xisf_file_io import write_xisf_image
 from metadata.classes import ImageMetadata
 from mosaics.panels import (
@@ -205,8 +205,8 @@ def _sxt_channel_narrow(args, kwargs):
 
 @node(cache_key_narrow=_bxt_channel_narrow, auto_memory=True, resources={"gpu_slots": 1})
 def bxt_channel(
-    target: Target, filter: str, config: ProcessingConfig, channel: ImageMetadata,
-) -> WithSidecar[TiffFilePath]:
+    target: Target, filter: str, config: ProcessingConfig, channel: ImageMetadata, *, out: TiffFilePath,
+) -> Produced:
     """Full BlurXTerminator (correct + sharpen, config.bxt) on a per-filter
     channel master at its NATIVE grid — the one and only BXT pass.
 
@@ -218,8 +218,6 @@ def bxt_channel(
     Its output is unsolved: correction shifts the geometry, so
     `native_star_separation` re-solves it in its own node (outside this
     task's GPU slot), and `place_image` projects from that WCS."""
-    out = bxt_channel.filename_fn(target, filter, config, channel)
-    os.makedirs(os.path.dirname(out), exist_ok=True)
     if config.development_settings.mock_pixinsight:
         _write_mono_tiff(out, _mono(channel), filter)
     else:
@@ -230,13 +228,13 @@ def bxt_channel(
                 correct_only=config.bxt.correct_only,
                 ml_version=config.bxt.ml_version,
                 overlap=config.bxt.overlap)
-    return WithSidecar(TiffFilePath(out))
+    return Produced(out)
 
 
 @node(cache_key_narrow=_sxt_channel_narrow, auto_memory=True, resources={"gpu_slots": 1})
 def sxt_channel(
-    target: Target, filter: str, config: ProcessingConfig, channel: ImageMetadata,
-) -> WithSidecar[TiffFilePath]:
+    target: Target, filter: str, config: ProcessingConfig, channel: ImageMetadata, *, out: TiffFilePath,
+) -> Produced:
     """StarXTerminator the BXT'd native mono channel; keep the starless
     body (linear, 32F). The STARLESS layer's per-panel source.
 
@@ -249,8 +247,6 @@ def sxt_channel(
     signal moved to the stars layer — so layer algebra, placement
     footprints, and merge level statistics all exercise realistically
     without rc-astro."""
-    out = sxt_channel.filename_fn(target, filter, config, channel)
-    os.makedirs(os.path.dirname(out), exist_ok=True)
     if config.development_settings.mock_pixinsight:
         from stacks.post_processing.background_pedestal import DEFAULT_PEDESTAL
         arr = _mono(channel)
@@ -262,13 +258,13 @@ def sxt_channel(
         from rc_astro_cli import run_sxt
         run_sxt(channel.filename, starless_out=out,
                 ml_version=config.sxt.ml_version, overlap=config.sxt.overlap)
-    return WithSidecar(TiffFilePath(out))
+    return Produced(out)
 
 
 @node(auto_memory=True)
 def stars_channel(
-    target: Target, filter: str, channel: ImageMetadata, starless: ImageMetadata,
-) -> WithSidecar[TiffFilePath]:
+    target: Target, filter: str, channel: ImageMetadata, starless: ImageMetadata, *, out: TiffFilePath,
+) -> Produced:
     """The STARS layer: `channel − starless`, clamped at 0 — exactly
     rc-astro's own definition of the stars image on linear data (simple
     subtraction; `--unscreen` is for stretched data). Streaming vips
@@ -277,11 +273,10 @@ def stars_channel(
     channel). Mostly zeros, so it compresses to almost nothing; the
     with-stars views are reassembled live in the viewer's finishes as
     `starless + star_s·stars`."""
-    out = stars_channel.filename_fn(target, filter, channel, starless)
     diff = _open_mono_vips(channel) - _open_mono_vips(starless)
     stars = (diff < 0).ifthenelse(0.0, diff).cast("float")
     _save_mono_vips(out, stars, filter, layer="stars")
-    return WithSidecar(TiffFilePath(out))
+    return Produced(out)
 
 
 @workflow_group
@@ -314,23 +309,22 @@ def _rgb_join(r: ImageMetadata, g: ImageMetadata, b: ImageMetadata) -> pyvips.Im
 
 @node(display="Linear RGB Starless", filter="RGB", final=True, auto_memory=True)  # pure bandjoin
 def linear_rgb_starless(
-    mosaic: Mosaic, r: ImageMetadata, g: ImageMetadata, b: ImageMetadata,
-) -> WithSidecar[TiffFilePath]:
+    mosaic: Mosaic, r: ImageMetadata, g: ImageMetadata, b: ImageMetadata, *, out: TiffFilePath,
+) -> Produced:
     """Scene format: the linear STARLESS RGB — bandjoin of the three
     starless channel layer mosaics. Star coherence across R/G/B is a
     property of the LAYERS now (each channel's stars were removed at the
     native grid and the residue subtracted exactly), so no canvas SXT
     pass exists; the with-stars RGB is never baked — the shader adds
     `starless + star_s·stars` live."""
-    out = linear_rgb_starless.filename_fn(mosaic, r, g, b)
     _save_color_vips(out, _rgb_join(r, g, b), "Linear RGB Starless")
-    return WithSidecar(TiffFilePath(out))
+    return Produced(out)
 
 
 @node(display="Linear RGB Stars", filter="RGB", final=True, auto_memory=True)  # pure bandjoin
 def linear_rgb_stars(
-    mosaic: Mosaic, r: ImageMetadata, g: ImageMetadata, b: ImageMetadata,
-) -> WithSidecar[TiffFilePath]:
+    mosaic: Mosaic, r: ImageMetadata, g: ImageMetadata, b: ImageMetadata, *, out: TiffFilePath,
+) -> Produced:
     """Scene format: the linear RGB STARS — bandjoin of the three stars
     layer mosaics (each exactly `channel − starless` per panel, merged
     without level matching). Coherent star colours come from the shared
@@ -338,9 +332,8 @@ def linear_rgb_stars(
     surface in the lab's confetti gate, not as canvas artifacts.
     Overwhelmingly zeros, so the deflate tap costs almost nothing; live
     finishes use it for star intensity (`starless + s·stars`)."""
-    out = linear_rgb_stars.filename_fn(mosaic, r, g, b)
     _save_color_vips(out, _rgb_join(r, g, b), "Linear RGB Stars", layer="stars")
-    return WithSidecar(TiffFilePath(out))
+    return Produced(out)
 
 
 # ---- named color deliverables (display=name, filter=None, final=True) ----
@@ -373,16 +366,14 @@ def _blend_sho_narrow(args, kwargs):
 
 @node(auto_memory=True)  # streaming bandjoin of the 3 starless channels
 def stack_sho_channels(
-    mosaic: Mosaic, sii: ImageMetadata, ha: ImageMetadata, oiii: ImageMetadata,
-) -> WithSidecar[TiffFilePath]:
+    mosaic: Mosaic, sii: ImageMetadata, ha: ImageMetadata, oiii: ImageMetadata, *, out: TiffFilePath,
+) -> Produced:
     """Stack the three LINEAR starless narrowband channels (S→R, H→G, O→B) into
     one 3-band linear BigTIFF — the pyvips-streamable source the NXT tiles crop
     from. Fully streaming since 2026-08-08: the inputs are the merged starless
     TIFFs, so the per-channel numpy round-trip (a temp mono BigTIFF per band,
     ~8 GB resident each) is gone — three lazy opens, one bandjoin, one tiled
     write. Legacy non-TIFF inputs fall back inside `_open_mono_vips`."""
-    out = stack_sho_channels.filename_fn(mosaic, sii, ha, oiii)
-    os.makedirs(os.path.dirname(out), exist_ok=True)
     meta = {"PIPELINE": "AstroFlow-OSS", "COLORSPC": "linear-sho"}
     monos = [_open_mono_vips(m) for m in (sii, ha, oiii)]
     stacked = monos[0].bandjoin([monos[1], monos[2]]).copy()
@@ -390,13 +381,13 @@ def stack_sho_channels(
     _atomic_tiffsave(stacked, Path(out),   # zstd: read only by pyvips (the NXT crops)
                      tile=tile_size_for(stacked.width, stacked.height),
                      compression=FAST_COMPRESSION)
-    return WithSidecar(TiffFilePath(out))
+    return Produced(out)
 
 
 @node(cache_key_narrow=_nxt_narrow, auto_memory=True, resources={"gpu_slots": 1}, ephemeral=True)  # NXT on an image (whole OR one tile)
 def nxt(
-    mosaic: Mosaic, config: ProcessingConfig, image: ImageMetadata,
-) -> WithSidecar[TiffFilePath]:
+    mosaic: Mosaic, config: ProcessingConfig, image: ImageMetadata, *, out: TiffFilePath,
+) -> Produced:
     """NoiseXTerminator on an image — one PANEL tile fed by process_in_panels;
     SAME code whether it sees a whole channel or a panel crop. A display-less
     transform: the deliverable identity lives on the blend passed to
@@ -418,8 +409,6 @@ def nxt(
     image: Heart 334b9c01 (19% zeros) lost 13% of its sky noise instead of
     89% (2026-10-02). So each band's zeros are filled with that band's
     median before rc-astro sees them, and set back to zero afterwards."""
-    out = nxt.filename_fn(mosaic, config, image)
-    os.makedirs(os.path.dirname(out), exist_ok=True)
     if config.development_settings.mock_pixinsight:
         write_tiff_image(Path(out), read_image(Path(image.filename)), {"PIPELINE": "AstroFlow-OSS"})
     else:
@@ -443,14 +432,14 @@ def nxt(
             result = np.atleast_3d(read_image(Path(tout))).copy()
             result[empty] = 0
             write_tiff_image(Path(out), result, {"PIPELINE": "AstroFlow-OSS"})
-    return WithSidecar(TiffFilePath(out))
+    return Produced(out)
 
 
 @node(cache_key_narrow=_blend_sho_narrow, display=LINEAR_SHO_DISPLAY, filter="RGB", final=True, auto_memory=True)  # 3-channel LINEAR, NXT-denoised
 def blend_linear_sho(
     mosaic: Mosaic, config: ProcessingConfig, viewbox, panels: tuple,
-    *tiles: ImageMetadata,
-) -> WithSidecar[TiffFilePath]:
+    *tiles: ImageMetadata, out: TiffFilePath,
+) -> Produced:
     """Feather the NXT'd tiles back into the single linear-SHO master — the
     source the WebGPU tile viewer finishes live. Fully streaming (see
     file_io/tiling.feather_blend_to_bigtiff): never materializes the canvas.
@@ -463,14 +452,12 @@ def blend_linear_sho(
     pad = config.tiling.overlap_px
     rects = [panel_rect(panel, viewbox, pad) for panel in panels]
     assert all(r is not None for r in rects), "panel projects off-canvas"
-    out = blend_linear_sho.filename_fn(mosaic, config, viewbox, panels, *tiles)
-    os.makedirs(os.path.dirname(out), exist_ok=True)
     feather_blend_to_bigtiff(
         [tuple(r) for r in rects], [t.filename for t in tiles], out,
         taper_px=config.tiling.overlap_px, blend=config.tiling.blend,
         metadata={"PIPELINE": "AstroFlow-OSS", "COLORSPC": "linear-sho"},
         canvas=(viewbox.num_pixels_x, viewbox.num_pixels_y))
-    return WithSidecar(TiffFilePath(out))
+    return Produced(out)
 
 
 def linear_sho(
@@ -525,40 +512,37 @@ def _nb_threeband(channels: dict) -> pyvips.Image:
 
 @node(display="Linear Narrowband Starless", filter="RGB", final=True, auto_memory=True)  # 3-band linear
 def linear_narrowband_starless(
-    mosaic: Mosaic, filters: tuple, *channels: ImageMetadata,
-) -> WithSidecar[TiffFilePath]:
+    mosaic: Mosaic, filters: tuple, *channels: ImageMetadata, out: TiffFilePath,
+) -> Produced:
     """Scene format for PARTIAL narrowband sets (an Hα-only galaxy, an
     HOO dual-band OSC): the starless layer combination, zero-filled to
     S,H,O. Full-SHO images don't get this — "Linear SHO" (NXT-denoised)
     already serves that role. The galaxy finishes (continuum subtraction
     Hα − q·R) sample this directly — starless Hα is the cleaner line
     source (star continuum never enters the injection)."""
-    out = linear_narrowband_starless.filename_fn(mosaic, filters, *channels)
     img = _nb_threeband(dict(zip(filters, channels)))
     _save_color_vips(out, img, "Linear Narrowband Starless", bands=filters)
-    return WithSidecar(TiffFilePath(out))
+    return Produced(out)
 
 
 @node(display="Linear L Starless", filter="L", final=True, auto_memory=True)  # mono linear
 def linear_lum(
-    mosaic: Mosaic, lum: ImageMetadata,
-) -> WithSidecar[TiffFilePath]:
+    mosaic: Mosaic, lum: ImageMetadata, *, out: TiffFilePath,
+) -> Produced:
     """The starless luminance layer mosaic as a served mono tap — the
     lightness source for live LRGB/HaLRGB finishing."""
-    out = linear_lum.filename_fn(mosaic, lum)
     _save_mono_vips(out, _open_mono_vips(lum), "L", layer="starless")
-    return WithSidecar(TiffFilePath(out))
+    return Produced(out)
 
 
 @node(display="Linear L Stars", filter="L", final=True, auto_memory=True)  # mono linear
 def linear_lum_stars(
-    mosaic: Mosaic, stars: ImageMetadata,
-) -> WithSidecar[TiffFilePath]:
+    mosaic: Mosaic, stars: ImageMetadata, *, out: TiffFilePath,
+) -> Produced:
     """The luminance STARS layer as a served mono tap — added back into
     the LRGB lightness live by the shader."""
-    out = linear_lum_stars.filename_fn(mosaic, stars)
     _save_mono_vips(out, _open_mono_vips(stars), "L", layer="stars")
-    return WithSidecar(TiffFilePath(out))
+    return Produced(out)
 
 
 def panel_source_manifest(targets_by_id: dict, filter: str, config,

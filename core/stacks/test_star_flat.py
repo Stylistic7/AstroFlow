@@ -34,6 +34,16 @@ from units import Celsius, Seconds
 
 
 # ---------------------------------------------------------------- fixtures
+
+def _built(star_flat, dest, **kw):
+    """`solve_and_write` plus the quality section `build_star_flat` returns
+    for the framework to record — what `gate` and the standing-flat lookup
+    read back."""
+    from file_io.sidecar import set_section
+    q = solve_and_write(star_flat, dest, **kw)
+    set_section(Path(dest), sfm.SECTION, q)
+    return q
+
 def _meta(i, *, filt="H", focal=351.0, instrume="ZWO ASI6200MM Pro", solved=True,
           image_type="Light", w=960, h=640, day=0):
     hdr = {"IMAGETYP": image_type, "FILTER": filt, "FOCALLEN": focal, "INSTRUME": instrume,
@@ -154,7 +164,7 @@ def test_solve_and_write_makes_a_wbpp_master_and_passes_the_gate(tmp_path):
     sf = _star_flat(members=[Path(p).stem for p in paths], member_files=tuple(paths), width_pixels=W, height_pixels=H)
     dest = tmp_path / "out" / "flat.xisf"
     # the synthetic detector holds only 12 cells at 256 px — too few for the split-half
-    q = solve_and_write(sf, dest, cells=(128,))
+    q = _built(sf, dest, cells=(128,))
     assert q["good"] and q["n_subs"] == 30 and q["cell"] == 128 and q["per_cell_uncertainty"] < GATE_UNCERTAINTY_MAX
     hdr = read_header(dest)
     assert str(hdr["STBLHASH"]) == sf.stable_hash and "master flat" in str(hdr["IMAGETYP"]).lower() and hdr["FILTER"] == "H"
@@ -172,7 +182,7 @@ def test_solve_and_write_makes_a_wbpp_master_and_passes_the_gate(tmp_path):
 def test_solve_and_write_rejects_a_sparse_group(tmp_path):
     paths = _write_synthetic_subs(tmp_path, 5)
     sf = _star_flat(members=[Path(p).stem for p in paths], member_files=tuple(paths), width_pixels=W, height_pixels=H)
-    q = solve_and_write(sf, tmp_path / "flat.xisf")
+    q = _built(sf, tmp_path / "flat.xisf")
     assert q["good"] is False and q["n_subs"] == 5
 
 
@@ -180,7 +190,7 @@ def test_gate_keeps_only_good_masters(tmp_path):
     good = _write_synthetic_subs(tmp_path / "g", 30); bad = _write_synthetic_subs(tmp_path / "b", 5)
     sf_good = _star_flat(members=[Path(p).stem for p in good], member_files=tuple(good), width_pixels=W, height_pixels=H, stable_hash="good")
     sf_bad = _star_flat(members=[Path(p).stem for p in bad], member_files=tuple(bad), width_pixels=W, height_pixels=H, stable_hash="bad")
-    solve_and_write(sf_good, tmp_path / "good.xisf", cells=(128,)); solve_and_write(sf_bad, tmp_path / "bad.xisf")
+    _built(sf_good, tmp_path / "good.xisf", cells=(128,)); _built(sf_bad, tmp_path / "bad.xisf")
     cands = StarFlatCandidates({StackHash("good"): sf_good, StackHash("bad"): sf_bad})
     rule = dict(min_subs=MIN_SUBS, min_split_half=MIN_SPLIT_HALF, max_uncertainty=GATE_UNCERTAINTY_MAX)
     kept = gate(cands, [tmp_path / "good.xisf", tmp_path / "bad.xisf"], **rule)
@@ -287,7 +297,7 @@ def test_preview_of_a_star_flat_is_its_master_and_never_builds_one(tmp_path, mon
     monkeypatch.setattr(sfm, "star_flat_master_path", lambda s: None)
     assert preview(StackHash("sf1"), 200) == (None, None)               # not built yet: no flat, no build
     dest = tmp_path / "flat.xisf"
-    solve_and_write(sf, dest)
+    _built(sf, dest)
     monkeypatch.setattr(sfm, "star_flat_master_path", lambda s: dest)
     _, image = preview(StackHash("sf1"), 200)
     assert image.dtype == np.float32 and image.shape[1] == 200 and 0.3 < np.median(image) < 0.7
@@ -360,7 +370,7 @@ def test_star_flat_master_is_a_display_product_like_every_other_master():
     """`display=` is what makes an op build its tile-pyramid sibling.
 
     Regression for 2026-09-09: `build_star_flat` declared no `display=`, so
-    `makes_tiff` was False, `_publish_with_presentations` never ran, and the
+    `makes_tiff` was False, no tile pyramid was built, and the
     master shipped without a pyramid. The thumbnail path then had nothing
     cheap to serve and refused the 61 MP primary on the budget gate, so every
     star flat's detail page 404'd. Ordinary calibration masters come from
@@ -443,13 +453,13 @@ def test_a_rebuilt_flat_keeps_its_identity_until_it_really_changes(tmp_path):
     sf = _star_flat(members=[Path(p).stem for p in paths], member_files=tuple(paths),
                     width_pixels=W, height_pixels=H)
     out = tmp_path / "flats"
-    q1 = solve_and_write(sf, out / "a.xisf", cells=(128,))
+    q1 = _built(sf, out / "a.xisf", cells=(128,))
     first = read_declared_content_hash(out / "a.xisf")
     assert first and q1["good"] and "carried_forward" not in q1
     assert read_call_hash(out / "a.xisf") is None           # the FRAMEWORK stamps that, not the body
 
     # the same data again: same pixels, so the same declared identity
-    q2 = solve_and_write(sf, out / "b.xisf", cells=(128,))
+    q2 = _built(sf, out / "b.xisf", cells=(128,))
     assert q2["carried_forward"] is True and q2["change_vs_standing"] <= STAR_FLAT_CHANGE
     assert read_declared_content_hash(out / "b.xisf") == first
     a = np.asarray(read_image(out / "a.xisf"), np.float64).squeeze()
@@ -466,7 +476,7 @@ def test_a_rebuilt_flat_keeps_its_identity_until_it_really_changes(tmp_path):
              t[:, 4], t[:, 5], t[:, 6], t[:, 7]]), {"engine": "test"})
     moved = _star_flat(members=[Path(p).stem for p in other], member_files=tuple(other),
                        width_pixels=W, height_pixels=H)
-    q3 = solve_and_write(moved, out / "c.xisf", cells=(128,))
+    q3 = _built(moved, out / "c.xisf", cells=(128,))
     assert read_declared_content_hash(out / "c.xisf") is not None
 
 
@@ -485,7 +495,7 @@ def test_a_group_with_no_photometry_builds_a_flat_of_ones(tmp_path):
         paths.append(str(p))                       # no star_photometry section at all
     sf = _star_flat(members=[Path(p).stem for p in paths], member_files=tuple(paths),
                     width_pixels=W, height_pixels=H)
-    q = solve_and_write(sf, tmp_path / "flat.xisf")
+    q = _built(sf, tmp_path / "flat.xisf")
     assert q["good"] is False and q["n_subs"] == 0 and "no member sub" in q["reason"]
     img = np.asarray(read_image(tmp_path / "flat.xisf"), np.float64).squeeze()
     assert img.shape == (H, W) and np.allclose(img, np.median(img))   # featureless

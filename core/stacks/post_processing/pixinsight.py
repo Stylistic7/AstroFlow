@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 from pix import Image
@@ -15,7 +14,7 @@ from decorators import node
 from decisions.settings import ProcessingConfig
 from metadata.classes import ImageMetadata
 from stacks.composite_stack import Stack
-from file_io.types import XisfFilePath, WithSidecar
+from file_io.types import Produced, XisfFilePath
 import structlog
 
 log = structlog.get_logger()
@@ -39,8 +38,8 @@ def _post_process_narrow(args, kwargs):
     auto_memory=True,
 )
 def post_process_stack(
-    stack: Stack, config: ProcessingConfig, master: ImageMetadata,
-) -> WithSidecar[XisfFilePath]:
+    stack: Stack, config: ProcessingConfig, master: ImageMetadata, *, out: XisfFilePath,
+) -> Produced:
     """PixInsight post-processing of a stacked master.
 
     `master` arrives as an `ImageMetadata` (the @makes_image trace
@@ -78,10 +77,6 @@ def post_process_stack(
         )
 
     mock_pixinsight = config.development_settings.mock_pixinsight
-    output_filename = post_process_stack.filename_fn(
-        stack, config, master,
-    )
-    os.makedirs(os.path.dirname(output_filename), exist_ok=True)
 
     def _calibrated_master() -> Image:
         """Fresh master view with WCS injected + flux-calibrated. Re-opened
@@ -103,11 +98,11 @@ def post_process_stack(
         #     named it (2026-08-10).
         image = Image.open(master.filename, filter=stack.filter)
         image = WriteAstrometricSolution(image, master.plate_solution.header)
-        GradientCorrection(image).save_to(output_filename, mock=mock_pixinsight)
+        GradientCorrection(image).save_to(out, mock=mock_pixinsight)
     else:
         try:
             MultiscaleGradientCorrection(_calibrated_master()).save_to(
-                output_filename, mock=mock_pixinsight,
+                out, mock=mock_pixinsight,
             )
         except PixInsightNoReferenceDataError:
             # MARS has no coverage for this field/filter. Fall back to the
@@ -118,7 +113,7 @@ def post_process_stack(
                 filter=stack.filter, master=str(master.filename),
             )
             AutomaticBackgroundExtractor(_calibrated_master()).save_to(
-                output_filename, mock=mock_pixinsight,
+                out, mock=mock_pixinsight,
             )
 
     # Equalize each panel's sky background to a known pedestal so
@@ -137,7 +132,7 @@ def post_process_stack(
             apply_background_pedestal_to_xisf,
         )
         apply_background_pedestal_to_xisf(
-            Path(output_filename), target=config.background_pedestal,
+            Path(out), target=config.background_pedestal,
         )
 
-    return WithSidecar(XisfFilePath(output_filename))
+    return Produced(out)

@@ -26,7 +26,7 @@ from astroscrappy import detect_cosmics
 
 from decorators import node
 from file_io.generic import read_image, read_header
-from file_io.types import FitsFilePath, WithSidecar
+from file_io.types import FitsFilePath, Produced
 from stacks.composite_stack import BaseStack, Stack
 from stacks.types import StackIdDependency
 from decisions.resolve import resolve_calibration, resolve_decisions
@@ -183,8 +183,8 @@ def _stack_files_oss_narrow(args, kwargs):
 )
 def stack_files_oss(
     stack: BaseStack,
-    config: ProcessingConfig,
-) -> WithSidecar[FitsFilePath]:
+    config: ProcessingConfig, *, out: FitsFilePath,
+) -> Produced:
     """OSS stacker producing a full-resolution master."""
     stack = resolve_calibration(stack, config.get_calibration_stacks(), config.decisions)
     if config.decisions and isinstance(stack, Stack):
@@ -193,9 +193,7 @@ def stack_files_oss(
             raise ValueError(f"Stack {stack} has no frames after applying decisions")
         stack = filtered
 
-    dest_filename = stack_files_oss.filename_fn(stack, config)
-    os.makedirs(os.path.dirname(dest_filename), exist_ok=True)
-    log.info("OSS stacking", stack=str(stack), dest=str(dest_filename))
+    log.info("OSS stacking", stack=str(stack), dest=str(out))
 
     # Load master calibration frames. Falls back from OSS to PIXINSIGHT
     # if no OSS cal exists yet — the PI cal masters are pixel-compatible
@@ -256,7 +254,7 @@ def stack_files_oss(
         header["DEC"] = stack.center[1]
 
     pyfits.PrimaryHDU(data=result.astype(np.float32), header=header).writeto(
-        str(dest_filename), overwrite=True,
+        str(out), overwrite=True,
     )
-    log.info("OSS stacking complete", output=str(dest_filename), frames=num_combined)
-    return WithSidecar(FitsFilePath(dest_filename))
+    log.info("OSS stacking complete", output=str(out), frames=num_combined)
+    return Produced(out)

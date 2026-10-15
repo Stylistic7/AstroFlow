@@ -42,8 +42,8 @@ from clustering.continuous import cluster_continuous
 from decorators import node
 from dependency_graph import Graph
 from file_io.generic import read_header
-from file_io.sidecar import get_section, set_section
-from file_io.types import WithSidecar, XisfFilePath
+from file_io.sidecar import get_section
+from file_io.types import Produced, XisfFilePath
 from hashing import hash_list, hash_list_int
 from metadata.classes import FrameHash, ImageMetadata, MetadataDict
 from metadata.image_types import is_light_frame, is_master
@@ -391,7 +391,7 @@ def _standing_flat(dest: Path, star_flat: StarFlatStack) -> tuple[np.ndarray, st
     read after."""
     from file_io.generic import read_declared_content_hash, read_image
     best: tuple[float, Path] | None = None
-    for path in Path(dest).parent.glob("*.xisf"):
+    for path in Path(dest).parent.glob("[!.]*.xisf"):      # never an in-flight scratch file
         if path == Path(dest):
             continue
         try:
@@ -429,10 +429,10 @@ def _pointing_of_sub(members: list[Path]) -> dict[int, int]:
 
 def solve_and_write(star_flat: StarFlatStack, dest, *, cells=CELLS, mag_window=MAG_WINDOW) -> dict:
     """Solve the group, write `dest` as a WBPP-ready Master Flat XISF
-    carrying the star flat's STBLHASH, and record the quality metrics in
-    its sidecar (`SECTION`); `good` there is informational (UI, logs) — the
-    gate itself is applied in `mint_star_flats`, whose thresholds sit in its
-    cache key. Returns the metrics."""
+    carrying the star flat's STBLHASH, and return the quality metrics — the
+    node records them in its sidecar (`SECTION`); `good` there is
+    informational (UI, logs) — the gate itself is applied in
+    `mint_star_flats`, whose thresholds sit in its cache key."""
     members = [Path(p) for p in star_flat.member_files]
     stars = gather_star_photometry(members)
     n_with = int(len(np.unique(stars[:, 10]))) if len(stars) else 0
@@ -457,7 +457,6 @@ def solve_and_write(star_flat: StarFlatStack, dest, *, cells=CELLS, mag_window=M
             "STBLHASH": star_flat.stable_hash, "SFLATSUB": 0, "SFLATCEL": 0,
             "CONTHASH": response_identity(response),
         })
-        set_section(Path(dest), SECTION, quality)
         log.info("star flat built", stack=str(star_flat), **quality)
         return quality
     sol, cell, r_raw, r_blob, coverage = solve_adaptive(
@@ -518,13 +517,12 @@ def solve_and_write(star_flat: StarFlatStack, dest, *, cells=CELLS, mag_window=M
         "STBLHASH": star_flat.stable_hash, "SFLATSUB": quality.get("n_subs", 0), "SFLATCEL": quality.get("cell", 0),
         "CONTHASH": identity or response_identity(response),
     })
-    set_section(Path(dest), SECTION, quality)
     log.info("star flat built", stack=str(star_flat), **quality)
     return quality
 
 
 # `display=` is what makes this a user-facing PRODUCT rather than an
-# intermediate: it sets `makes_tiff`, so `_publish_with_presentations`
+# intermediate: it sets `makes_tiff`, so `makes_image_wrap`
 # writes the tile-pyramid sibling every other master gets (stack_files
 # declares display="Master"). Without it a star flat was stamped and
 # nothing else, so its detail page had no pyramid to serve and the
@@ -532,7 +530,8 @@ def solve_and_write(star_flat: StarFlatStack, dest, *, cells=CELLS, mag_window=M
 # (2026-09-09). Decorator lists are stripped from the structural hash,
 # so adding this does NOT re-key the 91 existing masters.
 @node(num_cpus=4, display="Star Flat", resources={"diskcache": 0.001}, declares_identity=True)
-def build_star_flat(star_flat: StarFlatStack, cells: tuple, mag_window: tuple) -> WithSidecar[XisfFilePath]:
+def build_star_flat(star_flat: StarFlatStack, cells: tuple, mag_window: tuple, *,
+                    out: XisfFilePath) -> Produced:
     """The group's master flat (see `solve_and_write`). The solve settings
     are arguments so they sit in the cache key: a new cell size or window
     rebuilds every master by itself.
@@ -545,9 +544,8 @@ def build_star_flat(star_flat: StarFlatStack, cells: tuple, mag_window: tuple) -
     missing = [p for p in star_flat.member_files if not Path(p).exists()]
     if missing:
         raise FileNotFoundError(f"{len(missing)} of {star_flat.n_subs} member subs unreadable here, e.g. {missing[0]}")
-    dest = build_star_flat.filename_fn(star_flat, cells, mag_window)
-    solve_and_write(star_flat, dest, cells=cells, mag_window=mag_window)
-    return WithSidecar(XisfFilePath(dest))
+    quality = solve_and_write(star_flat, out, cells=cells, mag_window=mag_window)
+    return Produced(out, sections={SECTION: quality})
 
 
 @node(num_cpus=2, resources={"diskcache": 0.001})

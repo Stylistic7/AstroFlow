@@ -1,12 +1,11 @@
-"""Recover or reap staging files left by a killed publish.
+"""Reap the scratch files a killed producer left behind.
 
     python -m scripts.sweep_staging            # dry run, prints verdicts
     python -m scripts.sweep_staging --apply    # act on them
 
 Ray-free and context-free: it reads `output_dir` from the config if it can, and
 otherwise takes explicit roots, so it runs with the app DOWN — which is the
-point. See `file_io/staging.py` for why a parked payload is restored rather
-than deleted.
+point. See `file_io/staging.py` for why scratch is always safe to delete.
 """
 from __future__ import annotations
 
@@ -16,7 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from file_io.staging import DEFAULT_MIN_AGE_S, RESTORE, SKIP, sweep  # noqa: E402
+from file_io.staging import DEFAULT_MIN_AGE_S, SKIP, sweep  # noqa: E402
 
 
 def _default_roots() -> list[Path]:
@@ -35,7 +34,7 @@ def main() -> int:
     ap.add_argument("roots", nargs="*", type=Path,
                     help="output dirs to scan (default: config output_dir)")
     ap.add_argument("--apply", action="store_true",
-                    help="actually restore/delete (default is a dry run)")
+                    help="actually delete (default is a dry run)")
     ap.add_argument("--min-age-s", type=float, default=DEFAULT_MIN_AGE_S,
                     help=f"ignore files touched within N s ({DEFAULT_MIN_AGE_S:.0f})")
     args = ap.parse_args()
@@ -52,17 +51,14 @@ def main() -> int:
     for c in report["candidates"]:
         if c.action == SKIP:
             continue
-        arrow = f" -> {c.target.name}" if c.action == RESTORE else ""
         print(f"  {verb}{c.action:<8} {c.size / g:7.2f} GB  "
-              f"{c.path.parent.name}/{c.path.name}{arrow}")
+              f"{c.path.parent.name}/{c.path.name}")
         print(f"           ({c.reason})")
 
     skipped = report["skipped"]
-    print(f"\n  {verb}restore {report['restored']} "
-          f"({report['restored_bytes'] / g:.1f} GB), "
-          f"{verb}delete {report['deleted']} "
+    print(f"\n  {verb}delete {report['deleted']} "
           f"({report['deleted_bytes'] / g:.1f} GB), skipped {skipped}")
-    if not args.apply and (report["restored"] or report["deleted"]):
+    if not args.apply and report["deleted"]:
         print("  (dry run — re-run with --apply)")
     return 0
 

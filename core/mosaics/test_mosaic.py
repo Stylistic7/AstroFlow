@@ -140,7 +140,7 @@ def test_orion_mosaic(test_context) -> None:
     # single-filter corpus. This expected 2 while `display="Merged"` meant a
     # `_tiles.tiff` pyramid SIBLING was written beside the primary; since
     # "the pyramid IS the payload" (2026-08-17,
-    # `products/registry._publish_with_presentations`) the primary is itself
+    # `products/registry.makes_image_wrap`) the primary is itself
     # pyramidal and no sibling is written. FILTER=H is verified on the
     # `store_mosaic_color_channel_subframe` deliverable below.
     assert_files("merge_images_subframe/*.tiff", 1)
@@ -217,7 +217,7 @@ def test_orion_mosaic_hybrid_oss(test_context) -> None:
     assert_files("merge_images_oss/*.fits", 0)
 
     # NO `_tiles.tiff` sibling: since "the pyramid IS the payload"
-    # (2026-08-17, `products/registry._publish_with_presentations`), page 0 of
+    # (2026-08-17, `products/registry.makes_image_wrap`), page 0 of
     # the pyramidal TIFF is bit-identical to the planar master, so storing
     # both wasted ~265 GB at full build. The primary IS the pyramid now.
     assert_files("merge_images_oss/*_tiles.tiff", 0)

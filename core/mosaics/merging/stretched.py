@@ -28,7 +28,7 @@ import numpy as np
 
 from decorators import node
 from decisions.settings import ProcessingConfig
-from file_io.types import TiffFilePath, WithSidecar
+from file_io.types import Produced, TiffFilePath
 from metadata.classes import ImageMetadata
 from mosaics.types import Mosaic
 import structlog
@@ -52,29 +52,25 @@ def _stretch_nonzero(arr: "np.ndarray") -> "np.ndarray":
 @node(auto_memory=True)
 def autostretch_panel(
     mosaic: Mosaic, target, filter: str, viewbox, config: ProcessingConfig,
-    placed: ImageMetadata,
-) -> WithSidecar[TiffFilePath]:
+    placed: ImageMetadata, *, out: TiffFilePath,
+) -> Produced:
     """One placed panel, autostretched on its OWN statistics (bbox-on-disk
     in, bbox-on-disk out, so the blend reads it exactly like a placement).
     Per-panel pure: no joint coupling, no solver — equalization here is a
     property of the stretch, not a fit."""
-    from pathlib import Path
     from mosaics.placement.panel_io import read_placed_panel, write_placed_panel
 
     arr, offset_xy, canvas = read_placed_panel(placed.filename)
     stretched = _stretch_nonzero(arr)
-    out = Path(autostretch_panel.filename_fn(
-        mosaic, target, filter, viewbox, config, placed))
-    out.parent.mkdir(parents=True, exist_ok=True)
     write_placed_panel(out, stretched, offset_xy, canvas,
                        {"FILTER": filter, "COLORSPC": "display"})
-    return WithSidecar(TiffFilePath(out))
+    return Produced(out)
 
 
 @node(display="Mosaic Starless", final=True, auto_memory=True)  # mosaic projection — non-square pixels
 def merge_images_stretched(
-    mosaic: Mosaic, filter: str, *inputs: ImageMetadata,
-) -> WithSidecar[TiffFilePath]:
+    mosaic: Mosaic, filter: str, *inputs: ImageMetadata, out: TiffFilePath,
+) -> Produced:
     """The fused matched merge over AUTOSTRETCHED panels — level matching
     and feathering in display space, where the solver's objective equals
     the viewer's. Inputs are the placed STARLESS layers (star removal is
@@ -82,16 +78,12 @@ def merge_images_stretched(
     `merge_images_stars` and rides back in through the viewer's star_s).
     Thin twin of `merge_images_matched` (that op's body is hash-frozen
     for the linear pipelines; this one owns the display tag)."""
-    from pathlib import Path
     from hashing import hash_list
     from mosaics.merging.oss import (
-        _blend_many, _panel_count, _set_panel_count, write_tiff_image,
+        PANEL_COUNT, _blend_many, _panel_count, write_tiff_image,
     )
 
     assert len(inputs) >= 1
-    output_filename = merge_images_stretched.filename_fn(mosaic, filter, *inputs)
-    Path(output_filename).parent.mkdir(parents=True, exist_ok=True)
-
     paths = [inp.filename.resolve(strict=True) for inp in inputs]
     # pedestal=None: these panels are already stretched, so there is no
     # linear black point to aim at — equalize their skies to their own
@@ -100,7 +92,7 @@ def merge_images_stretched(
     # in display units; this is the correction for exactly that).
     result = _blend_many(paths, level_solve="overlap", pedestal=None)
 
-    write_tiff_image(Path(output_filename), result.astype(np.float32),
+    write_tiff_image(out, result.astype(np.float32),
                      {"FILTER": filter,
                       "STBLHASH": hash_list([inp.stable_hash for inp in inputs]),
                       "PIPELINE": "AstroFlow-OSS-Stretched",
@@ -109,11 +101,8 @@ def merge_images_stretched(
                       "SKYVER": "overlap-2"})
 
     new_count = sum(_panel_count(inp) for inp in inputs)
-    _set_panel_count(output_filename, new_count)
-
-    log.info("stretched OSS merge complete", output=str(output_filename),
-             panel_count=new_count, n_inputs=len(inputs))
-    return WithSidecar(output_filename)
+    log.info("stretched OSS merge complete", panel_count=new_count, n_inputs=len(inputs))
+    return Produced(out, sections={PANEL_COUNT: new_count})
 
 
 import ray
