@@ -268,9 +268,27 @@ def makes_image_wrap(
             _publish_with_presentations(result, call_hash, image_type, args)
         else:
             _stamp_header(result, call_hash, image_type, args)
+        _stamp_canvas(result, args, kwargs)
         return result
 
     return wrapped
+
+
+def _stamp_canvas(result, args: tuple, kwargs: dict) -> None:
+    """Record the canvas the result is drawn on in its sidecar — on the
+    PUBLISHED path, after `_publish_with_presentations` has landed it."""
+    from file_io.sidecar import set_section
+    from mosaics.canvas_stamp import SECTION, canvas_for_call
+    path = _result_path(result)
+    if path is None or not path.exists():
+        return
+    canvas = canvas_for_call(args, kwargs)
+    if canvas is None:
+        return
+    from previews.create_tile_pyramid import pyramid_path_for
+    for p in (path, pyramid_path_for(path)):     # the pyramid serves when the primary is reclaimed
+        if p.exists():
+            set_section(p, SECTION, canvas)
 
 
 def _primary_stable_hash(args: tuple) -> "str | None":

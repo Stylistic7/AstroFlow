@@ -43,14 +43,15 @@ def _canvas_viewbox(pipeline: str, obj) -> Viewbox:
     return compute_viewbox(_viewbox_quality_for_pipeline(pipeline), obj)
 
 
-def _get_polygons(pipeline: str, *args) -> list[dict[str, Any]]:
+def _get_polygons(pipeline: str, *args, canvas: "Viewbox | None" = None) -> list[dict[str, Any]]:
     """Compute projected polygons for an object at the pipeline's
-    output canvas resolution."""
+    output canvas resolution — on `canvas`, the viewbox stamped on the
+    displayed image, when it carries one."""
     obj = args[0]
     if isinstance(obj, CalibrationStack):
         return []
 
-    viewbox = _canvas_viewbox(pipeline, obj)
+    viewbox = canvas or _canvas_viewbox(pipeline, obj)
 
     def project(object: Any, viewbox: Viewbox) -> dict[str, Any]:
         polygon = project_to_viewbox(object.footprint, viewbox)
@@ -249,7 +250,10 @@ def metadata(object_type: str, object_id: str, pipeline: str, finish: str):
         return abort(404)
     args = _resolve_object(object_type, object_id,
                            b.role if b.role not in (None, "none") else None)
-    return jsonify({"objects": _get_polygons(pipeline, *args)})
+    from mosaics.canvas_stamp import canvas_of
+    shown = b.inputs[0].path if b.inputs else None
+    canvas = canvas_of(shown) if shown is not None else None
+    return jsonify({"objects": _get_polygons(pipeline, *args, canvas=canvas)})
 
 
 def _resolve_entity(object_type: str, object_id: str):
