@@ -315,7 +315,7 @@ def merge_sky_flats(
     return CalibrationStacksDict({**cal_stacks, **sky_flats})
 
 
-def sky_flat_master_path(stable_hash) -> Path | None:
+def sky_flat_master_path(stable_hash, output_dir=None) -> Path | None:
     """The built flat for this sky-flat stack, or None when it is not on disk.
 
     Found by scanning the producer's output directory for the file whose
@@ -323,9 +323,12 @@ def sky_flat_master_path(stable_hash) -> Path | None:
     argument tuple through the cache: the preview path does not have the
     dark and flat `ImageMetadata` those arguments carry, and a preview must
     never trigger a build. `gate()` locates star-flat masters the same way.
+    `output_dir`: the web server passes its own (Ray-free) context's.
     """
-    from context import context
-    out = Path(context.output_dir) / "build_sky_flat"
+    if output_dir is None:
+        from context import context
+        output_dir = context.output_dir
+    out = Path(output_dir) / "build_sky_flat"
     if not out.is_dir():
         return None
     for f in sorted(out.glob("*.xisf")):

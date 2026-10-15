@@ -66,7 +66,7 @@ def _role(filt) -> str:
 def _sky_flat_record(sf: dict) -> dict:
     from file_io.sidecar import get_section
     from stacks.sky_flat import sky_flat_master_path
-    path = sky_flat_master_path(sf["stable_hash"])
+    path = sky_flat_master_path(sf["stable_hash"], context.output_dir)
     q = (get_section(path, "sky_flat") or {}) if path else {}
     return {
         "id": sf["stable_hash"], "source_stack_id": sf.get("source_stack_id"),

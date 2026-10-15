@@ -167,12 +167,12 @@ def rank_fields(focal_mm: float, pixel_um: float, sensor: tuple[int, int],
         window_h = best_len * step_h
         out.append({
             **f,
-            "fits": f["clear_radius_deg"] >= half_diag,
-            "window_h": round(window_h, 2),
+            "fits": bool(f["clear_radius_deg"] >= half_diag),
+            "window_h": round(float(window_h), 2),
             "window_start_utc": t[best_start].isot[:16] + "Z",
             "window_end_utc": (t[best_start + best_len - 1] + step_h * u.hour).isot[:16] + "Z",
             "max_alt_deg": round(float(alt[ok].max()), 1),
-            "long_enough": window_h * 60 >= minutes_needed,
+            "long_enough": bool(window_h * 60 >= minutes_needed),
         })
     out.sort(key=lambda r: (not r["fits"], not r["long_enough"], -r["window_h"], r["stars_brighter_than_g11"]))
     return out[:limit]
