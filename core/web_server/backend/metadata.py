@@ -10,7 +10,6 @@ from stacks.composite_stack import CalibrationStack
 from stacks.composite_stack import Stack
 from targets.types import Target
 from mosaics.types import Mosaic, Viewbox
-from mosaics.viewbox import compute_viewbox
 from previews.types import MASTER
 from mosaics.trimming import project_to_viewbox
 from metadata.sidecar_io import read_image_metadata
@@ -21,37 +20,12 @@ from web_server.backend._route import finish_route
 metadata_bp = Blueprint("metadata", __name__)
 
 
-def _viewbox_quality_for_pipeline(pipeline: str) -> str:
-    """Map a pipeline name to the viewbox-quality the pipeline's
-    outputs are computed at: "Subframe" for the Subframe pipeline,
-    "Master" (native scale) for every other."""
-    if pipeline == "Subframe":
-        return "Subframe"
-    return "Master"
-
-
-def _canvas_viewbox(pipeline: str, obj) -> Viewbox:
-    """The canvas `pipeline` places `obj`'s pixels on: the cached measured
-    viewbox filed at graph-build time (`compute_graph._store_measured_viewbox`),
-    else the declared one (a pipeline not in the current graph, or a stack)."""
-    from dependency_graph.trace_paths import _snapshot_key
-    key = _snapshot_key((type(obj).__name__.lower(), obj.stable_hash, pipeline))
-    call_hash = context.get(("measured_viewbox", *key)) if key else None
-    measured = context.get(("compute_viewbox_measured", call_hash)) if call_hash else None
-    if isinstance(measured, Viewbox):
-        return measured
-    return compute_viewbox(_viewbox_quality_for_pipeline(pipeline), obj)
-
-
-def _get_polygons(pipeline: str, *args, canvas: "Viewbox | None" = None) -> list[dict[str, Any]]:
-    """Compute projected polygons for an object at the pipeline's
-    output canvas resolution — on `canvas`, the viewbox stamped on the
-    displayed image, when it carries one."""
+def _get_polygons(pipeline: str, viewbox: Viewbox, *args) -> list[dict[str, Any]]:
+    """The object's polygons projected onto `viewbox` — the canvas stamped
+    on the displayed image (`mosaics.canvas_stamp`)."""
     obj = args[0]
     if isinstance(obj, CalibrationStack):
         return []
-
-    viewbox = canvas or _canvas_viewbox(pipeline, obj)
 
     def project(object: Any, viewbox: Viewbox) -> dict[str, Any]:
         polygon = project_to_viewbox(object.footprint, viewbox)
@@ -253,7 +227,12 @@ def metadata(object_type: str, object_id: str, pipeline: str, finish: str):
     from mosaics.canvas_stamp import canvas_of
     shown = b.inputs[0].path if b.inputs else None
     canvas = canvas_of(shown) if shown is not None else None
-    return jsonify({"objects": _get_polygons(pipeline, *args, canvas=canvas)})
+    # No stamp, no polygons: an image built before stamping, or one not on a
+    # canvas (a stack master on its sensor grid). A guessed canvas drew the
+    # overlay 180 deg off the image — wrong is worse than absent.
+    if canvas is None:
+        return jsonify({"objects": []})
+    return jsonify({"objects": _get_polygons(pipeline, canvas, *args)})
 
 
 def _resolve_entity(object_type: str, object_id: str):

@@ -218,7 +218,7 @@ def test_metadata_route_selects_stacks_by_finish_role(client, monkeypatch):
 
     seen = []
     monkeypatch.setattr(md, "_resolve_object", lambda ot, oid, flt: seen.append(flt) or ("obj", flt))
-    monkeypatch.setattr(md, "_get_polygons", lambda pipeline, *args, canvas=None: [])
+    monkeypatch.setattr(md, "_get_polygons", lambda pipeline, viewbox, *args: [])
     for role in ("S", None):
         monkeypatch.setattr(catalog, "resolve_finish", lambda *a, _r=role: bound(_r))
         resp = client.get(f"/api/metadata/mosaic/m0/Pipe/{role or 'Hubble'}")

@@ -585,8 +585,6 @@ def _store_tap_snapshot(pipeline_fn, pipeline_name: str, entity, graph) -> None:
         pipeline_source_version(pipeline_fn._function),
         entity.stable_hash, entity.content_hash, pipeline_name,
     )
-    _store_measured_viewbox(key, graph)
-
     # The COMPLETE trace (every filename node, not just display-taps): the web
     # server reads it for the dashboard taps (display+filter), the mosaic
     # polygon overlays (stack_files by identity), and file opens — all Ray-free.
@@ -602,24 +600,6 @@ def _store_tap_snapshot(pipeline_fn, pipeline_name: str, entity, graph) -> None:
     # path). The prediction-time `record()` that lived here wrote predicted
     # paths into the log — the ledger entries that diverged from what the
     # runtime actually built, pinning phantoms and orphaning real files.
-
-
-def _store_measured_viewbox(key: tuple, graph) -> None:
-    """File the call hash of the measured viewbox this cart item's pixels are
-    placed on, under the snapshot key, so the web's polygon overlay projects
-    onto the canvas the image actually uses (`metadata._canvas_viewbox` reads
-    the cached `compute_viewbox_measured` result — never a trace). It can sit
-    far from the declared canvas: a Siril master is oriented like whichever
-    sub Siril registered to, 180 degrees apart across the meridian. The
-    entity's own viewbox is the one spanning the most channels: a mosaic's
-    trace also holds each panel's single-panel viewbox."""
-    nodes = {*graph, *(d for ds in graph.values() for d in ds)}
-    viewboxes = [n for n in nodes
-                 if getattr(getattr(n.task, "_function", n.task), "__name__", "")
-                 == "compute_viewbox_measured" and getattr(n, "content_hash", None)]
-    if viewboxes:
-        own = max(viewboxes, key=lambda n: len(n.args))
-        context.set(("measured_viewbox", *key), own.content_hash)
 
 
 def _store_product_taps(pipeline_name: str, entries: list[dict]) -> None:

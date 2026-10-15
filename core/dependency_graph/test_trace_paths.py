@@ -125,7 +125,6 @@ def test_tap_snapshot_is_rewritten_on_every_build(monkeypatch):
 
     walks = iter([[{"path": "/old/a.fits"}], [{"path": "/new/b.fits"}]])
     monkeypatch.setattr(cg, "context", _Ctx())
-    monkeypatch.setattr(cg, "_store_measured_viewbox", lambda key, graph: None)
     monkeypatch.setattr(cg, "_store_product_taps", lambda name, entries: None)
     monkeypatch.setattr(tp, "_walk_and_resolve_filenames_tagged", lambda graph: next(walks))
     monkeypatch.setattr(tp, "pipeline_source_version", lambda fn: "v1")
