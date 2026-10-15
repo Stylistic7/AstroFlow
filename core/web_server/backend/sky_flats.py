@@ -22,7 +22,7 @@ import statistics
 
 from flask import Blueprint, abort, jsonify, request
 
-from context import context
+from context import local_context as context
 
 sky_flats_bp = Blueprint("sky_flats", __name__)
 
