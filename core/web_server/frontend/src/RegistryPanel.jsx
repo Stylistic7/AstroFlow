@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
 import Paper from '@mui/material/Paper';
+import { PanelPage, PanelStatus } from './PanelPage.jsx';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
 import TableCell from '@mui/material/TableCell';
@@ -30,7 +31,7 @@ const KINDS = {
         installDir: '~/AstroFlow/finishes/',
         extraHeader: 'Reads',
         extra: (r) => r.reads.join(', '),
-        badge: (r) => (r.role ? `channel ${r.role}` : null),
+        badge: (r) => (r.role && r.role !== 'none' ? `channel ${r.role}` : null),
     },
 };
 
@@ -53,16 +54,14 @@ export default function RegistryPanel({ kind }) {
             .catch((e) => setError(String(e)));
     }, [kind]);
 
-    const installed = rows ? rows.filter((r) => r.origin === 'installed').length : 0;
+    if (error) return <PanelStatus title={k.title} error={`Couldn’t load the ${kind}: ${error}`} />;
+    if (!rows) return <PanelStatus title={k.title}>Loading {kind}…</PanelStatus>;
+    const installed = rows.filter((r) => r.origin === 'installed').length;
     return (
-        <Box sx={{ p: 2 }}>
-            <Typography variant="h5" sx={{ mb: 0.5 }}>{k.title}</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                {rows ? `${rows.length} present: ${rows.length - installed} built-in, ${installed} installed. ` : ''}
-                Installed {kind} load from <Box component="span" sx={mono}>{k.installDir}</Box>.
-            </Typography>
-            {error && <Typography color="error">Couldn’t load the {kind}: {error}</Typography>}
-            {rows && (
+        <PanelPage title={k.title} intro={<>
+            {rows.length} present: {rows.length - installed} built-in, {installed} installed.
+            Installed {kind} load from <Box component="span" sx={mono}>{k.installDir}</Box>.
+        </>}>
                 <TableContainer component={Paper} variant="outlined" sx={{ overflowX: 'auto' }}>
                     <Table size="small">
                         <TableHead>
@@ -102,7 +101,6 @@ export default function RegistryPanel({ kind }) {
                         </TableBody>
                     </Table>
                 </TableContainer>
-            )}
-        </Box>
+        </PanelPage>
     );
 }

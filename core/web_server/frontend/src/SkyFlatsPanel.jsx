@@ -8,8 +8,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
-  Paper, Radio, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Tooltip, Typography,
+  Radio, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Tooltip, Typography,
 } from '@mui/material';
+import { PanelPage, PanelSection, PanelStatus, rigName } from './PanelPage.jsx';
 
 const FILTER_NAMES = { H: 'Hα', S: 'SII', O: 'OIII', L: 'L', R: 'R', G: 'G', B: 'B' };
 const day = (s) => (s ? new Date(s).toISOString().slice(0, 10) : '—');
@@ -123,7 +124,7 @@ function PlanDialog({ open, onClose, rig, row }) {
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle>
-        Night-sky flat plan · {rig.name} · {FILTER_NAMES[row.filter] || row.filter}
+        Night-sky flat plan · {rigName(rig.name)} · {FILTER_NAMES[row.filter] || row.filter}
       </DialogTitle>
       <DialogContent>
         <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2, mt: 1 }}>
@@ -238,30 +239,24 @@ export default function SkyFlatsPanel() {
   }, []);
   useEffect(() => { load(); const t = setInterval(load, 60000); return () => clearInterval(t); }, [load]);
 
-  if (error) return <Typography color="error" sx={{ p: 3 }}>Night-sky flats unavailable: {error}</Typography>;
-  if (data === null) return <Box sx={{ p: 4, display: 'flex', gap: 2, alignItems: 'center' }}><CircularProgress size={20} /><Typography>Loading night-sky flats…</Typography></Box>;
+  if (error) return <PanelStatus title="Night-Sky Flats" error={`Night-sky flats unavailable: ${error}`} />;
+  if (data === null) return <PanelStatus title="Night-Sky Flats">Loading night-sky flats…</PanelStatus>;
 
   const rowOf = (rig, r) => edits[`${rig.key}/${r.filter}`] || r;
 
   return (
-    <Box sx={{ p: 2, maxWidth: 1200 }}>
-      <Typography variant="h5" gutterBottom>Night-Sky Flats</Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxWidth: 900 }}>
+    <PanelPage title="Night-Sky Flats" intro={<>
         A night-sky flat is a median of blank sky, shot at five slightly different pointings so the stars cancel
         and only the optics remain. It is cleaned of dust motes, so it stays valid while the dust changes — dust
         is corrected separately, per epoch (Dust Correction). Each rig needs one per filter. “Plan…” picks a blank
         field well placed that night and adds the plan to the rig's ASIAir; frames shot as its
         <Box component="span" sx={{ fontFamily: 'monospace' }}> SkyFlat </Box>panes become a night-sky flat by themselves.
-      </Typography>
+      </>}>
       {data.rigs.length === 0 && <Typography color="text.secondary">No rigs are connected.</Typography>}
-      <Stack spacing={2}>
         {data.rigs.map((rig) => (
-          <Paper key={rig.key} sx={{ p: 2 }}>
-            <Typography variant="h6">{rig.name} @ {Math.round(rig.focal_mm)} mm</Typography>
-            <Typography variant="caption" color="text.secondary">
-              field {rig.fov_deg[0]}° × {rig.fov_deg[1]}°{rig.ip ? '' : ' · offline: plans cannot be sent'}
-            </Typography>
-            <Table size="small" sx={{ mt: 1 }}>
+          <PanelSection key={rig.key} title={`${rigName(rig.name)} · ${Math.round(rig.focal_mm)} mm`}
+            meta={`field ${rig.fov_deg[0]}° × ${rig.fov_deg[1]}°${rig.ip ? '' : ' · offline: plans cannot be sent'}`}>
+            <Table size="small">
               <TableHead>
                 <TableRow>
                   <TableCell>Filter</TableCell>
@@ -279,10 +274,9 @@ export default function SkyFlatsPanel() {
                 ))}
               </TableBody>
             </Table>
-          </Paper>
+          </PanelSection>
         ))}
-      </Stack>
       {dialog && <PlanDialog open onClose={() => { setDialog(null); load(); }} rig={dialog.rig} row={dialog.row} />}
-    </Box>
+    </PanelPage>
   );
 }

@@ -37,7 +37,6 @@ import ProgressComponent from './ProgressComponent.jsx';
 import RayStatus from './RayStatus.jsx';
 import AsiairPanel from './AsiairPanel.jsx';
 import ShoppingCartPanel from './ShoppingCartPanel.jsx';
-import NextNightChip from './planner/NextNightChip.jsx';
 // import ObservingPlanChip from './suggestions/ObservingPlanChip.jsx';
 import { Document } from "flexsearch";
 
@@ -521,8 +520,6 @@ export default function PrimarySearchAppBar() {
             />
           </>)}
           <ShoppingCartPanel />
-          <VerticalDivider />
-          <NextNightChip />
           <VerticalDivider />
           <ProgressComponent />
           <VerticalDivider />

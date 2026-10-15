@@ -52,20 +52,20 @@ export default function LeftDrawer() {
           onKeyDown={toggleDrawer(false)}
         >
           <List>
-            <ListItem key="planner" disablePadding>
-              <ListItemButton onClick={() => navigate('/planner')}>
-                <ListItemIcon>
-                  <NightsStayIcon />
-                </ListItemIcon>
-                <ListItemText primary="Next night" />
-              </ListItemButton>
-            </ListItem>
             <ListItem key="recent" disablePadding>
               <ListItemButton onClick={() => navigate('/recent')}>
                 <ListItemIcon>
                   <ScheduleIcon />
                 </ListItemIcon>
                 <ListItemText primary="Recent" />
+              </ListItemButton>
+            </ListItem>
+            <ListItem key="planner" disablePadding>
+              <ListItemButton onClick={() => navigate('/planner')}>
+                <ListItemIcon>
+                  <NightsStayIcon />
+                </ListItemIcon>
+                <ListItemText primary="Next Night" />
               </ListItemButton>
             </ListItem>
             <ListItem key="pipelines" disablePadding>
@@ -84,20 +84,20 @@ export default function LeftDrawer() {
                 <ListItemText primary="Finishes" />
               </ListItemButton>
             </ListItem>
-            <ListItem key="dust-correction" disablePadding>
-              <ListItemButton onClick={() => navigate('/dust-correction')}>
-                <ListItemIcon>
-                  <CameraAltIcon />
-                </ListItemIcon>
-                <ListItemText primary="Dust Correction" />
-              </ListItemButton>
-            </ListItem>
             <ListItem key="sky-flats" disablePadding>
               <ListItemButton onClick={() => navigate('/sky-flats')}>
                 <ListItemIcon>
                   <BlurOnIcon />
                 </ListItemIcon>
                 <ListItemText primary="Night-Sky Flats" />
+              </ListItemButton>
+            </ListItem>
+            <ListItem key="dust-correction" disablePadding>
+              <ListItemButton onClick={() => navigate('/dust-correction')}>
+                <ListItemIcon>
+                  <CameraAltIcon />
+                </ListItemIcon>
+                <ListItemText primary="Dust Correction" />
               </ListItemButton>
             </ListItem>
           </List>

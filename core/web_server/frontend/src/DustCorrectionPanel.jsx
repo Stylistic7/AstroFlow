@@ -3,8 +3,9 @@
 // stacks/dust_runs.py). One row per filter; epochs in date order with a
 // small sensor drawing of the motes, boundaries dated between them.
 import React, { useEffect, useState } from 'react';
-import { Box, Chip, CircularProgress, Paper, Stack, Tooltip, Typography } from '@mui/material';
+import { Box, Chip, Paper, Tooltip, Typography } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
+import { PanelPage, PanelSection, PanelStatus } from './PanelPage.jsx';
 
 const FILTER_ORDER = ['L', 'R', 'G', 'B', 'H', 'S', 'O'];
 const filterRank = (f) => { const i = FILTER_ORDER.indexOf(f); return i < 0 ? 99 : i; };
@@ -96,8 +97,8 @@ export default function DustCorrectionPanel() {
     return () => { alive = false; clearInterval(t); };
   }, []);
 
-  if (error) return <Typography color="error" sx={{ p: 3 }}>Dust correction unavailable: {error}</Typography>;
-  if (reports === null) return <Box sx={{ p: 4, display: 'flex', gap: 2, alignItems: 'center' }}><CircularProgress size={20} /><Typography>Loading dust epochs…</Typography></Box>;
+  if (error) return <PanelStatus title="Dust Correction" error={`Dust correction unavailable: ${error}`} />;
+  if (reports === null) return <PanelStatus title="Dust Correction">Loading dust epochs…</PanelStatus>;
 
   const rigs = new Map();
   for (const rep of reports) {
@@ -108,29 +109,22 @@ export default function DustCorrectionPanel() {
   const ordered = [...rigs.values()].sort((a, b) => (b.rows.reduce((n, r) => n + r.runs, 0) - a.rows.reduce((n, r) => n + r.runs, 0)));
 
   return (
-    <Box sx={{ p: 2, maxWidth: 1400 }}>
-      <Typography variant="h5" gutterBottom>Dust Correction</Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+    <PanelPage title="Dust Correction" intro={<>
         Every camera at every focal length, with the dust-mote epochs its own lights show, per filter.
         A boundary is a night the dust decidedly changed; an epoch is final once its motes agree between
         halves of its pointings to within half a percent of sky, and never changes again.
-      </Typography>
+      </>}>
       {ordered.length === 0 && (
         <Typography color="text.secondary">No dust epochs yet — the fold runs once a rig's runs are measured.</Typography>
       )}
-      <Stack spacing={2}>
         {ordered.map(({ rig, rows }) => (
-          <Paper key={`${rig.camera_id}@${rig.focal_length}`} sx={{ p: 2 }}>
-            <Typography variant="h6">{rig.camera} @ {rig.focal_length} mm</Typography>
-            <Typography variant="caption" color="text.secondary">
-              camera {rig.camera_id} · {rig.width} × {rig.height} px · {rows.reduce((n, r) => n + r.runs, 0)} runs
-            </Typography>
+          <PanelSection key={`${rig.camera_id}@${rig.focal_length}`} title={`${rig.camera} · ${rig.focal_length} mm`}
+            meta={`camera ${rig.camera_id} · ${rig.width} × ${rig.height} px · ${rows.reduce((n, r) => n + r.runs, 0)} runs`}>
             {rows.sort((a, b) => filterRank(a.filter) - filterRank(b.filter)).map((rep) => (
               <FilterRow key={rep.system} rig={rig} report={rep} />
             ))}
-          </Paper>
+          </PanelSection>
         ))}
-      </Stack>
-    </Box>
+    </PanelPage>
   );
 }

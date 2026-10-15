@@ -440,12 +440,12 @@ function App() {
                 } />
 <Route path="/pipelines" element={
                   <AppLayout>
-                    <RegistryPanel kind="pipelines" />
+                    <RegistryPanel key="pipelines" kind="pipelines" />
                   </AppLayout>
                 } />
                 <Route path="/finishes" element={
                   <AppLayout>
-                    <RegistryPanel kind="finishes" />
+                    <RegistryPanel key="finishes" kind="finishes" />
                   </AppLayout>
                 } />
                 <Route path="/planner" element={
