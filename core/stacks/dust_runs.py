@@ -187,8 +187,8 @@ def measure_dust_run(run: Run, *, out: FitsFilePath) -> Produced:
     missing = [f for f in files if not Path(f).exists()]
     if missing:
         raise FileNotFoundError(f"{len(missing)} of {len(files)} subs unreadable here, e.g. {missing[0]}")
-    out, n = combine_dust_map(files)
-    hdu = fits.PrimaryHDU(data=out)
+    dust, n = combine_dust_map(files)
+    hdu = fits.PrimaryHDU(data=dust)
     hdu.header["IMAGETYP"] = IMAGE_TYPE
     hdu.header["DUSTRUN"] = run.content_hash
     hdu.header["DATE-OBS"] = _utc(run.oldest_date).isoformat()
@@ -198,7 +198,7 @@ def measure_dust_run(run: Run, *, out: FitsFilePath) -> Produced:
     hdu.header["DUSTDEC"] = float(run.center[1])
     hdu.writeto(out, overwrite=True)
     quality = {"n_subs": n, "date": _utc(run.oldest_date).isoformat(), "centre": [float(c) for c in run.center],
-               "block": BLOCK, "flat_rms": round(float(np.std(out)), 5)}
+               "block": BLOCK, "flat_rms": round(float(np.std(dust)), 5)}
     log.info("dust map measured", run=run.content_hash[:8], **quality)
     return Produced(out, sections={SECTION: quality})
 

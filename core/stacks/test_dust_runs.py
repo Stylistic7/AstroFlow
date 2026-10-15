@@ -152,6 +152,27 @@ def test_the_measurement_node_is_a_file_producer():
     assert hasattr(measure_dust_run, "filename_fn")
 
 
+def test_the_measurement_writes_its_map_to_out_and_returns_its_quality(tmp_path):
+    """The body end to end, the way the framework calls it: it writes the map
+    to the `out` it is handed and returns the quality as a section. (The
+    first cut named the map array `out` too, so every measurement computed
+    its map and then failed to write it — twice, with Ray's retry.)"""
+    import inspect
+    from stacks.dust_runs import SECTION, measure_dust_run
+    files = []
+    for i in range(6):
+        f = tmp_path / f"sub{i}.fit"
+        _write_sub(f, (300.0, 200.0, 24.0, 0.08), seed=i)
+        files.append(f)
+    run = _R(content_hash="run1", oldest_date=T0, center=(10.0, 20.0),
+             metadata={f.stem: SimpleNamespace(filename=f) for f in files})
+    out = tmp_path / "map.fits"
+    produced = inspect.unwrap(measure_dust_run._function)(run, out=out)
+    assert produced.path == out
+    assert fits.getdata(out).shape == (640 // BLOCK, 960 // BLOCK)
+    assert produced.sections[SECTION]["n_subs"] == 6
+
+
 def test_a_run_hashes_by_its_content_hash():
     """A measurement task is keyed by its Run; the dataclass must not have
     replaced BaseRun's content-hash __hash__ with a field-wise one (boot184:
