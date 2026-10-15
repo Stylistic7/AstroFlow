@@ -419,10 +419,17 @@ def target_thumbnail(target_id: str):
 def thumbnail_finish(object_type: str, object_id: str, pipeline: str, finish: str):
     """Thumbnail of one finish of an object under one pipeline — the finish
     baked over a small stored pyramid level of its inputs, never a decode
-    of a full-resolution master."""
-    from finishes.preview import render_finish_preview
+    of a full-resolution master. `?px=` asks for a larger render (a
+    dashboard's full-width hero): the short side is at least that many
+    pixels, up to `_MAX_PREVIEW_PX`."""
+    from finishes.preview import _PREVIEW_MIN_PX, render_finish_preview
+    px = min(max(request.args.get("px", _PREVIEW_MIN_PX, type=int), _PREVIEW_MIN_PX), _MAX_PREVIEW_PX)
     return _finish_png_response(
-        render_finish_preview(object_type, object_id, pipeline, finish))
+        render_finish_preview(object_type, object_id, pipeline, finish, min_px=px))
+
+
+# A hero spanning a 4K screen; the next pyramid level up is what gets read.
+_MAX_PREVIEW_PX = 4096
 
 
 @thumbnails_bp.route("/thumbnail/calibration_stack/<stack_id>")

@@ -36,12 +36,8 @@ function FinishThumbnail({ objectType, objectId, pipeline, finish }) {
         <Box
             onClick={() => navigate(buildUrl({ hierarchy, view }))}
             sx={{
-                // Fill an equal share of the row's width: with N siblings each
-                // `flex:1`, every image is 1/N of the viewport.
-                flex: '1 1 0',
                 minWidth: 0,
                 aspectRatio: '3 / 2',
-                maxHeight: '65vh',
                 borderRadius: 1,
                 border: '1px solid',
                 borderColor: 'divider',
@@ -95,6 +91,14 @@ function FinishThumbnail({ objectType, objectId, pipeline, finish }) {
 // Exported: TargetPanel renders the same per-pipeline sections — the
 // component is object-type-agnostic (every URL/API it touches is keyed by
 // (objectType, objectId)).
+// The hero is rendered at least this many pixels on its short side: the
+// window's shorter dimension in device pixels, in coarse steps so a few sizes
+// serve every screen (the server caches each).
+const heroPx = () => {
+    const need = Math.min(window.innerWidth, window.innerHeight) * (window.devicePixelRatio || 1);
+    return need <= 1024 ? 1024 : need <= 2048 ? 2048 : 4096;
+};
+
 export function PipelineSection({ objectType, objectId, pipeline }) {
     const [discardOpen, setDiscardOpen] = useState(false);
     const navigate = useNavigate();
@@ -127,29 +131,27 @@ export function PipelineSection({ objectType, objectId, pipeline }) {
                 onClose={() => setDiscardOpen(false)}
             />
             {heroView && (
-                <Box
-                    onClick={() => navigate(buildUrl({ hierarchy, view: heroView }))}
-                    sx={{
-                        cursor: 'pointer', mb: 2, position: 'relative',
-                        alignSelf: 'flex-start', borderRadius: 1,
-                        overflow: 'hidden', border: '1px solid',
-                        borderColor: 'divider', maxWidth: '100%',
-                    }}
-                >
-                    <PreviewImage
-                        src={`${buildApiUrl('/tap/thumbnail', hierarchy, heroView)}?v=${hero.mtime}`}
-                        alt={`${pipeline.name} — ${hero.name}`}
-                        style={{ display: 'block', maxHeight: '48vh',
-                                 maxWidth: '100%' }}
-                    />
+                // THE DELIVERABLE, as big as the window allows: up to the full
+                // width, and never taller than the screen below the titles. It is
+                // rendered at least that large (`heroPx`), so it only ever shrinks.
+                <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
+                    <Box onClick={() => navigate(buildUrl({ hierarchy, view: heroView }))}
+                         sx={{ cursor: 'pointer', maxWidth: '100%' }}>
+                        <PreviewImage
+                            src={`${buildApiUrl('/tap/thumbnail', hierarchy, heroView)}?v=${hero.mtime}&px=${heroPx()}`}
+                            alt={`${pipeline.name} — ${hero.name}`}
+                            style={{ display: 'block', maxWidth: '100%',
+                                     maxHeight: 'max(320px, calc(100vh - 270px))' }}
+                        />
+                    </Box>
                 </Box>
             )}
 
-            {/* Every finish this pipeline lists, in preference order. The
-                images share the full width (each flex:1). */}
+            {/* Every finish this pipeline lists, in preference order, at most
+                four to a row. */}
             <Box sx={{
-                display: 'flex', gap: 1, width: '100%',
-                alignItems: 'flex-start',
+                display: 'grid', gap: 1.5, width: '100%',
+                gridTemplateColumns: { xs: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' },
             }}>
                 {pipeline.finishes.map((f) => (
                     <FinishThumbnail

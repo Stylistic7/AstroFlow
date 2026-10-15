@@ -190,7 +190,7 @@ def render_finish_preview(object_type: str, object_id: str, pipeline: str,
     # display-referred payloads, viewer parity; 2026-09-16) — bump it when
     # the value derivation changes, since the finish_hash only covers the
     # finish definition.
-    key = ("finish_preview", 7, object_type, object_id, pipeline, name,
+    key = ("finish_preview", 7, object_type, object_id, pipeline, name, min_px,
            b.finish.finish_hash,
            *(_mtime(i.path) if i.path is not None else 0 for i in b.inputs))
     cached = dc.get(key) if values is None else None
