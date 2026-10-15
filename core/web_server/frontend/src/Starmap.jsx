@@ -99,6 +99,10 @@ export default function Starmap() {
 		plugins={plugins}
 		minFov={10}
 		maxFov={140}
+		// The viewer moves 5 zoom steps (of 100) per wheel EVENT, whatever the
+		// scroll distance, and trackpads fire many events per gesture: at the
+		// default speed one flick crossed most of the 10-140° range.
+		zoomSpeed={0.25}
 		onReady={handleReady}
 		onClick={handleClick} >
 	</ReactPhotoSphereViewer >;
