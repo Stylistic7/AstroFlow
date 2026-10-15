@@ -113,10 +113,14 @@ export function stfSeed(channelStats, bandRoles, colorspace, boundsFor = null, t
     // LINKED keys are solved from POOLED stats under the LINKED params' own
     // ranges — not the mean of separately-solved midtones, which is only
     // self-consistent when every band shares a span.
+    // An `empty` band (absent from a partial narrowband set, all zeros) has
+    // no statistics to pool — it would drag every pooled figure toward 0.
+    const present = channelStats.filter((c) => !c.empty);
+    const pool = present.length ? present : channelStats;
     const pooled = {
-        skyMedian: mean(channelStats.map((c) => c.skyMedian ?? c.median)),
-        skySigma: mean(channelStats.map((c) => c.skySigma ?? c.sigma)),
-        high: mean(channelStats.map((c) => c.high ?? c.p999 ?? c.p99)),
+        skyMedian: mean(pool.map((c) => c.skyMedian ?? c.median)),
+        skySigma: mean(pool.map((c) => c.skySigma ?? c.sigma)),
+        high: mean(pool.map((c) => c.high ?? c.p999 ?? c.p99)),
     };
     const linked = channelStf(pooled, target, b('blackpoint'), b('whitepoint'));
     seed.blackpoint = linked.bp;
@@ -126,7 +130,7 @@ export function stfSeed(channelStats, bandRoles, colorspace, boundsFor = null, t
     // rolloff pixels (between no-data zero and the sky pedestal) render as
     // no-data. 60% of the faintest band's sky level — comfortably above
     // any ramp, comfortably below real sky.
-    const skyMin = Math.min(...channelStats.map((c) => c.skyMedian ?? c.median));
+    const skyMin = Math.min(...pool.map((c) => c.skyMedian ?? c.median));
     if (skyMin > 0) seed.trim_floor = 0.6 * skyMin;
     // `star_white` normalises the STARS layer before its midtones curve.
     // Same bright anchor as the image white: the stats are composite-derived,

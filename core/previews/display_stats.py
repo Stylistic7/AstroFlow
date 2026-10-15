@@ -38,16 +38,32 @@ _SKY_Q = {"skyP25": 0.25, "skyMedian": 0.5, "skyP75": 0.75}
 _IQR_TO_SIGMA = 1.349
 
 
+def _covered(a: np.ndarray) -> np.ndarray:
+    """(N, nb) mask: where each band is finite and > 0. Coverage is PER BAND:
+    a partial narrowband set zero-fills its absent bands, so requiring every
+    band left no pixel covered and every H-only / H+O image without stats
+    (and black in the viewer, 2026-10-14)."""
+    return np.isfinite(a) & (a > 0.0)
+
+
+def _luminance(a: np.ndarray, m: np.ndarray) -> np.ndarray:
+    """Mean over each pixel's covered bands (rows with at least one)."""
+    n = m.sum(axis=1)
+    return np.where(m, a, 0.0).sum(axis=1) / np.maximum(n, 1)
+
+
 def _strips(img: pyvips.Image, nb: int):
-    """(covered values (N, nb) float32, luminance (N,)) per strip of rows.
-    Covered = every used band finite and > 0 (uncovered canvas is exactly 0)."""
+    """(values (N, nb), per-band coverage (N, nb), luminance (N,)) per strip
+    of rows, for the rows where at least one band is covered (uncovered
+    canvas is exactly 0)."""
     for y in range(0, img.height, _STRIP_ROWS):
         h = min(_STRIP_ROWS, img.height - y)
         a = np.ndarray(buffer=img.crop(0, y, img.width, h).write_to_memory(),
                        dtype=np.float32, shape=(h * img.width, img.bands))[:, :nb]
-        cov = np.all(np.isfinite(a), axis=1) & np.all(a > 0.0, axis=1)
-        v = a[cov]
-        yield v, v.mean(axis=1)
+        m = _covered(a)
+        rows = m.any(axis=1)
+        a, m = a[rows], m[rows]
+        yield a, m, _luminance(a, m)
 
 
 def _coarse_cut(img: pyvips.Image, nb: int, coarse: "pyvips.Image | None") -> float:
@@ -60,8 +76,9 @@ def _coarse_cut(img: pyvips.Image, nb: int, coarse: "pyvips.Image | None") -> fl
         c = img if f == 1 else img.shrink(f, f)
     a = np.ndarray(buffer=c.write_to_memory(), dtype=np.float32,
                    shape=(c.width * c.height, c.bands))[:, :nb]
-    cov = np.all(np.isfinite(a), axis=1) & np.all(a > 0.0, axis=1)
-    lum = a[cov].mean(axis=1)
+    m = _covered(a)
+    rows = m.any(axis=1)
+    lum = _luminance(a[rows], m[rows])
     return float(np.percentile(lum, 60)) if lum.size else 0.0
 
 
@@ -77,13 +94,21 @@ def _targets(hist: np.ndarray, fracs: dict) -> dict:
     return out
 
 
+# A band with no covered pixel (an absent band of a partial narrowband set):
+# zeros, flagged, so a reader indexing by band still finds a record and a
+# reader pooling bands can leave it out.
+_EMPTY = {k: 0.0 for k in (*_ALL_Q, *_SKY_Q, "min", "max", "sigma", "skySigma", "high")}
+
+
 def display_stats(img: pyvips.Image, coarse: "pyvips.Image | None" = None) -> list:
     """Exact per-band statistics of `img` (float32, up to 3 bands used), one
     dict per band: p1/p25/median/p75/p95/p99/p999, min, max, sigma, the sky
     subset's skyP25/skyMedian/skyP75/skySigma, and `high` = max(p999,
-    median + 60 sigma) -- the bright anchor the finishes read. Two streaming
-    passes; [] when nothing is covered. `coarse` (optional) is a small level
-    of the same image for the sky cut; otherwise `img` is shrunk for it."""
+    median + 60 sigma) -- the bright anchor the finishes read. Each band is
+    measured over the pixels IT covers; a band covering none gets a zeroed
+    record with `empty: True`. Two streaming passes; [] when nothing is
+    covered at all. `coarse` (optional) is a small level of the same image
+    for the sky cut; otherwise `img` is shrunk for it."""
     if img.format != "float":
         img = img.cast("float")
     nb = min(3, img.bands)
@@ -94,43 +119,54 @@ def display_stats(img: pyvips.Image, coarse: "pyvips.Image | None" = None) -> li
     h_sky = np.zeros((nb, _BINS), np.int64)
     lo = np.full(nb, np.inf)
     hi = np.full(nb, -np.inf)
-    for v, lum in _strips(img, nb):
+    for v, m, lum in _strips(img, nb):
         if not v.size:
             continue
         sky = lum < cut
-        bits = v.view(np.uint32) >> 16
         for b in range(nb):
-            h_all[b] += np.bincount(bits[:, b], minlength=_BINS)
-            h_sky[b] += np.bincount(bits[sky, b], minlength=_BINS)
-            lo[b] = min(lo[b], float(v[:, b].min()))
-            hi[b] = max(hi[b], float(v[:, b].max()))
-    if h_all[0].sum() == 0:
+            sel = m[:, b]
+            if not sel.any():
+                continue
+            vb = np.ascontiguousarray(v[sel, b])
+            bits = vb.view(np.uint32) >> 16
+            h_all[b] += np.bincount(bits, minlength=_BINS)
+            h_sky[b] += np.bincount(bits[sky[sel]], minlength=_BINS)
+            lo[b] = min(lo[b], float(vb.min()))
+            hi[b] = max(hi[b], float(vb.max()))
+    present = [b for b in range(nb) if h_all[b].sum() > 0]
+    if not present:
         return []
-    if h_sky[0].sum() == 0:            # degenerate cut: the sky is everything
-        h_sky, cut = h_all.copy(), np.inf
+    sky_is_all = [h_sky[b].sum() == 0 for b in range(nb)]   # degenerate cut
+    for b in range(nb):
+        if sky_is_all[b]:
+            h_sky[b] = h_all[b].copy()
 
-    want = [(_targets(h_all[b], _ALL_Q), _targets(h_sky[b], _SKY_Q)) for b in range(nb)]
+    want = {b: (_targets(h_all[b], _ALL_Q), _targets(h_sky[b], _SKY_Q)) for b in present}
     # pass 2: low-16-bit histograms inside the buckets that hold a wanted rank
-    buckets = [sorted({h for t in pair for h, _ in t.values()}) for pair in want]
-    luts = []
-    for bs in buckets:
+    buckets = {b: sorted({h for t in want[b] for h, _ in t.values()}) for b in present}
+    luts = {}
+    for b, bs in buckets.items():
         lut = np.full(_BINS, -1, np.int64)
         lut[bs] = np.arange(len(bs))
-        luts.append(lut)
-    l_all = [np.zeros((len(bs), _BINS), np.int64) for bs in buckets]
-    l_sky = [np.zeros((len(bs), _BINS), np.int64) for bs in buckets]
-    for v, lum in _strips(img, nb):
+        luts[b] = lut
+    l_all = {b: np.zeros((len(bs), _BINS), np.int64) for b, bs in buckets.items()}
+    l_sky = {b: np.zeros((len(bs), _BINS), np.int64) for b, bs in buckets.items()}
+    for v, m, lum in _strips(img, nb):
         if not v.size:
             continue
         sky = lum < cut
-        u = v.view(np.uint32)
-        for b in range(nb):
-            idx = luts[b][u[:, b] >> 16]
-            flat = idx * _BINS + (u[:, b] & 0xFFFF)
-            sel = idx >= 0
+        for b in present:
+            sel = m[:, b]
+            if not sel.any():
+                continue
+            u = np.ascontiguousarray(v[sel, b]).view(np.uint32)
+            idx = luts[b][u >> 16]
+            flat = idx * _BINS + (u & 0xFFFF)
+            hit = idx >= 0
             size = len(buckets[b]) * _BINS
-            l_all[b] += np.bincount(flat[sel], minlength=size).reshape(-1, _BINS)
-            l_sky[b] += np.bincount(flat[sel & sky], minlength=size).reshape(-1, _BINS)
+            in_sky = np.ones_like(hit) if sky_is_all[b] else sky[sel]
+            l_all[b] += np.bincount(flat[hit], minlength=size).reshape(-1, _BINS)
+            l_sky[b] += np.bincount(flat[hit & in_sky], minlength=size).reshape(-1, _BINS)
 
     def value(b, low, target):
         h, r = target
@@ -140,6 +176,9 @@ def display_stats(img: pyvips.Image, coarse: "pyvips.Image | None" = None) -> li
 
     out = []
     for b in range(nb):
+        if b not in want:
+            out.append({**_EMPTY, "empty": True})
+            continue
         all_t, sky_t = want[b]
         s = {name: value(b, l_all[b], t) for name, t in all_t.items()}
         s.update({name: value(b, l_sky[b], t) for name, t in sky_t.items()})
@@ -179,7 +218,9 @@ def stored_display_stats(served: "Path") -> "list | None":
         return None
     if not sec or sec.get("size") != st.st_size or sec.get("mtime_ns") != st.st_mtime_ns:
         return None
-    return sec["bands"]
+    # An empty list was the old all-bands-covered rule's answer for every
+    # partial narrowband image: not a measurement — re-measure it.
+    return sec["bands"] or None
 
 
 def pyramid_display_stats(path: "Path") -> list:
