@@ -8,7 +8,8 @@ lacks, network access to the CDS name resolver):
 Writes `stacks/sky_flat_fields.json`, which ships with the code: field choice
 is a pure function of that file, the rig and the night.
 
-A night-sky flat wants the emptiest sky there is: far from the Milky Way,
+A night-sky flat wants the emptiest sky there is: far from the Milky Way and
+from the ecliptic (no planet or asteroid wandering through the panes),
 with no bright star whose halo or reflections would survive the median,
 and no nebula, dark cloud or large galaxy in the frame. Candidates are
 spread evenly over the whole sky (both hemispheres, so any site has some),
@@ -33,6 +34,7 @@ N_CANDIDATES = 8000
 # of fields wherever a bright star or a galaxy group sits a few degrees off.
 TIERS = (("wide", 4.0), ("narrow", 1.5))
 MIN_GAL_LAT = 25.0          # |b|: the Milky Way's stars and dust stay out
+MIN_ECL_LAT = 20.0          # |beta|: planets keep within ~7 deg of the ecliptic, most asteroids within ~20
 BRIGHT_G = 5.5              # no Gaia star brighter than this inside the radius
 NAKED_EYE_MARGIN = 1.5      # extra clearance (deg) around the brightest stars Gaia lacks
 OBJECT_MIN_RADIUS = 0.1     # deg: nebulae, dark clouds and galaxies larger than this are avoided
@@ -115,8 +117,10 @@ def main() -> int:
 
     ra, dec = fibonacci_sphere(N_CANDIDATES)
     xyz = unit(ra, dec)
-    b = SkyCoord(ra * u.deg, dec * u.deg).galactic.b.deg
-    keep = np.abs(b) >= MIN_GAL_LAT
+    sky = SkyCoord(ra * u.deg, dec * u.deg)
+    b = sky.galactic.b.deg
+    beta = sky.transform_to("barycentricmeanecliptic").lat.deg
+    keep = (np.abs(b) >= MIN_GAL_LAT) & (np.abs(beta) >= MIN_ECL_LAT)
     out = []
     for tier, radius in TIERS:
         r = chord(radius)
@@ -130,24 +134,25 @@ def main() -> int:
             if np.any(sep < radius + obj_rad):
                 continue
             n = len(star_tree.query_ball_point(xyz[i], r))
-            fields.append((float(ra[i]), float(dec[i]), float(b[i]), n))
+            fields.append((float(ra[i]), float(dec[i]), float(b[i]), float(beta[i]), n))
         print(f"{tier}: {len(fields)} of {int(keep.sum())} candidates pass the hard rules", flush=True)
         best = {}
         for f in fields:
             cell = (int(f[0] // 15), int(np.digitize(f[1], DEC_BANDS)))
-            if cell not in best or f[3] < best[cell][3]:
+            if cell not in best or f[4] < best[cell][4]:
                 best[cell] = f
-        for (h, band), (fra, fdec, fb, n) in sorted(best.items()):
+        for (h, band), (fra, fdec, fb, fbeta, n) in sorted(best.items()):
             sign = "+" if fdec >= 0 else "-"
             out.append({
                 "id": f"{tier[0].upper()}{int(round(fra / 15 * 10)):03d}{sign}{int(round(abs(fdec))):02d}",
                 "tier": tier, "clear_radius_deg": radius,
                 "ra_deg": round(fra, 4), "dec_deg": round(fdec, 4),
-                "gal_lat_deg": round(fb, 1), "stars_brighter_than_g11": n,
+                "gal_lat_deg": round(fb, 1), "ecl_lat_deg": round(fbeta, 1),
+                "stars_brighter_than_g11": n,
             })
     OUT.write_text(json.dumps({
         "about": "Blank-sky fields for night-sky flats; written by scripts/build_sky_flat_fields.py",
-        "rules": {"tiers": dict(TIERS), "min_gal_lat_deg": MIN_GAL_LAT, "no_star_brighter_than_g": BRIGHT_G,
+        "rules": {"tiers": dict(TIERS), "min_gal_lat_deg": MIN_GAL_LAT, "min_ecl_lat_deg": MIN_ECL_LAT, "no_star_brighter_than_g": BRIGHT_G,
                   "naked_eye_margin_deg": NAKED_EYE_MARGIN, "object_min_radius_deg": OBJECT_MIN_RADIUS,
                   "score": f"Gaia stars brighter than G {COUNT_G} within the tier's radius"},
         "fields": out,

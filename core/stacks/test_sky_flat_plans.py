@@ -18,12 +18,13 @@ def _sep_deg(a, b):
 
 def test_the_field_catalogue_is_well_formed():
     fields = p.fields()
-    assert len(fields) > 100
+    assert len(fields) > 80
     assert len({f["id"] for f in fields}) == len(fields)
     assert {f["tier"] for f in fields} == {"wide", "narrow"}
     for f in fields:
         assert -90 <= f["dec_deg"] <= 90 and 0 <= f["ra_deg"] < 360
-        assert abs(f["gal_lat_deg"]) >= 25
+        assert abs(f["gal_lat_deg"]) >= 25          # off the Milky Way
+        assert abs(f["ecl_lat_deg"]) >= 20          # off the ecliptic: no planets or asteroids
     # both hemispheres, every season
     assert {int(f["ra_deg"] // 30) for f in fields} == set(range(12))
     assert any(f["dec_deg"] < -30 for f in fields) and any(f["dec_deg"] > 60 for f in fields)
