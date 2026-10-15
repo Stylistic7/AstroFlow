@@ -22,8 +22,13 @@ const monospaceSx = {
   lineHeight: 1.5,
 };
 
-function paneLineForStack(stack, pane) {
-  const [ra, dec] = stack.center;
+// `center` = where the pane is aimed. For a panel that is the TARGET's centre
+// (the point AstroFlow's ASIAir push aims at), not its first stack's: the two
+// differ whenever a panel's stacks were shot at different pointings, and two
+// aim points for one panel is how the 7098 seams opened (2026-10-14).
+// Coordinates are J2000 (plate solutions), what the ASIAir CSV import expects.
+function paneLineForStack(stack, pane, center = stack.center) {
+  const [ra, dec] = center;
   const rotation_angle = (stack.rotation_angle * 180.0) / Math.PI;
   const pane_width = (stack.image_scale * stack.width_pixels) / 60.0;
   const pane_height = (stack.image_scale * stack.height_pixels) / 60.0;
@@ -33,7 +38,7 @@ function paneLineForStack(stack, pane) {
 function paneLineForTarget(stacks, targets, target_id, pane) {
   const target = targets[target_id];
   const stack = stacks[target.stack_ids[0]];
-  return paneLineForStack(stack, pane);
+  return paneLineForStack(stack, pane, target.center ?? stack.center);
 }
 
 const HEADER = "Pane, RA, DEC, Position Angle (East), Pane width (arcmins), Pane height (arcmins), Overlap, Row, Column";
@@ -56,8 +61,8 @@ export default function TelescopiusDialog({ open, onClose, stacks, targets, mosa
     }
     if (mosaic && targets && stacks) {
       const sorted = [...mosaic.target_ids].sort((a, b) => {
-        const ra_a = stacks[targets[a]?.stack_ids?.[0]]?.center?.[0] ?? 0;
-        const ra_b = stacks[targets[b]?.stack_ids?.[0]]?.center?.[0] ?? 0;
+        const ra_a = targets[a]?.center?.[0] ?? 0;
+        const ra_b = targets[b]?.center?.[0] ?? 0;
         return ra_a - ra_b;
       });
       const lines = sorted.map((tid, i) => paneLineForTarget(stacks, targets, tid, i));
