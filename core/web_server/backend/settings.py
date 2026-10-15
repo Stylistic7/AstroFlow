@@ -119,22 +119,28 @@ def toggle_quarantine(object_type, object_id):
 def toggle_sky_flat_source(stack_id):
     """Promote a stack to a night-sky flat source, or demote it.
 
-    Blank-sky frames arrive stamped `Light` like any other, so nothing in a
-    header can identify them — this decision is the only place that knowledge
-    exists (`stacks/sky_flat.py`). Promoting mints a `SkyFlatStack` whose
-    frames are this stack's; it is then an ordinary flat, and resolves onto
-    lights of the same optical train exactly the way any flat does — pickable
-    in the flat selector alongside panel, twilight and star flats.
+    A stack shot as SkyFlat panes (`stacks/sky_flat_plans.py`) is a source by
+    default; any other is not. Toggling flips the stack's EFFECTIVE state and
+    stores a decision only when the result differs from that default — so a
+    promoted ordinary stack holds an INCLUDE, a demoted SkyFlat stack an
+    EXCLUDE, and a stack back at its default holds nothing. Promoting mints a
+    `SkyFlatStack` whose frames are this stack's; it is then an ordinary flat,
+    pickable in the flat selector alongside panel, twilight and star flats.
     """
+    from decisions.helpers import exclude, include
+    from stacks.sky_flat import is_sky_flat_source, sky_flat_id_for
+    from stacks.sky_flat_plans import is_named_sky_flat
+
     key = DecisionKey.sky_flat_source(stack_id)
     current = context.settings.decision_overrides
-    promoted = key in current and current[key].choice == BinaryChoice.INCLUDE
-
-    if promoted:
-        new_overrides = frozendict({k: v for k, v in current.items() if k != key})
+    filenames = ((context.ui_stacks or {}).get(stack_id) or {}).get("filenames") or []
+    now = is_sky_flat_source(stack_id, filenames, current)
+    default = is_named_sky_flat(filenames)
+    rest = {k: v for k, v in current.items() if k != key}
+    if (not now) == default:
+        new_overrides = frozendict(rest)
     else:
-        from decisions.helpers import include
-        new_overrides = frozendict(dict(current) | include(key))
+        new_overrides = frozendict(rest | (exclude(key) if now else include(key)))
 
     _update_settings(lambda s: replace(s, decision_overrides=new_overrides))
     announce("reload_data")
@@ -142,12 +148,23 @@ def toggle_sky_flat_source(stack_id):
     from state.actor import state
     state.drain_and_restart()
 
-    from stacks.sky_flat import sky_flat_id_for
     return jsonify({
         "stack_id": stack_id,
-        "is_sky_flat_source": not promoted,
-        "sky_flat_stack_id": None if promoted else str(sky_flat_id_for(stack_id)),
+        "is_sky_flat_source": not now,
+        "sky_flat_stack_id": None if now else str(sky_flat_id_for(stack_id)),
     })
+
+
+@settings_bp.route("/api/sky_flat_sources", methods=["GET"])
+def sky_flat_sources():
+    """Every stack that is a night-sky flat source NOW: the explicit
+    promotions, plus the SkyFlat-named stacks nobody demoted. Read from the
+    UI stack summaries — no stack is loaded."""
+    from stacks.sky_flat import is_sky_flat_source
+    overrides = context.settings.decision_overrides or {}
+    ui = context.ui_stacks or {}
+    return jsonify(sorted(sid for sid, s in ui.items()
+                          if is_sky_flat_source(sid, s.get("filenames") or [], overrides)))
 
 
 def _quarantined_frame_files() -> list[Path]:

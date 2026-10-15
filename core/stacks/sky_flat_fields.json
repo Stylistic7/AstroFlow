@@ -1,0 +1,1438 @@
+{
+ "about": "Blank-sky fields for night-sky flats; written by scripts/build_sky_flat_fields.py",
+ "rules": {
+  "tiers": {
+   "wide": 4.0,
+   "narrow": 1.5
+  },
+  "min_gal_lat_deg": 25.0,
+  "no_star_brighter_than_g": 5.5,
+  "naked_eye_margin_deg": 1.5,
+  "object_min_radius_deg": 0.1,
+  "score": "Gaia stars brighter than G 11.0 within the tier's radius"
+ },
+ "fields": [
+  {
+   "id": "W001-59",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 1.1446,
+   "dec_deg": -58.7459,
+   "gal_lat_deg": -57.3,
+   "stars_brighter_than_g11": 754
+  },
+  {
+   "id": "W000-14",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 0.0889,
+   "dec_deg": -14.1744,
+   "gal_lat_deg": -72.4,
+   "stars_brighter_than_g11": 155
+  },
+  {
+   "id": "W000+00",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 0.252,
+   "dec_deg": 0.1074,
+   "gal_lat_deg": -60.2,
+   "stars_brighter_than_g11": 249
+  },
+  {
+   "id": "W019-37",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 29.0329,
+   "dec_deg": -36.9326,
+   "gal_lat_deg": -73.2,
+   "stars_brighter_than_g11": 584
+  },
+  {
+   "id": "W012-18",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 17.915,
+   "dec_deg": -18.3533,
+   "gal_lat_deg": -80.1,
+   "stars_brighter_than_g11": 512
+  },
+  {
+   "id": "W015+01",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 23.2412,
+   "dec_deg": 1.0099,
+   "gal_lat_deg": -60.1,
+   "stars_brighter_than_g11": 645
+  },
+  {
+   "id": "W023-38",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 33.7689,
+   "dec_deg": -37.5443,
+   "gal_lat_deg": -69.6,
+   "stars_brighter_than_g11": 545
+  },
+  {
+   "id": "W025-00",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 37.4492,
+   "dec_deg": -0.4512,
+   "gal_lat_deg": -54.4,
+   "stars_brighter_than_g11": 446
+  },
+  {
+   "id": "W029+12",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 44.1574,
+   "dec_deg": 12.0125,
+   "gal_lat_deg": -40.5,
+   "stars_brighter_than_g11": 341
+  },
+  {
+   "id": "W037-69",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 56.1679,
+   "dec_deg": -69.1676,
+   "gal_lat_deg": -41.0,
+   "stars_brighter_than_g11": 870
+  },
+  {
+   "id": "W039-45",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 58.14,
+   "dec_deg": -45.2451,
+   "gal_lat_deg": -49.9,
+   "stars_brighter_than_g11": 726
+  },
+  {
+   "id": "W032-03",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 48.7303,
+   "dec_deg": -2.7011,
+   "gal_lat_deg": -47.9,
+   "stars_brighter_than_g11": 353
+  },
+  {
+   "id": "W031+11",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 45.9664,
+   "dec_deg": 10.7122,
+   "gal_lat_deg": -40.4,
+   "stars_brighter_than_g11": 305
+  },
+  {
+   "id": "W043-68",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 63.8309,
+   "dec_deg": -68.3376,
+   "gal_lat_deg": -39.1,
+   "stars_brighter_than_g11": 980
+  },
+  {
+   "id": "W041-49",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 61.758,
+   "dec_deg": -48.9926,
+   "gal_lat_deg": -46.7,
+   "stars_brighter_than_g11": 761
+  },
+  {
+   "id": "W040+15",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 60.6015,
+   "dec_deg": 14.7514,
+   "gal_lat_deg": -27.6,
+   "stars_brighter_than_g11": 659
+  },
+  {
+   "id": "W051-43",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 76.3931,
+   "dec_deg": -43.3045,
+   "gal_lat_deg": -37.0,
+   "stars_brighter_than_g11": 987
+  },
+  {
+   "id": "W068-86",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 101.7191,
+   "dec_deg": -85.8476,
+   "gal_lat_deg": -27.1,
+   "stars_brighter_than_g11": 1227
+  },
+  {
+   "id": "W062-47",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 92.4102,
+   "dec_deg": -47.1912,
+   "gal_lat_deg": -26.4,
+   "stars_brighter_than_g11": 1370
+  },
+  {
+   "id": "W079+36",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 118.451,
+   "dec_deg": 36.0064,
+   "gal_lat_deg": 27.5,
+   "stars_brighter_than_g11": 784
+  },
+  {
+   "id": "W082+23",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 122.3329,
+   "dec_deg": 23.009,
+   "gal_lat_deg": 26.8,
+   "stars_brighter_than_g11": 976
+  },
+  {
+   "id": "W081+37",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 121.378,
+   "dec_deg": 36.9864,
+   "gal_lat_deg": 30.0,
+   "stars_brighter_than_g11": 784
+  },
+  {
+   "id": "W099-02",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 149.0408,
+   "dec_deg": -2.1276,
+   "gal_lat_deg": 38.7,
+   "stars_brighter_than_g11": 550
+  },
+  {
+   "id": "W099+01",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 148.3499,
+   "dec_deg": 1.2105,
+   "gal_lat_deg": 40.1,
+   "stars_brighter_than_g11": 630
+  },
+  {
+   "id": "W108-00",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 162.5579,
+   "dec_deg": -0.2507,
+   "gal_lat_deg": 50.0,
+   "stars_brighter_than_g11": 131
+  },
+  {
+   "id": "W109+02",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 163.676,
+   "dec_deg": 1.8123,
+   "gal_lat_deg": 52.3,
+   "stars_brighter_than_g11": 120
+  },
+  {
+   "id": "W109+51",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 164.1653,
+   "dec_deg": 50.5226,
+   "gal_lat_deg": 58.0,
+   "stars_brighter_than_g11": 611
+  },
+  {
+   "id": "W110-05",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 165.0579,
+   "dec_deg": -4.8688,
+   "gal_lat_deg": 48.2,
+   "stars_brighter_than_g11": 141
+  },
+  {
+   "id": "W118+22",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 176.6652,
+   "dec_deg": 21.6771,
+   "gal_lat_deg": 74.3,
+   "stars_brighter_than_g11": 105
+  },
+  {
+   "id": "W112+31",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 168.7382,
+   "dec_deg": 31.1061,
+   "gal_lat_deg": 68.6,
+   "stars_brighter_than_g11": 453
+  },
+  {
+   "id": "W122-14",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 182.4569,
+   "dec_deg": -14.4257,
+   "gal_lat_deg": 47.2,
+   "stars_brighter_than_g11": 643
+  },
+  {
+   "id": "W122+29",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 182.9463,
+   "dec_deg": 29.4146,
+   "gal_lat_deg": 81.0,
+   "stars_brighter_than_g11": 147
+  },
+  {
+   "id": "W121+31",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 181.1373,
+   "dec_deg": 30.8889,
+   "gal_lat_deg": 79.1,
+   "stars_brighter_than_g11": 218
+  },
+  {
+   "id": "W122+63",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 182.8455,
+   "dec_deg": 62.9204,
+   "gal_lat_deg": 53.6,
+   "stars_brighter_than_g11": 649
+  },
+  {
+   "id": "W138-30",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 207.0919,
+   "dec_deg": -30.1573,
+   "gal_lat_deg": 31.1,
+   "stars_brighter_than_g11": 999
+  },
+  {
+   "id": "W139-04",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 208.1092,
+   "dec_deg": -3.8489,
+   "gal_lat_deg": 55.7,
+   "stars_brighter_than_g11": 573
+  },
+  {
+   "id": "W139+07",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 208.9632,
+   "dec_deg": 6.9715,
+   "gal_lat_deg": 64.7,
+   "stars_brighter_than_g11": 592
+  },
+  {
+   "id": "W146-30",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 219.491,
+   "dec_deg": -30.3729,
+   "gal_lat_deg": 27.1,
+   "stars_brighter_than_g11": 894
+  },
+  {
+   "id": "W148-05",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 222.3172,
+   "dec_deg": -5.3146,
+   "gal_lat_deg": 46.8,
+   "stars_brighter_than_g11": 418
+  },
+  {
+   "id": "W150+04",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 224.9803,
+   "dec_deg": 4.2222,
+   "gal_lat_deg": 51.7,
+   "stars_brighter_than_g11": 426
+  },
+  {
+   "id": "W149+81",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 223.3967,
+   "dec_deg": 81.3498,
+   "gal_lat_deg": 34.5,
+   "stars_brighter_than_g11": 982
+  },
+  {
+   "id": "W150-05",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 225.2442,
+   "dec_deg": -4.5239,
+   "gal_lat_deg": 45.5,
+   "stars_brighter_than_g11": 408
+  },
+  {
+   "id": "W153+09",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 230.1434,
+   "dec_deg": 9.1706,
+   "gal_lat_deg": 50.5,
+   "stars_brighter_than_g11": 377
+  },
+  {
+   "id": "W165+27",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 246.7506,
+   "dec_deg": 26.9122,
+   "gal_lat_deg": 42.4,
+   "stars_brighter_than_g11": 825
+  },
+  {
+   "id": "W174+67",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 261.2849,
+   "dec_deg": 67.0176,
+   "gal_lat_deg": 33.2,
+   "stars_brighter_than_g11": 1126
+  },
+  {
+   "id": "W198-37",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 296.3854,
+   "dec_deg": -37.2738,
+   "gal_lat_deg": -26.2,
+   "stars_brighter_than_g11": 1030
+  },
+  {
+   "id": "W200-41",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 300.0034,
+   "dec_deg": -40.551,
+   "gal_lat_deg": -29.7,
+   "stars_brighter_than_g11": 1061
+  },
+  {
+   "id": "W201-22",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 301.2845,
+   "dec_deg": -21.5538,
+   "gal_lat_deg": -25.4,
+   "stars_brighter_than_g11": 1028
+  },
+  {
+   "id": "W215-29",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 322.7286,
+   "dec_deg": -28.8079,
+   "gal_lat_deg": -46.0,
+   "stars_brighter_than_g11": 895
+  },
+  {
+   "id": "W228-05",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 342.6899,
+   "dec_deg": -4.6245,
+   "gal_lat_deg": -53.5,
+   "stars_brighter_than_g11": 135
+  },
+  {
+   "id": "W229+06",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 343.544,
+   "dec_deg": 6.1928,
+   "gal_lat_deg": -46.2,
+   "stars_brighter_than_g11": 159
+  },
+  {
+   "id": "W233-75",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 350.1275,
+   "dec_deg": -75.4948,
+   "gal_lat_deg": -40.3,
+   "stars_brighter_than_g11": 965
+  },
+  {
+   "id": "W235-36",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 351.8357,
+   "dec_deg": -36.2369,
+   "gal_lat_deg": -70.0,
+   "stars_brighter_than_g11": 562
+  },
+  {
+   "id": "W239-13",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 358.2799,
+   "dec_deg": -12.8633,
+   "gal_lat_deg": -70.3,
+   "stars_brighter_than_g11": 124
+  },
+  {
+   "id": "W230+05",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 345.353,
+   "dec_deg": 4.912,
+   "gal_lat_deg": -48.4,
+   "stars_brighter_than_g11": 130
+  },
+  {
+   "id": "W239+35",
+   "tier": "wide",
+   "clear_radius_deg": 4.0,
+   "ra_deg": 358.0783,
+   "dec_deg": 35.1609,
+   "gal_lat_deg": -26.2,
+   "stars_brighter_than_g11": 1291
+  },
+  {
+   "id": "N007-61",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 10.6167,
+   "dec_deg": -60.6773,
+   "gal_lat_deg": -56.4,
+   "stars_brighter_than_g11": 112
+  },
+  {
+   "id": "N003-30",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 4.6618,
+   "dec_deg": -30.0083,
+   "gal_lat_deg": -82.2,
+   "stars_brighter_than_g11": 24
+  },
+  {
+   "id": "N001-03",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 0.943,
+   "dec_deg": -3.2318,
+   "gal_lat_deg": -63.5,
+   "stars_brighter_than_g11": 13
+  },
+  {
+   "id": "N000+00",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 0.252,
+   "dec_deg": 0.1074,
+   "gal_lat_deg": -60.2,
+   "stars_brighter_than_g11": 39
+  },
+  {
+   "id": "N008+37",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 11.5954,
+   "dec_deg": 37.4901,
+   "gal_lat_deg": -25.4,
+   "stars_brighter_than_g11": 166
+  },
+  {
+   "id": "N017-64",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 24.8247,
+   "dec_deg": -63.8151,
+   "gal_lat_deg": -52.5,
+   "stars_brighter_than_g11": 94
+  },
+  {
+   "id": "N013-36",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 19.5609,
+   "dec_deg": -35.7236,
+   "gal_lat_deg": -79.7,
+   "stars_brighter_than_g11": 65
+  },
+  {
+   "id": "N012-28",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 18.1789,
+   "dec_deg": -27.864,
+   "gal_lat_deg": -85.2,
+   "stars_brighter_than_g11": 57
+  },
+  {
+   "id": "N019+11",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 28.8313,
+   "dec_deg": 11.3981,
+   "gal_lat_deg": -48.5,
+   "stars_brighter_than_g11": 75
+  },
+  {
+   "id": "N020+33",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 29.4214,
+   "dec_deg": 32.5901,
+   "gal_lat_deg": -28.2,
+   "stars_brighter_than_g11": 113
+  },
+  {
+   "id": "N028-65",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 41.9598,
+   "dec_deg": -65.3847,
+   "gal_lat_deg": -47.6,
+   "stars_brighter_than_g11": 90
+  },
+  {
+   "id": "N023-35",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 34.887,
+   "dec_deg": -34.9859,
+   "gal_lat_deg": -69.6,
+   "stars_brighter_than_g11": 66
+  },
+  {
+   "id": "N028-12",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 41.3312,
+   "dec_deg": -11.8222,
+   "gal_lat_deg": -59.2,
+   "stars_brighter_than_g11": 52
+  },
+  {
+   "id": "N029+15",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 43.4664,
+   "dec_deg": 15.4487,
+   "gal_lat_deg": -38.1,
+   "stars_brighter_than_g11": 38
+  },
+  {
+   "id": "N021+31",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 31.2304,
+   "dec_deg": 31.0894,
+   "gal_lat_deg": -29.2,
+   "stars_brighter_than_g11": 94
+  },
+  {
+   "id": "N037-61",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 55.4769,
+   "dec_deg": -61.2081,
+   "gal_lat_deg": -45.6,
+   "stars_brighter_than_g11": 98
+  },
+  {
+   "id": "N030-34",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 45.477,
+   "dec_deg": -33.6677,
+   "gal_lat_deg": -61.2,
+   "stars_brighter_than_g11": 81
+  },
+  {
+   "id": "N032-03",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 48.7303,
+   "dec_deg": -2.7011,
+   "gal_lat_deg": -47.9,
+   "stars_brighter_than_g11": 38
+  },
+  {
+   "id": "N033+12",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 48.8934,
+   "dec_deg": 11.515,
+   "gal_lat_deg": -37.9,
+   "stars_brighter_than_g11": 30
+  },
+  {
+   "id": "N042-75",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 62.7129,
+   "dec_deg": -74.8785,
+   "gal_lat_deg": -36.1,
+   "stars_brighter_than_g11": 111
+  },
+  {
+   "id": "N042-32",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 63.7301,
+   "dec_deg": -32.0139,
+   "gal_lat_deg": -45.9,
+   "stars_brighter_than_g11": 90
+  },
+  {
+   "id": "N044-27",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 65.9662,
+   "dec_deg": -27.2662,
+   "gal_lat_deg": -43.1,
+   "stars_brighter_than_g11": 89
+  },
+  {
+   "id": "N042+13",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 62.4105,
+   "dec_deg": 13.4369,
+   "gal_lat_deg": -27.1,
+   "stars_brighter_than_g11": 93
+  },
+  {
+   "id": "N050-76",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 75.112,
+   "dec_deg": -75.6096,
+   "gal_lat_deg": -33.0,
+   "stars_brighter_than_g11": 134
+  },
+  {
+   "id": "N050-46",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 75.2751,
+   "dec_deg": -46.2095,
+   "gal_lat_deg": -37.9,
+   "stars_brighter_than_g11": 118
+  },
+  {
+   "id": "N050-28",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 75.4382,
+   "dec_deg": -28.3675,
+   "gal_lat_deg": -35.3,
+   "stars_brighter_than_g11": 127
+  },
+  {
+   "id": "N061-67",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 91.5561,
+   "dec_deg": -67.2387,
+   "gal_lat_deg": -29.2,
+   "stars_brighter_than_g11": 165
+  },
+  {
+   "id": "N062-47",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 92.4102,
+   "dec_deg": -47.1912,
+   "gal_lat_deg": -26.4,
+   "stars_brighter_than_g11": 164
+  },
+  {
+   "id": "N070+73",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 104.8331,
+   "dec_deg": 72.6258,
+   "gal_lat_deg": 26.4,
+   "stars_brighter_than_g11": 160
+  },
+  {
+   "id": "N073-83",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 109.3822,
+   "dec_deg": -82.8047,
+   "gal_lat_deg": -26.1,
+   "stars_brighter_than_g11": 160
+  },
+  {
+   "id": "N080+28",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 119.8329,
+   "dec_deg": 28.1236,
+   "gal_lat_deg": 26.4,
+   "stars_brighter_than_g11": 122
+  },
+  {
+   "id": "N078+53",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 117.4961,
+   "dec_deg": 52.999,
+   "gal_lat_deg": 30.0,
+   "stars_brighter_than_g11": 79
+  },
+  {
+   "id": "N079+68",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 119.0411,
+   "dec_deg": 68.2601,
+   "gal_lat_deg": 31.0,
+   "stars_brighter_than_g11": 127
+  },
+  {
+   "id": "N081-84",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 121.7812,
+   "dec_deg": -84.4873,
+   "gal_lat_deg": -25.2,
+   "stars_brighter_than_g11": 183
+  },
+  {
+   "id": "N089-03",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 133.7147,
+   "dec_deg": -2.7297,
+   "gal_lat_deg": 25.7,
+   "stars_brighter_than_g11": 179
+  },
+  {
+   "id": "N082+29",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 122.7599,
+   "dec_deg": 29.0207,
+   "gal_lat_deg": 29.1,
+   "stars_brighter_than_g11": 101
+  },
+  {
+   "id": "N089+54",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 132.8221,
+   "dec_deg": 54.0105,
+   "gal_lat_deg": 39.1,
+   "stars_brighter_than_g11": 88
+  },
+  {
+   "id": "N087+63",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 130.3222,
+   "dec_deg": 62.8262,
+   "gal_lat_deg": 36.4,
+   "stars_brighter_than_g11": 115
+  },
+  {
+   "id": "N100-11",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 149.3048,
+   "dec_deg": -10.9309,
+   "gal_lat_deg": 33.1,
+   "stars_brighter_than_g11": 55
+  },
+  {
+   "id": "N100+03",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 149.4679,
+   "dec_deg": 3.2748,
+   "gal_lat_deg": 42.2,
+   "stars_brighter_than_g11": 70
+  },
+  {
+   "id": "N098+39",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 147.2941,
+   "dec_deg": 39.1332,
+   "gal_lat_deg": 50.5,
+   "stars_brighter_than_g11": 78
+  },
+  {
+   "id": "N098+61",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 147.4573,
+   "dec_deg": 61.3871,
+   "gal_lat_deg": 44.4,
+   "stars_brighter_than_g11": 83
+  },
+  {
+   "id": "N109-31",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 164.0407,
+   "dec_deg": -31.3406,
+   "gal_lat_deg": 25.4,
+   "stars_brighter_than_g11": 193
+  },
+  {
+   "id": "N109-04",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 163.2489,
+   "dec_deg": -3.5905,
+   "gal_lat_deg": 48.0,
+   "stars_brighter_than_g11": 10
+  },
+  {
+   "id": "N108+03",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 161.867,
+   "dec_deg": 3.0883,
+   "gal_lat_deg": 51.8,
+   "stars_brighter_than_g11": 4
+  },
+  {
+   "id": "N103+37",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 153.8392,
+   "dec_deg": 36.8968,
+   "gal_lat_deg": 55.8,
+   "stars_brighter_than_g11": 72
+  },
+  {
+   "id": "N103+62",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 155.1203,
+   "dec_deg": 62.0217,
+   "gal_lat_deg": 47.1,
+   "stars_brighter_than_g11": 93
+  },
+  {
+   "id": "N116-30",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 174.6308,
+   "dec_deg": -30.0745,
+   "gal_lat_deg": 30.2,
+   "stars_brighter_than_g11": 149
+  },
+  {
+   "id": "N110-08",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 165.7489,
+   "dec_deg": -8.2287,
+   "gal_lat_deg": 46.0,
+   "stars_brighter_than_g11": 13
+  },
+  {
+   "id": "N117+23",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 174.8562,
+   "dec_deg": 23.0556,
+   "gal_lat_deg": 73.2,
+   "stars_brighter_than_g11": 6
+  },
+  {
+   "id": "N120+32",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 179.3283,
+   "dec_deg": 32.3863,
+   "gal_lat_deg": 77.1,
+   "stars_brighter_than_g11": 46
+  },
+  {
+   "id": "N120+61",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 179.9184,
+   "dec_deg": 61.2379,
+   "gal_lat_deg": 54.8,
+   "stars_brighter_than_g11": 81
+  },
+  {
+   "id": "N128-31",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 191.7659,
+   "dec_deg": -30.8555,
+   "gal_lat_deg": 32.0,
+   "stars_brighter_than_g11": 132
+  },
+  {
+   "id": "N121-02",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 181.502,
+   "dec_deg": -2.1993,
+   "gal_lat_deg": 58.7,
+   "stars_brighter_than_g11": 38
+  },
+  {
+   "id": "N125+23",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 187.2553,
+   "dec_deg": 22.8534,
+   "gal_lat_deg": 83.4,
+   "stars_brighter_than_g11": 12
+  },
+  {
+   "id": "N123+32",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 184.0643,
+   "dec_deg": 31.8114,
+   "gal_lat_deg": 81.0,
+   "stars_brighter_than_g11": 12
+  },
+  {
+   "id": "N122+63",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 182.8455,
+   "dec_deg": 62.9204,
+   "gal_lat_deg": 53.6,
+   "stars_brighter_than_g11": 81
+  },
+  {
+   "id": "N138-30",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 207.0919,
+   "dec_deg": -30.1573,
+   "gal_lat_deg": 31.1,
+   "stars_brighter_than_g11": 128
+  },
+  {
+   "id": "N133-01",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 199.7551,
+   "dec_deg": -0.8093,
+   "gal_lat_deg": 61.3,
+   "stars_brighter_than_g11": 57
+  },
+  {
+   "id": "N132+15",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 198.1092,
+   "dec_deg": 14.7662,
+   "gal_lat_deg": 76.7,
+   "stars_brighter_than_g11": 50
+  },
+  {
+   "id": "N134+31",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 201.1994,
+   "dec_deg": 31.0225,
+   "gal_lat_deg": 81.7,
+   "stars_brighter_than_g11": 60
+  },
+  {
+   "id": "N130+63",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 195.2445,
+   "dec_deg": 62.5142,
+   "gal_lat_deg": 54.6,
+   "stars_brighter_than_g11": 66
+  },
+  {
+   "id": "N148-32",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 221.3,
+   "dec_deg": -31.862,
+   "gal_lat_deg": 25.1,
+   "stars_brighter_than_g11": 113
+  },
+  {
+   "id": "N149-03",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 223.4352,
+   "dec_deg": -3.2461,
+   "gal_lat_deg": 47.7,
+   "stars_brighter_than_g11": 47
+  },
+  {
+   "id": "N150+13",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 224.7164,
+   "dec_deg": 13.069,
+   "gal_lat_deg": 57.1,
+   "stars_brighter_than_g11": 53
+  },
+  {
+   "id": "N145+34",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 217.6435,
+   "dec_deg": 34.1856,
+   "gal_lat_deg": 67.6,
+   "stars_brighter_than_g11": 64
+  },
+  {
+   "id": "N147+62",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 220.0427,
+   "dec_deg": 61.7178,
+   "gal_lat_deg": 51.0,
+   "stars_brighter_than_g11": 88
+  },
+  {
+   "id": "N153-02",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 229.2893,
+   "dec_deg": -1.669,
+   "gal_lat_deg": 44.6,
+   "stars_brighter_than_g11": 48
+  },
+  {
+   "id": "N153+13",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 229.4524,
+   "dec_deg": 12.5696,
+   "gal_lat_deg": 52.8,
+   "stars_brighter_than_g11": 30
+  },
+  {
+   "id": "N152+36",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 228.2336,
+   "dec_deg": 35.5121,
+   "gal_lat_deg": 58.8,
+   "stars_brighter_than_g11": 74
+  },
+  {
+   "id": "N152+62",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 227.7057,
+   "dec_deg": 62.3594,
+   "gal_lat_deg": 48.0,
+   "stars_brighter_than_g11": 106
+  },
+  {
+   "id": "N160-04",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 240.5703,
+   "dec_deg": -3.9207,
+   "gal_lat_deg": 34.5,
+   "stars_brighter_than_g11": 68
+  },
+  {
+   "id": "N160+05",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 240.3064,
+   "dec_deg": 4.8257,
+   "gal_lat_deg": 39.7,
+   "stars_brighter_than_g11": 76
+  },
+  {
+   "id": "N163+32",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 244.2506,
+   "dec_deg": 32.2168,
+   "gal_lat_deg": 45.5,
+   "stars_brighter_than_g11": 99
+  },
+  {
+   "id": "N162+64",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 243.0318,
+   "dec_deg": 63.6856,
+   "gal_lat_deg": 41.4,
+   "stars_brighter_than_g11": 118
+  },
+  {
+   "id": "N171+26",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 256.2227,
+   "dec_deg": 25.8251,
+   "gal_lat_deg": 33.9,
+   "stars_brighter_than_g11": 152
+  },
+  {
+   "id": "N176+57",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 263.7849,
+   "dec_deg": 57.1533,
+   "gal_lat_deg": 32.7,
+   "stars_brighter_than_g11": 123
+  },
+  {
+   "id": "N172+75",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 257.6669,
+   "dec_deg": 74.8237,
+   "gal_lat_deg": 32.6,
+   "stars_brighter_than_g11": 134
+  },
+  {
+   "id": "N183-80",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 274.6151,
+   "dec_deg": -79.9399,
+   "gal_lat_deg": -25.3,
+   "stars_brighter_than_g11": 188
+  },
+  {
+   "id": "N181+58",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 271.4479,
+   "dec_deg": 57.7121,
+   "gal_lat_deg": 28.7,
+   "stars_brighter_than_g11": 167
+  },
+  {
+   "id": "N180+74",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 270.066,
+   "dec_deg": 74.128,
+   "gal_lat_deg": 29.5,
+   "stars_brighter_than_g11": 150
+  },
+  {
+   "id": "N196-79",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 294.6772,
+   "dec_deg": -79.3038,
+   "gal_lat_deg": -28.8,
+   "stars_brighter_than_g11": 133
+  },
+  {
+   "id": "N198-35",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 297.5034,
+   "dec_deg": -34.7241,
+   "gal_lat_deg": -26.4,
+   "stars_brighter_than_g11": 126
+  },
+  {
+   "id": "N192+80",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 288.3191,
+   "dec_deg": 80.4444,
+   "gal_lat_deg": 25.8,
+   "stars_brighter_than_g11": 193
+  },
+  {
+   "id": "N210-79",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 314.7393,
+   "dec_deg": -78.703,
+   "gal_lat_deg": -32.6,
+   "stars_brighter_than_g11": 139
+  },
+  {
+   "id": "N204-39",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 305.8574,
+   "dec_deg": -38.5081,
+   "gal_lat_deg": -33.8,
+   "stars_brighter_than_g11": 125
+  },
+  {
+   "id": "N201-22",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 301.2845,
+   "dec_deg": -21.5538,
+   "gal_lat_deg": -25.4,
+   "stars_brighter_than_g11": 113
+  },
+  {
+   "id": "N209+02",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 313.5828,
+   "dec_deg": 1.6403,
+   "gal_lat_deg": -26.2,
+   "stars_brighter_than_g11": 214
+  },
+  {
+   "id": "N217-60",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 325.7564,
+   "dec_deg": -60.155,
+   "gal_lat_deg": -44.2,
+   "stars_brighter_than_g11": 132
+  },
+  {
+   "id": "N220-35",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 329.9646,
+   "dec_deg": -34.8113,
+   "gal_lat_deg": -52.7,
+   "stars_brighter_than_g11": 98
+  },
+  {
+   "id": "N220-01",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 329.5999,
+   "dec_deg": -1.0958,
+   "gal_lat_deg": -41.1,
+   "stars_brighter_than_g11": 74
+  },
+  {
+   "id": "N220+08",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 329.3359,
+   "dec_deg": 7.6647,
+   "gal_lat_deg": -35.4,
+   "stars_brighter_than_g11": 84
+  },
+  {
+   "id": "N230-64",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 344.7005,
+   "dec_deg": -64.3394,
+   "gal_lat_deg": -48.7,
+   "stars_brighter_than_g11": 96
+  },
+  {
+   "id": "N230-41",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 344.8636,
+   "dec_deg": -40.8912,
+   "gal_lat_deg": -63.2,
+   "stars_brighter_than_g11": 79
+  },
+  {
+   "id": "N227-03",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 340.8809,
+   "dec_deg": -3.3465,
+   "gal_lat_deg": -51.3,
+   "stars_brighter_than_g11": 7
+  },
+  {
+   "id": "N230+08",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 344.662,
+   "dec_deg": 8.2721,
+   "gal_lat_deg": -45.3,
+   "stars_brighter_than_g11": 8
+  },
+  {
+   "id": "N229+30",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 343.4432,
+   "dec_deg": 30.4725,
+   "gal_lat_deg": -25.9,
+   "stars_brighter_than_g11": 208
+  },
+  {
+   "id": "N236-67",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 354.1726,
+   "dec_deg": -66.6897,
+   "gal_lat_deg": -48.8,
+   "stars_brighter_than_g11": 101
+  },
+  {
+   "id": "N238-30",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 356.9988,
+   "dec_deg": -30.3562,
+   "gal_lat_deg": -75.7,
+   "stars_brighter_than_g11": 49
+  },
+  {
+   "id": "N239-13",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 358.2799,
+   "dec_deg": -12.8633,
+   "gal_lat_deg": -70.3,
+   "stars_brighter_than_g11": 5
+  },
+  {
+   "id": "N230+05",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 345.353,
+   "dec_deg": 4.912,
+   "gal_lat_deg": -48.4,
+   "stars_brighter_than_g11": 8
+  },
+  {
+   "id": "N239+35",
+   "tier": "narrow",
+   "clear_radius_deg": 1.5,
+   "ra_deg": 358.0783,
+   "dec_deg": 35.1609,
+   "gal_lat_deg": -26.2,
+   "stars_brighter_than_g11": 161
+  }
+ ]
+}

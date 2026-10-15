@@ -14,6 +14,7 @@ import NightsStayIcon from '@mui/icons-material/NightsStay';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import PaletteIcon from '@mui/icons-material/Palette';
 import CameraAltIcon from '@mui/icons-material/CameraAlt';
+import BlurOnIcon from '@mui/icons-material/BlurOn';
 
 
 export default function LeftDrawer() {
@@ -83,12 +84,20 @@ export default function LeftDrawer() {
                 <ListItemText primary="Finishes" />
               </ListItemButton>
             </ListItem>
-            <ListItem key="rigs" disablePadding>
-              <ListItemButton onClick={() => navigate('/rigs')}>
+            <ListItem key="dust-correction" disablePadding>
+              <ListItemButton onClick={() => navigate('/dust-correction')}>
                 <ListItemIcon>
                   <CameraAltIcon />
                 </ListItemIcon>
-                <ListItemText primary="Rigs" />
+                <ListItemText primary="Dust Correction" />
+              </ListItemButton>
+            </ListItem>
+            <ListItem key="sky-flats" disablePadding>
+              <ListItemButton onClick={() => navigate('/sky-flats')}>
+                <ListItemIcon>
+                  <BlurOnIcon />
+                </ListItemIcon>
+                <ListItemText primary="Night-Sky Flats" />
               </ListItemButton>
             </ListItem>
           </List>

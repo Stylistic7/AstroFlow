@@ -1,4 +1,4 @@
-// Rigs: every known camera at every known focal length, and for each the
+// Dust Correction: every known camera at every known focal length, and for each the
 // dust-mote epochs the lights themselves show (`GET /api/dust/epochs`,
 // stacks/dust_runs.py). One row per filter; epochs in date order with a
 // small sensor drawing of the motes, boundaries dated between them.
@@ -76,7 +76,7 @@ function FilterRow({ rig, report }) {
   );
 }
 
-export default function RigsPanel() {
+export default function DustCorrectionPanel() {
   const [reports, setReports] = useState(null);
   const [error, setError] = useState(null);
   useEffect(() => {
@@ -96,8 +96,8 @@ export default function RigsPanel() {
     return () => { alive = false; clearInterval(t); };
   }, []);
 
-  if (error) return <Typography color="error" sx={{ p: 3 }}>Rigs unavailable: {error}</Typography>;
-  if (reports === null) return <Box sx={{ p: 4, display: 'flex', gap: 2, alignItems: 'center' }}><CircularProgress size={20} /><Typography>Loading rigs…</Typography></Box>;
+  if (error) return <Typography color="error" sx={{ p: 3 }}>Dust correction unavailable: {error}</Typography>;
+  if (reports === null) return <Box sx={{ p: 4, display: 'flex', gap: 2, alignItems: 'center' }}><CircularProgress size={20} /><Typography>Loading dust epochs…</Typography></Box>;
 
   const rigs = new Map();
   for (const rep of reports) {
@@ -109,7 +109,7 @@ export default function RigsPanel() {
 
   return (
     <Box sx={{ p: 2, maxWidth: 1400 }}>
-      <Typography variant="h5" gutterBottom>Rigs</Typography>
+      <Typography variant="h5" gutterBottom>Dust Correction</Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
         Every camera at every focal length, with the dust-mote epochs its own lights show, per filter.
         A boundary is a night the dust decidedly changed; an epoch is final once its motes agree between

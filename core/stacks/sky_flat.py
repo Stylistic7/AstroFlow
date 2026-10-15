@@ -246,15 +246,36 @@ def sky_flat_for(source, metadata) -> SkyFlatStack:
 
 
 def promoted_stack_ids(decision_overrides) -> set[str]:
-    """The stacks the user marked as blank sky. Nothing in a header says so —
-    blank-sky frames arrive stamped `Light` like any other — so this decision
-    is the only place that knowledge exists."""
+    """The stacks the user explicitly marked as blank sky."""
+    return _sky_flat_decisions(decision_overrides, BinaryChoice.INCLUDE)
+
+
+def demoted_stack_ids(decision_overrides) -> set[str]:
+    """The stacks the user explicitly said are NOT blank sky — the way to
+    overrule a stack shot as SkyFlat panes (`sky_flat_plans`)."""
+    return _sky_flat_decisions(decision_overrides, BinaryChoice.EXCLUDE)
+
+
+def _sky_flat_decisions(decision_overrides, choice) -> set[str]:
     return {
         key.subject_id
         for key, override in decision_overrides.items()
         if key.decision_type == DecisionType.SKY_FLAT_SOURCE
-        and override.choice == BinaryChoice.INCLUDE
+        and override.choice == choice
     }
+
+
+def is_sky_flat_source(stack_id: str, filenames, decision_overrides) -> bool:
+    """A Stack is a night-sky flat source when the user promoted it, or when
+    it was shot as SkyFlat panes and the user has not demoted it. Blank-sky
+    frames arrive stamped `Light` like any other, so the pane NAME the
+    ASIAir writes into each file name is the only mark they carry."""
+    from stacks.sky_flat_plans import is_named_sky_flat
+    if stack_id in promoted_stack_ids(decision_overrides):
+        return True
+    if stack_id in demoted_stack_ids(decision_overrides):
+        return False
+    return is_named_sky_flat(filenames)
 
 
 @node
@@ -265,11 +286,18 @@ def identify_sky_flats(decision_overrides, stacks: dict) -> SkyFlatStacks:
     calibration chain genuinely waits on identification here, which is the
     cost of a flat whose source is a science stack."""
     out = SkyFlatStacks()
-    for sid in sorted(promoted_stack_ids(decision_overrides)):
-        ref = stacks.get(sid)
+    promoted = promoted_stack_ids(decision_overrides)
+    for sid in sorted(promoted - set(stacks)):
+        log.info("sky-flat source no longer exists", stack=sid)
+    # Every stack is read (1.5 s for ~1000): a stack shot as SkyFlat panes is
+    # a source without a decision, so the names have to be looked at.
+    for sid in sorted(stacks):
+        ref = stacks[sid]
         source = ref.get() if hasattr(ref, "get") else ref
         if source is None:
-            log.info("sky-flat source no longer exists", stack=sid)
+            continue
+        frames = [str(m.filename) for m in source.all_metadata().values()]
+        if not is_sky_flat_source(str(sid), frames, decision_overrides):
             continue
         sky_flat = sky_flat_for(source, source.all_metadata())
         out[sky_flat.stable_hash] = sky_flat

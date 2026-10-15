@@ -26,7 +26,8 @@ import PerformanceExplorer from './PerformanceExplorer.jsx';
 import { FolderProvider } from './FolderContext';
 import constellationPolylines from './constellationPolylines.json';
 import PlannerPanel from './planner/PlannerPanel.jsx';
-import RigsPanel from './RigsPanel.jsx';
+import DustCorrectionPanel from './DustCorrectionPanel.jsx';
+import SkyFlatsPanel from './SkyFlatsPanel.jsx';
 
 function App() {
   const isPageVisible = usePageVisibility();
@@ -45,6 +46,9 @@ function App() {
   const [rayStatus, setRayStatus] = useState({});
   const [asiairDevices, setAsiairDevices] = useState({ rigs: [], summary: { total: 0, active: 0 } });
   const [decisionOverrides, setDecisionOverrides] = useState([]);
+  // Stack ids that are night-sky flat sources NOW: promoted by hand, or shot
+  // as SkyFlat panes and not demoted (`GET /api/sky_flat_sources`).
+  const [skyFlatSources, setSkyFlatSources] = useState([]);
   const [observingPlan, setObservingPlan] = useState({ entries: [] });
   const [sseConnected, setSseConnected] = useState(false);
   const [showQuarantined, setShowQuarantined] = useState(
@@ -119,6 +123,7 @@ function App() {
       try {
         const d = await fetch('/api/decision_overrides').then(r => r.json());
         setDecisionOverrides(d.overrides || []);
+        setSkyFlatSources(await fetch('/api/sky_flat_sources').then(r => r.json()));
       } catch (e) { console.warn(e); }
     };
 
@@ -229,20 +234,7 @@ function App() {
       .map(({ key }) => key.subject_id)
   ), [decisionOverrides]);
 
-  // Stacks the user has promoted to night-sky flat sources. Nothing in a
-  // header says a stack is blank sky, so this override is the only record of
-  // it. The decision_type VALUE is still "fringe_source": it is the key the
-  // promotions were persisted under, and a persisted identifier keeps its
-  // value (decisions/decisions.py, SKY_FLAT_SOURCE).
-  const skyFlatSourceSet = useMemo(() => {
-    const set = new Set();
-    for (const { key, choice } of decisionOverrides) {
-      if (key.decision_type === "fringe_source" && choice === "include") {
-        set.add(key.subject_id);
-      }
-    }
-    return set;
-  }, [decisionOverrides]);
+  const skyFlatSourceSet = useMemo(() => new Set(skyFlatSources), [skyFlatSources]);
 
   const isSkyFlatSource = useCallback(
     (stackId) => skyFlatSourceSet.has(stackId), [skyFlatSourceSet]
@@ -252,6 +244,7 @@ function App() {
     try {
       const d = await fetch('/api/decision_overrides').then(r => r.json());
       setDecisionOverrides(d.overrides || []);
+      setSkyFlatSources(await fetch('/api/sky_flat_sources').then(r => r.json()));
     } catch (e) { console.warn(e); }
   }, []);
 
@@ -460,9 +453,14 @@ function App() {
                     <PlannerPanel />
                   </AppLayout>
                 } />
-                <Route path="/rigs" element={
+                <Route path="/dust-correction" element={
                   <AppLayout>
-                    <RigsPanel />
+                    <DustCorrectionPanel />
+                  </AppLayout>
+                } />
+                <Route path="/sky-flats" element={
+                  <AppLayout>
+                    <SkyFlatsPanel />
                   </AppLayout>
                 } />
                 <Route path="/recent" element={
