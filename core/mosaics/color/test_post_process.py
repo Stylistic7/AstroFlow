@@ -232,9 +232,10 @@ def test_stars_channel_is_the_exact_residual(test_context, tmp_path):
     t = _target("panel", "panel_ch", _FOOTPRINT)
     # inspect.unwrap: the RAW body, below the decorator's metadata wrap.
     import inspect
-    out = inspect.unwrap(pp.stars_channel._function)(
-        t, "H", _meta(p_ch, "ch"), _meta(p_sl, "sl"))
-    stars = read_image(Path(str(out))).astype(np.float32)
+    out = tmp_path / "stars.tiff"
+    inspect.unwrap(pp.stars_channel._function)(
+        t, "H", _meta(p_ch, "ch"), _meta(p_sl, "sl"), out=out)
+    stars = read_image(out).astype(np.float32)
     if stars.ndim == 3:
         stars = stars[..., 0]
     assert stars.min() >= 0.0
@@ -309,11 +310,7 @@ def test_mono_layer_outputs_say_which_layer_they_are(tmp_path, monkeypatch):
     monkeypatch.setattr(pp, "_save_mono_vips",
                         lambda path, i, f, layer=None: seen.append(layer))
     for op in (pp.linear_lum, pp.linear_lum_stars):
-        # filename_fn resolves the output dir through context; the layer
-        # literal is what is under test, so stub the naming out
-        monkeypatch.setattr(op, "filename_fn", lambda *a: str(out))
-        # past beartype — these bodies only pick a filename and forward
-        inspect.unwrap(op._function)(None, None)
-    monkeypatch.setattr(pp.stars_channel, "filename_fn", lambda *a: str(out))
-    inspect.unwrap(pp.stars_channel._function)(None, "Ha", None, None)
+        # past beartype — these bodies only forward to the writer
+        inspect.unwrap(op._function)(None, None, out=out)
+    inspect.unwrap(pp.stars_channel._function)(None, "Ha", None, None, out=out)
     assert seen == ["starless", "stars", "stars"]

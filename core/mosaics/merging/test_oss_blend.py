@@ -126,10 +126,7 @@ def test_merge_writes_the_physical_layer_into_the_header(tmp_path):
     src = _write(tmp_path, "panel", img)
     inp = SimpleNamespace(filename=src, stable_hash="abc")
     out = tmp_path / "merged.tiff"
-    op = SimpleNamespace(filename_fn=lambda *a: str(out))
-
-    _merge_layer(op, None, "Ha", (inp,), level_solve=None, skyver="v",
-                 layer="stars")
+    _merge_layer(out, "Ha", (inp,), level_solve=None, skyver="v", layer="stars")
     assert read_tiff_header(out)["LAYER"] == "stars"
 
 
@@ -143,10 +140,10 @@ def test_the_two_merge_ops_declare_opposite_layers(monkeypatch):
     seen = []
     monkeypatch.setattr(
         oss, "_merge_layer",
-        lambda op, mosaic, filter, inputs, **kw: seen.append(kw["layer"]))
+        lambda out, filter, inputs, **kw: seen.append(kw["layer"]))
     for op in (oss.merge_images_oss, oss.merge_images_stars):
         # past beartype: the bodies only forward, so a real Mosaic is noise
-        inspect.unwrap(op._function)(None, "Ha")
+        inspect.unwrap(op._function)(None, "Ha", out=None)
     assert seen == ["starless", "stars"]
 
 

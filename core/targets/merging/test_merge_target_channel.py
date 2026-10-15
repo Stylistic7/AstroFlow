@@ -35,7 +35,7 @@ def test_n1_fits_master_is_converted_to_valid_xisf(tmp_path):
     out = XisfFilePath(str(tmp_path / "channel.xisf"))
     result = _merge_target_channel_impl(
         target=None, filter="H", stacks=_stacks(), config=None,
-        masters=(SimpleNamespace(filename=fits_path),), output_filename=out,
+        masters=(SimpleNamespace(filename=fits_path),), out=out,
     )
 
     assert Path(out).exists()
@@ -43,7 +43,7 @@ def test_n1_fits_master_is_converted_to_valid_xisf(tmp_path):
     # means a genuine XISF was written, with the FITS keywords carried over.
     hdr = read_xisf_header(out)
     assert str(hdr.get("STBLHASH")) == "abc123def456"
-    assert result.path == out
+    assert Path(result.path) == out
 
 
 def test_n1_xisf_master_is_copied(tmp_path):
@@ -54,7 +54,7 @@ def test_n1_xisf_master_is_copied(tmp_path):
     out = XisfFilePath(str(tmp_path / "channel.xisf"))
     _merge_target_channel_impl(
         target=None, filter="S", stacks=_stacks(), config=None,
-        masters=(SimpleNamespace(filename=xisf_path),), output_filename=out,
+        masters=(SimpleNamespace(filename=xisf_path),), out=out,
     )
 
     assert Path(out).exists()
@@ -97,7 +97,7 @@ def test_n2_hdr_merge_restores_background_pedestal(tmp_path, monkeypatch):
     _merge_target_channel_impl(
         target=None, filter="H", stacks=stacks, config=config,
         masters=(SimpleNamespace(filename=m1), SimpleNamespace(filename=m2)),
-        output_filename=out,
+        out=out,
     )
 
     from file_io.generic import read_image
