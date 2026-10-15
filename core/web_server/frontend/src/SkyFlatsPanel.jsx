@@ -37,7 +37,7 @@ function FlatSummary({ flats }) {
       )}
       {f.motes_cleaned > 0 && (
         <Tooltip title="Dust motes found in the flat and divided out, so the flat stays valid as the dust changes">
-          <Typography variant="caption" color="text.secondary">{f.motes_cleaned} motes cleaned</Typography>
+          <Typography variant="caption" color="text.secondary">{f.motes_cleaned} {f.motes_cleaned === 1 ? "mote" : "motes"} cleaned</Typography>
         </Tooltip>
       )}
       {flats.length > 1 && <Typography variant="caption" color="text.secondary">+{flats.length - 1} older</Typography>}
