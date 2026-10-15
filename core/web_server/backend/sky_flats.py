@@ -66,9 +66,15 @@ def _role(filt) -> str:
 def _sky_flat_record(sf: dict) -> dict:
     from file_io.sidecar import get_section
     from stacks.sky_flat import sky_flat_master_path
+    from stacks.sky_flat_ramp import ramp_of
     path = sky_flat_master_path(sf["stable_hash"], context.output_dir)
     q = (get_section(path, "sky_flat") or {}) if path else {}
+    try:
+        ramp = ramp_of(path) if path else None
+    except (OSError, ValueError):
+        ramp = None
     return {
+        "ramp_pct": ramp and ramp["ramp_pct"], "ramp_angle_deg": ramp and ramp["angle_deg"],
         "id": sf["stable_hash"], "source_stack_id": sf.get("source_stack_id"),
         "frames": sf.get("n_frames"), "newest_date": sf.get("newest_date"),
         "built": path is not None, "good": q.get("good"), "rms": q.get("rms"),
@@ -184,3 +190,38 @@ def push_sky_flat_plan():
         except RuntimeError as e:
             abort(502, description=str(e))
     return jsonify({"dry_run": False, "plan_name": name, **summary, **result})
+
+
+@sky_flats_bp.route("/api/sky_flats/<sky_flat_id>/thumbnail.png")
+def sky_flat_thumbnail(sky_flat_id):
+    """A small, stretched picture of the BUILT night-sky flat, to eyeball it:
+    vignetting, dust shadows, a ramp. The flat is near 1.0 everywhere, so it
+    is shown with a percentile stretch (0.5-99.5% of its own values), not the
+    sky autostretch, which assumes a dark background."""
+    import io
+
+    import numpy as np
+    from flask import send_file
+    from PIL import Image
+    from file_io.generic import read_image
+    from stacks.sky_flat import sky_flat_master_path
+
+    path = sky_flat_master_path(sky_flat_id, context.output_dir)
+    if path is None:
+        abort(404, description=f"night-sky flat {sky_flat_id} is not built")
+    width = max(64, min(int(request.args.get("w", 360)), 1200))
+    img = np.asarray(read_image(path))
+    if img.ndim == 3:
+        img = img[..., 0]
+    img = np.asarray(img[::8, ::8], np.float32)
+    ok = np.isfinite(img) & (img > 0)
+    lo, hi = np.percentile(img[ok], [0.5, 99.5]) if ok.any() else (0.0, 1.0)
+    v = np.clip((np.nan_to_num(img) - lo) / max(hi - lo, 1e-9), 0, 1)
+    pic = Image.fromarray((v * 255).astype(np.uint8))
+    pic.thumbnail((width, width))
+    buf = io.BytesIO()
+    pic.save(buf, format="PNG")
+    buf.seek(0)
+    resp = send_file(buf, mimetype="image/png")
+    resp.headers["Cache-Control"] = "max-age=3600"
+    return resp

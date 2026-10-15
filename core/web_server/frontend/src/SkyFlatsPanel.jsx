@@ -19,10 +19,46 @@ const todayLocal = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
+// A ramp at or above this (peak-to-peak across the frame) is worth a look.
+const RAMP_NOTICE_PCT = 1.0;
+
+function RampNote({ pct, angle }) {
+  if (pct == null) return null;
+  const notable = pct >= RAMP_NOTICE_PCT;
+  return (
+    <Tooltip title={
+      `A linear gradient of ${pct.toFixed(2)}% across the frame, rising toward the arrow (as the flat is shown). `
+      + 'It might be light pollution baked into the flat, or a real optical term (an off-centre axis, a tilted sensor); '
+      + 'it is shown, never removed.'}>
+      <Stack direction="row" spacing={0.5} alignItems="center" component="span">
+        <Typography variant="caption" color={notable ? 'warning.main' : 'text.secondary'}>
+          ramp {pct.toFixed(pct < 1 ? 2 : 1)}%
+        </Typography>
+        <Box component="span" sx={{ display: 'inline-block', transform: `rotate(${angle}deg)`, lineHeight: 1,
+          color: notable ? 'warning.main' : 'text.secondary', fontSize: 13 }}>→</Box>
+      </Stack>
+    </Tooltip>
+  );
+}
+
+function FlatThumb({ flat }) {
+  if (!flat.built) return null;
+  const src = `/api/sky_flats/${flat.id}/thumbnail.png?w=240`;
+  return (
+    <Box component="a" href={`/api/sky_flats/${flat.id}/thumbnail.png?w=1200`} target="_blank" rel="noreferrer"
+      sx={{ display: 'block', lineHeight: 0, flex: '0 0 auto' }}>
+      <Box component="img" src={src} alt="night-sky flat" loading="lazy"
+        sx={{ width: 120, height: 'auto', borderRadius: 0.5, border: 1, borderColor: 'divider', display: 'block' }} />
+    </Box>
+  );
+}
+
 function FlatSummary({ flats }) {
   if (!flats.length) return <Typography variant="body2" color="text.secondary">None yet</Typography>;
   const f = flats[0];
   return (
+    <Stack direction="row" spacing={1.5} alignItems="center">
+      <FlatThumb flat={f} />
     <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: 'wrap' }}>
       <Typography variant="body2" sx={{ fontVariantNumeric: 'tabular-nums' }}>
         {day(f.newest_date)} · {f.frames} frames
@@ -40,7 +76,9 @@ function FlatSummary({ flats }) {
           <Typography variant="caption" color="text.secondary">{f.motes_cleaned} {f.motes_cleaned === 1 ? "mote" : "motes"} cleaned</Typography>
         </Tooltip>
       )}
+      <RampNote pct={f.ramp_pct} angle={f.ramp_angle_deg} />
       {flats.length > 1 && <Typography variant="caption" color="text.secondary">+{flats.length - 1} older</Typography>}
+    </Stack>
     </Stack>
   );
 }
