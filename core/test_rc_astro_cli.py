@@ -4,9 +4,11 @@ Ray-free; mocks `subprocess.run` (writing the deterministically-named outputs
 rc-astro 0.9.3 produces under `-o <dir>`) so it needs no rc-astro install. The
 real CLI's flags + output names were validated against a live run.
 """
+import shutil
 import subprocess
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 import rc_astro_cli
@@ -25,10 +27,13 @@ def _fake_run_writing_outputs():
         sub = cmd[cmd.index("--no-banner") + 1]
         inp = Path(cmd[cmd.index("--no-banner") + 2])
         o = Path(cmd[cmd.index("-o") + 1])
+        from file_io.generic import read_image_geometry
+        g = read_image_geometry(inp)
+        fake_run.fed = (g.width_pixels, g.height_pixels)
 
-        def write(target: Path):
+        def write(target: Path):     # the "product" is the input, unchanged
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(b"IMG")
+            shutil.copyfile(inp, target)
 
         if o.suffix.lower() in _IMG_EXTS:        # explicit output file (bxt)
             write(o)
@@ -45,8 +50,19 @@ def _fake_run_writing_outputs():
     return fake_run
 
 
+def _channels(d: Path, w: int = 512, h: int = 512) -> None:
+    """`chan.fits` and `chan.xisf`, `w` x `h` (on the 512 ladder by default)."""
+    from astropy.io import fits
+    from file_io.xisf_file_io import write_xisf_image
+    pixels = np.random.default_rng(0).random((h, w)).astype(np.float32)
+    fits.PrimaryHDU(pixels).writeto(d / "chan.fits")
+    write_xisf_image(d / "chan.xisf", pixels[..., None])
+
+
 @pytest.fixture
-def fake(monkeypatch):
+def fake(monkeypatch, tmp_path):
+    monkeypatch.setattr(rc_astro_cli, "MODEL_CACHE", tmp_path / "no-model-cache")
+    _channels(tmp_path)
     f = _fake_run_writing_outputs()
     monkeypatch.setattr(rc_astro_cli, "rc_astro_base_command", lambda: ["rc-astro"])
     monkeypatch.setattr(subprocess, "run", f)
@@ -125,5 +141,41 @@ def test_nonzero_exit_raises(monkeypatch, tmp_path):
         return R()
     monkeypatch.setattr(rc_astro_cli, "rc_astro_base_command", lambda: ["rc-astro"])
     monkeypatch.setattr(subprocess, "run", boom)
+    monkeypatch.setattr(rc_astro_cli, "MODEL_CACHE", tmp_path / "no-model-cache")
+    _channels(tmp_path)
     with pytest.raises(RuntimeError, match="exited 1"):
         rc_astro_cli.run_bxt(tmp_path / "chan.fits", tmp_path / "o.xisf")
+
+
+def test_an_image_off_the_ladder_runs_padded_and_comes_back_on_its_own_grid(fake, tmp_path):
+    """The Neural Engine compiles a model bundle per input SHAPE, so a master
+    off the 512 ladder runs zero-padded to the next rung (right and bottom)
+    and every product is cropped back to the input's exact size and pixels."""
+    import pyvips
+    from file_io.tiff_file_io import write_tiff_image
+    src = tmp_path / "master.tiff"
+    pixels = np.random.default_rng(1).random((300, 600)).astype(np.float32)
+    write_tiff_image(src, pixels, {})
+    out = tmp_path / "bxt.tiff"
+    rc_astro_cli.run_bxt(src, out)
+    assert fake.fed == (1024, 512)
+    got = pyvips.Image.tiffload(str(out), page=0)
+    assert (got.width, got.height) == (600, 300)
+    arr = np.ndarray(buffer=got.write_to_memory(), dtype=np.float32, shape=(300, 600))
+    assert np.array_equal(arr, pixels)
+
+
+def test_the_model_cache_is_trimmed_oldest_first_and_never_a_young_bundle(tmp_path):
+    import os
+    now = 1_000_000_000.0
+    root = tmp_path / "e5bundlecache"
+    for i, age_h in enumerate([30, 20, 10, 1]):            # four 1 kB bundles
+        b = root / "25G227" / f"bundle{i}"
+        b.mkdir(parents=True)
+        (b / "model.bin").write_bytes(b"x" * 1000)
+        os.utime(b, (now - age_h * 3600, now - age_h * 3600))
+    assert rc_astro_cli.bound_model_cache(root, cap=2500, now=now) == 2000
+    assert sorted(p.name for p in (root / "25G227").iterdir()) == ["bundle2", "bundle3"]
+    # Over the cap but only young bundles left: nothing more goes.
+    assert rc_astro_cli.bound_model_cache(root, cap=500, now=now) == 1000
+    assert [p.name for p in (root / "25G227").iterdir()] == ["bundle3"]
