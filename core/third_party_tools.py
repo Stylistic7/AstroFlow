@@ -193,6 +193,8 @@ def check_cluster() -> list[dict]:
     import ray
     from ray.util.scheduling_strategies import NodeAffinitySchedulingStrategy
 
+    from ray_infra.ray_init import connect_to_ray_cluster
+    connect_to_ray_cluster()  # a web worker connects on first use
     remote = ray.remote(num_cpus=0)(check_this_mac)
     head = ray.get_runtime_context().get_node_id()
     nodes = sorted((n for n in ray.nodes() if n.get("Alive")), key=lambda n: n["NodeID"] != head)

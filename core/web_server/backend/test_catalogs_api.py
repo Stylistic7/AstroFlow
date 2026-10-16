@@ -14,7 +14,10 @@ def client(monkeypatch):
     ctx = SimpleNamespace(astrometry_index_dir=None, mars_database=None)
     pushes, restarts = [], []
     monkeypatch.setattr(catalogs_api, "context", ctx)
-    monkeypatch.setattr(catalogs_api.node_settings, "push_to_cluster", lambda: pushes.append(1))
+    monkeypatch.setattr(catalogs_api.node_settings, "push_to_cluster", pushes.append)
+    monkeypatch.setattr(catalogs_api.node_settings, "current", lambda: {
+        "astrometry_index_dir": str(ctx.astrometry_index_dir) if ctx.astrometry_index_dir else None,
+        "mars_database": None, "tool_paths": {}})
     import state.actor
     monkeypatch.setattr(state.actor, "state", SimpleNamespace(drain_and_restart=lambda: restarts.append(1)))
     app = flask.Flask(__name__)
@@ -32,10 +35,20 @@ def test_saving_the_index_folder_creates_it_pushes_it_and_starts_the_first_run(c
     assert r.status_code == 200, r.data
     assert client.ctx.astrometry_index_dir == index and index.is_dir()
     assert client.ctx.mars_database == mars
-    assert client.pushes == [1] and client.restarts == [1]
+    assert client.pushes == [{"astrometry_index_dir": str(index), "mars_database": str(mars), "tool_paths": {}}]
+    assert client.restarts == [1]
     client.put("/api/catalogs", json={"astrometry_index_dir": str(tmp_path / "elsewhere")})
-    assert client.ctx.mars_database is None
-    assert client.pushes == [1, 1] and client.restarts == [1], "only the first folder starts a run"
+    assert client.ctx.mars_database is None and client.pushes[-1]["mars_database"] is None
+    assert len(client.pushes) == 2 and client.restarts == [1], "only the first folder starts a run"
+
+
+def test_nothing_is_saved_when_a_mac_cannot_take_the_settings(client, tmp_path, monkeypatch):
+    def unreachable(settings):
+        flask.abort(503, description="Not saved: a Mac in the cluster didn't take the settings")
+    monkeypatch.setattr(catalogs_api.node_settings, "push_to_cluster", unreachable)
+    r = client.put("/api/catalogs", json={"astrometry_index_dir": str(tmp_path)})
+    assert r.status_code == 503 and b"Not saved" in r.data
+    assert client.ctx.astrometry_index_dir is None and client.restarts == []
 
 
 @pytest.mark.parametrize("body, message", [

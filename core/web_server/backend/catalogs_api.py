@@ -65,10 +65,12 @@ def put_catalogs():
     if mars and not Path(mars).is_file():
         abort(400, description=f"MARS database {mars} is not a file this Mac can see")
 
+    # Every Mac first: if one can't take the settings, nothing is saved.
+    node_settings.push_to_cluster({**node_settings.current(), "astrometry_index_dir": str(index),
+                                   "mars_database": mars or None})
     first = not context.astrometry_index_dir
     context.astrometry_index_dir = index
     context.mars_database = Path(mars) if mars else None
-    node_settings.push_to_cluster()
     if first:
         state.drain_and_restart()
     return jsonify(_current())

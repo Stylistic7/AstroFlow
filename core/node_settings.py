@@ -57,13 +57,19 @@ def current() -> dict:
     }
 
 
-def push_to_cluster() -> None:
-    """Writes the head's settings on every Mac in the cluster."""
+def push_to_cluster(settings: dict) -> None:
+    """Writes `settings` on every Mac in the cluster. A Mac that doesn't
+    take them aborts the request (503), so the caller saves nothing."""
+    from flask import abort
     import ray
     from ray.util.scheduling_strategies import NodeAffinitySchedulingStrategy
 
-    settings = current()
+    from ray_infra.ray_init import connect_to_ray_cluster
+    connect_to_ray_cluster()  # a web worker connects on first use
     write_remote = ray.remote(num_cpus=0)(write)
     refs = [write_remote.options(scheduling_strategy=NodeAffinitySchedulingStrategy(n["NodeID"], soft=False))
             .remote(settings) for n in ray.nodes() if n.get("Alive")]
-    ray.get(refs, timeout=60)
+    try:
+        ray.get(refs, timeout=60)
+    except Exception as e:
+        abort(503, description=f"Not saved: a Mac in the cluster didn't take the settings ({e})")

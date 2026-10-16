@@ -38,8 +38,9 @@ def put_tools():
         if not Path(path).is_absolute():
             abort(400, description=f"{t.name}: {path} must be a full path")
         paths[t.key] = path
+    # Every Mac first: if one can't take the settings, nothing is saved.
+    node_settings.push_to_cluster({**node_settings.current(), "tool_paths": paths})
     context.tool_paths = paths
-    node_settings.push_to_cluster()
     return jsonify(_current())
 
 
