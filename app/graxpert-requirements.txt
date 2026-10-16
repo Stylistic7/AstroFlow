@@ -1,0 +1,41 @@
+# GraXpert as the app bundles it (app/build_app.sh), in its own folder beside
+# AstroFlow's packages: it needs its own numpy and friends. Frozen from a
+# working install (2026-10-16); every Mac in a cluster runs exactly these.
+appdirs==1.4.4
+argon2-cffi==25.1.0
+argon2-cffi-bindings==25.1.0
+astropy==8.0.1
+astropy-iers-data==0.2026.8.10.0.32.39
+certifi==2026.7.22
+cffi==2.1.1
+charset-normalizer==3.5.0
+customtkinter==6.0.0
+darkdetect==0.8.0
+flatbuffers==25.12.19
+graxpert==3.2.0a2
+idna==3.18
+imageio==2.37.4
+lazy-loader==0.5
+lz4==4.4.5
+minio==7.2.20
+ml-dtypes==0.5.4
+networkx==3.6.1
+numpy==2.2.6
+onnxruntime==1.28.0
+opencv-python-headless==4.11.0.86
+packaging==26.3
+pillow==12.3.0
+protobuf==7.35.1
+pycparser==3.0
+pycryptodome==3.23.0
+pyerfa==2.0.1.5
+pykrige==1.7.3
+pyyaml==6.0.3
+requests==2.34.2
+scikit-image==0.26.0
+scipy==1.18.0
+tifffile==2026.7.31
+typing-extensions==4.16.0
+urllib3==2.7.0
+xisf==0.9.7
+zstandard==0.25.0

@@ -6,7 +6,8 @@ MultiscaleGradientCorrection, minus the MARS external reference (GraXpert is
 data-driven). We drive it as an EXTERNAL CLI tool so its heavy ML runtime and
 AI models live outside this venv and are installed / updated independently.
 
-Install: ``make install-graxpert`` (run by ``make install``), which does
+AstroFlow.app carries its own GraXpert (`app/build_app.sh`); from a checkout,
+``make install-graxpert`` (run by ``make install``) does
 ``uv tool install graxpert --with onnxruntime`` — an ISOLATED environment, NOT
 this venv. That isolation is mandatory, not stylistic: graxpert 3.2.0a2
 requires ``numpy<=2.2.6`` while this project pins ``numpy==2.4.6`` so that
@@ -14,61 +15,26 @@ ndarrays pickle across cluster nodes, and a plain ``uv pip install graxpert``
 silently downgrades it. Driving GraXpert as a subprocess means its numpy never
 has to agree with ours.
 
-Alternatives, if you'd rather not use the tool env:
-  * a standalone GraXpert app     → set ``ASTROFLOW_GRAXPERT_BIN`` to its path
-  * any ``graxpert`` on ``PATH``
+Any other GraXpert: set where it is on the Third-Party Tools page.
 
 CLI shape (verified against the installed GraXpert 3.2 `-h`, which differs from
 the README — smoothing/correction moved into a preferences file):
   ``<graxpert> <input.fits> -cmd background-extraction -output <name>
      [-gpu true|false] [-preferences_file <prefs.json>]``
 """
-import importlib.util
-import os
-import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 import structlog
 
+from third_party_tools import tool_path
+
 log = structlog.get_logger()
 
 
-class GraXpertNotFoundError(RuntimeError):
-    """GraXpert could not be located. Install it or set ASTROFLOW_GRAXPERT_BIN."""
-
-
 def graxpert_base_command() -> list[str]:
-    """How to invoke GraXpert, resolved in priority order:
-
-    1. ``$ASTROFLOW_GRAXPERT_BIN`` — a path, or a whole command string.
-    2. a ``graxpert`` executable on ``PATH``.
-    3. the uv tool bin dir, where ``make install-graxpert`` puts it. Checked
-       explicitly because ``PATH`` is not dependable HERE: this runs inside Ray
-       workers, whose environment is inherited from whatever shell started the
-       raylet, and ``~/.local/bin`` is a login-shell addition that a
-       service-started raylet need not have.
-    4. ``<this-python> -m graxpert.main`` — only hits when someone has installed
-       graxpert into this venv, which the numpy pin says not to do.
-    """
-    override = os.environ.get("ASTROFLOW_GRAXPERT_BIN")
-    if override:
-        return override.split()
-    on_path = shutil.which("graxpert")
-    if on_path:
-        return [on_path]
-    tool_bin = Path(os.environ.get("UV_TOOL_BIN_DIR") or "~/.local/bin")
-    candidate = tool_bin.expanduser() / "graxpert"
-    if candidate.exists():
-        return [str(candidate)]
-    if importlib.util.find_spec("graxpert") is not None:
-        return [sys.executable, "-m", "graxpert.main"]
-    raise GraXpertNotFoundError(
-        f"GraXpert not found (PATH, {candidate}, or this venv). Run "
-        f"`make install-graxpert` on this node, or set ASTROFLOW_GRAXPERT_BIN "
-        f"to the GraXpert executable."
-    )
+    """How to invoke GraXpert on this Mac (`third_party_tools.tool_path`)."""
+    return [tool_path("graxpert")]
 
 
 def run_background_extraction(

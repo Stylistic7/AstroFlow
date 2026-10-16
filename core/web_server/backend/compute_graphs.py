@@ -4,6 +4,7 @@ import os
 import subprocess
 
 from context import local_context as context
+from third_party_tools import pixinsight
 
 compute_graphs_bp = Blueprint("compute_graphs", __name__)
 
@@ -339,7 +340,7 @@ def open_node_result_path(node_id):
         print(f"### opening filename {filename}")
         subprocess.Popen(
             [
-                "/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight",
+                pixinsight("PixInsight.app", "Contents", "MacOS", "PixInsight"),
                 filename,
             ]
         )

@@ -1,0 +1,21 @@
+Gaia XP catalogue (gaia_xp)
+
+This folder is derived from the Gaia DR3 XP sampled mean spectra
+(xp_sampled_mean_spectrum) of the European Space Agency (ESA) mission Gaia
+(https://www.cosmos.esa.int/gaia), processed by the Gaia Data Processing and
+Analysis Consortium (DPAC, https://www.cosmos.esa.int/web/gaia/dpac/consortium).
+Funding for the DPAC has been provided by national institutions, in particular
+the institutions participating in the Gaia Multilateral Agreement.
+
+AstroFlow kept the 15.9 million sources brighter than a synthetic G of 14 and
+replaced each spectrum with its flux through seven filters (H, S, O, L, R, G,
+B); see manifest.json and AstroFlow's core/photometry/gaia_catalog.py.
+
+Gaia data are released under the Creative Commons Attribution-ShareAlike 3.0
+IGO licence (CC BY-SA 3.0 IGO,
+https://creativecommons.org/licenses/by-sa/3.0/igo/). This derived catalogue
+is shared under the same licence.
+
+References:
+  Gaia Collaboration, Vallenari, A., et al. 2023, A&A 674, A1 (Gaia DR3)
+  De Angeli, F., et al. 2023, A&A 674, A2 (XP spectra)

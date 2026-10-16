@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 
 import rc_astro_cli
+import third_party_tools
 
 
 _IMG_EXTS = {".xisf", ".fits", ".fit", ".tiff", ".tif"}
@@ -120,15 +121,16 @@ def test_sxt_requires_an_output(fake, tmp_path):
         rc_astro_cli.run_sxt(tmp_path / "chan.xisf")
 
 
-def test_env_override_splits(monkeypatch):
-    monkeypatch.setenv("ASTROFLOW_RC_ASTRO_BIN", "/opt/rc-astro/rc-astro --flag")
-    assert rc_astro_cli.rc_astro_base_command() == ["/opt/rc-astro/rc-astro", "--flag"]
+def test_the_tools_page_location_wins(monkeypatch):
+    monkeypatch.setattr(third_party_tools.node_settings, "read",
+                        lambda: {"tool_paths": {"rc-astro": "/opt/rc-astro/rc-astro"}})
+    assert rc_astro_cli.rc_astro_base_command() == ["/opt/rc-astro/rc-astro"]
 
 
 def test_missing_binary_raises(monkeypatch):
-    monkeypatch.delenv("ASTROFLOW_RC_ASTRO_BIN", raising=False)
-    monkeypatch.setattr(rc_astro_cli.shutil, "which", lambda _: None)
-    with pytest.raises(rc_astro_cli.RcAstroNotFoundError):
+    monkeypatch.setattr(third_party_tools.node_settings, "read", lambda: {})
+    monkeypatch.setattr(third_party_tools.shutil, "which", lambda _: None)
+    with pytest.raises(third_party_tools.ToolNotFoundError):
         rc_astro_cli.rc_astro_base_command()
 
 

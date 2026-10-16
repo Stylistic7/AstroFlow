@@ -8,11 +8,10 @@ from typing import Any
 from pix.image import Image
 from pix.recipe import Step
 from pix.tasks.copy_fits_keywords import CopyFITSKeywords
+from third_party_tools import pixinsight
 
-_SCRIPT_FILENAME = (
-    "/Applications/PixInsight/src/scripts/"
-    "JohnMurphy/PhotometricMosaic/AstroFlowPhotometricMosaic.js"
-)
+def _script_filename() -> str:
+    return pixinsight("src", "scripts", "JohnMurphy", "PhotometricMosaic", "AstroFlowPhotometricMosaic.js")
 
 _DEFAULT_PARAMETERS = {
     "referenceView": "placed_0",
@@ -83,7 +82,7 @@ def PhotometricMosaic(images: list[Image], **kwargs: Any) -> Image:
 
     recipe.add_step(Step(
         name="PhotometricMosaic",
-        script_filename=_SCRIPT_FILENAME,
+        script_filename=_script_filename(),
         parameters={k: str(v) for k, v in parameters.items()},
         # astroflow_main() logs any exception (console.criticalln) and returns
         # normally, so a failed join never creates the Mosaic view. Assert

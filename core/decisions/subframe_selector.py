@@ -4,6 +4,7 @@ import subprocess
 import time
 import json
 import math
+from third_party_tools import pixinsight
 
 subframe_selector_script = """
 var P = new SubframeSelector;
@@ -93,7 +94,7 @@ def measure_frames(light_frames, image_scale):
         )
         ret = subprocess.run(
             [
-                "/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight",
+                pixinsight("PixInsight.app", "Contents", "MacOS", "PixInsight"),
                 f"--execute={script_filename}",
             ]
         ).returncode

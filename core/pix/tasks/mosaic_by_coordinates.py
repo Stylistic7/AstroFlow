@@ -3,10 +3,10 @@ from typing import Any
 
 from pix.image import Image
 from pix.recipe import Step
+from third_party_tools import pixinsight
 
-_SCRIPT_FILENAME = (
-    "/Applications/PixInsight/src/scripts/MosaicByCoordinates/MosaicByCoordinates.js"
-)
+def _script_filename() -> str:
+    return pixinsight("src", "scripts", "MosaicByCoordinates", "MosaicByCoordinates.js")
 
 _DEFAULT_PARAMETERS = {
     "engine_centerCoordsAuto": True,
@@ -36,7 +36,7 @@ def MosaicByCoordinates(images: list[Image], **kwargs: Any) -> list[Image]:
 
     recipe.add_step(Step(
         name="MosaicByCoordinates",
-        script_filename=_SCRIPT_FILENAME,
+        script_filename=_script_filename(),
         parameters={k: str(v) for k, v in parameters.items()},
     ))
 

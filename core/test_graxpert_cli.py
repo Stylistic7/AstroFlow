@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 import graxpert_cli
+import third_party_tools
 
 
 def _fake_run_writing_output():
@@ -81,32 +82,32 @@ def test_omits_gpu_when_unset(monkeypatch, tmp_path):
     assert "-gpu" not in fake.cmd  # let GraXpert auto-detect the provider
 
 
-def test_env_override_splits_into_argv(monkeypatch):
-    monkeypatch.setenv("ASTROFLOW_GRAXPERT_BIN", "/opt/graxpert/bin/graxpert --extra")
-    assert graxpert_cli.graxpert_base_command() == ["/opt/graxpert/bin/graxpert", "--extra"]
+def test_the_tools_page_location_wins(monkeypatch):
+    monkeypatch.setattr(third_party_tools.node_settings, "read",
+                        lambda: {"tool_paths": {"graxpert": "/opt/graxpert/bin/graxpert"}})
+    assert graxpert_cli.graxpert_base_command() == ["/opt/graxpert/bin/graxpert"]
 
 
 def test_finds_graxpert_in_uv_tool_bin_dir(monkeypatch, tmp_path):
     """`make install-graxpert` puts GraXpert in the uv tool bin dir, which is
     NOT on a Ray worker's PATH — the worker inherits the raylet's environment,
     not a login shell's. Resolution must not depend on PATH."""
-    monkeypatch.delenv("ASTROFLOW_GRAXPERT_BIN", raising=False)
-    monkeypatch.setattr(graxpert_cli.shutil, "which", lambda _: None)
-    monkeypatch.setenv("UV_TOOL_BIN_DIR", str(tmp_path))
-    (tmp_path / "graxpert").write_text("#!/bin/sh\n")
+    monkeypatch.setattr(third_party_tools.node_settings, "read", lambda: {})
+    monkeypatch.setattr(third_party_tools.shutil, "which", lambda _: None)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / ".local" / "bin").mkdir(parents=True)
+    (tmp_path / ".local" / "bin" / "graxpert").write_text("#!/bin/sh\n")
 
-    assert graxpert_cli.graxpert_base_command() == [str(tmp_path / "graxpert")]
+    assert graxpert_cli.graxpert_base_command() == [str(tmp_path / ".local" / "bin" / "graxpert")]
 
 
 def test_raises_when_graxpert_missing(monkeypatch, tmp_path):
-    monkeypatch.delenv("ASTROFLOW_GRAXPERT_BIN", raising=False)
-    monkeypatch.setattr(graxpert_cli.shutil, "which", lambda _: None)
-    monkeypatch.setattr(graxpert_cli.importlib.util, "find_spec", lambda _: None)
-    # Point the tool dir at an EMPTY dir: otherwise this passes or fails
-    # depending on whether the machine running the tests happens to have
-    # GraXpert installed, which is how this test broke.
-    monkeypatch.setenv("UV_TOOL_BIN_DIR", str(tmp_path))
-    with pytest.raises(graxpert_cli.GraXpertNotFoundError):
+    monkeypatch.setattr(third_party_tools.node_settings, "read", lambda: {})
+    monkeypatch.setattr(third_party_tools.shutil, "which", lambda _: None)
+    # An empty home: otherwise this passes or fails depending on whether the
+    # machine running the tests happens to have GraXpert installed.
+    monkeypatch.setenv("HOME", str(tmp_path))
+    with pytest.raises(third_party_tools.ToolNotFoundError):
         graxpert_cli.graxpert_base_command()
 
 

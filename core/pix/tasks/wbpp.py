@@ -13,6 +13,7 @@ from typing import Any
 import structlog
 
 from pix.recipe import Step
+from third_party_tools import pixinsight
 
 log = structlog.get_logger()
 
@@ -24,9 +25,8 @@ class WBPPDuplicateMastersError(Exception):
     downstream code doesn't pick one at random and proceed.
     """
 
-_SCRIPT_FILENAME = (
-    "/Applications/PixInsight/src/scripts/BatchPreprocessing/WBPP.js"
-)
+def _script_filename() -> str:
+    return pixinsight("src", "scripts", "BatchPreprocessing", "WBPP.js")
 
 _DEFAULT_PARAMETERS = {
     "outputDirectory": "",
@@ -125,7 +125,7 @@ def run_wbpp(
 
     args_str = " ".join(f'-a="{k}={v}"' for k, v in arguments.items())
     params_str = " ".join(f'-p="{k},{v}"' for k, v in parameters.items())
-    scp = f'run -x {args_str} {params_str} "{_SCRIPT_FILENAME}"'
+    scp = f'run -x {args_str} {params_str} "{_script_filename()}"'
 
     with tempfile.TemporaryDirectory(prefix="pix-wbpp-") as tmp_dir:
         # Watch `output_dir` (not the sentinel `tmp_dir`): that's where WBPP

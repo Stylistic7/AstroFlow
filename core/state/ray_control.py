@@ -78,9 +78,12 @@ def _resources(base: dict) -> str:
     `Siril: 1` marks a node with Siril installed: integrations request a
     sliver of it, so it gates where they run, not how many."""
     import json
-    from stacks.stacking.siril import SIRIL_APP
-    if os.path.exists(os.environ.get("ASTROFLOW_SIRIL_BIN") or SIRIL_APP):
-        base = {**base, "Siril": 1}
+    from third_party_tools import ToolNotFoundError, tool_path
+    try:
+        if os.path.exists(tool_path("siril")):
+            base = {**base, "Siril": 1}
+    except ToolNotFoundError:
+        pass
     return "'" + json.dumps(base) + "'"
 
 

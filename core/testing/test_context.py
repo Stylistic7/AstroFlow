@@ -28,6 +28,9 @@ def make_test_context() -> tuple[
 
     output_dir_obj = tempfile.TemporaryDirectory()
     context.output_dir = Path(output_dir_obj.name)
+    # Only the graph's start gate reads it: solve-field takes its index
+    # files from this Mac's node_settings, never from the context.
+    context.astrometry_index_dir = Path(output_dir_obj.name) / "astrometry-net"
 
     context.settings = Settings(
         clustering_settings=ClusteringSettings(

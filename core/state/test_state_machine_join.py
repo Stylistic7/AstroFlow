@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 import pytest
 
+import node_settings
 import state.state_machine as sm
 import state.worker_sync as ws
 
@@ -29,6 +30,16 @@ WT = "wt:" + "c" * 40
 @pytest.fixture(autouse=True)
 def worker_settings(monkeypatch):
     monkeypatch.setattr(sm, "get_network_settings", lambda: _NS())
+
+
+@pytest.fixture(autouse=True)
+def stub_node_settings(monkeypatch):
+    """The head's settings as a joining worker reads them, and the copy it
+    keeps — never this Mac's real settings file."""
+    written = []
+    monkeypatch.setattr(ws, "head_node_settings", lambda ip: {"astrometry_index_dir": "/Volumes/X/index"})
+    monkeypatch.setattr(node_settings, "write", written.append)
+    return written
 
 
 @pytest.fixture
@@ -87,6 +98,12 @@ def test_join_head_joins_on_version_match(monkeypatch, stub_mounts):
     state, actions = sm._join_head({}, _join())
     assert [a["type"] for a in actions] == ["start_ray_subordinate_node"]
     assert state["joined_version"] == SHA
+
+
+def test_a_joining_worker_keeps_the_heads_settings(monkeypatch, stub_mounts, stub_node_settings):
+    _stub_versions(monkeypatch, head=SHA, local=SHA)
+    sm._join_head({}, _join())
+    assert stub_node_settings == [{"astrometry_index_dir": "/Volumes/X/index"}]
 
 
 def test_join_head_matches_working_tree_versions(monkeypatch, stub_mounts):

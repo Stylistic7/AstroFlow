@@ -64,10 +64,13 @@ def put_storage():
 @storage_bp.route("/api/storage/choose_folder", methods=["POST"])
 def choose_folder():
     """The Mac's own folder picker, opened on the machine running AstroFlow.
-    A browser can't hand a page a folder's path, so the server asks. Returns
-    {"path": null} when the user cancels."""
-    prompt = str((request.get_json(silent=True) or {}).get("prompt") or "Choose a folder")
-    script = f'POSIX path of (choose folder with prompt {_applescript_str(prompt)})'
+    A browser can't hand a page a folder's path, so the server asks.
+    `{"file": true}` picks a file instead. Returns {"path": null} when the
+    user cancels."""
+    body = request.get_json(silent=True) or {}
+    prompt = str(body.get("prompt") or "Choose a folder")
+    kind = "file" if body.get("file") else "folder"
+    script = f'POSIX path of (choose {kind} with prompt {_applescript_str(prompt)})'
     result = subprocess.run(["/usr/bin/osascript", "-e", script], capture_output=True, text=True)
     if result.returncode != 0:  # -128: the user cancelled
         return jsonify({"path": None})

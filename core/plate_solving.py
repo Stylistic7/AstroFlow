@@ -19,6 +19,8 @@ from collections.abc import Mapping
 
 from beartype import beartype
 
+import node_settings
+from third_party_tools import tool_path
 from file_io.conversion import convert_xisf_to_fits
 from file_io.planar import needs_planar, write_planar
 from file_io.sidecar import get_section, set_section, sidecar_path_for
@@ -425,8 +427,12 @@ def solve_field(
     # corner at order 4 and 0.9 px at order 3. Systematic displacement
     # after the refine: 0.1-0.5 px on every train but the 2000 mm 6200MM,
     # where 2 of 5 subs sit at 1.3-1.7 px in one corner at either order.
+    # The index folder chosen on the Catalogs page; without one (a checkout
+    # never set up through the app), Homebrew's astrometry.cfg.
+    config = node_settings.ASTROMETRY_CONFIG
     base = [
-        "solve-field",
+        tool_path("solve-field"),
+        *(["--config", str(config)] if config.exists() else []),
         "--overwrite",
         "--no-plots",
         "--new-fits",

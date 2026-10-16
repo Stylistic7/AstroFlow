@@ -9,8 +9,15 @@
 # processes (Ray workers, gunicorn, the MCP sidecar) that start as
 # `sys.executable -m …`, which needs a real interpreter, not a frozen binary.
 #
-# What the user still installs: Homebrew, `brew install astrometry-net vips`,
-# and astrometry.net index files. The app checks for them on launch.
+# It also carries GraXpert (its own packages in Resources/tools, pinned by
+# graxpert-requirements.txt) and the Gaia XP catalogue AstroFlow calibrates
+# with (Resources/gaia_xp, from GAIA_CATALOG, built by
+# core/photometry/gaia_catalog.py).
+#
+# What the user still installs: Homebrew and `brew install astrometry-net
+# vips` (the app checks for them on launch), and Siril and RC Astro (the
+# dashboard's Third-Party Tools page tries each tool on every Mac). The
+# astrometry.net index files are chosen and downloaded on the Catalogs page.
 #
 # The build is the committed tree (it is stamped with the commit, RELEASE, as
 # its cluster version); ALLOW_DIRTY=1 builds the working tree for a test,
@@ -28,6 +35,14 @@ DIST="$APP_SRC/dist"
 WORK="$APP_SRC/build"
 PYTHON_VERSION=3.13
 PYOBJC="pyobjc-framework-Cocoa==11.1"
+GAIA_CATALOG="${GAIA_CATALOG:-/Volumes/AstroProcessed/Catalogs/GaiaXP/gaia_xp}"
+
+for column in source_id ra dec G colour flux; do
+	if [ ! -f "$GAIA_CATALOG/$column.npy" ]; then
+		echo "No Gaia XP catalogue at $GAIA_CATALOG ($column.npy is missing); set GAIA_CATALOG." >&2
+		exit 1
+	fi
+done
 
 sha="$(git -C "$REPO" rev-parse HEAD)"
 if [ -n "$(git -C "$REPO" status --porcelain)" ]; then
@@ -76,8 +91,26 @@ fi
 echo "→ packages"
 (cd "$REPO" && uv export --frozen --no-dev --no-hashes --no-emit-project --quiet) > "$WORK/requirements.txt"
 uv pip install --quiet --python "$py" --break-system-packages -r "$WORK/requirements.txt" "$PYOBJC"
+
+echo "→ GraXpert"
+# Its own folder, not the app's site-packages: GraXpert pins its own numpy.
+uv pip install --quiet --python "$py" --target "$RES/tools/graxpert" -r "$APP_SRC/graxpert-requirements.txt"
+mkdir -p "$RES/tools/bin"
+cat > "$RES/tools/bin/graxpert" <<'EOF'
+#!/bin/sh
+# GraXpert on the app's Python, with only its own packages beside the stdlib.
+res="$(cd "$(dirname "$0")/../.." && pwd)"
+PYTHONPATH="$res/tools/graxpert" exec "$res/python/bin/python3" -s \
+	-c 'import sys; from graxpert.main import main; sys.argv[0] = "graxpert"; sys.exit(main())' "$@"
+EOF
+chmod +x "$RES/tools/bin/graxpert"
+
+echo "→ Gaia XP catalogue"
+rsync -a --exclude '.*' "$GAIA_CATALOG/" "$RES/gaia_xp/"
+cp "$APP_SRC/LICENSE-gaia.txt" "$RES/gaia_xp/"
+
 # Bytecode now, so nothing writes into the signed bundle at run time.
-"$py" -m compileall -q -j 0 "$RES/python/lib" "$RES/AstroFlow" >/dev/null || true
+"$py" -m compileall -q -j 0 "$RES/python/lib" "$RES/tools/graxpert" "$RES/AstroFlow" >/dev/null || true
 
 echo "→ bundle"
 cat > "$APP/Contents/MacOS/AstroFlow" <<'EOF'

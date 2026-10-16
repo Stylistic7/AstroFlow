@@ -10,21 +10,22 @@ import { PanelPage, PanelSection, PanelStatus } from './PanelPage.jsx';
 
 const TITLE = 'Folders';
 
-async function chooseFolder(prompt) {
+// The Mac's own picker; `file` picks a file instead of a folder.
+export async function chooseFolder(prompt, file = false) {
   const r = await fetch('/api/storage/choose_folder', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt }),
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, file }),
   });
   return r.ok ? (await r.json()).path : null;
 }
 
-function FolderField({ id, label, value, onChange, prompt, onRemove }) {
+export function FolderField({ id, label, value, onChange, prompt, onRemove, placeholder = '/Volumes/Astro/Raw', file = false }) {
   return (
     <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
       <TextField id={id} label={label} value={value} onChange={(e) => onChange(e.target.value)}
-        size="small" fullWidth placeholder="/Volumes/Astro/Raw"
+        size="small" fullWidth placeholder={placeholder}
         inputProps={{ spellCheck: false, style: { fontFamily: 'monospace' } }} />
       <Button variant="outlined" sx={{ flex: '0 0 auto' }}
-        onClick={async () => { const p = await chooseFolder(prompt); if (p) onChange(p); }}>
+        onClick={async () => { const p = await chooseFolder(prompt, file); if (p) onChange(p); }}>
         Choose…
       </Button>
       {onRemove && (
@@ -84,7 +85,9 @@ export default function StoragePanel() {
       + 'and never changes them. Everything it makes (calibrated frames, stacks, mosaics, previews) '
       + 'goes into the output folder.'}>
       {!saved.output_dir && (
-        <Alert severity="info">Choose your folders to start. Nothing is scanned until both are set.</Alert>
+        <Alert severity="info">
+          Choose your folders to start, then the index files on the Catalogs page. Nothing is scanned until both are set.
+        </Alert>
       )}
       <PanelSection title="Input folders" meta={`${wanted.input_dirs.length} folder${wanted.input_dirs.length === 1 ? '' : 's'}`}
         subtitle="Where your capture software or ASIAir downloads land. New frames are picked up automatically.">
@@ -120,14 +123,17 @@ export default function StoragePanel() {
   );
 }
 
-// The front page on a fresh install: send the user to Folders until both are
-// set, since nothing is scanned before then.
+// The front page on a fresh install: send the user to Folders, then
+// Catalogs, until the folders and the index folder are set, since nothing is
+// scanned before then.
 export function RequireFolders({ children }) {
   const navigate = useNavigate();
   useEffect(() => {
-    fetch('/api/storage').then((r) => (r.ok ? r.json() : null)).then((s) => {
-      if (s && (!s.output_dir || !s.input_dirs.length)) navigate('/folders', { replace: true });
-    }).catch(() => {});
+    Promise.all(['/api/storage', '/api/catalogs'].map((u) => fetch(u).then((r) => (r.ok ? r.json() : null))))
+      .then(([s, c]) => {
+        if (s && (!s.output_dir || !s.input_dirs.length)) navigate('/folders', { replace: true });
+        else if (c && !c.astrometry_index_dir) navigate('/catalogs', { replace: true });
+      }).catch(() => {});
   }, [navigate]);
   return children;
 }

@@ -1,9 +1,9 @@
 """Worker-side head attachment: mount the head's shared disks over 10 GbE
-and read the head's advertised code version.
+and read the head's advertised code version and settings.
 
 Code does NOT move through here — code moves via git, and the worker FENCES
 on version equality before joining (`state_machine._join_head`). This module
-is mounts + one HTTP version read.
+is mounts + two HTTP reads (version, `node_settings`).
 
 Everything here is worker-initiated. The head only *advertises* (via zeroconf)
 its 10 GbE IP, its share names, and its `cluster_version`; nothing in this
@@ -131,3 +131,10 @@ def head_current_version(head_ip: str) -> str:
     # this trivial read can spike from ~ms to tens of seconds.
     with urllib.request.urlopen(url, timeout=90) as r:
         return json.loads(r.read()).get("cluster_version", "")
+
+
+def head_node_settings(head_ip: str) -> dict:
+    """The head's catalogue and tool settings (`node_settings`), which a
+    worker keeps its own copy of."""
+    with urllib.request.urlopen(f"http://{head_ip}:{HTTP_PORT}/api/node_settings", timeout=90) as r:
+        return json.loads(r.read())

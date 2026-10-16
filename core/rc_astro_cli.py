@@ -6,9 +6,8 @@ heavy CoreML/GPU ML runtime and models live outside this venv and are installed
 / licensed independently. The all-OSS color pipeline uses BXT (deconvolution,
 on linear data) and SXT (star separation).
 
-Install / locate (any one is enough):
-  * `rc-astro` on PATH (the installer puts it at /usr/local/bin/rc-astro)
-  * set `ASTROFLOW_RC_ASTRO_BIN` to its path (or a whole command string)
+Install: the rc-astro installer puts it at /usr/local/bin/rc-astro; anywhere
+else, set where it is on the Third-Party Tools page.
 
 Output format is XISF, not FITS: a full-res mosaic channel can exceed 2**31
 pixels, which overflows rc-astro's cfitsio FITS *writer* (cfitsio status 306,
@@ -37,7 +36,6 @@ TIFF) and removes the memory ceiling. It's finicky and may cost quality at seams
 author to tile internally end-to-end (it already tiles for GPU memory; it just
 needs to not hold/write the whole image). Track: see project memory.
 """
-import os
 import shutil
 import subprocess
 import tempfile
@@ -46,26 +44,14 @@ from pathlib import Path
 
 import structlog
 
+from third_party_tools import tool_path
+
 log = structlog.get_logger()
 
 
-class RcAstroNotFoundError(RuntimeError):
-    """rc-astro could not be located. Install it or set ASTROFLOW_RC_ASTRO_BIN."""
-
-
 def rc_astro_base_command() -> list[str]:
-    """How to invoke rc-astro: `$ASTROFLOW_RC_ASTRO_BIN` (a path or whole command
-    string), else an `rc-astro` on PATH. Raises if neither is found."""
-    override = os.environ.get("ASTROFLOW_RC_ASTRO_BIN")
-    if override:
-        return override.split()
-    on_path = shutil.which("rc-astro")
-    if on_path:
-        return [on_path]
-    raise RcAstroNotFoundError(
-        "rc-astro not found. Install it, or set ASTROFLOW_RC_ASTRO_BIN to the "
-        "rc-astro executable."
-    )
+    """How to invoke rc-astro on this Mac (`third_party_tools.tool_path`)."""
+    return [tool_path("rc-astro")]
 
 
 # The Neural Engine's compiled-model cache rc-astro fills, one bundle per input

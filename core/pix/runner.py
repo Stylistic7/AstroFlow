@@ -10,9 +10,13 @@ from pathlib import Path
 
 import psutil
 
-_PIXINSIGHT_EXECUTABLE = (
-    "/Applications/PixInsight/PixInsight.app/Contents/MacOS/PixInsight"
-)
+from third_party_tools import pixinsight
+
+
+def _pixinsight_executable() -> str:
+    return pixinsight("PixInsight.app", "Contents", "MacOS", "PixInsight")
+
+
 _DEFAULT_SLOTS = [1]
 _LOCK_DIR = Path(os.environ.get("TMPDIR", "/tmp"))
 
@@ -40,7 +44,7 @@ def _find_via_psutil() -> dict[int, int]:
     instances: dict[int, int] = {}
     for proc in psutil.process_iter(["pid", "exe", "cmdline"]):
         try:
-            if proc.info["exe"] != _PIXINSIGHT_EXECUTABLE:
+            if proc.info["exe"] != _pixinsight_executable():
                 continue
             for arg in proc.info["cmdline"] or []:
                 if arg.startswith("-n="):
@@ -61,14 +65,14 @@ def _find_running_instances() -> dict[int, int]:
     """
     try:
         result = subprocess.run(
-            [_PIXINSIGHT_EXECUTABLE, "-e"],
+            [_pixinsight_executable(), "-e"],
             text=True, capture_output=True, timeout=30,
         )
     except subprocess.TimeoutExpired as e:
         print(f"### pix: -e timed out after 30s; falling back to psutil. {e}")
         return _find_via_psutil()
     except FileNotFoundError as e:
-        print(f"### pix: PixInsight executable missing at {_PIXINSIGHT_EXECUTABLE}: {e}")
+        print(f"### pix: PixInsight executable missing at {_pixinsight_executable()}: {e}")
         raise
 
     if result.returncode != 0:
@@ -92,7 +96,7 @@ def _slot_registered(slot: int) -> bool:
     """
     try:
         result = subprocess.run(
-            [_PIXINSIGHT_EXECUTABLE, "-e"],
+            [_pixinsight_executable(), "-e"],
             text=True, capture_output=True, timeout=10,
         )
     except subprocess.TimeoutExpired:
@@ -130,7 +134,7 @@ def _start_instance(slot: int) -> None:
 
     proc = subprocess.Popen(
         [
-            _PIXINSIGHT_EXECUTABLE,
+            _pixinsight_executable(),
             f"-n={slot}",
             "--no-startup-check-updates",
             "--no-startup-gui-messages",
@@ -210,7 +214,7 @@ def _kill_instance(slot: int) -> None:
     exit_script = _LOCK_DIR / f"pix-exit-{slot}.scp"
     exit_script.write_text("exit\n")
     subprocess.run(
-        [_PIXINSIGHT_EXECUTABLE, f"--execute={slot}:{exit_script}"],
+        [_pixinsight_executable(), f"--execute={slot}:{exit_script}"],
         timeout=10,
     )
 
@@ -365,7 +369,7 @@ def run_scp(
         start_time = time.monotonic()
         try:
             subprocess.run(
-                [_PIXINSIGHT_EXECUTABLE, f"--execute={slot}:{scp_filename}"],
+                [_pixinsight_executable(), f"--execute={slot}:{scp_filename}"],
                 timeout=_DISPATCH_TIMEOUT,
             )
         except subprocess.TimeoutExpired:
@@ -509,6 +513,6 @@ def open_in_gui(views: dict[str, Path]) -> None:
           f"{sorted(views)}")
 
     subprocess.run(
-        [_PIXINSIGHT_EXECUTABLE, f"--execute={_GUI_SLOT}:{scp_path}"],
+        [_pixinsight_executable(), f"--execute={_GUI_SLOT}:{scp_path}"],
         timeout=_DISPATCH_TIMEOUT,
     )

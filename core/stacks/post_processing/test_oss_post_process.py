@@ -19,10 +19,11 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from graxpert_cli import GraXpertNotFoundError, graxpert_base_command
+from graxpert_cli import graxpert_base_command
 from stacks.post_processing import oss as oss_module
 from stacks.post_processing.background_pedestal import _SKY_QUANTILE
 from stacks.post_processing.oss import corrected_normalized_pixels
+from third_party_tools import ToolNotFoundError
 
 # A real light with a genuine light-pollution gradient (M42, 26 MP) — the
 # smallest full testdata light, so the real GraXpert run stays well under the
@@ -37,7 +38,7 @@ def _graxpert_available() -> bool:
     try:
         graxpert_base_command()
         return True
-    except GraXpertNotFoundError:
+    except ToolNotFoundError:
         return False
 
 

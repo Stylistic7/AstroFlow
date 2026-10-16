@@ -8,6 +8,7 @@ from typing import Any
 
 from pix.image import Image
 from pix.recipe import Step
+from third_party_tools import pixinsight
 
 _DEFAULT_PARAMETERS = {
     "metadata_focal": "541.5685232722849",
@@ -62,7 +63,8 @@ _DEFAULT_PARAMETERS = {
     "non_interactive": "true",
 }
 
-_SCRIPT_FILENAME = "/Applications/PixInsight/src/scripts/AdP/ImageSolver.js"
+def _script_filename() -> str:
+    return pixinsight("src", "scripts", "AdP", "ImageSolver.js")
 
 _ACTIVATE_JS = """
 let view = View.viewById("{view_id}");
@@ -83,7 +85,7 @@ def ImageSolver(image: Image, **kwargs: Any) -> Image:
     # Run ImageSolver as an external script with -p parameter flags
     image.recipe.add_step(Step(
         name="ImageSolver",
-        script_filename=_SCRIPT_FILENAME,
+        script_filename=_script_filename(),
         parameters=parameters,
         success_pattern=re.compile(r'Resolution \.+ [\d.]+ arcsec/px'),
     ))

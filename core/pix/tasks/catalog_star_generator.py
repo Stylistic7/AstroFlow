@@ -25,10 +25,10 @@ from typing import Any
 
 from pix.image import Image
 from pix.recipe import Step
+from third_party_tools import pixinsight
 
-_SCRIPT_FILENAME = (
-    "/Applications/PixInsight/src/scripts/CatalogStarGenerator/CatalogStarGenerator.js"
-)
+def _script_filename() -> str:
+    return pixinsight("src", "scripts", "CatalogStarGenerator", "CatalogStarGenerator.js")
 
 # Prefix from CSG_SETTINGS_MODULE base call. Every registered field on
 # the engine object lives at "sgen_<field>" in the Parameters store.
@@ -107,7 +107,7 @@ def CatalogStarGenerator(image: Image, **kwargs: Any) -> Image:
 
     image.recipe.add_step(Step(
         name="CatalogStarGenerator",
-        script_filename=_SCRIPT_FILENAME,
+        script_filename=_script_filename(),
         parameters=parameters,
         # CSG's Generate() throws "The target image has no astrometric
         # solution" if WCS extraction fails. Catch it loudly — silently

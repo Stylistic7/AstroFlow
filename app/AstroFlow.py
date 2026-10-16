@@ -2,9 +2,13 @@
 
 AstroFlow itself (`core/main.py`) runs as a child process, exactly as
 `make start` runs it, with its output in ~/Library/Logs/AstroFlow. This
-process only owns the Mac side: the Dock icon and menus, the first-launch
-check for the Homebrew tools AstroFlow needs, opening the dashboard once it
+process only owns the Mac side: the Dock icon and menus, the launch check
+for the Homebrew tools AstroFlow can't start without, opening the dashboard once it
 answers, and a graceful shutdown on Quit.
+
+What the bundle ships beside the code (`app/build_app.sh`): Python with every
+package, GraXpert (`Resources/tools`) and the Gaia XP catalogue
+(`Resources/gaia_xp`).
 
 The app bundle (`app/build_app.sh`) runs this with its own Python; from a
 checkout, `uv run --with pyobjc-framework-Cocoa python app/AstroFlow.py`.
@@ -38,6 +42,9 @@ import objc
 
 ROOT = Path(__file__).resolve().parent.parent  # the bundle's Resources/AstroFlow, or a checkout
 CORE = ROOT / "core"
+RESOURCES = ROOT.parent  # the bundle's Resources (from a checkout, none of the below exist)
+TOOLS_BIN = RESOURCES / "tools" / "bin"
+GAIA_CATALOG = RESOURCES / "gaia_xp"
 ICON = next((p for p in (ROOT.parent / "icon.icns", ROOT / "app" / "icon.icns") if p.exists()), None)
 DASHBOARD_PORT = 8000
 DASHBOARD = f"http://localhost:{DASHBOARD_PORT}"
@@ -45,9 +52,10 @@ LOG = Path.home() / "Library" / "Logs" / "AstroFlow" / "AstroFlow.log"
 # A Finder-launched app gets a bare PATH; AstroFlow's tools come from Homebrew.
 HOMEBREW_BIN = ("/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin")
 PATH = ":".join([*HOMEBREW_BIN, "/usr/bin", "/bin", "/usr/sbin", "/sbin"])
+SUPPORT = Path.home() / "Library" / "Application Support" / "AstroFlow"
 # "worker" makes this Mac a worker; anything else (or no file) a head. A file,
 # not NSUserDefaults: the process is the bundled Python, with no bundle id.
-ROLE_FILE = Path.home() / "Library" / "Application Support" / "AstroFlow" / "role"
+ROLE_FILE = SUPPORT / "role"
 # How long Quit waits for AstroFlow's own graceful shutdown (in-flight work
 # finishing) before it interrupts it.
 GRACEFUL_QUIT_S = 600
@@ -68,41 +76,29 @@ def _brew_prefix() -> Path | None:
     return Path(brew).resolve().parent.parent if brew else None
 
 
-def _index_dirs(prefix: Path) -> list[Path]:
-    """The folders solve-field searches for index files (`add_path` lines in
-    Homebrew's astrometry.cfg)."""
-    cfg = prefix / "etc" / "astrometry.cfg"
-    if not cfg.exists():
-        return []
-    return [Path(line.split(None, 1)[1].strip()) for line in cfg.read_text().splitlines()
-            if line.startswith("add_path") and len(line.split(None, 1)) == 2]
+# The installs AstroFlow can't start without. The rest of the third-party
+# tools are tried, on every Mac, on the dashboard's Third-Party Tools page.
+def _missing_installs(prefix: Path) -> list[str]:
+    return [install for present, install in (
+        (shutil.which("solve-field", path=PATH), "brew install astrometry-net"),
+        ((prefix / "lib" / "libvips.42.dylib").exists(), "brew install vips"),
+    ) if not present]
 
 
 def _setup_problems() -> tuple[str, str] | None:
-    """(title, details) for whatever the user still has to install, or None."""
+    """(title, details) for whatever the user still has to install, or None.
+    The index files plate solving needs are chosen and downloaded on the
+    Catalogs page."""
     prefix = _brew_prefix()
     if prefix is None:
         return ("AstroFlow needs Homebrew",
                 "AstroFlow uses a few command-line tools that Homebrew installs. Install Homebrew from "
-                "https://brew.sh, then in Terminal run:\n\n    brew install astrometry-net vips\n\n"
-                "and open AstroFlow again.")
-    missing = [formula for formula, present in (
-        ("astrometry-net", shutil.which("solve-field", path=PATH)),
-        ("vips", (prefix / "lib" / "libvips.42.dylib").exists()),
-    ) if not present]
+                "https://brew.sh, then open AstroFlow again.")
+    missing = _missing_installs(prefix)
     if missing:
-        return ("AstroFlow needs a few Homebrew tools",
-                "In Terminal, run:\n\n"
-                f"    brew install {' '.join(missing)}\n\n"
-                "then open AstroFlow again. astrometry-net plate-solves every frame; vips reads and "
-                "writes large images.")
-    dirs = _index_dirs(prefix)
-    if not any(next(d.glob("index-*.fits"), None) for d in dirs if d.is_dir()):
-        where = "\n".join(f"    {d}" for d in dirs) or "    (no add_path in astrometry.cfg)"
-        return ("Plate solving needs index files",
-                "solve-field found no astrometry.net index files. Download the 4100 or 5200 series "
-                "files that match your field of view (https://astrometry.net/doc/readme.html) into "
-                f"one of:\n\n{where}\n\nWithout them, no frame can be placed on the sky.")
+        return ("AstroFlow needs a few more tools",
+                "In Terminal, run:\n\n" + "\n".join(f"    {install}" for install in missing)
+                + "\n\nthen open AstroFlow again.")
     return None
 
 
@@ -157,8 +153,11 @@ class AppDelegate(NSObject):
         LOG.parent.mkdir(parents=True, exist_ok=True)
         if LOG.exists():
             LOG.replace(LOG.with_suffix(".previous.log"))
-        env = dict(os.environ, PATH=PATH, PYTHONUNBUFFERED="1", PYTHONDONTWRITEBYTECODE="1",
+        env = dict(os.environ, PATH=":".join([str(TOOLS_BIN), PATH]),
+                   PYTHONUNBUFFERED="1", PYTHONDONTWRITEBYTECODE="1",
                    ASTROFLOW_HEAD_NODE="1" if self._is_head() else "0")
+        if GAIA_CATALOG.is_dir():
+            env["ASTROFLOW_GAIA_CATALOG"] = str(GAIA_CATALOG)
         with open(LOG, "ab") as log:
             self.child = subprocess.Popen(
                 [sys.executable, "main.py"], cwd=CORE, env=env,
@@ -197,20 +196,21 @@ class AppDelegate(NSObject):
 
     @objc.python_method
     def _stop_child(self):
-        """AstroFlow's graceful shutdown (SIGTERM = enqueue quit), then its
-        forced one (a second SIGINT runs its cleanup and exits)."""
+        """AstroFlow's graceful shutdown, then its forced one: its Ctrl-C
+        handling, where the first SIGINT enqueues the quit and a second runs
+        its cleanup and exits. Never SIGTERM: Ray's crash handler owns SIGTERM
+        in that process and kills it on the spot, leaving the web servers and
+        Ray's agents running (2026-10-16)."""
         child = self.child
         if child is None or child.poll() is not None:
             return
-        child.send_signal(signal.SIGTERM)
+        child.send_signal(signal.SIGINT)
         try:
             child.wait(GRACEFUL_QUIT_S)
             return
         except subprocess.TimeoutExpired:
             pass
-        for _ in range(2):
-            child.send_signal(signal.SIGINT)
-            time.sleep(1)
+        child.send_signal(signal.SIGINT)
         try:
             child.wait(60)
         except subprocess.TimeoutExpired:

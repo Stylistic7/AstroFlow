@@ -7,9 +7,8 @@ open-source AI background extractor), driven as an external CLI — see
 this op works directly on the OSS FITS master (PI's SPFC/MGC need metadata the
 OSS master doesn't carry).
 
-GraXpert install (in any environment on PATH, or pointed at by
-ASTROFLOW_GRAXPERT_BIN): `pip install "graxpert[cpuonly]"` on Apple Silicon
-(the bare `graxpert` is missing the onnxruntime AI library). See `graxpert_cli`.
+GraXpert: AstroFlow.app carries its own; see `graxpert_cli` for a checkout,
+and the Third-Party Tools page for whether it works on each Mac.
 """
 import tempfile
 from pathlib import Path

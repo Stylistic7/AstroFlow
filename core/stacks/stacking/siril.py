@@ -45,10 +45,10 @@ from stacks.dust_epochs import MoteModel
 from stacks.stacking.pixinsight import _stack_files_narrow
 from stacks.star_flat_gain import GAIN_SECTION, FlatGain, with_scaled_flats
 from stacks.types import FilenameDependency, StackIdDependency
+from third_party_tools import tool_path
 
 log = structlog.get_logger()
 
-SIRIL_APP = "/Applications/Siril.app/Contents/MacOS/siril-cli"
 # Threads per Siril instance. Siril's file I/O is serial, so one instance
 # leaves cores idle; but two instances at 24 threads each spin-wait in
 # OpenMP. Measured on 45 x 61 MP subs with the app running (2026-10-08),
@@ -73,12 +73,10 @@ STACK_OPTIONS = "rej w 3 3 -norm=addscale -output_norm -weight=wfwhm"
 
 
 def siril_cli() -> str:
-    """`$ASTROFLOW_SIRIL_BIN`, else the official app bundle (Homebrew's 1.4.4
-    links OpenCV 5 and crashes in every rejection stack, 2026-10-08)."""
-    path = os.environ.get("ASTROFLOW_SIRIL_BIN") or SIRIL_APP
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"siril-cli not found at {path}: install Siril on this node (siril.org)")
-    return path
+    """The official app bundle's siril-cli, or wherever the Third-Party Tools
+    page says (never Homebrew's 1.4.4, which links OpenCV 5 and crashes in
+    every rejection stack, 2026-10-08)."""
+    return tool_path("siril")
 
 
 def _as_fits(src: Path, dst: Path) -> Path:

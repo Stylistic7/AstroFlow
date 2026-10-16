@@ -7,11 +7,11 @@ from pix.image import Image
 from pix.recipe import Step
 from pix.tasks.js import execute_on_views
 
+import node_settings
+
 _DEFAULT_PARAMETERS = {
     "useMARSDatabase": True,
-    "marsDatabaseFiles": [
-        [True, "/Volumes/AstroProcessed/Catalogs/MARS-DR1-1.1.1.xmars"]
-    ],
+    "marsDatabaseFiles": None,  # [[True, <the Catalogs page's MARS database>]]
     "grayMARSFilter": "Ha",
     "referenceImageId": "",
     "gradientScale": 1024,
@@ -37,12 +37,16 @@ _MARS_FILTER_MAP = {
 def MultiscaleGradientCorrection(image: Image, **kwargs: Any) -> Image:
     from pix.tasks.filters import normalize_filter
 
+    mars = node_settings.read().get("mars_database")
+    if not mars:
+        raise FileNotFoundError("MultiscaleGradientCorrection needs the MARS database: "
+                                "set where it is on the Catalogs page")
     filter_key = normalize_filter(image.filter) or "Ha"
     mars_filter = _MARS_FILTER_MAP.get(filter_key, "Ha")
 
     js = execute_on_views(
         "MultiscaleGradientCorrection",
-        _DEFAULT_PARAMETERS | {"grayMARSFilter": mars_filter} | kwargs,
+        _DEFAULT_PARAMETERS | {"marsDatabaseFiles": [[True, mars]], "grayMARSFilter": mars_filter} | kwargs,
         [image.view_id],
     )
     image.recipe.add_step(

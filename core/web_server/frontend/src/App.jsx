@@ -28,6 +28,8 @@ import constellationPolylines from './constellationPolylines.json';
 import PlannerPanel from './planner/PlannerPanel.jsx';
 import DustCorrectionPanel from './DustCorrectionPanel.jsx';
 import StoragePanel, { RequireFolders } from './StoragePanel.jsx';
+import CatalogsPanel from './CatalogsPanel.jsx';
+import ToolsPanel from './ToolsPanel.jsx';
 import SkyFlatsPanel from './SkyFlatsPanel.jsx';
 
 function App() {
@@ -462,6 +464,16 @@ function App() {
                 <Route path="/folders" element={
                   <AppLayout>
                     <StoragePanel />
+                  </AppLayout>
+                } />
+                <Route path="/catalogs" element={
+                  <AppLayout>
+                    <CatalogsPanel />
+                  </AppLayout>
+                } />
+                <Route path="/tools" element={
+                  <AppLayout>
+                    <ToolsPanel />
                   </AppLayout>
                 } />
                 <Route path="/sky-flats" element={
