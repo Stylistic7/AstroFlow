@@ -200,3 +200,41 @@ def test_gate_skips_pushed_check_without_upstream(repo):
     says the check was skipped rather than silently passing."""
     ok, reason = cv.require_clean_and_pushed(repo)
     assert ok and "no upstream" in reason
+
+
+# ---- releases: the macOS app bundle (no .git, a RELEASE stamp) ---------------
+
+@pytest.fixture
+def release(tmp_path):
+    """An app bundle's copy of the tree: no git, stamped with its commit."""
+    r = tmp_path / "AstroFlow"
+    (r / "core").mkdir(parents=True)
+    (r / "core" / "main.py").write_text("print('v1')\n")
+    (r / cv.RELEASE_STAMP).write_text("a" * 40 + "\n")
+    return r
+
+
+def test_a_release_is_its_stamped_commit(release):
+    assert head_cluster_version(release, uncommitted=False) == "a" * 40
+    assert local_code_version(release, "a" * 40) == "a" * 40
+    assert is_deployable_version(head_cluster_version(release, uncommitted=False))
+
+
+def test_a_release_passes_the_start_gate(release):
+    ok, reason = cv.require_clean_and_pushed(release)
+    assert ok and reason == "release aaaaaaa"
+
+
+def test_a_release_keys_snapshots_by_its_commit(release, monkeypatch):
+    import base_path
+    monkeypatch.setattr(base_path, "get_base_path", lambda: str(release))
+    monkeypatch.setattr(cv, "_deployed_version_cache", None)
+    monkeypatch.delenv(cv.CODE_VERSION_ENV, raising=False)
+    assert deployed_code_version() == "a" * 40
+
+
+def test_a_test_build_of_a_dirty_tree_never_deploys(release):
+    """`ALLOW_DIRTY=1 app/build_app.sh` stamps `<sha>-dirty`: the head runs,
+    and no worker will join it."""
+    (release / cv.RELEASE_STAMP).write_text("a" * 40 + "-dirty")
+    assert not is_deployable_version(head_cluster_version(release, uncommitted=False))

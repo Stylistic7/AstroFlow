@@ -1,4 +1,0 @@
-brew install python@3.11
-python3.13 -m venv ~/AstroFlow_venv
-~/AstroFlow_venv/bin/pip3 install "numpy<2" ray==2.47 flask flask-cors gunicorn gevent httpx liblapack libopencv opencv-python scikit-image python-dateutil pytz xxhash  diskcache structlog astropy shapely mergedeep addict async_timeout plotly pandas ephem matplotlib spherical-geometry xisf largestinteriorrectangle cdshealpix xxhash python-statemachine objsize requests h5py colorama psutil pyobjc setproctitle beartype zeroconf large-image[tifffile] pytest pytest-xdist pytest-benchmark frozendict
-

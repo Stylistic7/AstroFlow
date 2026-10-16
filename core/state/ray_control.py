@@ -1,11 +1,12 @@
 import os
+import shlex
 import subprocess
 import time
 import socket
 
 import psutil
 
-from base_path import get_bin_dir
+from base_path import RAY_CLI
 
 
 def _workers_soft_limit() -> int:
@@ -52,10 +53,9 @@ def is_ray_connected(timeout: float = 10.0):
     tracking, and probing it on top and acting on a flaky result tore down
     healthy raylets.
     """
-    ray_path = get_bin_dir() / "ray"
     try:
         result = subprocess.run(
-            [ray_path, "status"], capture_output=True, text=True, timeout=timeout
+            [*RAY_CLI, "status"], capture_output=True, text=True, timeout=timeout
         )
     except subprocess.TimeoutExpired:
         return False
@@ -86,13 +86,12 @@ def _resources(base: dict) -> str:
 
 def start_ray_head_node(node_ip_address: str | None = None, timeout=60):
     # TODO: Check for an existing Ray head node.
-    ray_path = get_bin_dir() / "ray"
     # TODO: Put these resources in the UI.
     # For debug-style one-task-at-a-time serialization, add {"fake_resource": 1}
     # here and tag the target functions with resources={"fake_resource": 1}.
     resources = _resources({"PixInsight": 1, "diskcache": 1, "fastest_storage": 1, "gpu_slots": 3})
     bind = f" --node-ip-address {node_ip_address}" if node_ip_address else ""
-    command = f"""ulimit -n 10000 && RAY_num_workers_soft_limit={_workers_soft_limit()} {ray_path} start --head{bind} --memory {_ray_memory_bytes()} --resources {resources}"""
+    command = f"""ulimit -n 10000 && RAY_num_workers_soft_limit={_workers_soft_limit()} {shlex.join(RAY_CLI)} start --head{bind} --memory {_ray_memory_bytes()} --resources {resources}"""
     print(f'### Starting Ray head node with command "{command}"')
     process = subprocess.Popen(
         command,
@@ -158,7 +157,6 @@ def start_ray_subordinate_node(head_node_address, node_ip_address: str | None = 
                 f"relaunch — a blind worker poisons every file-touching "
                 f"task it is handed."
             )
-    ray_path = get_bin_dir() / "ray"
     # Reap any local raylet BEFORE starting the one true node, so a join is
     # idempotent: exactly one raylet per machine, always. A worker process can
     # exit (crash, manual restart, version-change teardown) without stopping
@@ -169,13 +167,13 @@ def start_ray_subordinate_node(head_node_address, node_ip_address: str | None = 
     # advertising 10 CPU + 0.7×RAM, defeating CPU- and memory-gated scheduling
     # ~11×. `stop --force` is a fast, unconditional local reap (no-op when none
     # are running); only ever called on a worker joining, never on the head.
-    subprocess.run([ray_path, "stop", "--force"], capture_output=True, text=True)
+    subprocess.run([*RAY_CLI, "stop", "--force"], capture_output=True, text=True)
     # TODO: Put these resources in the UI.
     resources = _resources({"PixInsight": 1, "gpu_slots": 2})
     bind = node_ip_address or get_ip()
     # Ray refuses multi-node clusters on macOS without the opt-in; set here, not
     # in a shell profile (fish universals are invisible to zsh/ssh launches).
-    command = f"""ulimit -n 10000 && RAY_ENABLE_WINDOWS_OR_OSX_CLUSTER=1 RAY_num_workers_soft_limit={_workers_soft_limit()} {ray_path} start --address {head_node_address}:6379 --node-ip-address {bind} --memory {_ray_memory_bytes()} --resources {resources}"""
+    command = f"""ulimit -n 10000 && RAY_ENABLE_WINDOWS_OR_OSX_CLUSTER=1 RAY_num_workers_soft_limit={_workers_soft_limit()} {shlex.join(RAY_CLI)} start --address {head_node_address}:6379 --node-ip-address {bind} --memory {_ray_memory_bytes()} --resources {resources}"""
     print(f'### Starting Ray subordinate node with command "{command}"')
     process = subprocess.Popen(
         command,
@@ -196,8 +194,7 @@ def start_ray_subordinate_node(head_node_address, node_ip_address: str | None = 
 
 
 def stop_ray_node(timeout=15):
-    ray_path = get_bin_dir() / "ray"
-    subprocess.run([ray_path, "stop"], capture_output=True, text=True)
+    subprocess.run([*RAY_CLI, "stop"], capture_output=True, text=True)
 
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -207,4 +204,4 @@ def stop_ray_node(timeout=15):
         time.sleep(1)
 
     print("### Ray did not stop in time, forcing...")
-    subprocess.run([ray_path, "stop", "--force"], capture_output=True, text=True)
+    subprocess.run([*RAY_CLI, "stop", "--force"], capture_output=True, text=True)

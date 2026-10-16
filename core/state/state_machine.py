@@ -7,7 +7,7 @@ import signal
 import sys
 
 from frozendict import frozendict
-from base_path import get_bin_dir, get_base_path, set_ray_working_dir
+from base_path import RAY_CLI, get_base_path, set_ray_working_dir
 from context import context, get_cache, queue
 from decisions.settings import (
     Settings,
@@ -203,19 +203,6 @@ def _populate_context(
     from products import ensure_producers_registered
 
     ensure_producers_registered()
-
-    # TODO: Put these in the UI.
-    print(f"### _populate_context")
-
-    # ONE raw root since 2026-08-18 (was /Volumes/Astro/Raw + /Volumes/Astro2/Raw).
-    # Listing a path whose VOLUME is absent is not a no-op: `library_scan`
-    # reads an unmounted volume as "disconnected" and reuses that dir's last
-    # record verbatim, so a stale entry here would resurrect every frame of the
-    # old library as a phantom that no delta can ever clear.
-    context.input_dirs = [
-        Path("/Volumes/AstroRaw/Raw"),
-    ]
-    context.output_dir = Path("/Volumes/AstroProcessed/Processed")
 
     context.asiair_devices = []
     context.compute_graphs = [GraphRuntime(Graph({}))]
@@ -762,14 +749,13 @@ ctrl_c_count = 0
 
 
 def _force_cleanup():
-    ray_path = get_bin_dir() / "ray"
     subprocess.run(["pkill", "-f", "gunicorn"], capture_output=True)
     subprocess.run(["pkill", "-f", "mcp_server --port"], capture_output=True)
     # Kill orphan PixInsight on hard shutdown too (see main._force_cleanup): its
     # output is never cached once Ray is gone, and a survivor collides with the
     # next launch's PI.
     subprocess.run(["pkill", "-f", "PixInsight"], capture_output=True)
-    subprocess.run([ray_path, "stop", "--force"], capture_output=True)
+    subprocess.run([*RAY_CLI, "stop", "--force"], capture_output=True)
 
 
 def handle_sigint(sig, frame):

@@ -10,17 +10,13 @@ def app_support_dir() -> Path:
 
 
 def get_base_path() -> str:
-    # The app runs the checkout it was launched from — full stop. The old
-    # ASTROFLOW_LIVE_CORE / pointer-file redirect existed so a synced worker
-    # could re-exec into a pulled snapshot; with code moving via git, a
-    # redirect is only a way to silently run the WRONG tree (a stale pointer
-    # on a worker pointed at a weeks-old frozen checkout, 2026-08-25).
-    if getattr(sys, "frozen", False):
-        # If the application is frozen (running as a standalone executable)
-        return sys._MEIPASS
-    else:
-        # If the application is running in a development environment
-        return Path(__file__).resolve().parent.parent
+    # The app runs the checkout (or app bundle copy) it was launched from —
+    # full stop. The old ASTROFLOW_LIVE_CORE / pointer-file redirect existed
+    # so a synced worker could re-exec into a pulled snapshot; with code
+    # moving via git, a redirect is only a way to silently run the WRONG tree
+    # (a stale pointer on a worker pointed at a weeks-old frozen checkout,
+    # 2026-08-25).
+    return Path(__file__).resolve().parent.parent
 
 
 # Ray's runtime_env working_dir. Set explicitly at head startup to
@@ -38,8 +34,8 @@ def get_ray_working_dir() -> str:
     return _ray_working_dir or f"{get_base_path()}/core"
 
 
-def get_bin_dir() -> str:
-    if getattr(sys, "frozen", False):
-        return Path(sys._MEIPASS) / "bin"
-    else:
-        return Path(sys.prefix) / "bin"
+# The Ray CLI, run by this interpreter. Not the `ray` console script: its
+# shebang pins the interpreter's absolute path, which breaks once the macOS
+# app bundle is moved, and an unquoted path with a space broke the shell
+# commands that launch it.
+RAY_CLI = (sys.executable, "-m", "ray.scripts.scripts")

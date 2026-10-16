@@ -41,6 +41,7 @@ from web_server.backend.finish_saves import finish_saves_bp
 from web_server.backend.finish_export import finish_export_bp
 from web_server.backend.router import stateful_route
 from web_server.backend.planner import planner_bp
+from web_server.backend.storage import storage_bp
 
 debug = False
 STREAM_PORT = 8001
@@ -62,20 +63,14 @@ from base_path import get_base_path
 base_path = get_base_path()
 print(f"### base_path {base_path}")
 
-if getattr(sys, "frozen", False):
-    print("### Starting web server: app is frozen")
-    app = flask.Flask(
-        __name__,
-        template_folder=f"{base_path}/core/web_server/templates",
-        static_folder=f"{base_path}/core/web_server/static",
-    )
-else:
-    print("Starting web server: app is not frozen")
-    app = flask.Flask(
-        __name__,
-        template_folder=f"{base_path}/core/web_server/frontend/build",
-        static_folder=f"{base_path}/core/web_server/backend/static",
-    )
+# The built frontend (`npm run build`) is the UI on :8000; in development
+# the CRA dev server on :3000 serves it instead and proxies the API here.
+_FRONTEND_BUILD = f"{base_path}/core/web_server/frontend/build"
+app = flask.Flask(
+    __name__,
+    template_folder=_FRONTEND_BUILD,
+    static_folder=f"{_FRONTEND_BUILD}/static",
+)
 
 from flask_cors import CORS
 # Global CORS: tags every response (including `abort(404)` 404s and
@@ -150,6 +145,7 @@ app.register_blueprint(code_sync_bp)
 app.register_blueprint(finish_saves_bp)
 app.register_blueprint(finish_export_bp)
 app.register_blueprint(planner_bp)
+app.register_blueprint(storage_bp)
 
 
 class CustomJSONProvider(DefaultJSONProvider):
@@ -169,8 +165,19 @@ def index():
     return flask.render_template("index.html")
 
 
-@app.route("/starmap")
-def starmap():
+@app.route("/static/images/<path:filename>")
+def static_image(filename):
+    return flask.send_from_directory(f"{base_path}/core/web_server/backend/static/images", filename)
+
+
+@app.route("/<path:path>")
+def frontend(path):
+    """The single-page app owns every other URL (/mosaic/…, /stack/…): its
+    files at the build's root, else index.html for the router to resolve."""
+    if path.startswith("api/"):
+        flask.abort(404)
+    if (Path(_FRONTEND_BUILD) / path).is_file():
+        return flask.send_from_directory(_FRONTEND_BUILD, path)
     return flask.render_template("index.html")
 
 

@@ -5,7 +5,7 @@ import sys
 
 import structlog
 
-from base_path import get_bin_dir
+from base_path import RAY_CLI
 from state.state_machine import Action, enqueue_action, main_event_loop
 from dependency_graph.serialization import enable_function_fqname_pickling
 
@@ -53,7 +53,6 @@ def _prevent_idle_sleep() -> None:
 
 
 def _force_cleanup():
-    ray_path = get_bin_dir() / "ray"
     subprocess.run(["pkill", "-f", "gunicorn"], capture_output=True)
     # The MCP sidecar: `mcp_server --port` cannot match Claude Code's own
     # hyphenated `mcp-server-*` processes.
@@ -67,7 +66,7 @@ def _force_cleanup():
     # app cleans up its own PI. (SIGKILL of main.py itself can still skip atexit;
     # `make stop` remains the belt-and-suspenders.)
     subprocess.run(["pkill", "-f", "PixInsight"], capture_output=True)
-    subprocess.run([ray_path, "stop"], capture_output=True)
+    subprocess.run([*RAY_CLI, "stop"], capture_output=True)
 
 
 def main():

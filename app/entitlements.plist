@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- cffi and ctypes callbacks (pyvips, numpy's allocator hooks) need writable+executable memory. -->
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
+	<!-- Homebrew's libvips and the user's PixInsight/Siril are signed by other teams. -->
+	<key>com.apple.security.cs.disable-library-validation</key><true/>
+	<!-- AstroFlow's processes find each other through these variables (PYTHONPATH, RAY_*). -->
+	<key>com.apple.security.cs.allow-dyld-environment-variables</key><true/>
+</dict>
+</plist>

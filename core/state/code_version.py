@@ -23,6 +23,11 @@ Versions:
     over the working tree's deployable files. A worker only matches when its
     tree is byte-identical — practically a single-machine/dev mode, and a
     worker refuses loudly, which is the point.
+  * a release (the macOS app bundle, `app/build_app.sh`): no `.git`; the
+    build stamps the commit it was made from in `RELEASE` at the bundle's
+    root. That SHA is the version, and a release is clean and published by
+    construction, so it passes the start gate and fences like a checkout at
+    the same commit.
 """
 import hashlib
 import os
@@ -68,6 +73,15 @@ def _is_excluded(rel: str) -> bool:
     return False
 
 
+RELEASE_STAMP = "RELEASE"
+
+
+def release_version(repo: Path) -> "str | None":
+    """The commit an app bundle was built from, or None for a git checkout."""
+    stamp = Path(repo) / RELEASE_STAMP
+    return stamp.read_text().strip() if stamp.is_file() else None
+
+
 def _head_sha(repo: Path) -> str:
     out = subprocess.run(
         ["git", "-C", str(repo), "rev-parse", "HEAD"],
@@ -105,7 +119,10 @@ def working_tree_version(repo: Path) -> str:
 
 def head_cluster_version(repo: Path, uncommitted: bool) -> str:
     """The version this head advertises: a `wt:` working-tree hash in
-    uncommitted mode, else the committed HEAD SHA."""
+    uncommitted mode, else the committed HEAD SHA (a release's stamp)."""
+    release = release_version(repo)
+    if release:
+        return release
     return working_tree_version(repo) if uncommitted else _head_sha(repo)
 
 
@@ -129,6 +146,9 @@ def local_code_version(repo: Path, head_version: str) -> str:
     HEAD SHA, suffixed `-dirty` when the tree has non-excluded edits so
     edited code can never pass the fence under a committed banner."""
     repo = Path(repo)
+    release = release_version(repo)
+    if release:
+        return release
     if head_version.startswith(_WT_PREFIX):
         return working_tree_version(repo)
     sha = _head_sha(repo)
@@ -155,6 +175,9 @@ def require_clean_and_pushed(repo: Path) -> tuple[bool, str]:
     workers must be able to `git pull` it (pushed). Refusing HERE is what
     makes the deploy flow un-forgettable: commit -> push -> start the head ->
     pull on workers -> start workers."""
+    release = release_version(repo)
+    if release:
+        return True, f"release {release[:7]}"
     if _is_dirty(repo):
         return False, "the working tree has uncommitted changes"
     n = _unpushed_count(repo)
@@ -187,8 +210,8 @@ def deployed_code_version() -> str:
     processes spawned after it — the mixed-code hazard the fence exists to
     make loud, not something to paper over.
 
-    Without the shipped value: "" when the checkout isn't a git repo
-    (bundles, bare test dirs) — trace keys then simply lose their
+    Without the shipped value: a release's stamped SHA; "" when the checkout
+    isn't a git repo (bare test dirs) — trace keys then simply lose their
     code-version component.
     """
     global _deployed_version_cache
@@ -199,8 +222,8 @@ def deployed_code_version() -> str:
             return shipped
         try:
             from base_path import get_base_path
-            _deployed_version_cache = working_tree_version(
-                Path(get_base_path()))
+            repo = Path(get_base_path())
+            _deployed_version_cache = release_version(repo) or working_tree_version(repo)
         except Exception:
             _deployed_version_cache = ""
     return _deployed_version_cache
