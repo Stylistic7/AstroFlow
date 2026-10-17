@@ -5,6 +5,8 @@ composites, ROLE binding for per-filter taps (raw header spellings like
 "SII"/"Ha" normalise), joins carrying every band, registration order as
 preference, status as the worst required input, and never a trace.
 """
+from pathlib import Path
+
 import pytest
 
 from catalog import finishes as cf
@@ -47,7 +49,7 @@ def world(monkeypatch):
 
     def resolve(product):
         st = status.get((product.display, product.filter), LIVE)
-        return (None, ABSENT) if st == ABSENT else (f"/served/{product.display}/{product.filter}", st)
+        return (None, ABSENT) if st == ABSENT else (Path(f"/served/{product.display}/{product.filter}"), st)
     monkeypatch.setattr(cf.queries, "resolve_product", resolve)
     return taps, filters, status
 
@@ -181,3 +183,27 @@ def test_never_traces(world, monkeypatch):
     monkeypatch.setattr(tp, "_resolve_pipeline_call", _boom)
     assert cf.finishes_for("mosaic", "nope", "P") == []
     assert cf.default_finish_for("mosaic", "nope") is None
+
+
+def test_a_target_lists_each_pipelines_masters_even_a_pipeline_that_only_stacked(world, monkeypatch):
+    """The target page is one section per pipeline: the masters it made (its
+    `Master` taps on the target's stacks) and the finishes applied to them. A
+    pipeline that only stacked the frames still has a section."""
+    from types import SimpleNamespace
+    taps, filters, _ = world
+    monkeypatch.setattr(cf.queries, "resolve_entity",
+                        lambda t, i: SimpleNamespace(stack_ids=["s_S", "s_H"]) if (t, i) == ("target", "t") else object())
+    filters[("target", "t")] = ["H", "S"]
+    filters[("stack", "s_H")], filters[("stack", "s_S")] = ["H"], ["S"]
+    taps[("target", "t", "P")] = [_e("Linear SHO", "RGB")]
+    for sid, f in (("s_H", "H"), ("s_S", "S")):
+        taps[("stack", sid, "P")] = [_e("Master", f), _e("Post-Processed", f)]
+    taps[("stack", "s_H", "Q")] = [_e("Master", "H")]          # Q only stacked
+
+    m = cf.finishes_matrix("target", "t")
+    by_name = {p["name"]: p for p in m["pipelines"]}
+    assert sorted(by_name) == ["P", "Q"]
+    assert [(x["stack_id"], x["filter"], x["finish"]) for x in by_name["P"]["masters"]] == \
+        [("s_H", "H", "H"), ("s_S", "S", "S")]                   # filter order, not stack order
+    assert [x["stack_id"] for x in by_name["Q"]["masters"]] == ["s_H"]
+    assert by_name["Q"]["finishes"] == []

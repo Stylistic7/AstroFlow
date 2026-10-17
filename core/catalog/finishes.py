@@ -201,24 +201,52 @@ def stars_inputs(b: BoundFinish, tags_of) -> list:
             if i.path is not None and tags_of(i.path).get("LAYER") == "stars"]
 
 
+def masters_for(target, pipeline: str) -> list:
+    """The stacked masters `pipeline` made for this target — each stack with
+    a `display="Master"` tap in that pipeline — in filter order. Each names
+    the stack finish the stack viewer opens it in (its channel finish, which
+    reads the pipeline's master), whose status and mtime it reports, so the
+    target page links every master to the pipeline that made it."""
+    out = []
+    for sid in target.stack_ids:
+        master = next((e for e in queries.product_taps("stack", sid, pipeline)
+                       if e["display"] == "Master"), None)
+        if master is None:
+            continue
+        bound = finishes_for("stack", sid, pipeline)
+        out.append({"stack_id": sid, "filter": master["filter"],
+                    "finish": bound[0].name if bound else None,
+                    "status": bound[0].status if bound else "absent",
+                    "mtime": bound[0].mtime if bound else None})
+    return sorted(out, key=lambda m: queries._filter_sort_key(str(m["filter"])))
+
+
 def finishes_matrix(object_type: str, object_id: str) -> "dict | None":
     """`/api/finishes` and the MCP `finishes_for_object` tool: every pipeline
     that can show the object with its finishes, plus the default view; None
-    for an object the identification does not know. A pipeline none of whose
-    taps any finish reads is omitted. Snapshot-only: never traces."""
-    if queries.resolve_entity(object_type, object_id) is None:
+    for an object the identification does not know. A pipeline with neither
+    a finish nor (for a target) a master is omitted. A target's pipelines
+    also list the stacked masters each made (`masters_for`). Snapshot-only:
+    never traces."""
+    entity = queries.resolve_entity(object_type, object_id)
+    if entity is None:
         return None
+    names = queries.pipelines_for(object_type, object_id)
+    if object_type == "target":
+        # A pipeline that only stacked this target's frames still made masters.
+        names = sorted(set(names).union(*(queries.pipelines_for("stack", sid) for sid in entity.stack_ids)))
     pipelines = []
-    for name in queries.pipelines_for(object_type, object_id):
+    for name in names:
         bound = finishes_for(object_type, object_id, name)
-        if not bound:
+        masters = masters_for(entity, name) if object_type == "target" else []
+        if not bound and not masters:
             continue     # traced taps no finish reads: nothing to pick
         pipelines.append({"name": name, "finishes": [
             {"name": b.name, "role": b.role, "status": b.status, "mtime": b.mtime,
              "inputs": [{"tap": i.tap, "filter": i.filter, "status": i.status}
                         for i in b.inputs]}
             for b in bound
-        ]})
+        ], **({"masters": masters} if object_type == "target" else {})})
     default = default_finish_for(object_type, object_id)
     return {"pipelines": pipelines,
             "default": ({"pipeline": default.pipeline, "finish": default.name}

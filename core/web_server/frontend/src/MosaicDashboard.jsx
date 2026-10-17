@@ -1,11 +1,9 @@
 // MosaicDashboard.jsx — at-a-glance view of a mosaic: what each pipeline
 // PRODUCED, and whether it is current. One section per pipeline, showing:
 //
-//   1. THE DELIVERABLE — that pipeline's preferred finish, baked server-side
-//      by the SAME traced finish the viewer runs live, so it can never drift
-//      from the sliders.
-//   2. EVERY FINISH the pipeline lists — composites and single channels
-//      alike — each with its build status, deep-linked into the viewer.
+//   EVERY FINISH the pipeline lists — composites and single channels alike —
+//   each with its build status, deep-linked into the viewer. (A target's
+//   page also lists each pipeline's stacked masters; see PipelineSection.)
 //
 // Data source: `/api/finishes/mosaic/<id>` returns one entry per pipeline,
 // each with its finishes in preference order (`absent` = traced but not
@@ -20,21 +18,16 @@ import AstroFlowContext from "./AstroFlowContext.jsx";
 import DiscardResultsDialog from "./DiscardResultsDialog.jsx";
 import { buildUrl, buildApiUrl } from "./urls.js";
 import { useFinishes } from "./useVersions.js";
-import PreviewImage from "./PreviewImage.jsx";
+import { filterLabel } from "./filters.js";
 
 
-function FinishThumbnail({ objectType, objectId, pipeline, finish }) {
+// One preview tile: an image (or "not yet built"), a caption, an OUT OF DATE
+// chip, optional badges; the whole tile opens `href`.
+function Tile({ src, caption, status, href, children }) {
     const navigate = useNavigate();
-    const hierarchy = [{ type: objectType, id: objectId }];
-    const view = { pipeline, finish: finish.name };
-    const built = finish.status !== 'absent';
-    const url = built
-        ? `${buildApiUrl('/tap/thumbnail', hierarchy, view)}?v=${finish.mtime}`
-        : null;
-
     return (
         <Box
-            onClick={() => navigate(buildUrl({ hierarchy, view }))}
+            onClick={() => navigate(href)}
             sx={{
                 minWidth: 0,
                 aspectRatio: '3 / 2',
@@ -43,21 +36,18 @@ function FinishThumbnail({ objectType, objectId, pipeline, finish }) {
                 borderColor: 'divider',
                 overflow: 'hidden',
                 position: 'relative',
-                // Always clickable — even before the finish is built, the
-                // viewer page is useful for the workflow graph + progress.
+                // Always clickable — even before it is built, the viewer page
+                // is useful for the workflow graph + progress.
                 cursor: 'pointer',
-                backgroundColor: built ? 'transparent' : 'rgba(255,255,255,0.04)',
+                backgroundColor: src ? 'transparent' : 'rgba(255,255,255,0.04)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
             }}
         >
-            {url ? (
-                <img
-                    src={url}
-                    alt={finish.name}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                />
+            {src ? (
+                <img src={src} alt={caption}
+                     style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             ) : (
                 <Typography variant="caption" sx={{ color: 'text.disabled' }}>
                     not yet built
@@ -70,9 +60,9 @@ function FinishThumbnail({ objectType, objectId, pipeline, finish }) {
                 fontSize: 12,
                 px: 1, py: 0.25,
             }}>
-                {finish.name}
+                {caption}
             </Box>
-            {finish.status === 'out_of_date' && (
+            {status === 'out_of_date' && (
                 <Box sx={{
                     position: 'absolute', top: 4, right: 4,
                     backgroundColor: 'warning.main',
@@ -83,31 +73,45 @@ function FinishThumbnail({ objectType, objectId, pipeline, finish }) {
                     OUT OF DATE
                 </Box>
             )}
+            {children && (
+                <Box onClick={(e) => e.stopPropagation()}
+                     sx={{ position: 'absolute', top: 4, left: 4, display: 'flex', gap: 0.5 }}>
+                    {children}
+                </Box>
+            )}
         </Box>
     );
 }
 
 
-// Exported: TargetPanel renders the same per-pipeline sections — the
-// component is object-type-agnostic (every URL/API it touches is keyed by
-// (objectType, objectId)).
-// The hero is rendered at least this many pixels on its short side: the
-// window's shorter dimension in device pixels, in coarse steps so a few sizes
-// serve every screen (the server caches each).
-const heroPx = () => {
-    const need = Math.min(window.innerWidth, window.innerHeight) * (window.devicePixelRatio || 1);
-    return need <= 1024 ? 1024 : need <= 2048 ? 2048 : 4096;
+const tileGrid = {
+    display: 'grid', gap: 1.5, width: '100%',
+    gridTemplateColumns: { xs: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' },
 };
 
-export function PipelineSection({ objectType, objectId, pipeline }) {
-    const [discardOpen, setDiscardOpen] = useState(false);
-    const navigate = useNavigate();
-    const hierarchy = [{ type: objectType, id: objectId }];
-    // THE DELIVERABLE: the first (preferred) finish that is actually built.
-    const hero = pipeline.finishes.find((f) => f.status !== 'absent');
-    const heroView = hero && { pipeline: pipeline.name, finish: hero.name };
+
+function GroupTitle({ children }) {
     return (
-        <Box sx={{ mb: 4 }}>
+        <Typography variant="subtitle2" sx={{ color: 'text.secondary', mt: 1, mb: 1 }}>
+            {children}
+        </Typography>
+    );
+}
+
+
+// One section per pipeline, in two halves: what the PIPELINE made (a
+// target's stacked masters, `pipeline.masters`, each opening the stack viewer
+// in this pipeline) and the FINISHES applied to its outputs, each opening the
+// finish viewer. No hero image: the full-screen viewer is the one big picture
+// (2026-10-17). Exported: TargetPanel and MosaicDashboard both render it; a
+// mosaic's pipelines list finishes only.
+export function PipelineSection({ objectType, objectId, pipeline, hierarchy, masterBadges }) {
+    const [discardOpen, setDiscardOpen] = useState(false);
+    const own = [{ type: objectType, id: objectId }];
+    const pageHierarchy = hierarchy || own;
+    const masters = pipeline.masters || [];
+    return (
+        <Box sx={{ mb: 5 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                 <Typography variant="h6" sx={{ color: 'primary.main' }}>
                     {pipeline.name}
@@ -122,7 +126,7 @@ export function PipelineSection({ objectType, objectId, pipeline }) {
                     Discard results…
                 </Button>
             </Box>
-            <Divider sx={{ mb: 2 }} />
+            <Divider sx={{ mb: 1 }} />
             <DiscardResultsDialog
                 objectType={objectType}
                 objectId={objectId}
@@ -130,39 +134,52 @@ export function PipelineSection({ objectType, objectId, pipeline }) {
                 open={discardOpen}
                 onClose={() => setDiscardOpen(false)}
             />
-            {heroView && (
-                // THE DELIVERABLE, as big as the window allows: up to the full
-                // width, and never taller than the screen below the titles. It is
-                // rendered at least that large (`heroPx`), so it only ever shrinks.
-                <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
-                    <Box onClick={() => navigate(buildUrl({ hierarchy, view: heroView }))}
-                         sx={{ cursor: 'pointer', maxWidth: '100%' }}>
-                        <PreviewImage
-                            src={`${buildApiUrl('/tap/thumbnail', hierarchy, heroView)}?v=${hero.mtime}&px=${heroPx()}`}
-                            alt={`${pipeline.name} — ${hero.name}`}
-                            style={{ display: 'block', maxWidth: '100%',
-                                     maxHeight: 'max(320px, calc(100vh - 270px))' }}
-                        />
+
+            {masters.length > 0 && (
+                <>
+                    <GroupTitle>Pipeline outputs · stacked masters</GroupTitle>
+                    <Box sx={{ ...tileGrid, mb: 2 }}>
+                        {masters.map((m) => {
+                            const leaf = [{ type: 'stack', id: m.stack_id }];
+                            const view = m.finish && { pipeline: pipeline.name, finish: m.finish };
+                            return (
+                                <Tile
+                                    key={m.stack_id}
+                                    src={view && m.status !== 'absent'
+                                        ? `${buildApiUrl('/tap/thumbnail', leaf, view)}?v=${m.mtime}` : null}
+                                    caption={filterLabel(m.filter) || m.filter || 'Master'}
+                                    status={m.status}
+                                    href={buildUrl({ hierarchy: [...pageHierarchy, ...leaf], view })}
+                                >
+                                    {masterBadges && masterBadges(m.stack_id)}
+                                </Tile>
+                            );
+                        })}
                     </Box>
-                </Box>
+                </>
             )}
 
-            {/* Every finish this pipeline lists, in preference order, at most
-                four to a row. */}
-            <Box sx={{
-                display: 'grid', gap: 1.5, width: '100%',
-                gridTemplateColumns: { xs: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' },
-            }}>
-                {pipeline.finishes.map((f) => (
-                    <FinishThumbnail
-                        key={f.name}
-                        objectType={objectType}
-                        objectId={objectId}
-                        pipeline={pipeline.name}
-                        finish={f}
-                    />
-                ))}
-            </Box>
+            {pipeline.finishes.length > 0 && (
+                <>
+                    {masters.length > 0 && <GroupTitle>Finishes</GroupTitle>}
+                    {/* Every finish this pipeline lists, in preference order. */}
+                    <Box sx={tileGrid}>
+                        {pipeline.finishes.map((f) => {
+                            const view = { pipeline: pipeline.name, finish: f.name };
+                            return (
+                                <Tile
+                                    key={f.name}
+                                    src={f.status !== 'absent'
+                                        ? `${buildApiUrl('/tap/thumbnail', own, view)}?v=${f.mtime}` : null}
+                                    caption={f.name}
+                                    status={f.status}
+                                    href={buildUrl({ hierarchy: pageHierarchy, view })}
+                                />
+                            );
+                        })}
+                    </Box>
+                </>
+            )}
         </Box>
     );
 }
@@ -181,10 +198,6 @@ export default function MosaicDashboard() {
 
     const pipelines = data?.pipelines || [];
 
-    // No page-level hero: each PipelineSection renders its OWN canonical
-    // preview, so a single auto-picked one on top would just duplicate
-    // whichever pipeline happened to win — and on an A/B object it silently
-    // implied the two pipelines shared a look.
     return (
         <Paper elevation={2} sx={{
             borderRadius: 0,
