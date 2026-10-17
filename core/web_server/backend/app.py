@@ -60,6 +60,7 @@ def strtobool(val: str) -> bool:
 
 
 from base_path import get_base_path
+from ray_infra.ray_init import RayNotUpError
 
 base_path = get_base_path()
 print(f"### base_path {base_path}")
@@ -89,6 +90,14 @@ from flask_cors import CORS
 # 1 anyway). Expose the tile headers so colour tiles decode correctly.
 CORS(app, resources={r"/*": {"origins": "*"}},
      expose_headers=["X-Tile-Width", "X-Tile-Height", "X-Tile-Bands"])
+
+
+@app.errorhandler(RayNotUpError)
+def _ray_not_up(_e):
+    """A request that needs Ray before the head's Ray is up (the web servers
+    answer about a minute earlier): 503 and a retry hint, not a 500 with a
+    traceback in the log for every request an open tab makes at startup."""
+    return jsonify({"status": "starting", "detail": "AstroFlow is still starting"}), 503, {"Retry-After": "5"}
 
 app.register_blueprint(files_bp)
 app.register_blueprint(tiles_bp)

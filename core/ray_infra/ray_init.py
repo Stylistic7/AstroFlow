@@ -15,6 +15,13 @@ _scheduler_actor = None
 _ray_init_lock = threading.Lock()
 
 
+class RayNotUpError(ConnectionError):
+    """There is no Ray cluster to join yet: the web servers answer about a
+    minute before the head's Ray is up. The web app turns it into 503 +
+    Retry-After (`web_server/backend/app.py`) rather than a 500 and a
+    traceback per request."""
+
+
 def connect_to_ray_cluster(create_orchestrator_actors: bool = True):
     """Join the Ray cluster; the HEAD also creates + pins the singleton
     orchestrator actors (context/state/scheduler) to itself.
@@ -41,29 +48,34 @@ def connect_to_ray_cluster(create_orchestrator_actors: bool = True):
 
         from state.code_version import CODE_VERSION_ENV, RAY_WORKING_DIR_EXCLUDES, deployed_code_version
 
-        ray_context = ray.init(
-            address="auto",
-            namespace="AstroFlow",
-            runtime_env={
-                "working_dir": working_dir,
-                # One code version for the whole job: a remote worker runs
-                # from Ray's packaged copy (no .git) and would hash its own
-                # tree to "", keying trace/tap snapshots the head can't read.
-                "env_vars": {CODE_VERSION_ENV: deployed_code_version()},
-                # web_server/backend Python is needed at runtime (the
-                # announcer is imported by status callbacks inside
-                # actors). We only want to skip the heavy artifacts:
-                # frontend node_modules + build, and the backend's
-                # built-static-assets dir. The list lives in
-                # state.code_version as the single source of truth shared
-                # with the pull-deploy snapshot machinery.
-                "excludes": RAY_WORKING_DIR_EXCLUDES,
-                # Install the ContextRef Ray-context serializer in every
-                # worker process (restores the same-session Plasma fast
-                # path; stdlib pickle stays ref-free / airtight).
-                "worker_process_setup_hook": "ray_infra.worker_setup.setup_worker",
-            },
-        )
+        try:
+            ray_context = ray.init(
+                address="auto",
+                namespace="AstroFlow",
+                runtime_env={
+                    "working_dir": working_dir,
+                    # One code version for the whole job: a remote worker runs
+                    # from Ray's packaged copy (no .git) and would hash its own
+                    # tree to "", keying trace/tap snapshots the head can't read.
+                    "env_vars": {CODE_VERSION_ENV: deployed_code_version()},
+                    # web_server/backend Python is needed at runtime (the
+                    # announcer is imported by status callbacks inside
+                    # actors). We only want to skip the heavy artifacts:
+                    # frontend node_modules + build, and the backend's
+                    # built-static-assets dir. The list lives in
+                    # state.code_version as the single source of truth shared
+                    # with the pull-deploy snapshot machinery.
+                    "excludes": RAY_WORKING_DIR_EXCLUDES,
+                    # Install the ContextRef Ray-context serializer in every
+                    # worker process (restores the same-session Plasma fast
+                    # path; stdlib pickle stays ref-free / airtight).
+                    "worker_process_setup_hook": "ray_infra.worker_setup.setup_worker",
+                },
+            )
+        except ConnectionError as e:
+            if "Could not find any running Ray instance" not in str(e):
+                raise
+            raise RayNotUpError(str(e)) from e
 
         # The driver runs no worker hook — register here too.
         from cache.context_ref import register_context_ref_serializer

@@ -130,6 +130,8 @@ def test_the_tools_page_location_wins(monkeypatch):
 def test_missing_binary_raises(monkeypatch):
     monkeypatch.setattr(third_party_tools.node_settings, "read", lambda: {})
     monkeypatch.setattr(third_party_tools.shutil, "which", lambda _: None)
+    # Nor at its install location, which this Mac may well have.
+    monkeypatch.setattr(third_party_tools.Path, "exists", lambda self: False)
     with pytest.raises(third_party_tools.ToolNotFoundError):
         rc_astro_cli.rc_astro_base_command()
 
