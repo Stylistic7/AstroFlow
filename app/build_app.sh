@@ -103,10 +103,11 @@ echo "→ frontend"
 (cd "$REPO/core/web_server/frontend" && npm ci --no-audit --no-fund --loglevel=error && npm run build --silent)
 
 echo "→ source"
-# Tracked and new files, as `git status` sees them; no test data, and of the
-# frontend only its build.
+# Tracked and new files, as `git status` sees them; no tests or their data
+# and labs (core/testing), and of the frontend only its build.
 (cd "$REPO" && git ls-files -co --exclude-standard -- core app/AstroFlow.py pyproject.toml uv.lock) \
-	| grep -vE '^core/(testdata|pix/testdata|web_server/frontend)/' > "$WORK/files.txt"
+	| grep -vE '^core/(testdata|pix/testdata|testing|web_server/frontend)/' \
+	| grep -vE '(^|/)(test_[^/]*|conftest)\.py$' > "$WORK/files.txt"
 rsync -a --files-from="$WORK/files.txt" "$REPO/" "$RES/AstroFlow/"
 rsync -a "$REPO/core/web_server/frontend/build/" "$RES/AstroFlow/core/web_server/frontend/build/"
 echo "$sha" > "$RES/AstroFlow/RELEASE"
