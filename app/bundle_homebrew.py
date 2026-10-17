@@ -14,7 +14,8 @@ load unsigned code); the build signs again with a Developer ID when it has one.
 The licence files of each Homebrew formula shipped go to
 LICENSES_DIR/<formula>-<version>/, with THIRD-PARTY.md listing every formula,
 its licence and its source. Each formula's source archive goes to
-SOURCES_DIR, verified by checksum, for publishing beside the release: the
+SOURCES_DIR, verified by checksum and listed in LICENSES_DIR/SOURCES.txt,
+for publishing beside the release: the
 (L)GPL ones require it, and shipping them all is simpler than sorting them.
 """
 from __future__ import annotations
@@ -33,6 +34,13 @@ from pathlib import Path
 PREFIX = Path(subprocess.run(["brew", "--prefix"], capture_output=True, text=True, check=True).stdout.strip())
 CELLAR = PREFIX / "Cellar"
 LICENSE_NAMES = re.compile(r"^(LICEN[CS]E|COPYING|COPYRIGHT|NOTICE)", re.I)
+# Archives upstream replaced after Homebrew built from them, so the original
+# can no longer be fetched, even by Homebrew: the current archive of the same
+# release, pinned by its own checksum and noted in THIRD-PARTY.md.
+REROLLED = {
+    # ATNF re-rolled 8.10 (2026-10-17: `brew fetch -s wcslib` fails the same way).
+    "wcslib-8.10.tar.bz2": "b394d3306da9a52410f056136911496e599b5c48f1cff2f221563697077bbd8d",
+}
 
 
 def loads(path: Path) -> list[str]:
@@ -106,7 +114,7 @@ def record(formulas: set[tuple[str, str]], licenses_dir: Path, sources_dir: Path
     info = {f["name"]: f for f in json.loads(subprocess.run(
         ["brew", "info", "--json=v2", *sorted(n for n, _ in formulas)],
         capture_output=True, text=True, check=True).stdout)["formulae"]}
-    rows = []
+    rows, archives = [], []
     for name, version in sorted(formulas):
         # The source must be the one the shipped binary was built from, and
         # Homebrew only knows its formula's current source.
@@ -121,8 +129,12 @@ def record(formulas: set[tuple[str, str]], licenses_dir: Path, sources_dir: Path
             tmp = archive.with_suffix(archive.suffix + ".part")
             urllib.request.urlretrieve(url, tmp)
             tmp.rename(archive)
-        if sha and hashlib.sha256(archive.read_bytes()).hexdigest() != sha:
-            raise SystemExit(f"{archive.name}: checksum differs from Homebrew's {sha}")
+        got = hashlib.sha256(archive.read_bytes()).hexdigest()
+        note = ""
+        if sha and got != sha:
+            if REROLLED.get(archive.name) != got:
+                raise SystemExit(f"{archive.name}: checksum {got} differs from Homebrew's {sha}")
+            note = f" (upstream re-released this archive after Homebrew built from it: sha256 {got}, not {sha})"
         # The licence files at the top of the source tree, or in its top-level
         # licenses/ folder: Homebrew does not always install them (cfitsio's
         # keg has none).
@@ -136,12 +148,14 @@ def record(formulas: set[tuple[str, str]], licenses_dir: Path, sources_dir: Path
                 (out / Path(m.name).name).write_bytes(tar.extractfile(m).read())
         if not found:
             raise SystemExit(f"{name} {version}: no licence file at the top of {archive.name}")
-        rows.append(f"| {name} | {version} | {info[name].get('license') or '?'} | {url} |")
+        rows.append(f"| {name} | {version} | {info[name].get('license') or '?'} | {url}{note} |")
+        archives.append(archive.name)
     (licenses_dir / "THIRD-PARTY.md").write_text(
         "# Programs and libraries AstroFlow.app carries\n\n"
         "Built by Homebrew. Each one's licence files are in the folder named after it; "
         "the source archives are published beside each AstroFlow release.\n\n"
         "| Formula | Version | Licence | Source |\n|---|---|---|---|\n" + "\n".join(rows) + "\n")
+    (licenses_dir / "SOURCES.txt").write_text("\n".join(archives) + "\n")
 
 
 if __name__ == "__main__":

@@ -254,7 +254,7 @@ if [ -n "${SIGN_IDENTITY:-}" ]; then
 fi
 # The sources of what the app carries, to publish beside the disk image.
 mkdir -p "$DIST/sources"
-for archive in $(sed -n 's/^| [^|]* | [^|]* | [^|]* | \(.*\) |$/\1/p' "$DIST/AstroFlow.app/Contents/Resources/licenses/THIRD-PARTY.md"); do
-	cp "$SOURCES/$(basename "${archive%%\?*}")" "$DIST/sources/"
-done
+while read -r archive; do
+	cp "$SOURCES/$archive" "$DIST/sources/"
+done < "$DIST/AstroFlow.app/Contents/Resources/licenses/SOURCES.txt"
 du -sh "$DIST/AstroFlow.app" "$dmg" "$DIST/sources"
