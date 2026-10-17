@@ -218,6 +218,26 @@ def _bind_args(
     return bound
 
 
+def _result_identity(result: Any, call_hash: str, declares_identity: bool) -> str:
+    """The content hash a result carries: its producer's call hash, unless the
+    op declares its output's identity and the output file carries one — then
+    that, exactly as the trace (`trace_paths._declared_or_stem`) and preflight
+    (`preflight._dep_identity`) key its consumers. Stamping the call hash here
+    instead keyed every star-flat stack one way at run time and another in the
+    trace: 324 promised products "out of date" forever (2026-10-17)."""
+    if declares_identity:
+        filename = getattr(result, "filename", None)
+        if filename is not None:
+            from file_io.generic import read_declared_content_hash
+            try:
+                declared = read_declared_content_hash(Path(str(filename)))
+            except (OSError, ValueError, KeyError):
+                declared = None
+            if declared:
+                return str(declared)
+    return call_hash
+
+
 def _carries_identity(result: Any) -> bool:
     """Whether `result` is a dataclass value with a `content_hash` FIELD —
     the shape the pure-Merkle stamp applies to. Files (`WithSidecar`, the
@@ -295,7 +315,8 @@ def make_cached_decorator(
             # their type (subframe_channel's ImageMetadata, 2026-09-17) would
             # otherwise keep an empty or foreign hash for as long as they hit.
             if not identity_root and _carries_identity(cached):
-                object.__setattr__(cached, "content_hash", call_hash)
+                object.__setattr__(cached, "content_hash",
+                                   _result_identity(cached, call_hash, declares_identity))
             from dependency_graph.classes import Graph
             if isinstance(cached, Graph):
                 # A Graph is a PLAN, not a result — the store side has refused
@@ -366,9 +387,12 @@ def make_cached_decorator(
             # mispredicted) made the trace-time key and the runtime key
             # disagree. Only an identity ROOT keeps its own — a run's hash is
             # its frame membership, a frame's is its file — and must not move
-            # with the op's source or the library it was built from.
+            # with the op's source or the library it was built from; and a
+            # `declares_identity` op's result carries the identity its file
+            # declares (`_result_identity`).
             if not identity_root and _carries_identity(result):
-                object.__setattr__(result, "content_hash", call_hash)
+                object.__setattr__(result, "content_hash",
+                                   _result_identity(result, call_hash, declares_identity))
             from dependency_graph.classes import Graph
             if isinstance(result, Graph):
                 # A Graph is a PLAN, not a result: a description of work still

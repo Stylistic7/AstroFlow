@@ -804,6 +804,17 @@ def main_event_loop():
 
     try:
         while True:
+            # Checked FIRST, every pass: an exit test that only followed a
+            # dispatch never ran again once the last queued actions were
+            # skipped startup steps, and main.py waited forever with Ray
+            # already stopped (2026-10-17, behind update_astroflow_services).
+            if (
+                quit_received
+                and queue.empty(QUEUE_NAME)
+                and _state.get("processing", []) == []
+            ):
+                break
+
             action = queue.get(QUEUE_NAME)
             if action is None:
                 time.sleep(0.1)
@@ -825,13 +836,6 @@ def main_event_loop():
                     f"main_event_loop action {action['type']} raised exception {e}"
                 )
                 traceback.print_exc()
-
-            if (
-                quit_received
-                and queue.empty(QUEUE_NAME)
-                and _state.get("processing", []) == []
-            ):
-                break
 
     except Exception as e:
         print(f"Unexpected error: {e}")

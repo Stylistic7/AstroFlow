@@ -26,3 +26,22 @@ def test_a_quit_during_boot_starts_nothing_after_it(monkeypatch):
     monkeypatch.setattr(sm, "dispatch", lambda action: ran.append(action["type"]))
     sm.main_event_loop()
     assert ran == ["quit", "stop_gunicorn", "stop_ray_node"]
+
+
+def test_a_quit_ends_even_when_the_last_queued_actions_are_skipped(monkeypatch):
+    """The exit test must run after a skip too: here nothing is dispatched
+    after the last shutdown step, so a loop that only re-checked after a
+    dispatch waited forever (2026-10-17)."""
+    import threading
+    monkeypatch.setattr(sm, "queue", _Queue([
+        {"type": "quit"}, {"type": "stop_ray_node"}, {"type": "update_astroflow_services"},
+    ]))
+    monkeypatch.setattr(sm, "_state", {"processing": []})
+    ran = []
+    monkeypatch.setattr(sm, "dispatch", lambda action: ran.append(action["type"]))
+    monkeypatch.setattr(sm.signal, "signal", lambda *a: None)   # not the main thread
+    loop = threading.Thread(target=sm.main_event_loop, daemon=True)
+    loop.start()
+    loop.join(timeout=5)
+    assert not loop.is_alive(), "main_event_loop never returned"
+    assert ran == ["quit", "stop_ray_node"]

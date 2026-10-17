@@ -75,3 +75,32 @@ def test_an_entry_stored_before_the_stamp_is_stamped_on_hit(test_context):
     get_cache()[key] = _Derived(content_hash="foreign", payload=11)
     r = ray.get(derive.remote(11))
     assert r.payload == 11 and r.content_hash == _call_hash(derive, 11)
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class _Filed:
+    """A result naming its output file, as `ImageMetadata` does."""
+    content_hash: str
+    filename: str
+
+
+@node(declares_identity=True)
+def declare(path: str, conthash: str) -> _Filed:
+    import numpy as np
+    from astropy.io import fits
+    header = fits.Header({"CONTHASH": conthash} if conthash else {})
+    fits.PrimaryHDU(np.zeros((2, 2), np.float32), header=header).writeto(path, overwrite=True)
+    return _Filed(content_hash="", filename=path)
+
+
+def test_a_declared_identity_is_what_the_result_carries_on_miss_and_hit(test_context, tmp_path):
+    """Consumers key on what the file declares — as the trace and preflight do
+    — not on the call hash (star flats, 2026-10-17)."""
+    path = str(tmp_path / "flat.fits")
+    assert ray.get(declare.remote(path, "e6792cdbed52e08d")).content_hash == "e6792cdbed52e08d"
+    assert ray.get(declare.remote(path, "e6792cdbed52e08d")).content_hash == "e6792cdbed52e08d"
+
+
+def test_an_output_that_declares_nothing_carries_its_call_hash(test_context, tmp_path):
+    path = str(tmp_path / "plain.fits")
+    assert ray.get(declare.remote(path, "")).content_hash == _call_hash(declare, path, "")

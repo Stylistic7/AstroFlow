@@ -164,7 +164,9 @@ ray-status:
 # Start the live app (Ray head + gunicorn web server) in the FOREGROUND.
 # Run from core/. Ctrl-C stops it (main.py's atexit cleans up gunicorn + ray).
 start: sweep-pi-swap sweep-vips-scratch sweep-staging sweep-siril-scratch
-	uv run python main.py
+	# Unbuffered: main.py's own lines ("Got first ctrl-c", the shutdown steps)
+	# reach the boot log as they happen, not when a buffer fills.
+	PYTHONUNBUFFERED=1 uv run python main.py
 
 # Reap the scratch files a killed producer left (`.<stem>.partial.<pid>.*`,
 # `*.tmp.<pid>.*`). Runs at START, with the cluster DOWN, which is what makes it
