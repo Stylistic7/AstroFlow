@@ -18,12 +18,13 @@ import AstroFlowContext from "./AstroFlowContext.jsx";
 import DiscardResultsDialog from "./DiscardResultsDialog.jsx";
 import { buildUrl, buildApiUrl } from "./urls.js";
 import { useFinishes } from "./useVersions.js";
-import { filterLabel } from "./filters.js";
+import StackThumbnail from "./StackThumbnail.jsx";
 
 
-// One preview tile: an image (or "not yet built"), a caption, an OUT OF DATE
-// chip, optional badges; the whole tile opens `href`.
-function Tile({ src, caption, status, href, children }) {
+// A finish's preview tile: an image (or "not yet built"), its name, an OUT OF
+// DATE chip; the whole tile opens `href`. (Masters are StackThumbnails, which
+// carry the stack's own filter, subs, hours and exposure widget.)
+function Tile({ src, caption, status, href }) {
     const navigate = useNavigate();
     return (
         <Box
@@ -71,12 +72,6 @@ function Tile({ src, caption, status, href, children }) {
                     px: 0.5, py: 0.25, borderRadius: 0.5, lineHeight: 1.3,
                 }}>
                     OUT OF DATE
-                </Box>
-            )}
-            {children && (
-                <Box onClick={(e) => e.stopPropagation()}
-                     sx={{ position: 'absolute', top: 4, left: 4, display: 'flex', gap: 0.5 }}>
-                    {children}
                 </Box>
             )}
         </Box>
@@ -143,16 +138,17 @@ export function PipelineSection({ objectType, objectId, pipeline, hierarchy, mas
                             const leaf = [{ type: 'stack', id: m.stack_id }];
                             const view = m.finish && { pipeline: pipeline.name, finish: m.finish };
                             return (
-                                <Tile
+                                <StackThumbnail
                                     key={m.stack_id}
+                                    stack_id={m.stack_id}
                                     src={view && m.status !== 'absent'
-                                        ? `${buildApiUrl('/tap/thumbnail', leaf, view)}?v=${m.mtime}` : null}
-                                    caption={filterLabel(m.filter) || m.filter || 'Master'}
+                                        ? `${buildApiUrl('/tap/thumbnail', leaf, view)}?v=${m.mtime}` : undefined}
                                     status={m.status}
-                                    href={buildUrl({ hierarchy: [...pageHierarchy, ...leaf], view })}
+                                    handleClick={() => window.open(
+                                        buildUrl({ hierarchy: [...pageHierarchy, ...leaf], view }), '_blank')}
                                 >
                                     {masterBadges && masterBadges(m.stack_id)}
-                                </Tile>
+                                </StackThumbnail>
                             );
                         })}
                     </Box>

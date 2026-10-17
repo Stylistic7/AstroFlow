@@ -1,6 +1,8 @@
 /**
  * A stack's card on the target page: ONE still image and what it is.
  *
+ * `src` shows a given image instead (a target's pipeline section passes that
+ * pipeline's master, with its `status` for the OUT OF DATE chip); by default
  * `/thumbnail/stack/<id>` serves the master's default finish when the stack
  * has been stacked (`X-Producer: master`, status live / out_of_date), else
  * its best raw subframe by star count (`X-Producer: subframe`, status
@@ -29,7 +31,7 @@ const chipStyle = (background) => ({
 	fontSize: 11, fontWeight: 600, letterSpacing: 0.3, pointerEvents: "none",
 });
 
-export default function StackThumbnail({ stack_id, handleClick, children }) {
+export default function StackThumbnail({ stack_id, handleClick, children, src, status }) {
 	const { stacks, invalidated } = useContext(AstroFlowContext);
 	const [served, setServed] = useState(null);   // {status, producer} | null
 	const [absent, setAbsent] = useState(false);
@@ -56,7 +58,7 @@ export default function StackThumbnail({ stack_id, handleClick, children }) {
 				</div>
 			) : (
 				<PreviewImage
-					src={`/thumbnail/stack/${stack_id}`}
+					src={src || `/thumbnail/stack/${stack_id}`}
 					alt={`${stack.name} ${stack.filter}`}
 					style={{ width: "100%", display: "block" }}
 					onLoaded={setServed}
@@ -99,6 +101,9 @@ export default function StackThumbnail({ stack_id, handleClick, children }) {
 					<span style={chipStyle("rgba(60, 60, 60, 0.85)")}>
 						unstacked · best of {numSubs} subs
 					</span>
+				)}
+				{status === "out_of_date" && (
+					<span style={chipStyle("rgba(237, 108, 2, 0.9)")}>OUT OF DATE</span>
 				)}
 				{isStale && (
 					<span style={chipStyle("rgba(255, 100, 100, 0.85)")}>Reprocessing…</span>
