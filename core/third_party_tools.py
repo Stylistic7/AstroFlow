@@ -60,6 +60,10 @@ def _at(path: str) -> Callable[[], str | None]:
     return lambda: path if Path(path).exists() else None
 
 
+def _first(*finders: Callable[[], str | None]) -> Callable[[], str | None]:
+    return lambda: next((p for p in (f() for f in finders) if p), None)
+
+
 def _run(argv: list[str], **kwargs) -> subprocess.CompletedProcess:
     result = subprocess.run(argv, capture_output=True, text=True, timeout=_TIMEOUT_S, **kwargs)
     if result.returncode != 0:
@@ -154,7 +158,10 @@ TOOLS = [
          "the macOS app from https://siril.org", _at("/Applications/Siril.app/Contents/MacOS/siril-cli"),
          _trial_siril),
     Tool("rc-astro", "RC Astro", "BlurXTerminator, StarXTerminator, NoiseXTerminator",
-         "the rc-astro installer from https://www.rc-astro.com", _on_path("rc-astro"), _trial_rc_astro),
+         "the rc-astro installer from https://www.rc-astro.com",
+         # The app's PATH is its own tools and the system's, not /usr/local/bin
+         # where the installer links it: its install location too.
+         _first(_on_path("rc-astro"), _at("/Applications/RC-Astro/CLI/rc-astro")), _trial_rc_astro),
     Tool("pixinsight", "PixInsight", "the PixInsight pipelines (a folder, not a program)",
          "https://pixinsight.com", _at("/Applications/PixInsight"), _trial_pixinsight),
 ]

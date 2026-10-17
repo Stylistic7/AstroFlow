@@ -18,8 +18,15 @@ def test_a_location_set_on_the_page_wins_over_the_usual_place(settings, monkeypa
     assert tools.tool_path("rc-astro") == "/opt/rc/rc-astro"
 
 
+def test_rc_astro_is_found_where_its_installer_puts_it_off_the_apps_path(settings, monkeypatch):
+    monkeypatch.setattr(tools.shutil, "which", lambda _: None)
+    monkeypatch.setattr(tools.Path, "exists", lambda self: str(self) == "/Applications/RC-Astro/CLI/rc-astro")
+    assert tools.tool_path("rc-astro") == "/Applications/RC-Astro/CLI/rc-astro"
+
+
 def test_a_missing_tool_says_where_to_set_it(settings, monkeypatch):
     monkeypatch.setattr(tools.shutil, "which", lambda _: None)
+    monkeypatch.setattr(tools.Path, "exists", lambda self: False)
     with pytest.raises(tools.ToolNotFoundError, match="Third-Party Tools page"):
         tools.tool_path("rc-astro")
     result = tools.check("rc-astro")
