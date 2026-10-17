@@ -2,17 +2,20 @@
 
 Code that runs on any node (a @node body solving a frame, a task calling
 GraXpert) can't read the durable store, so the head copies the user's choices
-(Catalogs and Third-Party Tools pages) into a small file on each Mac: when the
+(the Third-Party Tools page) into a small file on each Mac: when the
 head starts, whenever they are saved (a task pinned to every node), and on a
 worker when it joins (`state_machine._join_head`). Readers open the file when
 they need a value, so a change applies to the next call.
 
   {"astrometry_index_dir": "/Volumes/…/astrometry-net" | null,
-   "mars_database": "/Volumes/…/MARS-DR1-1.1.1.xmars" | null,
    "tool_paths": {"graxpert": "/opt/…/graxpert", …}}
 
-Beside it, solve-field's own configuration naming the index folder
-(`astrometry.cfg`); `plate_solving` passes it whenever it exists.
+`astrometry_index_dir` is the user's EXTRA index files, for fields smaller
+than the app's own set covers (about 20'); from a checkout it is the only one.
+
+Beside it, solve-field's own configuration naming the index folders
+(`astrometry.cfg`): the app's (`ASTROFLOW_INDEX_DIR`, set by the app on each
+Mac) and the extra one. `plate_solving` passes it whenever it exists.
 """
 import json
 import os
@@ -33,11 +36,19 @@ def read() -> dict:
 def write(settings: dict) -> None:
     SUPPORT.mkdir(parents=True, exist_ok=True)
     _replace(SETTINGS, json.dumps(settings, indent=2))
-    index = settings.get("astrometry_index_dir")
-    if index:
-        _replace(ASTROMETRY_CONFIG, f"inparallel\ncpulimit 300\nadd_path {index}\nautoindex\n")
+    folders = index_folders(settings)
+    if folders:
+        paths = "".join(f"add_path {f}\n" for f in folders)
+        _replace(ASTROMETRY_CONFIG, f"inparallel\ncpulimit 300\n{paths}autoindex\n")
     else:
         ASTROMETRY_CONFIG.unlink(missing_ok=True)
+
+
+def index_folders(settings: dict) -> list[str]:
+    """The folders solve-field reads index files from on this Mac: the app's
+    own, then the user's extra one."""
+    bundled = os.environ.get("ASTROFLOW_INDEX_DIR")
+    return [f for f in (bundled, settings.get("astrometry_index_dir")) if f]
 
 
 def _replace(path: Path, text: str) -> None:
@@ -49,10 +60,9 @@ def _replace(path: Path, text: str) -> None:
 def current() -> dict:
     """The settings as the head's durable store holds them."""
     from context import local_context as context
-    index, mars = context.astrometry_index_dir, context.mars_database
+    index = context.astrometry_index_dir
     return {
         "astrometry_index_dir": str(index) if index else None,
-        "mars_database": str(mars) if mars else None,
         "tool_paths": dict(context.tool_paths or {}),
     }
 

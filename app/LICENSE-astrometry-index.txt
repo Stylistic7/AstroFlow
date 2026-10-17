@@ -1,0 +1,26 @@
+Astrometry.net index files (astrometry-index)
+
+These are the index files the plate solver (solve-field) matches star
+patterns against, made by the Astrometry.net team with its
+build-astrometry-index program and downloaded from data.astrometry.net
+(4100 series) and portal.nersc.gov (5200 LITE series). AstroFlow ships a
+subset, for fields from about 20 arcminutes wide to the whole sky:
+
+  index-4107 … index-4119   built from the Tycho-2 catalogue
+  index-5203 … index-5206   built from Gaia DR2, with Tycho-2 for the bright stars
+
+Astrometry.net: Lang, D., Hogg, D. W., Mierle, K., Blanton, M., & Roweis, S.
+2010, AJ 139, 1782 (https://astrometry.net).
+
+Gaia: this work has made use of data from the European Space Agency (ESA)
+mission Gaia (https://www.cosmos.esa.int/gaia), processed by the Gaia Data
+Processing and Analysis Consortium (DPAC,
+https://www.cosmos.esa.int/web/gaia/dpac/consortium). Funding for the DPAC has
+been provided by national institutions, in particular the institutions
+participating in the Gaia Multilateral Agreement. Gaia data are released
+under the Creative Commons Attribution-ShareAlike 3.0 IGO licence
+(https://creativecommons.org/licenses/by-sa/3.0/igo/); the 5200 files are
+shared under the same licence.
+  Gaia Collaboration, Brown, A. G. A., et al. 2018, A&A 616, A1 (Gaia DR2)
+
+Tycho-2: Høg, E., et al. 2000, A&A 355, L27.

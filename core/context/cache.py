@@ -144,7 +144,6 @@ _DURABLE_STR_KEYS = frozenset(
         "input_dirs",
         "output_dir",
         "astrometry_index_dir",
-        "mars_database",
         "tool_paths",
         # --- user curation (reason 1: an eviction loses user work) ---
         "shopping_cart",

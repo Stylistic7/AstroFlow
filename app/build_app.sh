@@ -9,15 +9,30 @@
 # processes (Ray workers, gunicorn, the MCP sidecar) that start as
 # `sys.executable -m …`, which needs a real interpreter, not a frozen binary.
 #
-# It also carries GraXpert (its own packages in Resources/tools, pinned by
-# graxpert-requirements.txt) and the Gaia XP catalogue AstroFlow calibrates
-# with (Resources/gaia_xp, from GAIA_CATALOG, built by
-# core/photometry/gaia_catalog.py).
+# It also carries every program and catalogue AstroFlow needs that isn't
+# someone else's licensed product, so a Mac needs nothing else installed:
 #
-# What the user still installs: Homebrew and `brew install astrometry-net
-# vips` (the app checks for them on launch), and Siril and RC Astro (the
-# dashboard's Third-Party Tools page tries each tool on every Mac). The
-# astrometry.net index files are chosen and downloaded on the Catalogs page.
+#   * GraXpert: its own packages in Resources/tools, pinned by
+#     graxpert-requirements.txt.
+#   * solve-field and libvips (under pyvips), copied from this Mac's Homebrew
+#     with every library they load, into Resources/tools/bin and
+#     Resources/lib (bundle_homebrew.py). Their licences go in
+#     Resources/licenses; their source archives beside the disk image, for
+#     publishing with the release.
+#   * the astrometry.net index files for fields from about 20' to the whole
+#     sky (Resources/astrometry-index, from ASTROMETRY_INDEX): 4107-4119 and
+#     5203-5206, 4.6 GB. An ASI585MM at 2000 mm, a 19' x 11' field, solves on
+#     these alone, blind, in sparse fields (tested on the M101 and M51 subs,
+#     2026-10-17). Smaller fields add their own index files on the
+#     Third-Party Tools page.
+#   * the Gaia XP catalogue AstroFlow calibrates with (Resources/gaia_xp, from
+#     GAIA_CATALOG, built by core/photometry/gaia_catalog.py).
+#
+# What the user installs, if they want them: PixInsight, Siril and RC Astro
+# (the dashboard's Third-Party Tools page tries each tool on every Mac).
+#
+# Building needs Homebrew's astrometry-net and vips installed, at their
+# formulas' current versions (so the published sources are the shipped ones).
 #
 # The build is the committed tree (it is stamped with the commit, RELEASE, as
 # its cluster version); ALLOW_DIRTY=1 builds the working tree for a test,
@@ -36,10 +51,33 @@ WORK="$APP_SRC/build"
 PYTHON_VERSION=3.13
 PYOBJC="pyobjc-framework-Cocoa==11.1"
 GAIA_CATALOG="${GAIA_CATALOG:-/Volumes/AstroProcessed/Catalogs/GaiaXP/gaia_xp}"
+ASTROMETRY_INDEX="${ASTROMETRY_INDEX:-/Volumes/AstroProcessed/astrometry-net}"
+SOURCES="$APP_SRC/.sources"   # source archives, kept between builds
 
 for column in source_id ra dec G colour flux; do
 	if [ ! -f "$GAIA_CATALOG/$column.npy" ]; then
 		echo "No Gaia XP catalogue at $GAIA_CATALOG ($column.npy is missing); set GAIA_CATALOG." >&2
+		exit 1
+	fi
+done
+index_files=()
+for i in 4107 4108 4109 4110 4111 4112 4113 4114 4115 4116 4117 4118 4119; do
+	index_files+=("index-$i.fits")
+done
+for i in 5203 5204 5205 5206; do
+	for hp in $(seq -w 0 47); do
+		index_files+=("index-$i-$hp.fits")
+	done
+done
+for f in "${index_files[@]}"; do
+	if [ ! -f "$ASTROMETRY_INDEX/$f" ]; then
+		echo "No $f in $ASTROMETRY_INDEX; set ASTROMETRY_INDEX." >&2
+		exit 1
+	fi
+done
+for formula in astrometry-net vips; do
+	if ! brew list --versions "$formula" >/dev/null 2>&1; then
+		echo "The build copies Homebrew's $formula into the app: brew install $formula" >&2
 		exit 1
 	fi
 done
@@ -105,12 +143,51 @@ PYTHONPATH="$res/tools/graxpert" exec "$res/python/bin/python3" -s \
 EOF
 chmod +x "$RES/tools/bin/graxpert"
 
+echo "→ solve-field and libvips"
+# solve-field and the engine it runs. Given a FITS file (`--fits-image`,
+# plate_solving.py) it runs two Python steps besides, removelines and
+# uniformize, which run here on the app's Python from astrometry.net's own
+# package (astropy stands in for its fitsio).
+an="$(brew --prefix astrometry-net)"
+relocate=()
+for f in solve-field astrometry-engine; do
+	cp "$an/bin/$f" "$RES/tools/bin/"
+	relocate+=("$RES/tools/bin/$f=$(readlink -f "$an/bin/$f")")
+done
+mkdir -p "$RES/tools/astrometry"
+rsync -a --exclude '*.so' --exclude __pycache__ "$an"/libexec/lib/python3.*/site-packages/astrometry "$RES/tools/astrometry/"
+for step in removelines uniformize; do
+	cat > "$RES/tools/bin/$step" <<EOF
+#!/bin/sh
+# astrometry.net's $step step, which solve-field runs, on the app's Python.
+res="\$(cd "\$(dirname "\$0")/../.." && pwd)"
+PYTHONPATH="\$res/tools/astrometry" exec "\$res/python/bin/python3" -s -m astrometry.util.$step "\$@"
+EOF
+	chmod +x "$RES/tools/bin/$step"
+done
+# pyvips compiled its module against Homebrew's libvips, by absolute path.
+vips_module="$(ls "$RES/python/lib/python$PYTHON_VERSION/site-packages/"_libvips*.so 2>/dev/null || true)"
+if [ -z "$vips_module" ]; then
+	echo "pyvips installed without its compiled module, so it would look for libvips at run time; brew install vips and build again." >&2
+	exit 1
+fi
+relocate+=("$vips_module")
+"$py" "$APP_SRC/bundle_homebrew.py" "$RES/lib" "$RES/licenses" "$SOURCES" "${relocate[@]}"
+# libvips loads its format plugins from its build prefix; point it at an
+# empty one so it never loads Homebrew's (which link Homebrew's libvips).
+mkdir -p "$RES/tools/vips"
+
+echo "→ astrometry.net index files"
+mkdir -p "$RES/astrometry-index"
+(cd "$ASTROMETRY_INDEX" && rsync -a "${index_files[@]}" "$RES/astrometry-index/")
+cp "$APP_SRC/LICENSE-astrometry-index.txt" "$RES/astrometry-index/"
+
 echo "→ Gaia XP catalogue"
 rsync -a --exclude '.*' "$GAIA_CATALOG/" "$RES/gaia_xp/"
 cp "$APP_SRC/LICENSE-gaia.txt" "$RES/gaia_xp/"
 
 # Bytecode now, so nothing writes into the signed bundle at run time.
-"$py" -m compileall -q -j 0 "$RES/python/lib" "$RES/tools/graxpert" "$RES/AstroFlow" >/dev/null || true
+"$py" -m compileall -q -j 0 "$RES/python/lib" "$RES/tools/graxpert" "$RES/tools/astrometry" "$RES/AstroFlow" >/dev/null || true
 
 echo "→ bundle"
 cat > "$APP/Contents/MacOS/AstroFlow" <<'EOF'
@@ -175,4 +252,9 @@ if [ -n "${SIGN_IDENTITY:-}" ]; then
 		xcrun stapler staple "$dmg"
 	fi
 fi
-du -sh "$DIST/AstroFlow.app" "$dmg"
+# The sources of what the app carries, to publish beside the disk image.
+mkdir -p "$DIST/sources"
+for archive in $(sed -n 's/^| [^|]* | [^|]* | [^|]* | \(.*\) |$/\1/p' "$DIST/AstroFlow.app/Contents/Resources/licenses/THIRD-PARTY.md"); do
+	cp "$SOURCES/$(basename "${archive%%\?*}")" "$DIST/sources/"
+done
+du -sh "$DIST/AstroFlow.app" "$dmg" "$DIST/sources"

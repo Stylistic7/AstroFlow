@@ -16,7 +16,6 @@ import PaletteIcon from '@mui/icons-material/Palette';
 import CameraAltIcon from '@mui/icons-material/CameraAlt';
 import BlurOnIcon from '@mui/icons-material/BlurOn';
 import FolderIcon from '@mui/icons-material/Folder';
-import StarsIcon from '@mui/icons-material/Stars';
 import BuildIcon from '@mui/icons-material/Build';
 import Divider from '@mui/material/Divider';
 
@@ -113,14 +112,6 @@ export default function LeftDrawer() {
                   <FolderIcon />
                 </ListItemIcon>
                 <ListItemText primary="Folders" />
-              </ListItemButton>
-            </ListItem>
-            <ListItem key="catalogs" disablePadding>
-              <ListItemButton onClick={() => navigate('/catalogs')}>
-                <ListItemIcon>
-                  <StarsIcon />
-                </ListItemIcon>
-                <ListItemText primary="Catalogs" />
               </ListItemButton>
             </ListItem>
             <ListItem key="tools" disablePadding>

@@ -69,7 +69,7 @@ export default function CalibrationGrid({
               alt=""
               onClick={() => onSelectFlat(flatId ?? NO_FLAT)}
               sx={{
-                width: cell, height: cell, objectFit: 'cover', cursor: 'pointer',
+                width: cell, height: 'auto', cursor: 'pointer',
                 borderRadius: 1, display: 'block',
                 outline: isSelected(flatId) ? '3px solid #2196f3' : '1px solid #333',
               }}

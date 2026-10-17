@@ -66,14 +66,41 @@ def test_rc_astro_names_the_unlicensed_products(monkeypatch):
     assert "bxt" not in str(e.value)
 
 
-def test_solve_field_fails_on_a_mac_that_cannot_see_the_index_files(settings, monkeypatch, tmp_path):
+def test_solve_field_counts_the_apps_index_files_and_the_extra_ones(settings, monkeypatch, tmp_path):
     monkeypatch.setattr(tools.subprocess, "run", _fake_run("0.97\n"))
-    assert "no index folder chosen" in tools._trial_solve_field("solve-field")
-    settings["astrometry_index_dir"] = str(tmp_path)
-    with pytest.raises(RuntimeError, match="no index files"):
+    monkeypatch.delenv("ASTROFLOW_INDEX_DIR", raising=False)
+    with pytest.raises(RuntimeError, match="no index folder"):
         tools._trial_solve_field("solve-field")
-    (tmp_path / "index-4119.fits").touch()
-    assert tools._trial_solve_field("solve-field") == f"0.97; 1 index files in {tmp_path}"
+    bundled, extra = tmp_path / "bundled", tmp_path / "extra"
+    bundled.mkdir(), extra.mkdir()
+    (bundled / "index-4119.fits").touch()
+    monkeypatch.setenv("ASTROFLOW_INDEX_DIR", str(bundled))
+    assert tools._trial_solve_field("solve-field") == f"0.97; 1 index files in {bundled}"
+    settings["astrometry_index_dir"] = str(extra)
+    with pytest.raises(RuntimeError, match=f"no index files in {extra}"):
+        tools._trial_solve_field("solve-field")
+    (extra / "index-5200-00.fits").touch()
+    assert tools._trial_solve_field("solve-field") == \
+        f"0.97; 1 index files in {bundled}, 1 index files in {extra}"
+
+
+def test_pixinsight_names_the_mars_database_registered_in_it(monkeypatch, tmp_path):
+    import pix.tasks.multiscale_gradient_correction as mgc
+    app = tmp_path / "PixInsight" / "PixInsight.app" / "Contents"
+    (app / "MacOS").mkdir(parents=True)
+    (app / "MacOS" / "PixInsight").touch()
+    (app / "Info.plist").write_bytes(tools.plistlib.dumps({"CFBundleShortVersionString": "1.9.4"}))
+    settings_dir = tmp_path / "settings"
+    settings_dir.mkdir()
+    monkeypatch.setattr(mgc, "_PI_SETTINGS", settings_dir)
+    with pytest.raises(RuntimeError, match="no MARS database registered"):
+        tools._trial_pixinsight(str(tmp_path / "PixInsight"))
+    mars = tmp_path / "MARS & co.xmars"
+    mars.touch()
+    (settings_dir / "core-001-pxi.settings").write_text(
+        '<i k="MultiscaleProcessing"><v k="MARSDatabaseFilePath000" t="s">'
+        f'{str(mars).replace("&", "&amp;")}</v><v k="MARSDatabaseFilePath001" t="s">/gone.xmars</v></i>')
+    assert tools._trial_pixinsight(str(tmp_path / "PixInsight")) == f"PixInsight 1.9.4; MARS: {mars}"
 
 
 def test_a_failing_program_reports_its_own_last_lines(monkeypatch):

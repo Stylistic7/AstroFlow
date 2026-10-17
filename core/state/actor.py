@@ -221,10 +221,10 @@ class StateActor:
             case "announce":
                 self.state, new_actions = _announce(self.state, action)
             case "update_settings" | "run_entire_graph" if not (
-                    context.input_dirs and context.output_dir and context.astrometry_index_dir):
+                    context.input_dirs and context.output_dir):
                 # A fresh install: nothing to scan or build until the user
                 # picks folders (Folders page, web_server/backend/storage.py).
-                print("### Folders not all chosen yet (input, output, index files); not running the graph")
+                print("### Folders not chosen yet (input, output); not running the graph")
             case "update_settings" | "run_entire_graph":
                 # PHASE 1 — previews to COMPLETION before any heavy work: the
                 # Subframe defaults exist for every mosaic before the main

@@ -22,7 +22,6 @@ from beartype import beartype
 import node_settings
 from third_party_tools import tool_path
 from file_io.conversion import convert_xisf_to_fits
-from file_io.planar import needs_planar, write_planar
 from file_io.sidecar import get_section, set_section, sidecar_path_for
 from units import Degrees, Radians, ArcsecondsPerPixel
 _PLATESOLUTION_SCHEMA = "astroflow.platesolution.v2"
@@ -119,19 +118,19 @@ def _solve_field(
     high SIP order cost no search time and cannot blow up."""
     # TODO: Only copy the file to a temp dir once.
     with tempfile.TemporaryDirectory() as temp_dir:
-        if os.path.splitext(filename)[-1] in [".xisf"]:
-            dest_filename = Path(
-                os.path.join(temp_dir, os.path.basename(filename))
-            ).with_suffix(".fits")
+        # solve-field always gets FITS, and is told so (`--fits-image`):
+        # any other format it converts through Python and Netpbm helpers
+        # that AstroFlow.app doesn't ship (app/build_app.sh).
+        suffix = Path(filename).suffix.lower()
+        dest_filename = Path(temp_dir) / (Path(filename).stem + ".fits")
+        if suffix == ".xisf":
             convert_xisf_to_fits(filename, dest_filename)
+        elif suffix in (".fits", ".fit", ".fts"):
+            os.symlink(Path(filename).resolve(), dest_filename)
         else:
-            dest_filename = Path(
-                os.path.join(temp_dir, os.path.basename(filename))
-            )
-            if needs_planar(filename):   # zstd/tiled TIFF: astrometry.net can't decode it
-                write_planar(filename, dest_filename)
-            else:
-                os.symlink(Path(filename).resolve(), dest_filename)
+            from file_io.generic import read_image
+            pixels = np.asarray(read_image(Path(filename)), np.float32)
+            pyfits.PrimaryHDU(pixels.mean(axis=2) if pixels.ndim == 3 else pixels).writeto(dest_filename)  # colour: luminance
 
         if verify is not None:
             # a header-only FITS carrying the WCS keywords (NAXISn are what
@@ -427,12 +426,14 @@ def solve_field(
     # corner at order 4 and 0.9 px at order 3. Systematic displacement
     # after the refine: 0.1-0.5 px on every train but the 2000 mm 6200MM,
     # where 2 of 5 subs sit at 1.3-1.7 px in one corner at either order.
-    # The index folder chosen on the Catalogs page; without one (a checkout
-    # never set up through the app), Homebrew's astrometry.cfg.
+    # The app's own index files plus any extra folder (node_settings); with
+    # neither (a checkout never set up through the app), solve-field's own
+    # astrometry.cfg.
     config = node_settings.ASTROMETRY_CONFIG
     base = [
         tool_path("solve-field"),
         *(["--config", str(config)] if config.exists() else []),
+        "--fits-image",
         "--overwrite",
         "--no-plots",
         "--new-fits",

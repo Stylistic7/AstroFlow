@@ -1,4 +1,4 @@
-"""The programs AstroFlow runs but doesn't ship, and a trial run of each.
+"""The programs AstroFlow runs, and a trial run of each.
 
 Every caller finds its program through `tool_path`: the location the user set
 on the Third-Party Tools page (`node_settings`), else where the program
@@ -6,10 +6,11 @@ normally installs. `check_cluster` runs every trial on every Mac in the
 cluster, so the page shows at a glance which tool on which machine doesn't
 work yet, and why: the trial's own error message.
 
-GraXpert ships inside AstroFlow.app (`app/build_app.sh`), which puts it on
-PATH; it is still checked, because it can still fail (2026-10-16: a worker's
-onnxruntime built for the wrong Python broke every background extraction it
-ran).
+GraXpert, solve-field and libvips ship inside AstroFlow.app
+(`app/build_app.sh`), which puts its own tools first on PATH; they are still
+checked, because they can still fail (2026-10-16: a worker's onnxruntime built
+for the wrong Python broke every background extraction it ran). PixInsight,
+Siril and RC Astro are the user's to install.
 """
 import plistlib
 import re
@@ -69,13 +70,14 @@ def _run(argv: list[str], **kwargs) -> subprocess.CompletedProcess:
 
 def _trial_solve_field(path: str) -> str:
     version = _run([path, "--version"]).stdout.strip()
-    index = node_settings.read().get("astrometry_index_dir")
-    if not index:
-        return f"{version}; no index folder chosen yet (Catalogs page)"
-    count = sum(1 for _ in Path(index).glob("index-*.fits")) if Path(index).is_dir() else 0
-    if not count:
-        raise RuntimeError(f"{version}, but no index files in {index} on this Mac")
-    return f"{version}; {count} index files in {index}"
+    counts = {f: sum(1 for _ in Path(f).glob("index-*.fits")) if Path(f).is_dir() else 0
+              for f in node_settings.index_folders(node_settings.read())}
+    if not counts:
+        raise RuntimeError(f"{version}, but no index folder on this Mac: set one under solve-field")
+    empty = [f for f, n in counts.items() if not n]
+    if empty:
+        raise RuntimeError(f"{version}, but no index files in {', '.join(empty)} on this Mac")
+    return f"{version}; " + ", ".join(f"{n} index files in {f}" for f, n in counts.items())
 
 
 def _trial_vips(_path: str) -> str:
@@ -132,14 +134,20 @@ def _trial_pixinsight(path: str) -> str:
     if not (app / "Contents" / "MacOS" / "PixInsight").exists():
         raise RuntimeError(f"no PixInsight.app in {path}")
     with open(app / "Contents" / "Info.plist", "rb") as f:
-        return f"PixInsight {plistlib.load(f).get('CFBundleShortVersionString', '(unknown version)')}"
+        version = f"PixInsight {plistlib.load(f).get('CFBundleShortVersionString', '(unknown version)')}"
+    from pix.tasks.multiscale_gradient_correction import registered_mars_databases
+    databases = registered_mars_databases()
+    if not databases:
+        raise RuntimeError(f"{version}, but no MARS database registered in it, which its gradient correction "
+                           "needs: open MultiscaleGradientCorrection in PixInsight and add one under MARS databases")
+    return f"{version}; MARS: {', '.join(databases)}"
 
 
 TOOLS = [
     Tool("solve-field", "astrometry.net", "plate solving: placing every frame on the sky",
-         "brew install astrometry-net", _on_path("solve-field"), _trial_solve_field),
+         "included in AstroFlow.app", _on_path("solve-field"), _trial_solve_field),
     Tool("vips", "libvips", "reading and writing large images",
-         "brew install vips", lambda: None, _trial_vips, locatable=False),
+         "included in AstroFlow.app", lambda: None, _trial_vips, locatable=False),
     Tool("graxpert", "GraXpert", "background extraction (ships with AstroFlow)",
          "included in AstroFlow.app", _graxpert, _trial_graxpert),
     Tool("siril", "Siril", "stacking",

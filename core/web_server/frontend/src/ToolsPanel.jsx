@@ -1,5 +1,6 @@
-// Third-Party Tools: the programs AstroFlow runs but doesn't ship, where each
-// one is, and whether it works on every Mac in the cluster. `GET/PUT
+// Third-Party Tools: the programs AstroFlow runs, where each one is, and
+// whether it works on every Mac in the cluster; plus solve-field's extra index
+// files, for fields smaller than the app's own set covers. `GET/PUT
 // /api/tools`; `POST /api/tools/check` runs each tool's trial on every Mac
 // (a few seconds: GraXpert's is a real background extraction).
 import React, { useEffect, useState } from 'react';
@@ -24,6 +25,7 @@ function Trial({ result }) {
 export default function ToolsPanel() {
   const [saved, setSaved] = useState(null);
   const [paths, setPaths] = useState({});
+  const [extraIndex, setExtraIndex] = useState('');
   const [nodes, setNodes] = useState(null);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState(null);
@@ -32,6 +34,7 @@ export default function ToolsPanel() {
   const load = (t) => {
     setSaved(t);
     setPaths(Object.fromEntries(t.tools.map((tool) => [tool.key, tool.path || ''])));
+    setExtraIndex(t.extra_index_dir || '');
   };
   const check = async () => {
     setChecking(true);
@@ -51,12 +54,16 @@ export default function ToolsPanel() {
   }, []);
   if (!saved) return <PanelStatus title={TITLE} error={error}>Loading…</PanelStatus>;
 
-  const dirty = saved.tools.some((t) => (t.path || '') !== (paths[t.key] || '').trim());
+  const dirty = saved.tools.some((t) => (t.path || '') !== (paths[t.key] || '').trim())
+    || (saved.extra_index_dir || '') !== extraIndex.trim();
   const save = async () => {
     setSaving(true); setError(null);
     const r = await fetch('/api/tools', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ paths: Object.fromEntries(Object.entries(paths).map(([k, v]) => [k, v.trim()])) }),
+      body: JSON.stringify({
+        paths: Object.fromEntries(Object.entries(paths).map(([k, v]) => [k, v.trim()])),
+        extra_index_dir: extraIndex.trim() || null,
+      }),
     });
     setSaving(false);
     if (!r.ok) {
@@ -77,9 +84,10 @@ export default function ToolsPanel() {
 
   return (
     <PanelPage title={TITLE} intro={
-      'The programs AstroFlow runs but doesn’t include. Each is tried on every Mac in your cluster; '
-      + 'hover over a result for what the program said. Leave a location empty to use where the program '
-      + 'normally installs; a location you set applies on every Mac.'}>
+      'The programs AstroFlow runs. GraXpert, solve-field and libvips come with AstroFlow; PixInsight, '
+      + 'Siril and RC Astro are yours to install if you want their pipelines. Each is tried on every Mac '
+      + 'in your cluster; hover over a result for what the program said. Leave a location empty to use '
+      + 'where the program normally is; a location you set applies on every Mac.'}>
       <PanelSection title="Every Mac" meta={nodes ? `${nodes.length} Mac${nodes.length === 1 ? '' : 's'}` : null}
         subtitle={checking ? 'Trying each tool on every Mac…' : null}>
         <TableContainer sx={{ overflowX: 'auto' }}>
@@ -131,7 +139,18 @@ export default function ToolsPanel() {
             <Box key={t.key}>
               <FolderField id={`tool-${t.key}`} label={t.name} value={paths[t.key] || ''}
                 onChange={(v) => setPaths({ ...paths, [t.key]: v })} file={t.key !== 'pixinsight'}
-                prompt={`Choose ${t.name}`} placeholder={`Where it normally installs (${t.install})`} />
+                prompt={`Choose ${t.name}`} placeholder={`Where it normally is (${t.install})`} />
+              {t.key === 'solve-field' && (
+                <Box sx={{ mt: 1.5 }}>
+                  <FolderField id="extra-index" label="Extra index files" value={extraIndex}
+                    onChange={setExtraIndex} prompt="Choose a folder of astrometry.net index files"
+                    placeholder="None: AstroFlow's own index files solve fields from about 20′ wide to the whole sky" />
+                  <Typography variant="caption" color="text.secondary">
+                    Only for smaller fields (focal lengths beyond about 2000 mm): a folder of index files
+                    from astrometry.net, such as the 5200 series, at the same location on every Mac.
+                  </Typography>
+                </Box>
+              )}
             </Box>
           ))}
         </Stack>
@@ -139,7 +158,7 @@ export default function ToolsPanel() {
       {error && <Alert severity="error">{error}</Alert>}
       <Box sx={{ display: 'flex', gap: 1 }}>
         <Button variant="contained" disabled={!dirty || saving} onClick={save}>
-          {saving ? 'Saving…' : 'Save locations'}
+          {saving ? 'Saving…' : 'Save'}
         </Button>
         <Button disabled={!dirty || saving} onClick={() => { load(saved); setError(null); }}>Revert</Button>
       </Box>

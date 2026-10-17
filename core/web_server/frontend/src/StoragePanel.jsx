@@ -86,7 +86,7 @@ export default function StoragePanel() {
       + 'goes into the output folder.'}>
       {!saved.output_dir && (
         <Alert severity="info">
-          Choose your folders to start, then the index files on the Catalogs page. Nothing is scanned until both are set.
+          Choose your folders to start. Nothing is scanned until both are set.
         </Alert>
       )}
       <PanelSection title="Input folders" meta={`${wanted.input_dirs.length} folder${wanted.input_dirs.length === 1 ? '' : 's'}`}
@@ -123,16 +123,14 @@ export default function StoragePanel() {
   );
 }
 
-// The front page on a fresh install: send the user to Folders, then
-// Catalogs, until the folders and the index folder are set, since nothing is
-// scanned before then.
+// The front page on a fresh install: send the user to Folders until the
+// folders are set, since nothing is scanned before then.
 export function RequireFolders({ children }) {
   const navigate = useNavigate();
   useEffect(() => {
-    Promise.all(['/api/storage', '/api/catalogs'].map((u) => fetch(u).then((r) => (r.ok ? r.json() : null))))
-      .then(([s, c]) => {
+    fetch('/api/storage').then((r) => (r.ok ? r.json() : null))
+      .then((s) => {
         if (s && (!s.output_dir || !s.input_dirs.length)) navigate('/folders', { replace: true });
-        else if (c && !c.astrometry_index_dir) navigate('/catalogs', { replace: true });
       }).catch(() => {});
   }, [navigate]);
   return children;

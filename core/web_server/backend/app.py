@@ -41,7 +41,6 @@ from web_server.backend.finish_saves import finish_saves_bp
 from web_server.backend.finish_export import finish_export_bp
 from web_server.backend.router import stateful_route
 from web_server.backend.planner import planner_bp
-from web_server.backend.catalogs_api import catalogs_bp
 from web_server.backend.storage import storage_bp
 from web_server.backend.tools_api import tools_bp
 
@@ -148,7 +147,6 @@ app.register_blueprint(finish_saves_bp)
 app.register_blueprint(finish_export_bp)
 app.register_blueprint(planner_bp)
 app.register_blueprint(storage_bp)
-app.register_blueprint(catalogs_bp)
 app.register_blueprint(tools_bp)
 
 

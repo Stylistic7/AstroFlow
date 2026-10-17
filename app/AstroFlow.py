@@ -2,19 +2,18 @@
 
 AstroFlow itself (`core/main.py`) runs as a child process, exactly as
 `make start` runs it, with its output in ~/Library/Logs/AstroFlow. This
-process only owns the Mac side: the Dock icon and menus, the launch check
-for the Homebrew tools AstroFlow can't start without, opening the dashboard once it
-answers, and a graceful shutdown on Quit.
+process only owns the Mac side: the Dock icon and menus, opening the
+dashboard once it answers, and a graceful shutdown on Quit.
 
 What the bundle ships beside the code (`app/build_app.sh`): Python with every
-package, GraXpert (`Resources/tools`) and the Gaia XP catalogue
-(`Resources/gaia_xp`).
+package, GraXpert, solve-field and libvips (`Resources/tools`,
+`Resources/lib`), the astrometry.net index files (`Resources/astrometry-index`)
+and the Gaia XP catalogue (`Resources/gaia_xp`). Nothing comes from Homebrew.
 
 The app bundle (`app/build_app.sh`) runs this with its own Python; from a
 checkout, `uv run --with pyobjc-framework-Cocoa python app/AstroFlow.py`.
 """
 import os
-import shutil
 import signal
 import socket
 import subprocess
@@ -44,14 +43,16 @@ ROOT = Path(__file__).resolve().parent.parent  # the bundle's Resources/AstroFlo
 CORE = ROOT / "core"
 RESOURCES = ROOT.parent  # the bundle's Resources (from a checkout, none of the below exist)
 TOOLS_BIN = RESOURCES / "tools" / "bin"
+INDEX_DIR = RESOURCES / "astrometry-index"
+VIPS_HOME = RESOURCES / "tools" / "vips"
 GAIA_CATALOG = RESOURCES / "gaia_xp"
 ICON = next((p for p in (ROOT.parent / "icon.icns", ROOT / "app" / "icon.icns") if p.exists()), None)
 DASHBOARD_PORT = 8000
 DASHBOARD = f"http://localhost:{DASHBOARD_PORT}"
 LOG = Path.home() / "Library" / "Logs" / "AstroFlow" / "AstroFlow.log"
-# A Finder-launched app gets a bare PATH; AstroFlow's tools come from Homebrew.
-HOMEBREW_BIN = ("/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin")
-PATH = ":".join([*HOMEBREW_BIN, "/usr/bin", "/bin", "/usr/sbin", "/sbin"])
+# The bundle's own tools, then the system's: never Homebrew's, so every Mac in
+# a cluster runs the same versions whatever else it has installed.
+PATH = ":".join([str(TOOLS_BIN), "/usr/bin", "/bin", "/usr/sbin", "/sbin"])
 SUPPORT = Path.home() / "Library" / "Application Support" / "AstroFlow"
 # "worker" makes this Mac a worker; anything else (or no file) a head. A file,
 # not NSUserDefaults: the process is the bundled Python, with no bundle id.
@@ -69,37 +70,6 @@ def _dashboard_answers() -> bool:
         return True
     except OSError:
         return False
-
-
-def _brew_prefix() -> Path | None:
-    brew = shutil.which("brew", path=PATH)
-    return Path(brew).resolve().parent.parent if brew else None
-
-
-# The installs AstroFlow can't start without. The rest of the third-party
-# tools are tried, on every Mac, on the dashboard's Third-Party Tools page.
-def _missing_installs(prefix: Path) -> list[str]:
-    return [install for present, install in (
-        (shutil.which("solve-field", path=PATH), "brew install astrometry-net"),
-        ((prefix / "lib" / "libvips.42.dylib").exists(), "brew install vips"),
-    ) if not present]
-
-
-def _setup_problems() -> tuple[str, str] | None:
-    """(title, details) for whatever the user still has to install, or None.
-    The index files plate solving needs are chosen and downloaded on the
-    Catalogs page."""
-    prefix = _brew_prefix()
-    if prefix is None:
-        return ("AstroFlow needs Homebrew",
-                "AstroFlow uses a few command-line tools that Homebrew installs. Install Homebrew from "
-                "https://brew.sh, then open AstroFlow again.")
-    missing = _missing_installs(prefix)
-    if missing:
-        return ("AstroFlow needs a few more tools",
-                "In Terminal, run:\n\n" + "\n".join(f"    {install}" for install in missing)
-                + "\n\nthen open AstroFlow again.")
-    return None
 
 
 def _menu_item(title, action, key="", target=None):
@@ -123,10 +93,6 @@ class AppDelegate(NSObject):
             self._alert("AstroFlow is already running",
                         "It was started outside this app (from Terminal). Opening its dashboard.")
             webbrowser.open(DASHBOARD)
-            NSApp.terminate_(None)
-            return
-        problem = _setup_problems()
-        if problem and self._alert(*problem, buttons=("Quit", "Open Anyway")) != NSAlertSecondButtonReturn:
             NSApp.terminate_(None)
             return
         self._start_child()
@@ -153,11 +119,14 @@ class AppDelegate(NSObject):
         LOG.parent.mkdir(parents=True, exist_ok=True)
         if LOG.exists():
             LOG.replace(LOG.with_suffix(".previous.log"))
-        env = dict(os.environ, PATH=":".join([str(TOOLS_BIN), PATH]),
+        env = dict(os.environ, PATH=PATH,
                    PYTHONUNBUFFERED="1", PYTHONDONTWRITEBYTECODE="1",
                    ASTROFLOW_HEAD_NODE="1" if self._is_head() else "0")
-        if GAIA_CATALOG.is_dir():
-            env["ASTROFLOW_GAIA_CATALOG"] = str(GAIA_CATALOG)
+        for var, path in (("ASTROFLOW_GAIA_CATALOG", GAIA_CATALOG), ("ASTROFLOW_INDEX_DIR", INDEX_DIR),
+                          # libvips loads its plugins from here: an empty folder, never Homebrew's
+                          ("VIPSHOME", VIPS_HOME)):
+            if path.is_dir():
+                env[var] = str(path)
         with open(LOG, "ab") as log:
             self.child = subprocess.Popen(
                 [sys.executable, "main.py"], cwd=CORE, env=env,
