@@ -3,7 +3,7 @@ JUNIT_SERIAL = serial.xml
 JUNIT_EXCLUSIVE = exclusive.xml
 JUNIT_MERGED = merged.xml
 
-.PHONY: install tests tests-full clean ray-clean ray-status start stop restart sweep-pi-swap
+.PHONY: install tests tests-full clean ray-clean ray-status frontend start stop restart sweep-pi-swap
 
 # Build/repair the project venv so it EXACTLY matches uv.lock — the
 # single source of truth every Mac in the cluster syncs to. `--frozen`
@@ -163,7 +163,19 @@ ray-status:
 # --- App lifecycle ---------------------------------------------------------
 # Start the live app (Ray head + gunicorn web server) in the FOREGROUND.
 # Run from core/. Ctrl-C stops it (main.py's atexit cleans up gunicorn + ray).
-start: sweep-pi-swap sweep-vips-scratch sweep-staging sweep-siril-scratch
+# The UI on :8000 is the COMPILED frontend (web_server/frontend/build), which
+# nothing else rebuilds: on 2026-10-17 it was still the build of 10-06, so :8000
+# showed an old UI while the :3000 dev server showed the current one. Rebuilt
+# only when its source is newer than the build, so an unchanged frontend costs
+# a second; `npm ci` first when the lock file changed.
+frontend:
+	@cd web_server/frontend && \
+	if [ ! -f build/index.html ] || [ -n "$$(find src public package.json package-lock.json -newer build/index.html -print -quit)" ]; then \
+		if [ ! -d node_modules ] || [ package-lock.json -nt node_modules ]; then npm ci --no-audit --no-fund --loglevel=error; fi; \
+		echo "→ building the frontend (its source changed)"; npm run build --silent; \
+	else echo "→ frontend up to date"; fi
+
+start: frontend sweep-pi-swap sweep-vips-scratch sweep-staging sweep-siril-scratch
 	# Unbuffered: main.py's own lines ("Got first ctrl-c", the shutdown steps)
 	# reach the boot log as they happen, not when a buffer fills.
 	PYTHONUNBUFFERED=1 uv run python main.py
