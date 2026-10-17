@@ -33,6 +33,8 @@
 #
 # Building needs Homebrew's astrometry-net and vips installed, at their
 # formulas' current versions (so the published sources are the shipped ones).
+# Upgrading what the app carries is Homebrew's job: `brew upgrade`, then build
+# again; the build names any formula still behind.
 #
 # The build is the committed tree (it is stamped with the commit, RELEASE, as
 # its cluster version); ALLOW_DIRTY=1 builds the working tree for a test,

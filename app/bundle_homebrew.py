@@ -114,14 +114,16 @@ def record(formulas: set[tuple[str, str]], licenses_dir: Path, sources_dir: Path
     info = {f["name"]: f for f in json.loads(subprocess.run(
         ["brew", "info", "--json=v2", *sorted(n for n, _ in formulas)],
         capture_output=True, text=True, check=True).stdout)["formulae"]}
+    # The source must be the one the shipped binary was built from, and
+    # Homebrew only knows its formula's current source: every formula behind
+    # it is named at once, as one command.
+    behind = sorted(n for n, v in formulas if re.sub(r"_\d+$", "", v) != info[n]["versions"]["stable"])
+    if behind:
+        raise SystemExit(f"Homebrew has newer versions of {len(behind)} formula(s) the app carries, so their "
+                         f"source archives are not the installed ones. Run\n\n    brew upgrade {' '.join(behind)}\n\n"
+                         "and build again.")
     rows, archives = [], []
     for name, version in sorted(formulas):
-        # The source must be the one the shipped binary was built from, and
-        # Homebrew only knows its formula's current source.
-        current = info[name]["versions"]["stable"]
-        if re.sub(r"_\d+$", "", version) != current:
-            raise SystemExit(f"{name} is installed at {version} but Homebrew's formula is at {current}, "
-                             f"so its source archive is not the shipped one: `brew upgrade {name}` and build again.")
         stable = info[name]["urls"]["stable"]
         url, sha = stable["url"], stable.get("checksum")
         archive = sources_dir / url.rsplit("/", 1)[-1].split("?")[0]
