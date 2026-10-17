@@ -785,6 +785,17 @@ def _handle_sigterm(sig, frame):
     enqueue_action(dict(type="quit"))
 
 
+# What still runs once "quit" has been handled: its own shutdown steps, and
+# the graphs reporting in. Anything else still queued is startup (a quit during
+# boot): run after the quit's stop_gunicorn, a queued start_gunicorn started the
+# web servers with nothing left to stop them, and they outlived main.py
+# (2026-10-17, the stream server on :8001).
+_AFTER_QUIT = frozenset({
+    "stop_scheduler", "stop_zeroconf", "stop_gunicorn", "stop_mcp", "stop_ray_node",
+    "unmount_head_shares", "graph_done", "noop",
+})
+
+
 def main_event_loop():
     signal.signal(signal.SIGINT, handle_sigint)
     signal.signal(signal.SIGTERM, _handle_sigterm)
@@ -796,6 +807,10 @@ def main_event_loop():
             action = queue.get(QUEUE_NAME)
             if action is None:
                 time.sleep(0.1)
+                continue
+
+            if quit_received and action.get("type") not in _AFTER_QUIT:
+                print(f"### quitting: skipping {action.get('type')}")
                 continue
 
             try:
