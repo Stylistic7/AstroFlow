@@ -70,7 +70,6 @@ print(f"### base_path {base_path}")
 _FRONTEND_BUILD = f"{base_path}/core/web_server/frontend/build"
 app = flask.Flask(
     __name__,
-    template_folder=_FRONTEND_BUILD,
     static_folder=f"{_FRONTEND_BUILD}/static",
 )
 
@@ -170,10 +169,20 @@ app.json_provider_class = CustomJSONProvider
 app.json = app.json_provider_class(app)
 
 
+def _index_page():
+    """The build's index.html, read from disk on every request and never
+    cached by the browser. Not a Jinja template: Flask compiles a template
+    once per worker, so after a rebuild every worker kept serving the old
+    page, whose scripts the rebuild had deleted, and the UI went blank
+    (2026-10-17)."""
+    response = flask.send_from_directory(_FRONTEND_BUILD, "index.html", max_age=0)
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 @app.route("/")
 def index():
-    """Displays the index page accessible at '/'"""
-    return flask.render_template("index.html")
+    return _index_page()
 
 
 @app.route("/static/images/<path:filename>")
@@ -189,7 +198,7 @@ def frontend(path):
         flask.abort(404)
     if (Path(_FRONTEND_BUILD) / path).is_file():
         return flask.send_from_directory(_FRONTEND_BUILD, path)
-    return flask.render_template("index.html")
+    return _index_page()
 
 
 
