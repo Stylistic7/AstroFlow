@@ -59,7 +59,7 @@ cp solver/solve-field.exe solver/astrometry-engine.exe "$out/bin/"
 cp __init__.py "$out/python/astrometry/"
 cp util/*.py "$out/python/astrometry/util/"
 cp LICENSE "$out/licenses/astrometry.net-LICENSE"
-cp "../cfitsio-$CFITSIO_VERSION/licenses" "$out/licenses/cfitsio-licenses"
+cp -r "../cfitsio-$CFITSIO_VERSION/licenses" "$out/licenses/cfitsio"
 
 echo "→ the Cygwin runtime"
 cp /bin/dash.exe "$out/bin/sh.exe"
