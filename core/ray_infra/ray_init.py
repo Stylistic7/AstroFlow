@@ -15,6 +15,16 @@ _scheduler_actor = None
 _ray_init_lock = threading.Lock()
 
 
+def no_uv_runtime_env() -> None:
+    """Keep Ray (>= 2.48) from turning a `uv run` launch into a per-worker uv
+    environment: its hook then demands pyproject.toml inside the shipped
+    working_dir (`core/`, one level below it) and refuses to start at all.
+    Every worker already runs this process's environment. Ray reads the flag
+    when `ray.init` runs, so setting it here works whatever launched us."""
+    import ray._private.ray_constants as ray_constants
+    ray_constants.RAY_ENABLE_UV_RUN_RUNTIME_ENV = False
+
+
 class RayNotUpError(ConnectionError):
     """There is no Ray cluster to join yet: the web servers answer about a
     minute before the head's Ray is up. The web app turns it into 503 +
@@ -48,6 +58,7 @@ def connect_to_ray_cluster(create_orchestrator_actors: bool = True):
 
         from state.code_version import CODE_VERSION_ENV, RAY_WORKING_DIR_EXCLUDES, deployed_code_version
 
+        no_uv_runtime_env()
         try:
             ray_context = ray.init(
                 address="auto",
