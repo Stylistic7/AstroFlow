@@ -34,4 +34,7 @@ jobs:
         if: failure()
         with:
           name: build-logs
-          path: _build/**/*.log
+          path: |
+            _build/cfitsio-*/configure.log
+            _build/cfitsio-*/make.log
+            _build/astrometry.net-*/make.log

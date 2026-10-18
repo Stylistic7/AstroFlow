@@ -11,6 +11,10 @@
 # zlib-devel, dash, zip and curl (.github/workflows/solve-field-windows.yml);
 # writes solve-field-windows-x64.zip into the current directory.
 set -euo pipefail
+# Cygwin's toolchain first: a GitHub runner also has MinGW's gcc, ld and
+# gfortran on PATH, and configure mixed them in (Cygwin objects, MinGW ld:
+# every Cygwin runtime symbol undefined).
+export PATH=/usr/bin:/bin:$PATH
 
 AN_VERSION=0.97
 AN_SHA256=e4eef1b658ba5ad462282b661c0ca3a5c538ba1716e853f7970b7b9fa4a33459
@@ -37,7 +41,7 @@ tar -xzf an.tar.gz
 
 echo "→ cfitsio $CFITSIO_VERSION (without curl and its chain of DLLs)"
 (cd "cfitsio-$CFITSIO_VERSION" \
-    && ./configure --prefix="$work/cfitsio" --disable-curl --enable-reentrant >configure.log 2>&1 \
+    && ./configure --prefix="$work/cfitsio" --disable-curl --disable-shared --enable-reentrant >configure.log 2>&1 \
     && make -j"$(nproc)" >make.log 2>&1 && make install >>make.log 2>&1) \
     || { for log in "cfitsio-$CFITSIO_VERSION"/*.log; do echo "== $log"; tail -n 40 "$log"; done; exit 1; }
 
