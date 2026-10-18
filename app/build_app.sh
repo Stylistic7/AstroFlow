@@ -50,7 +50,7 @@ APP_SRC="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(dirname "$APP_SRC")"
 DIST="$APP_SRC/dist"
 WORK="$APP_SRC/build"
-PYTHON_VERSION=3.13
+PYTHON_VERSION=3.12
 PYOBJC="pyobjc-framework-Cocoa==11.1"
 GAIA_CATALOG="${GAIA_CATALOG:-/Volumes/AstroProcessed/Catalogs/GaiaXP/gaia_xp}"
 ASTROMETRY_INDEX="${ASTROMETRY_INDEX:-/Volumes/AstroProcessed/astrometry-net}"
