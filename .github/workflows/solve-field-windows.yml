@@ -24,7 +24,7 @@ jobs:
             curl
       - name: Build
         shell: C:\cygwin\bin\bash.exe -eo pipefail -o igncr '{0}'
-        run: ./app/windows/build_solve_field.sh
+        run: bash -o igncr ./app/windows/build_solve_field.sh
       - uses: actions/upload-artifact@v4
         with:
           name: solve-field-windows-x64
