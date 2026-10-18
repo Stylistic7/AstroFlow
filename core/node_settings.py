@@ -57,7 +57,9 @@ def index_folders(settings: dict) -> list[str]:
 
 def _replace(path: Path, text: str) -> None:
     tmp = path.with_name(f".{path.name}.{os.getpid()}")
-    tmp.write_text(text)
+    # LF on every platform: Windows text mode would write CRLF, and the
+    # solver's engine keeps the CR in each add_path folder name.
+    tmp.write_text(text, newline="\n")
     tmp.replace(path)
 
 
