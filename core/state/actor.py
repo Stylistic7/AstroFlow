@@ -163,8 +163,10 @@ class StateActor:
         except GraphCancelled:
             print("### Graph drained; restart already enqueued")
             from context.context import _get_namespace
-            ray.get_actor("context", namespace=_get_namespace()).set.remote(
-                "node_running", {})  # the drain waited for every in-flight task
+            # The handle is held in a variable: Ray refuses a method call on a
+            # handle that is never stored ("Lost reference to actor").
+            context_actor = ray.get_actor("context", namespace=_get_namespace())
+            context_actor.set.remote("node_running", {})  # the drain waited for every in-flight task
             return state, [Action(type="announce", message="reload_data")]
         except _NODE_LOST_ERRORS as e:
             # A worker node/raylet died mid-run (infra failure, not a task bug).
