@@ -201,8 +201,11 @@ def _solve_field(
             finally:
                 fits.close()
         else:
-            # TODO: Emit warnings through Metaflow's reporting system.
-            # print(f'Could not plate-solve file {filename}')
+            # Loud: what solve-field said, since a failed solve otherwise
+            # leaves no trace of WHY (a missing index folder, a broken step).
+            output = (ret.stdout + ret.stderr).decode("utf-8", "replace").strip().splitlines()
+            print(f"### solve-field did not solve {filename} (exit {ret.returncode}); its last lines:\n"
+                  + "\n".join(output[-12:]))
             return None
 
 
