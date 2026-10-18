@@ -48,7 +48,11 @@ echo "→ cfitsio $CFITSIO_VERSION (without curl and its chain of DLLs)"
 echo "→ astrometry.net $AN_VERSION: the solver (plot/ wants cairo, sdss/ Python; gsl is in-tree)"
 cd "astrometry.net-$AN_VERSION"
 export PKG_CONFIG_PATH=$work/cfitsio/lib/pkgconfig
-make -j"$(nproc)" solver >make.log 2>&1 || { tail -n 60 make.log; exit 1; }
+# For any x86-64 PC, not the build machine's CPU (the default is -march=native).
+# gsl-an first: under -j the top-level Makefile races util/ against it.
+export ARCH_FLAGS="-march=x86-64 -mtune=generic"
+make -j"$(nproc)" gsl-an >make.log 2>&1 && make -j"$(nproc)" solver >>make.log 2>&1 \
+    || { grep -nE "error:|\*\*\*" make.log | head -20; tail -n 40 make.log; exit 1; }
 cp solver/solve-field.exe solver/astrometry-engine.exe "$out/bin/"
 cp __init__.py "$out/python/astrometry/"
 cp util/*.py "$out/python/astrometry/util/"
