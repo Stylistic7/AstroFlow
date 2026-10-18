@@ -30,3 +30,8 @@ jobs:
           name: solve-field-windows-x64
           path: solve-field-windows-x64.zip
           if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: build-logs
+          path: _build/**/*.log

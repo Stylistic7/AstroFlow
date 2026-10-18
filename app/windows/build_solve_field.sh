@@ -18,7 +18,10 @@ CFITSIO_VERSION=4.7.0
 CFITSIO_SHA256=ce573bbea8e75b429f8c3d3e86498741ba3dc9628a1530d2f65268397ad059e8
 
 dest=$PWD
-work=$(mktemp -d)
+# Under the workspace, so a failed run can upload the logs (the workflow does).
+work=$dest/_build
+rm -rf "$work"
+mkdir -p "$work"
 out=$work/solve-field
 mkdir -p "$out/bin" "$out/python/astrometry/util" "$out/licenses" "$out/tmp"
 
@@ -36,12 +39,12 @@ echo "→ cfitsio $CFITSIO_VERSION (without curl and its chain of DLLs)"
 (cd "cfitsio-$CFITSIO_VERSION" \
     && ./configure --prefix="$work/cfitsio" --disable-curl --enable-reentrant >configure.log 2>&1 \
     && make -j"$(nproc)" >make.log 2>&1 && make install >>make.log 2>&1) \
-    || { tail -30 "cfitsio-$CFITSIO_VERSION"/*.log; exit 1; }
+    || { for log in "cfitsio-$CFITSIO_VERSION"/*.log; do echo "== $log"; tail -n 40 "$log"; done; exit 1; }
 
 echo "→ astrometry.net $AN_VERSION: the solver (plot/ wants cairo, sdss/ Python; gsl is in-tree)"
 cd "astrometry.net-$AN_VERSION"
 export PKG_CONFIG_PATH=$work/cfitsio/lib/pkgconfig
-make -j"$(nproc)" solver >make.log 2>&1 || { tail -60 make.log; exit 1; }
+make -j"$(nproc)" solver >make.log 2>&1 || { tail -n 60 make.log; exit 1; }
 cp solver/solve-field.exe solver/astrometry-engine.exe "$out/bin/"
 cp __init__.py "$out/python/astrometry/"
 cp util/*.py "$out/python/astrometry/util/"
