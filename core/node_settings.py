@@ -22,6 +22,7 @@ import os
 from pathlib import Path
 
 from base_path import app_support_dir
+from file_io.cygwin import cygwin_path
 
 SUPPORT = app_support_dir()
 SETTINGS = SUPPORT / "settings.json"
@@ -40,8 +41,8 @@ def write(settings: dict) -> None:
     _replace(SETTINGS, json.dumps(settings, indent=2))
     folders = index_folders(settings)
     if folders:
-        # Forward slashes: on Windows solve-field is a Cygwin program.
-        paths = "".join(f"add_path {Path(f).as_posix()}\n" for f in folders)
+        # On Windows solve-field is a Cygwin program: its paths, its way.
+        paths = "".join(f"add_path {cygwin_path(f)}\n" for f in folders)
         _replace(ASTROMETRY_CONFIG, f"inparallel\ncpulimit 300\n{paths}autoindex\n")
     else:
         ASTROMETRY_CONFIG.unlink(missing_ok=True)

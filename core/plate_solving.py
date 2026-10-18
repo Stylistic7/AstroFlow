@@ -22,6 +22,7 @@ from beartype import beartype
 import node_settings
 from third_party_tools import tool_path
 from file_io.conversion import convert_xisf_to_fits
+from file_io.cygwin import cygwin_path
 from file_io.links import link_or_copy
 from file_io.sidecar import get_section, set_section, sidecar_path_for
 from units import Degrees, Radians, ArcsecondsPerPixel
@@ -111,10 +112,9 @@ def simplify_header(header: Mapping[str, Any]) -> dict[str, Any]:
 
 @beartype
 def _solver_arg(arg) -> str:
-    """An argument as solve-field reads it. On Windows it is a Cygwin program
-    (app/windows/build_solve_field.sh): it takes `C:/...` paths, but splits
-    names only on '/'."""
-    return str(arg).replace("\\", "/") if sys.platform == "win32" else str(arg)
+    """An argument as solve-field reads it: on Windows it is a Cygwin program
+    (app/windows/build_solve_field.sh), given paths in Cygwin's form."""
+    return cygwin_path(arg)
 
 
 def _solver_env() -> dict[str, str]:
@@ -159,7 +159,8 @@ def _solve_field(
             arguments = arguments + ["--verify", str(seed)]
 
         try:
-            command = [_solver_arg(a) for a in [*arguments, "--temp-dir", temp_dir, dest_filename]]
+            # The program itself stays a Windows path: subprocess runs it.
+            command = [arguments[0], *(_solver_arg(a) for a in [*arguments[1:], "--temp-dir", temp_dir, dest_filename])]
             if debug:
                 print("### command " + " ".join(command))
 

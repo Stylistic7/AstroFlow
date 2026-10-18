@@ -34,9 +34,11 @@ def test_the_solver_gets_our_temp_dir_and_the_python_for_its_steps(monkeypatch):
     assert env["ASTROFLOW_PYTHON"] == sys.executable
 
 
-def test_on_windows_every_path_is_forward_slashed(monkeypatch):
+def test_on_windows_the_solver_gets_cygwin_paths_but_runs_by_its_windows_one(monkeypatch):
     command, _ = _run_with_fake_solver(
         monkeypatch, "win32", [r"C:\tools\bin\solve-field.exe", "--config", r"C:\Users\w\astrometry.cfg"])
-    assert command[0] == "C:/tools/bin/solve-field.exe"
-    assert command[2] == "C:/Users/w/astrometry.cfg"
-    assert not any("\\" in a for a in command)
+    assert command[0] == r"C:\tools\bin\solve-field.exe"
+    assert command[2] == "/cygdrive/c/Users/w/astrometry.cfg"
+    # The frame and temp dir are this machine's own paths here; test_cygwin
+    # covers their conversion on Windows.
+    assert command[-1].endswith("frame.fits") and "--temp-dir" in command
