@@ -7,6 +7,7 @@ input folder is scanned, and a new output folder is rebuilt from scratch,
 because every product is filed under the output folder.
 """
 import subprocess
+import sys
 from pathlib import Path
 
 from flask import Blueprint, abort, jsonify, request
@@ -63,18 +64,34 @@ def put_storage():
 
 @storage_bp.route("/api/storage/choose_folder", methods=["POST"])
 def choose_folder():
-    """The Mac's own folder picker, opened on the machine running AstroFlow.
-    A browser can't hand a page a folder's path, so the server asks.
+    """The machine's own folder picker, opened where AstroFlow runs. A
+    browser can't hand a page a folder's path, so the server asks.
     `{"file": true}` picks a file instead. Returns {"path": null} when the
     user cancels."""
     body = request.get_json(silent=True) or {}
     prompt = str(body.get("prompt") or "Choose a folder")
-    kind = "file" if body.get("file") else "folder"
-    script = f'POSIX path of (choose {kind} with prompt {_applescript_str(prompt)})'
-    result = subprocess.run(["/usr/bin/osascript", "-e", script], capture_output=True, text=True)
-    if result.returncode != 0:  # -128: the user cancelled
-        return jsonify({"path": None})
-    return jsonify({"path": result.stdout.strip().rstrip("/") or "/"})
+    return jsonify({"path": _pick("file" if body.get("file") else "folder", prompt)})
+
+
+def _pick(kind: str, prompt: str) -> str | None:
+    """AppleScript's `choose folder` on the Mac, Windows Forms' dialogs
+    through PowerShell on Windows (the dialogs need an STA thread); None
+    when the user cancels (osascript -128, or our own exit 1)."""
+    if sys.platform == "win32":
+        dialog, title, chosen = (("OpenFileDialog", "Title", "FileName") if kind == "file"
+                                 else ("FolderBrowserDialog", "Description", "SelectedPath"))
+        script = (f"Add-Type -AssemblyName System.Windows.Forms; "
+                  f"$d = New-Object System.Windows.Forms.{dialog}; $d.{title} = '{prompt.replace("'", "''")}'; "
+                  f"if ($d.ShowDialog() -eq 'OK') {{ [Console]::Out.Write($d.{chosen}) }} else {{ exit 1 }}")
+        command = ["powershell", "-NoProfile", "-STA", "-Command", script]
+    else:
+        command = ["/usr/bin/osascript", "-e",
+                   f'POSIX path of (choose {kind} with prompt {_applescript_str(prompt)})']
+    result = subprocess.run(command, capture_output=True, text=True)
+    if result.returncode != 0:
+        return None
+    path = result.stdout.strip()
+    return path if sys.platform == "win32" else (path.rstrip("/") or "/")
 
 
 def _applescript_str(s: str) -> str:
