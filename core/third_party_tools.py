@@ -53,8 +53,8 @@ def _graxpert() -> str | None:
     """On PATH (the app puts its own there), else where `make install-graxpert`
     puts it: the uv tool bin folder, which a Ray worker started outside a login
     shell doesn't have on its PATH."""
-    tool_bin = Path("~/.local/bin/graxpert").expanduser()
-    return shutil.which("graxpert") or (str(tool_bin) if tool_bin.exists() else None)
+    # `which` with the folder: on Windows the tool is graxpert.exe.
+    return shutil.which("graxpert") or shutil.which("graxpert", path=str(Path.home() / ".local" / "bin"))
 
 
 def _at(path: str) -> Callable[[], str | None]:
