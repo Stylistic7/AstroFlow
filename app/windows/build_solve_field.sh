@@ -11,10 +11,10 @@
 # zlib-devel, dash, zip and curl (.github/workflows/solve-field-windows.yml);
 # writes solve-field-windows-x64.zip into the current directory.
 set -euo pipefail
-# Cygwin's toolchain first: a GitHub runner also has MinGW's gcc, ld and
-# gfortran on PATH, and configure mixed them in (Cygwin objects, MinGW ld:
-# every Cygwin runtime symbol undefined).
-export PATH=/usr/bin:/bin:$PATH
+# Cygwin's tools only: a GitHub runner also has MinGW's gcc, ld and gfortran
+# on PATH, and configure mixed them in (Cygwin objects linked by MinGW's ld,
+# through the gfortran Cygwin lacks: every Cygwin runtime symbol undefined).
+export PATH=/usr/bin:/bin
 
 AN_VERSION=0.97
 AN_SHA256=e4eef1b658ba5ad462282b661c0ca3a5c538ba1716e853f7970b7b9fa4a33459

@@ -21,6 +21,7 @@ jobs:
             zlib-devel
             dash
             zip
+            unzip
             curl
       - name: Build
         shell: C:\cygwin\bin\bash.exe -eo pipefail -o igncr '{0}'
