@@ -1,0 +1,28 @@
+# astrometry.net's solve-field for the Windows app (app/windows/build_solve_field.sh).
+name: solve-field for Windows
+on:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cygwin/cygwin-install-action@v6
+        with:
+          platform: x86_64
+          packages: |
+            gcc-core
+            make
+            pkg-config
+            zlib-devel
+            dash
+            zip
+            curl
+      - name: Build
+        shell: C:\cygwin\bin\bash.exe -eo pipefail -o igncr '{0}'
+        run: ./app/windows/build_solve_field.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: solve-field-windows-x64
+          path: solve-field-windows-x64.zip
+          if-no-files-found: error
