@@ -78,7 +78,9 @@ for step in removelines uniformize; do
     cat > "$out/bin/$step" <<EOF
 #!/bin/sh
 # astrometry.net's $step step, which solve-field runs, on AstroFlow's Python.
-here=\$(dirname "\$0")
+# Pure shell: the bundle has no coreutils. The shell execs POSIX paths only.
+here=\${0%/*}
+python=\$(cygpath -u "\$ASTROFLOW_PYTHON")
 n=\$#
 i=0
 while [ \$i -lt \$n ]; do
@@ -88,7 +90,7 @@ while [ \$i -lt \$n ]; do
     set -- "\$@" "\$a"
     i=\$((i + 1))
 done
-PYTHONPATH=\$(cygpath -w "\$here/../python") exec "\$ASTROFLOW_PYTHON" -s -m astrometry.util.$step "\$@"
+PYTHONPATH=\$(cygpath -w "\$here/../python") exec "\$python" -s -m astrometry.util.$step "\$@"
 EOF
     chmod +x "$out/bin/$step"
 done
