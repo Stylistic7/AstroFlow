@@ -2,6 +2,10 @@
 name: solve-field for Windows
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - app/windows/build_solve_field.sh
+      - .github/workflows/solve-field-windows.yml
 jobs:
   build:
     runs-on: windows-latest
