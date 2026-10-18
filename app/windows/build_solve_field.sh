@@ -47,7 +47,9 @@ echo "→ cfitsio $CFITSIO_VERSION (without curl and its chain of DLLs)"
 
 echo "→ astrometry.net $AN_VERSION: the solver (plot/ wants cairo, sdss/ Python; gsl is in-tree)"
 cd "astrometry.net-$AN_VERSION"
-export PKG_CONFIG_PATH=$work/cfitsio/lib/pkgconfig
+# Named outright, with zlib after cfitsio: a static libcfitsio needs it, and
+# pkg-config lists it only under Libs.private.
+export CFITS_INC="-I$work/cfitsio/include" CFITS_LIB="-L$work/cfitsio/lib -lcfitsio -lz -lm"
 # For any x86-64 PC, not the build machine's CPU (the default is -march=native).
 # gsl-an first: under -j the top-level Makefile races util/ against it.
 export ARCH_FLAGS="-march=x86-64 -mtune=generic"
