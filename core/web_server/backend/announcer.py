@@ -1,5 +1,5 @@
+import threading
 import time
-import os
 
 from context import queue
 from web_server.backend.message_announcer import MessageAnnouncer
@@ -18,9 +18,17 @@ def post_fork(server, worker):
 
 
 def start_event_loop():
-    import gevent
+    """The announcer's one consumer, in the stream server: a greenlet under
+    gunicorn's gevent worker (which monkey-patches the socket module), a
+    thread under waitress on Windows."""
+    from gevent import monkey
 
-    gevent.spawn(event_loop)
+    if monkey.is_module_patched("socket"):
+        import gevent
+
+        gevent.spawn(event_loop)
+    else:
+        threading.Thread(target=event_loop, name="announcer", daemon=True).start()
 
 
 def event_loop():

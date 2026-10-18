@@ -5,6 +5,7 @@ import sys
 
 from mcp_server import MCP_PORT
 from state.gunicorn_control import GunicornConfig, GunicornManager
+from state.procs import CHILD_FLAGS
 
 
 class McpManager(GunicornManager):
@@ -23,4 +24,4 @@ class McpManager(GunicornManager):
         command = [sys.executable, "-m", "mcp_server", "--port", str(port)]
         print(f"### Starting MCP sidecar with command: {command}")
         env = os.environ | {"ASTROFLOW_CACHE_TIMEOUT_S": "15"}
-        return subprocess.Popen(command, env=env)
+        return subprocess.Popen(command, env=env, creationflags=CHILD_FLAGS)

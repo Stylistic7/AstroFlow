@@ -4,6 +4,8 @@ import subprocess
 import sys
 import time
 
+from state.procs import CHILD_FLAGS
+
 
 @dataclass(frozen=True)
 class GunicornConfig:
@@ -15,6 +17,12 @@ class GunicornConfig:
     start_port: int
     num_workers: int
     timeout: int
+    # Windows only (one waitress process per port): its threads. gunicorn's
+    # worker processes keep their 4 each.
+    threads: int = 4
+    # Windows only: `module:function` run in the server's process before it
+    # serves — what the gunicorn config file's `post_fork` does on POSIX.
+    on_start: str = ""
 
 
 # A worker that dies at boot dies FAST — every observed failure exited in
@@ -36,6 +44,9 @@ class GunicornManager:
     (2026-08-18/19, three times). A LONE respawn reliably succeeds (3/3
     measured) because the import race needs company, so one staggered retry
     round is normally the end of it.
+
+    On Windows, where gunicorn cannot run (it forks), each port is one
+    waitress process (`web_server.backend.serve`), supervised the same way.
     """
 
     def __init__(self, config: GunicornConfig):
@@ -43,7 +54,13 @@ class GunicornManager:
         self.processes = []   # aligned with self.ports
         self.ports = []
 
-    def _spawn(self, port: int) -> subprocess.Popen:
+    def _command(self, port: int) -> list[str]:
+        if sys.platform == "win32":
+            command = [sys.executable, "-m", "web_server.backend.serve", self.config.module,
+                       "--port", str(port), "--threads", str(self.config.threads)]
+            if self.config.on_start:
+                command += ["--on-start", self.config.on_start]
+            return command
         command = [
             sys.executable,
             "-m",
@@ -68,8 +85,11 @@ class GunicornManager:
 
         if self.config.timeout is not None:
             command += ["--timeout", str(self.config.timeout)]
+        return command
 
-        print(f"### Starting gunicorn process with command: {command}")
+    def _spawn(self, port: int) -> subprocess.Popen:
+        command = self._command(port)
+        print(f"### Starting web server with command: {command}")
         # Web workers get a SHORT cache-op timeout (the compute graph's
         # default is 86400s = "block until done"): a gunicorn thread
         # stuck behind the cache.db writer lock must error out in
@@ -79,7 +99,7 @@ class GunicornManager:
         # hot web keys moved to the lock-free durable store this should
         # rarely trigger; it is the backstop, not the mechanism.
         env = os.environ | {"ASTROFLOW_CACHE_TIMEOUT_S": "15"}
-        return subprocess.Popen(command, env=env)
+        return subprocess.Popen(command, env=env, creationflags=CHILD_FLAGS)
 
     def start(self):
         for i in range(self.config.num_servers):

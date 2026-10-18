@@ -21,7 +21,9 @@ import json
 import os
 from pathlib import Path
 
-SUPPORT = Path.home() / "Library" / "Application Support" / "AstroFlow"
+from base_path import app_support_dir
+
+SUPPORT = app_support_dir()
 SETTINGS = SUPPORT / "settings.json"
 ASTROMETRY_CONFIG = SUPPORT / "astrometry.cfg"
 

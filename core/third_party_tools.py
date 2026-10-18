@@ -16,6 +16,7 @@ import plistlib
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -58,6 +59,11 @@ def _graxpert() -> str | None:
 
 def _at(path: str) -> Callable[[], str | None]:
     return lambda: path if Path(path).exists() else None
+
+
+def _installed(mac: str, windows: str) -> Callable[[], str | None]:
+    """Where the tool's installer puts it on this platform."""
+    return _at(windows if sys.platform == "win32" else mac)
 
 
 def _first(*finders: Callable[[], str | None]) -> Callable[[], str | None]:
@@ -155,15 +161,17 @@ TOOLS = [
     Tool("graxpert", "GraXpert", "background extraction (ships with AstroFlow)",
          "included in AstroFlow.app", _graxpert, _trial_graxpert),
     Tool("siril", "Siril", "stacking",
-         "the macOS app from https://siril.org", _at("/Applications/Siril.app/Contents/MacOS/siril-cli"),
-         _trial_siril),
+         "the app from https://siril.org",
+         _installed("/Applications/Siril.app/Contents/MacOS/siril-cli",
+                    r"C:\Program Files\Siril\bin\siril-cli.exe"), _trial_siril),
     Tool("rc-astro", "RC Astro", "BlurXTerminator, StarXTerminator, NoiseXTerminator",
          "the rc-astro installer from https://www.rc-astro.com",
          # The app's PATH is its own tools and the system's, not /usr/local/bin
          # where the installer links it: its install location too.
          _first(_on_path("rc-astro"), _at("/Applications/RC-Astro/CLI/rc-astro")), _trial_rc_astro),
     Tool("pixinsight", "PixInsight", "the PixInsight pipelines (a folder, not a program)",
-         "https://pixinsight.com", _at("/Applications/PixInsight"), _trial_pixinsight),
+         "https://pixinsight.com",
+         _installed("/Applications/PixInsight", r"C:\Program Files\PixInsight"), _trial_pixinsight),
 ]
 _BY_KEY = {t.key: t for t in TOOLS}
 

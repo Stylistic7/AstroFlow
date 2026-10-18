@@ -8,6 +8,7 @@ import socket
 import psutil
 
 from base_path import RAY_CLI
+from state.procs import CHILD_FLAGS
 
 
 def _workers_soft_limit() -> int:
@@ -108,6 +109,7 @@ def _start_ray(args: list[str], env: dict[str, str]) -> subprocess.Popen:
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,  # Line-buffered output
+        creationflags=CHILD_FLAGS,
     )
 
 
