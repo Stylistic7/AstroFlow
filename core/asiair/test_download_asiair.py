@@ -109,3 +109,52 @@ def test_the_download_poller_calls_the_downloader_correctly():
             f"download_from_asiair.remote takes 3 positional args "
             f"(rig, ip, dest_path); call site passes {len(c.args)}"
         )
+
+
+def test_ping_counts_the_windows_way_there(monkeypatch):
+    import subprocess
+    import sys
+    seen = {}
+
+    def fake_run(command, **kw):
+        seen["command"] = command
+        return subprocess.CompletedProcess(command, 0)
+    monkeypatch.setattr(dl.subprocess, "run", fake_run)
+    monkeypatch.setattr(sys, "platform", "win32")
+    assert dl.ping("10.0.0.28") and seen["command"] == ["ping", "-n", "1", "10.0.0.28"]
+    monkeypatch.setattr(sys, "platform", "darwin")
+    dl.ping("10.0.0.28")
+    assert seen["command"] == ["ping", "-c", "1", "10.0.0.28"]
+
+
+def test_on_windows_the_share_is_a_unc_path_and_nothing_is_mounted(monkeypatch):
+    import sys
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(dl.os.path, "isdir", lambda p: p == r"\\10.0.0.28\EMMC Images")
+    monkeypatch.setattr(dl.subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no mount on Windows")))
+    with dl.MountContextManager("RC71", "10.0.0.28", "EMMC%20Images", "/tmp/unused") as share:
+        assert share.mounted and share.path == r"\\10.0.0.28\EMMC Images"
+    with dl.MountContextManager("RC71", "10.0.0.28", "TF%20Images", "/tmp/unused") as share:
+        assert not share.mounted, "an unreachable share is reported, not raised"
+
+
+def test_copy_lands_each_frame_whole_with_its_mtime_and_no_partials_left(tmp_path):
+    import os
+    src, dest = tmp_path / "card", tmp_path / "raw"
+    src.mkdir(); dest.mkdir()
+    frame = src / "Light_2.fit"
+    frame.write_bytes(b"pixels")
+    os.utime(frame, (1_600_000_000, 1_600_000_000))
+    assert dl._copy_fits_files([str(frame)], str(dest))
+    landed = dest / "Light_2.fit"
+    assert landed.read_bytes() == b"pixels" and int(landed.stat().st_mtime) == 1_600_000_000
+    assert sorted(p.name for p in dest.iterdir()) == ["Light_2.fit"]
+
+
+def test_logs_copy_keeps_the_device_folder_name(tmp_path):
+    log_dir = tmp_path / "card" / "log"
+    log_dir.mkdir(parents=True)
+    (log_dir / "guide.txt").write_text("rms 0.5")
+    assert dl._download_logs_from_rig(str(log_dir), str(tmp_path / "date" / "350mm"))
+    assert (tmp_path / "date" / "350mm" / "logs" / "log" / "guide.txt").read_text() == "rms 0.5"
+    assert dl._download_logs_from_rig(str(log_dir), str(tmp_path / "date" / "350mm")), "a second copy is fine"
