@@ -7,7 +7,7 @@
 # Cygwin runtime those programs need: its DLL, a shell (solve-field runs its
 # helpers through /bin/sh) and cygpath for the wrappers.
 #
-# Runs on a Windows machine with Cygwin's gcc-core, make, pkg-config,
+# Runs on a Windows machine with Cygwin's gcc-core, make, pkg-config, libbz2-devel,
 # zlib-devel, dash, zip and curl (.github/workflows/solve-field-windows.yml);
 # writes solve-field-windows-x64.zip into the current directory.
 set -euo pipefail

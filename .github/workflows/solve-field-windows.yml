@@ -19,6 +19,7 @@ jobs:
             make
             pkg-config
             zlib-devel
+            libbz2-devel
             dash
             zip
             unzip
