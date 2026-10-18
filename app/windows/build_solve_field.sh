@@ -90,7 +90,8 @@ while [ \$i -lt \$n ]; do
     set -- "\$@" "\$a"
     i=\$((i + 1))
 done
-PYTHONPATH=\$(cygpath -w "\$here/../python") exec "\$python" -s -m astrometry.util.$step "\$@"
+# bin's Windows path, then up: in Cygwin bin is /usr/bin, whose .. is /usr.
+PYTHONPATH=\$(cygpath -w "\$here")/../python exec "\$python" -s -m astrometry.util.$step "\$@"
 EOF
     chmod +x "$out/bin/$step"
 done
