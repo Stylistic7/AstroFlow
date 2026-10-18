@@ -1,6 +1,7 @@
 import os
 import shlex
 import subprocess
+import sys
 import time
 import socket
 
@@ -84,7 +85,30 @@ def _resources(base: dict) -> str:
             base = {**base, "Siril": 1}
     except ToolNotFoundError:
         pass
-    return "'" + json.dumps(base) + "'"
+    return json.dumps(base)
+
+
+def _start_ray(args: list[str], env: dict[str, str]) -> subprocess.Popen:
+    """`ray start` as an argument list with its own environment: no shell,
+    which Windows lacks `ulimit` and `VAR=value cmd` for. The open-file limit
+    the raylet needs (10,000) is raised here, in this process, and inherited;
+    Windows has no such limit."""
+    if sys.platform != "win32":
+        import resource
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        want = 10000 if hard == resource.RLIM_INFINITY else min(10000, hard)
+        if soft < want:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (want, hard))
+    command = [*RAY_CLI, "start", *args]
+    print(f'### Starting Ray with {" ".join(f"{k}={v}" for k, v in env.items())} {shlex.join(command)}')
+    return subprocess.Popen(
+        command,
+        env={**os.environ, **env},
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,  # Line-buffered output
+    )
 
 
 def start_ray_head_node(node_ip_address: str | None = None, timeout=60):
@@ -93,17 +117,10 @@ def start_ray_head_node(node_ip_address: str | None = None, timeout=60):
     # For debug-style one-task-at-a-time serialization, add {"fake_resource": 1}
     # here and tag the target functions with resources={"fake_resource": 1}.
     resources = _resources({"PixInsight": 1, "diskcache": 1, "fastest_storage": 1, "gpu_slots": 3})
-    bind = f" --node-ip-address {node_ip_address}" if node_ip_address else ""
-    command = f"""ulimit -n 10000 && RAY_num_workers_soft_limit={_workers_soft_limit()} {shlex.join(RAY_CLI)} start --head{bind} --memory {_ray_memory_bytes()} --resources {resources}"""
-    print(f'### Starting Ray head node with command "{command}"')
-    process = subprocess.Popen(
-        command,
-        shell=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,  # Line-buffered output
-    )
+    bind = ["--node-ip-address", node_ip_address] if node_ip_address else []
+    process = _start_ray(
+        ["--head", *bind, "--memory", str(_ray_memory_bytes()), "--resources", resources],
+        {"RAY_num_workers_soft_limit": str(_workers_soft_limit())})
 
     try:
         _wait_for_ray(timeout)
@@ -176,16 +193,11 @@ def start_ray_subordinate_node(head_node_address, node_ip_address: str | None = 
     bind = node_ip_address or get_ip()
     # Ray refuses multi-node clusters on macOS without the opt-in; set here, not
     # in a shell profile (fish universals are invisible to zsh/ssh launches).
-    command = f"""ulimit -n 10000 && RAY_ENABLE_WINDOWS_OR_OSX_CLUSTER=1 RAY_num_workers_soft_limit={_workers_soft_limit()} {shlex.join(RAY_CLI)} start --address {head_node_address}:6379 --node-ip-address {bind} --memory {_ray_memory_bytes()} --resources {resources}"""
-    print(f'### Starting Ray subordinate node with command "{command}"')
-    process = subprocess.Popen(
-        command,
-        shell=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,  # Line-buffered output
-    )
+    process = _start_ray(
+        ["--address", f"{head_node_address}:6379", "--node-ip-address", bind,
+         "--memory", str(_ray_memory_bytes()), "--resources", resources],
+        {"RAY_ENABLE_WINDOWS_OR_OSX_CLUSTER": "1",
+         "RAY_num_workers_soft_limit": str(_workers_soft_limit())})
 
     try:
         _wait_for_ray(timeout)
