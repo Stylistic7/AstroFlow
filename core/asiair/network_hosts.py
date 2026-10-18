@@ -8,7 +8,7 @@ import socket
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 
-import netifaces
+import psutil
 
 _MAX_ADDRESSES = 1024   # a /22; a bigger interface is not a home LAN, and each address costs a probe
 _CONNECT_TIMEOUT_S = 0.5
@@ -16,12 +16,14 @@ _CONNECT_TIMEOUT_S = 0.5
 
 def _local_networks() -> list[ipaddress.IPv4Network]:
     nets = []
-    for iface in netifaces.interfaces():
-        for addr in netifaces.ifaddresses(iface).get(netifaces.AF_INET, []):
-            if "netmask" not in addr or "broadcast" not in addr:
-                continue   # loopback or point-to-point (VPN)
-            net = ipaddress.ip_network(f"{addr['addr']}/{addr['netmask']}", strict=False)
-            if not net.is_link_local and net.num_addresses <= _MAX_ADDRESSES:
+    for addrs in psutil.net_if_addrs().values():
+        for addr in addrs:
+            if addr.family != socket.AF_INET or not addr.netmask or addr.ptp:
+                continue   # not IPv4, or a point-to-point link (VPN)
+            net = ipaddress.ip_network(f"{addr.address}/{addr.netmask}", strict=False)
+            # Loopback by address, not by a missing broadcast address, which
+            # Windows never reports.
+            if not (net.is_loopback or net.is_link_local) and net.num_addresses <= _MAX_ADDRESSES:
                 nets.append(net)
     return nets
 

@@ -9,7 +9,7 @@ version = "0.1"
 # share one interpreter, and the pinned deps (ray, numpy, ...) only ship
 # cp313 wheels — let uv pick 3.14 and `uv sync` fails with "no wheel for
 # the current platform". Bump this in lockstep across all nodes.
-requires-python = ">=3.13,<3.14"
+requires-python = ">=3.12,<3.14"
 
 # Every node (head or worker) installs the same set so behaviour is
 # identical everywhere. Splitting into head-vs-worker optional extras
@@ -27,7 +27,6 @@ dependencies = [
     "objsize",
     "xxhash",
     "psutil",
-    "netifaces",
     "zeroconf",
     "frozendict",
     "python-dateutil",
