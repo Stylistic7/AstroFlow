@@ -20,9 +20,10 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: solve-field-windows-x64
+      # The Node that wrote package-lock.json (npm 10 lays the tree out differently and rejects it).
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 26
       - name: Frontend
         working-directory: core/web_server/frontend
         run: |
