@@ -349,8 +349,15 @@ def _with_common_first_pass(fn, inputs: tuple, optional: tuple,
     pixels (4.3%) are ragged, separating into coherent channel
     combinations (H-only, SH, HO, SO).
 
-    OPTIONAL inputs are skipped: they bind black when absent, so testing
-    them would blank the whole image instead of its rim.
+    An OPTIONAL input is judged on its own, never the pixel: where any of
+    its bands is exactly zero, that input alone goes to black there and the
+    finish degrades the way an absent one does (the starless view). A wholly
+    absent input binds black and so is black everywhere, as before; an RGB
+    stars join whose G channel was refused (2026-10-19: thin Sagittarius
+    stacks, post-stack calibration refused on scatter) used to screen red
+    plus blue onto the nebula — magenta stars that grew with the stars
+    slider. A stars layer between its stars is small but positive, and sits
+    off the pedestal gauge, so the exact-zero test is used, not `floor`.
 
     `colour` finishes (no filter role) also get the background desaturation
     pass (BG_DESAT / BG_LEVEL); a channel finish's grey output has nothing to
@@ -389,6 +396,15 @@ def _with_common_first_pass(fn, inputs: tuple, optional: tuple,
         if colour:
             desat = kwargs.pop(BG_DESAT.name, BG_DESAT.default)
             level = kwargs.pop(BG_LEVEL.name, BG_LEVEL.default)
+        # An optional input missing any band is absent at that pixel: that
+        # input goes to black there (see the docstring), under the same
+        # toggle as the rim trim so "raw" means raw.
+        srcs = list(srcs)
+        for i, tap in enumerate(inputs):
+            if tap in optional and i < len(srcs):
+                s = srcs[i]
+                present = minimum(minimum(s.r, s.g), s.b) > 0.0
+                srcs[i] = mix(s, where(present, s, s * 0.0), trim)
         out = fn(*srcs, **kwargs)
         if tracer.tracing():
             reads.update(_bands_read(out.node, len(inputs)))
@@ -493,7 +509,8 @@ def finish(name: str, inputs: tuple, alt_primaries: tuple = (),
             structural_source_hash(fn) + "|" + name + "|" + ",".join(inputs)
             # common4: + the show-clipping last pass and Color expansion
             # (2026-10-03). common5: + background desaturation (2026-10-04).
-            # common6: + the display-white ceiling, `white()` (2026-10-19).
+            # common6: + the display-white ceiling, `white()`, and an
+            # optional input blanked where a band is missing (2026-10-19).
             # Bumping the tag is what invalidates every served spec and
             # cached preview exactly once when the shared pass changes.
             + "|common6"

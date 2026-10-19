@@ -272,6 +272,27 @@ class TestCommonFirstPass:
         out = f.bake([nb, np.zeros_like(nb)], {"trim_ragged": 1.0})[0]
         assert out.max() > 0, "an absent star layer must not black out the image"
 
+    def test_an_optional_input_missing_a_band_vanishes_instead_of_changing_colour(self):
+        """An RGB stars join whose G channel was refused (2026-10-19) screened
+        red plus blue onto the nebula: magenta stars. Where any band of an
+        optional input is exactly zero, that input alone is black there — the
+        starless view — while the nebula underneath still renders; the trim
+        toggle off shows the raw data."""
+        import numpy as np
+        f = self._hubble()
+        nb = np.full((1, 4, 3), 0.006, dtype=np.float32)   # nebula below the bright anchor: mid grey
+        stars = np.zeros_like(nb)
+        stars[0, 0] = (0.3, 0.3, 0.3)        # a white star, all bands present
+        stars[0, 1] = (0.3, 0.0, 0.3)        # the same star with G refused
+        stars[0, 2] = (0.3, 1e-6, 0.3)       # faint but present G: a real red-blue star
+        starless = f.bake([nb, np.zeros_like(nb)])[0]
+        out = f.bake([nb, stars])[0]
+        assert out[0].max() > starless[0].max(), "a whole star screens on"
+        assert np.allclose(out[1], starless[1]), "a star missing a band vanishes"
+        assert out[2][0] > out[2][1] + 0.1, "a faint band is present, the star keeps its colour"
+        raw = f.bake([nb, stars], {"trim_ragged": 0.0})[0]
+        assert raw[1][0] > raw[1][1] + 0.1, "trim off: the two-band star shows as it is"
+
     def test_traced_into_the_wgsl(self):
         """It goes through the tracer like any author op — not spliced into
         the shader template — so WGSL and numpy come from one source."""
