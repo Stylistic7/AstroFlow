@@ -6,6 +6,17 @@ import { MarkersPlugin } from '@photo-sphere-viewer/markers-plugin';
 import "@photo-sphere-viewer/markers-plugin/index.css";
 import AstroFlowContext from './AstroFlowContext.jsx';
 
+// The viewer needs WebGL 2 and throws without it (a virtual machine or a
+// remote-desktop session often has none); unguarded, that unmounted the
+// whole app, so the home page went blank with no way to reach the rest.
+const WEBGL2 = (() => {
+	try {
+		return !!document.createElement("canvas").getContext("webgl2");
+	} catch {
+		return false;
+	}
+})();
+
 export default function Starmap() {
 	const { constellationPolylines, targets, mosaics, isQuarantined, showQuarantined } = useContext(AstroFlowContext);
 	const navigate = useNavigate();
@@ -90,6 +101,13 @@ export default function Starmap() {
 	const handleReady = (instance) => {
 		setInstance(instance);
 	}; // end handleReady
+
+	if (!WEBGL2)
+		return <p style={{ padding: "2em" }}>
+			The star map needs WebGL 2, which this browser does not provide (virtual
+			machines and remote-desktop sessions usually lack it). Everything else in
+			AstroFlow works: use the menu.
+		</p>;
 
 	return <ReactPhotoSphereViewer
 		src="/static/images/ESA_Gaia_DR2_AllSky_Brightness_Colour_Cartesian_4000x2000.png"
