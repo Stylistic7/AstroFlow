@@ -39,6 +39,7 @@ from decisions.resolve import resolve_calibration, resolve_decisions
 from decisions.settings import ProcessingConfig
 from decorators import node
 from file_io.types import FitsFilePath, Produced
+from file_io.links import link_or_copy
 from metadata.classes import ImageMetadata
 from stacks.composite_stack import BaseStack, Stack
 from stacks.dust_epochs import MoteModel
@@ -88,7 +89,7 @@ def _as_fits(src: Path, dst: Path) -> Path:
     if dst.exists():
         return dst
     if src.suffix.lower() in (".fit", ".fits"):
-        os.symlink(src, dst)
+        link_or_copy(src, dst)
     else:
         fits.writeto(dst, np.asarray(read_image(src), np.float32).squeeze(), overwrite=True)
     return dst
@@ -125,13 +126,13 @@ def _calibration_script(stack: BaseStack, cal_by_id: dict[str, Path], tmp: Path,
             # sequence"); calibrate the lone frame directly, under the name
             # the sequence path would have given it.
             (m,) = run.metadata.values()
-            os.symlink(m.filename, tmp / "proc" / f"r{i}_00001.fit")
+            link_or_copy(m.filename, tmp / "proc" / f"r{i}_00001.fit")
             lines += [f"cd {tmp}/proc", f"calibrate_single r{i}_00001.fit {args} -prefix=pp_"]
             continue
         run_dir = tmp / f"run_{i}"
         run_dir.mkdir()
         for m in run.metadata.values():
-            os.symlink(m.filename, run_dir / Path(m.filename).name)
+            link_or_copy(m.filename, run_dir / Path(m.filename).name)
         lines += [f"cd {run_dir}", f"link r{i} -out={tmp}/proc", f"cd {tmp}/proc",   # Siril names it r{i}_
                   f"calibrate r{i} {args} -prefix=pp_"]
     return "\n".join(lines) + "\n" if len(lines) > 3 else None
@@ -164,7 +165,7 @@ def _gather(stack: BaseStack, tmp: Path) -> Path:
         assert len(frames) == len(run.metadata), (i, len(frames), len(run.metadata))
         for f in frames:
             n += 1
-            os.symlink(f, all_dir / f"{n:05d}{f.suffix.lower()}")
+            link_or_copy(f, all_dir / f"{n:05d}{f.suffix.lower()}")
     return all_dir
 
 

@@ -22,6 +22,8 @@ from beartype import beartype
 import node_settings
 from third_party_tools import tool_path
 from file_io.conversion import convert_xisf_to_fits
+from file_io.cygwin import cygwin_path
+from file_io.links import link_or_copy
 from file_io.sidecar import get_section, set_section, sidecar_path_for
 from units import Degrees, Radians, ArcsecondsPerPixel
 _PLATESOLUTION_SCHEMA = "astroflow.platesolution.v2"
@@ -109,6 +111,18 @@ def simplify_header(header: Mapping[str, Any]) -> dict[str, Any]:
 
 
 @beartype
+def _solver_arg(arg) -> str:
+    """An argument as solve-field reads it: on Windows it is a Cygwin program
+    (app/windows/build_solve_field.sh), given paths in Cygwin's form."""
+    return cygwin_path(arg)
+
+
+def _solver_env() -> dict[str, str]:
+    """solve-field's Python steps (removelines, uniformize) run on this
+    interpreter: the Windows bundle's wrappers read ASTROFLOW_PYTHON."""
+    return {**os.environ, "ASTROFLOW_PYTHON": sys.executable, "CYGWIN": "nodosfilewarning"}
+
+
 def _solve_field(
     filename: Path | str, arguments: list[str], debug: bool = False,
     verify: PlateSolution | None = None,
@@ -126,7 +140,7 @@ def _solve_field(
         if suffix == ".xisf":
             convert_xisf_to_fits(filename, dest_filename)
         elif suffix in (".fits", ".fit", ".fts"):
-            os.symlink(Path(filename).resolve(), dest_filename)
+            link_or_copy(filename, dest_filename)
         else:
             from file_io.generic import read_image
             pixels = np.asarray(read_image(Path(filename)), np.float32)
@@ -145,11 +159,12 @@ def _solve_field(
             arguments = arguments + ["--verify", str(seed)]
 
         try:
-            command = arguments + [dest_filename]
+            # The program itself stays a Windows path: subprocess runs it.
+            command = [arguments[0], *(_solver_arg(a) for a in [*arguments[1:], "--temp-dir", temp_dir, dest_filename])]
             if debug:
-                print("### command " + " ".join([str(i) for i in command]))
+                print("### command " + " ".join(command))
 
-            ret = subprocess.run(command, capture_output=True)
+            ret = subprocess.run(command, capture_output=True, env=_solver_env())
 
             if debug:
                 print(ret.stdout.decode("utf-8"))
@@ -187,8 +202,11 @@ def _solve_field(
             finally:
                 fits.close()
         else:
-            # TODO: Emit warnings through Metaflow's reporting system.
-            # print(f'Could not plate-solve file {filename}')
+            # Loud: what solve-field said, since a failed solve otherwise
+            # leaves no trace of WHY (a missing index folder, a broken step).
+            output = (ret.stdout + ret.stderr).decode("utf-8", "replace").strip().splitlines()
+            print(f"### solve-field did not solve {filename} (exit {ret.returncode}); its last lines:\n"
+                  + "\n".join(output[-12:]))
             return None
 
 

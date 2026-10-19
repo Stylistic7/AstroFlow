@@ -21,6 +21,7 @@ def guincorn_configs() -> list[GunicornConfig]:
             # request. Processes are the only thing that actually isolates.
             num_workers=4,
             timeout=300,
+            threads=16,
         ),
         "stream_server": GunicornConfig(
             name="stream_server",
@@ -31,6 +32,10 @@ def guincorn_configs() -> list[GunicornConfig]:
             start_port=8001,
             num_workers=1,
             timeout=0,
+            # Every open event stream holds a thread for as long as a page is
+            # open; its announcer loop, as gunicorn_config.py starts it.
+            threads=64,
+            on_start="web_server.backend.announcer:start_event_loop",
         ),
         "tile_server": GunicornConfig(
             name="tile_server",
@@ -44,5 +49,6 @@ def guincorn_configs() -> list[GunicornConfig]:
             # tiles/s no matter how many requests were in flight (2026-10-01).
             num_workers=4,
             timeout=300,
+            threads=16,
         ),
     }

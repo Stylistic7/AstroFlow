@@ -8,6 +8,7 @@ import socket
 import psutil
 
 from base_path import RAY_CLI
+from state.procs import CHILD_FLAGS
 
 
 def _workers_soft_limit() -> int:
@@ -63,11 +64,14 @@ def is_ray_connected(timeout: float = 10.0):
     return "Autoscaler status" in result.stdout
 
 
-def _wait_for_ray(timeout):
-    """Poll ray status until the node is up, or raise TimeoutError."""
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        print("### Waiting for Ray node to start...")
+def _wait_for_ray(process: subprocess.Popen, timeout):
+    """Poll `ray status` until the node is up; raise as soon as `ray start`
+    exits with an error (it exits 0 once the node runs), or after `timeout`."""
+    started = time.monotonic()
+    while time.monotonic() - started < timeout:
+        if process.poll() not in (None, 0):
+            raise RuntimeError(f"`ray start` exited with {process.returncode}; its output is above")
+        print(f"### Waiting for Ray node to start... ({time.monotonic() - started:.0f}s)")
         if is_ray_connected():
             return
         time.sleep(1)
@@ -92,7 +96,8 @@ def _start_ray(args: list[str], env: dict[str, str]) -> subprocess.Popen:
     """`ray start` as an argument list with its own environment: no shell,
     which Windows lacks `ulimit` and `VAR=value cmd` for. The open-file limit
     the raylet needs (10,000) is raised here, in this process, and inherited;
-    Windows has no such limit."""
+    Windows has no such limit. Its output goes where ours does (the boot
+    log), so a start that fails says why there."""
     if sys.platform != "win32":
         import resource
         soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
@@ -101,17 +106,15 @@ def _start_ray(args: list[str], env: dict[str, str]) -> subprocess.Popen:
             resource.setrlimit(resource.RLIMIT_NOFILE, (want, hard))
     command = [*RAY_CLI, "start", *args]
     print(f'### Starting Ray with {" ".join(f"{k}={v}" for k, v in env.items())} {shlex.join(command)}')
-    return subprocess.Popen(
-        command,
-        env={**os.environ, **env},
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,  # Line-buffered output
-    )
+    return subprocess.Popen(command, env={**os.environ, **env}, creationflags=CHILD_FLAGS)
 
 
-def start_ray_head_node(node_ip_address: str | None = None, timeout=60):
+# Generous: under x64 emulation on an ARM Windows VM a start takes well over a
+# minute; a start that fails is caught by its exit code, not by this.
+_START_TIMEOUT_S = 180
+
+
+def start_ray_head_node(node_ip_address: str | None = None, timeout=_START_TIMEOUT_S):
     # TODO: Check for an existing Ray head node.
     # TODO: Put these resources in the UI.
     # For debug-style one-task-at-a-time serialization, add {"fake_resource": 1}
@@ -123,8 +126,8 @@ def start_ray_head_node(node_ip_address: str | None = None, timeout=60):
         {"RAY_num_workers_soft_limit": str(_workers_soft_limit())})
 
     try:
-        _wait_for_ray(timeout)
-    except TimeoutError:
+        _wait_for_ray(process, timeout)
+    except (TimeoutError, RuntimeError):
         process.kill()
         raise
 
@@ -144,7 +147,8 @@ def get_ip() -> str:
     return ip
 
 
-def start_ray_subordinate_node(head_node_address, node_ip_address: str | None = None, timeout=60):
+def start_ray_subordinate_node(head_node_address, node_ip_address: str | None = None,
+                               timeout=_START_TIMEOUT_S):
     # JOIN FENCE: refuse to join when this process context cannot read the
     # shared volumes. A worker that joins blind LOOKS healthy to the
     # scheduler but fails every file-touching task it is handed — three
@@ -200,8 +204,8 @@ def start_ray_subordinate_node(head_node_address, node_ip_address: str | None = 
          "RAY_num_workers_soft_limit": str(_workers_soft_limit())})
 
     try:
-        _wait_for_ray(timeout)
-    except TimeoutError:
+        _wait_for_ray(process, timeout)
+    except (TimeoutError, RuntimeError):
         process.kill()
         raise
 

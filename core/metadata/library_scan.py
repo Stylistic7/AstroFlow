@@ -120,6 +120,9 @@ def dir_available(dir: str | Path) -> bool:
     if len(parts) >= 3 and parts[0] == "/" and parts[1] == "Volumes":
         volume = Path("/Volumes") / parts[2]
         return volume.exists()  # volume mounted, dir truly gone → "present"
+    if root.drive:
+        # Windows: an unplugged disk's letter, or an offline share's \\host\share
+        return Path(root.anchor).exists()
     return True  # non-volume path missing = real (empty) state, not absence
 
 

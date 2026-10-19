@@ -9,6 +9,7 @@ import astropy.io.fits as pyfits  # type: ignore
 
 import file_io
 from file_io.types import Produced, XisfFilePath
+from file_io.links import link_or_copy
 from file_io.generic import update_header, copy_image
 from file_io.xisf_file_io import read_xisf_total_exposure_time
 from stacks.run import Run
@@ -35,8 +36,8 @@ def _symlink_frames(filenames: list[str], dest_dir: str) -> None:
             )
 
         dest_filename = os.path.join(dest_dir, os.path.basename(filename))
-        print(f"symlinking {filename} -> {dest_filename}")
-        os.symlink(filename, dest_filename)
+        print(f"linking {filename} -> {dest_filename}")
+        link_or_copy(filename, dest_filename)
 
 def _copy_frames_with_plate_solution(
     metadata: MetadataDict, dest_dir: str,

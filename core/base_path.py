@@ -6,6 +6,8 @@ from pathlib import Path
 def app_support_dir() -> Path:
     """Writable per-user dir for AstroFlow state that must live OUTSIDE the
     read-only / code-signed app bundle."""
+    if sys.platform == "win32":
+        return Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "AstroFlow"
     return Path.home() / "Library" / "Application Support" / "AstroFlow"
 
 

@@ -115,3 +115,20 @@ def test_a_failing_program_reports_its_own_last_lines(monkeypatch):
         argv, 1, "", "line 1\nImportError: Python version mismatch"))
     with pytest.raises(RuntimeError, match="exited 1:\nline 1\nImportError: Python version mismatch"):
         tools._run(["graxpert"])
+
+def test_graxpert_is_found_in_the_uv_tool_folder_when_not_on_path(monkeypatch):
+    import os
+    import stat
+    import tempfile
+    from pathlib import Path
+
+    import third_party_tools
+
+    home = Path(tempfile.mkdtemp())
+    tool = home / ".local" / "bin" / "graxpert"
+    tool.parent.mkdir(parents=True)
+    tool.write_text("#!/bin/sh\n")
+    tool.chmod(tool.stat().st_mode | stat.S_IXUSR)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    monkeypatch.setattr(os, "environ", {**os.environ, "PATH": str(home)})   # nothing on PATH
+    assert third_party_tools._graxpert() == str(tool)

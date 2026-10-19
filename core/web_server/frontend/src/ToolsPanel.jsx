@@ -1,7 +1,7 @@
 // Third-Party Tools: the programs AstroFlow runs, where each one is, and
-// whether it works on every Mac in the cluster; plus solve-field's extra index
+// whether it works on every node in the cluster; plus solve-field's extra index
 // files, for fields smaller than the app's own set covers. `GET/PUT
-// /api/tools`; `POST /api/tools/check` runs each tool's trial on every Mac
+// /api/tools`; `POST /api/tools/check` runs each tool's trial on every node
 // (a few seconds: GraXpert's is a real background extraction).
 import React, { useEffect, useState } from 'react';
 import {
@@ -85,11 +85,11 @@ export default function ToolsPanel() {
   return (
     <PanelPage title={TITLE} intro={
       'The programs AstroFlow runs. GraXpert, solve-field and libvips come with AstroFlow; PixInsight, '
-      + 'Siril and RC Astro are yours to install if you want their pipelines. Each is tried on every Mac '
+      + 'Siril and RC Astro are yours to install if you want their pipelines. Each is tried on every node '
       + 'in your cluster; hover over a result for what the program said. Leave a location empty to use '
-      + 'where the program normally is; a location you set applies on every Mac.'}>
-      <PanelSection title="Every Mac" meta={nodes ? `${nodes.length} Mac${nodes.length === 1 ? '' : 's'}` : null}
-        subtitle={checking ? 'Trying each tool on every Mac…' : null}>
+      + 'where the program normally is; a location you set applies on every node.'}>
+      <PanelSection title="Every node" meta={nodes ? `${nodes.length} node${nodes.length === 1 ? '' : 's'}` : null}
+        subtitle={checking ? 'Trying each tool on every node…' : null}>
         <TableContainer sx={{ overflowX: 'auto' }}>
           <Table size="small">
             <TableHead>
@@ -147,7 +147,7 @@ export default function ToolsPanel() {
                     placeholder="None: AstroFlow's own index files solve fields from about 20′ wide to the whole sky" />
                   <Typography variant="caption" color="text.secondary">
                     Only for smaller fields (focal lengths beyond about 2000 mm): a folder of index files
-                    from astrometry.net, such as the 5200 series, at the same location on every Mac.
+                    from astrometry.net, such as the 5200 series, at the same location on every node.
                   </Typography>
                 </Box>
               )}

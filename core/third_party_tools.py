@@ -2,7 +2,7 @@
 
 Every caller finds its program through `tool_path`: the location the user set
 on the Third-Party Tools page (`node_settings`), else where the program
-normally installs. `check_cluster` runs every trial on every Mac in the
+normally installs. `check_cluster` runs every trial on every node in the
 cluster, so the page shows at a glance which tool on which machine doesn't
 work yet, and why: the trial's own error message.
 
@@ -16,6 +16,7 @@ import plistlib
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -52,12 +53,17 @@ def _graxpert() -> str | None:
     """On PATH (the app puts its own there), else where `make install-graxpert`
     puts it: the uv tool bin folder, which a Ray worker started outside a login
     shell doesn't have on its PATH."""
-    tool_bin = Path("~/.local/bin/graxpert").expanduser()
-    return shutil.which("graxpert") or (str(tool_bin) if tool_bin.exists() else None)
+    # `which` with the folder: on Windows the tool is graxpert.exe.
+    return shutil.which("graxpert") or shutil.which("graxpert", path=str(Path.home() / ".local" / "bin"))
 
 
 def _at(path: str) -> Callable[[], str | None]:
     return lambda: path if Path(path).exists() else None
+
+
+def _installed(mac: str, windows: str) -> Callable[[], str | None]:
+    """Where the tool's installer puts it on this platform."""
+    return _at(windows if sys.platform == "win32" else mac)
 
 
 def _first(*finders: Callable[[], str | None]) -> Callable[[], str | None]:
@@ -77,10 +83,10 @@ def _trial_solve_field(path: str) -> str:
     counts = {f: sum(1 for _ in Path(f).glob("index-*.fits")) if Path(f).is_dir() else 0
               for f in node_settings.index_folders(node_settings.read())}
     if not counts:
-        raise RuntimeError(f"{version}, but no index folder on this Mac: set one under solve-field")
+        raise RuntimeError(f"{version}, but no index folder on this node: set one under solve-field")
     empty = [f for f, n in counts.items() if not n]
     if empty:
-        raise RuntimeError(f"{version}, but no index files in {', '.join(empty)} on this Mac")
+        raise RuntimeError(f"{version}, but no index files in {', '.join(empty)} on this node")
     return f"{version}; " + ", ".join(f"{n} index files in {f}" for f, n in counts.items())
 
 
@@ -127,13 +133,13 @@ def _trial_rc_astro(path: str) -> str:
                   if not re.search(r"(?<!un)licensed", status.get(p, "").lower())
                   or re.search(r"not licensed|expired", status.get(p, "").lower())]
     if unlicensed:
-        raise RuntimeError(f"rc-astro {version}, but not licensed on this Mac:\n" + "\n".join(unlicensed))
+        raise RuntimeError(f"rc-astro {version}, but not licensed on this node:\n" + "\n".join(unlicensed))
     return f"rc-astro {version}; BXT, SXT and NXT licensed"
 
 
 def _trial_pixinsight(path: str) -> str:
     """Located, not launched: starting PixInsight on every check would open
-    its window on every Mac."""
+    its window on every node."""
     app = Path(path) / "PixInsight.app"
     if not (app / "Contents" / "MacOS" / "PixInsight").exists():
         raise RuntimeError(f"no PixInsight.app in {path}")
@@ -149,43 +155,45 @@ def _trial_pixinsight(path: str) -> str:
 
 TOOLS = [
     Tool("solve-field", "astrometry.net", "plate solving: placing every frame on the sky",
-         "included in AstroFlow.app", _on_path("solve-field"), _trial_solve_field),
+         "included in AstroFlow", _on_path("solve-field"), _trial_solve_field),
     Tool("vips", "libvips", "reading and writing large images",
-         "included in AstroFlow.app", lambda: None, _trial_vips, locatable=False),
+         "included in AstroFlow", lambda: None, _trial_vips, locatable=False),
     Tool("graxpert", "GraXpert", "background extraction (ships with AstroFlow)",
-         "included in AstroFlow.app", _graxpert, _trial_graxpert),
+         "included in AstroFlow", _graxpert, _trial_graxpert),
     Tool("siril", "Siril", "stacking",
-         "the macOS app from https://siril.org", _at("/Applications/Siril.app/Contents/MacOS/siril-cli"),
-         _trial_siril),
+         "the app from https://siril.org",
+         _installed("/Applications/Siril.app/Contents/MacOS/siril-cli",
+                    r"C:\Program Files\Siril\bin\siril-cli.exe"), _trial_siril),
     Tool("rc-astro", "RC Astro", "BlurXTerminator, StarXTerminator, NoiseXTerminator",
          "the rc-astro installer from https://www.rc-astro.com",
          # The app's PATH is its own tools and the system's, not /usr/local/bin
          # where the installer links it: its install location too.
          _first(_on_path("rc-astro"), _at("/Applications/RC-Astro/CLI/rc-astro")), _trial_rc_astro),
     Tool("pixinsight", "PixInsight", "the PixInsight pipelines (a folder, not a program)",
-         "https://pixinsight.com", _at("/Applications/PixInsight"), _trial_pixinsight),
+         "https://pixinsight.com",
+         _installed("/Applications/PixInsight", r"C:\Program Files\PixInsight"), _trial_pixinsight),
 ]
 _BY_KEY = {t.key: t for t in TOOLS}
 
 
 def tool_path(key: str) -> str:
-    """Where `key` is on this Mac: the location set on the Third-Party Tools
+    """Where `key` is on this node: the location set on the Third-Party Tools
     page, else its usual place. Raises when neither has it."""
     tool = _BY_KEY[key]
     path = node_settings.read().get("tool_paths", {}).get(key) or tool.default()
     if not path:
-        raise ToolNotFoundError(f"{tool.name} not found on this Mac. Install it ({tool.install}), "
+        raise ToolNotFoundError(f"{tool.name} not found on this node. Install it ({tool.install}), "
                                 "or set where it is on the Third-Party Tools page.")
     return path
 
 
 def pixinsight(*parts: str) -> str:
-    """A path inside this Mac's PixInsight installation."""
+    """A path inside this node's PixInsight installation."""
     return str(Path(tool_path("pixinsight"), *parts))
 
 
 def check(key: str) -> dict:
-    """{"path", "ok", "detail"}: this Mac's trial of one tool."""
+    """{"path", "ok", "detail"}: this node's trial of one tool."""
     tool = _BY_KEY[key]
     path = None
     try:
@@ -204,7 +212,7 @@ def check_this_mac() -> dict:
 
 
 def check_cluster() -> list[dict]:
-    """Every tool's trial on every Mac in the cluster, the head first."""
+    """Every tool's trial on every node in the cluster, the head first."""
     import ray
     from ray.util.scheduling_strategies import NodeAffinitySchedulingStrategy
 

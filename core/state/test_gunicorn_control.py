@@ -64,3 +64,25 @@ def test_respawn_rounds_are_bounded(monkeypatch):
     m = _manager(monkeypatch, always_dead, num_servers=1)
     m.start()
     assert m.processes[0] is always_dead[3], "exactly MAX_RESPAWN_ROUNDS retries"
+
+
+def _config(**overrides):
+    return GunicornConfig(**{
+        "name": "t", "config_file": "web_server/backend/gunicorn_config.py", "module": "m:app",
+        "worker_type": "gevent", "num_servers": 1, "start_port": 8001, "num_workers": 1,
+        "timeout": 0, **overrides})
+
+
+def test_posix_runs_gunicorn_and_windows_runs_waitress(monkeypatch):
+    import sys
+    cfg = _config(threads=64, on_start="web_server.backend.announcer:start_event_loop")
+    monkeypatch.setattr(sys, "platform", "darwin")
+    posix = GunicornManager(cfg)._command(8001)
+    assert posix[1:3] == ["-m", "gunicorn"] and "--threads" in posix and "64" not in posix
+    assert "-c" in posix, "gunicorn's config file starts the announcer there"
+    monkeypatch.setattr(sys, "platform", "win32")
+    windows = GunicornManager(cfg)._command(8001)
+    assert windows[1:4] == ["-m", "web_server.backend.serve", "m:app"]
+    assert windows[4:] == ["--port", "8001", "--threads", "64",
+                           "--on-start", "web_server.backend.announcer:start_event_loop"]
+    assert "--on-start" not in GunicornManager(_config())._command(8000)

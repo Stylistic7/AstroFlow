@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import ray
+import shutil
 import subprocess
+import sys
 from pathlib import Path
+from urllib.parse import unquote
 import tempfile
 import time
 import datetime
@@ -48,7 +51,7 @@ def _rig_name_for_group(fits_files: list[str], fallback: str) -> str:
 def ping(ip: str) -> bool:
     return (
         subprocess.run(
-            ["ping", "-c", "1", ip],
+            ["ping", "-n" if sys.platform == "win32" else "-c", "1", ip],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         ).returncode
@@ -105,46 +108,60 @@ def _make_dest_dir_for_date(dest_dir: str, date: datetime.datetime) -> str:
 
 
 def _copy_fits_files(fits_files: list[str], dest_dir: str) -> bool:
-    """rsync the candidates into `dest_dir`; True if rsync succeeded.
+    """Copy the candidates into `dest_dir`; True when every copy succeeded.
+    A name already there is left alone; each file lands whole (written
+    beside as `.partial`, then renamed) with its mtime kept — what rsync's
+    `--ignore-existing --partial --delay-updates` did before, on the Mac
+    only (Windows has no rsync).
 
-    Deliberately does NOT report which files it copied. `--ignore-existing`
-    means the copied set is a subset of the candidates that only rsync knows,
-    and the old return — the candidate list, restated with the destination
-    prefix — was that subset's plausible-looking impostor. Its one consumer
-    fed it to a sidecar rewrite that bumped 171 mtimes per sweep and spun the
-    graph forever (2026-09-09). Nothing needs the list: the library scan
-    discovers what landed, from the disk.
+    Deliberately does NOT report which files it copied. The copied set is a
+    subset of the candidates, and the old return — the candidate list,
+    restated with the destination prefix — was that subset's
+    plausible-looking impostor. Its one consumer fed it to a sidecar rewrite
+    that bumped 171 mtimes per sweep and spun the graph forever
+    (2026-09-09). Nothing needs the list: the library scan discovers what
+    landed, from the disk.
     """
     if not fits_files:
         return True
 
-    print(f"Using rsync to copy {len(fits_files)} FITS files to '{dest_dir}'...")
-    ret = subprocess.run(
-        [
-            "rsync",
-            "-a",
-            "--ignore-existing",
-            "--partial",
-            "--partial-dir=.rsync-partial",
-            "--delay-updates",
-            *fits_files,
-            dest_dir,
-        ]
-    ).returncode
-    if ret != 0:
-        print("Could not rsync FITS files")
+    print(f"Copying {len(fits_files)} FITS files to '{dest_dir}'...")
+    try:
+        for src in fits_files:
+            dest = Path(dest_dir) / Path(src).name
+            if dest.exists():
+                continue
+            partial = dest.with_name(dest.name + ".partial")
+            shutil.copy2(src, partial)
+            os.replace(partial, dest)
+    except OSError as e:
+        print(f"Could not copy FITS files: {e}")
         return False
 
-    print("rsync is done")
+    print("copy is done")
     return True
 
 
 class MountContextManager:
+    """The rig's share, readable at `path` inside the block: mounted at
+    `mount_point` on the Mac; on Windows reached as a UNC path, no mount."""
+
     def __init__(self, rig: str, ip: str, volume: str, mount_point: str) -> None:
         self.rig, self.ip, self.volume, self.mount_point = rig, ip, volume, mount_point
         self.mounted = False
+        self.path = mount_point
 
     def __enter__(self) -> "MountContextManager":
+        if sys.platform == "win32":
+            self.path = rf"\\{self.ip}\{unquote(self.volume)}"
+            self.mounted = os.path.isdir(self.path)
+            if not self.mounted:
+                # The ASIAIR's share is a guest share, which Windows blocks
+                # by default (AllowInsecureGuestAuth) and, since 11 24H2,
+                # by requiring SMB signing the device does not do.
+                print(f"Could not reach {self.path}: Windows allows a guest share only with "
+                      "AllowInsecureGuestAuth on and SMB signing not required")
+            return self
         print(f"Mounting volume '{self.volume}' from rig '{self.rig}'")
         self.mounted = _mount_volume(self.ip, self.volume, self.mount_point)
         if not self.mounted:
@@ -155,7 +172,7 @@ class MountContextManager:
         if exc_type:
             print("Exception info:", exc_type, exc_value, exc_tb, sep="\n")
 
-        if not self.mounted:
+        if not self.mounted or sys.platform == "win32":
             return
         print(f"Unmounting '{self.volume}' from rig '{self.rig}'")
         if not _unmount_volume(self.mount_point):
@@ -268,9 +285,14 @@ def _download_logs_from_rig(log_dir: str, dest_dir: str) -> bool:
         print(f"Could not find log dir '{log_dir}'")
         return False
 
-    dest_dir = os.path.join(dest_dir, "logs")
-    print(f"Copying logs from '{log_dir}' to '{dest_dir}'")
-    return subprocess.run(["rsync", "-zar", log_dir, dest_dir]).returncode == 0
+    dest = os.path.join(dest_dir, "logs", os.path.basename(os.path.normpath(log_dir)))
+    print(f"Copying logs from '{log_dir}' to '{dest}'")
+    try:
+        shutil.copytree(log_dir, dest, dirs_exist_ok=True)
+    except OSError as e:   # shutil.Error too: files the device is still writing
+        print(f"Could not copy logs: {e}")
+        return False
+    return True
 
 
 @ray.remote
@@ -308,15 +330,12 @@ def download_from_asiair(
                         f"{rig} ({ip}) — mount failed"
                     )
                     continue
-                print(
-                    f"Successfully mounted rig {rig} ({ip}) "
-                    f"at mount point {mount_point}"
-                )
+                print(f"Reading rig {rig} ({ip}) at {mcm.path}")
 
                 total_min_date = None
                 rig_name = rig
                 for fits_path in search_def["fits_paths"]:
-                    path = os.path.join(mount_point, fits_path)
+                    path = os.path.join(mcm.path, fits_path)
                     print(f"Copying FITS files from path {path}")
                     result = _download_from_rig_grouped_by_date(
                         path, dest_path, rig
@@ -330,7 +349,7 @@ def download_from_asiair(
                     )
 
                 if total_min_date:
-                    log_dir = os.path.join(mount_point, search_def["log_dir"])
+                    log_dir = os.path.join(mcm.path, search_def["log_dir"])
                     date_dir = os.path.join(
                         _make_dest_dir_for_date(dest_path, total_min_date),
                         rig_name,

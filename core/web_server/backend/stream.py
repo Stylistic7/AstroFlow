@@ -35,7 +35,9 @@ def stream():
 
     response = Response(eventStream(), mimetype="text/event-stream")
     response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Connection"] = "keep-alive"
+    # No Connection header: it is hop-by-hop, which WSGI forbids an app to set
+    # (waitress enforces it; gunicorn let it pass), and HTTP/1.1 keeps the
+    # connection alive by default.
     response.headers["Cache-Control"] = "no-cache"
 
     return response

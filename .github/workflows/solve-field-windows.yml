@@ -1,0 +1,69 @@
+# astrometry.net's solve-field for the Windows app (app/windows/build_solve_field.sh).
+name: solve-field for Windows
+on:
+  workflow_dispatch:
+  workflow_call:
+  push:
+    paths:
+      - app/windows/build_solve_field.sh
+      - .github/workflows/solve-field-windows.yml
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cygwin/cygwin-install-action@v6
+        with:
+          platform: x86_64
+          packages: |
+            gcc-core
+            make
+            pkg-config
+            zlib-devel
+            libbz2-devel
+            dash
+            zip
+            unzip
+            curl
+      - name: Build
+        shell: C:\cygwin\bin\bash.exe -eo pipefail -o igncr '{0}'
+        run: bash -o igncr ./app/windows/build_solve_field.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: solve-field-windows-x64
+          path: solve-field-windows-x64.zip
+          if-no-files-found: error
+      # The proof: the zip, unpacked as it ships, solves a real frame here on
+      # native x64 — with its Python steps on a plain Python, as in the app.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Solve a frame with the built zip
+        shell: pwsh
+        run: |
+          pip install -q numpy astropy
+          git lfs pull --include app/windows/test/frame_bin4.fit
+          Expand-Archive solve-field-windows-x64.zip -DestinationPath C:\sf
+          New-Item -ItemType Directory -Force C:\sf\index, C:\sf\tmp | Out-Null
+          foreach ($i in 4112, 4113, 4114, 4115) {
+            Invoke-WebRequest "https://data.astrometry.net/4100/index-$i.fits" -OutFile "C:\sf\index\index-$i.fits"
+          }
+          "inparallel`ncpulimit 300`nadd_path C:/sf/index`nautoindex`n" | Set-Content C:\sf\an.cfg -NoNewline
+          Copy-Item app/windows/test/frame_bin4.fit C:\sf\frame.fits
+          # The app's PATH shape: the bundle's bin first, then Python, then the system; no other Cygwin.
+          $env:Path = "C:\sf\solve-field\bin;$env:pythonLocation;$env:pythonLocation\Scripts;C:\Windows\System32;C:\Windows"
+          $env:ASTROFLOW_PYTHON = "$env:pythonLocation\python.exe"
+          $env:CYGWIN = "nodosfilewarning"
+          solve-field.exe --config C:/sf/an.cfg --fits-image --overwrite --no-plots --new-fits none `
+            --tweak-order 2 --crpix-center --cpulimit 300 --objs 1000 `
+            --scale-units degwidth --scale-low 4 --scale-high 8 --temp-dir C:/sf/tmp C:/sf/frame.fits
+          if (-not (Test-Path C:\sf\frame.solved)) { throw "the frame did not solve" }
+          python -c "from astropy.io import fits; h=fits.getheader(r'C:\sf\frame.wcs'); print('solved: CRVAL', h['CRVAL1'], h['CRVAL2'], 'CD1_1', h['CD1_1'])"
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: build-logs
+          path: |
+            _build/cfitsio-*/configure.log
+            _build/cfitsio-*/make.log
+            _build/astrometry.net-*/make.log

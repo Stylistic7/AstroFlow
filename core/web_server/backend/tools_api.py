@@ -1,7 +1,7 @@
 """The Third-Party Tools page's API: where each program AstroFlow runs is,
-and whether it works on every Mac in the cluster (`third_party_tools`).
+and whether it works on every node in the cluster (`third_party_tools`).
 
-A location set here is the same on every Mac (`node_settings`), like the
+A location set here is the same on every node (`node_settings`), like the
 folders; leaving it empty uses where the program normally installs (for
 GraXpert, solve-field and libvips, inside AstroFlow.app). The one other
 setting is solve-field's: a folder of extra index files, for fields smaller
@@ -48,8 +48,8 @@ def put_tools():
     if index and not Path(index).is_absolute():
         abort(400, description=f"Extra index files: {index} must be a full path")
     if index and not Path(index).is_dir():
-        abort(400, description=f"Extra index files: {index} is not a folder this Mac can see")
-    # Every Mac first: if one can't take the settings, nothing is saved.
+        abort(400, description=f"Extra index files: {index} is not a folder this node can see")
+    # Every node first: if one can't take the settings, nothing is saved.
     node_settings.push_to_cluster({**node_settings.current(), "tool_paths": paths,
                                    "astrometry_index_dir": index or None})
     context.tool_paths = paths
@@ -59,13 +59,13 @@ def put_tools():
 
 @tools_bp.route("/api/tools/check", methods=["POST"])
 def check_tools():
-    """Every tool's trial on every Mac, the head first. Takes a few seconds:
+    """Every tool's trial on every node, the head first. Takes a few seconds:
     GraXpert's trial runs a real background extraction."""
     return jsonify({"nodes": check_cluster()})
 
 
 @tools_bp.route("/api/node_settings", methods=["GET"])
 def get_node_settings():
-    """What every Mac keeps a copy of (`node_settings`); a joining worker
+    """What every node keeps a copy of (`node_settings`); a joining worker
     reads it here."""
     return jsonify(node_settings.current())

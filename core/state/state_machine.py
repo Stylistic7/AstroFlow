@@ -21,6 +21,7 @@ from state.ray_control import (
     stop_ray_node,
 )
 from state.astroflow_zeroconf import AstroFlowZeroconf
+from state.procs import kill_matching
 from state.network_settings import (
     get_network_settings,
     resolve_interface_ip,
@@ -758,13 +759,19 @@ def enqueue_action(action):
 ctrl_c_count = 0
 
 
-def _force_cleanup():
-    subprocess.run(["pkill", "-f", "gunicorn"], capture_output=True)
-    subprocess.run(["pkill", "-f", "mcp_server --port"], capture_output=True)
-    # Kill orphan PixInsight on hard shutdown too (see main._force_cleanup): its
-    # output is never cached once Ray is gone, and a survivor collides with the
-    # next launch's PI.
-    subprocess.run(["pkill", "-f", "PixInsight"], capture_output=True)
+def force_cleanup():
+    """Everything this app started, by command line: the web servers
+    (gunicorn, or waitress's serve module on Windows), the MCP sidecar
+    (`mcp_server --port`, which cannot match Claude Code's own hyphenated
+    `mcp-server-*` processes), PixInsight and Ray. The pix runner keeps a
+    persistent out-of-process PI instance; on a crash (Ray dies, main.py
+    exits with an error) it is orphaned — its in-flight WBPP output is never
+    cached, it can sit on tens of GB of RAM, and a survivor collides with the
+    next launch's PI ("yielded execution to running instance" → SIGSEGV).
+    Runs at every exit, clean or not (a SIGKILL of main.py itself still skips
+    it; `make stop` remains the belt-and-braces)."""
+    for pattern in ("gunicorn", "web_server.backend.serve", "mcp_server --port", "PixInsight"):
+        kill_matching(pattern)
     subprocess.run([*RAY_CLI, "stop", "--force"], capture_output=True)
 
 
@@ -776,7 +783,7 @@ def handle_sigint(sig, frame):
         enqueue_action(dict(type="quit"))
     else:
         print(f"Got second ctrl-c, forcing cleanup and exit")
-        _force_cleanup()
+        force_cleanup()
         sys.exit(1)
 
 
@@ -799,6 +806,10 @@ _AFTER_QUIT = frozenset({
 def main_event_loop():
     signal.signal(signal.SIGINT, handle_sigint)
     signal.signal(signal.SIGTERM, _handle_sigterm)
+    if hasattr(signal, "SIGBREAK"):
+        # Windows, where SIGTERM is never delivered: Ctrl-Break, and the
+        # CTRL_BREAK_EVENT a launcher sends this process group, quit as Ctrl-C.
+        signal.signal(signal.SIGBREAK, handle_sigint)
 
     quit_received = False
 

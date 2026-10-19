@@ -81,6 +81,8 @@ def enable_test_mode(ray_temp_dir: str | None = None) -> None:
     object_store_memory = max(256 * 1024**2,
                               min(1536 * 1024**2, obj_budget // n_workers))
 
+    from ray_infra.ray_init import no_uv_runtime_env
+    no_uv_runtime_env()
     _log(f"ray.init START namespace={namespace} working_dir={working_dir} "
          f"temp_dir={ray_temp_dir} n_workers={n_workers} num_cpus={num_cpus} "
          f"object_store_mb={object_store_memory // 1024**2}")
