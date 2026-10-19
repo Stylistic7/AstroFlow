@@ -3,7 +3,10 @@
 When a light stack's frames live under a directory tree that contains
 externally pre-stacked masters (typically `Calibration Masters/Master*.fit`),
 those masters are the user's chosen calibration for that target. Find them
-by walking up from each frame's parent directory.
+by walking up from each frame's folder, no further than the frames' own
+volume or the user's home: masters live beside the library, and probing above
+it means every other volume and every automount (`/home` hung a Mac for good
+on 2026-10-19).
 
 Used as the *first-tried default* by the CALIBRATION_BIAS / CALIBRATION_DARK /
 CALIBRATION_FLAT decision points in `decisions/resolve.py`; the chronological
@@ -16,6 +19,7 @@ here on demand. Per-directory results are cached for the life of the process.
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -118,14 +122,18 @@ def masters_in_dir(directory: Path) -> list[ExternalMaster]:
     return out
 
 
+# The roots whose children are the operating system's, never a library's.
+_SYSTEM_ROOTS = (Path("/"), Path("/System/Volumes/Data"))
+
+
 def _ancestor_dirs(start: Path) -> Iterable[Path]:
-    """Yield `start` and each ancestor up to the filesystem root."""
+    """Yield `start` and each ancestor up to the frames' volume or the user's
+    home (included), never a system root (excluded)."""
     p = start.resolve()
-    yielded: set[Path] = set()
-    while p not in yielded:
-        yielded.add(p)
+    home = Path.home().resolve()
+    while p not in _SYSTEM_ROOTS:
         yield p
-        if p.parent == p:
+        if p == home or os.path.ismount(p) or p.parent == p:
             break
         p = p.parent
 

@@ -5,6 +5,7 @@ temporary FITS tree on disk and exercise `find_external_master` directly.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import astropy.io.fits as pyfits
@@ -12,6 +13,7 @@ import numpy as np
 import pytest
 
 from calibration.directory_affinity import (
+    _ancestor_dirs,
     _dir_master_cache,
     find_external_master,
     masters_in_dir,
@@ -241,3 +243,16 @@ def test_calibration_named_directory_wins_over_unnamed_sibling(tmp_path):
         filter="B", exposure=None,
     )
     assert found == str(intended.resolve())
+
+
+def test_the_walk_stops_at_the_home_folder_or_the_volume_never_a_system_root(tmp_path):
+    """Masters live beside the library. Climbing to `/` probed every other
+    volume and every automount, and `iterdir()` on macOS's `/home` automount
+    hung a clean Mac for good (2026-10-19)."""
+    home = Path.home().resolve()
+    walk = list(_ancestor_dirs(home / "Pictures" / "AstroFlow" / "Raw" / "night"))
+    assert walk[0] == home / "Pictures" / "AstroFlow" / "Raw" / "night" and walk[-1] == home
+    walk = list(_ancestor_dirs(tmp_path / "lights"))           # under a system volume, outside home
+    assert walk[0] == (tmp_path / "lights").resolve()
+    assert Path("/") not in walk and Path("/System/Volumes/Data") not in walk
+    assert all(not os.path.ismount(p) or p == walk[-1] for p in walk)
