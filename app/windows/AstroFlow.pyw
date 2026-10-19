@@ -10,6 +10,7 @@ puts the bundled tools on PATH through the environment below; from a
 checkout, `uv run pythonw app/windows/AstroFlow.pyw`.
 """
 import os
+import shutil
 import signal
 import socket
 import subprocess
@@ -48,7 +49,7 @@ def _environment() -> dict[str, str]:
     """The bundled tools first on PATH, and where the bundled data is; a
     checkout has none of it and runs with the machine's own."""
     env = dict(os.environ, PYTHONUTF8="1", PYTHONUNBUFFERED="1", PYTHONDONTWRITEBYTECODE="1")
-    paths = [str(TOOLS / "solve-field" / "bin"), str(TOOLS / "vips" / "bin")]
+    paths = [str(TOOLS / "bin"), str(TOOLS / "solve-field" / "bin"), str(TOOLS / "vips" / "bin")]
     env["PATH"] = os.pathsep.join([*(p for p in paths if Path(p).is_dir()), env.get("PATH", "")])
     for var, path in (("ASTROFLOW_GAIA_CATALOG", TOOLS / "gaia_xp"),
                       ("ASTROFLOW_INDEX_DIR", TOOLS / "astrometry-index"),
@@ -56,6 +57,19 @@ def _environment() -> dict[str, str]:
         if path.is_dir():
             env[var] = str(path)
     return env
+
+
+def _seed_graxpert_model() -> None:
+    """GraXpert's AI model from the install into GraXpert's own folder, once:
+    GraXpert would otherwise download it on first use, which fails on some
+    machines, and it must not write into Program Files."""
+    src = TOOLS / "graxpert-models" / "bge-ai-models"
+    dst = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "GraXpert" / "GraXpert" / "bge-ai-models"
+    if not src.is_dir():
+        return
+    for version in src.iterdir():
+        if not (dst / version.name / "model.onnx").exists():
+            shutil.copytree(version, dst / version.name, dirs_exist_ok=True)
 
 
 class Launcher:
@@ -80,6 +94,7 @@ class Launcher:
         if _dashboard_answers():
             webbrowser.open(DASHBOARD)      # already running (from a terminal): just open it
             return
+        _seed_graxpert_model()
         self._start_child()
         self.icon.run()
 

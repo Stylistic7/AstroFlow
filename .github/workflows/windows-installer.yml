@@ -1,0 +1,47 @@
+# The Windows installer: the solver (its own workflow, called), then the
+# install layout and setup.exe (app/windows/build_installer.ps1).
+name: Windows installer
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - app/windows/build_installer.ps1
+      - app/windows/AstroFlow.iss
+      - app/windows/index-files.txt
+      - .github/workflows/windows-installer.yml
+jobs:
+  solver:
+    uses: ./.github/workflows/solve-field-windows.yml
+  installer:
+    needs: solver
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: solve-field-windows-x64
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Frontend
+        working-directory: core/web_server/frontend
+        run: |
+          npm ci
+          npm run build
+      - uses: astral-sh/setup-uv@v5
+      # The 4.6 GB of index files, once: the list is the key.
+      - uses: actions/cache@v4
+        with:
+          path: _downloads/astrometry-index
+          key: astrometry-index-${{ hashFiles('app/windows/index-files.txt') }}
+      - name: Build the install layout and setup.exe
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./app/windows/build_installer.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AstroFlow-Setup
+          path: _dist/*.exe
+          compression-level: 0
+          if-no-files-found: error

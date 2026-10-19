@@ -2,6 +2,7 @@
 name: solve-field for Windows
 on:
   workflow_dispatch:
+  workflow_call:
   push:
     paths:
       - app/windows/build_solve_field.sh
