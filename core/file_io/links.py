@@ -7,7 +7,7 @@ def link_or_copy(src: Path, dst: Path) -> None:
     """`dst` reads as `src` without copying when the platform allows: a
     symlink, else a hard link (Windows refuses symlinks outside Developer
     Mode; a hard link needs the same volume), else a copy."""
-    src = Path(src).resolve()
+    src = Path(src).absolute()      # a link made elsewhere must not be relative; the path stays as given
     for link in (os.symlink, os.link):
         try:
             link(src, dst)

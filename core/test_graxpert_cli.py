@@ -9,6 +9,7 @@ claimed 3.2 had dropped them; it hadn't. The mistake was invisible because the
 one test that checked only ever called the wrapper without them, so their
 absence proved nothing — `post_stack_calibrate` passes all three.)
 """
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -93,17 +94,26 @@ def test_finds_graxpert_in_uv_tool_bin_dir(monkeypatch, tmp_path):
     NOT on a Ray worker's PATH — the worker inherits the raylet's environment,
     not a login shell's. Resolution must not depend on PATH."""
     monkeypatch.setattr(third_party_tools.node_settings, "read", lambda: {})
-    monkeypatch.setattr(third_party_tools.shutil, "which", lambda _: None)
+    monkeypatch.setattr(third_party_tools.shutil, "which", _which_off_path)
     monkeypatch.setenv("HOME", str(tmp_path))
     (tmp_path / ".local" / "bin").mkdir(parents=True)
     (tmp_path / ".local" / "bin" / "graxpert").write_text("#!/bin/sh\n")
+    (tmp_path / ".local" / "bin" / "graxpert").chmod(0o755)
 
     assert graxpert_cli.graxpert_base_command() == [str(tmp_path / ".local" / "bin" / "graxpert")]
 
 
+_REAL_WHICH = shutil.which      # captured before any test patches the module's attribute
+
+
+def _which_off_path(cmd, path=None):
+    """`shutil.which` with nothing on PATH: only an explicit folder finds anything."""
+    return _REAL_WHICH(cmd, path=path) if path else None
+
+
 def test_raises_when_graxpert_missing(monkeypatch, tmp_path):
     monkeypatch.setattr(third_party_tools.node_settings, "read", lambda: {})
-    monkeypatch.setattr(third_party_tools.shutil, "which", lambda _: None)
+    monkeypatch.setattr(third_party_tools.shutil, "which", _which_off_path)
     # An empty home: otherwise this passes or fails depending on whether the
     # machine running the tests happens to have GraXpert installed.
     monkeypatch.setenv("HOME", str(tmp_path))
