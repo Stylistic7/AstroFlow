@@ -27,7 +27,7 @@ $PythonKey = "cpython-3.12-windows-x86_64-none"
 function Fetch($url, $file) {
     if (-not (Test-Path $file)) {
         New-Item -ItemType Directory -Force (Split-Path $file) | Out-Null
-        & curl.exe -sSL --retry 3 --retry-delay 5 -o "$file.part" $url
+        & curl.exe -sSfL --retry 3 --retry-delay 5 -o "$file.part" $url
         if ($LASTEXITCODE -ne 0) { throw "download failed: $url" }
         Move-Item "$file.part" $file
     }
@@ -89,12 +89,19 @@ set "PYTHONPATH=%here%..\graxpert"
 "%here%..\..\python\python.exe" -s -c "import sys; from graxpert.main import main; sys.argv[0] = 'graxpert'; sys.exit(main())" %*
 '@ -NoNewline
 
-Write-Host "==> astrometry.net index files"
+Write-Host "==> astrometry.net index files (the data release's zips: data.astrometry.net has no 5200 series)"
 $indexDir = "$Downloads\astrometry-index"
-foreach ($name in Get-Content "$repo\app\windows\index-files.txt") {
-    $series = if ($name -like "index-41*") { "4100" } else { "5000" }
-    Fetch "https://data.astrometry.net/$series/$name" "$indexDir\$name"
+if (-not (Test-Path "$indexDir\index-5206-47.fits")) {
+    New-Item -ItemType Directory -Force $indexDir | Out-Null
+    gh release download data-v1 -p "index-*.zip" -D "$Downloads\index-zips" --skip-existing
+    Get-ChildItem "$Downloads\index-zips\*.zip" | ForEach-Object { Expand-Archive $_.FullName -DestinationPath $indexDir -Force }
 }
+$expected = Get-Content "$repo\app\windows\index-files.txt"
+foreach ($name in $expected) {
+    $bytes = [IO.File]::ReadAllBytes("$indexDir\$name")[0..5]
+    if ([Text.Encoding]::ASCII.GetString($bytes) -ne "SIMPLE") { throw "$name is not a FITS file" }
+}
+Write-Host "    $($expected.Count) index files, all FITS"
 New-Item -ItemType Directory -Force "$Stage\tools\astrometry-index" | Out-Null
 Copy-Item "$indexDir\*.fits" "$Stage\tools\astrometry-index\"
 Copy-Item "$repo\app\LICENSE-astrometry-index.txt" "$Stage\tools\astrometry-index\"
