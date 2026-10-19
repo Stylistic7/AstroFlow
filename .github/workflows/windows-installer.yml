@@ -46,6 +46,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: AstroFlow-Setup
-          path: _dist/*.exe
+          path: _dist/*
           compression-level: 0
           if-no-files-found: error

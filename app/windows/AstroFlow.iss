@@ -23,7 +23,11 @@ ArchitecturesInstallIn64BitMode=x64compatible
 ; Several gigabytes, most of it index files that barely compress: fast, not solid.
 Compression=lzma2/fast
 SolidCompression=no
-DiskSpanning=no
+; Inno Setup caps a single-file installer at 4.2 GB compressed; ours is bigger, so
+; the data goes in AstroFlow-Setup-<version>-N.bin slices beside setup.exe (which
+; reads them from its own folder: the whole folder is what gets sent).
+DiskSpanning=yes
+DiskSliceSize=max
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; Flags: unchecked

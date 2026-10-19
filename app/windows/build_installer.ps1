@@ -1,5 +1,5 @@
-# AstroFlow's Windows installer: the install layout, then setup.exe through
-# Inno Setup — what app/build_app.sh does for the Mac app.
+# AstroFlow's Windows installer: the install layout, then setup.exe and its
+# .bin slices through Inno Setup — what app/build_app.sh does for the Mac app.
 #
 #   <stage>\AstroFlow\  the committed tree, stamped RELEASE, with the frontend built
 #   <stage>\python\     a standalone x64 CPython 3.12 holding every package of uv.lock
