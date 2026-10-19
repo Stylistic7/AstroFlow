@@ -4,9 +4,9 @@ A star flat is the detector's multiplicative response — vignetting, dust,
 and the narrowband etalon a flat panel cannot reproduce — solved jointly from
 the Gaia photometry of every plate-solved light subframe shot through one
 (camera, focal length, filter) group (`stacks/starflat.py` for the math, the
-`star_photometry` sidecar sections for the data). It is the DEFAULT flat for
-every light stack of its group (`decisions/resolve.py`) unless the user
-pins an explicit flat or "none".
+`star_photometry` sidecar sections for the data). It is offered in every
+light stack's flat picker (`decisions/resolve.py`), never chosen by default:
+the user pins it, as they would an explicit flat or "none".
 
 Identity follows the Stack conventions exactly (attributes/chronology,
 `Stack.from_frames`): `stable_hash` is the content hash of the oldest member
@@ -22,7 +22,7 @@ candidates above the spatial split (next to the camera fingerprints), one
 parallel across groups), `mint_star_flats` keeps the ones that pass the
 quality gate, and `merge_star_flats` adds them to the calibration stacks
 BEFORE any light↔flat association. Groups that fail the gate simply have no
-star flat, and the run falls back to today's chronological/explicit default.
+star flat to offer; the default is unaffected either way.
 """
 import math
 from dataclasses import dataclass

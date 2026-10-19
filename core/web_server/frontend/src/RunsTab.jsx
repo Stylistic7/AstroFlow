@@ -69,9 +69,9 @@ const RunsTab = ({ stack }) => {
     .map(([id, run]) => ({ id, ...run }))
     .sort((a, b) => (Date.parse(b.newest_date) || 0) - (Date.parse(a.newest_date) || 0));
 
-  // Carousel order: the star flat (the default) leftmost, then "none",
-  // then the explicit masters, most recent first — the flats worth
-  // considering are almost always the newest ones.
+  // Carousel order: the masters most recent first — the flats worth
+  // considering are almost always the newest ones — then the star flats,
+  // which are never the default and only ever the user's choice.
   const flatCaptureTime = (id) => {
     const ms = Date.parse(calibrationStacks[id]?.oldest_date);
     return Number.isNaN(ms) ? 0 : ms;
@@ -82,8 +82,9 @@ const RunsTab = ({ stack }) => {
     .sort((a, b) => flatCaptureTime(b) - flatCaptureTime(a));
 
   // "none" is a PINNED choice (the run stacks without a flat), distinct
-  // from clearing the override — with a star flat as the default, an
-  // absent override means "use the star flat".
+  // from clearing the override — an absent override means "use the
+  // computed default" (the night-sky flat, the flats shot beside the
+  // lights, or the nearest in time).
   const NO_FLAT = 'none';
 
   const handleSelectFlat = (runId, flatId) => {
@@ -133,7 +134,7 @@ const RunsTab = ({ stack }) => {
 
   const getSelectedFlatByRun = run => {
     // A local click wins until the server-resolved detail refreshes; the
-    // resolved dependency (star flat by default, an explicit master, or
+    // resolved dependency (the computed default, an explicit master, or
     // absent = "none") is the truth otherwise.
     if (run.id in selectedFlatsByRun) {
       return selectedFlatsByRun[run.id];
@@ -224,7 +225,7 @@ const RunsTab = ({ stack }) => {
             <CalibrationGrid
               stack={stack}
               run={run}
-              flatIds={[...starFlatIds, ...sortedFlatIds]}
+              flatIds={[...sortedFlatIds, ...starFlatIds]}
               calibrationStacks={calibrationStacks}
               selectedFlatId={selectedFlatId}
               onSelectFlat={(id) => handleSelectFlat(run.id, id)}

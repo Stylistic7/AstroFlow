@@ -15,7 +15,7 @@ from frozendict import frozendict
 import stacks.calibration_selection as sel
 import stacks.star_flat as sfm
 from calibration.calibration_frames import _build_cal_index, focal_length_of
-from decisions.resolve import NO_FLAT, _star_flat_for
+from decisions.resolve import NO_FLAT
 from file_io.generic import read_header, read_image
 from file_io.sidecar import get_section
 from hashing import hash_list
@@ -253,29 +253,7 @@ def test_focal_length_and_index_treat_star_flats_specially():
     sf = _star_flat()
     assert focal_length_of(sf) == 351.0
     bias_by, dark_by, flat_by = _build_cal_index({StackHash("a"): sf})
-    assert flat_by == {}                                          # never a chronological candidate
-
-
-def _run(filt="H", focal=351.0, w=960, h=640):
-    return SimpleNamespace(filter=filt, width_pixels=w, height_pixels=h,
-                           metadata={"f": SimpleNamespace(header={"FOCALLEN": focal})})
-
-
-def test_default_flat_is_the_groups_star_flat():
-    cal = {StackHash("sf350"): _star_flat(stable_hash="sf350", focal_length=350.0, members=("a", "b")),
-           StackHash("sf1230"): _star_flat(stable_hash="sf1230", focal_length=1230.0, members=("c", "d", "e"))}
-    assert _star_flat_for(_run(focal=351.0), cal, None) == "sf350"      # 2% train tolerance
-    assert _star_flat_for(_run(focal=1234.0), cal, None) == "sf1230"
-    assert _star_flat_for(_run(focal=540.0), cal, None) is None          # no star flat for this train
-    assert _star_flat_for(_run(filt="S"), cal, None) is None             # filter must match
-    assert _star_flat_for(_run(w=6248), cal, None) is None               # sensor geometry must match
-
-
-def test_default_prefers_the_same_camera_then_the_deeper_flat():
-    cal = {StackHash("cam1"): _star_flat(stable_hash="cam1", camera_id_hash="fp1", members=("a", "b")),
-           StackHash("cam2"): _star_flat(stable_hash="cam2", camera_id_hash="fp2", members=("c", "d", "e", "f"))}
-    assert _star_flat_for(_run(), cal, "fp1") == "cam1"                  # same fingerprint wins
-    assert _star_flat_for(_run(), cal, None) == "cam2"                   # unknown camera: most subs
+    assert flat_by == {}                              # never a default: the user's option only
 
 
 # ---------------------------------------------------------------- UI, previews, graph

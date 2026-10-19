@@ -348,13 +348,13 @@ def test_no_decisions_for_uniform_rotation(test_context):
     assert len(rotation_decisions) == 0, "No rotation decisions expected for uniform rotation"
 
 
-def test_star_flat_is_the_default_flat_and_none_is_a_pinned_choice(test_context, monkeypatch):
+def test_star_flat_is_an_option_never_the_default_and_none_is_a_pinned_choice(test_context, monkeypatch):
     """`resolve_calibration` on a stack from a real graph run (which also
     exercises the star-flat tasks wired above the spatial split — with no
     plate solutions there are no candidates, and the graph must still run):
-    the group's star flat is the default flat; an override of NO_FLAT drops
-    the flat WITHOUT the missing-master concern; an explicit flat override
-    beats the star flat."""
+    the real master is the default flat even with the group's star flat on
+    offer; an override of NO_FLAT drops the flat WITHOUT the missing-master
+    concern; an override names the star flat."""
     import concerns
     from decisions.resolve import NO_FLAT, resolve_calibration
     from stacks.composite_stack import CalibrationStack, CalibrationStacksDict
@@ -386,11 +386,11 @@ def test_star_flat_is_the_default_flat_and_none_is_a_pinned_choice(test_context,
     key = DecisionKey.calibration("flat", stack.stable_hash, run_hash)
 
     resolved = resolve_calibration(stack, cal, frozendict())
-    assert resolved.contents[run_hash].dependencies["flat"] == StackIdDependency(stack_id="star")
+    assert resolved.contents[run_hash].dependencies["flat"] == StackIdDependency(stack_id="explicit")
     resolved = resolve_calibration(stack, cal, frozendict({key: DecisionOverride(choice=NO_FLAT)}))
     assert "flat" not in resolved.contents[run_hash].dependencies
-    resolved = resolve_calibration(stack, cal, frozendict({key: DecisionOverride(choice="explicit")}))
-    assert resolved.contents[run_hash].dependencies["flat"] == StackIdDependency(stack_id="explicit")
+    resolved = resolve_calibration(stack, cal, frozendict({key: DecisionOverride(choice="star")}))
+    assert resolved.contents[run_hash].dependencies["flat"] == StackIdDependency(stack_id="star")
     assert warned and all("flat" not in m for m in warned)      # darks are missing (a concern); "none" never is
 
 

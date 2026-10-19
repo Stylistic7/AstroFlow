@@ -473,10 +473,10 @@ def flats_for_sensor_and_filter(width, height, filter):
         and s.filter == filter  # calibration_stacks holds real Run objects
         and same_optical_train(target_focal, focal_length_of(s))
     ]
-    # Night-sky flats first (spectrally matched to the lights), then star
-    # flats, then the explicit masters — the order `_default_choice` picks in.
-    return ([k for k, s in matching if getattr(s, "kind", None) == "star"]
-            + [k for k, s in matching if getattr(s, "kind", None) != "star"])
+    # The masters `_default_choice` picks among first (night-sky and real
+    # flats), then the star flats, which are only ever the user's choice.
+    return ([k for k, s in matching if getattr(s, "kind", None) != "star"]
+            + [k for k, s in matching if getattr(s, "kind", None) == "star"])
 
 
 @app.route("/api/ray/status")

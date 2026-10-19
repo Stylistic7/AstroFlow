@@ -386,7 +386,7 @@ def build_regroup_graph(
     # Star flats: candidates per (camera, focal length, filter) need the
     # camera fingerprints; every candidate's master is then built in its own
     # task (parallel across groups) and gated, BEFORE any light↔flat
-    # association below — the star flat is the default flat.
+    # association below, so the picker can offer it.
     star_flat_candidates_task = (identify_star_flats, metadata_ref)
     scatter_task = (
         scatter_spatial_groups,

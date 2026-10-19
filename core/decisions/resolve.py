@@ -1,6 +1,7 @@
 """Apply decisions to a Stack to produce filtered or annotated views."""
 from __future__ import annotations
 
+import os
 from collections import Counter
 from dataclasses import replace
 from frozendict import frozendict
@@ -153,27 +154,23 @@ _UNCALIBRATED_SYMPTOM = {
 }
 
 # The user's explicit "no flat" — a pinned choice, distinct from "no
-# override" (which now means the star flat). Deliberate, so no concern.
+# override" (the computed default). Deliberate, so no concern.
 NO_FLAT = "none"
 
+# Directory affinity between a run's lights and a flat stack's frames: the
+# flats sit in the lights' own folder (0), in a sibling folder under the same
+# parent (1: `<target>/Lights` and `<target>/Flats`), or anywhere else (2).
+# With one folder per night every night is a sibling of every other, and the
+# tie goes to chronology, which is what that layout wants anyway.
+_ELSEWHERE = 2
 
-def _star_flat_for(run, cal_stacks, cam_id) -> str | None:
-    """The group's star flat for this run, or None: same sensor geometry,
-    same filter, same optical train (2% FOCALLEN), preferring the same
-    camera fingerprint; among several, the one solved from the most subs."""
-    from calibration.calibration_frames import focal_length_of, same_optical_train, sensor_of
-    run_focal = focal_length_of(run)
-    cands = [
-        (sid, s) for sid, s in cal_stacks.items()
-        if getattr(s, "kind", None) == "star"
-        and s.filter == run.filter
-        and sensor_of(s) == sensor_of(run)
-        and same_optical_train(run_focal, s.focal_length)
-    ]
-    if not cands:
-        return None
-    cands = _prefer_same_camera(cands, cam_id, lambda c: c[1].camera_id_hash)
-    return max(cands, key=lambda c: (c[1].n_subs, c[0]))[0]
+
+def _affinity(run_dirs: frozenset[str], flat_dirs: frozenset[str]) -> int:
+    if run_dirs & flat_dirs:
+        return 0
+    if {os.path.dirname(d) for d in run_dirs} & {os.path.dirname(d) for d in flat_dirs}:
+        return 1
+    return _ELSEWHERE
 
 
 def _prefer_same_camera(cands: list, cam_id: str | None, cam_of) -> list:
@@ -209,7 +206,7 @@ def resolve_calibration(
     cached default or user override.
     """
     from calibration.calibration_frames import (
-        _build_cal_index, _midpoint_s, sensor_of,
+        _build_cal_index, _midpoint_s, frame_dirs, sensor_of,
         focal_length_of, same_optical_train,
     )
     from calibration.directory_affinity import find_external_master
@@ -264,10 +261,10 @@ def resolve_calibration(
         and cal_stacks[key.subject_id].image_type == "flat"
     }
 
-    def _chronological_flat(run: Run):
-        cand = flat_by_sensor_filter.get((sensor_of(run), run.filter))
-        if not cand:
-            return None
+    def _flat_candidates(run: Run) -> list:
+        """The flat stacks that can calibrate this run at all, as
+        (affinity, seconds from the run) pairs with their ids."""
+        cand = flat_by_sensor_filter.get((sensor_of(run), run.filter), [])
         cand = [c for c in cand if c[3] not in quarantined_flat_ids]
         # A flat from a different optical train (FOCALLEN mismatch beyond
         # tolerance) is REFUSED outright: its vignetting profile is wrong
@@ -277,11 +274,20 @@ def resolve_calibration(
         # wrong-train flat. Unknown FOCALLEN on either side still matches.
         run_focal = focal_length_of(run)
         cand = [c for c in cand if same_optical_train(run_focal, c[2])]
-        if not cand:
-            return None
         cand = _prefer_same_camera(cand, cam_id, lambda x: x[1])
         mid = _midpoint_s(run.oldest_date, run.newest_date)
-        return min(cand, key=lambda x: abs(x[0] - mid))[3]
+        run_dirs = frame_dirs(run.metadata)
+        return [(_affinity(run_dirs, c[4]), abs(c[0] - mid), c[3]) for c in cand]
+
+    def _affine_flat(run: Run):
+        """The flat stack shot beside the lights (their folder or a sibling
+        of it), nearest in time among those; None when none is."""
+        cand = [c for c in _flat_candidates(run) if c[0] < _ELSEWHERE]
+        return min(cand)[2] if cand else None
+
+    def _chronological_flat(run: Run):
+        cand = _flat_candidates(run)
+        return min(cand, key=lambda c: c[1:])[2] if cand else None
 
     def _sky_flat_for(run: Run):
         """The nearest NIGHT-SKY flat in time for this run's optical train.
@@ -317,31 +323,31 @@ def resolve_calibration(
     }
 
     def _default_choice(cal_type: str, run: Run) -> str | None:
-        """Flats: the group's star flat first. Then directory-affinity; then
-        chronological.
+        """Flats: a night-sky flat first (its dust models ride along, see
+        `calibration_selection.carries_motes`). Then directory affinity: the
+        flats shot beside the lights, or a pre-stacked external master in
+        the lights' tree. Then the nearest in time.
 
-        A star flat (`stacks/star_flat.py`) is solved from the photometry of
-        every light shot through the run's (camera, focal length, filter)
-        and corrects vignetting AND the narrowband etalon a panel cannot;
-        it exists only where the group passed the quality gate, so a sparse
-        train falls through to the older defaults below.
-        Directory-affinity returns an absolute path to a pre-stacked external
-        master sitting in an ancestor directory of the run's frames (typically
-        a `Calibration Masters/MasterDark*.fit` file under the target's tree).
-        Chronological returns a StackHash of an AstroFlow-stacked calibration
-        stack. Disambiguated downstream by whether the choice starts with "/".
+        A star flat (`stacks/star_flat.py`) is never the default: solved
+        from the lights' own photometry, it is offered in the picker for the
+        user to choose, but has not proved reliable enough to be chosen for
+        them (2026-10-19).
+        Directory-affinity returns a StackHash of an AstroFlow-stacked flat
+        from the lights' folder or a sibling of it, or an absolute path to a
+        pre-stacked external master sitting in an ancestor directory of the
+        run's frames (typically `Calibration Masters/MasterDark*.fit` under
+        the target's tree). Chronological returns a StackHash. Disambiguated
+        downstream by whether the choice starts with "/".
         """
         if cal_type == "flat":
-            # Three flavours of flat, most spectrally-matched first: a
-            # night-sky flat sees the etalon exactly as the lights do; a star
-            # flat measures it from continuum and needs k to scale it; a
-            # panel/twilight flat barely sees it at all.
+            # Most spectrally-matched first: a night-sky flat sees the etalon
+            # exactly as the lights do; a panel/twilight flat barely sees it.
             sky = _sky_flat_for(run)
             if sky is not None:
                 return sky
-            star = _star_flat_for(run, cal_stacks, cam_id)
-            if star is not None:
-                return star
+            affine = _affine_flat(run)
+            if affine is not None:
+                return affine
         path = find_external_master(
             (m.filename for m in run.metadata.values()),
             kind=cal_type,

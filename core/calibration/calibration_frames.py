@@ -1,6 +1,7 @@
 import ray
 import numpy as np
 import operator
+import os
 import itertools
 from dataclasses import replace
 from datetime import datetime, timedelta
@@ -267,6 +268,12 @@ def sensor_of(s) -> tuple[int, int]:
     return (s.width_pixels, s.height_pixels)
 
 
+def frame_dirs(metadata: MetadataDict) -> frozenset[str]:
+    """The folders these frames live in, for directory affinity between
+    lights and the flats shot beside them. Pure: no filesystem calls."""
+    return frozenset(os.path.dirname(str(m.filename)) for m in metadata.values())
+
+
 def _build_cal_index(cal_stacks: dict[StackHash, CalibrationStack]):
     """Index calibration stacks for chronological matching, bucketed by SENSOR
     GEOMETRY and tagged with camera identity.
@@ -293,12 +300,12 @@ def _build_cal_index(cal_stacks: dict[StackHash, CalibrationStack]):
         tuple, list[tuple[float, float, float, str | None, StackHash]]
     ] = {}
     flat_by_sensor_filter: dict[
-        tuple[tuple, str], list[tuple[float, str | None, StackHash]]
+        tuple[tuple, str], list[tuple[float, str | None, float | None, StackHash, frozenset[str]]]
     ] = {}
 
     for sid, s in cal_stacks.items():
         if getattr(s, "kind", None) == "star":
-            continue   # star flats are the DEFAULT, resolved ahead of chronology
+            continue   # star flats are the user's option, never a default
         mid = _midpoint_s(s.oldest_date, s.newest_date)
         sensor = sensor_of(s)
         cam = s.camera_id_hash
@@ -312,7 +319,7 @@ def _build_cal_index(cal_stacks: dict[StackHash, CalibrationStack]):
             )
         elif s.image_type == "flat":
             flat_by_sensor_filter.setdefault((sensor, s.filter), []).append(
-                (mid, cam, focal_length_of(s), sid)
+                (mid, cam, focal_length_of(s), sid, frame_dirs(s.all_metadata()))
             )
 
     # Sort each bucket by midpoint; helps cache locality, not required for

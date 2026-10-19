@@ -285,9 +285,10 @@ def test_lazy_thumbnails_regenerate_on_miss(client, with_orion_mosaic):
 
 
 def test_flats_route_offers_star_flats_first(client):
-    """The manual flat picker: the group's star flat(s) leftmost, then the
-    explicit masters, all restricted to this sensor, filter and optical
-    train — the same candidate set `resolve_calibration` considers."""
+    """The manual flat picker: the masters the default is chosen among
+    first, then the group's star flat(s), all restricted to this sensor,
+    filter and optical train — the same candidate set `resolve_calibration`
+    considers."""
     import datetime
     from frozendict import frozendict
     from context import context
@@ -312,8 +313,8 @@ def test_flats_route_offers_star_flats_first(client):
         StackHash("starS"): _flat(StarFlatStack, "starS", filter="S", focal_length=350.0, member_files=("/e", "/f")),
         StackHash("other"): _flat(CalibrationStack, "other", width_pixels=6248, height_pixels=4176),
     })
-    assert client.get("/api/flats/1080/720/H?focal_length=351").get_json() == ["star350", "explicit"]
-    assert client.get("/api/flats/1080/720/H").get_json() == ["star350", "star1230", "explicit"]
+    assert client.get("/api/flats/1080/720/H?focal_length=351").get_json() == ["explicit", "star350"]
+    assert client.get("/api/flats/1080/720/H").get_json() == ["explicit", "star350", "star1230"]
     assert client.get("/api/flats/1080/720/S?focal_length=350").get_json() == ["starS"]
     assert client.get("/api/flats/1080/720/O").get_json() == []
 
