@@ -33,7 +33,8 @@ _RESERVED = (
     | {"let", "var", "const", "fn", "return", "select", "vec3", "vec4",
        "f32", "bool", "true", "false", "if", "else", "loop", "for", "while",
        "pow", "min", "max", "clamp", "mix", "exp", "log", "sqrt", "abs",
-       "dot", "saturate", "P", "src0", "src1", "src2", "src3", "aux"}
+       "dot", "saturate", "P", "src0", "src1", "src2", "src3", "aux",
+       "globals", "display_white"}
 )
 
 
@@ -164,25 +165,27 @@ class Finish:
 
     def bake(self, sources: list, values: "dict | None" = None) -> np.ndarray:
         """Server-side evaluation: run the ORIGINAL function on numpy
-        sources (one (H, W, 3) float array per input tap), return float32
-        [0, 1] — parity with the shader's final clamp."""
-        v = self.defaults()
+        sources (one (H, W, 3) float array per input tap), return float32 in
+        [0, display white] — the common pass's final clamp. The display
+        white is 1.0 (SDR) unless `values` carries `display_white`, the
+        viewer's HDR global."""
+        v = {"display_white": 1.0, **self.defaults()}
         if values:
             v.update({k: values[k] for k in v if k in values})
         wrapped = [NpVec(_broadcast(s)) for s in sources]
-        out = self.fn(*wrapped, **{p.name: v[p.name] for p in self.params})
+        out = self.fn(*wrapped, **v)
         arr = out.a if isinstance(out, NpVec) else np.asarray(out)
-        return np.clip(arr, 0.0, 1.0).astype(np.float32)
+        return arr.astype(np.float32)
 
     def interpret(self, sources: list, values: "dict | None" = None) -> np.ndarray:
         """Evaluate the TRACED GRAPH under WGSL semantics — the test oracle
         proving the emitted shader computes what `bake` computes."""
-        v = self.defaults()
+        v = {"display_white": 1.0, **self.defaults()}
         if values:
             v.update(values)
         srcs = [_broadcast(s).astype(np.float64) for s in sources]
         out = tracer.interpret(self.graph, srcs, v, NUMPY_CALLS)
-        return np.clip(out, 0.0, 1.0).astype(np.float32)
+        return out.astype(np.float32)
 
 
 def _broadcast(s) -> np.ndarray:
@@ -249,7 +252,9 @@ def _trace(fn, name: str, inputs: tuple) -> "tuple[str, list, object]":
         kwargs = {pname: tracer.param(pname) for pname, _ in params}
         for pname, p in params:
             trace.params[pname] = p
-        result = fn(*srcs, **kwargs)
+        # The display's white is the viewer's global (one per canvas, set by
+        # its HDR control), not a knob of the finish: `white()` traces to it.
+        result = fn(*srcs, display_white=tracer.param("display_white"), **kwargs)
         if not isinstance(result, tracer.Vec):
             raise FinishDefinitionError(
                 f"{name}: must return a colour (vec3) — got "
@@ -261,7 +266,8 @@ def _trace(fn, name: str, inputs: tuple) -> "tuple[str, list, object]":
 
     filled = [replace(p, name=pname) for pname, p in params]
     struct = "\n".join(f"    {p.name}: f32," for p in filled)
-    aliases = "\n".join(f"    let {p.name} = P.{p.name};" for p in filled)
+    aliases = "\n".join([f"    let {p.name} = P.{p.name};" for p in filled]
+                        + ["    let display_white = globals.displayWhite;"])
     args = ", ".join(f"src{i}: vec4<f32>" for i in range(len(inputs)))
     helpers = expand_helpers(helper_names)
     wgsl = (
@@ -356,15 +362,27 @@ def _with_common_first_pass(fn, inputs: tuple, optional: tuple,
     this composed function — runs identically in numpy, which keeps the
     server-side preview and the viewer showing the same picture.
     """
+    from finishes import stdlib
     from finishes.stdlib import (
-        maximum, minimum, mix, replace_lightness, saturate, vec3, where,
+        clamp, maximum, minimum, mix, replace_lightness, saturate, vec3,
+        where, white,
     )
 
     required = [i for i, tap in enumerate(inputs) if tap not in optional]
     sig = inspect.signature(fn)
     reads: dict = {}   # filled once, at trace time; the bake reads the same
 
-    def guarded(*srcs, **kwargs):
+    def guarded(*srcs, display_white=1.0, **kwargs):
+        # The display's white for this evaluation (1.0 = SDR, the HDR
+        # headroom above it): `white()` reads it from any finish or stdlib
+        # function, traced and baked alike.
+        token = stdlib._white.set(display_white)
+        try:
+            return passes(*srcs, **kwargs)
+        finally:
+            stdlib._white.reset(token)
+
+    def passes(*srcs, **kwargs):
         trim = kwargs.pop(TRIM_RAGGED.name, TRIM_RAGGED.default)
         floor = kwargs.pop(TRIM_FLOOR.name, TRIM_FLOOR.default)
         show_clip = kwargs.pop(SHOW_CLIPPING.name, SHOW_CLIPPING.default)
@@ -393,7 +411,7 @@ def _with_common_first_pass(fn, inputs: tuple, optional: tuple,
         if not hasattr(out, "r"):
             return out   # not a colour: the definition check reports it
         if colour:
-            c = saturate(out)
+            c = clamp(out, 0.0, white())
             y = c.r * _LUMA[0] + c.g * _LUMA[1] + c.b * _LUMA[2]
             # The MASK reads brightness as the largest component, not the
             # luminance: a bright saturated SII red (Y 0.21) or OIII blue
@@ -404,15 +422,18 @@ def _with_common_first_pass(fn, inputs: tuple, optional: tuple,
             # Exactly the finish's colour when off: no Lab round trip at all.
             out = where(desat > 0.0, replace_lightness(c, y, keep), out)
         # Clipping, judged on the final colour as an 8-bit display shows it,
-        # and only where there is data: any component that renders as 255 =
-        # blown highlight (magenta); every component rendering as 0 =
-        # crushed shadow (blue). A single zero component is a pure hue, not
-        # clipping.
+        # and only where there is data: any component that renders as the
+        # display's white = blown highlight (magenta); every component
+        # rendering as 0 = crushed shadow (blue). A single zero component is
+        # a pure hue, not clipping.
         top = maximum(maximum(out.r, out.g), out.b)
         z = top * 0.0
-        flagged = where(top >= 1.0 - _HALF_STEP, vec3(z + 1.0, z, z + 1.0),
+        flagged = where(top >= white() - _HALF_STEP, vec3(z + 1.0, z, z + 1.0),
                         where(top <= _HALF_STEP, vec3(z, z, z + 1.0), out))
-        return mix(out, where(covered, flagged, out), show_clip)
+        # The one ceiling, for the shader and the bake alike: the display's
+        # white — 1.0 on SDR, the headroom above it on HDR.
+        return clamp(mix(out, where(covered, flagged, out), show_clip),
+                     0.0, white())
 
     guarded.__name__ = getattr(fn, "__name__", "finish")
     guarded.__doc__ = fn.__doc__
@@ -471,10 +492,11 @@ def finish(name: str, inputs: tuple, alt_primaries: tuple = (),
         h = xxhash.xxh64(
             structural_source_hash(fn) + "|" + name + "|" + ",".join(inputs)
             # common4: + the show-clipping last pass and Color expansion
-            # (2026-10-03). common5: + background desaturation (2026-10-04). Bumping the tag is what invalidates every served
-            # spec and cached preview exactly once when the shared pass
-            # changes.
-            + "|common5"
+            # (2026-10-03). common5: + background desaturation (2026-10-04).
+            # common6: + the display-white ceiling, `white()` (2026-10-19).
+            # Bumping the tag is what invalidates every served spec and
+            # cached preview exactly once when the shared pass changes.
+            + "|common6"
         ).hexdigest()
         from extension_info import describe
         f = Finish(name=name, inputs=tuple(inputs), optional=tuple(optional),

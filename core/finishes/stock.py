@@ -18,6 +18,11 @@ Conventions that make the knobs pleasant:
     at 0, star reduction between. A missing stars format binds black, which
     degrades gracefully to the starless view.
   * Hα is band `.g` of the zero-filled S,H,O narrowband layout.
+  * `white()` is the display's white: 1.0 on SDR, above it when the viewer
+    drives an HDR display. The stock curves end there, never at a literal
+    1.0, so the brightest nebulosity continues into the headroom while
+    everything the SDR picture shows stays put; stars (`_stars_layer`,
+    `screen`) stay at or below SDR white.
 """
 from __future__ import annotations
 
@@ -25,13 +30,20 @@ import inspect
 
 from finishes.framework import Color, Param, finish
 from finishes.stdlib import (
-    maximum, minimum, mtf, replace_lightness, saturate, screen, vec3, where,
+    clamp, maximum, minimum, mtf, replace_lightness, saturate, screen, vec3,
+    where, white,
 )
 
 
 def _stretch(x, bp, wp, mid):
-    """Black/white-point + midtones — the per-channel building block."""
-    return mtf(saturate((x - bp) / maximum(wp - bp, 1e-6)), mid)
+    """Black/white-point + midtones — the per-channel building block. Above
+    the white point the curve continues along its own tangent (the MTF's
+    slope there is mid/(1−mid)) up to the display's white: 1.0 on SDR, so
+    nothing changes; with HDR headroom the nebulosity brighter than the
+    white point keeps its gradation instead of clipping."""
+    xn = (x - bp) / maximum(wp - bp, 1e-6)
+    over = maximum(xn - 1.0, 0.0) * (mid / maximum(1.0 - mid, 1e-3))
+    return minimum(mtf(saturate(xn), mid) + over, white())
 
 
 def _stars_layer(stars, star_s, star_mid, star_white):
@@ -62,8 +74,10 @@ def _ghs_pinned(x, sky, sig, top, level, neb, strength):
     the sky median lands exactly on `level` and the bright anchor `top`
     exactly on `neb`. Sky and nebula then move independently: each slider
     holds its own point fixed whatever the others do. `sky`, `sig` and `top`
-    are data anchors seeded from the channel's stats; `neb` > 1 clips the
-    brightest nebula to white on purpose.
+    are data anchors seeded from the channel's stats. What is brighter than
+    the anchor continues up the GHS's own shoulder to the display's white:
+    on SDR `neb` ≥ 1 clips it on purpose; with HDR headroom it shows, and
+    `neb` above 1 places the anchor itself in the headroom.
 
     Only the GHS's own shape matters here: its normalisation constants
     cancel in the two-point solve, so f is used un-normalised."""
@@ -78,7 +92,7 @@ def _ghs_pinned(x, sky, sig, top, level, neb, strength):
 
     f_sky = f(sky)
     scale = (neb - level) / maximum(f(top) - f_sky, 1e-12)
-    return saturate((f(x) - f_sky) * scale + level)
+    return clamp((f(x) - f_sky) * scale + level, 0.0, white())
 
 
 @finish(name="Hubble", inputs=("Linear SHO", "Linear RGB Stars"),
@@ -152,13 +166,14 @@ def emission_hues(nb, stars,
     intensity, and the three are ADDED: every line keeps its own structure where it emits, overlaps
     blend, nothing is discarded (Stylistic7, 2026-10-03; replaces SCNR's green
     cap). `scale` multiplies the summed colour — a linear gain, so every
-    ratio (contrast) survives; an experiment alongside the nebula levels. A pixel whose sum passes 1 is scaled down by its own largest
-    component — per pixel, hue-preserving; no global rescale."""
+    ratio (contrast) survives; an experiment alongside the nebula levels. A
+    pixel whose sum passes the display's white is scaled down by its own
+    largest component — per pixel, hue-preserving; no global rescale."""
     s = _ghs_pinned(nb.r, skyS, sigS, topS, levelS, nebS, strS)
     h = _ghs_pinned(nb.g, skyH, sigH, topH, levelH, nebH, strH)
     o = _ghs_pinned(nb.b, skyO, sigO, topO, levelO, nebO, strO)
     c = (colS * s + colH * h + colO * o) * scale
-    c = c / maximum(maximum(maximum(c.r, c.g), c.b), 1.0)
+    c = c / maximum(maximum(maximum(c.r, c.g), c.b) / white(), 1.0)
     return screen(c, _stars_layer(stars, star_s, star_mid, star_white))
 
 
@@ -181,13 +196,16 @@ def foraxx(nb, stars,
            scnr=Param(0.9, 0.0, 1.0, step=0.1, label="green→gold")):
     """Foraxx dynamic palette: per-pixel data-dependent narrowband weights
     (`~x = 1−x`): R = (O^~O)·S + ~(O^~O)·H; G blends H/O by (O·H)^~(O·H);
-    B = O. Inputs saturated first so pow never sees a negative base."""
-    s = saturate(_stretch(nb.r, blackS, whiteS, midS))
-    h = saturate(_stretch(nb.g, blackH, whiteH, midH))
-    o = saturate(_stretch(nb.b, blackO, whiteO, midO))
-    wr = o ** (1.0 - o)
+    B = O. The weights come from the channels clipped to SDR white, so pow
+    never sees a base outside [0, 1]; the channels themselves keep their
+    headroom."""
+    s = _stretch(nb.r, blackS, whiteS, midS)
+    h = _stretch(nb.g, blackH, whiteH, midH)
+    o = _stretch(nb.b, blackO, whiteO, midO)
+    o1 = saturate(o)
+    wr = o1 ** (1.0 - o1)
     r = wr * s + (1.0 - wr) * h
-    m = o * h
+    m = o1 * saturate(h)
     wg = m ** (1.0 - m)
     g = wg * h + (1.0 - wg) * o
     g = minimum(g, (1.0 - scnr) * g + scnr * 0.5 * (r + o))
