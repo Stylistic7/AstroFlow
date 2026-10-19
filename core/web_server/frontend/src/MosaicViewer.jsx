@@ -52,9 +52,12 @@ export default function MosaicViewer() {
 	const hdrCapable = useHdrCapability();
 	// Default ON where the display can actually show it. `useHdrCapability` is
 	// a `(dynamic-range: high)` match, so this only self-enables on a screen
-	// that has the headroom; an SDR display still sees peak forced to 1.0.
+	// that has the headroom; an SDR display still sees the display white
+	// forced to 1.0. 1.35 in the finishes' output units is two stops of
+	// headroom (see HdrControls), inside what an XDR panel offers at any
+	// brightness setting.
 	const [hdrEnabled, setHdrEnabled] = useState(hdrCapable);
-	const [peakBrightness, setPeakBrightness] = useState(2.0);
+	const [displayWhite, setDisplayWhite] = useState(1.35);
 
     const mosaic = mosaics?.[mosaic_id];
     const entity = target_id ? targets?.[target_id] : mosaic;
@@ -136,15 +139,15 @@ export default function MosaicViewer() {
 						handleChange={() => setShowDepth((v) => !v)}
 					/>
 				</>}
-				{/* Peak brightness is the ONE global uniform: the finish shader
-				    ends in `rgb * globals.peakBrightness`, whatever the finish.
+				{/* The display white is the ONE global uniform: every finish's
+				    curve ends at `globals.displayWhite` (its `white()`).
 				    `HdrControls` self-gates on real display capability. */}
 				<HdrControls
 					hdrCapable={hdrCapable}
 					hdrEnabled={hdrEnabled}
 					setHdrEnabled={setHdrEnabled}
-					peakBrightness={peakBrightness}
-					setPeakBrightness={setPeakBrightness}
+					displayWhite={displayWhite}
+					setDisplayWhite={setDisplayWhite}
 				/>
 				{mosaic && <Tooltip title="Export to Telescopius">
 					<IconButton
@@ -218,7 +221,7 @@ export default function MosaicViewer() {
 						pipeline={pipeline}
 						finish={finish}
 						hdrEnabled={hdrEnabled}
-						peakBrightness={peakBrightness}
+						displayWhite={displayWhite}
 					/>
 				</Box>
 

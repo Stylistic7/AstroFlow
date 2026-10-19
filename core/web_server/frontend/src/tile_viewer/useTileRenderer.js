@@ -16,7 +16,7 @@
  *   setTileUrls     — caller passes the current set of tiles that should
  *                     be on-screen; renderer fetches missing ones,
  *                     evicts no-longer-visible ones, and re-renders.
- *   setGlobals      — update the finish's DisplayParams + peakBrightness
+ *   setGlobals      — update the finish's DisplayParams + displayWhite
  *   setViewport     — push the pan/zoom transform; paints synchronously
  *   setGrid / clearGrid — the 3×3 taste-grid (one DisplayParams per cell)
  *   clearTiles      — wipe the cache (a product was rebuilt)
@@ -47,7 +47,9 @@ const globalsLayoutEntries = (filterable) => [
     { binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
 ];
 
-// Globals uniform: peakBrightness, padded to the 16-byte uniform struct size.
+// Globals uniform: displayWhite — the finish's ceiling in its own output
+// units (1.0 on SDR; the HDR display white above it) — padded to the
+// 16-byte uniform struct size.
 const GLOBALS_BYTES = 16;
 // DisplayParams uniform buffer: fixed 256 B (64 f32) — comfortably larger
 // than any finish's param count. Each finish's DisplayParams struct is a
@@ -267,13 +269,13 @@ function makeRenderer(stateRef) {
     }
 
     /** Push the finish's DisplayParams (one value per param, declared order)
-     * and/or peakBrightness; paints synchronously so a slider reflects on
+     * and/or displayWhite; paints synchronously so a slider reflects on
      * the next frame. Either may be omitted to leave it as-is. */
-    function setGlobals({ peakBrightness, finishParams }) {
+    function setGlobals({ displayWhite, finishParams }) {
         const s = stateRef.current;
         if (!s) return;
         if (finishParams) s.lastFinishParams = packFinishParams(finishParams);
-        if (peakBrightness !== undefined) s.lastGlobals[0] = peakBrightness;
+        if (displayWhite !== undefined) s.lastGlobals[0] = displayWhite;
         paint();
     }
 
@@ -641,7 +643,7 @@ export function useTileRenderer({ canvasRef }) {
                 visible: new Set(),     // subset of `tiles` to draw this frame
                 pending: new Map(),     // key -> AbortController of the in-flight fetch
                 queue: [],              // wanted tiles waiting for an in-flight slot
-                lastGlobals: new Float32Array([1, 0, 0, 0]),   // peakBrightness + pad
+                lastGlobals: new Float32Array([1, 0, 0, 0]),   // displayWhite + pad
                 lastViewport: new Float32Array(8),
                 // rAF coalescing — multiple redraw() calls within one
                 // frame collapse into a single paint.

@@ -19,6 +19,10 @@
 
 const toLinear = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
 const toDisplay = (c) => (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055);
+// The sRGB transfer function, which the HDR canvas continues above 1.0
+// (extended sRGB): HdrControls converts a linear headroom to the display
+// white in the finishes' encoded units with it.
+export { toLinear as srgbDecode, toDisplay as srgbEncode };
 
 /** Display sRGB → OKLab [L, a, b]. */
 export function srgbToOklab([r, g, b]) {

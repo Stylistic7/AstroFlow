@@ -184,7 +184,7 @@ export default function TileViewerV2({
     showPanelNumbers: showPanelNumbersProp,
     showDepth: showDepthProp,
     hdrEnabled: hdrEnabledProp,
-    peakBrightness: peakBrightnessProp,
+    displayWhite: displayWhiteProp,
 } = {}) {
     const params = useParams();
     const objectType = objectTypeProp ?? params.objectType;
@@ -221,7 +221,7 @@ export default function TileViewerV2({
     const [polygons, setPolygons] = useState(null);
     // Standalone-mode local state. When `embedded`, the parent-supplied
     // props win and these are unused.
-    const [localPeakBrightness, setLocalPeakBrightness] = useState(2.0);
+    const [localDisplayWhite, setLocalDisplayWhite] = useState(1.35);
     const [localShowPolygons, setLocalShowPolygons] = useState(true);
     const [localShowPanelNumbers, setLocalShowPanelNumbers] = useState(false);
     const [localShowDepth, setLocalShowDepth] = useState(false);
@@ -255,12 +255,14 @@ export default function TileViewerV2({
     const [folded, setFolded] = useState([]);
 
     // Resolve each control to "parent prop if provided, else local state".
-    const peakBrightness = peakBrightnessProp ?? localPeakBrightness;
+    const displayWhite = displayWhiteProp ?? localDisplayWhite;
     const showPolygons = showPolygonsProp ?? localShowPolygons;
     const showPanelNumbers = showPanelNumbersProp ?? localShowPanelNumbers;
     const showDepth = showDepthProp ?? localShowDepth;
-    // hdrEnabled gates brightness: when off, force peak=1.0 (SDR).
-    const effectivePeak = (hdrEnabledProp === false) ? 1.0 : peakBrightness;
+    // The display's white in the finish's output units: 1.0 = SDR, which
+    // hdrEnabled=false forces; above it the finishes use the HDR headroom
+    // (see HdrControls).
+    const effectiveWhite = (hdrEnabledProp === false) ? 1.0 : displayWhite;
 
     // Fetch the tile metadata. Re-fetch when computeGraphStatus changes so
     // a cart that regenerates a product pushes the new mtime down to the
@@ -652,21 +654,21 @@ export default function TileViewerV2({
     }
 
     // Push the uniforms: the finish's DisplayParams (single view) or one
-    // set per grid cell, plus peakBrightness — the ONE global, applied by
-    // the generated fs_main after the finish.
+    // set per grid cell, plus displayWhite — the ONE global, the ceiling
+    // every finish's curve ends at (its `white()`).
     useEffect(() => {
         if (!renderer.isReady || !activeFinish) return;
         if (gridActive && gridCenter && gridMoves) {
-            renderer.setGlobals({ peakBrightness: effectivePeak });
+            renderer.setGlobals({ displayWhite: effectiveWhite });
             renderer.setGrid(buildCellFinishParams(gridAxes, paramOrder, gridCenter, gridMoves));
         } else {
             renderer.setGlobals({
-                peakBrightness: effectivePeak,
+                displayWhite: effectiveWhite,
                 finishParams: activeFinish.params.map(
                     (p) => genericValues[p.name] ?? p.default),
             });
         }
-    }, [renderer, activeFinish, gridAxes, paramOrder, effectivePeak,
+    }, [renderer, activeFinish, gridAxes, paramOrder, effectiveWhite,
         gridActive, gridCenter, gridMoves, genericValues]);
 
     // On viewport change: push uniforms to renderer + recompute visible
@@ -859,13 +861,13 @@ export default function TileViewerV2({
                     color: '#fff', backdropFilter: 'blur(6px)',
                 }}>
                     <Typography variant="caption">
-                        HDR brightness: {effectivePeak.toFixed(1)}×
+                        Display white: {effectiveWhite.toFixed(2)}
                     </Typography>
                     <Slider
                         size="small"
-                        value={localPeakBrightness}
-                        onChange={(_, v) => setLocalPeakBrightness(v)}
-                        min={1} max={8} step={0.1}
+                        value={localDisplayWhite}
+                        onChange={(_, v) => setLocalDisplayWhite(v)}
+                        min={1} max={2} step={0.05}
                     />
                     <FormControlLabel
                         control={

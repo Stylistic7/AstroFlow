@@ -7,11 +7,13 @@
  * `fn displayFinish(src0[, src1..src3], P)`, one vec4 per declared input. We
  * splice it between the shared preamble (structs / bindings / vs_main) and a
  * generated fs_main that samples every input and hands them all to
- * displayFinish, then multiplies by the one global, peakBrightness.
+ * displayFinish, whose colour is the pixel: the finish's own last pass
+ * clamps it to [0, globals.displayWhite] — 1.0 on SDR, the viewer's HDR
+ * display white above it (the finish's `white()`; see finishes/stdlib.py).
  *
  * Binding layout:
  *   group 0 (shared by every tile):
- *     @binding(0) globals   — uniform Globals { peakBrightness }
+ *     @binding(0) globals   — uniform Globals { displayWhite }
  *     @binding(1) viewport  — uniform Viewport { tx, ty, scale, screenW, screenH }
  *     @binding(2) sampler   — linear, clamp-to-edge
  *     @binding(3) fparams   — uniform DisplayParams (declared AFTER the chunk,
@@ -36,7 +38,7 @@ export const MAX_INPUTS = 4;
 
 const SHADER_PREAMBLE = /* wgsl */ `
 struct Globals {
-    peakBrightness: f32,
+    displayWhite: f32,
 };
 struct Viewport {
     tx: f32,
@@ -126,10 +128,9 @@ ${samples.join('\n')}
     // RAW scene-linear sources straight into the finish — NO global normalise.
     // The finish owns ALL of its scaling (its black/white/mid, a normalise op,
     // or nothing): normalisation is part of the individual pipeline, not a
-    // hidden global. See project_scene_display_seam.
-    let rgb = clamp(displayFinish(${args.join(', ')}, fparams),
-                    vec3<f32>(0.0), vec3<f32>(1.0));
-    return vec4<f32>(rgb * globals.peakBrightness, 1.0);
+    // hidden global. See project_scene_display_seam. It owns its ceiling
+    // too: its last pass clamps to [0, globals.displayWhite].
+    return vec4<f32>(displayFinish(${args.join(', ')}, fparams), 1.0);
 }
 `;
 }
