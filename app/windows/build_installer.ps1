@@ -56,6 +56,8 @@ if ($LASTEXITCODE -ne 0) { throw "uv python install failed" }
 $installed = Get-ChildItem "$Downloads\pyroot" -Directory | Where-Object Name -like "cpython-3.12*" | Select-Object -First 1
 Copy-Item -Recurse $installed.FullName "$Stage\python"
 $py = "$Stage\python\python.exe"
+# Ours to fill: uv marks its interpreters externally managed, which uv pip install honours.
+Remove-Item "$Stage\python\Lib\EXTERNALLY-MANAGED" -ErrorAction SilentlyContinue
 uv export --frozen --no-dev --no-emit-project --no-hashes -o "$Downloads\requirements.txt"
 if ($LASTEXITCODE -ne 0) { throw "uv export failed" }
 uv pip install --python $py -r "$Downloads\requirements.txt"
