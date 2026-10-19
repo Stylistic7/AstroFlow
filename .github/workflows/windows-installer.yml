@@ -26,6 +26,9 @@ jobs:
           node-version: 26
       - name: Frontend
         working-directory: core/web_server/frontend
+        # Under CI=true react-scripts turns ESLint warnings into errors.
+        env:
+          CI: "false"
         run: |
           npm ci
           npm run build
