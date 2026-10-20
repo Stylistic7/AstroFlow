@@ -10,30 +10,11 @@ exactly as WGSL splats scalars.
 """
 from __future__ import annotations
 
-from contextvars import ContextVar
 from dataclasses import dataclass
 
 import numpy as np
 
 from finishes.tracer import Expr, FinishTraceError, Vec, call, vec3_node
-
-
-# The display's white for the evaluation in progress, installed by the
-# framework around every finish call: the viewer's display-white global at
-# trace time (an Expr), the baker's value (a float, 1.0 unless asked) in
-# numpy. See `white()`.
-_white: ContextVar = ContextVar("finish_display_white", default=1.0)
-
-
-def white():
-    """The display's white in the finish's own output units: 1.0 on an SDR
-    display, and above it (1.35 for two stops of headroom) when the viewer
-    drives an HDR display. Use it wherever 1.0 would mean "the brightest the
-    display shows" — the ceiling of a stretch, the pixel the show-clipping
-    pass paints — and never for a mask or a weight. The stock curves end
-    here rather than at 1.0, so the brightest nebulosity continues into the
-    headroom while everything the SDR picture already showed stays put."""
-    return _white.get()
 
 
 # ── the numpy dual of Vec ─────────────────────────────────────────────────
@@ -159,9 +140,9 @@ HELPERS: "dict[str, Helper]" = {
         "    let a = 500.0 * (f.x - f.y) * chroma;\n"
         "    let b = 200.0 * (f.y - f.z) * chroma;\n"
         "    let fy = labF(la);\n"
-        "    return max(xyzScrgb(vec3<f32>(labFinv(fy + a / 500.0),"
+        "    return clamp(xyzScrgb(vec3<f32>(labFinv(fy + a / 500.0),"
         " labFinv(fy), labFinv(fy - b / 200.0))),"
-        " vec3<f32>(0.0));\n"
+        " vec3<f32>(0.0), vec3<f32>(1.0));\n"
         "}", deps=("labF", "labFinv", "scrgbXyz", "xyzScrgb")),
 }
 
@@ -221,9 +202,7 @@ def _replace_lightness_np(c, la, chroma):
     fy = _labf_np(np.asarray(la, dtype=np.float64))
     xyz2 = np.stack([_labf_inv_np(fy + a / 500.0), _labf_inv_np(fy),
                      _labf_inv_np(fy - b / 200.0)], axis=-1) * _WHITE
-    # No ceiling here: a lightness above 1 is the HDR headroom, and the
-    # framework's last pass clamps every finish to the display's white.
-    return np.maximum(xyz2 @ _M_INV.T, 0.0)
+    return np.clip(xyz2 @ _M_INV.T, 0.0, 1.0)
 
 
 # fn name → numpy implementation, consumed by tracer.interpret() and the
@@ -354,9 +333,5 @@ def vec3(r, g, b):
 
 
 def screen(a, b):
-    """Screen blend `1 − (1−a)·(1−b)` — pure composition, dual for free.
-
-    Defined on [0, 1], so `a` above SDR white (the nebula's headroom) passes
-    through unchanged: stars screened onto a palette never enter the
-    headroom, and never darken the nebulosity that does."""
-    return maximum(a, 1.0 - (1.0 - saturate(a)) * (1.0 - saturate(b)))
+    """Screen blend `1 − (1−a)·(1−b)` — pure composition, dual for free."""
+    return 1.0 - (1.0 - saturate(a)) * (1.0 - saturate(b))

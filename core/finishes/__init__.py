@@ -27,12 +27,12 @@ branching is `where(cond, a, b)`.
 from finishes.framework import Color, Param, finish
 from finishes.stdlib import (
     absolute, clamp, dot, exp, log, maximum, minimum, mix, mtf, saturate,
-    screen, sqrt, replace_lightness, vec3, where, white,
+    screen, sqrt, replace_lightness, vec3, where,
 )
 
 __all__ = [
     "Color", "Param", "finish",
     "absolute", "clamp", "dot", "exp", "log", "maximum", "minimum", "mix",
     "mtf", "saturate", "screen", "sqrt", "replace_lightness", "vec3",
-    "where", "white",
+    "where",
 ]

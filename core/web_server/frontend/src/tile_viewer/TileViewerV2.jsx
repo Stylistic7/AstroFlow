@@ -45,9 +45,6 @@ import { buildApiUrl, buildUrl } from '../urls.js';
 
 
 const TILE_SIZE = 256;
-// The nebula-level knobs (`nebS`, `nebH`, `nebO`, `nebH` of a channel finish):
-// seeded to the display white and re-seeded on an HDR toggle (finish_seed.js).
-const NEBULA_LEVEL = /^neb/;
 
 
 /** Standard ray-casting point-in-polygon test. `points` is the
@@ -187,10 +184,7 @@ export default function TileViewerV2({
     showPanelNumbers: showPanelNumbersProp,
     showDepth: showDepthProp,
     hdrEnabled: hdrEnabledProp,
-    displayWhite: displayWhiteProp,
-    // A restored look carries its display white: these put it back.
-    setHdrEnabled: setHdrEnabledProp,
-    setDisplayWhite: setDisplayWhiteProp,
+    peakBrightness: peakBrightnessProp,
 } = {}) {
     const params = useParams();
     const objectType = objectTypeProp ?? params.objectType;
@@ -227,7 +221,7 @@ export default function TileViewerV2({
     const [polygons, setPolygons] = useState(null);
     // Standalone-mode local state. When `embedded`, the parent-supplied
     // props win and these are unused.
-    const [localDisplayWhite, setLocalDisplayWhite] = useState(1.35);
+    const [localPeakBrightness, setLocalPeakBrightness] = useState(2.0);
     const [localShowPolygons, setLocalShowPolygons] = useState(true);
     const [localShowPanelNumbers, setLocalShowPanelNumbers] = useState(false);
     const [localShowDepth, setLocalShowDepth] = useState(false);
@@ -261,18 +255,12 @@ export default function TileViewerV2({
     const [folded, setFolded] = useState([]);
 
     // Resolve each control to "parent prop if provided, else local state".
-    const displayWhite = displayWhiteProp ?? localDisplayWhite;
+    const peakBrightness = peakBrightnessProp ?? localPeakBrightness;
     const showPolygons = showPolygonsProp ?? localShowPolygons;
     const showPanelNumbers = showPanelNumbersProp ?? localShowPanelNumbers;
     const showDepth = showDepthProp ?? localShowDepth;
-    // The display's white in the finish's output units: 1.0 = SDR, which
-    // hdrEnabled=false forces; above it the finishes use the HDR headroom
-    // (see HdrControls).
-    const effectiveWhite = (hdrEnabledProp === false) ? 1.0 : displayWhite;
-    // The seed reads the current display white through a ref: an HDR toggle
-    // must re-seed the nebula levels (below), never every knob.
-    const whiteRef = useRef(effectiveWhite);
-    whiteRef.current = effectiveWhite;
+    // hdrEnabled gates brightness: when off, force peak=1.0 (SDR).
+    const effectivePeak = (hdrEnabledProp === false) ? 1.0 : peakBrightness;
 
     // Fetch the tile metadata. Re-fetch when computeGraphStatus changes so
     // a cart that regenerates a product pushes the new mtime down to the
@@ -374,8 +362,7 @@ export default function TileViewerV2({
         const pb = new Map(activeFinish.params.map(
             (p) => [p.name, { lo: p.lo, hi: p.hi }]));
         const seed = stfSeed(primary?.channelStats, primary?.bandRoles, primary?.colorspace,
-                             (n) => pb.get(n) ?? null, undefined, primary?.channelStatsStarless,
-                             whiteRef.current);
+                             (n) => pb.get(n) ?? null, undefined, primary?.channelStatsStarless);
         if (seed) {
             for (const p of activeFinish.params) {
                 if (p.name in seed) init[p.name] = Math.min(p.hi, Math.max(p.lo, seed[p.name]));
@@ -385,23 +372,6 @@ export default function TileViewerV2({
         setSeedValues(seed ? init : {});
         setGenericValues(init);
     }, [renderer, activeFinish, primary, seedKey]);
-
-    // An HDR toggle lands every nebula level on the new display white — its
-    // seed — and leaves every other knob alone (Stylistic7, 2026-10-19: "the
-    // sliders should just start at their sensible level"). A restored look
-    // brings its own display white AND its own nebula levels, so the change
-    // of white it causes is not a toggle: `restoredWhiteRef` names it.
-    const restoredWhiteRef = useRef(null);
-    useEffect(() => {
-        if (!activeFinish) return;
-        const restored = restoredWhiteRef.current === effectiveWhite;
-        restoredWhiteRef.current = null;
-        if (restored) return;
-        const nebula = activeFinish.params.filter((p) => NEBULA_LEVEL.test(p.name));
-        if (!nebula.length) return;
-        setGenericValues((cur) => ({ ...cur, ...Object.fromEntries(nebula.map(
-            (p) => [p.name, Math.min(p.hi, Math.max(p.lo, effectiveWhite))])) }));
-    }, [activeFinish, effectiveWhite]);
 
     const foldKey = activeFinish ? `afFinishFolded:${activeFinish.name}` : null;
     useEffect(() => {
@@ -682,21 +652,21 @@ export default function TileViewerV2({
     }
 
     // Push the uniforms: the finish's DisplayParams (single view) or one
-    // set per grid cell, plus displayWhite — the ONE global, the ceiling
-    // every finish's curve ends at (its `white()`).
+    // set per grid cell, plus peakBrightness — the ONE global, applied by
+    // the generated fs_main after the finish.
     useEffect(() => {
         if (!renderer.isReady || !activeFinish) return;
         if (gridActive && gridCenter && gridMoves) {
-            renderer.setGlobals({ displayWhite: effectiveWhite });
+            renderer.setGlobals({ peakBrightness: effectivePeak });
             renderer.setGrid(buildCellFinishParams(gridAxes, paramOrder, gridCenter, gridMoves));
         } else {
             renderer.setGlobals({
-                displayWhite: effectiveWhite,
+                peakBrightness: effectivePeak,
                 finishParams: activeFinish.params.map(
                     (p) => genericValues[p.name] ?? p.default),
             });
         }
-    }, [renderer, activeFinish, gridAxes, paramOrder, effectiveWhite,
+    }, [renderer, activeFinish, gridAxes, paramOrder, effectivePeak,
         gridActive, gridCenter, gridMoves, genericValues]);
 
     // On viewport change: push uniforms to renderer + recompute visible
@@ -889,13 +859,13 @@ export default function TileViewerV2({
                     color: '#fff', backdropFilter: 'blur(6px)',
                 }}>
                     <Typography variant="caption">
-                        Display white: {effectiveWhite.toFixed(2)}
+                        HDR brightness: {effectivePeak.toFixed(1)}×
                     </Typography>
                     <Slider
                         size="small"
-                        value={localDisplayWhite}
-                        onChange={(_, v) => setLocalDisplayWhite(v)}
-                        min={1} max={2} step={0.05}
+                        value={localPeakBrightness}
+                        onChange={(_, v) => setLocalPeakBrightness(v)}
+                        min={1} max={8} step={0.1}
                     />
                     <FormControlLabel
                         control={
@@ -1004,28 +974,15 @@ export default function TileViewerV2({
                             </span>
                         ))}
                     </Typography>
-                    {/* A look is its knobs PLUS the display white it was made
-                        for (`display_white`, the finishes' own name for it):
-                        restoring an HDR look turns HDR on at that white, an
-                        SDR look turns it off. Exports stay SDR files. */}
                     <FinishSaves
                         url={buildApiUrl('/api/finish_saves', hierarchy, view)}
-                        values={{
-                            ...Object.fromEntries(activeFinish.params.map(
-                                (prm) => [prm.name, genericValues[prm.name] ?? prm.default])),
-                            display_white: effectiveWhite,
-                        }}
-                        onRestore={({ display_white: white, ...saved }) => {
-                            setGenericValues((cur) => ({
-                                ...cur,
-                                ...Object.fromEntries(Object.entries(saved).filter(
-                                    ([name]) => activeFinish.params.some((prm) => prm.name === name))),
-                            }));
-                            if (white === undefined) return;
-                            restoredWhiteRef.current = white;
-                            if (white > 1) (setDisplayWhiteProp ?? setLocalDisplayWhite)(white);
-                            setHdrEnabledProp?.(white > 1);
-                        }}
+                        values={Object.fromEntries(activeFinish.params.map(
+                            (prm) => [prm.name, genericValues[prm.name] ?? prm.default]))}
+                        onRestore={(saved) => setGenericValues((cur) => ({
+                            ...cur,
+                            ...Object.fromEntries(Object.entries(saved).filter(
+                                ([name]) => activeFinish.params.some((prm) => prm.name === name))),
+                        }))}
                     />
                     <FinishExport
                         url={buildApiUrl('/api/finish_export', hierarchy, view)}

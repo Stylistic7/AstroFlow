@@ -220,11 +220,8 @@ def render_finish_preview(object_type: str, object_id: str, pipeline: str,
                          anchors_from=primary.astype(np.float32, copy=False))
 
     out = b.finish.bake(sources, {**seeded, **(values or {})})
-    # A saved look made for an HDR display carries its `display_white`, so
-    # the bake runs past 1.0 there; the thumbnail is an SDR picture and clips
-    # (uint8 would wrap a 1.35 to 88).
     ok, buf = cv2.imencode(".png", cv2.cvtColor(
-        (np.clip(out, 0.0, 1.0) * 255.0).astype(np.uint8), cv2.COLOR_RGB2BGR))
+        (out * 255.0).astype(np.uint8), cv2.COLOR_RGB2BGR))
     if not ok:
         return None
     png = buf.tobytes()

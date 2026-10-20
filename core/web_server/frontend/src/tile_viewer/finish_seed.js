@@ -90,7 +90,7 @@ function identitySeed(bandRoles) {
 // background as almost entirely dark — correct by the recipe, unusable to
 // look at.
 export function stfSeed(channelStats, bandRoles, colorspace, boundsFor = null, target = 0.10,
-                        starlessStats = null, displayWhite = 1.0) {
+                        starlessStats = null) {
     if (colorspace === 'display') return identitySeed(bandRoles);
     if (!channelStats || !channelStats.length) return null;
     const b = (name) => (boundsFor ? boundsFor(name) : null);
@@ -102,12 +102,6 @@ export function stfSeed(channelStats, bandRoles, colorspace, boundsFor = null, t
     per.forEach((p, i) => {
         const s = bandRoles?.[i] ?? String(i);
         seed[`black${s}`] = p.bp; seed[`white${s}`] = p.wp; seed[`mid${s}`] = p.mid;
-        // The nebula level — where the pinned GHS lands its bright anchor —
-        // seeds to the display's white: 1.0 on SDR, the HDR display white
-        // (1.35 for two stops) when HDR is on, so the brightest nebulosity
-        // fills the headroom without a slider being touched (Stylistic7,
-        // 2026-10-19). The viewer re-seeds exactly these on an HDR toggle.
-        seed[`neb${s}`] = displayWhite;
         // Data anchors for the pinned-GHS finishes (Hubble and the channel finishes): sky median,
         // sky noise and the bright level, measured on the STARLESS primary --
         // the stretch never sees the stars. Twin of `_stf_values` (preview.py).

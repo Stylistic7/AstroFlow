@@ -420,12 +420,6 @@ def test_pinned_ghs_shows_three_controls_per_channel():
         shown = [p.name for p in f.params if p.kind != "data" and p.name[-1] == r and not p.builtin]
         assert sorted(shown) == sorted([f"level{r}", f"neb{r}", f"str{r}"]), shown
         assert all(p.kind == "data" for p in f.params if p.name in (f"sky{r}", f"sig{r}", f"top{r}"))
-    # The nebula level reaches the display white's reach (2.0 in the viewer):
-    # with HDR on the viewer seeds it to the display white (2026-10-19).
-    for name in ("Hubble", "Emission Hues", "H", "L"):
-        for p in get_finish(name).params:
-            if p.name.startswith("neb"):
-                assert (p.default, p.hi) == (1.0, 2.0), (name, p.name, p.hi)
 
 
 def test_emission_hues_adds_each_line_in_its_own_colour():
@@ -601,95 +595,3 @@ def test_channel_finishes_get_no_background_desaturation():
     for name in ("H", "O", "Master"):
         names = [p.name for p in get_finish(name).params]
         assert "bg_desat" not in names and "bg_level" not in names, name
-
-
-class TestDisplayWhite:
-    """`white()` (2026-10-19): the display's white, 1.0 on SDR, the viewer's
-    HDR display white above it. A finish's curve ends there, so the brightest
-    nebulosity continues into the headroom, and everything the SDR picture
-    already showed stays exactly as it was."""
-
-    HDR = {"display_white": 1.5}
-
-    @pytest.mark.parametrize("name,nsrc", STOCK)
-    def test_sdr_clips_at_one_hdr_fills_the_headroom_and_the_shader_agrees(self, name, nsrc):
-        f = get_finish(name)
-        sources = _srcs(nsrc, seed=1)      # runs well past every white point
-        sdr = f.bake(sources)
-        hdr = f.bake(sources, self.HDR)
-        assert sdr.max() <= 1.0
-        assert 1.0 < hdr.max() <= 1.5
-        assert np.abs(hdr - f.interpret(sources, self.HDR)).max() < 1e-5
-
-    @pytest.mark.parametrize("name", ["Hubble", "H", "RGB", "Master"])
-    def test_what_sdr_shows_below_white_is_untouched(self, name):
-        """A pixel the SDR picture shows below white renders identically in
-        HDR. (A mix AFTER the curves — Hubble's green→gold cap, Foraxx's
-        weights, LRGB's chroma, Emission Hues' gain — lets one channel's
-        headroom reach a pixel the SDR picture showed, by design; the cap
-        is off here.)"""
-        f = get_finish(name)
-        # Nebula only (no stars), a quarter of it past the white point.
-        primary = _srcs(1, seed=2, scale=0.012)[0]
-        sources = [primary] + [np.zeros_like(primary)] * (len(f.inputs) - 1)
-        sdr = f.bake(sources, {"scnr": 0.0})
-        hdr = f.bake(sources, dict(self.HDR, scnr=0.0))
-        shown = sdr.max(axis=-1) < 1.0 - 1e-6
-        assert shown.any() and not shown.all()
-        assert np.array_equal(hdr[shown], sdr[shown])
-
-    def test_the_mtf_stretch_continues_along_its_tangent_above_the_white_point(self):
-        from finishes.stdlib import _white
-        from finishes.stock import _stretch
-        mid = 0.25
-        x = np.array([0.5, 1.0, 1.0 + 1e-3, 2.0, 100.0])
-        token = _white.set(2.0)
-        try:
-            y = _stretch(x, 0.0, 1.0, mid)
-        finally:
-            _white.reset(token)
-        slope = mid / (1.0 - mid)                 # the MTF's slope at its white point
-        assert y[0] == pytest.approx(_mtf_np(0.5, mid))
-        assert y[1] == 1.0
-        assert y[2] == pytest.approx(1.0 + slope * 1e-3, rel=1e-6)
-        assert y[3] == pytest.approx(1.0 + slope)
-        assert y[4] == 2.0                         # the display's white caps it
-
-    def test_the_pinned_ghs_continues_past_its_anchor_into_the_headroom(self):
-        from finishes.stdlib import _white
-        from finishes.stock import _ghs_pinned
-        sky, sig, top = 0.005, 3e-5, 0.0089
-        x = np.array([sky, top, 1.3 * top, 50.0 * top])
-        token = _white.set(1.5)
-        try:
-            y = _ghs_pinned(x, sky, sig, top, 0.04, 1.0, 4.0)
-        finally:
-            _white.reset(token)
-        assert y[0] == pytest.approx(0.04) and y[1] == pytest.approx(1.0)
-        assert 1.0 < y[2] < 1.5 and y[3] == 1.5
-
-    def test_stars_never_enter_the_headroom_nor_darken_the_nebula_that_does(self):
-        from finishes.stdlib import screen
-        # Width 4, not 3: a 3-wide array reads as one colour.
-        out = screen(np.array([0.5, 1.0, 1.3, 0.0]), np.full(4, 0.5))
-        assert np.allclose(out, [0.75, 1.0, 1.3, 0.5])
-
-    def test_show_clipping_judges_against_the_display_white(self):
-        f = get_finish("H")
-        src = _srcs(1, seed=3)
-        hdr = f.bake(src, self.HDR)
-        shown = f.bake(src, dict(self.HDR, show_clipping=1.0))
-        top = hdr.max(axis=-1)
-        blown = top >= 1.5 - 0.5 / 255
-        assert blown.any() and (top > 1.0).sum() > blown.sum(), "some headroom pixels are not blown"
-        assert np.allclose(shown[blown], (1, 0, 1))
-        lit = ~blown & (top > 0.01)
-        assert np.array_equal(shown[lit], hdr[lit])
-
-    def test_the_shader_reads_the_display_white_from_the_viewer_global(self):
-        f = get_finish("Hubble")
-        assert "let display_white = globals.displayWhite;" in f.wgsl
-        assert "display_white: f32" not in f.wgsl        # not a DisplayParams field
-        assert all(p.name != "display_white" for p in f.params)
-        from finishes.stdlib import white
-        assert white() == 1.0                            # SDR outside any finish
