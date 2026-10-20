@@ -25,7 +25,7 @@ from pipelines.hybrid_graxpert_oss_mosaic import register
 from stacks.calibration_selection import calibrate
 from stacks.post_processing.graxpert_stack import post_stack_calibrate
 from stacks.stacking.siril import integrate_with_siril
-from stacks.foreign import foreign_master, is_foreign
+from stacks.foreign import foreign_master, foreign_post_processed_master, is_foreign
 from targets.merging.oss import calibrate_channel, hdr_merge_masters, merge_target_channel_oss
 
 PIPELINE = "Hybrid: Siril + GraXpert + OSS Mosaic"
@@ -45,7 +45,7 @@ def solved_master(stack, config):
 def post_processed_master(stack, config):
     """`solved_master` → post-stacking calibration."""
     if is_foreign(stack):
-        return foreign_master(stack)   # made elsewhere by this same pipeline
+        return foreign_post_processed_master(stack, config, post_stack_calibrate)
     master = solved_master(stack, config)
     return inherit_plate_solution(post_stack_calibrate(stack, config, master), master)
 

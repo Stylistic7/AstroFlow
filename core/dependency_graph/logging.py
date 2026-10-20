@@ -53,7 +53,7 @@ def _concerns_keys_for(func: Callable, args: tuple, kwargs: dict) -> list[tuple]
     if not stable_hash:
         return []
     from products.registry import _producers
-    if not any(
+    if not getattr(func, "_reports_concerns", False) and not any(
         func.__name__ == w.__name__
         for wrappers in _producers.values()
         for w in wrappers

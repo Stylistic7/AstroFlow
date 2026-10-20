@@ -72,6 +72,7 @@ def write_shared_master(path: Path, meta: ImageMetadata | None = None, **kw) -> 
     hdu = fits.PrimaryHDU(np.zeros((meta.height_pixels, meta.width_pixels), dtype=np.float32))
     for k, v in meta.header.items():
         hdu.header[k] = v.isoformat() if isinstance(v, datetime.datetime) else v
+    hdu.header["DONTSOLV"] = True   # blank pixels: a re-measure must not launch a blind solve
     hdu.writeto(path, overwrite=True)
     write_image_metadata(meta)
     set_section(path, "plate_solution", _plate_solution_to_obj(meta.plate_solution))

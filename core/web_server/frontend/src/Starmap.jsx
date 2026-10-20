@@ -63,13 +63,12 @@ export default function Starmap() {
 		markersPlugs.clearMarkers();
 
 		// A target made only of other people's masters (shared master folders)
-		// is drawn dashed: blue when our pipeline admits them, grey when another
-		// pipeline made them and they are only shown. A target we hold frames
-		// in is drawn as ours, whoever else contributed.
+		// is drawn dashed. A target we hold frames in is drawn as ours, whoever
+		// else contributed. Which pipeline made a foreign master is a concern on
+		// its stack, not a colour here.
 		const foreignState = (target) => {
 			const members = (target.stack_ids || []).map((id) => stacks?.[id]).filter(Boolean);
-			if (!members.length || !members.every((s) => s.foreign)) return null;
-			return members.some((s) => s.admitted) ? 'foreign' : 'foreign-unmatched';
+			return members.length && members.every((s) => s.foreign) ? 'foreign' : null;
 		};
 
 		constellationPolylines.forEach((polyline, index) => {

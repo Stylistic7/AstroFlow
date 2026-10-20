@@ -131,11 +131,3 @@
   stroke-dasharray: 12 8;
   fill: rgba(0, 0, 255, 0.12);
 }
-
-.target--foreign-unmatched {
-  stroke: rgba(170, 170, 170, 0.9);
-  stroke-opacity: 0.9;
-  stroke-width: 4px;
-  stroke-dasharray: 6 6;
-  fill: rgba(128, 128, 128, 0.15);
-}

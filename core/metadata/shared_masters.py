@@ -1,22 +1,24 @@
-"""Shared master folders: other people's masters, read from their sidecars.
+"""Shared master folders: other people's masters, read like a raw folder.
 
 A shared master folder (`context.shared_dirs`; a Dropbox folder, a synced
-bucket — AstroFlow never learns which) holds post-stack-calibrated masters
-and their sidecars, published by every AstroFlow instance in a group
-(`stacks.publish_shared`). This module READS such a folder; nothing here
-writes into one, and nothing in the app writes a sidecar beside a file it
-found there: the producer's sidecar is the manifest, authoritative and
-complete (metadata, plate solution, calibration certificate, pipeline stamp),
-so no master is ever opened, solved or measured on the consumer's side. A
-consumer that wrote beside a shared file would race every other consumer
-through the sync tool (conflicted copies, sync storms).
+bucket — AstroFlow never learns which) holds masters published by every
+AstroFlow instance in a group (`stacks.publish_shared`), and whatever else a
+member drops in: a master from another program is foreign all the same. This
+module READS such a folder and derives what it must: a master that brings no
+sidecar is plate-solved and measured in place, the sidecar written beside it
+exactly as in a raw data folder, so the first member to see it does the work
+for all through the sync tool. The master itself is never modified.
 
-The scan lists the DATA files that have a sidecar, with the pair's size and
-newest mtime, so a master still arriving through the sync tool (size short of
-what its sidecar recorded) is left out until it is whole, and a change to
-either file re-keys the folder's piece. The pieces and their union follow the
-raw library exactly (`metadata.image_metadata`): per-folder, fingerprint
-keyed, disconnected = unchanged.
+Two things differ from a raw folder, because a shared folder has many
+writers and a sync tool between them. A file can change under us — it
+arrives in pieces, or is re-pushed under its name — so a sidecar here is
+valid only while the size it recorded is the file's size; otherwise it is
+discarded and the file measured again (`compute_shared_master` keys on size
+and mtime). And two members may write the same sidecar at once; the sync
+tool keeps one as a conflicted copy, which pairs with no data file and is
+ignored. The pieces and their union follow the raw library
+(`metadata.image_metadata`): per-folder, fingerprint keyed, disconnected =
+unchanged.
 """
 from __future__ import annotations
 
@@ -43,45 +45,86 @@ def _sidecar_data_path(sidecar: Path) -> Path | None:
 
 
 def scan_shared_dir(dir: str | Path) -> ScanRecord:
-    """Fresh scan of a PRESENT shared folder: every image file beside a
-    sidecar, recursively, skipping dot-prefixed names (a sync tool's
-    temporaries and conflict markers)."""
+    """Fresh scan of a PRESENT shared folder: every image file, recursively,
+    with the newest mtime of the file and its sidecar, skipping dot-prefixed
+    names (a sync tool's temporaries and conflict markers)."""
     root = Path(dir)
     entries: list[tuple[str, int, int]] = []
-    for sidecar in root.rglob("*.json"):
-        if any(part.startswith(".") for part in sidecar.relative_to(root).parts):
+    for data in root.rglob("*"):
+        if data.suffix.lower() not in _IMAGE_SUFFIXES or not data.is_file():
             continue
-        data = _sidecar_data_path(sidecar)
-        if data is None:
+        if any(part.startswith(".") for part in data.relative_to(root).parts):
             continue
         try:
-            ds, ss = data.stat(), sidecar.stat()
+            st = data.stat()
+            mtime = st.st_mtime_ns
+            sidecar = data.with_suffix(data.suffix + ".json")
+            if sidecar.exists():
+                mtime = max(mtime, sidecar.stat().st_mtime_ns)
         except OSError:
             continue  # vanished mid-scan → the next scan sees the folder as it is
-        entries.append((str(data.relative_to(root)), ds.st_size,
-                        max(ds.st_mtime_ns, ss.st_mtime_ns)))
+        entries.append((str(data.relative_to(root)), st.st_size, mtime))
     listing = tuple(sorted(entries))
     return ScanRecord(dir=str(root), fingerprint=hash_call("shared_listing_v1", listing),
                       listing=listing)
 
 
+MEASURED = "measured"   # sidecar section: the bytes a shared file's sidecar describes
+
+
+def sidecar_is_current(data: Path, size: int) -> bool:
+    """A shared file's sidecar describes THESE bytes. A file we measured here
+    recorded its size AND mtime (`MEASURED`): a re-pushed master, even one of
+    exactly the same size, has a new mtime and is measured again. A sidecar
+    that arrived with an AstroFlow-published master recorded the size alone,
+    and that master's name is its content: new bytes come under a new name.
+    A half-arrived file fails either test."""
+    from file_io.sidecar import get_file_size, get_section, sidecar_path_for
+    if not sidecar_path_for(data).exists():
+        return False
+    measured = get_section(data, MEASURED)
+    if isinstance(measured, dict):
+        try:
+            st = data.stat()
+        except OSError:
+            return False
+        return measured.get("size") == st.st_size and measured.get("mtime_ns") == st.st_mtime_ns
+    return get_file_size(data) == size
+
+
+@node(num_cpus=0.25, auto_memory=True)
+def compute_shared_master(path: str, size: int, mtime_ns: int) -> None:
+    """Measure a shared master in place — content hash, header, statistics,
+    plate solution — writing its sidecar beside it, as `compute_image_metadata`
+    does for a raw frame, then record which bytes it describes. Keyed on the
+    file's size and mtime, so a file that changed is measured anew: a sidecar
+    that recorded other bytes is dropped first, and with it any broken marker
+    (a truncated file that has since finished arriving must be retried)."""
+    from file_io.sidecar import set_section, sidecar_path_for
+    from metadata.image_metadata import compute_image_metadata
+    data = Path(path)
+    if sidecar_is_current(data, size):
+        return
+    sidecar_path_for(data).unlink(missing_ok=True)
+    st = data.stat()
+    compute_image_metadata._function(data)
+    set_section(data, MEASURED, {"size": st.st_size, "mtime_ns": st.st_mtime_ns})
+
+
 def _is_shared_master(meta, size_on_disk: int) -> bool:
-    """A file this folder may lend to a mosaic: a stamped, solved light master
-    (`PIPEHASH`, `CALLHASH`, `STBLHASH`) whose bytes are all there."""
+    """A file this folder may lend to a mosaic: a solved, single-band light
+    master whose bytes are all there (the sidecar recorded this size)."""
     from file_io.sidecar import get_file_size
-    from hashing.pipeline_stamp import stamp_of
     from metadata.image_types import is_light_frame
-    h = meta.header
     return bool(
-        stamp_of(h) and h.get("CALLHASH") and h.get("STBLHASH")
-        and is_light_frame(h) and meta.plate_solution is not None
-        and get_file_size(meta.filename) == size_on_disk
+        is_light_frame(meta.header) and meta.plate_solution is not None
+        and meta.channels == 1 and get_file_size(meta.filename) == size_on_disk
     )
 
 
 def admissible_masters(root: Path, listing: tuple) -> dict:
     """`{content_hash: ImageMetadata}` of the listed files that are whole,
-    stamped, solved light masters, from their sidecars alone."""
+    solved, single-band light masters, from their sidecars."""
     from metadata.sidecar_io import read_image_metadata
 
     masters: dict = {}

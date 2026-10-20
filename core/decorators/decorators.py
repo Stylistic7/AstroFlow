@@ -248,6 +248,10 @@ class _Node:
         # default "light" makes `is_light_frame` uniformly true for produced
         # images.
         image_type = ray_opts.pop("image_type", "light")
+        # An op whose `concerns.warn(...)` calls are filed under its first
+        # argument's object even though it produces no file (producers get this
+        # by registration; see `dependency_graph.logging._concerns_keys_for`).
+        reports_concerns = ray_opts.pop("reports_concerns", False)
         # This op's output is a WORKING VALUE, not a deliverable: reclaimed as
         # soon as the graph that consumes it completes. The author of the op is
         # the one who knows whether it is cheap to recompute, so the decision
@@ -381,6 +385,7 @@ class _Node:
         # the same on every op; a node that produces no file simply has nothing
         # to reclaim.
         wrapper._ephemeral = ephemeral
+        wrapper._reports_concerns = reports_concerns
         if display_name is not None:
             wrapper._display_name = display_name
 

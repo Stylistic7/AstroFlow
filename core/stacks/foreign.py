@@ -10,15 +10,15 @@ overlapping panels get the same mosaic on both machines without anyone
 doing anything. The pipelines take its master from disk (`foreign_master`)
 where they would stack and calibrate a local one.
 
-ADMISSION. A foreign stack is MERGED only when the same pipeline made its
-master (`hashing.pipeline_stamp`): its `PIPEHASH` must equal the stamp of a
-post-processed master this instance built itself. A foreign stack whose
-stamp matches nothing local is still identified — it shows on the starmap,
-dashed and grey, with the reason — but no pipeline merges it
-(`targets.target_channel.group_stacks_by_filter`). Admission is part of the
-stack's `content_hash`, so a stamp that starts matching (this instance built
-its first master, or the other side updated and re-pushed) re-keys the
-target and the mosaic, and the pipelines run again with the panel in.
+MERGING. Every foreign stack merges — "people may wish to merge masters they
+no longer have the raw subframes for". The pipeline stamp
+(`hashing.pipeline_stamp`) only LABELS: a foreign master whose stamp matches
+one of this instance's own post-processed masters merges silently; one with
+another stamp, or none (stacked outside AstroFlow), merges with a CONCERN on
+the stack naming it, which the target and mosaic pages bubble up. A master
+with no stamp is a raw integration: it goes through this instance's own
+post-stack calibration first (`foreign_post_processed_master`), so what the
+mosaic merges is on the same flux scale and background as everything else.
 
 IDENTITY. `stable_hash` is the master's `STBLHASH` — its oldest subframe,
 stamped by the AstroFlow that stacked it — so a foreign master of the very
@@ -61,12 +61,12 @@ class ForeignStack(Stack):
     """A Stack whose master was made elsewhere; `contents` is empty."""
     master_path: str = ""
     shared_dir: str = ""          # the shared master folder it was found in
-    pipeline_stamp: str = ""      # the master's PIPEHASH
-    admitted: bool = False        # the stamp matches a locally built master's
-    observer: str | None = None   # OBSERVER, for credit — never for admission
+    pipeline_stamp: str = ""      # the master's PIPEHASH; "" = stacked outside AstroFlow
+    same_pipeline: bool = False   # the stamp matches a master this instance built
+    observer: str | None = None   # OBSERVER, for credit — never for merging
 
     @classmethod
-    def from_master(cls, meta: ImageMetadata, *, admitted: bool, shared_dir: str) -> "ForeignStack":
+    def from_master(cls, meta: ImageMetadata, *, same_pipeline: bool, shared_dir: str) -> "ForeignStack":
         from file_io.sidecar import get_section
         from hashing.pipeline_stamp import stamp_of
         h = meta.header
@@ -78,10 +78,12 @@ class ForeignStack(Stack):
         frames = MetadataDict({content_hash: meta})
         astrometric = AstrometricAttributes.from_frames([content_hash], frames)
         return cls(
-            # The admission state is identity: a stamp that starts matching
-            # must re-key every target and mosaic the stack belongs to.
-            content_hash=hash_list([content_hash, "admitted" if admitted else "pending"]),
-            stable_hash=str(h["STBLHASH"]),
+            # The label is identity: a stamp that starts matching re-keys the
+            # targets and mosaics the stack is in, so the concern is re-judged.
+            content_hash=hash_list([content_hash, "same" if same_pipeline else "other"]),
+            # An AstroFlow master names its oldest subframe; any other master
+            # is only its pixels.
+            stable_hash=str(h.get("STBLHASH") or meta.stable_hash),
             oldest_date=_date(shared.get("oldest_date"), h["DATE-OBS"]),
             newest_date=_date(shared.get("newest_date"), h["DATE-OBS"]),
             image_type="light",
@@ -99,7 +101,7 @@ class ForeignStack(Stack):
             master_path=str(meta.filename),
             shared_dir=shared_dir,
             pipeline_stamp=stamp_of(h) or "",
-            admitted=admitted,
+            same_pipeline=same_pipeline,
             observer=(str(shared.get("observer") or h.get("OBSERVER") or "").strip() or None),
         )
 
@@ -131,17 +133,17 @@ def shared_dir_of(path: str | Path, shared_dirs: tuple[str, ...]) -> str:
 
 def choose_foreign_masters(masters: dict, hashes, local_stamps) -> list[tuple[ImageMetadata, bool]]:
     """One master per stable hash among `hashes` (keys into `masters`), with
-    its admission: the admitted one wins, then the smaller call hash."""
+    whether our pipeline made it: that one wins, then the smaller hash."""
     from hashing.pipeline_stamp import stamp_of
     chosen: dict[str, tuple] = {}
     for h in hashes:
         meta = masters[h]
-        admitted = stamp_of(meta.header) in local_stamps
-        key = str(meta.header["STBLHASH"])
-        rank = (not admitted, meta.content_hash)
+        same = stamp_of(meta.header) in local_stamps
+        key = str(meta.header.get("STBLHASH") or meta.stable_hash)
+        rank = (not same, meta.content_hash)
         if key not in chosen or rank < chosen[key][0]:
-            chosen[key] = (rank, meta, admitted)
-    return [(meta, admitted) for _key, (_rank, meta, admitted) in sorted(chosen.items())]
+            chosen[key] = (rank, meta, same)
+    return [(meta, same) for _key, (_rank, meta, same) in sorted(chosen.items())]
 
 
 @node(resources={"diskcache": 0.001})
@@ -149,36 +151,65 @@ def identify_foreign_stacks(
     shared_ref: ContextRef, hashes: tuple, local_stamps: tuple, shared_dirs: tuple,
 ) -> StacksDict:
     """The foreign stacks for the shared masters `hashes` (keys into
-    `shared_ref`), one per stable hash, admitted when the master's pipeline
-    stamp is one of `local_stamps`."""
+    `shared_ref`), one per stable hash, labelled by whether the master's
+    pipeline stamp is one of `local_stamps`."""
     out = StacksDict()
-    n_admitted = 0
-    for meta, admitted in choose_foreign_masters(shared_ref.get(), hashes, local_stamps):
+    n_same = 0
+    for meta, same in choose_foreign_masters(shared_ref.get(), hashes, local_stamps):
         try:
             stack = ForeignStack.from_master(
-                meta, admitted=admitted,
+                meta, same_pipeline=same,
                 shared_dir=shared_dir_of(meta.filename, shared_dirs))
         except Exception as e:
             log.warning("shared master not admissible as a stack",
                         file=str(meta.filename), error=str(e))
             continue
-        n_admitted += admitted
+        n_same += same
         out[stack.stable_hash] = ContextRef.store(("stacks", stack.stable_hash), stack)
     log.info("identified foreign stacks", candidates=len(hashes), stacks=len(out),
-             admitted=n_admitted)
+             same_pipeline=n_same)
     return out
 
 
-@node(resources={"diskcache": 0.001})
+@node(resources={"diskcache": 0.001}, reports_concerns=True)
 def foreign_master(stack: ForeignStack) -> ImageMetadata:
-    """A foreign stack's post-processed master, as the pipelines expect one:
-    the file on disk, re-identified under this op's call hash exactly as
+    """A foreign stack's master, as the pipelines expect one: the file on
+    disk, re-identified under this op's call hash exactly as
     `pipelines.subframe.subframe_channel` does for a raw frame (the runtime
     stamps the blank `content_hash` with the call hash, keeping the
-    pure-Merkle handle/value equality every trace prediction depends on)."""
+    pure-Merkle handle/value equality every trace prediction depends on).
+    Files the concern that labels a master our pipeline did not make."""
+    import concerns
     from metadata.image_metadata import compute_image_metadata
+    if not stack.pipeline_stamp:
+        concerns.warn(
+            "Stacked outside AstroFlow",
+            f"{Path(stack.master_path).name} carries no pipeline stamp, so it was integrated by "
+            "another program. It is calibrated here (Gaia flux scale, background, pedestal) and "
+            "merged; its integration and rejection are whatever that program did.",
+            observer=stack.observer)
+    elif not stack.same_pipeline:
+        concerns.warn(
+            "Made by a different pipeline",
+            f"{Path(stack.master_path).name} was post-processed by an AstroFlow pipeline that is "
+            "not one this instance runs (another stacker, or another version of the code). It is "
+            "merged as it is.",
+            observer=stack.observer, pipeline_stamp=stack.pipeline_stamp)
     meta = compute_image_metadata._function(Path(stack.master_path))
     return dataclasses.replace(meta, content_hash="")
+
+
+def foreign_post_processed_master(stack: ForeignStack, config, post_process):
+    """What a pipeline's per-stack recipe returns for a foreign stack: an
+    AstroFlow master as it is (its pipeline post-processed it), any other
+    master through THIS pipeline's post-stack calibration `post_process(stack,
+    config, master)` — a raw integration from another program has neither
+    the Gaia flux scale nor the background treatment the merge assumes."""
+    from metadata.solve_nodes import inherit_plate_solution
+    master = foreign_master(stack)
+    if stack.pipeline_stamp:
+        return master
+    return inherit_plate_solution(post_process(stack, config, master), master)
 
 
 def local_pipeline_stamps() -> tuple[str, ...]:

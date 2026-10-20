@@ -206,10 +206,12 @@ def scatter_compute_image_metadata(*filenames_in: list[Path]) -> Graph:
     graph_dict[union] = pieces
 
     # Shared master folders (`metadata.shared_masters`): other people's
-    # masters, read from their sidecars — no compute nodes, nothing written.
-    # Same per-folder piece + union shape as the raw library above.
+    # masters. Same per-folder piece + union shape as the raw library above;
+    # a file whose sidecar is missing, or recorded other bytes, is measured
+    # in place first (plate solve included).
     from metadata.shared_masters import (
-        build_shared_dicts, build_shared_library, scan_shared_dir,
+        build_shared_dicts, build_shared_library, compute_shared_master,
+        scan_shared_dir, sidecar_is_current,
     )
     shared_pieces: list[tuple] = []
     for dir in context.shared_dirs or []:
@@ -217,9 +219,16 @@ def scatter_compute_image_metadata(*filenames_in: list[Path]) -> Graph:
         record, fresh = scan_or_reuse(dir, scanner=scan_shared_dir)
         if fresh and (old is None or old.fingerprint != record.fingerprint):
             records_to_persist.append((record.dir, record.fingerprint, record.listing))
-        log.info("shared masters scan", dir=str(dir), files=len(record.listing), fresh=fresh)
+        root = Path(record.dir)
+        to_measure = {
+            (compute_shared_master, str(root / rel), size, mtime)
+            for rel, size, mtime in record.listing
+            if fresh and not sidecar_is_current(root / rel, size)
+        }
+        log.info("shared masters scan", dir=str(dir), files=len(record.listing), fresh=fresh,
+                 to_measure=len(to_measure))
         piece = (build_shared_library, record.dir, record.fingerprint, record.listing)
-        graph_dict[piece] = set()
+        graph_dict[piece] = to_measure
         shared_pieces.append(piece)
     shared_union = (build_shared_dicts,)
     graph_dict[shared_union] = shared_pieces

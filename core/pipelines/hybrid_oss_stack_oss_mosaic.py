@@ -33,7 +33,7 @@ from stacks.calibration_selection import (
 from stacks.composite_stack import Stack
 from stacks.post_processing.oss import post_process_stack_oss
 from stacks.stacking.oss import stack_files_oss
-from stacks.foreign import foreign_master, is_foreign
+from stacks.foreign import foreign_post_processed_master, is_foreign
 from targets.merging.pixinsight import merge_target_channel
 from targets.types import Target
 
@@ -52,7 +52,8 @@ def post_processed_master(stack, config):
     whether or not the ordering edge is present.
     """
     if is_foreign(stack):
-        return foreign_master(stack)   # made elsewhere by this same pipeline
+        return foreign_post_processed_master(stack, config, lambda s, c, m: plate_solve_image(
+            post_process_stack_oss(s, c.development_settings.mock_pixinsight, c.background_pedestal, m)))
     steps, _top_ids = calibration_plan(stack, config)
     cal_masters = []
     masters = {}

@@ -54,7 +54,8 @@ def _foreign_stack_for_ui(stack) -> dict:
     whether this instance's pipeline admits it."""
     return {
         "foreign": True,
-        "admitted": stack.admitted,
+        "same_pipeline": stack.same_pipeline,
+        "stacked_by": "astroflow" if stack.pipeline_stamp else "unknown",
         "observer": stack.observer,
         "shared_dir": stack.shared_dir,
         "pipeline_stamp": stack.pipeline_stamp,

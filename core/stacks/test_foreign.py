@@ -23,7 +23,7 @@ def test_a_foreign_stack_carries_what_the_master_says(tmp_path):
         "oldest_date": "2026-09-01T03:00:00", "newest_date": "2026-10-02T05:00:00",
         "integration_s": 7200.0, "n_frames": 12, "pipeline": "Hybrid: Siril + GraXpert + OSS Mosaic",
     })
-    s = ForeignStack.from_master(meta, admitted=True, shared_dir=str(tmp_path))
+    s = ForeignStack.from_master(meta, same_pipeline=True, shared_dir=str(tmp_path))
     assert is_foreign(s)
     assert s.stable_hash == meta.header["STBLHASH"]
     assert s.filter == "Ha" and float(s.exposure) == 600.0 and float(s.integration) == 7200.0
@@ -33,20 +33,20 @@ def test_a_foreign_stack_carries_what_the_master_says(tmp_path):
     assert (s.width_pixels, s.height_pixels) == (400, 300)
     assert abs(s.center[0] - 84.0) < 1e-6 and abs(s.center[1] - 34.0) < 1e-6
     assert s.healpix_cells and s.footprint is not None and s.projected_footprints
-    assert s.observer == "Stylistic7" and s.admitted and s.master_path == str(tmp_path / "m.fits")
+    assert s.observer == "Stylistic7" and s.same_pipeline and s.master_path == str(tmp_path / "m.fits")
     assert s.pipeline_stamp == meta.header["PIPEHASH"]
     assert not s.contents and s.state == frozendict()
 
 
-def test_admission_is_identity(tmp_path):
+def test_the_pipeline_label_is_identity(tmp_path):
     meta = solved_master_metadata(tmp_path / "m.fits")
-    yes = ForeignStack.from_master(meta, admitted=True, shared_dir="")
-    no = ForeignStack.from_master(meta, admitted=False, shared_dir="")
+    yes = ForeignStack.from_master(meta, same_pipeline=True, shared_dir="")
+    no = ForeignStack.from_master(meta, same_pipeline=False, shared_dir="")
     assert yes.stable_hash == no.stable_hash
     assert yes.content_hash != no.content_hash
 
 
-def test_one_master_per_stable_hash_the_admitted_one_first(tmp_path):
+def test_one_master_per_stable_hash_ours_first(tmp_path):
     local_stamps = ("feed000000000001",)
     stale = solved_master_metadata(tmp_path / "old.fits", call_hash="a" * 16, stable_hash="s" * 16, stamp="dead000000000000")
     fresh = solved_master_metadata(tmp_path / "new.fits", call_hash="b" * 16, stable_hash="s" * 16, stamp="feed000000000001")
@@ -69,13 +69,25 @@ def test_a_foreign_stack_joins_the_group_of_its_pointing_or_stands_alone(tmp_pat
     assert unassigned == [far.content_hash]
 
 
-def test_a_pipeline_only_sees_admitted_foreign_stacks(tmp_path):
+def test_every_foreign_stack_reaches_the_channels(tmp_path):
     meta = solved_master_metadata(tmp_path / "m.fits")
-    admitted = ForeignStack.from_master(meta, admitted=True, shared_dir="")
-    pending = ForeignStack.from_master(
+    ours = ForeignStack.from_master(meta, same_pipeline=True, shared_dir="")
+    other = ForeignStack.from_master(
         solved_master_metadata(tmp_path / "p.fits", stable_hash="p" * 16, call_hash="p" * 16),
-        admitted=False, shared_dir="")
-    assert group_stacks_by_filter([admitted, pending]) == {"H": [admitted]}
+        same_pipeline=False, shared_dir="")
+    assert group_stacks_by_filter([other, ours]) == {"H": sorted([ours, other], key=lambda s: s.stable_hash)}
+
+
+def test_a_master_from_another_program_is_named_by_its_pixels(tmp_path):
+    meta = solved_master_metadata(tmp_path / "wbpp.fits", call_hash="p1x3l" + "0" * 11, stable_hash="unused")
+    for k in ("PIPEHASH", "CALLHASH", "STBLHASH"):
+        del meta.header[k]
+    import dataclasses
+    meta = dataclasses.replace(meta, stable_hash=meta.content_hash)   # as compute_image_metadata leaves it
+    s = ForeignStack.from_master(meta, same_pipeline=False, shared_dir="")
+    assert s.stable_hash == meta.content_hash and s.pipeline_stamp == "" and not s.same_pipeline
+    chosen = choose_foreign_masters({meta.content_hash: meta}, (meta.content_hash,), ("x",))
+    assert chosen == [(meta, False)]
 
 
 def test_shared_dir_of_finds_the_configured_folder():
@@ -106,7 +118,7 @@ def test_identify_foreign_stacks_stores_one_stack_per_stable_hash(tmp_path, monk
         _Ref(masters), tuple(sorted(masters)), ("feed000000000001",), (str(tmp_path),))
     assert list(out) == ["s" * 16]
     stack = out["s" * 16].get()
-    assert isinstance(stack, ForeignStack) and stack.admitted and stack.master_path == str(tmp_path / "b.fits")
+    assert isinstance(stack, ForeignStack) and stack.same_pipeline and stack.master_path == str(tmp_path / "b.fits")
     assert stack.shared_dir == str(tmp_path)
     assert set(stored) == {("stacks", "s" * 16)}
 

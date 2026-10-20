@@ -1,8 +1,9 @@
-"""End to end on a Ray test context: a master in a shared master folder, of
-the pointing our frames cover, is identified as a foreign stack in OUR
-target, admitted when its pipeline stamp is one our own masters carry, and
-only the admitted one reaches a pipeline's channel; our own master is
-published into the folder on request, and the folder is then current."""
+"""End to end on a Ray test context: masters in a shared master folder, of
+the pointing our frames cover, are identified as foreign stacks in OUR
+target and every one reaches a pipeline's channel, labelled by whether our
+pipeline made it; a file that changed under its sidecar is measured again;
+our own master is published into the folder on request, and the folder is
+then current."""
 from dataclasses import replace
 from pathlib import Path
 
@@ -21,7 +22,7 @@ from testing.shared_masters import write_shared_master
 OURS, THEIRS, OTHER = "5" * 16, "e" * 16, "c" * 16
 
 
-def test_a_shared_master_of_our_pointing_joins_our_target_and_is_admitted_by_its_stamp(test_context, tmp_path):
+def test_shared_masters_of_our_pointing_join_our_target_and_merge_labelled_by_their_stamp(test_context, tmp_path):
     import math
     make_synthetic_frames(ra=100, dec=50, prefix="foo", number=10, dither=0, dest_dir=context.input_dirs[0])
     share = tmp_path / "share"
@@ -57,7 +58,7 @@ def test_a_shared_master_of_our_pointing_joins_our_target_and_is_admitted_by_its
     foreign = {h: s for h, s in stacks.items() if isinstance(s, ForeignStack)}
     local = {h: s for h, s in stacks.items() if not isinstance(s, ForeignStack)}
     assert len(local) == 1 and set(foreign) == {THEIRS, OTHER}
-    assert foreign[THEIRS].admitted and not foreign[OTHER].admitted
+    assert foreign[THEIRS].same_pipeline and not foreign[OTHER].same_pipeline
     assert foreign[THEIRS].observer == "A friend" and foreign[THEIRS].shared_dir == str(share)
     assert not foreign[THEIRS].contents
 
@@ -67,12 +68,12 @@ def test_a_shared_master_of_our_pointing_joins_our_target_and_is_admitted_by_its
          for t in targets.values()])
     (target,) = targets.values()
     assert set(target.stack_ids) == set(local) | set(foreign)
-    assert {s.stable_hash for s in target.stacks_for("H")} == set(local) | {THEIRS}, \
-        "only the admitted foreign stack reaches a pipeline's channel"
+    assert {s.stable_hash for s in target.stacks_for("H")} == set(local) | set(foreign), \
+        "every foreign stack reaches a pipeline's channel"
 
     ui = context.ui_stacks
-    assert ui[THEIRS]["foreign"] and ui[THEIRS]["admitted"] and ui[THEIRS]["shared_dir"] == str(share)
-    assert ui[OTHER]["foreign"] and not ui[OTHER]["admitted"]
+    assert ui[THEIRS]["foreign"] and ui[THEIRS]["same_pipeline"] and ui[THEIRS]["shared_dir"] == str(share)
+    assert ui[OTHER]["foreign"] and not ui[OTHER]["same_pipeline"] and ui[OTHER]["stacked_by"] == "astroflow"
     assert not ui[local_id]["foreign"]
 
     # Publishing is opt-in: nothing of ours is in the folder until we say so.
@@ -93,3 +94,12 @@ def test_a_shared_master_of_our_pointing_joins_our_target_and_is_admitted_by_its
     publish_shared_masters(context)
     assert not copy.exists() and not (share / ("0" * 16 + ".fits.json")).exists()
     assert (share / ("f" * 16 + ".fits")).exists(), "theirs is not ours to touch"
+
+
+    # A shared file that changed under its sidecar is measured again, not
+    # trusted: with no star field to solve, the grown copy drops out.
+    with open(share / ("d" * 16 + ".fits"), "ab") as f:
+        f.write(b"\0" * 2880)
+    run_graph(build_compute_graph())
+    assert OTHER not in context.stacks and THEIRS in context.stacks
+    assert get_section(share / ("d" * 16 + ".fits"), "measured") is not None, "measured here, in place"
