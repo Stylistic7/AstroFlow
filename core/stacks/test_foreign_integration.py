@@ -98,8 +98,12 @@ def test_shared_masters_of_our_pointing_join_our_target_and_merge_labelled_by_th
 
     # A shared file that changed under its sidecar is measured again, not
     # trusted: with no star field to solve, the grown copy drops out.
-    with open(share / ("d" * 16 + ".fits"), "ab") as f:
+    import os, time
+    grown = share / ("d" * 16 + ".fits")
+    with open(grown, "ab") as f:
         f.write(b"\0" * 2880)
+    os.utime(grown, (time.time() - 3600, time.time() - 3600))   # long settled
     run_graph(build_compute_graph())
     assert OTHER not in context.stacks and THEIRS in context.stacks
-    assert get_section(share / ("d" * 16 + ".fits"), "measured") is not None, "measured here, in place"
+    assert get_section(grown, "image_metadata") is not None, "measured here, in place"
+    assert get_section(grown, "plate_solution") is None, "blank pixels: nothing to solve"

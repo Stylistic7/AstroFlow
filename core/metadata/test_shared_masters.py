@@ -5,7 +5,8 @@ solved, a single-band light — whoever made it."""
 from pathlib import Path
 
 from metadata.shared_masters import (
-    admissible_masters, compute_shared_master, scan_shared_dir, sidecar_is_current,
+    SETTLED_AFTER_S, admissible_masters, compute_shared_master, measurements_due,
+    scan_shared_dir, sidecar_is_current,
 )
 from testing.shared_masters import solved_master_metadata, write_shared_master
 
@@ -31,43 +32,72 @@ def test_the_fingerprint_moves_when_a_sidecar_changes(tmp_path):
     assert scan_shared_dir(tmp_path).fingerprint != before
 
 
-def test_a_sidecar_is_current_only_for_the_bytes_it_recorded(tmp_path):
-    import os
-    from file_io.sidecar import set_section
-    from metadata.shared_masters import MEASURED
+def test_a_sidecar_is_current_when_it_recorded_the_files_size(tmp_path):
     write_shared_master(tmp_path / "a.fits", call_hash="a" * 16, stable_hash="1" * 16)
     size = (tmp_path / "a.fits").stat().st_size
-    assert sidecar_is_current(tmp_path / "a.fits", size), "published by AstroFlow: the size is enough"
+    assert sidecar_is_current(tmp_path / "a.fits", size)
     assert not sidecar_is_current(tmp_path / "a.fits", size + 100)
     (tmp_path / "b.fits").write_bytes(b"x" * 10)
     assert not sidecar_is_current(tmp_path / "b.fits", 10), "no sidecar at all"
-    # measured here: size AND mtime must match — a same-size re-push is new bytes
-    st = (tmp_path / "a.fits").stat()
-    set_section(tmp_path / "a.fits", MEASURED, {"size": st.st_size, "mtime_ns": st.st_mtime_ns})
-    assert sidecar_is_current(tmp_path / "a.fits", size)
-    os.utime(tmp_path / "a.fits", ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000_000))
-    assert not sidecar_is_current(tmp_path / "a.fits", size)
 
 
-def test_measuring_in_place_drops_a_stale_sidecar_first_and_records_the_bytes(tmp_path, monkeypatch):
+def _record(root, **overrides):
+    r = scan_shared_dir(root)
+    return r if not overrides else type(r)(**{**r.__dict__, **overrides})
+
+
+def test_what_a_scan_must_measure(tmp_path):
+    import os, time
+    write_shared_master(tmp_path / "described.fits", call_hash="a" * 16, stable_hash="1" * 16)
+    (tmp_path / "fresh.fits").write_bytes(b"x" * 10)        # no sidecar, just arrived
+    (tmp_path / "old.fits").write_bytes(b"y" * 10)          # no sidecar, long settled
+    os.utime(tmp_path / "old.fits", (time.time() - 2 * SETTLED_AFTER_S, time.time() - 2 * SETTLED_AFTER_S))
+    now = time.time()
+
+    # First sight: only the settled file is measured; the fresh one waits.
+    record = scan_shared_dir(tmp_path)
+    due = measurements_due(tmp_path, None, record, now)
+    assert [(Path(p).name, v) for p, _, _, v in due] == [("old.fits", False)]
+
+    # Next scan, nothing moved: the fresh file has now sat unchanged — measure it.
+    due = measurements_due(tmp_path, record, scan_shared_dir(tmp_path), now)
+    assert sorted((Path(p).name, v) for p, _, _, v in due) == [("fresh.fits", False), ("old.fits", False)]
+
+    # A described file moved under its sidecar: verify by hash, do not trust.
+    with open(tmp_path / "described.fits", "ab") as f:
+        f.write(b"")
+    os.utime(tmp_path / "described.fits", ns=(1, record.listing[0][2] + 10 ** 9))
+    due = measurements_due(tmp_path, record, scan_shared_dir(tmp_path), now)
+    assert ("described.fits", True) in [(Path(p).name, v) for p, _, _, v in due]
+
+
+def test_a_changed_file_is_measured_again_only_if_its_pixels_changed(tmp_path, monkeypatch):
     import metadata.image_metadata as im
-    from file_io.sidecar import get_section
-    from metadata.shared_masters import MEASURED
+    import metadata.shared_masters as sm
     data = tmp_path / "a.fits"
-    write_shared_master(data, call_hash="a" * 16, stable_hash="1" * 16)
-    with open(data, "ab") as f:
-        f.write(b"\0" * 100)   # re-pushed, or still arriving, when the sidecar was written
+    meta = write_shared_master(data, call_hash="a" * 16, stable_hash="1" * 16)
+    del meta.header["CALLHASH"]           # another program's master: content hash = pixels
+    import dataclasses
+    from file_io.generic import hash_of_image_data
+    write_shared_master(data, dataclasses.replace(meta, content_hash=hash_of_image_data(data)))
     seen = []
     monkeypatch.setattr(im.compute_image_metadata, "_function",
                         lambda path: seen.append((path, (tmp_path / "a.fits.json").exists())))
-    compute_shared_master._function(str(data), data.stat().st_size, 0)
-    assert seen == [(data, False)], "the stale sidecar was gone before the file was measured"
-    st = data.stat()
-    assert get_section(data, MEASURED) == {"size": st.st_size, "mtime_ns": st.st_mtime_ns}
-    # current now: measuring again is a no-op
+    size = data.stat().st_size
+    compute_shared_master._function(str(data), size, 0, True)
+    assert seen == [], "same pixels: the sidecar stands, nothing is written"
+    # the pixels changed (same size): the stale sidecar goes and the file is measured
+    from astropy.io import fits
+    with fits.open(data, mode="update") as h:
+        h[0].data[0, 0] = 1.0
+    compute_shared_master._function(str(data), data.stat().st_size, 0, True)
+    assert seen == [(data, False)]
+    # a sidecar recording other bytes is dropped without a hash
     seen.clear()
-    compute_shared_master._function(str(data), data.stat().st_size, 0)
-    assert seen == []
+    with open(data, "ab") as f:
+        f.write(b"\0" * 100)
+    compute_shared_master._function(str(data), data.stat().st_size, 0, False)
+    assert seen == [(data, False)]
 
 
 def test_whole_solved_single_band_light_masters_are_admissible_whoever_made_them(tmp_path):

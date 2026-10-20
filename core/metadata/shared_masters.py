@@ -11,14 +11,18 @@ for all through the sync tool. The master itself is never modified.
 
 Two things differ from a raw folder, because a shared folder has many
 writers and a sync tool between them. A file can change under us — it
-arrives in pieces, or is re-pushed under its name — so a sidecar here is
-valid only while the size it recorded is the file's size; otherwise it is
-discarded and the file measured again (`compute_shared_master` keys on size
-and mtime). And two members may write the same sidecar at once; the sync
-tool keeps one as a conflicted copy, which pairs with no data file and is
-ignored. The pieces and their union follow the raw library
-(`metadata.image_metadata`): per-folder, fingerprint keyed, disconnected =
-unchanged.
+arrives in pieces, or is re-pushed under its name — so a sidecar is trusted
+only for the bytes it recorded: its size must be the file's, and when THIS
+machine's scan sees the file's size or mtime move, the pixels are hashed
+once and compared with the sidecar's content hash before the sidecar is
+believed (a sync tool's mtimes are its own business, so no machine's mtime
+is ever written into the shared sidecar, and only a genuine change costs a
+read). A file nobody has described yet is measured only once it has sat
+unchanged since the previous scan or is minutes old, never while arriving.
+And two members may write the same sidecar at once; the sync tool keeps one
+as a conflicted copy, which pairs with no data file and is ignored. The
+pieces and their union follow the raw library (`metadata.image_metadata`):
+per-folder, fingerprint keyed, disconnected = unchanged.
 """
 from __future__ import annotations
 
@@ -46,10 +50,13 @@ def _sidecar_data_path(sidecar: Path) -> Path | None:
 
 def scan_shared_dir(dir: str | Path) -> ScanRecord:
     """Fresh scan of a PRESENT shared folder: every image file, recursively,
-    with the newest mtime of the file and its sidecar, skipping dot-prefixed
-    names (a sync tool's temporaries and conflict markers)."""
+    skipping dot-prefixed names (a sync tool's temporaries and conflict
+    markers). The listing carries the DATA files' size and mtime, so the
+    scan delta speaks of the masters alone; the sidecars' stats enter the
+    fingerprint, so a sidecar someone else filled in re-keys the piece."""
     root = Path(dir)
     entries: list[tuple[str, int, int]] = []
+    sidecars: list[tuple[str, int, int]] = []
     for data in root.rglob("*"):
         if data.suffix.lower() not in _IMAGE_SUFFIXES or not data.is_file():
             continue
@@ -57,58 +64,80 @@ def scan_shared_dir(dir: str | Path) -> ScanRecord:
             continue
         try:
             st = data.stat()
-            mtime = st.st_mtime_ns
+            rel = str(data.relative_to(root))
+            entries.append((rel, st.st_size, st.st_mtime_ns))
             sidecar = data.with_suffix(data.suffix + ".json")
             if sidecar.exists():
-                mtime = max(mtime, sidecar.stat().st_mtime_ns)
+                ss = sidecar.stat()
+                sidecars.append((rel, ss.st_size, ss.st_mtime_ns))
         except OSError:
             continue  # vanished mid-scan → the next scan sees the folder as it is
-        entries.append((str(data.relative_to(root)), st.st_size, mtime))
     listing = tuple(sorted(entries))
-    return ScanRecord(dir=str(root), fingerprint=hash_call("shared_listing_v1", listing),
-                      listing=listing)
+    return ScanRecord(dir=str(root), listing=listing,
+                      fingerprint=hash_call("shared_listing_v2", listing, tuple(sorted(sidecars))))
 
 
-MEASURED = "measured"   # sidecar section: the bytes a shared file's sidecar describes
+#: A file nobody has described is measured once it is this old, even on
+#: first sight: the sync tool has long finished with it.
+SETTLED_AFTER_S = 10 * 60
 
 
 def sidecar_is_current(data: Path, size: int) -> bool:
-    """A shared file's sidecar describes THESE bytes. A file we measured here
-    recorded its size AND mtime (`MEASURED`): a re-pushed master, even one of
-    exactly the same size, has a new mtime and is measured again. A sidecar
-    that arrived with an AstroFlow-published master recorded the size alone,
-    and that master's name is its content: new bytes come under a new name.
-    A half-arrived file fails either test."""
-    from file_io.sidecar import get_file_size, get_section, sidecar_path_for
-    if not sidecar_path_for(data).exists():
-        return False
-    measured = get_section(data, MEASURED)
-    if isinstance(measured, dict):
-        try:
-            st = data.stat()
-        except OSError:
-            return False
-        return measured.get("size") == st.st_size and measured.get("mtime_ns") == st.st_mtime_ns
-    return get_file_size(data) == size
+    """A shared file's sidecar exists and recorded this size."""
+    from file_io.sidecar import get_file_size, sidecar_path_for
+    return sidecar_path_for(data).exists() and get_file_size(data) == size
+
+
+def measurements_due(root: Path, old, record, now: float | None = None) -> list[tuple]:
+    """`(path, size, mtime_ns, verify)` for the listed files this scan must
+    look at: a file without a current sidecar, once settled (unchanged since
+    the previous scan, or `SETTLED_AFTER_S` old); and a file whose size or
+    mtime moved since the previous scan although its sidecar is current —
+    verified by hash before the sidecar is believed."""
+    import time
+    from metadata.library_scan import delta
+    now = time.time() if now is None else now
+    added, changed, _removed = delta(old, record)
+    unsettled = set(added) | set(changed)
+    due = []
+    for rel, size, mtime in record.listing:
+        path = root / rel
+        if sidecar_is_current(path, size):
+            if rel in changed:
+                due.append((str(path), size, mtime, True))
+        elif rel not in unsettled or now - mtime / 1e9 > SETTLED_AFTER_S:
+            due.append((str(path), size, mtime, False))
+    return due
 
 
 @node(num_cpus=0.25, auto_memory=True)
-def compute_shared_master(path: str, size: int, mtime_ns: int) -> None:
+def compute_shared_master(path: str, size: int, mtime_ns: int, verify: bool) -> None:
     """Measure a shared master in place — content hash, header, statistics,
     plate solution — writing its sidecar beside it, as `compute_image_metadata`
-    does for a raw frame, then record which bytes it describes. Keyed on the
-    file's size and mtime, so a file that changed is measured anew: a sidecar
-    that recorded other bytes is dropped first, and with it any broken marker
-    (a truncated file that has since finished arriving must be retried)."""
-    from file_io.sidecar import set_section, sidecar_path_for
+    does for a raw frame. Keyed on the file's size and mtime as this machine
+    saw them. With `verify`, the sidecar is current by size but the file moved
+    under it: the pixels are hashed and the sidecar kept if it describes them,
+    dropped and the file measured anew if not (an AstroFlow-published master
+    is its name, so it is never re-measured for a stat change). A dropped
+    sidecar takes any broken marker with it: a truncated file that has since
+    finished arriving must be retried."""
+    from file_io.generic import hash_of_image_data
+    from file_io.sidecar import sidecar_path_for
     from metadata.image_metadata import compute_image_metadata
+    from metadata.sidecar_io import read_image_metadata
     data = Path(path)
     if sidecar_is_current(data, size):
-        return
+        if not verify:
+            return
+        try:
+            known = read_image_metadata(data)
+        except Exception:
+            known = None
+        if known is not None and (known.header.get("CALLHASH") or hash_of_image_data(data) == known.content_hash):
+            return
+        log.info("shared master changed under its sidecar — measuring again", file=path)
     sidecar_path_for(data).unlink(missing_ok=True)
-    st = data.stat()
     compute_image_metadata._function(data)
-    set_section(data, MEASURED, {"size": st.st_size, "mtime_ns": st.st_mtime_ns})
 
 
 def _is_shared_master(meta, size_on_disk: int) -> bool:

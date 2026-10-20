@@ -63,10 +63,13 @@ def test_a_foreign_stack_joins_the_group_of_its_pointing_or_stands_alone(tmp_pat
     groups = [(frame_a.content_hash,), (frame_b.content_hash,)]
     near_b = solved_master_metadata(tmp_path / "nb.fits", ra=120.01, dec=-20.01, call_hash="nb" * 8)
     far = solved_master_metadata(tmp_path / "far.fits", ra=200.0, dec=10.0, call_hash="fr" * 8)
-    masters = {m.content_hash: m for m in (near_b, far)}
-    by_group, unassigned = assign_to_spatial_groups(masters, metadata, groups, overlap_fraction=0.5)
+    far2 = solved_master_metadata(tmp_path / "far2.fits", ra=200.005, dec=10.0, call_hash="f2" * 8)
+    pane = solved_master_metadata(tmp_path / "pane.fits", ra=200.0, dec=12.7, call_hash="pn" * 8)
+    masters = {m.content_hash: m for m in (near_b, far, far2, pane)}
+    by_group, own = assign_to_spatial_groups(masters, metadata, groups, overlap_fraction=0.5)
     assert by_group == {1: [near_b.content_hash]}
-    assert unassigned == [far.content_hash]
+    assert own == [sorted([far.content_hash, far2.content_hash]), [pane.content_hash]], \
+        "the two far masters share a pointing; the other pane is a pointing of its own"
 
 
 def test_every_foreign_stack_reaches_the_channels(tmp_path):

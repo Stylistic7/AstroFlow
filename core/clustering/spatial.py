@@ -1,7 +1,7 @@
 import math
 import numpy as np
 import ray
-from typing import Sequence, Callable, Any, TypeVar
+from typing import Callable, Any, TypeVar
 
 import metadata.image_types as image_types
 from geometry import footprints
@@ -64,6 +64,24 @@ def _min_fov_deg(metadata: MetadataDict, frame_hash: str) -> float:
     return m.plate_solution.image_scale * min(m.width_pixels, m.height_pixels) / 3600.0
 
 
+def pointing(metadata: MetadataDict, frame_hash: str, overlap_fraction: float) -> tuple:
+    """The pointing of one solved image for `same_pointing`: its centre as a
+    unit vector and the cosine of the offset it tolerates — a fraction
+    `1 - overlap_fraction` of its own narrower field, at most 2 degrees.
+    One definition for raw frames and for masters (`stacks.foreign`)."""
+    m = metadata[frame_hash]
+    max_offset_deg = (1.0 - overlap_fraction) * _min_fov_deg(metadata, frame_hash) / 2.0
+    return (np.asarray(footprints.radec_to_vector(*m.plate_solution.center)),
+            math.cos(math.radians(min(max_offset_deg, 2.0))))
+
+
+def same_pointing(a: tuple, b: tuple) -> bool:
+    """Two `pointing`s frame the same field: closer than the stricter of
+    their tolerances."""
+    (va, ta), (vb, tb) = a, b
+    return bool(np.dot(va, vb) > max(ta, tb))
+
+
 @node
 def cluster_by_image_center(
     metadata_ref: ContextRef[MetadataDict],
@@ -100,17 +118,6 @@ def cluster_by_image_center(
         sizes={f"{w}x{h}": len(hs) for (w, h), hs in sorted(by_sensor.items())},
     )
 
-    def get_centroid(center: Sequence[float]) -> np.ndarray:
-        return np.asarray(footprints.radec_to_vector(*center))
-
-    def cos_threshold(h: str) -> float:
-        max_offset_deg = (1.0 - overlap_fraction) * _min_fov_deg(metadata, h) / 2.0
-        return math.cos(math.radians(min(max_offset_deg, 2.0)))
-
-    def comparison_fn(a, b):
-        (va, ta), (vb, tb) = a, b
-        return bool(np.dot(va, vb) > max(ta, tb))
-
     all_spatial_groups: list[tuple[str, ...]] = []
     for dims, sensor_hashes in sorted(by_sensor.items()):
         scale_items = [
@@ -120,13 +127,7 @@ def cluster_by_image_center(
 
         for scale_group in scale_groups:
             frame_hashes = [h for h, _ in scale_group]
-            values = {
-                h: (
-                    get_centroid(plate_solved[h].plate_solution.center),
-                    cos_threshold(h),
-                )
-                for h in frame_hashes
-            }
+            values = {h: pointing(metadata, h, overlap_fraction) for h in frame_hashes}
 
             log.info(
                 "Spatial clustering",
@@ -135,7 +136,7 @@ def cluster_by_image_center(
                 min_fov_deg=round(min(_min_fov_deg(metadata, h) for h in frame_hashes), 3),
             )
 
-            groups = find_groups(values, comparison_fn, min_component_members)
+            groups = find_groups(values, same_pointing, min_component_members)
             all_spatial_groups.extend(tuple(sorted(g)) for g in groups)
 
     log.info("Total spatial groups", num_groups=len(all_spatial_groups))

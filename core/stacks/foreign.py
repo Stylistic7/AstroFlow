@@ -244,50 +244,35 @@ def local_pipeline_stamps() -> tuple[str, ...]:
 
 def assign_to_spatial_groups(
     masters: dict, metadata: MetadataDict, spatial_groups: list, overlap_fraction: float,
-) -> tuple[dict[int, list[str]], list[str]]:
-    """Which spatial group of raw frames each shared master points at — the
-    same centre-and-field-of-view test `cluster_by_image_center` groups frames
-    by — so a foreign panel joins the local stacks of its pointing in ONE
-    `identify_targets` call and lands in the same Target. Returns
-    ({group index: [content hashes]}, [content hashes matching no group])."""
-    import math
+) -> tuple[dict[int, list[str]], list[list[str]]]:
+    """Which spatial group of raw frames each shared master points at — by
+    the pointing test `cluster_by_image_center` groups frames with
+    (`clustering.spatial.pointing` / `same_pointing`) — so a foreign panel
+    joins the local stacks of its pointing in ONE `identify_targets` call and
+    lands in the same Target. Masters matching no local pointing are grouped
+    among themselves by the same test, one group per pointing:
+    `identify_targets` separates by sensor, scale and rotation, never by
+    position, so two panes handed to it together would become one Target.
+    Returns ({group index: [content hashes]}, [[content hashes], ...] of the
+    pointings of their own)."""
+    from clustering.spatial import find_groups, pointing, same_pointing
 
-    import numpy as np
-
-    from clustering.spatial import _min_fov_deg
-    from geometry import footprints
-
-    def threshold(meta_dict, h) -> float:
-        max_offset_deg = (1.0 - overlap_fraction) * _min_fov_deg(meta_dict, h) / 2.0
-        return math.cos(math.radians(min(max_offset_deg, 2.0)))
-
-    group_vectors = []
-    for g in spatial_groups:
-        frames = [h for h in g if h in metadata and metadata[h].plate_solution is not None]
-        if not frames:
-            group_vectors.append((np.zeros((0, 3)), np.zeros(0)))
-            continue
-        vs = np.array([footprints.radec_to_vector(*metadata[h].plate_solution.center) for h in frames])
-        ts = np.array([threshold(metadata, h) for h in frames])
-        group_vectors.append((vs, ts))
-
+    group_pointings = [
+        [pointing(metadata, h, overlap_fraction)
+         for h in g if h in metadata and metadata[h].plate_solution is not None]
+        for g in spatial_groups
+    ]
     by_group: dict[int, list[str]] = {}
-    unassigned: list[str] = []
+    own: dict[str, tuple] = {}
     for h, meta in sorted(masters.items()):
         if meta.plate_solution is None:
             continue
-        v = np.asarray(footprints.radec_to_vector(*meta.plate_solution.center))
-        t = threshold(MetadataDict({h: meta}), h)
-        best, best_dot = None, -2.0
-        for i, (vs, ts) in enumerate(group_vectors):
-            if not len(vs):
-                continue
-            dots = vs @ v
-            ok = dots > np.maximum(ts, t)
-            if ok.any() and dots[ok].max() > best_dot:
-                best, best_dot = i, float(dots[ok].max())
-        if best is None:
-            unassigned.append(h)
+        mine = pointing(MetadataDict({h: meta}), h, overlap_fraction)
+        matches = [i for i, frames in enumerate(group_pointings)
+                   if any(same_pointing(mine, f) for f in frames)]
+        if matches:
+            by_group.setdefault(matches[0], []).append(h)
         else:
-            by_group.setdefault(best, []).append(h)
-    return by_group, unassigned
+            own[h] = mine
+    own_groups = find_groups(own, same_pointing, 1)
+    return by_group, [sorted(g) for g in sorted(own_groups, key=lambda g: sorted(g)[0])]

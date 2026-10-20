@@ -285,12 +285,13 @@ def scatter_spatial_groups(
     shared_masters = shared_ref.get() if shared_ref is not None else {}
     local_stamps = local_pipeline_stamps() if shared_masters else ()
     shared_dirs = tuple(str(d) for d in (context.shared_dirs or ()))
-    foreign_by_group, foreign_unassigned = assign_to_spatial_groups(
+    foreign_by_group, foreign_own_groups = assign_to_spatial_groups(
         shared_masters, metadata, spatial_groups, clustering_settings.overlap_fraction)
     if shared_masters:
         print(f"### shared masters: {len(shared_masters)} in {len(shared_dirs)} folder(s), "
               f"{sum(len(v) for v in foreign_by_group.values())} joining local pointings, "
-              f"{len(foreign_unassigned)} on their own; {len(local_stamps)} local pipeline stamp(s)")
+              f"{sum(len(g) for g in foreign_own_groups)} in {len(foreign_own_groups)} pointing(s) of "
+              f"their own; {len(local_stamps)} local pipeline stamp(s)")
 
     def foreign_task(hashes):
         return (identify_foreign_stacks, shared_ref, tuple(sorted(hashes)), local_stamps, shared_dirs)
@@ -332,10 +333,10 @@ def scatter_spatial_groups(
         stack_tasks.append(members)
         target_tasks.append(customize_targets_task)
 
-    if foreign_unassigned:
-        rest = foreign_task(foreign_unassigned)
-        target_task = Node(identify_targets, clustering_settings.angular_tolerance, name="foreign")
-        customize_targets_task = Node(scatter_customize_targets, name="foreign")
+    for j, own in enumerate(foreign_own_groups):
+        rest = foreign_task(own)
+        target_task = Node(identify_targets, clustering_settings.angular_tolerance, name=f"foreign-{j}")
+        customize_targets_task = Node(scatter_customize_targets, name=f"foreign-{j}")
         graph[target_task] = {rest}
         graph[customize_targets_task] = {target_task}
         stack_tasks.append(rest)

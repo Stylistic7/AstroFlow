@@ -211,7 +211,7 @@ def scatter_compute_image_metadata(*filenames_in: list[Path]) -> Graph:
     # in place first (plate solve included).
     from metadata.shared_masters import (
         build_shared_dicts, build_shared_library, compute_shared_master,
-        scan_shared_dir, sidecar_is_current,
+        measurements_due, scan_shared_dir,
     )
     shared_pieces: list[tuple] = []
     for dir in context.shared_dirs or []:
@@ -221,9 +221,8 @@ def scatter_compute_image_metadata(*filenames_in: list[Path]) -> Graph:
             records_to_persist.append((record.dir, record.fingerprint, record.listing))
         root = Path(record.dir)
         to_measure = {
-            (compute_shared_master, str(root / rel), size, mtime)
-            for rel, size, mtime in record.listing
-            if fresh and not sidecar_is_current(root / rel, size)
+            (compute_shared_master, *due)
+            for due in (measurements_due(root, old, record) if fresh else ())
         }
         log.info("shared masters scan", dir=str(dir), files=len(record.listing), fresh=fresh,
                  to_measure=len(to_measure))
