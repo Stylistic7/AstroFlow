@@ -37,11 +37,12 @@ def test_shared_masters_of_our_pointing_join_our_target_and_merge_labelled_by_th
     geometry = dict(ra=mine.center[0] + 0.0005, dec=mine.center[1] + 0.0005, scale=float(mine.image_scale),
                     nx=mine.width_pixels, ny=mine.height_pixels, rotation_deg=math.degrees(mine.rotation_angle))
 
-    # A post-processed master of ours, in the version log, carrying the stamp
-    # our pipeline writes: the admission reference.
+    # A post-processed master of ours — of OUR stack (its stable hash), in the
+    # version log — carrying the stamp our pipeline writes: the admission
+    # reference, and later the file we publish.
     ours = write_shared_master(Path(context.output_dir) / "post_stack_calibrate" / ("0" * 16 + ".fits"),
-                               **geometry, call_hash="0" * 16, stable_hash="1" * 16, stamp=OURS)
-    context[("product_versions", "Stack", "1" * 16, "P", "Post-Processed", "H")] = [
+                               **geometry, call_hash="0" * 16, stable_hash=local_id, stamp=OURS)
+    context[("product_versions", "Stack", local_id, "P", "Post-Processed", "H")] = [
         {"path": str(ours.filename), "call_hash": "0" * 16, "ts": 0.0}]
     assert local_pipeline_stamps() == (OURS,)
 
@@ -79,8 +80,6 @@ def test_shared_masters_of_our_pointing_join_our_target_and_merge_labelled_by_th
     # Publishing is opt-in: nothing of ours is in the folder until we say so.
     publish_shared_masters(context)
     assert not (share / ("0" * 16 + ".fits")).exists()
-    context[("product_versions", "Stack", local_id, "P", "Post-Processed", "H")] = [
-        {"path": str(ours.filename), "call_hash": "0" * 16, "ts": 0.0}]
     context.settings = replace(context.settings, decision_overrides=frozendict({
         DecisionKey.sharing(ObjectType.STACK, local_id, str(share)): DecisionOverride(choice=SHARED)}))
     publish_shared_masters(context)
@@ -88,6 +87,17 @@ def test_shared_masters_of_our_pointing_join_our_target_and_merge_labelled_by_th
     assert copy.exists() and get_section(copy, "shared")["pipeline"] == "P"
     assert get_section(copy, "plate_solution")["data"] is not None
     assert not shared_dirs_changed(context), "our own publish is not a change worth a drain"
+    from hashing.pipeline_stamp import stamp_of
+    from metadata.sidecar_io import read_image_metadata
+    published = read_image_metadata(copy)
+    assert stamp_of(published.header) == OURS and published.header["STBLHASH"] == local_id
+
+    # Our own copy, read back from the folder, is our stack — not a second one.
+    run_graph(build_compute_graph())
+    stacks = {h: ref.get() for h, ref in context.stacks.items()}
+    assert {h for h, s in stacks.items() if isinstance(s, ForeignStack)} == {THEIRS, OTHER}
+    assert not isinstance(stacks[local_id], ForeignStack) and stacks[local_id].contents
+    assert len(context.targets) == 1
 
     # Withdrawing retires the copy.
     context.settings = replace(context.settings, decision_overrides=frozendict())

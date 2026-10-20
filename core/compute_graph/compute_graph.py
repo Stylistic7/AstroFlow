@@ -156,9 +156,8 @@ def store_ui_mosaics(ui_mosaics: dict) -> None:
 @beartype
 def combine_stacks(*ancestor_results: dict) -> StacksDict:
     """One spatial group's stacks, local and foreign (`stacks.foreign`), as
-    the StacksDict `identify_targets` takes. Later dicts win a key: the
-    builder lists the local stacks last, so a local stack keeps its stable
-    hash over a foreign master of the same subframes."""
+    the StacksDict `identify_targets` takes. The keys are disjoint: foreign
+    identification skips the masters of subframes the local stacks hold."""
     merged = {k: v for d in ancestor_results for k, v in d.items()}
     assert None not in merged.values()
     return StacksDict(merged)
@@ -296,6 +295,13 @@ def scatter_spatial_groups(
     def foreign_task(hashes):
         return (identify_foreign_stacks, shared_ref, tuple(sorted(hashes)), local_stamps, shared_dirs)
 
+    # Foreign stacks are identified IN SERIES after every local stack is: each
+    # foreign task takes the union of the local stacks as `local`, so a master
+    # of subframes this library holds — our own published copy coming back, a
+    # dataset two members both own — is skipped, never stored twice.
+    local_tasks = []
+    all_local = Node(combine_stacks, name="local-stacks")
+
     stack_tasks = []
     target_tasks = []
     for i, g in enumerate(spatial_groups):
@@ -314,12 +320,13 @@ def scatter_spatial_groups(
             group_frontier,
             gate,
         )
+        local_tasks.append(stack_task)
         members = stack_task
         if foreign_by_group.get(i):
-            # Local LAST: a local stack keeps its stable hash over a foreign
-            # master of the same subframes (`combine_stacks`, last wins).
+            foreign = foreign_task(foreign_by_group[i])
+            graph[foreign] = [all_local]
             members = Node(combine_stacks, name=f"group-{i}")
-            graph[members] = [foreign_task(foreign_by_group[i]), stack_task]
+            graph[members] = [foreign, stack_task]
 
         target_task = Node(identify_targets, clustering_settings.angular_tolerance, name=str(i))
         customize_targets_task = Node(
@@ -333,8 +340,11 @@ def scatter_spatial_groups(
         stack_tasks.append(members)
         target_tasks.append(customize_targets_task)
 
+    if foreign_by_group or foreign_own_groups:
+        graph[all_local] = local_tasks
     for j, own in enumerate(foreign_own_groups):
         rest = foreign_task(own)
+        graph[rest] = [all_local]
         target_task = Node(identify_targets, clustering_settings.angular_tolerance, name=f"foreign-{j}")
         customize_targets_task = Node(scatter_customize_targets, name=f"foreign-{j}")
         graph[target_task] = {rest}

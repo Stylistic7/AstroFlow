@@ -9,6 +9,7 @@ from frozendict import frozendict
 from cache.context_ref import ContextRef
 
 from metadata.classes import MetadataDict
+from stacks.composite_stack import StacksDict
 from stacks.foreign import (
     ForeignStack, assign_to_spatial_groups, choose_foreign_masters, is_foreign, shared_dir_of,
 )
@@ -124,6 +125,12 @@ def test_identify_foreign_stacks_stores_one_stack_per_stable_hash(tmp_path, monk
     assert isinstance(stack, ForeignStack) and stack.same_pipeline and stack.master_path == str(tmp_path / "b.fits")
     assert stack.shared_dir == str(tmp_path)
     assert set(stored) == {("stacks", "s" * 16)}
+    # a master of subframes a local stack holds is skipped, not stored twice
+    stored.clear()
+    out = foreign.identify_foreign_stacks._function(
+        _Ref(masters), tuple(sorted(masters)), ("feed000000000001",), (str(tmp_path),),
+        StacksDict({"s" * 16: _Ref("the local stack", content_hash="L")}))
+    assert list(out) == [] and stored == {}
 
 
 def test_build_shared_library_reads_sidecars_only(tmp_path, monkeypatch):
@@ -136,3 +143,11 @@ def test_build_shared_library_reads_sidecars_only(tmp_path, monkeypatch):
     ref = sm.build_shared_library._function(str(tmp_path), record.fingerprint, record.listing)
     assert set(ref.get()) == {good.content_hash}
     assert sorted(p.name for p in tmp_path.iterdir()) == before, "nothing written into the shared folder"
+
+
+def test_combine_stacks_unions_a_pointings_local_and_foreign_stacks():
+    from compute_graph.compute_graph import combine_stacks
+    local = _Ref("local-stack", content_hash="L")
+    foreign = _Ref("foreign-stack", content_hash="F")
+    merged = combine_stacks._function({"t" * 16: foreign}, {"s" * 16: local})
+    assert merged == {"t" * 16: foreign, "s" * 16: local}

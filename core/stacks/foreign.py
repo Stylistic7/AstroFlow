@@ -149,13 +149,21 @@ def choose_foreign_masters(masters: dict, hashes, local_stamps) -> list[tuple[Im
 @node(resources={"diskcache": 0.001})
 def identify_foreign_stacks(
     shared_ref: ContextRef, hashes: tuple, local_stamps: tuple, shared_dirs: tuple,
+    local: StacksDict | None = None,
 ) -> StacksDict:
     """The foreign stacks for the shared masters `hashes` (keys into
     `shared_ref`), one per stable hash, labelled by whether the master's
-    pipeline stamp is one of `local_stamps`."""
+    pipeline stamp is one of `local_stamps`. A master of subframes this
+    library holds itself — the stable hash is one of `local`'s, the stacks
+    identified for the same pointing — is skipped: it is our own published
+    copy coming back, or a remote-observatory dataset two members both own,
+    and the local stack IS that stack."""
     out = StacksDict()
-    n_same = 0
+    n_same = n_ours = 0
     for meta, same in choose_foreign_masters(shared_ref.get(), hashes, local_stamps):
+        if local is not None and str(meta.header.get("STBLHASH") or meta.stable_hash) in local:
+            n_ours += 1
+            continue
         try:
             stack = ForeignStack.from_master(
                 meta, same_pipeline=same,
@@ -167,7 +175,7 @@ def identify_foreign_stacks(
         n_same += same
         out[stack.stable_hash] = ContextRef.store(("stacks", stack.stable_hash), stack)
     log.info("identified foreign stacks", candidates=len(hashes), stacks=len(out),
-             same_pipeline=n_same)
+             same_pipeline=n_same, ours=n_ours)
     return out
 
 
