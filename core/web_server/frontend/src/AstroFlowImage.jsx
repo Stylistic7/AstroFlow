@@ -19,6 +19,8 @@ export const AstroFlowImage = ({
     finish = undefined,
     hdrEnabled = false,
     displayWhite = 1.0,
+    setHdrEnabled = undefined,
+    setDisplayWhite = undefined,
 }) => (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         <div style={{ flexGrow: 1, position: 'relative', overflow: 'hidden' }}>
@@ -38,6 +40,8 @@ export const AstroFlowImage = ({
                     showDepth={showDepth}
                     hdrEnabled={hdrEnabled}
                     displayWhite={displayWhite}
+                    setHdrEnabled={setHdrEnabled}
+                    setDisplayWhite={setDisplayWhite}
                 />
             ) : (
                 <img

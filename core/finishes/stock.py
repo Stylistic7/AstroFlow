@@ -23,6 +23,10 @@ Conventions that make the knobs pleasant:
     1.0, so the brightest nebulosity continues into the headroom while
     everything the SDR picture shows stays put; stars (`_stars_layer`,
     `screen`) stay at or below SDR white.
+  * a `neb<R>` nebula level is SEEDED to the display white by the viewer
+    (1.0 on SDR, the HDR display white, up to its 2.0 reach, with HDR on) and
+    re-seeded on an HDR toggle: the bright anchor itself lands on the white
+    the display has (Stylistic7, 2026-10-19), not just what lies above it.
 """
 from __future__ import annotations
 
@@ -100,19 +104,19 @@ def _ghs_pinned(x, sky, sig, top, level, neb, strength):
         optional=("Linear RGB Stars",))
 def hubble_ghs(nb, stars,
                levelS=Param(0.04, -0.1, 0.2, step=0.005, label="sky level", group="SII (red)"),
-               nebS=Param(1.0, 0.5, 1.5, step=0.01, label="nebula level", group="SII (red)"),
+               nebS=Param(1.0, 0.5, 2.0, step=0.01, label="nebula level", group="SII (red)"),
                strS=Param(4.0, 0.0, 10.0, step=0.05, label="stretch", group="SII (red)"),
                skyS=Param(0.005, 0.0, 0.05, step=0.03, label="sky", scale="log", group="SII (red)", kind="data"),
                sigS=Param(3e-5, 1e-7, 1e-2, step=0.03, label="noise σ", scale="log", group="SII (red)", kind="data"),
                topS=Param(0.0089, 0.001, 0.5, step=0.03, label="bright anchor", scale="log", group="SII (red)", kind="data"),
                levelH=Param(0.04, -0.1, 0.2, step=0.005, label="sky level", group="Hα (green)"),
-               nebH=Param(1.0, 0.5, 1.5, step=0.01, label="nebula level", group="Hα (green)"),
+               nebH=Param(1.0, 0.5, 2.0, step=0.01, label="nebula level", group="Hα (green)"),
                strH=Param(4.0, 0.0, 10.0, step=0.05, label="stretch", group="Hα (green)"),
                skyH=Param(0.005, 0.0, 0.05, step=0.03, label="sky", scale="log", group="Hα (green)", kind="data"),
                sigH=Param(3e-5, 1e-7, 1e-2, step=0.03, label="noise σ", scale="log", group="Hα (green)", kind="data"),
                topH=Param(0.0089, 0.001, 0.5, step=0.03, label="bright anchor", scale="log", group="Hα (green)", kind="data"),
                levelO=Param(0.04, -0.1, 0.2, step=0.005, label="sky level", group="OIII (blue)"),
-               nebO=Param(1.0, 0.5, 1.5, step=0.01, label="nebula level", group="OIII (blue)"),
+               nebO=Param(1.0, 0.5, 2.0, step=0.01, label="nebula level", group="OIII (blue)"),
                strO=Param(4.0, 0.0, 10.0, step=0.05, label="stretch", group="OIII (blue)"),
                skyO=Param(0.005, 0.0, 0.05, step=0.03, label="sky", scale="log", group="OIII (blue)", kind="data"),
                sigO=Param(3e-5, 1e-7, 1e-2, step=0.03, label="noise σ", scale="log", group="OIII (blue)", kind="data"),
@@ -139,21 +143,21 @@ def emission_hues(nb, stars,
                   scale=Param(0.7, 0.1, 2.0, step=0.01, label="overall scale"),
                   colS=Color((1.0, 0.0, 0.0), label="colour", group="SII"),
                   levelS=Param(0.04, -0.1, 0.2, step=0.005, label="sky level", group="SII"),
-                  nebS=Param(1.0, 0.5, 1.5, step=0.01, label="nebula level", group="SII"),
+                  nebS=Param(1.0, 0.5, 2.0, step=0.01, label="nebula level", group="SII"),
                   strS=Param(5.0, 0.0, 10.0, step=0.05, label="stretch", group="SII"),
                   skyS=Param(0.005, 0.0, 0.05, step=0.03, label="sky", scale="log", group="SII", kind="data"),
                   sigS=Param(3e-5, 1e-7, 1e-2, step=0.03, label="noise σ", scale="log", group="SII", kind="data"),
                   topS=Param(0.0089, 0.001, 0.5, step=0.03, label="bright anchor", scale="log", group="SII", kind="data"),
                   colH=Color((1.0, 0.667, 0.0), label="colour", group="Hα"),
                   levelH=Param(0.04, -0.1, 0.2, step=0.005, label="sky level", group="Hα"),
-                  nebH=Param(1.0, 0.5, 1.5, step=0.01, label="nebula level", group="Hα"),
+                  nebH=Param(1.0, 0.5, 2.0, step=0.01, label="nebula level", group="Hα"),
                   strH=Param(5.0, 0.0, 10.0, step=0.05, label="stretch", group="Hα"),
                   skyH=Param(0.005, 0.0, 0.05, step=0.03, label="sky", scale="log", group="Hα", kind="data"),
                   sigH=Param(3e-5, 1e-7, 1e-2, step=0.03, label="noise σ", scale="log", group="Hα", kind="data"),
                   topH=Param(0.0089, 0.001, 0.5, step=0.03, label="bright anchor", scale="log", group="Hα", kind="data"),
                   colO=Color((0.0, 0.75, 1.0), label="colour", group="OIII"),
                   levelO=Param(0.04, -0.1, 0.2, step=0.005, label="sky level", group="OIII"),
-                  nebO=Param(1.0, 0.5, 1.5, step=0.01, label="nebula level", group="OIII"),
+                  nebO=Param(1.0, 0.5, 2.0, step=0.01, label="nebula level", group="OIII"),
                   strO=Param(5.0, 0.0, 10.0, step=0.05, label="stretch", group="OIII"),
                   skyO=Param(0.005, 0.0, 0.05, step=0.03, label="sky", scale="log", group="OIII", kind="data"),
                   sigO=Param(3e-5, 1e-7, 1e-2, step=0.03, label="noise σ", scale="log", group="OIII", kind="data"),
@@ -311,7 +315,7 @@ def _channel(role: str, band: str, primaries: tuple):
     body.__signature__ = inspect.Signature([
         inspect.Parameter("c", inspect.Parameter.POSITIONAL_ONLY),
         inspect.Parameter("level" + role, kw, default=Param(0.04, -0.1, 0.2, step=0.005, label="sky level")),
-        inspect.Parameter("neb" + role, kw, default=Param(1.0, 0.5, 1.5, step=0.01, label="nebula level")),
+        inspect.Parameter("neb" + role, kw, default=Param(1.0, 0.5, 2.0, step=0.01, label="nebula level")),
         inspect.Parameter("str" + role, kw, default=Param(5.0, 0.0, 10.0, step=0.05, label="stretch")),
         inspect.Parameter("sky" + role, kw, default=Param(0.005, 0.0, 0.05, step=0.03, label="sky", scale="log", kind="data")),
         inspect.Parameter("sig" + role, kw, default=Param(3e-5, 1e-7, 1e-2, step=0.03, label="noise σ", scale="log", kind="data")),

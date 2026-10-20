@@ -222,6 +222,8 @@ export default function MosaicViewer() {
 						finish={finish}
 						hdrEnabled={hdrEnabled}
 						displayWhite={displayWhite}
+						setHdrEnabled={setHdrEnabled}
+						setDisplayWhite={setDisplayWhite}
 					/>
 				</Box>
 

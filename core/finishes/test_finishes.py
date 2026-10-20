@@ -420,6 +420,12 @@ def test_pinned_ghs_shows_three_controls_per_channel():
         shown = [p.name for p in f.params if p.kind != "data" and p.name[-1] == r and not p.builtin]
         assert sorted(shown) == sorted([f"level{r}", f"neb{r}", f"str{r}"]), shown
         assert all(p.kind == "data" for p in f.params if p.name in (f"sky{r}", f"sig{r}", f"top{r}"))
+    # The nebula level reaches the display white's reach (2.0 in the viewer):
+    # with HDR on the viewer seeds it to the display white (2026-10-19).
+    for name in ("Hubble", "Emission Hues", "H", "L"):
+        for p in get_finish(name).params:
+            if p.name.startswith("neb"):
+                assert (p.default, p.hi) == (1.0, 2.0), (name, p.name, p.hi)
 
 
 def test_emission_hues_adds_each_line_in_its_own_colour():
