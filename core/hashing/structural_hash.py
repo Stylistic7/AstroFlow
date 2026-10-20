@@ -96,20 +96,25 @@ def _serialize(node, out: list) -> None:
         out.append(repr(node))
 
 
+def structural_text_hash(src: str) -> str:
+    """The AST-normalized hash of Python source TEXT — a function, a class or
+    a whole module — through the very serialization `structural_source_hash`
+    applies to a live function. Raises what `ast.parse` raises."""
+    tokens: list = []
+    _serialize(ast.parse(src), tokens)
+    return xxhash.xxh64("".join(tokens)).hexdigest()
+
+
 def structural_source_hash(func) -> str:
     """The AST-normalized source hash for `func`, with raw-text fallback."""
     try:
-        src = textwrap.dedent(inspect.getsource(func))
-        tree = ast.parse(src)
+        h = structural_text_hash(textwrap.dedent(inspect.getsource(func)))
     except (OSError, TypeError, SyntaxError, IndentationError) as e:
         raw = _raw_source_or_repr(func)
         h = xxhash.xxh64(raw).hexdigest()
         print(f"### structural_hash FALLBACK {getattr(func, '__name__', func)!r} "
               f"({type(e).__name__}) -> raw-text hash {h}", flush=True)
         return h
-    tokens: list = []
-    _serialize(tree, tokens)
-    h = xxhash.xxh64("".join(tokens)).hexdigest()
     if _DEBUG:
         print(f"### structural_hash {getattr(func, '__name__', '?')} -> {h}",
               flush=True)

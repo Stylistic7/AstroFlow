@@ -154,6 +154,18 @@ def store_ui_mosaics(ui_mosaics: dict) -> None:
 
 @ray.remote(num_cpus=0.1)
 @beartype
+def combine_stacks(*ancestor_results: dict) -> StacksDict:
+    """One spatial group's stacks, local and foreign (`stacks.foreign`), as
+    the StacksDict `identify_targets` takes. Later dicts win a key: the
+    builder lists the local stacks last, so a local stack keeps its stable
+    hash over a foreign master of the same subframes."""
+    merged = {k: v for d in ancestor_results for k, v in d.items()}
+    assert None not in merged.values()
+    return StacksDict(merged)
+
+
+@ray.remote(num_cpus=0.1)
+@beartype
 def combine_dicts(*ancestor_results: dict[Any, Any]) -> dict[Any, Any]:
     assert isinstance(ancestor_results, tuple)
     for d in ancestor_results:
@@ -163,7 +175,9 @@ def combine_dicts(*ancestor_results: dict[Any, Any]) -> dict[Any, Any]:
     return result
 
 
-@ray.remote(num_cpus=0.1)
+# Head-pinned: the foreign-stack admission reference reads the durable
+# product version log (`stacks.foreign.local_pipeline_stamps`).
+@ray.remote(num_cpus=0.1, resources={"diskcache": 0.001})
 def scatter_spatial_groups(
     metadata_ref: ContextRef[MetadataDict],
     clustering_settings: ClusteringSettings,
@@ -171,6 +185,9 @@ def scatter_spatial_groups(
     *ancestor_results,
 ) -> Graph:
     from cache.context_ref import ContextRef
+    from stacks.foreign import (
+        assign_to_spatial_groups, identify_foreign_stacks, local_pipeline_stamps,
+    )
     from stacks.sky_flat import identify_sky_flats, merge_sky_flats
     from stacks.star_flat import StarFlats, merge_star_flats
 
@@ -259,6 +276,25 @@ def scatter_spatial_groups(
     # ORDERED lists, not sets: these deps feed value-consuming nodes
     # (combine_dicts takes *ancestor_results), and dep order is part of the
     # cache key — canonicalize_graph now raises on unordered value-deps.
+    # Other people's masters (`metadata.shared_masters` → `stacks.foreign`):
+    # each joins the spatial group its pointing matches, so it is identified
+    # into the same Target as the local stacks of that panel; the rest form
+    # targets of their own. Admission (merge or only show) is decided
+    # against the stamps of the masters this instance built.
+    shared_ref = context["shared_ref"]
+    shared_masters = shared_ref.get() if shared_ref is not None else {}
+    local_stamps = local_pipeline_stamps() if shared_masters else ()
+    shared_dirs = tuple(str(d) for d in (context.shared_dirs or ()))
+    foreign_by_group, foreign_unassigned = assign_to_spatial_groups(
+        shared_masters, metadata, spatial_groups, clustering_settings.overlap_fraction)
+    if shared_masters:
+        print(f"### shared masters: {len(shared_masters)} in {len(shared_dirs)} folder(s), "
+              f"{sum(len(v) for v in foreign_by_group.values())} joining local pointings, "
+              f"{len(foreign_unassigned)} on their own; {len(local_stamps)} local pipeline stamp(s)")
+
+    def foreign_task(hashes):
+        return (identify_foreign_stacks, shared_ref, tuple(sorted(hashes)), local_stamps, shared_dirs)
+
     stack_tasks = []
     target_tasks = []
     for i, g in enumerate(spatial_groups):
@@ -277,6 +313,12 @@ def scatter_spatial_groups(
             group_frontier,
             gate,
         )
+        members = stack_task
+        if foreign_by_group.get(i):
+            # Local LAST: a local stack keeps its stable hash over a foreign
+            # master of the same subframes (`combine_stacks`, last wins).
+            members = Node(combine_stacks, name=f"group-{i}")
+            graph[members] = [foreign_task(foreign_by_group[i]), stack_task]
 
         target_task = Node(identify_targets, clustering_settings.angular_tolerance, name=str(i))
         customize_targets_task = Node(
@@ -284,10 +326,19 @@ def scatter_spatial_groups(
         )
 
         # Each target identification depends on its own spatial group's stacks.
-        graph[target_task] = {stack_task}
+        graph[target_task] = {members}
         graph[customize_targets_task] = {target_task}
 
-        stack_tasks.append(stack_task)
+        stack_tasks.append(members)
+        target_tasks.append(customize_targets_task)
+
+    if foreign_unassigned:
+        rest = foreign_task(foreign_unassigned)
+        target_task = Node(identify_targets, clustering_settings.angular_tolerance, name="foreign")
+        customize_targets_task = Node(scatter_customize_targets, name="foreign")
+        graph[target_task] = {rest}
+        graph[customize_targets_task] = {target_task}
+        stack_tasks.append(rest)
         target_tasks.append(customize_targets_task)
 
     gather_stacks_task = Node(combine_dicts, name="combine_stacks")

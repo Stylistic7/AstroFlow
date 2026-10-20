@@ -236,6 +236,24 @@ function App() {
       .map(({ key }) => key.subject_id)
   ), [decisionOverrides]);
 
+  // Shared master folders each stack/target/mosaic is published into
+  // (decision "sharing": subject = the folder). Opt-in; see SharingMenu.jsx.
+  const sharingMarks = useMemo(() => {
+    const marks = new Map();
+    decisionOverrides
+      .filter(({ key, choice }) => key.decision_type === "sharing" && choice === "shared")
+      .forEach(({ key }) => {
+        const k = `${key.object_type}/${key.parent_stack_id}`;
+        if (!marks.has(k)) marks.set(k, new Set());
+        marks.get(k).add(key.subject_id);
+      });
+    return marks;
+  }, [decisionOverrides]);
+  const sharedFolders = useCallback(
+    (objectType, objectId) => sharingMarks.get(`${objectType}/${objectId}`) || new Set(),
+    [sharingMarks]
+  );
+
   const skyFlatSourceSet = useMemo(() => new Set(skyFlatSources), [skyFlatSources]);
 
   const isSkyFlatSource = useCallback(
@@ -282,6 +300,7 @@ function App() {
             refreshAsiairDevices,
             isQuarantined,
             standaloneTargets,
+            sharedFolders,
             isSkyFlatSource,
             showQuarantined,
             toggleShowQuarantined,

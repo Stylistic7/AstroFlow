@@ -24,6 +24,7 @@ from stacks.calibration_selection import calibrate
 from stacks.composite_stack import Stack
 from stacks.post_processing.pixinsight import post_process_stack
 from stacks.stacking.pixinsight import stack_files
+from stacks.foreign import foreign_master, is_foreign
 from targets.merging.pixinsight import merge_target_channel
 from targets.types import Target
 from metadata.master_analysis import analyze_master
@@ -35,6 +36,8 @@ def post_processed_master(stack, config):
     transformation, so `calibrate(...)` does the cal-master
     building in one call. Shared across the stack / target /
     mosaic entry points."""
+    if is_foreign(stack):
+        return foreign_master(stack)   # made elsewhere by this same pipeline
     cal_masters = calibrate(stack, config)
     master = plate_solve_image(stack_files(stack, config, *cal_masters))
     analyze_master(master)   # leaf: writes the master's `analysis` sidecar section

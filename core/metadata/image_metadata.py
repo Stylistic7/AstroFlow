@@ -204,8 +204,28 @@ def scatter_compute_image_metadata(*filenames_in: list[Path]) -> Graph:
     # recomputed ~46s every boot; trace caches re-keyed). Dep order IS part
     # of a value-consuming node's cache key — never pass it as a set.
     graph_dict[union] = pieces
+
+    # Shared master folders (`metadata.shared_masters`): other people's
+    # masters, read from their sidecars — no compute nodes, nothing written.
+    # Same per-folder piece + union shape as the raw library above.
+    from metadata.shared_masters import (
+        build_shared_dicts, build_shared_library, scan_shared_dir,
+    )
+    shared_pieces: list[tuple] = []
+    for dir in context.shared_dirs or []:
+        old = load_record(dir)
+        record, fresh = scan_or_reuse(dir, scanner=scan_shared_dir)
+        if fresh and (old is None or old.fingerprint != record.fingerprint):
+            records_to_persist.append((record.dir, record.fingerprint, record.listing))
+        log.info("shared masters scan", dir=str(dir), files=len(record.listing), fresh=fresh)
+        piece = (build_shared_library, record.dir, record.fingerprint, record.listing)
+        graph_dict[piece] = set()
+        shared_pieces.append(piece)
+    shared_union = (build_shared_dicts,)
+    graph_dict[shared_union] = shared_pieces
+
     publisher = (publish_library_refs, tuple(records_to_persist))
-    graph_dict[publisher] = {union}
+    graph_dict[publisher] = [union, shared_union]
     return Graph(graph_dict)
 
 
@@ -555,7 +575,7 @@ def build_library_dicts(quarantined: tuple, *pieces: tuple) -> tuple:
 @beartype
 @measure_performance
 def publish_library_refs(
-    records: tuple, pair: tuple,
+    records: tuple, pair: tuple, shared_ref: ContextRef,
 ) -> ContextRef[MetadataDict]:
     """The startup chain's single impure terminal: publish the refs and
     persist the fresh scan records.
@@ -563,6 +583,9 @@ def publish_library_refs(
     * `context["metadata_ref"]` / `context["defects_ref"]` — the fixed keys
       every other consumer (web server, trace cache keys,
       `identify_camera_fingerprints`) reads with one cheap RPC.
+    * `context["shared_ref"]` — the shared master folders' masters
+      (`metadata.shared_masters`), which `scatter_spatial_groups` turns into
+      foreign stacks.
     * Persist each fresh dir record — deliberately HERE, after the pieces
       and union succeeded, so a run that dies earlier re-deltas the same
       files next start instead of swallowing them.
@@ -575,6 +598,7 @@ def publish_library_refs(
     metadata_ref, defects_ref = pair
     context["metadata_ref"] = metadata_ref
     context["defects_ref"] = defects_ref
+    context["shared_ref"] = shared_ref
     for dir, fingerprint, listing in records:
         store_record(ScanRecord(
             dir=dir, fingerprint=fingerprint,

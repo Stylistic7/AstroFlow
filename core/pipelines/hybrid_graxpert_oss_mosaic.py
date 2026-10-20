@@ -58,6 +58,7 @@ from stacks.calibration_selection import calibrate
 from stacks.composite_stack import Stack
 from stacks.post_processing.graxpert_stack import post_stack_calibrate
 from stacks.stacking.pixinsight import stack_files
+from stacks.foreign import foreign_master, is_foreign
 from targets.merging.pixinsight import merge_target_channel
 from targets.types import Target
 from metadata.master_analysis import analyze_master
@@ -77,6 +78,8 @@ def post_processed_master(stack, config):
     display units at 4x4; 0.0015 with SPFC —
     mosaics/test_lab_full_pipeline.py). A panel SPFC cannot calibrate is
     REFUSED, not merged; the SPFC certificate rides in the sidecar."""
+    if is_foreign(stack):
+        return foreign_master(stack)   # made elsewhere by this same pipeline
     cal_masters = calibrate(stack, config)
     master = plate_solve_image(stack_files(stack, config, *cal_masters))
     analyze_master(master)   # leaf: writes the master's `analysis` sidecar section

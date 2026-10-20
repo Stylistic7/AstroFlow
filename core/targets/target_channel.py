@@ -32,10 +32,13 @@ def group_stacks_by_filter(stacks: list[Stack]) -> dict[str, list[Stack]]:
     Stable ordering: filters alphabetical, stacks-within-filter by
     stable_hash so the cache key is deterministic.
     """
+    from stacks.foreign import is_foreign
     by_filter: dict[str, list[Stack]] = {}
     for s in stacks:
         if s.filter is None:
             continue
+        if is_foreign(s) and not s.admitted:
+            continue  # another pipeline made it: shown on the starmap, never merged
         by_filter.setdefault(s.filter, []).append(s)
     return {
         f: sorted(by_filter[f], key=lambda s: s.stable_hash)

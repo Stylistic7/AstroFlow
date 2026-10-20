@@ -66,6 +66,36 @@ def put_mosaic_membership(target_id):
     return jsonify({"target_id": target_id, "standalone": request.method == "PUT"})
 
 
+@settings_bp.route("/api/sharing/<object_type>/<object_id>", methods=["PUT", "DELETE"])
+def put_sharing(object_type, object_id):
+    """`{"folder": <a configured shared master folder>}`: PUT publishes this
+    stack's, target's or mosaic's masters into that folder from the end of
+    the next pass on (a target or mosaic sends all its stacks); DELETE stops
+    — the published copies are retired then (`stacks.publish_shared`).
+    Opt-in only. The graph restarts: publishing happens at the end of a
+    pass."""
+    from stacks.publish_shared import SHARED
+    try:
+        kind = ObjectType(object_type)
+    except ValueError:
+        return jsonify({"error": "object_type must be stack, target or mosaic"}), 400
+    folder = str((request.get_json(silent=True) or {}).get("folder") or "")
+    if folder not in {str(d) for d in (context.shared_dirs or [])}:
+        return jsonify({"error": "folder must be one of the configured shared master folders"}), 400
+    key = DecisionKey.sharing(kind, object_id, folder)
+    current = dict(context.settings.decision_overrides)
+    if request.method == "DELETE":
+        current.pop(key, None)
+    else:
+        current[key] = DecisionOverride(choice=SHARED)
+    _update_settings(lambda s: replace(s, decision_overrides=frozendict(current)))
+    announce("reload_data")
+    from state.actor import state
+    state.drain_and_restart()
+    return jsonify({"object_type": object_type, "object_id": object_id, "folder": folder,
+                    "shared": request.method == "PUT"})
+
+
 @settings_bp.route("/api/quarantine/<object_type>/<object_id>", methods=["POST"])
 def toggle_quarantine(object_type, object_id):
     """Toggle quarantine for a stack, target, or mosaic.

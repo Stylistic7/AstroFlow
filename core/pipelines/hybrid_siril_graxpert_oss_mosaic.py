@@ -25,6 +25,7 @@ from pipelines.hybrid_graxpert_oss_mosaic import register
 from stacks.calibration_selection import calibrate
 from stacks.post_processing.graxpert_stack import post_stack_calibrate
 from stacks.stacking.siril import integrate_with_siril
+from stacks.foreign import foreign_master, is_foreign
 from targets.merging.oss import calibrate_channel, hdr_merge_masters, merge_target_channel_oss
 
 PIPELINE = "Hybrid: Siril + GraXpert + OSS Mosaic"
@@ -43,6 +44,8 @@ def solved_master(stack, config):
 @workflow_group
 def post_processed_master(stack, config):
     """`solved_master` → post-stacking calibration."""
+    if is_foreign(stack):
+        return foreign_master(stack)   # made elsewhere by this same pipeline
     master = solved_master(stack, config)
     return inherit_plate_solution(post_stack_calibrate(stack, config, master), master)
 
@@ -56,12 +59,19 @@ def _by_exposure(stacks):
 def channel(target, filter, stacks, config):
     """One stack: its post-processed master. Several: their RAW masters
     HDR-combined (longest exposure first, on its grid), then calibrated once
-    as a whole — see `targets.merging.oss`."""
+    as a whole — see `targets.merging.oss`. A foreign stack has no raw
+    master here, only its calibrated one, so a channel it is part of
+    HDR-combines the post-processed masters instead and skips the second
+    calibration (each input is already on the Gaia scale, background-free)."""
     if len(stacks) == 1:
         master = post_processed_master(stacks[0], config)
         return inherit_plate_solution(
             merge_target_channel_oss(target, filter, tuple(stacks), config, master), master)
     ordered = _by_exposure(stacks)
+    if any(is_foreign(s) for s in ordered):
+        masters = [post_processed_master(s, config) for s in ordered]
+        return inherit_plate_solution(
+            hdr_merge_masters(target, filter, ordered, config, *masters), masters[0])
     raws = [solved_master(s, config) for s in ordered]
     merged = inherit_plate_solution(hdr_merge_masters(target, filter, ordered, config, *raws), raws[0])
     return inherit_plate_solution(calibrate_channel(target, filter, ordered, config, merged), raws[0])
@@ -71,7 +81,8 @@ def geometry(target, filter, stacks, config):
     """The master `channel` takes its plate solution from, before any
     calibration: the canvas is measured on these, so an SPFC refusal blocks
     only that channel's merges."""
-    return solved_master(_by_exposure(stacks)[0], config)
+    first = _by_exposure(stacks)[0]
+    return foreign_master(first) if is_foreign(first) else solved_master(first, config)
 
 
 for_stack, for_target, for_mosaic = register(PIPELINE, post_processed_master,

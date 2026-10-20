@@ -1,5 +1,7 @@
-// Folders: where AstroFlow reads raw frames (one or more input folders) and
-// where it writes everything it makes (one output folder). `GET/PUT
+// Folders: where AstroFlow reads raw frames (one or more raw data folders),
+// where it writes everything it makes (one output folder), and the shared
+// master folders a group exchanges calibrated masters through (any number;
+// a synced folder — AstroFlow never learns how it syncs). `GET/PUT
 // /api/storage`; "Choose…" opens the Mac's own folder picker on the machine
 // running AstroFlow (`POST /api/storage/choose_folder`).
 import React, { useEffect, useState } from 'react';
@@ -18,7 +20,7 @@ export async function chooseFolder(prompt, file = false) {
   return r.ok ? (await r.json()).path : null;
 }
 
-export function FolderField({ id, label, value, onChange, prompt, onRemove, placeholder = '/Volumes/Astro/Raw', file = false }) {
+export function FolderField({ id, label, value, onChange, prompt, onRemove, placeholder = '/Volumes/Astro/Raw', file = false, removeTitle = 'Remove this folder' }) {
   return (
     <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
       <TextField id={id} label={label} value={value} onChange={(e) => onChange(e.target.value)}
@@ -29,8 +31,8 @@ export function FolderField({ id, label, value, onChange, prompt, onRemove, plac
         Choose…
       </Button>
       {onRemove && (
-        <Tooltip title="Remove this input folder">
-          <IconButton aria-label="Remove this input folder" onClick={onRemove}><DeleteOutlineIcon /></IconButton>
+        <Tooltip title={removeTitle}>
+          <IconButton aria-label={removeTitle} onClick={onRemove}><DeleteOutlineIcon /></IconButton>
         </Tooltip>
       )}
     </Box>
@@ -41,6 +43,7 @@ export default function StoragePanel() {
   const [saved, setSaved] = useState(null);
   const [inputs, setInputs] = useState([]);
   const [output, setOutput] = useState('');
+  const [shared, setShared] = useState([]);
   const [error, setError] = useState(null);
   const [status, setStatus] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -49,6 +52,7 @@ export default function StoragePanel() {
     setSaved(s);
     setInputs(s.input_dirs.length ? s.input_dirs : ['']);
     setOutput(s.output_dir || '');
+    setShared(s.shared_dirs || []);
   };
 
   useEffect(() => {
@@ -58,7 +62,11 @@ export default function StoragePanel() {
 
   if (!saved) return <PanelStatus title={TITLE} error={error}>Loading…</PanelStatus>;
 
-  const wanted = { input_dirs: inputs.map((d) => d.trim()).filter(Boolean), output_dir: output.trim() };
+  const wanted = {
+    input_dirs: inputs.map((d) => d.trim()).filter(Boolean),
+    output_dir: output.trim(),
+    shared_dirs: shared.map((d) => d.trim()).filter(Boolean),
+  };
   const dirty = JSON.stringify(wanted) !== JSON.stringify(saved);
   const outputMoves = saved.output_dir && wanted.output_dir !== saved.output_dir;
 
@@ -78,26 +86,28 @@ export default function StoragePanel() {
   };
 
   const setInput = (i) => (v) => setInputs(inputs.map((d, j) => (j === i ? v : d)));
+  const setSharedAt = (i) => (v) => setShared(shared.map((d, j) => (j === i ? v : d)));
 
   return (
     <PanelPage title={TITLE} intro={
-      'AstroFlow reads your raw frames from the input folders, including every folder inside them, '
+      'AstroFlow reads your raw frames from the raw data folders, including every folder inside them, '
       + 'and never changes them. Everything it makes (calibrated frames, stacks, mosaics, previews) '
-      + 'goes into the output folder.'}>
+      + 'goes into the output folder. A shared master folder is how a group pools calibrated masters: '
+      + 'masters you share are copied in, and everyone else\'s are read from it.'}>
       {!saved.output_dir && (
         <Alert severity="info">
           Choose your folders to start. Nothing is scanned until both are set.
         </Alert>
       )}
-      <PanelSection title="Input folders" meta={`${wanted.input_dirs.length} folder${wanted.input_dirs.length === 1 ? '' : 's'}`}
-        subtitle="Where your capture software or ASIAir downloads land. New frames are picked up automatically.">
+      <PanelSection title="Raw data folders" meta={`${wanted.input_dirs.length} folder${wanted.input_dirs.length === 1 ? '' : 's'}`}
+        subtitle="Where your capture software or ASIAir downloads land: subframes, and any calibration masters you keep beside them. New frames are picked up automatically.">
         <Stack spacing={1.5}>
           {inputs.map((d, i) => (
-            <FolderField key={i} id={`input-dir-${i}`} label={`Input folder ${i + 1}`} value={d}
-              onChange={setInput(i)} prompt="Choose a folder of raw frames"
+            <FolderField key={i} id={`input-dir-${i}`} label={`Raw data folder ${i + 1}`} value={d}
+              onChange={setInput(i)} prompt="Choose a folder of raw frames" removeTitle="Remove this raw data folder"
               onRemove={inputs.length > 1 ? () => setInputs(inputs.filter((_, j) => j !== i)) : null} />
           ))}
-          <Box><Button onClick={() => setInputs([...inputs, ''])}>Add input folder</Button></Box>
+          <Box><Button onClick={() => setInputs([...inputs, ''])}>Add raw data folder</Button></Box>
         </Stack>
       </PanelSection>
       <PanelSection title="Output folder"
@@ -109,6 +119,18 @@ export default function StoragePanel() {
             A new output folder starts empty, so everything is rebuilt there. The old folder is left as it is.
           </Alert>
         )}
+      </PanelSection>
+      <PanelSection title="Shared master folders" meta={`${wanted.shared_dirs.length} folder${wanted.shared_dirs.length === 1 ? '' : 's'}`}
+        subtitle="A folder a group keeps in sync (Dropbox, Drive, Syncthing — your choice). Only the stacked, calibrated masters you choose to share are copied in; everyone else's appear on your starmap and join your mosaics when the same pipeline made them.">
+        <Stack spacing={1.5}>
+          {shared.map((d, i) => (
+            <FolderField key={i} id={`shared-dir-${i}`} label={`Shared master folder ${i + 1}`} value={d}
+              onChange={setSharedAt(i)} prompt="Choose a shared master folder" placeholder="/Users/you/Dropbox/Orion Mosaic"
+              removeTitle="Stop using this shared master folder"
+              onRemove={() => setShared(shared.filter((_, j) => j !== i))} />
+          ))}
+          <Box><Button onClick={() => setShared([...shared, ''])}>Add shared master folder</Button></Box>
+        </Stack>
       </PanelSection>
       {error && <Alert severity="error">{error}</Alert>}
       {status && !dirty && <Alert severity="success">{status}</Alert>}

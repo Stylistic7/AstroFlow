@@ -22,6 +22,7 @@ def _current() -> dict:
     return {
         "input_dirs": [str(d) for d in (context.input_dirs or [])],
         "output_dir": str(output) if output else None,
+        "shared_dirs": [str(d) for d in (context.shared_dirs or [])],
     }
 
 
@@ -53,10 +54,23 @@ def put_storage():
     for d in inputs:
         if output == d or output.is_relative_to(d) or d.is_relative_to(output):
             abort(400, description=f"The output folder can't be inside an input folder, or contain one ({d})")
+    # Shared master folders: a group's synced folder of calibrated masters
+    # (`metadata.shared_masters`, `stacks.publish_shared`). Kept apart from
+    # the raw and output folders — a shared folder inside a raw folder would
+    # be scanned as raw data, and one inside the output folder swept.
+    shared = [_folder(d, "Shared master folder") for d in body.get("shared_dirs") or []]
+    if len(set(shared)) != len(shared):
+        abort(400, description="The same shared master folder is listed twice")
+    for s in shared:
+        for d in (*inputs, output):
+            if s == d or s.is_relative_to(d) or d.is_relative_to(s):
+                abort(400, description=f"A shared master folder can't be inside a raw data or output folder, or contain one ({s})")
 
-    changed = inputs != list(context.input_dirs or []) or output != context.output_dir
+    changed = (inputs != list(context.input_dirs or []) or output != context.output_dir
+               or shared != list(context.shared_dirs or []))
     context.input_dirs = inputs
     context.output_dir = output
+    context.shared_dirs = shared
     if changed:
         state.drain_and_restart()
     return jsonify(_current())

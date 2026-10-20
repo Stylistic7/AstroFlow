@@ -121,6 +121,9 @@ def effective_integration(
     """
     if master_meta is not None and master_meta.master_integration_s is not None:
         return float(master_meta.master_integration_s)
+    from stacks.foreign import is_foreign
+    if is_foreign(stack):
+        return float(stack.integration)   # no subframes here: the master's own figure
     return predicted_effective_integration(stack)
 
 

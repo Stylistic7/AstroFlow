@@ -15,6 +15,7 @@ import { Box, Paper, Typography, Divider, Button } from "@mui/material";
 import DeleteSweepIcon from "@mui/icons-material/DeleteSweep";
 
 import AstroFlowContext from "./AstroFlowContext.jsx";
+import SharingMenu from './SharingMenu.jsx';
 import DiscardResultsDialog from "./DiscardResultsDialog.jsx";
 import { buildUrl, buildApiUrl } from "./urls.js";
 import { useFinishes } from "./useVersions.js";
@@ -181,6 +182,30 @@ export function PipelineSection({ objectType, objectId, pipeline, hierarchy, mas
 }
 
 
+// Whose masters are in this mosaic besides ours (foreign stacks, from the
+// shared master folders): credit, nothing more.
+function ContributorsLine({ mosaic }) {
+    const { targets, stacks } = useContext(AstroFlowContext);
+    const names = new Set();
+    let anonymous = 0;
+    (mosaic.target_ids || []).forEach((tid) => {
+        (targets?.[tid]?.stack_ids || []).forEach((sid) => {
+            const s = stacks?.[sid];
+            if (!s?.foreign) return;
+            if (s.observer) names.add(s.observer); else anonymous += 1;
+        });
+    });
+    if (!names.size && !anonymous) return null;
+    const list = [...names].sort();
+    if (anonymous) list.push(`${anonymous} other${anonymous === 1 ? '' : 's'}`);
+    return (
+        <Typography variant="body2" sx={{ color: 'text.secondary', ml: 1 }}>
+            with masters from {list.join(', ')}
+        </Typography>
+    );
+}
+
+
 export default function MosaicDashboard() {
     const { mosaic_id } = useParams();
     const { mosaics, computeGraphStatus } = useContext(AstroFlowContext);
@@ -206,9 +231,13 @@ export default function MosaicDashboard() {
             p: 3,
             overflow: 'auto',
         }}>
-            <Typography variant="h5" sx={{ mb: 3 }}>
-                {mosaic.name || `Mosaic ${mosaic_id.slice(0, 8)}`}
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
+                <Typography variant="h5">
+                    {mosaic.name || `Mosaic ${mosaic_id.slice(0, 8)}`}
+                </Typography>
+                <SharingMenu objectType="mosaic" objectId={mosaic_id} />
+                <ContributorsLine mosaic={mosaic} />
+            </Box>
 
             {pipelines.length === 0 ? (
                 <Typography sx={{ color: 'text.secondary' }}>

@@ -38,6 +38,7 @@ class DecisionType(str, Enum):
     SKY_FLAT_SOURCE = "fringe_source"
     PROJECT_KIND = "project_kind"          # planner: "lrgb" or "narrowband" (R/G/B = star colour)
     MOSAIC_MEMBERSHIP = "mosaic_membership"  # "standalone": kept out of every mosaic however it overlaps
+    SHARING = "sharing"                      # subject = a shared master folder; "shared": this object's masters go there
 
 
 # Lower precedence = applied first by resolve_decisions.
@@ -134,6 +135,14 @@ class DecisionKey:
         overlapping fields are different projects: the choice "standalone"
         keeps the target out of every mosaic (`mosaics.identification`)."""
         return cls(DecisionType.MOSAIC_MEMBERSHIP, ObjectType.TARGET, target_id, target_id)
+
+    @classmethod
+    def sharing(cls, object_type: "ObjectType", object_id: str, folder: str) -> "DecisionKey":
+        """This stack's, target's or mosaic's masters are published into the
+        shared master folder `folder` (`stacks.publish_shared`). Opt-in, one
+        key per object and folder; a target or mosaic choice sends every
+        component stack, the way quarantine does. Absent: never shared."""
+        return cls(DecisionType.SHARING, object_type, object_id, folder)
 
     @classmethod
     def rotation_outlier(cls, stack_id: str, run_id: str) -> "DecisionKey":
@@ -255,6 +264,13 @@ def get_decisions_for_object(
     return context.get(_decisions_key(object_type, object_id), {})
 
 
+# Decisions that change nothing a pipeline computes, so they must not enter
+# any cache key: SHARING only says where a finished master is copied
+# (`stacks.publish_shared`) — baked into the stack's key it would re-stack the
+# master on every toggle.
+OUTSIDE_THE_PIPELINE = frozenset({DecisionType.SHARING})
+
+
 def decisions_for_stack(
     decision_overrides: frozendict, stack_id: str,
 ) -> frozendict:
@@ -266,7 +282,7 @@ def decisions_for_stack(
     """
     return frozendict({
         k: v for k, v in decision_overrides.items()
-        if k.matches_stack(stack_id)
+        if k.matches_stack(stack_id) and k.decision_type not in OUTSIDE_THE_PIPELINE
     })
 
 
@@ -289,5 +305,5 @@ def decisions_for_objects(
     ids = frozenset(object_ids)
     return frozendict({
         k: v for k, v in decision_overrides.items()
-        if k.parent_stack_id in ids
+        if k.parent_stack_id in ids and k.decision_type not in OUTSIDE_THE_PIPELINE
     })

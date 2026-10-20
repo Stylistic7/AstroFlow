@@ -130,6 +130,10 @@ _DURABLE_TUPLE_NS = frozenset(
      # it until the disk returns, so it must never evict. Overwritten by a
      # fresh scan whenever the dir is present. See metadata/library_scan.py.
      "library_scan",
+     # Per-shared-folder record of the masters THIS instance published there
+     # (`stacks.publish_shared`): what makes a file in a shared folder ours to
+     # retire. Nothing else can tell — not a name, not a stable hash.
+     "shared_published",
      # Tap-snapshot payloads (ContextRef targets for the str-keyed snapshot
      # index below) — hot web-read path, see reason 2 above.
      "tap_snapshots"}
@@ -143,6 +147,7 @@ _DURABLE_STR_KEYS = frozenset(
         "settings",
         "input_dirs",
         "output_dir",
+        "shared_dirs",
         "astrometry_index_dir",
         "tool_paths",
         # --- user curation (reason 1: an eviction loses user work) ---

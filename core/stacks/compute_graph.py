@@ -48,6 +48,42 @@ def _focal_length_of(stack) -> int | None:
     return round(float(focal)) if focal is not None else None
 
 
+def _foreign_stack_for_ui(stack) -> dict:
+    """A foreign stack's UI entry (`stacks.foreign`): no subframes, no
+    calibration, no decisions — what its master says, plus whose it is and
+    whether this instance's pipeline admits it."""
+    return {
+        "foreign": True,
+        "admitted": stack.admitted,
+        "observer": stack.observer,
+        "shared_dir": stack.shared_dir,
+        "pipeline_stamp": stack.pipeline_stamp,
+        "stable_hash": stack.stable_hash,
+        "content_hash": stack.content_hash,
+        "name": stack.name,
+        "image_type": stack.image_type,
+        "camera": stack.camera,
+        "camera_id_hash": None,
+        "camera_id_short": None,
+        "filter": stack.filter,
+        "role": normalize_filter(stack.filter) or "none",
+        "exposure": stack.exposure,
+        "integration": stack.integration,
+        "raw_integration_s": stack.integration,
+        "mean_temperature": stack.mean_temperature,
+        "image_scale": stack.image_scale,
+        "rotation_angle": stack.rotation_angle,
+        "width_pixels": stack.width_pixels,
+        "height_pixels": stack.height_pixels,
+        "focal_length": None,
+        "center": list(stack.center) if stack.center else None,
+        "oldest_date": str(stack.oldest_date) if stack.oldest_date else None,
+        "newest_date": str(stack.newest_date) if stack.newest_date else None,
+        "state": dict(stack.state),
+        "filenames": [stack.master_path],
+    }
+
+
 @node
 def prepare_stack_for_ui(
     stack: Stack,
@@ -57,10 +93,14 @@ def prepare_stack_for_ui(
 ) -> dict:
     from decisions.resolve import resolve_calibration, resolve_decisions
     from decisions.compute_graph import ALL_EXCLUSION_TYPES
+    from stacks.foreign import is_foreign
 
+    if is_foreign(stack):
+        return _foreign_stack_for_ui(stack)
     stack = resolve_calibration(stack, cal_stacks, decisions)
     resolve_decisions(stack, ALL_EXCLUSION_TYPES, decisions, min_frames)
     return {
+        "foreign": False,
         "stable_hash": stack.stable_hash,
         "content_hash": stack.content_hash,
         "name": stack.name,

@@ -41,6 +41,7 @@ from stacks.calibration_selection import calibrate
 from stacks.composite_stack import Stack
 from stacks.post_processing.pixinsight import post_process_stack
 from stacks.stacking.pixinsight import stack_files
+from stacks.foreign import foreign_master, is_foreign
 from targets.merging.pixinsight import merge_target_channel
 from targets.types import Target
 from metadata.master_analysis import analyze_master
@@ -49,6 +50,8 @@ from metadata.master_analysis import analyze_master
 @workflow_group
 def post_processed_master(stack, config):
     """Calibrate → WBPP-stack → post-process. Same as PI Master."""
+    if is_foreign(stack):
+        return foreign_master(stack)   # made elsewhere by this same pipeline
     cal_masters = calibrate(stack, config)
     master = plate_solve_image(stack_files(stack, config, *cal_masters))
     analyze_master(master)   # leaf: writes the master's `analysis` sidecar section

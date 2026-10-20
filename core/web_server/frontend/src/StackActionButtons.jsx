@@ -2,6 +2,7 @@ import { Box, Tooltip, IconButton } from '@mui/material';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import QuarantineToggle from './QuarantineToggle';
 import ShoppingCartMenu from './ShoppingCartMenu';
+import SharingMenu from './SharingMenu.jsx';
 
 
 export default function StackActionButtons({ stack_id }) {
@@ -16,6 +17,7 @@ export default function StackActionButtons({ stack_id }) {
         objectType="stack"
         objectId={stack_id}
       />
+      <SharingMenu objectType="stack" objectId={stack_id} />
       <Tooltip title="Show in Finder">
         <IconButton onClick={handleShowInFinder} color="white">
           <FolderOpenIcon />

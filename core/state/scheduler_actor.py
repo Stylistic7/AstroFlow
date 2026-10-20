@@ -67,6 +67,29 @@ class SchedulerActor:
         except asyncio.CancelledError:
             pass
 
+    async def start_shared_dirs_poller(
+        self, interval_s: float, start_delay_s: float = 0.0,
+    ) -> None:
+        """Watch the shared master folders for other members' pushes (there
+        is no filesystem watcher; a scan is one directory walk)."""
+        if getattr(self, "_shared_dirs_task", None) is not None:
+            return
+        self._shared_dirs_task = asyncio.get_event_loop().create_task(
+            self._shared_dirs_loop(interval_s, start_delay_s)
+        )
+
+    async def _shared_dirs_loop(self, interval_s: float, start_delay_s: float) -> None:
+        try:
+            await asyncio.sleep(start_delay_s)
+            while True:
+                try:
+                    await asyncio.to_thread(_check_shared_dirs_and_maybe_restart)
+                except Exception as e:
+                    print(f"### shared folders poll raised, ignoring: {e}")
+                await asyncio.sleep(interval_s)
+        except asyncio.CancelledError:
+            pass
+
     async def start_asiair_live_poller(
         self, interval_s: float = 5.0, start_delay_s: float = 5.0,
     ) -> None:
@@ -286,6 +309,20 @@ def _drain_due(new_files: int) -> bool:
     minutes, so a pass per hourly batch costs little and the masters,
     seams and the planner's curves follow the night as it happens."""
     return new_files > 0
+
+
+def _check_shared_dirs_and_maybe_restart() -> None:
+    """A shared master folder changed since its last scan (another member
+    pushed or retired a master): drain and re-identify, so their panel
+    joins — or leaves — the mosaic within the hour."""
+    from context import context
+    from stacks.publish_shared import shared_dirs_changed
+
+    if not (context.shared_dirs and shared_dirs_changed(context)):
+        return
+    print("### shared master folders changed: draining graph")
+    state = ray.get_actor("state", namespace=_get_namespace())
+    ray.get(state.drain_and_restart.remote())
 
 
 def _run_asiair_download_and_maybe_restart() -> None:

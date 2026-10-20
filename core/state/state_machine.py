@@ -611,6 +611,10 @@ def _schedule_download_from_asiairs(
         interval_s=5.0,
         start_delay_s=5.0,
     )
+    scheduler.start_shared_dirs_poller.remote(
+        interval_s=60 * 60,
+        start_delay_s=120,
+    )
     scheduler.start_ray_metrics_poller.remote(
         interval_s=1.0,
         start_delay_s=1.0,

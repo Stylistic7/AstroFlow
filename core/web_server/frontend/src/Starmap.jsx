@@ -18,7 +18,9 @@ const WEBGL2 = (() => {
 })();
 
 export default function Starmap() {
-	const { constellationPolylines, targets, mosaics, isQuarantined, showQuarantined } = useContext(AstroFlowContext);
+	const { constellationPolylines, targets, mosaics, stacks, isQuarantined, showQuarantined } = useContext(AstroFlowContext);
+
+
 	const navigate = useNavigate();
 	const [instance, setInstance] = useState(undefined);
 
@@ -60,6 +62,16 @@ export default function Starmap() {
 
 		markersPlugs.clearMarkers();
 
+		// A target made only of other people's masters (shared master folders)
+		// is drawn dashed: blue when our pipeline admits them, grey when another
+		// pipeline made them and they are only shown. A target we hold frames
+		// in is drawn as ours, whoever else contributed.
+		const foreignState = (target) => {
+			const members = (target.stack_ids || []).map((id) => stacks?.[id]).filter(Boolean);
+			if (!members.length || !members.every((s) => s.foreign)) return null;
+			return members.some((s) => s.admitted) ? 'foreign' : 'foreign-unmatched';
+		};
+
 		constellationPolylines.forEach((polyline, index) => {
 			markersPlugs.addMarker({
 				id: "polyline_" + index,
@@ -76,7 +88,8 @@ export default function Starmap() {
 			if (!target.projected_footprints) continue;
 			if (!showQuarantined && isQuarantined("target", id)) continue;
 
-			const state = target.contains_exception ? 'exception' : (target.is_complete ? 'ok' : 'incomplete');
+			const state = foreignState(target)
+				|| (target.contains_exception ? 'exception' : (target.is_complete ? 'ok' : 'incomplete'));
 			markersPlugs.addMarker({
 				id: "target," + id,
 				className: `target--${state}`,
@@ -95,7 +108,7 @@ export default function Starmap() {
 				polygon: mosaic.projected_footprints['galactic']['coords'],
 			});
 		};
-	}, [instance, constellationPolylines, targets, mosaics, isQuarantined, showQuarantined]);
+	}, [instance, constellationPolylines, targets, mosaics, stacks, isQuarantined, showQuarantined]);
 
 
 	const handleReady = (instance) => {

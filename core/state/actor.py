@@ -195,6 +195,14 @@ class StateActor:
         if completeness:
             from cache.completeness import log_completeness
             log_completeness(context)
+            # The shared master folders mirror this pass's masters
+            # (`stacks.publish_shared`): copy what is new, retire what
+            # is gone. Never lets a folder problem fail the pass.
+            try:
+                from stacks.publish_shared import publish_shared_masters
+                publish_shared_masters(context)
+            except Exception as e:
+                print(f"### publishing shared masters failed: {e!r}")
         # No completion-time cleanup: display-product N-1s are deleted
         # deterministically at node completion (`version_log.supersede`),
         # ephemerals by the in-run GC, foreign debris by the janitor. The

@@ -126,7 +126,7 @@ def dir_available(dir: str | Path) -> bool:
     return True  # non-volume path missing = real (empty) state, not absence
 
 
-def scan_or_reuse(dir: str | Path) -> tuple[ScanRecord, bool]:
+def scan_or_reuse(dir: str | Path, scanner=None) -> tuple[ScanRecord, bool]:
     """The startup entry point: (record, fresh).
 
     Present dir → fresh scan, return (record, True). Disconnected volume →
@@ -142,7 +142,7 @@ def scan_or_reuse(dir: str | Path) -> tuple[ScanRecord, bool]:
     cache entries make the re-dispatch cheap.
     """
     if dir_available(dir):
-        return scan_dir(dir), True
+        return (scanner or scan_dir)(dir), True
     known = load_record(dir)
     if known is not None:
         log.info(

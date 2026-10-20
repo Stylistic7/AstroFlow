@@ -10,7 +10,7 @@ import web_server.backend.storage as storage
 
 @pytest.fixture
 def client(monkeypatch):
-    ctx = SimpleNamespace(input_dirs=None, output_dir=None)
+    ctx = SimpleNamespace(input_dirs=None, output_dir=None, shared_dirs=None)
     restarts = []
     monkeypatch.setattr(storage, "context", ctx)
     import state.actor
@@ -23,7 +23,7 @@ def client(monkeypatch):
 
 
 def test_a_fresh_install_has_no_folders(client):
-    assert client.get("/api/storage").get_json() == {"input_dirs": [], "output_dir": None}
+    assert client.get("/api/storage").get_json() == {"input_dirs": [], "output_dir": None, "shared_dirs": []}
 
 
 def test_saving_folders_stores_them_and_reruns_the_graph(client, tmp_path):
@@ -35,6 +35,19 @@ def test_saving_folders_stores_them_and_reruns_the_graph(client, tmp_path):
     assert client.restarts == [1]
     client.put("/api/storage", json={"input_dirs": [str(raw)], "output_dir": str(out)})
     assert client.restarts == [1], "saving the same folders again changes nothing"
+
+
+def test_shared_master_folders_are_kept_apart_from_the_others(client, tmp_path):
+    raw, out, share = tmp_path / "raw", tmp_path / "out", tmp_path / "share"
+    raw.mkdir(), out.mkdir(), share.mkdir()
+    body = {"input_dirs": [str(raw)], "output_dir": str(out)}
+    r = client.put("/api/storage", json={**body, "shared_dirs": [str(share)]})
+    assert r.status_code == 200 and r.get_json()["shared_dirs"] == [str(share)]
+    assert client.ctx.shared_dirs == [share]
+    for bad in (raw / "inside", out):
+        bad.mkdir(exist_ok=True)
+        assert client.put("/api/storage", json={**body, "shared_dirs": [str(bad)]}).status_code == 400
+    assert client.put("/api/storage", json={**body, "shared_dirs": [str(share), str(share)]}).status_code == 400
 
 
 @pytest.mark.parametrize("body, message", [

@@ -72,13 +72,19 @@ def _stack_subframe(s):
     return subframe_channel(s)
 
 
+def _local_stacks_for(target, filter):
+    """A foreign stack (`stacks.foreign`) has no subframes here to preview."""
+    from stacks.foreign import is_foreign
+    return [s for s in target.stacks_for(filter) if not is_foreign(s)]
+
+
 def channels_for_target(target):
-    """First stack's best frame per filter — same representative
+    """First local stack's best frame per filter — same representative
     choice the legacy SUBFRAME path made."""
     return {
-        filter: _stack_subframe(target.stacks_for(filter)[0])
+        filter: _stack_subframe(_local_stacks_for(target, filter)[0])
         for filter in target.filters
-        if target.stacks_for(filter)
+        if _local_stacks_for(target, filter)
     }
 
 

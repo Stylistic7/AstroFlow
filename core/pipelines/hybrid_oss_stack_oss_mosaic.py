@@ -33,6 +33,7 @@ from stacks.calibration_selection import (
 from stacks.composite_stack import Stack
 from stacks.post_processing.oss import post_process_stack_oss
 from stacks.stacking.oss import stack_files_oss
+from stacks.foreign import foreign_master, is_foreign
 from targets.merging.pixinsight import merge_target_channel
 from targets.types import Target
 
@@ -50,6 +51,8 @@ def post_processed_master(stack, config):
     enter the master's call_hash, so the cached artifact is identical
     whether or not the ordering edge is present.
     """
+    if is_foreign(stack):
+        return foreign_master(stack)   # made elsewhere by this same pipeline
     steps, _top_ids = calibration_plan(stack, config)
     cal_masters = []
     masters = {}

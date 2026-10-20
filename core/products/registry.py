@@ -268,7 +268,8 @@ def makes_image_wrap(
                 f"{func.__name__} wrote a sidecar beside its scratch output; return "
                 "its sections in Produced(sections=...) instead")
             _publish(out, final, result, canonical_call_hash(*args, **kwargs),
-                     image_type, args, kwargs, makes_tiff)
+                     image_type, args, kwargs, makes_tiff,
+                     stamp=_pipeline_stamp_for(func.__name__, params, args, kwargs))
         finally:
             for f in litter:
                 f.unlink(missing_ok=True)
@@ -279,7 +280,8 @@ def makes_image_wrap(
 
 
 def _publish(out: Path, final: Path, result, call_hash: str, image_type,
-             args: tuple, kwargs: dict, makes_tiff: bool) -> None:
+             args: tuple, kwargs: dict, makes_tiff: bool,
+             stamp: "str | None" = None) -> None:
     """Steps 1-4 of `makes_image_wrap`. A failed stamp or pyramid build still
     publishes the planar payload: the master is expensive, its presentation is
     not (`_make_tile_pyramid` logs and swallows its own failures)."""
@@ -288,7 +290,7 @@ def _publish(out: Path, final: Path, result, call_hash: str, image_type,
     from previews.create_tile_pyramid import pyramid_path_for
     payload = out
     try:
-        _stamp_header(out, call_hash, image_type, args, result.header)
+        _stamp_header(out, call_hash, image_type, args, result.header, stamp)
         if makes_tiff and _pyramid_is_the_payload(out):
             # THE PYRAMID IS THE PAYLOAD (2026-08-17): a pyramidal TIFF's page 0
             # is bit-identical to the planar master, so storing both wasted
@@ -381,12 +383,40 @@ def _inherited_cards(header, args) -> dict:
     return hints
 
 
+def _pipeline_stamp_for(op_name: str, params: list, args: tuple, kwargs: dict) -> str:
+    """The `PIPEHASH` this op writes (`hashing.pipeline_stamp`): the science
+    code, the op, and the stamp of its PRIMARY image input — the first
+    ImageMetadata or image path bound to a NAMED parameter. Varargs
+    (`*cal_masters`, `*masters`) are data, not pipeline: how many a user has
+    must not move the stamp."""
+    from hashing.pipeline_stamp import pipeline_stamp, stamp_of
+    from metadata.classes import ImageMetadata
+    named = [a for p, a in zip(params, args)
+             if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)]
+    named += [kwargs[p.name] for p in params if p.kind is p.KEYWORD_ONLY and p.name in kwargs]
+    upstream = None
+    for value in named:
+        if isinstance(value, ImageMetadata):
+            upstream = stamp_of(value.header)
+            break
+        if isinstance(value, Path):
+            from file_io.generic import read_header
+            try:
+                upstream = stamp_of(read_header(value))
+            except (OSError, ValueError):
+                upstream = None
+            break
+    return pipeline_stamp(op_name, upstream)
+
+
 def _stamp_header(
     result: Any, call_hash: str, image_type: str | None,
-    args: tuple = (), cards: "dict | None" = None,
+    args: tuple = (), cards: "dict | None" = None, stamp: "str | None" = None,
 ) -> None:
     """Stamp the result file's native header in a single write:
 
+      * `PIPEHASH` = `stamp` — the pipeline stamp (`hashing.pipeline_stamp`):
+        what "the same pipeline made this" means across users.
       * `CALLHASH` = `call_hash` — always. Provenance axis +
         write-completion witness (stamped only after the body finished, so a
         body that writes straight to its final path cannot be mistaken for
@@ -426,6 +456,9 @@ def _stamp_header(
             updates["STBLHASH"] = stable
         updates |= _inherited_cards(header, args)
         updates |= dict(cards or {})            # the body's own cards win over defaults
+        if stamp is not None:
+            from hashing.pipeline_stamp import PIPELINE_STAMP_KEY
+            updates[PIPELINE_STAMP_KEY] = stamp
         updates[_CALL_HASH_KEY] = str(call_hash)
         update_header(target, updates)
     except (OSError, ValueError):
