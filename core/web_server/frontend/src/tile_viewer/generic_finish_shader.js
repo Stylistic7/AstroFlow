@@ -96,29 +96,22 @@ fn vs_main(@builtin(vertex_index) idx: u32) -> VsOut {
 `;
 
 
-/** The generated fs_main: one texture + one sample per declared input,
- * mono inputs broadcast to RGB, all handed to `displayFinish(src0.., P)`.
+/** The fragment's tail once every input is sampled as `t0..tn`: a 1-band
+ * input broadcast to RGB, the no-data sentinel, the finish call and the ONE
+ * global, peakBrightness. Shared with the sky shader (sky/sky_shader.js),
+ * which finds its texels on a sphere and finishes them identically.
  * `monoMask[i]` is true when input i is a bound 1-band tap. */
-function genericFsMain(monoMask) {
+export function finishTail(monoMask) {
     const n = Math.max(1, monoMask.length);
-    const decls = [];
-    const samples = [];
+    const lines = [];
     const args = [];
     for (let i = 0; i < n; i++) {
-        decls.push(`@group(1) @binding(${1 + i}) var srcTexture${i}: texture_2d<f32>;`);
-        samples.push(`    let t${i} = textureSample(srcTexture${i}, tileSampler, in.uv);`);
-        samples.push(monoMask[i]
+        lines.push(monoMask[i]
             ? `    let s${i} = vec4<f32>(t${i}.rrr, 1.0);`
             : `    let s${i} = t${i};`);
         args.push(`s${i}`);
     }
-    return `
-@group(0) @binding(3) var<uniform> fparams: DisplayParams;
-${decls.join('\n')}
-
-@fragment
-fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-${samples.join('\n')}
+    return `${lines.join('\n')}
     // No-data footprint sentinel (all-zero primary) → opaque black.
     if (s0.r == 0.0 && s0.g == 0.0 && s0.b == 0.0) {
         return vec4<f32>(0.0, 0.0, 0.0, 1.0);
@@ -129,7 +122,28 @@ ${samples.join('\n')}
     // hidden global. See project_scene_display_seam.
     let rgb = clamp(displayFinish(${args.join(', ')}, fparams),
                     vec3<f32>(0.0), vec3<f32>(1.0));
-    return vec4<f32>(rgb * globals.peakBrightness, 1.0);
+    return vec4<f32>(rgb * globals.peakBrightness, 1.0);`;
+}
+
+
+/** The generated fs_main: one texture + one sample per declared input, then
+ * the shared tail. */
+function genericFsMain(monoMask) {
+    const n = Math.max(1, monoMask.length);
+    const decls = [];
+    const samples = [];
+    for (let i = 0; i < n; i++) {
+        decls.push(`@group(1) @binding(${1 + i}) var srcTexture${i}: texture_2d<f32>;`);
+        samples.push(`    let t${i} = textureSample(srcTexture${i}, tileSampler, in.uv);`);
+    }
+    return `
+@group(0) @binding(3) var<uniform> fparams: DisplayParams;
+${decls.join('\n')}
+
+@fragment
+fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+${samples.join('\n')}
+${finishTail(monoMask)}
 }
 `;
 }

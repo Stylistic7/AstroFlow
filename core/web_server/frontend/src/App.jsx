@@ -17,6 +17,7 @@ import AstroFlowContext from './AstroFlowContext.jsx';
 import ProgressComponent from './ProgressComponent.jsx';
 import WorkflowGraph from './WorkflowGraph.jsx';
 import TileViewerV2 from './tile_viewer/TileViewerV2.jsx';
+import HealpixViewer from './sky/HealpixViewer.jsx';
 import StackViewer from './StackViewer.jsx';
 import MosaicViewer from './MosaicViewer.jsx';
 import MosaicDashboard from './MosaicDashboard.jsx';
@@ -459,6 +460,7 @@ function App() {
                     <TileViewerV2 />
                   </Box>
                 } />
+                <Route path="/sky/:name" element={<HealpixViewer />} />
 <Route path="/pipelines" element={
                   <AppLayout>
                     <RegistryPanel key="pipelines" kind="pipelines" />
