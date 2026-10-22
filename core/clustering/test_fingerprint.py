@@ -24,17 +24,17 @@ def test_build_overlap_matrix():
     #   B = {2,3,5}   -> A∩B = {2,3}   = 2
     #   C = {1,4,6}   -> A∩C = {1,4}   = 2; B∩C = {} = 0
     frames = {_h("A"): {1, 2, 3, 4}, _h("B"): {2, 3, 5}, _h("C"): {1, 4, 6}}
-    X, O, frame_list, col_to_pixel = build_overlap(frames)
-    # Row order preserves dict insertion order.
+    X, frame_list, col_to_pixel = build_overlap(frames)
+    # Rows are the frames in sorted order.
     assert frame_list == (_h("A"), _h("B"), _h("C"))
     # X has 4+3+3 = 10 nonzeros
     assert X.nnz == 10
-    # O is symmetric with diagonal zeroed.
-    Odense = O.toarray()
+    # X @ X.T is the overlap: own counts on the diagonal, shared counts off it.
+    Odense = (X @ X.T).toarray()
     assert Odense[0, 1] == 2 and Odense[1, 0] == 2  # A-B
     assert Odense[0, 2] == 2 and Odense[2, 0] == 2  # A-C
     assert Odense[1, 2] == 0 and Odense[2, 1] == 0  # B-C
-    assert Odense[0, 0] == 0 and Odense[1, 1] == 0 and Odense[2, 2] == 0
+    assert Odense[0, 0] == 4 and Odense[1, 1] == 3 and Odense[2, 2] == 3
     # col_to_pixel is the column index -> pixel id map; check the pixel
     # ids covered match the union.
     assert set(col_to_pixel) == {1, 2, 3, 4, 5, 6}
@@ -43,13 +43,44 @@ def test_build_overlap_matrix():
 def test_initial_clusters_respects_o_min():
     # A-B overlap 2, A-C overlap 2, B-C overlap 0.
     frames = {_h("A"): {1, 2, 3, 4}, _h("B"): {2, 3, 5}, _h("C"): {1, 4, 6}}
-    _, O, _, _ = build_overlap(frames)
+    X, _, _ = build_overlap(frames)
     # At o_min=3 no edges survive -> 3 separate components.
-    labels_3 = initial_clusters(O, o_min=3)
+    labels_3 = initial_clusters(X, o_min=3)
     assert len(set(labels_3.tolist())) == 3
-    # At o_min=2 A bridges B and C -> 1 component.
-    labels_2 = initial_clusters(O, o_min=2)
-    assert len(set(labels_2.tolist())) == 1
+    # At o_min=2 A bridges B and C -> 1 component, also when the overlap is
+    # folded one row at a time (B and C meet only through A's row).
+    for chunk in (1, 2, 2048):
+        labels_2 = initial_clusters(X, o_min=2, rows_per_chunk=chunk)
+        assert len(set(labels_2.tolist())) == 1, chunk
+
+
+def test_chunked_components_and_anchor_scores_match_the_full_overlap():
+    # Random frames over three hidden cameras plus noise: the chunked
+    # components and the X-based anchor scores equal what the full O gives.
+    from scipy.sparse.csgraph import connected_components
+    rng = np.random.default_rng(4)
+    cams = [set(rng.choice(5000, 60, replace=False).tolist()) for _ in range(3)]
+    frames = {}
+    for i in range(90):
+        hot = set(rng.choice(sorted(cams[i % 3]), 40, replace=False).tolist()) if i % 7 else set()
+        frames[_h(f"f{i:03d}")] = hot | set(rng.integers(5000, 9000, 30).tolist())     # every 7th: noise only
+    X, _, _ = build_overlap(frames)
+    O = (X @ X.T).tocsr(); O.setdiag(0); O.eliminate_zeros()
+    Ot = O.copy(); Ot.data = (Ot.data >= 3).astype(np.int8); Ot.eliminate_zeros()
+    _, full = connected_components(Ot, directed=False)
+    for chunk in (7, 32, 2048):
+        chunked = initial_clusters(X, o_min=3, rows_per_chunk=chunk)
+        same = {(a, b) for a, b in zip(full, chunked)}
+        assert len(same) == len(set(full)) == len(set(chunked)), chunk     # one-to-one: same partition
+    labels = np.array([i % 3 for i in range(X.shape[0])], dtype=np.int32)
+    got = anchor_reassign(labels, X, min_anchor_size=5, min_avg_score=0.5, max_iters=1)
+    # reference: the old M @ O on the full overlap
+    M = np.zeros((3, X.shape[0]), np.float32)
+    for k in range(3):
+        M[k, labels == k] = 1.0 / (labels == k).sum()
+    ref_scores = (M @ O.toarray()).T
+    ref = np.where(ref_scores.max(axis=1) < 0.5, labels, ref_scores.argmax(axis=1))
+    assert np.array_equal(got, ref)
 
 
 def test_anchor_reassign_pulls_orphan_into_anchor():
@@ -62,12 +93,12 @@ def test_anchor_reassign_pulls_orphan_into_anchor():
         frames[_h(f"anchor{i}")] = common | {100 + 10 * i + j for j in range(5)}
     # Orphan shares most of `common` -> strong avg overlap with anchor.
     frames[_h("orphan")] = (set(list(common)[:18]) | {999})
-    _, O, frame_list, _ = build_overlap(frames)
+    X, frame_list, _ = build_overlap(frames)
     # Manually force orphan into its own cluster (rows are in sorted frame order).
     orphan = frame_list.index(_h("orphan"))
     labels = np.where(np.arange(len(frame_list)) == orphan, 10, 0).astype(np.int32)
     labels = anchor_reassign(
-        labels, O, min_anchor_size=5, min_avg_score=0.5, max_iters=5
+        labels, X, min_anchor_size=5, min_avg_score=0.5, max_iters=5
     )
     # Orphan should be absorbed into the anchor cluster.
     assert labels[orphan] == labels[frame_list.index(_h("anchor0"))]
@@ -91,19 +122,19 @@ def test_anchor_reassign_guard_keeps_low_signal_singletons():
     # Orphan has 1 pixel, which is in 30% of starbase (avg overlap = 0.3,
     # below the 0.5 guard).
     frames[_h("orphan_flat")] = {999}
-    _, O, frame_list, _ = build_overlap(frames)
+    X, frame_list, _ = build_overlap(frames)
     # Rows follow the table's (sorted) frame order: label them by name.
     labels = np.array([0 if h.startswith("user") else 1 if h.startswith("starbase") else 2
                        for h in frame_list], dtype=np.int32)
     orphan = frame_list.index(_h("orphan_flat"))
     new_labels = anchor_reassign(
-        labels, O, min_anchor_size=10, min_avg_score=0.5, max_iters=5
+        labels, X, min_anchor_size=10, min_avg_score=0.5, max_iters=5
     )
     assert new_labels[orphan] == 2  # guard kept orphan as singleton
 
     # Sanity: without the guard, the orphan WOULD be misattributed to starbase.
     no_guard = anchor_reassign(
-        labels, O, min_anchor_size=10, min_avg_score=0.0, max_iters=5
+        labels, X, min_anchor_size=10, min_avg_score=0.0, max_iters=5
     )
     assert no_guard[orphan] == 1  # misattributed without the guard
 
@@ -208,7 +239,7 @@ def test_consensus_pixels_stable_across_resamples():
     for i in range(100):
         noise = set(rng.choice(noise_pool, size=30, replace=False).tolist())
         big_frames[_h(f"f{i}")] = set(real_defects) | noise
-    X_big, _, frame_list_big, col_to_pixel_big = build_overlap(big_frames)
+    X_big, frame_list_big, col_to_pixel_big = build_overlap(big_frames)
     cons_big = consensus_pixels_for_cluster(
         list(range(100)), X_big, col_to_pixel_big, tau=0.5, top_n=30
     )
@@ -217,7 +248,7 @@ def test_consensus_pixels_stable_across_resamples():
     # Same camera at half N.
     subset = rng.choice(100, size=50, replace=False).tolist()
     small_frames = {frame_list_big[i]: big_frames[frame_list_big[i]] for i in subset}
-    X_small, _, _, col_to_pixel_small = build_overlap(small_frames)
+    X_small, _, col_to_pixel_small = build_overlap(small_frames)
     cons_small = consensus_pixels_for_cluster(
         list(range(50)), X_small, col_to_pixel_small, tau=0.5, top_n=30
     )

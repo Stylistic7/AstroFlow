@@ -20,7 +20,10 @@ PIPELINE — sparse-matrix throughout for tractability on 10k-frame inputs:
   1. Build X (frames x pixels, binary): X[f, p] = 1 iff frame f lists p
      as a defect candidate.
   2. O = X @ X.T (with diagonal zeroed): O[i, j] is the count of pixels
-     that frames i and j both list — pairwise defect-set OVERLAP.
+     that frames i and j both list — pairwise defect-set OVERLAP. O is never
+     held whole: one body's frames all overlap one another, so on the real
+     library it is ~300M nonzeros (a 15 GB worker, 2026-10-22). Step 3 folds
+     it in row chunks, step 4 needs only anchors x frames of it.
   3. Initial connected components on the graph of edges where O[i,j] >= o_min.
      This is single linkage: ONE edge welds two components, and no later
      stage splits a component again, so `o_min` must sit far above what
@@ -93,6 +96,9 @@ class FingerprintMap(dict[FrameHash, tuple[int, ...]]):
 
 
 _DEFAULT_MIN_DEFECT = 100
+# Rows of the overlap computed at once in `initial_clusters`: 2048 x ~17k
+# frames of one body is ~35M products, a few hundred MB, then discarded.
+_OVERLAP_CHUNK_ROWS = 2048
 # Measured on the real library (2026-10-22, two ASI6200MM Pro bodies): frames
 # of one body share 59+ pixels within a season and 13+ across years and
 # telescopes; frames of DIFFERENT bodies share at most 3, once in 17,600
@@ -163,8 +169,8 @@ def sensor_key(header: dict) -> tuple:
 
 def build_overlap(
     frame_sets: DefectTable | dict,
-) -> tuple[csr_matrix, csr_matrix, tuple[FrameHash, ...], np.ndarray]:
-    """Build the frame x pixel matrix X and overlap matrix O = X @ X.T.
+) -> tuple[csr_matrix, tuple[FrameHash, ...], np.ndarray]:
+    """Build the frame x pixel matrix X whose X @ X.T is the overlap.
 
     `frame_sets` is a `DefectTable`, or `{frame: pixel set or
     {pixel: strength}}` (tests), turned into one. Rows are the table's
@@ -172,8 +178,7 @@ def build_overlap(
 
     Returns:
         X: (n_frames, n_pixels) binary
-        O: (n_frames, n_frames) integer overlap counts, diagonal zeroed
-        frame_list: row-index order of X/O
+        frame_list: row-index order of X
         col_to_pixel: column-index order of X (column k corresponds to pixel id col_to_pixel[k])
 
     Built straight from the table's arrays: rows by repeating each frame's
@@ -189,31 +194,45 @@ def build_overlap(
         dtype=np.int32,
     )
     del rows, cols
-    O = (X @ X.T).tocsr()
-    O.setdiag(0)
-    O.eliminate_zeros()
-    return X, O, tuple(table.frames.tolist()), col_to_pixel.astype(np.int64)
+    return X, tuple(table.frames.tolist()), col_to_pixel.astype(np.int64)
 
 
 @beartype
-def initial_clusters(O: csr_matrix, *, o_min: int = _DEFAULT_O_MIN) -> np.ndarray:
-    """Connected components on the overlap graph thresholded at O >= o_min.
+def initial_clusters(
+    X: csr_matrix, *, o_min: int = _DEFAULT_O_MIN, rows_per_chunk: int = _OVERLAP_CHUNK_ROWS,
+) -> np.ndarray:
+    """Connected components on the overlap graph thresholded at O >= o_min,
+    O = X @ X.T off the diagonal, computed `rows_per_chunk` rows of O at a
+    time: each chunk's edges are joined to the components found so far
+    (every frame linked to its component's first frame) and discarded.
 
     Returns a label array of length n_frames; labels are arbitrary ints.
     """
     if o_min <= 0:
         raise ValueError(f"o_min must be positive, got {o_min}")
-    Ot = O.copy()
-    Ot.data = Ot.data * (Ot.data >= o_min).astype(np.int32)
-    Ot.eliminate_zeros()
-    _, labels = connected_components(Ot, directed=False)
+    n = X.shape[0]
+    XT = X.T.tocsr()
+    rep = np.arange(n)                    # each frame's component, named by its first frame
+    labels = np.arange(n)
+    frames = np.arange(n)
+    for start in range(0, n, rows_per_chunk):
+        block = (X[start:start + rows_per_chunk] @ XT).tocoo()
+        keep = (block.data >= o_min) & (block.row + start != block.col)
+        rows = np.concatenate([block.row[keep] + start, frames])
+        cols = np.concatenate([block.col[keep], rep])
+        del block, keep
+        graph = csr_matrix((np.ones(len(rows), np.int8), (rows, cols)), shape=(n, n))
+        _, labels = connected_components(graph, directed=False)
+        del graph, rows, cols
+        _, first = np.unique(labels, return_index=True)
+        rep = first[labels]
     return labels
 
 
 @beartype
 def anchor_reassign(
     labels: np.ndarray,
-    O: csr_matrix,
+    X: csr_matrix,
     *,
     min_anchor_size: int = _DEFAULT_MIN_ANCHOR_SIZE,
     min_avg_score: float = _DEFAULT_MIN_AVG_SCORE,
@@ -222,16 +241,20 @@ def anchor_reassign(
     """Iteratively pull each frame into the anchor cluster (size
     >= min_anchor_size) whose members it overlaps most with on average.
 
-    The score is computed directly from O (against cluster MEMBERS), so a
-    small cluster cannot win reassignment against itself via a self-
-    referential consensus — see the module docstring.
+    The score is computed against cluster MEMBERS, so a small cluster
+    cannot win reassignment against itself via a self-referential consensus
+    — see the module docstring. It is `M @ O` with O = X @ X.T off the
+    diagonal, evaluated as `(M @ X) @ X.T` minus each frame's own defect
+    count where it is a member: anchors x frames, never frames x frames.
 
     Frames whose max avg-overlap with any anchor is below `min_avg_score`
     keep their current label. This prevents low-signal frames (flats,
     noise-fingerprints) from being randomly attributed.
     """
     labels = labels.copy()
-    n_frames = O.shape[0]
+    n_frames = X.shape[0]
+    XT = X.T.tocsr()
+    own = np.asarray(X.sum(axis=1)).ravel().astype(np.float32)   # O's zeroed diagonal
     for it in range(max_iters):
         sizes = Counter(labels.tolist())
         anchors = sorted(c for c, n in sizes.items() if n >= min_anchor_size)
@@ -256,9 +279,10 @@ def anchor_reassign(
             shape=(len(anchors), n_frames),
             dtype=np.float32,
         )
-        del ar_rows, ar_cols, ar_vals
+        ar_rows_kept, ar_cols_kept, ar_vals_kept = ar_rows[:idx], ar_cols[:idx], ar_vals[:idx]
         # avg overlap of each frame with each anchor's members.
-        scores = (M @ O).toarray().T  # shape (n_frames, n_anchors)
+        scores = ((M @ X) @ XT).toarray().T  # shape (n_frames, n_anchors)
+        scores[ar_cols_kept, ar_rows_kept] -= own[ar_cols_kept] * ar_vals_kept
         del M
         best_k = scores.argmax(axis=1)
         max_score = scores.max(axis=1)
@@ -385,11 +409,11 @@ def cluster_by_fingerprint(
     out: list[tuple[tuple[FrameHash, ...], tuple[int, ...]]] = []
 
     if len(qualified):
-        X, O, frame_list, col_to_pixel = build_overlap(qualified)
-        labels = initial_clusters(O, o_min=o_min)
+        X, frame_list, col_to_pixel = build_overlap(qualified)
+        labels = initial_clusters(X, o_min=o_min)
         labels = anchor_reassign(
             labels,
-            O,
+            X,
             min_anchor_size=min_anchor_size,
             min_avg_score=min_avg_score,
         )
