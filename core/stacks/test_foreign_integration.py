@@ -17,7 +17,7 @@ from file_io.sidecar import get_section
 from stacks.foreign import ForeignStack, local_pipeline_stamps
 from stacks.publish_shared import SHARED, publish_shared_masters, shared_dirs_changed
 from testing import make_synthetic_frames
-from testing.shared_masters import write_shared_master
+from testing.shared_masters import describe_for_coadd, write_shared_master
 
 OURS, THEIRS, OTHER = "5" * 16, "e" * 16, "c" * 16
 
@@ -82,8 +82,21 @@ def test_shared_masters_of_our_pointing_join_our_target_and_merge_labelled_by_th
     assert not (share / ("0" * 16 + ".fits")).exists()
     context.settings = replace(context.settings, decision_overrides=frozendict({
         DecisionKey.sharing(ObjectType.STACK, local_id, str(share)): DecisionOverride(choice=SHARED)}))
+    # ... and the share gate holds a master back until it can be weighted: this
+    # one has no measured PSF, no flux calibration, and was stacked without a
+    # flat (metadata/share_gate.py says so; the UI shows the same reasons).
+    from metadata.share_gate import concerns_from_cache, stacks_readiness
+    from stacks.publish_shared import current_masters
+    from context import get_cache
+    verdict = stacks_readiness(context.ui_stacks, current_masters({local_id}),
+                               lambda sid: concerns_from_cache(get_cache(), sid))[local_id]
+    assert not verdict["ready"] and {"psf", "flux"} <= {r["code"] for r in verdict["blocking"]}
     publish_shared_masters(context)
     copy = share / ("0" * 16 + ".fits")
+    assert not copy.exists()
+    describe_for_coadd(ours.filename)
+    context[("concerns", "Stack", local_id)] = {}          # the fixture has no flats; that is its concern, not this test's
+    publish_shared_masters(context)
     assert copy.exists() and get_section(copy, "shared")["pipeline"] == "P"
     assert get_section(copy, "plate_solution")["data"] is not None
     assert not shared_dirs_changed(context), "our own publish is not a change worth a drain"

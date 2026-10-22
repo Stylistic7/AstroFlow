@@ -87,6 +87,10 @@ def put_sharing(object_type, object_id):
     if request.method == "DELETE":
         current.pop(key, None)
     else:
+        if kind == ObjectType.STACK:
+            verdict = _share_readiness(object_id)
+            if not verdict["ready"]:
+                return jsonify({"error": "this stack's master is not ready to share", **verdict}), 409
         current[key] = DecisionOverride(choice=SHARED)
     _update_settings(lambda s: replace(s, decision_overrides=frozendict(current)))
     announce("reload_data")
@@ -94,6 +98,41 @@ def put_sharing(object_type, object_id):
     state.drain_and_restart()
     return jsonify({"object_type": object_type, "object_id": object_id, "folder": folder,
                     "shared": request.method == "PUT"})
+
+
+_readiness_cache: dict = {"at": 0.0, "value": {}}
+_READINESS_TTL_S = 60.0
+
+NO_MASTER = {"ready": False, "warnings": [], "blocking": [{
+    "code": "master", "title": "No master yet",
+    "detail": "This stack has no post-processed master to share; one is made at the end of a pass."}]}
+
+
+def _share_readiness(stack_id: str) -> dict:
+    """`metadata.share_gate` over every current master, cached briefly: the
+    verdict needs the train's typical PSF, which is a median over its peers."""
+    import time
+    from context import get_cache
+    from metadata.share_gate import concerns_from_cache, stacks_readiness
+    from stacks.publish_shared import current_masters
+    now = time.monotonic()
+    if now - _readiness_cache["at"] > _READINESS_TTL_S:
+        ui_stacks = context.ui_stacks or {}
+        cache = get_cache()
+        _readiness_cache["value"] = stacks_readiness(
+            ui_stacks, current_masters(set(ui_stacks)), lambda sid: concerns_from_cache(cache, sid))
+        _readiness_cache["at"] = now
+    return _readiness_cache["value"].get(stack_id, NO_MASTER)
+
+
+@settings_bp.route("/api/share_readiness/stack/<stack_id>", methods=["GET"])
+def share_readiness(stack_id):
+    """Whether this stack's master may go into a shared master folder, and
+    every reason it may not or should be thought about first
+    (`metadata.share_gate`): `{"ready", "blocking": [...], "warnings": [...]}`."""
+    if stack_id not in (context.ui_stacks or {}):
+        return jsonify({"error": "stack not found"}), 404
+    return jsonify(_share_readiness(stack_id))
 
 
 @settings_bp.route("/api/quarantine/<object_type>/<object_id>", methods=["POST"])

@@ -32,6 +32,12 @@ class ClusteringSettings:
     # comfortably accepting any real camera (smallest validated: 142
     # frames). Tests override via test_context.
     fingerprint_min_anchor_size: int = 20
+    # Shared defect pixels that link two frames in the clustering's first,
+    # single-linkage pass (`clustering.fingerprint._DEFAULT_O_MIN`). Here as
+    # well so it rides into `identify_camera_fingerprints`' key: the node's
+    # hash covers its own body only, and the 2026-10-22 change of this value
+    # in the helper module left the live app serving the old, merged map.
+    fingerprint_o_min: int = 20
 
     def __hash__(self):
         return hash_dataclass(self)

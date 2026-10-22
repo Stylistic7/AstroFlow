@@ -444,6 +444,7 @@ def build_regroup_graph(
         metadata_ref,
         defects_ref,
         clustering_settings.fingerprint_min_anchor_size,
+        clustering_settings.fingerprint_o_min,
     )
     # Star flats: candidates per (camera, focal length, filter) need the
     # camera fingerprints; every candidate's master is then built in its own

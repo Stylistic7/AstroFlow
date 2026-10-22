@@ -77,3 +77,12 @@ def write_shared_master(path: Path, meta: ImageMetadata | None = None, **kw) -> 
     write_image_metadata(meta)
     set_section(path, "plate_solution", _plate_solution_to_obj(meta.plate_solution))
     return meta
+
+
+def describe_for_coadd(path: Path, *, fwhm_arcsec: float = 3.0, scatter: float = 0.04) -> None:
+    """Give a test master what the share gate (metadata/share_gate.py) reads
+    of a real one: a measured PSF and a Gaia flux calibration in its sidecar."""
+    from file_io.sidecar import set_section
+    set_section(path, "analysis", {"version": 3, "noise_px": 1e-4, "pixel_arcsec": 2.0,
+                                   "psf": {"fwhm_px": fwhm_arcsec / 2.0, "fwhm_arcsec": fwhm_arcsec, "n_stars": 300}})
+    set_section(path, "spfc_calibration", {"scale": 0.01, "n_stars": 2000, "sigma": scatter, "reference": 0.006})

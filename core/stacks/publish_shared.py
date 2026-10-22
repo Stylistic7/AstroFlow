@@ -130,10 +130,22 @@ def reconcile_folder(folder: Path, masters: list, published: dict, ui_stacks: di
     from file_io.sidecar import set_section, sidecar_path_for
     from metadata.sidecar_io import read_image_metadata
 
+    from context import get_cache
+    from metadata.share_gate import concerns_from_cache, stacks_readiness
+
     published = dict(published)
     wanted: dict[str, Path] = {}
+    # The share gate (metadata/share_gate.py): what would make the group's
+    # map worse stays home, and the UI has already said why.
+    cache = get_cache()
+    verdicts = stacks_readiness(ui_stacks, masters, lambda sid: concerns_from_cache(cache, sid))
     for stack_id, pipeline, path in masters:
         if not _publishable(path):
+            continue
+        verdict = verdicts.get(stack_id)
+        if verdict and not verdict["ready"]:
+            log.info("shared master withheld by the share gate", folder=str(folder), file=path.name,
+                     stack=stack_id[:8], reasons=[r["code"] for r in verdict["blocking"]])
             continue
         wanted[path.stem] = path
         dest = folder / path.name
