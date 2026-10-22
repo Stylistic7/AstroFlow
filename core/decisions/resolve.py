@@ -362,14 +362,22 @@ def resolve_calibration(
 
     new_contents = RunsDict()
     missing: Counter[str] = Counter()
+    # Defaults that fell back to another body's master: `_prefer_same_camera`
+    # prefers rather than requires, so when this body has no master of its
+    # own the geometry bucket's nearest one calibrates the run. That is the
+    # better of two wrongs (vignetting right, hot pixels / etalon / window
+    # dust the other body's) and must not be silent either.
+    other_body: Counter[str] = Counter()
+    other_body_ids: dict[str, set[str]] = {}
     for run_hash, run in stack.contents.items():
         deps = dict(run.dependencies)
         for cal_type in CALIBRATION_TOPOLOGY.get(run.image_type, ()):
             if cal_type in deps:
                 continue  # Already set (e.g., from cal-to-cal association)
 
+            key = DecisionKey.calibration(cal_type, stack.stable_hash, run_hash)
             decision = DecisionPoint.make(
-                key=DecisionKey.calibration(cal_type, stack.stable_hash, run_hash),
+                key=key,
                 title=f"Calibration: {cal_type}",
                 description=f"Which {cal_type} source to use for this run",
             )
@@ -406,11 +414,38 @@ def resolve_calibration(
                     f"{choice!r}, which is not in the current cal_stacks"
                 )
                 deps[cal_type] = StackIdDependency(stack_id=choice)
+                other = cal_stacks[choice].camera_id_hash
+                if (cam_id is not None and other is not None and other != cam_id
+                        and key not in decision_overrides):
+                    other_body[cal_type] += 1
+                    other_body_ids.setdefault(cal_type, set()).add(other[:8])
 
         new_contents[run_hash] = replace(run, dependencies=frozendict(deps))
 
-    if missing:
+    if missing or other_body:
         from concerns import warn as _concern_warn
+    if other_body:
+        kinds = "/".join(sorted(other_body))
+        _concern_warn(
+            f"Calibrated with another camera body's {kinds} master",
+            detail=(
+                "; ".join(
+                    f"{n} run{'s' if n != 1 else ''} matched a {k} master from "
+                    f"camera {'/'.join(sorted(other_body_ids[k]))}"
+                    for k, n in sorted(other_body.items())
+                )
+                + f" (this stack is camera {cam_id[:8]}). The master fits the "
+                "sensor geometry and, for a flat, the optical train, so "
+                "vignetting is right; hot pixels, the etalon and window dust "
+                "belong to the other body. It was chosen because this body "
+                "has no master of its own to match — shoot or promote one, "
+                "or choose a master explicitly from this stack's calibration "
+                "decisions."
+            ),
+            stack=stack.stable_hash,
+            other_body=dict(sorted(other_body.items())),
+        )
+    if missing:
         kinds = "/".join(sorted(missing))
         _concern_warn(
             f"Stacking with no {kinds} master",

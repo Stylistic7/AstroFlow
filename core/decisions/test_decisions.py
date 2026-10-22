@@ -394,6 +394,54 @@ def test_star_flat_is_an_option_never_the_default_and_none_is_a_pinned_choice(te
     assert warned and all("flat" not in m for m in warned)      # darks are missing (a concern); "none" never is
 
 
+def test_master_from_another_body_is_a_concern_unless_chosen(test_context, monkeypatch):
+    """`_prefer_same_camera` prefers, never requires: when this body has no
+    flat of its own on the train, another body's flat from the same geometry
+    bucket calibrates the run. That is reported on the stack — the hot
+    pixels, etalon and dust are the other body's — unless the user chose
+    it, and not at all when the master is this body's or unfingerprinted."""
+    import concerns
+    from decisions.resolve import resolve_calibration
+    from stacks.composite_stack import CalibrationStack, CalibrationStacksDict
+    from stacks.run import RunsDict
+    from stacks.types import StackHash, StackIdDependency
+    from units import Celsius, Seconds
+
+    make_synthetic_frames(number=10, dest_dir=context.input_dirs[0],
+                          start_datetime=datetime.datetime(2023, 12, 1, 20, 0, 0))
+    run_graph(build_compute_graph())
+    stack = next(iter(context.stacks.values())).get()
+    (run_hash, run), = stack.contents.items()
+    assert stack.camera_id_hash, "the synthetic body must fingerprint for this test to mean anything"
+
+    def _flat(sid, cam):
+        return CalibrationStack(
+            content_hash=sid, image_type="flat", camera="cam", filter=run.filter, mean_temperature=Celsius(-10.0),
+            exposure=Seconds(1.0), integration=Seconds(0.0), width_pixels=run.width_pixels,
+            height_pixels=run.height_pixels, stable_hash=sid, oldest_date=datetime.datetime(2026, 1, 1),
+            newest_date=datetime.datetime(2026, 1, 2), state=frozendict(), contents=RunsDict(), camera_id_hash=cam)
+
+    warned = []
+    monkeypatch.setattr(concerns, "warn", lambda title, detail="", **f: warned.append((title, f)))
+    key = DecisionKey.calibration("flat", stack.stable_hash, run_hash)
+
+    other = CalibrationStacksDict({StackHash("other"): _flat("other", "b" * 16)})
+    resolved = resolve_calibration(stack, other, frozendict())
+    assert resolved.contents[run_hash].dependencies["flat"] == StackIdDependency(stack_id="other")
+    assert [f["other_body"] for t, f in warned if t.startswith("Calibrated with another camera body")] == [{"flat": 1}]
+
+    warned.clear()
+    resolve_calibration(stack, other, frozendict({key: DecisionOverride(choice="other")}))
+    assert not any(t.startswith("Calibrated with another") for t, _ in warned)      # the user's pick is deliberate
+
+    warned.clear()
+    own = CalibrationStacksDict({StackHash("own"): _flat("own", stack.camera_id_hash),
+                                 StackHash("blank"): _flat("blank", None)})
+    resolved = resolve_calibration(stack, own, frozendict())
+    assert resolved.contents[run_hash].dependencies["flat"] == StackIdDependency(stack_id="own")
+    assert not any(t.startswith("Calibrated with another") for t, _ in warned)
+
+
 def test_bias_selection_ignores_temperature(test_context, monkeypatch):
     """A bias is offset + read noise — temperature-independent on CMOS, unlike
     a dark, where matching temperature is the whole point.
