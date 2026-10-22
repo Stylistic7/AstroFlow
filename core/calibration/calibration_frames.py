@@ -151,7 +151,10 @@ def identify_calibration_stacks(
         frames: list[FrameHash],
         camera_consensus: tuple[int, ...],
     ) -> CalibrationStack:
-        run = ray.get(calibration_run_from_frames.remote(frames, metadata))
+        # Only this run's frames, not the whole non-master library: that was
+        # pickled into every calibration run task and hashed into its key.
+        run = ray.get(calibration_run_from_frames.remote(
+            frames, MetadataDict({h: metadata[h] for h in sorted(frames)})))
         assert run.image_type in ["bias", "dark", "flat"]
         return CalibrationStack.from_run(run, camera_consensus=camera_consensus)
 

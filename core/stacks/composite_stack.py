@@ -131,9 +131,11 @@ class Stack(BaseStack, AstrometricAttributes):
 
         for run in runs:
             run_frames = [x[0] for x in run]
-            new_stack = ray.get(
-                run_from_frames.remote(run_frames, metadata)
-            )
+            # Only this run's frames: the whole group's metadata would be
+            # pickled into every run task and hashed into its key, so a new
+            # frame anywhere in the group re-keyed every run.
+            new_stack = ray.get(run_from_frames.remote(
+                run_frames, MetadataDict({h: metadata[h] for h in sorted(run_frames)})))
             contents[new_stack.stable_hash] = new_stack
 
         if not contents:

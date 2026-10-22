@@ -194,6 +194,13 @@ class ContextActor:
         with self._held_lock:
             self._drop(key)
 
+    def hold(self, key: Key, refs: list) -> None:
+        """Pin an object put with this actor as owner whose value is already
+        in the diskcache (`ContextRef.in_plasma`). Nested in a list so Ray
+        delivers the ref, not the value."""
+        (ref,) = refs
+        self._hold(key, ref)
+
     def release(self, key: Key) -> None:
         """Stop pinning `key`'s object (`ContextRef.release`); the value
         stays in the diskcache."""

@@ -184,6 +184,7 @@ def scatter_spatial_groups(
     *ancestor_results,
 ) -> Graph:
     from cache.context_ref import ContextRef
+    from metadata.image_metadata import _library_identity
     from stacks.foreign import (
         assign_to_spatial_groups, identify_foreign_stacks, local_pipeline_stamps,
     )
@@ -309,9 +310,14 @@ def scatter_spatial_groups(
         # frames gets None, keeping its identify key STABLE across
         # drains — only the group actively being shot re-keys.
         group_frontier = effective_frontier(_newest_of(g), frontier, gate)
+        # The group's own frames, stored once: `identify_stacks` reads nothing
+        # else, so it no longer unpickles the whole library per group, and a
+        # library change re-keys only the groups whose frames it touched.
+        group_metadata = MetadataDict({h: metadata[h] for h in sorted(g) if h in metadata})
+        group_ref = ContextRef.store_large(group_metadata, _library_identity(group_metadata))
         stack_task = (
             identify_stacks,
-            metadata_ref,
+            group_ref,
             clustering_settings.angular_tolerance,
             g,
             clustering_settings.min_frames_in_stack,

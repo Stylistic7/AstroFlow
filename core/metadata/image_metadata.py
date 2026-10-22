@@ -602,7 +602,9 @@ def publish_library_refs(
     """
     from metadata.library_scan import ScanRecord, store_record
 
-    metadata_ref, defects_ref = pair
+    # Cache hits hand back refs with no ObjectRef; put the values back into
+    # the object store once so every consumer reads them zero-copy.
+    metadata_ref, defects_ref = pair[0].in_plasma(), pair[1].in_plasma()
     context["metadata_ref"] = metadata_ref
     context["defects_ref"] = defects_ref
     context["shared_ref"] = shared_ref

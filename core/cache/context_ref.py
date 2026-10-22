@@ -106,6 +106,23 @@ class ContextRef(Generic[T]):
             )
         return value
 
+    def in_plasma(self) -> "ContextRef[T]":
+        """This ref with its value in the object store. A ref that comes back
+        from a cached node lost its ObjectRef at the diskcache boundary
+        (`__reduce__`), so every consumer it is handed to would pull the value
+        through the ContextActor -- for the library's dicts, ~5 consumers
+        each pass and the actor at 14.7 GB (2026-09-09). Put it back once,
+        owned and pinned by the actor like any stored value."""
+        if self.ref is not None:
+            return self
+        from context import context
+        value = self.get()
+        actor = context._actor()
+        ref = ray.put(value, _owner=actor)
+        ray.get(actor.hold.remote(self.cache_key, [ref]))
+        return ContextRef(cache_key=self.cache_key, content_hash=self.content_hash,
+                          ref=ref, session=_current_session())
+
     def release(self) -> None:
         """Let the object store free this value now. The ContextActor stops
         pinning it (it owns every stored object, `store`) and this handle

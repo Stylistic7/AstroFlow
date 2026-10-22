@@ -96,6 +96,25 @@ def test_get_repopulates_ref_after_context_fetch(empty_context):
     assert ref.ref is None
 
 
+def test_in_plasma_puts_a_stripped_ref_back_once_and_release_frees_the_hold(empty_context):
+    """A ref from a cached node has no ObjectRef; `in_plasma` puts the value
+    back into the object store (actor-owned and pinned, like `store`), a ref
+    that already has one is returned as is, and `release` drops the pin and
+    the handle while the value stays readable from the diskcache."""
+    stored = ContextRef.store_large(np.arange(10_000, dtype=np.int32))
+    stripped = pickle.loads(pickle.dumps(stored))
+    assert stripped.ref is None
+    live = stripped.in_plasma()
+    assert live.ref is not None and live.content_hash == stored.content_hash
+    assert ray.get(live.ref)[9_999] == 9_999
+    assert live.in_plasma() is live
+    actor = context._actor()
+    assert live.cache_key in ray.get(actor.held.remote())["keys"]
+    live.release()
+    assert live.ref is None and live.cache_key not in ray.get(actor.held.remote())["keys"]
+    assert live.get()[5] == 5
+
+
 def test_get_does_not_call_ray_put(empty_context):
     """get() must never call ray.put — that would bloat the object store."""
     # With a ref: uses fast path, no ray.put needed.
