@@ -7,6 +7,7 @@ import inspect
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from metadata import visibility as V
 from metadata.master_analysis import FACTORS
@@ -54,9 +55,31 @@ def test_analyze_master_writes_the_sidecar_section(tmp_path):
     assert out["visibility"]["thresholds"] == list(V.THRESHOLDS)
     assert len(curves) == len(V.THRESHOLDS) and all(len(c) == len(FACTORS) for c in curves)
     assert all(b >= a for c in curves for a, b in zip(c, c[1:]))    # more hours never reveal less
+    assert out["noise_px"] == pytest.approx(2e-4, rel=0.15) and out["pixel_arcsec"] is None
+    assert out["psf"] == {"fwhm_px": None, "n_stars": out["psf"]["n_stars"], "fwhm_arcsec": None}   # a starless field has no PSF to measure
+
+
+def test_measure_master_reports_the_noise_and_the_psf():
+    """What the coadd weights by: the pixels' noise and the PSF's Gaussian
+    width, on the sky when the master is solved."""
+    from metadata.master_analysis import measure_master
+    rng = np.random.default_rng(5)
+    img = _field(rng, 2e-4)
+    yy, xx = np.mgrid[0:img.shape[0], 0:img.shape[1]]
+    s = 3.5 / 2.3548                                         # 60 stars of FWHM 3.5 px, well above the sky
+    for _ in range(60):
+        x, y = rng.uniform(40, 760), rng.uniform(40, 560)
+        img += np.float32(0.2) * np.exp(-((xx - x) ** 2 + (yy - y) ** 2) / (2 * s * s)).astype(np.float32)
+    out = measure_master(img, stable_hash="abc", filter="H", integration_s=3600.0, pixel_arcsec=2.0)
+    assert out["version"] == 3 and out["noise_px"] == pytest.approx(2e-4, rel=0.15)
+    assert out["psf"]["n_stars"] >= 40
+    assert out["psf"]["fwhm_px"] == pytest.approx(3.5, rel=0.1)
+    assert out["psf"]["fwhm_arcsec"] == pytest.approx(7.0, rel=0.1)
+    assert measure_master(img, stable_hash="abc", filter="H", integration_s=None, pixel_arcsec=None)["psf"]["fwhm_arcsec"] is None
 
 
 if __name__ == "__main__":
     import tempfile
     test_more_hours_reveal_more_and_noise_is_not_structure(); print("ok more hours / noise")
     test_analyze_master_writes_the_sidecar_section(Path(tempfile.mkdtemp())); print("ok sidecar section")
+    test_measure_master_reports_the_noise_and_the_psf(); print("ok noise and psf")

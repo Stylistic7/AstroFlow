@@ -133,7 +133,14 @@ def post_stack_calibrate(
 
     Pixels are written back into a copy of the gain-true XISF so FITS
     keywords and the astrometric solution survive (without that,
-    compute_image_metadata would re-solve from scratch)."""
+    compute_image_metadata would re-solve from scratch).
+
+    The output describes itself: its sidecar carries the `analysis` section
+    measured on the CALIBRATED pixels (noise, PSF, visibility — what a
+    coadd weights by; see `metadata.master_analysis`), and NOISE00 is that
+    noise, not the integration's, which the gain just rescaled (2026-10-22:
+    every calibrated master carried its pre-gain NOISE00, 15x too high on
+    an RC71 master, 150x on an FLT156 one)."""
     return calibrate_master(master, stack.filter, f"stack {stack.stable_hash}", config, out)
 
 
@@ -217,10 +224,9 @@ def calibrate_master(
         # Gain-true pixels, written through the master's own XISF so FITS
         # keywords and the astrometric solution survive (same contract the
         # PI recipe had).
-        _write_pixels_preserving_metadata(
-            Path(master.filename), gain_xisf, image * np.float32(gain),
-        )
+        gain_true = image * np.float32(gain)
         del image
+        _write_pixels_preserving_metadata(Path(master.filename), gain_xisf, gain_true)
 
         corrected = None
         if config.background_extraction:
@@ -240,6 +246,14 @@ def calibrate_master(
             if corrected.ndim == 3 and corrected.shape[2] == 1:
                 corrected = corrected[:, :, 0]
 
+        # Measured on the pixels that ship (the pedestal below is a constant).
+        from metadata.master_analysis import measure_master, pixel_arcsec_of
+        analysis = measure_master(
+            corrected if corrected is not None else gain_true,
+            stable_hash=str(master.stable_hash), filter=str(filter),
+            integration_s=master.master_integration_s, pixel_arcsec=pixel_arcsec_of(hdr),
+        )
+        del gain_true
         _write_pixels_preserving_metadata(gain_xisf, out, corrected)
 
     # Equalize the sky to the shared pedestal — adjacent mosaic panels
@@ -253,8 +267,9 @@ def calibrate_master(
              gain=cert["reference"] / cert["scale"], n_stars=cert["n_stars"])
     # PHOTREF declares the gauge on the artifact itself: pixels are physical
     # SPFC band flux scaled by it, so any consumer can convert onward.
-    return Produced(out, header={"PHOTREF": float(_SPFC_REFERENCE_SCALE)},
-                    sections={"spfc_calibration": cert})
+    return Produced(out, header={"PHOTREF": float(_SPFC_REFERENCE_SCALE),
+                                 "NOISE00": analysis["noise_px"], "NOISEEST": "robust high-pass (AstroFlow)"},
+                    sections={"spfc_calibration": cert, "analysis": analysis})
 
 
 # FITS cards that describe the FITS container or its WCS, not the image: the
