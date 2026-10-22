@@ -38,6 +38,11 @@ class ClusteringSettings:
     # hash covers its own body only, and the 2026-10-22 change of this value
     # in the helper module left the live app serving the old, merged map.
     fingerprint_o_min: int = 20
+    # Consensus pixels two anchor clusters must share to be one sensor
+    # (`clustering.fingerprint._DEFAULT_CONSENSUS_MERGE_MIN`): a pointing
+    # glued by stars is a fragment of its body, not a camera. In the key for
+    # the same reason as `fingerprint_o_min`.
+    fingerprint_consensus_merge_min: int = 5
 
     def __hash__(self):
         return hash_dataclass(self)

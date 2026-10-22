@@ -33,6 +33,10 @@ PIPELINE — sparse-matrix throughout for tractability on 10k-frame inputs:
   5. Consensus pixels per cluster: pixels in >= tau fraction of cluster
      members, sorted by frequency (descending) then pixel id (ascending),
      truncated to top_n. Hash of this canonical tuple is the camera identity.
+  6. Anchors whose consensus pixels overlap are merged: a pointing whose
+     frames glue to each other by STARS (single-pixel at a coarse scale)
+     but reach the rest of their body by too few hot pixels for step 3 is
+     a fragment of that body, not a camera. See `merge_anchors_by_consensus`.
 
 WHY ANCHOR REASSIGNMENT, NOT EM-STYLE CONSENSUS REFINEMENT
 A small cluster's "consensus" is dominated by its own frames — for a
@@ -104,6 +108,10 @@ _DEFAULT_MIN_AVG_SCORE = 0.5
 _DEFAULT_MAX_ITERS = 15
 _DEFAULT_CONSENSUS_TAU = 0.5
 _DEFAULT_CONSENSUS_TOP_N = 30
+# Anchors sharing this many consensus pixels are one sensor (two 30-pixel
+# sets of a 61 MP sensor coincide by chance on ~1e-5 pixels; one body's
+# fragments share 10-25). See `merge_anchors_by_consensus`.
+_DEFAULT_CONSENSUS_MERGE_MIN = 5
 # Subset-attribution: a leftover frame is assigned to an already-established
 # camera when it shares at least this many of that camera's 30 consensus
 # (signature) pixels. Camera consensuses are disjoint and consensus pixels are
@@ -325,6 +333,49 @@ def consensus_pixels_for_cluster(
 
 
 @beartype
+def merge_anchors_by_consensus(
+    anchors: list[list[int]],
+    X: csr_matrix,
+    col_to_pixel: Sequence[int],
+    *,
+    tau: float = _DEFAULT_CONSENSUS_TAU,
+    top_n: int = _DEFAULT_CONSENSUS_TOP_N,
+    min_shared: int = _DEFAULT_CONSENSUS_MERGE_MIN,
+) -> list[list[int]]:
+    """Anchor clusters whose consensus pixels overlap are one sensor: merge
+    them (transitively), members concatenated in a deterministic order.
+
+    Why a cluster can be a fragment of a body: at a coarse pixel scale a
+    star's core is a single bright isolated pixel, so `extract_defects`
+    lists hundreds of STARS beside a frame's true hot pixels, and frames of
+    one pointing share those stars by the hundred. With `o_min` set high
+    enough to refuse a chance pair of pixels between two bodies
+    (2026-10-22), older frames whose true hot pixels overlap the rest of
+    their body by only 5-15 pixels no longer reach it by an edge, but still
+    glue to their own pointing by stars -- and a pointing becomes a
+    "camera". Its consensus, though, is the pixels in half its frames, and
+    the body's strongest hot pixels are in all of them; two bodies share
+    none. Measured on the real library: fragments of body A overlap its
+    consensus by 10-25 pixels, body B by 0."""
+    consensuses = [set(consensus_pixels_for_cluster(a, X, col_to_pixel, tau=tau, top_n=top_n)) for a in anchors]
+    parent = list(range(len(anchors)))
+
+    def root(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for i in range(len(anchors)):
+        for j in range(i + 1, len(anchors)):
+            if len(consensuses[i] & consensuses[j]) >= min_shared:
+                parent[root(j)] = root(i)
+    merged: dict[int, list[int]] = {}
+    for i, a in enumerate(anchors):
+        merged.setdefault(root(i), []).extend(a)
+    return [sorted(m) for m in sorted(merged.values(), key=min)]
+
+
 def cluster_by_fingerprint(
     frame_sets: dict[FrameHash, dict[int, float] | set[int] | None],
     *,
@@ -334,6 +385,7 @@ def cluster_by_fingerprint(
     min_avg_score: float = _DEFAULT_MIN_AVG_SCORE,
     consensus_tau: float = _DEFAULT_CONSENSUS_TAU,
     consensus_top_n: int = _DEFAULT_CONSENSUS_TOP_N,
+    consensus_merge_min: int = _DEFAULT_CONSENSUS_MERGE_MIN,
 ) -> list[tuple[tuple[FrameHash, ...], tuple[int, ...]]]:
     """Cluster frames by defect-set overlap; return one tuple per cluster.
 
@@ -373,10 +425,15 @@ def cluster_by_fingerprint(
         # (noise-fingerprint frames that couldn't be confidently attributed)
         # fold into the no-fingerprint bucket — they shouldn't be treated
         # as a real camera.
+        anchors: list[list[int]] = []
         for member_idx in by_cluster.values():
             if len(member_idx) < min_anchor_size:
                 no_fingerprint.extend(frame_list[i] for i in member_idx)
                 continue
+            anchors.append(member_idx)
+        for member_idx in merge_anchors_by_consensus(
+            anchors, X, col_to_pixel, tau=consensus_tau, top_n=consensus_top_n, min_shared=consensus_merge_min,
+        ):
             consensus = consensus_pixels_for_cluster(
                 member_idx, X, col_to_pixel,
                 tau=consensus_tau, top_n=consensus_top_n,

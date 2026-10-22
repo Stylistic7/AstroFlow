@@ -173,6 +173,29 @@ def test_one_chance_pair_does_not_weld_two_cameras():
     assert by_source["b"] == {_h(f"b{i}") for i in range(30)}
 
 
+def test_a_pointing_glued_by_stars_is_a_fragment_of_its_body_not_a_camera():
+    # Body A's hot pixels, present in every frame of both its pointings; a
+    # second pointing of older frames carries only 8 of A's 40 (below o_min)
+    # but 300 stars of its own, shared by all its frames. Body B is disjoint.
+    hot_a = set(range(1, 41))
+    stars_1, stars_2, stars_b = set(range(1000, 1300)), set(range(2000, 2300)), set(range(3000, 3300))
+    hot_b = set(range(50_000, 50_040))
+    frames: dict = {}
+    for i in range(25):
+        frames[_h(f"a1_{i}")] = hot_a | stars_1 | {9000 + i}
+    for i in range(25):
+        frames[_h(f"a2_{i}")] = set(list(hot_a)[:8]) | stars_2 | {9100 + i}
+    for i in range(25):
+        frames[_h(f"b_{i}")] = hot_b | stars_b | {9200 + i}
+    result = cluster_by_fingerprint(frames, min_defect=10, min_anchor_size=5)
+    cameras = {frozenset(f) for f, c in result if c != ()}
+    assert cameras == {frozenset(_h(f"a{p}_{i}") for p in (1, 2) for i in range(25)),
+                       frozenset(_h(f"b_{i}") for i in range(25))}
+    # and the merged body's identity is its hot pixels, not either pointing's stars
+    (consensus_a,) = [c for f, c in result if _h("a1_0") in f]
+    assert set(consensus_a) <= hot_a
+
+
 def test_consensus_pixels_stable_across_resamples():
     # Same camera at full N vs half N -> identical top-N consensus.
     # Build frames where 30 "real defect" pixels are ALWAYS present (freq=1.0)

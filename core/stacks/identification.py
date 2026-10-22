@@ -35,6 +35,7 @@ def build_fingerprint_map(
     defects: DefectsDict,
     fingerprint_min_anchor_size: int,
     fingerprint_o_min: int = clustering.fingerprint._DEFAULT_O_MIN,
+    fingerprint_consensus_merge_min: int = clustering.fingerprint._DEFAULT_CONSENSUS_MERGE_MIN,
 ) -> FingerprintMap:
     """Assign each light frame a camera identity (consensus tuple), in three
     passes of decreasing confidence so we don't discard usable subs:
@@ -85,6 +86,7 @@ def build_fingerprint_map(
         pre_leftover: list[FrameHash] = []
         for cluster_frames, consensus in clustering.cluster_by_fingerprint(
             frame_sets, min_anchor_size=fingerprint_min_anchor_size, o_min=fingerprint_o_min,
+            consensus_merge_min=fingerprint_consensus_merge_min,
         ):
             if consensus:
                 consensuses.append(consensus)
@@ -147,6 +149,7 @@ def identify_camera_fingerprints(
     defects_ref: ContextRef[DefectsDict],
     fingerprint_min_anchor_size: int,
     fingerprint_o_min: int,
+    fingerprint_consensus_merge_min: int,
 ) -> ContextRef[FingerprintMap]:
     """Cluster ALL light frames by hot-pixel fingerprint to assign each
     frame to a physical camera. Runs once, ABOVE the spatial-group split,
@@ -168,6 +171,7 @@ def identify_camera_fingerprints(
     """
     fp = build_fingerprint_map(
         metadata_ref.get(), defects_ref.get(), fingerprint_min_anchor_size, fingerprint_o_min,
+        fingerprint_consensus_merge_min,
     )
     return ContextRef.store_large(fp)
 

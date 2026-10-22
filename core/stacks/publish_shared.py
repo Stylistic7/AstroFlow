@@ -122,23 +122,29 @@ def _shared_section(stack_id: str, pipeline: str, ui_stack: dict, header: dict) 
     }
 
 
-def reconcile_folder(folder: Path, masters: list, published: dict, ui_stacks: dict) -> dict:
+def _concerns_from_the_cache(stack_id: str) -> list[dict]:
+    from context import get_cache
+    from metadata.share_gate import concerns_from_cache
+    return concerns_from_cache(get_cache(), stack_id)
+
+
+def reconcile_folder(folder: Path, masters: list, published: dict, ui_stacks: dict,
+                     concerns_of=_concerns_from_the_cache) -> dict:
     """Make `folder` hold exactly `masters` (`(stack_id, pipeline, path)`) of
     ours: copy in what is missing, retire what we published before and no
-    longer have. Returns the new published record `{call_hash: file name}`."""
+    longer have. Returns the new published record `{call_hash: file name}`.
+    `concerns_of(stack_id)` feeds the share gate: the cache by default, a
+    test's own answer otherwise."""
     from file_io.publish import publish_pair_atomically
     from file_io.sidecar import set_section, sidecar_path_for
     from metadata.sidecar_io import read_image_metadata
-
-    from context import get_cache
-    from metadata.share_gate import concerns_from_cache, stacks_readiness
+    from metadata.share_gate import stacks_readiness
 
     published = dict(published)
     wanted: dict[str, Path] = {}
     # The share gate (metadata/share_gate.py): what would make the group's
     # map worse stays home, and the UI has already said why.
-    cache = get_cache()
-    verdicts = stacks_readiness(ui_stacks, masters, lambda sid: concerns_from_cache(cache, sid))
+    verdicts = stacks_readiness(ui_stacks, masters, concerns_of)
     for stack_id, pipeline, path in masters:
         if not _publishable(path):
             continue
