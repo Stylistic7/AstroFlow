@@ -169,8 +169,11 @@ class ContextRef(Generic[T]):
         multi-machine setups we hit a silent-drop race: 278 concurrent set
         RPCs from a remote worker through the 64-way-concurrent ContextActor
         would leave 2-4 entries missing in the head's diskcache, breaking
-        downstream `store_targets` / `identify_mosaics`. A read-back catches
-        the drop at the source; one retry handles it.
+        downstream `store_targets` / `identify_mosaics`. A presence check
+        catches the drop at the source; one retry handles it. Presence, not a
+        read-back: reading the value back unpickled the whole object in the
+        actor and shipped it to this process again, for every store -- the
+        library's dicts included (2026-10-22, the actor peaking at 39 GB).
         """
         from context import context
         import time
@@ -184,8 +187,8 @@ class ContextRef(Generic[T]):
             # value Ray would resolve a top-level ObjectRef argument into.
             ray.get(actor.set_owned.remote(cache_key, [ref]))
             attempts += 1
-            # Read back through the same RPC path the consumer will use.
-            if context[cache_key] is not None:
+            # The key is in the durable cache, asked of the actor that wrote it.
+            if ray.get(actor.contains.remote(cache_key)):
                 if attempts > 1:
                     print(
                         f"### ContextRef.store: write to {cache_key} required "
