@@ -297,10 +297,10 @@ def make_synthetic_frames(
         # as n^2/n_pixels: a real ASI6200MM Pro carries ~1000 defects across
         # 61 MP, so two of its frames collide on ~0.02 pixels by luck. The
         # default 1200 on this 0.78 MP stand-in collides on ~1.3 — some 80x
-        # denser than any real sensor, enough for chance alone to clear
-        # `o_min` and fuse two cameras through single-linkage. Tests that
-        # care about telling bodies apart should pass a count that keeps
-        # n^2/(w*h) well under 1.
+        # denser than any real sensor, and one chance pair clearing `o_min`
+        # fuses two cameras through single-linkage. Tests that care about
+        # telling bodies apart should pass a count that keeps n^2/(w*h)
+        # well under 1, so chance stays nowhere near `o_min`.
         if pixel_arrays is None and image_type != "Bias":
             _hot_seed = xxhash.xxh64(
                 f"{instrument}|{width_pixels}x{height_pixels}"

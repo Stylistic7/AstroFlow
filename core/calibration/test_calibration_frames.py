@@ -720,8 +720,9 @@ def test_darks_from_two_bodies_split_by_camera_id_hash(test_context) -> None:
     `n_hot_pixels=200` keeps the synthetic defect density physically
     representative. This is the only test that asks the fingerprint to tell
     two BODIES apart, and the default 1200 defects on a 0.78 MP stand-in is
-    ~80x denser than a real sensor — dense enough that chance overlap alone
-    clears `o_min` and single-linkage welds the two cameras together. At 200
+    ~80x denser than a real sensor — dense enough that chance overlap is no
+    longer negligible against `o_min`, and one pair clearing it welds the
+    two cameras together through single-linkage. At 200
     the numbers behave like real hardware: ~200 shared pixels within a body,
     ~0.05 expected between bodies. Nothing about the camera STRING is load-
     bearing here; the bodies differ only in the pixels they emit.

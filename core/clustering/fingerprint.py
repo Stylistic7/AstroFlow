@@ -22,6 +22,10 @@ PIPELINE — sparse-matrix throughout for tractability on 10k-frame inputs:
   2. O = X @ X.T (with diagonal zeroed): O[i, j] is the count of pixels
      that frames i and j both list — pairwise defect-set OVERLAP.
   3. Initial connected components on the graph of edges where O[i,j] >= o_min.
+     This is single linkage: ONE edge welds two components, and no later
+     stage splits a component again, so `o_min` must sit far above what
+     two unrelated sensors share by chance across the WHOLE library's
+     cross pairs, not just one pair. See `_DEFAULT_O_MIN`.
   4. Anchor reassignment: iteratively pull each frame into the anchor
      cluster (size >= min_anchor_size) whose members it overlaps most
      with on average; guard `min_avg_score` keeps low-signal frames out
@@ -85,7 +89,16 @@ class FingerprintMap(dict[FrameHash, tuple[int, ...]]):
 
 
 _DEFAULT_MIN_DEFECT = 100
-_DEFAULT_O_MIN = 3
+# Measured on the real library (2026-10-22, two ASI6200MM Pro bodies): frames
+# of one body share 59+ pixels within a season and 13+ across years and
+# telescopes; frames of DIFFERENT bodies share at most 3, once in 17,600
+# pairs. At the old value of 3 that one chance pair fused both bodies into a
+# single camera id through single linkage, and every stack of the second
+# body inherited the first body's darks. 20 is an order of magnitude above
+# chance and below the weakest same-body link that matters; a frame linked
+# more weakly than that reaches its body through anchor reassignment or
+# `attribute_by_consensus` instead of through an edge.
+_DEFAULT_O_MIN = 20
 _DEFAULT_MIN_ANCHOR_SIZE = 20
 _DEFAULT_MIN_AVG_SCORE = 0.5
 _DEFAULT_MAX_ITERS = 15

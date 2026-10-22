@@ -150,6 +150,29 @@ def test_cross_camera_clusters_disjoint():
         assert len(sources) == 1
 
 
+def test_one_chance_pair_does_not_weld_two_cameras():
+    # The 2026-10-22 library: two bodies whose frames share 60-500 pixels
+    # within a body and 0-3 across bodies. A single cross pair at 3 shared
+    # pixels (chance) must not fuse the bodies through single linkage, and a
+    # frame linked to its own body by only 15 pixels — below `o_min` — must
+    # still reach it through anchor reassignment.
+    cam_a = set(range(1, 300))
+    cam_b = set(range(10_000, 10_300))
+    frames: dict = {}
+    for i in range(30):
+        frames[_h(f"a{i}")] = cam_a | {1000 + i}
+    for i in range(30):
+        frames[_h(f"b{i}")] = cam_b | {20_000 + i}
+    frames[_h("a_bridge")] = cam_a | {10_001, 10_002, 10_003}      # 3 of B's pixels by chance
+    frames[_h("a_weak")] = set(list(cam_a)[:15]) | set(range(30_000, 30_100))
+    result = cluster_by_fingerprint(frames, min_defect=10, min_anchor_size=5)
+    qualified = {frames_: c for (frames_, c) in result if c != ()}
+    assert len(qualified) == 2
+    by_source = {("a" if str(h).startswith("a") else "b"): set(g) for g in qualified for h in g[:1]}
+    assert by_source["a"] == {_h(f"a{i}") for i in range(30)} | {_h("a_bridge"), _h("a_weak")}
+    assert by_source["b"] == {_h(f"b{i}") for i in range(30)}
+
+
 def test_consensus_pixels_stable_across_resamples():
     # Same camera at full N vs half N -> identical top-N consensus.
     # Build frames where 30 "real defect" pixels are ALWAYS present (freq=1.0)
