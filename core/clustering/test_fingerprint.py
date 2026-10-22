@@ -63,15 +63,14 @@ def test_anchor_reassign_pulls_orphan_into_anchor():
     # Orphan shares most of `common` -> strong avg overlap with anchor.
     frames[_h("orphan")] = (set(list(common)[:18]) | {999})
     _, O, frame_list, _ = build_overlap(frames)
-    # Manually force orphan into its own cluster.
-    labels = np.arange(len(frame_list), dtype=np.int32)
-    labels[:10] = 0  # all anchor frames -> cluster 0
-    # Orphan starts as its own singleton (cluster 10).
+    # Manually force orphan into its own cluster (rows are in sorted frame order).
+    orphan = frame_list.index(_h("orphan"))
+    labels = np.where(np.arange(len(frame_list)) == orphan, 10, 0).astype(np.int32)
     labels = anchor_reassign(
         labels, O, min_anchor_size=5, min_avg_score=0.5, max_iters=5
     )
     # Orphan should be absorbed into the anchor cluster.
-    assert labels[-1] == labels[0]
+    assert labels[orphan] == labels[frame_list.index(_h("anchor0"))]
 
 
 def test_anchor_reassign_guard_keeps_low_signal_singletons():
@@ -93,20 +92,20 @@ def test_anchor_reassign_guard_keeps_low_signal_singletons():
     # below the 0.5 guard).
     frames[_h("orphan_flat")] = {999}
     _, O, frame_list, _ = build_overlap(frames)
-    labels = np.zeros(len(frame_list), dtype=np.int32)
-    labels[:20] = 0
-    labels[20:40] = 1
-    labels[40] = 2  # orphan singleton
+    # Rows follow the table's (sorted) frame order: label them by name.
+    labels = np.array([0 if h.startswith("user") else 1 if h.startswith("starbase") else 2
+                       for h in frame_list], dtype=np.int32)
+    orphan = frame_list.index(_h("orphan_flat"))
     new_labels = anchor_reassign(
         labels, O, min_anchor_size=10, min_avg_score=0.5, max_iters=5
     )
-    assert new_labels[40] == 2  # guard kept orphan as singleton
+    assert new_labels[orphan] == 2  # guard kept orphan as singleton
 
     # Sanity: without the guard, the orphan WOULD be misattributed to starbase.
     no_guard = anchor_reassign(
         labels, O, min_anchor_size=10, min_avg_score=0.0, max_iters=5
     )
-    assert no_guard[40] == 1  # misattributed without the guard
+    assert no_guard[orphan] == 1  # misattributed without the guard
 
 
 def test_cluster_by_fingerprint_filters_low_defect_frames():

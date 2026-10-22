@@ -66,7 +66,7 @@ from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import connected_components
 
 from hashing import hash_list_int
-from metadata.classes import FrameHash
+from metadata.classes import DefectTable, FrameHash
 
 
 log = structlog.get_logger()
@@ -161,15 +161,14 @@ def sensor_key(header: dict) -> tuple:
     return (header.get("NAXIS1"), header.get("NAXIS2"))
 
 
-@beartype
 def build_overlap(
-    frame_sets: dict[FrameHash, dict[int, float] | set[int]],
-) -> tuple[csr_matrix, csr_matrix, tuple[FrameHash, ...], tuple[int, ...]]:
+    frame_sets: DefectTable | dict,
+) -> tuple[csr_matrix, csr_matrix, tuple[FrameHash, ...], np.ndarray]:
     """Build the frame x pixel matrix X and overlap matrix O = X @ X.T.
 
-    `frame_sets[h]` may be a `dict[int, float]` (pixel -> strength, the
-    real ImageMetadata.defect_candidates shape) or a `set[int]` (tests).
-    Only pixel KEYS are used — strength is ignored here.
+    `frame_sets` is a `DefectTable`, or `{frame: pixel set or
+    {pixel: strength}}` (tests), turned into one. Rows are the table's
+    frames in sorted order; columns are the distinct pixels, ascending.
 
     Returns:
         X: (n_frames, n_pixels) binary
@@ -177,48 +176,23 @@ def build_overlap(
         frame_list: row-index order of X/O
         col_to_pixel: column-index order of X (column k corresponds to pixel id col_to_pixel[k])
 
-    Memory note: for ~16k frames × ~1000 defects each, the COO triple is
-    ~16M entries. Holding `rows`/`cols` as Python lists of int costs
-    ~28 bytes per entry (~900 MB); pre-allocated numpy arrays are 4 bytes
-    each (~128 MB). The order-of-magnitude difference matters on
-    multi-camera production libraries.
+    Built straight from the table's arrays: rows by repeating each frame's
+    index over its defect count, columns by `np.unique` of the pixels -- no
+    Python object per defect (16M of them on the real library).
     """
-    frame_list = tuple(frame_sets.keys())
-    # Allocate the COO triple up front using numpy. Lower bound on size
-    # is total defect count across all frames.
-    total = sum(len(frame_sets[h]) for h in frame_list)
-    rows = np.empty(total, dtype=np.int32)
-    cols = np.empty(total, dtype=np.int32)
-    pixel_to_col: dict[int, int] = {}
-    idx = 0
-    for i, h in enumerate(frame_list):
-        for p in frame_sets[h]:
-            c = pixel_to_col.get(p)
-            if c is None:
-                c = len(pixel_to_col)
-                pixel_to_col[p] = c
-            rows[idx] = i
-            cols[idx] = c
-            idx += 1
-    n_pixels = len(pixel_to_col)
-    # csr_matrix accepts ones-implicit binary via data=np.ones.
-    data = np.ones(total, dtype=np.int32)
+    table = DefectTable.of(frame_sets)
+    rows = np.repeat(np.arange(len(table), dtype=np.int32), table.counts())
+    col_to_pixel, cols = np.unique(table.pixels, return_inverse=True)
     X = csr_matrix(
-        (data, (rows, cols)),
-        shape=(len(frame_list), n_pixels),
+        (np.ones(len(rows), dtype=np.int32), (rows, cols.astype(np.int32))),
+        shape=(len(table), len(col_to_pixel)),
         dtype=np.int32,
     )
-    # Build col_to_pixel before releasing pixel_to_col so we don't hold
-    # both a dict and a tuple of comparable size.
-    col_to_pixel_arr = np.empty(n_pixels, dtype=np.int64)
-    for p, c in pixel_to_col.items():
-        col_to_pixel_arr[c] = p
-    del pixel_to_col
-    del rows, cols, data
+    del rows, cols
     O = (X @ X.T).tocsr()
     O.setdiag(0)
     O.eliminate_zeros()
-    return X, O, frame_list, tuple(col_to_pixel_arr.tolist())
+    return X, O, tuple(table.frames.tolist()), col_to_pixel.astype(np.int64)
 
 
 @beartype
@@ -303,7 +277,7 @@ def anchor_reassign(
 def consensus_pixels_for_cluster(
     cluster_frame_idx: Sequence[int],
     X: csr_matrix,
-    col_to_pixel: Sequence[int],
+    col_to_pixel: Sequence[int] | np.ndarray,
     *,
     tau: float = _DEFAULT_CONSENSUS_TAU,
     top_n: int = _DEFAULT_CONSENSUS_TOP_N,
@@ -323,7 +297,7 @@ def consensus_pixels_for_cluster(
     if qual_cols.size == 0:
         return ()
     # Sort by frequency descending, then by pixel id ascending.
-    pixel_ids = np.array([col_to_pixel[c] for c in qual_cols.tolist()])
+    pixel_ids = np.asarray(col_to_pixel)[qual_cols]
     freqs = col_sum[qual_cols]
     # numpy lexsort: last key is primary; primary = -freqs (descending),
     # secondary = pixel_ids (ascending).
@@ -336,7 +310,7 @@ def consensus_pixels_for_cluster(
 def merge_anchors_by_consensus(
     anchors: list[list[int]],
     X: csr_matrix,
-    col_to_pixel: Sequence[int],
+    col_to_pixel: Sequence[int] | np.ndarray,
     *,
     tau: float = _DEFAULT_CONSENSUS_TAU,
     top_n: int = _DEFAULT_CONSENSUS_TOP_N,
@@ -377,7 +351,7 @@ def merge_anchors_by_consensus(
 
 
 def cluster_by_fingerprint(
-    frame_sets: dict[FrameHash, dict[int, float] | set[int] | None],
+    frame_sets: DefectTable | dict,
     *,
     min_defect: int = _DEFAULT_MIN_DEFECT,
     o_min: int = _DEFAULT_O_MIN,
@@ -399,17 +373,18 @@ def cluster_by_fingerprint(
     The default parameters were validated on a 16,819-frame real library;
     see the module docstring.
     """
-    qualified: dict[FrameHash, dict[int, float] | set[int]] = {}
-    no_fingerprint: list[FrameHash] = []
-    for h, defects in frame_sets.items():
-        if defects is None or len(defects) < min_defect:
-            no_fingerprint.append(h)
-        else:
-            qualified[h] = defects
+    table = DefectTable.of(frame_sets)
+    # Frames a dict input names with no defects at all (None) are not rows of
+    # the table; they belong in the no-fingerprint bucket too.
+    no_fingerprint: list[FrameHash] = [] if isinstance(frame_sets, DefectTable) else \
+        [h for h, d in frame_sets.items() if not d]
+    enough = table.counts() >= min_defect
+    no_fingerprint += table.frames[~enough].tolist()
+    qualified = table.take(np.flatnonzero(enough))
 
     out: list[tuple[tuple[FrameHash, ...], tuple[int, ...]]] = []
 
-    if qualified:
+    if len(qualified):
         X, O, frame_list, col_to_pixel = build_overlap(qualified)
         labels = initial_clusters(O, o_min=o_min)
         labels = anchor_reassign(
@@ -458,7 +433,7 @@ def cluster_by_fingerprint(
 
 @beartype
 def attribute_by_consensus(
-    leftover: dict[FrameHash, dict[int, float] | set[int] | None],
+    leftover: DefectTable | dict,
     consensuses: Sequence[Sequence[int]],
     *,
     min_hits: int = _DEFAULT_SUBSET_MIN_HITS,
@@ -482,10 +457,9 @@ def attribute_by_consensus(
     out: dict[FrameHash, tuple[int, ...]] = {}
     if not cons_sets:
         return out
-    for h, defs in leftover.items():
-        if not defs:
-            continue
-        pix = set(defs)
+    table = DefectTable.of(leftover)
+    for h, i in zip(table.frames.tolist(), range(len(table))):
+        pix = set(table.pixels[table.offsets[i]:table.offsets[i + 1]].tolist())
         best_hits = second = 0
         best: tuple[int, ...] | None = None
         for cons_t, cons_s in cons_sets:

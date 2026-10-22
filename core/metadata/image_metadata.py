@@ -9,7 +9,7 @@ from file_io.generic import read_header, get_content_hash, read_image_geometry, 
 from file_io.master_integration import read_master_integration_seconds
 from calibration.sensor_fingerprint import extract_defects
 import metadata.image_types as image_types
-from metadata.classes import ImageMetadata, MetadataDict, DefectsDict
+from metadata.classes import DefectTable, ImageMetadata, MetadataDict
 from metadata import star_photometry
 import plate_solving
 from dependency_graph import Graph
@@ -378,7 +378,7 @@ def compute_image_metadata(
     # Defect candidates are written separately so that downstream
     # consumers that only need ImageMetadata (i.e. every node except
     # `identify_camera_fingerprints`) don't pay the ~1.8 GB deserialize
-    # cost in their worker heaps. See `metadata/classes.py:DefectsDict`.
+    # cost in their worker heaps. See `metadata/classes.py:DefectTable`.
     write_defect_candidates(filename, defect_candidates)
 
     if plate_solve is None and plate_solution is not None:
@@ -529,13 +529,13 @@ def build_dir_library(
         entries=len(metadata), with_defects=len(defects),
     )
     return (ContextRef.store_large(metadata, _library_identity(metadata)),
-            ContextRef.store_large(defects))
+            ContextRef.store_large(DefectTable.from_sets(defects)))
 
 
 @node(num_cpus=0.25)
 def build_library_dicts(quarantined: tuple, *pieces: tuple) -> tuple:
     """Union the per-dir pieces into the canonical (MetadataDict ref,
-    DefectsDict ref) pair, dropping quarantined content hashes.
+    DefectTable ref) pair, dropping quarantined content hashes.
 
     Pure and cached on (quarantined, *piece refs): unchanged pieces + an
     unchanged quarantine set = a diskcache hit returning the same refs —
@@ -551,17 +551,18 @@ def build_library_dicts(quarantined: tuple, *pieces: tuple) -> tuple:
     """
     quarantined_set = set(quarantined)
     raw_metadata: dict = {}
-    raw_defects: dict = {}
+    tables: list[DefectTable] = []
+    taken: set = set(quarantined_set)
     for piece in pieces:
         meta_ref, defect_ref = piece
         for content_hash, value in meta_ref.get().items():
             if content_hash in quarantined_set or content_hash in raw_metadata:
                 continue
             raw_metadata[content_hash] = value
-        for content_hash, d in defect_ref.get().items():
-            if content_hash in quarantined_set or content_hash in raw_defects:
-                continue
-            raw_defects[content_hash] = d
+        table = defect_ref.get().drop(taken)          # first piece wins, as for metadata
+        taken.update(table.frames.tolist())
+        tables.append(table)
+        defect_ref.release()                          # the union is this piece's only reader
     # CANONICAL insertion order: the dicts' pickled bytes (and therefore the
     # stored refs' content hashes, and therefore every downstream cache key
     # embedding them — fingerprints, traces) must not depend on piece
@@ -569,9 +570,7 @@ def build_library_dicts(quarantined: tuple, *pieces: tuple) -> tuple:
     metadata = MetadataDict()
     for content_hash in sorted(raw_metadata):
         metadata[content_hash] = raw_metadata[content_hash]
-    defects = DefectsDict()
-    for content_hash in sorted(raw_defects):
-        defects[content_hash] = raw_defects[content_hash]
+    defects = DefectTable.concat(tables)              # sorted by frame: byte-stable
     log.info(
         "library dicts built", entries=len(metadata), defects=len(defects),
     )

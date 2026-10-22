@@ -198,7 +198,7 @@ def test_two_bodies_separated_by_fingerprint_alone(test_context):
 
 
 def test_frames_without_defect_candidates_recovered_by_locality(test_context):
-    """A frame missing from the global DefectsDict (no extractable hot-pixel
+    """A frame missing from the global DefectTable (no extractable hot-pixel
     fingerprint — legacy un-migrated sidecars, or a CCD whose column defects
     `extract_defects` can't see) has no clustering signal, but the locality
     fallback (`build_fingerprint_map` pass 3) recovers it: its capture folder
@@ -218,7 +218,7 @@ def test_frames_without_defect_candidates_recovered_by_locality(test_context):
         dither=0, dest_dir=context.input_dirs[0],
     )
     # Strip the `defect_candidates` sidecar section from the "bad"
-    # frame so `load_defects` omits it from DefectsDict (the new shape's
+    # frame so the library omits it from the DefectTable (the new shape's
     # equivalent of the legacy `defect_candidates=None`).
     from pathlib import Path
     from context import context as ctx

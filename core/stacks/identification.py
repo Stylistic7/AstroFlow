@@ -12,7 +12,7 @@ import clustering
 from clustering.fingerprint import FingerprintMap, sensor_key
 from clustering.quiesce import admit_quiesced_frames
 from stacks.composite_stack import Stack, StacksDict
-from metadata.classes import DefectsDict, FrameHash, MetadataDict
+from metadata.classes import DefectTable, FrameHash, MetadataDict
 from metadata.image_types import is_light_frame
 from cache.context_ref import ContextRef
 from context import context
@@ -32,7 +32,7 @@ log = structlog.get_logger()
 
 def build_fingerprint_map(
     metadata: MetadataDict,
-    defects: DefectsDict,
+    defects: DefectTable,
     fingerprint_min_anchor_size: int,
     fingerprint_o_min: int = clustering.fingerprint._DEFAULT_O_MIN,
     fingerprint_consensus_merge_min: int = clustering.fingerprint._DEFAULT_CONSENSUS_MERGE_MIN,
@@ -70,9 +70,10 @@ def build_fingerprint_map(
         for h, m in metadata.items()
     }
 
+    with_defects = set(defects.frames.tolist())
     by_pre_group: dict[tuple, list[FrameHash]] = {}
     for h in metadata:
-        if h in defects:
+        if h in with_defects:
             by_pre_group.setdefault(sensor_of[h], []).append(h)
 
     import gc
@@ -81,7 +82,7 @@ def build_fingerprint_map(
     leftover: list[FrameHash] = []
     n_subset = 0
     for key, hashes in by_pre_group.items():
-        frame_sets = {h: defects[h] for h in hashes}
+        frame_sets = defects.subset(hashes)
         consensuses: list[tuple[int, ...]] = []
         pre_leftover: list[FrameHash] = []
         for cluster_frames, consensus in clustering.cluster_by_fingerprint(
@@ -101,7 +102,7 @@ def build_fingerprint_map(
             h for h in pre_leftover if is_light_frame(metadata[h].header)
         ]
         recovered = clustering.attribute_by_consensus(
-            {h: frame_sets[h] for h in light_leftover}, consensuses,
+            frame_sets.subset(light_leftover), consensuses,
         )
         fp.update(recovered)
         n_subset += len(recovered)
@@ -121,7 +122,7 @@ def build_fingerprint_map(
     # never extracted (zero-defect CCD frames, absent from `defects`).
     no_defect_lights = [
         h for h, m in metadata.items()
-        if h not in defects and is_light_frame(m.header)
+        if h not in with_defects and is_light_frame(m.header)
     ]
     fallback = clustering.attribute_by_locality(
         leftover + no_defect_lights,
@@ -146,7 +147,7 @@ def build_fingerprint_map(
 @node
 def identify_camera_fingerprints(
     metadata_ref: ContextRef[MetadataDict],
-    defects_ref: ContextRef[DefectsDict],
+    defects_ref: ContextRef[DefectTable],
     fingerprint_min_anchor_size: int,
     fingerprint_o_min: int,
     fingerprint_consensus_merge_min: int,
@@ -173,6 +174,10 @@ def identify_camera_fingerprints(
         metadata_ref.get(), defects_ref.get(), fingerprint_min_anchor_size, fingerprint_o_min,
         fingerprint_consensus_merge_min,
     )
+    # This node is the defect table's only reader in a pass: free its plasma
+    # copy now rather than when newer objects push it out of the actor's
+    # held budget. A later reader (a test, a probe) gets it from diskcache.
+    defects_ref.release()
     return ContextRef.store_large(fp)
 
 

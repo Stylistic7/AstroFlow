@@ -7,7 +7,7 @@ from beartype import beartype
 from context import context
 from stacks.dust_runs import DustEpochs
 from cache.context_ref import ContextRef
-from metadata.classes import DefectsDict, MetadataDict
+from metadata.classes import DefectTable, MetadataDict
 from metadata.image_metadata import scatter_compute_image_metadata
 from clustering import cluster_by_image_center
 from calibration import (
@@ -431,7 +431,7 @@ def build_regroup_graph(
     from stacks.identification import identify_camera_fingerprints
     from stacks.star_flat import identify_star_flats, scatter_star_flats
 
-    defects_ref: ContextRef[DefectsDict] = context["defects_ref"]
+    defects_ref: ContextRef[DefectTable] = context["defects_ref"]
 
     cluster_task = (
         cluster_by_image_center,

@@ -106,6 +106,18 @@ class ContextRef(Generic[T]):
             )
         return value
 
+    def release(self) -> None:
+        """Let the object store free this value now. The ContextActor stops
+        pinning it (it owns every stored object, `store`) and this handle
+        forgets its ObjectRef; the diskcache copy stays, so a later `get()`
+        anywhere reads it from there. For a large value whose last reader in
+        the pass is known -- the library's defect table is read once, by
+        `identify_camera_fingerprints` -- called by that reader."""
+        from context import context
+        actor = context._actor()        # Ray wants the handle held, not chained
+        ray.get(actor.release.remote(self.cache_key))
+        self.ref = None
+
     def __reduce__(self):
         # stdlib pickle path (diskcache persistence, cached Graphs,
         # _snapshot_context): ALWAYS strip the ObjectRef. A live ref that

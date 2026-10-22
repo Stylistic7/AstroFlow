@@ -194,6 +194,11 @@ class ContextActor:
         with self._held_lock:
             self._drop(key)
 
+    def release(self, key: Key) -> None:
+        """Stop pinning `key`'s object (`ContextRef.release`); the value
+        stays in the diskcache."""
+        self._release(key)
+
     def held(self) -> dict:
         with self._held_lock:
             return {"keys": list(self._held), "bytes": self._held_bytes}
