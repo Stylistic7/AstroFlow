@@ -105,3 +105,10 @@ def test_unreadable_count_propagates_none(tmp_path):
     with patch("file_io.master_integration.read_xisf_number_of_images",
                return_value=None):
         assert read_master_integration_seconds(p, {"EXPTIME": 300.0}) is None
+
+
+def test_a_fits_master_with_ncombine_integrates_its_count_of_exposures(tmp_path):
+    f = tmp_path / "survey.fits"
+    f.write_bytes(b"")
+    assert read_master_integration_seconds(f, {"NCOMBINE": 12, "EXPTIME": 1200.0}) == 14400.0
+    assert read_master_integration_seconds(f, {"NCOMBINE": 12}) is None

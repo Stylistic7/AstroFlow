@@ -63,11 +63,21 @@ def _read_siril_fits(filename: Path, header: dict[str, Any]) -> float | None:
     return _safe_float(header.get("LIVETIME"))
 
 
+def _read_ncombine_fits(filename: Path, header: dict[str, Any]) -> float | None:
+    """The FITS convention (IRAF, MaxIm DL, survey products such as MDW's):
+    `NCOMBINE` images of per-sub `EXPTIME` each."""
+    if filename.suffix.lower() not in (".fit", ".fits"):
+        return None
+    n, exptime = _safe_float(header.get("NCOMBINE")), _safe_float(header.get("EXPTIME"))
+    return n * exptime if n and exptime else None
+
+
 # Registered in priority order — first match wins. Each reader is free
 # to inspect the header and skip cheaply when the master isn't theirs.
 _READERS: tuple[_Reader, ...] = (
     _read_xisf,
     _read_siril_fits,
+    _read_ncombine_fits,
 )
 
 

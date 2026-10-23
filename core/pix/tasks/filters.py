@@ -18,7 +18,10 @@ for canon, aliases in _FILTER_MAP.items():
 
 
 def normalize_filter(name: str | None) -> str | None:
+    """The band a filter name means, or None. A name that goes on to give
+    a wavelength or bandwidth ("Ha 3nm", "OIII-6.5nm", "H-Alpha 656/3") means
+    the band its name starts with."""
     if not name:
         return None
     key = re.sub(r"[^a-z0-9α]", "", name.lower())
-    return _CANON.get(key)
+    return _CANON.get(key) or _CANON.get(re.sub(r"[0-9].*$", "", key))
