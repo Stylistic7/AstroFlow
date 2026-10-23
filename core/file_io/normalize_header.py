@@ -36,6 +36,13 @@ def normalize_header(header: dict) -> dict:
         # Leave it as a string.
         output[k] = v
 
+    # FITS 4.0 spellings (survey products, e.g. MAST's HLSPs): XPOSURE is
+    # the exposure, DATE-BEG the start of the observation.
+    if "EXPTIME" not in output and "XPOSURE" in output:
+        output["EXPTIME"] = float(output["XPOSURE"])
+    if "DATE-OBS" not in output and "DATE-BEG" in output:
+        output["DATE-OBS"] = output["DATE-BEG"]
+
     if "EXPTIME" in output and "EXPOSURE" not in output:
         output["EXPOSURE"] = float(output["EXPTIME"])
 

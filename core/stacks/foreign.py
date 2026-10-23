@@ -85,7 +85,7 @@ class ForeignStack(Stack):
             # is only its pixels.
             stable_hash=str(h.get("STBLHASH") or meta.stable_hash),
             oldest_date=_date(shared.get("oldest_date"), h["DATE-OBS"]),
-            newest_date=_date(shared.get("newest_date"), h["DATE-OBS"]),
+            newest_date=_date(shared.get("newest_date"), _first(h, ("DATE-END", "DATE-OBS"))),
             image_type="light",
             camera=str(h.get("INSTRUME") or ""),
             filter=(str(h["FILTER"]) if h.get("FILTER") not in (None, "") else None),
@@ -106,7 +106,7 @@ class ForeignStack(Stack):
         )
 
 
-def _date(iso: str | None, fallback: datetime.datetime) -> datetime.datetime:
+def _date(iso: str | None, fallback) -> datetime.datetime:
     """UTC-aware, like every local stack's dates (`clustering.quiesce._utc`):
     a naive date from another program's header cannot be compared with them."""
     from clustering.quiesce import _utc
@@ -116,6 +116,27 @@ def _date(iso: str | None, fallback: datetime.datetime) -> datetime.datetime:
         except ValueError:
             pass
     return _utc(fallback)
+
+
+def _first(header, keys):
+    return next((header[k] for k in keys if header.get(k) not in (None, "")), None)
+
+
+#: The headers a foreign master is read by, and what stands in when one is
+#: missing — said on the stack as a concern, so the user knows what was
+#: assumed. (FILTER "none" is `normalize_header`'s stand-in for no FILTER.)
+_IMPORTANT_HEADERS = (
+    ("IMAGETYP", "read as a light master (it sits in a shared master folder)"),
+    ("FILTER", "no filter: it cannot be flux-calibrated or joined to a channel"),
+    ("EXPTIME", "exposure unknown (0 s)"),
+    ("INSTRUME", "camera unknown"),
+)
+
+
+def missing_headers(header) -> list[str]:
+    """One line per important header the master lacks, with what stands in."""
+    return [f"{key}: {assumed}" for key, assumed in _IMPORTANT_HEADERS
+            if header.get(key) in (None, "", "none")]
 
 
 def is_foreign(stack) -> bool:
@@ -204,6 +225,13 @@ def foreign_master(stack: ForeignStack) -> ImageMetadata:
             "merged as it is.",
             observer=stack.observer, pipeline_stamp=stack.pipeline_stamp)
     meta = compute_image_metadata._function(Path(stack.master_path))
+    missing = missing_headers(meta.header)
+    if missing:
+        concerns.warn(
+            "Missing headers",
+            f"{Path(stack.master_path).name} lacks headers AstroFlow reads a master by:\n"
+            + "\n".join(f"• {line}" for line in missing),
+            missing=[line.split(":")[0] for line in missing], observer=stack.observer)
     return dataclasses.replace(meta, content_hash="")
 
 

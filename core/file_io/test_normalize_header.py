@@ -72,3 +72,12 @@ def test_missing_filter_defaults_to_none():
 def test_filter_preserved():
     header = normalize_header({"IMAGETYP": "Light", "FILTER": "H"})
     assert header["FILTER"] == "H"
+
+
+def test_fits_4_spellings_of_exposure_and_start_fill_the_amateur_ones():
+    h = normalize_header({"XPOSURE": 1200.0, "DATE-BEG": "2019-11-14T01:14:45"})
+    assert h["EXPTIME"] == h["EXPOSURE"] == 1200.0
+    assert h["DATE-OBS"] == datetime.datetime(2019, 11, 14, 1, 14, 45, tzinfo=datetime.timezone.utc)
+    own = normalize_header({"EXPTIME": 300.0, "XPOSURE": 1200.0, "DATE-OBS": "2026-10-01T03:00:00",
+                            "DATE-BEG": "2019-11-14T01:14:45"})
+    assert own["EXPTIME"] == 300.0 and own["DATE-OBS"].year == 2026      # an amateur header wins

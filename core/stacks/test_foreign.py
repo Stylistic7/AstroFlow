@@ -151,3 +151,23 @@ def test_combine_stacks_unions_a_pointings_local_and_foreign_stacks():
     foreign = _Ref("foreign-stack", content_hash="F")
     merged = combine_stacks._function({"t" * 16: foreign}, {"s" * 16: local})
     assert merged == {"t" * 16: foreign, "s" * 16: local}
+
+
+def test_a_survey_master_is_dated_to_its_end_and_says_what_it_lacks(tmp_path):
+    from stacks.foreign import missing_headers
+    meta = solved_master_metadata(tmp_path / "mdw.fits", call_hash="m" * 16, stable_hash="7" * 16)
+    utc = datetime.timezone.utc
+    for k in ("IMAGETYP", "INSTRUME", "PIPEHASH", "CALLHASH", "STBLHASH"):
+        meta.header.pop(k, None)
+    # EXPTIME/DATE-OBS are normalize_header's copies of the file's XPOSURE/DATE-BEG
+    meta.header.update({"EXPTIME": 1200.0, "EXPOSURE": 1200.0,
+                        "DATE-OBS": datetime.datetime(2019, 11, 14, 1, 14, 45, tzinfo=utc),
+                        "DATE-END": datetime.datetime(2020, 8, 25, 8, 22, 31, tzinfo=utc)})
+    write_shared_master(tmp_path / "mdw.fits", meta)
+    s = ForeignStack.from_master(meta, same_pipeline=False, shared_dir=str(tmp_path))
+    assert float(s.exposure) == 1200.0
+    assert s.oldest_date == datetime.datetime(2019, 11, 14, 1, 14, 45, tzinfo=utc)
+    assert s.newest_date == datetime.datetime(2020, 8, 25, 8, 22, 31, tzinfo=utc)
+    missing = [line.split(":")[0] for line in missing_headers(meta.header)]
+    assert missing == ["IMAGETYP", "INSTRUME"]
+    assert missing_headers({**meta.header, "IMAGETYP": "Light", "INSTRUME": "FLI"}) == []

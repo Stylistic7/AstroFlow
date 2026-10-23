@@ -137,16 +137,29 @@ def compute_shared_master(path: str, size: int, mtime_ns: int, verify: bool) -> 
             return
         log.info("shared master changed under its sidecar — measuring again", file=path)
     sidecar_path_for(data).unlink(missing_ok=True)
-    compute_image_metadata._function(data)
+    from file_io.generic import read_header
+    from plate_solving import PlateSolveFailedException
+    try:
+        compute_image_metadata._function(data, plate_solve=declares_light(read_header(data)))
+    except PlateSolveFailedException:
+        # Recorded unsolved, as a raw frame would be: described, never admitted.
+        compute_image_metadata._function(data, plate_solve=False)
+
+
+def declares_light(header: dict) -> bool:
+    """A shared folder holds light masters: a file says otherwise only with
+    an IMAGETYP that is not a light (every calibration master carries one;
+    survey products often carry none)."""
+    from metadata.image_types import is_light_frame
+    return "IMAGETYP" not in (header or {}) or is_light_frame(header)
 
 
 def _is_shared_master(meta, size_on_disk: int) -> bool:
     """A file this folder may lend to a mosaic: a solved, single-band light
     master whose bytes are all there (the sidecar recorded this size)."""
     from file_io.sidecar import get_file_size
-    from metadata.image_types import is_light_frame
     return bool(
-        is_light_frame(meta.header) and meta.plate_solution is not None
+        declares_light(meta.header) and meta.plate_solution is not None
         and meta.channels == 1 and get_file_size(meta.filename) == size_on_disk
     )
 

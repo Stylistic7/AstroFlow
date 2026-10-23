@@ -82,7 +82,7 @@ def test_a_changed_file_is_measured_again_only_if_its_pixels_changed(tmp_path, m
     write_shared_master(data, dataclasses.replace(meta, content_hash=hash_of_image_data(data)))
     seen = []
     monkeypatch.setattr(im.compute_image_metadata, "_function",
-                        lambda path: seen.append((path, (tmp_path / "a.fits.json").exists())))
+                        lambda path, plate_solve=None: seen.append((path, (tmp_path / "a.fits.json").exists())))
     size = data.stat().st_size
     compute_shared_master._function(str(data), size, 0, True)
     assert seen == [], "same pixels: the sidecar stands, nothing is written"
@@ -122,3 +122,14 @@ def test_whole_solved_single_band_light_masters_are_admissible_whoever_made_them
     assert set(masters) == {ours.content_hash, theirs.content_hash}
     assert masters[theirs.content_hash].plate_solution is not None
     assert masters[ours.content_hash].filename == tmp_path / "ours.fits"
+
+
+def test_a_shared_master_without_imagetyp_is_a_light_and_a_calibration_master_never_is(tmp_path):
+    from metadata.shared_masters import declares_light
+    assert declares_light({"FILTER": "H"})                     # survey products carry none
+    assert declares_light({"IMAGETYP": "Light Frame"})
+    assert not declares_light({"IMAGETYP": "master flat"})
+    survey = solved_master_metadata(tmp_path / "survey.fits", call_hash="f" * 16, stable_hash="6" * 16)
+    del survey.header["IMAGETYP"]
+    write_shared_master(tmp_path / "survey.fits", survey)
+    assert set(admissible_masters(tmp_path, scan_shared_dir(tmp_path).listing)) == {survey.content_hash}

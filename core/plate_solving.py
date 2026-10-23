@@ -452,6 +452,11 @@ def solve_field(
         tool_path("solve-field"),
         *(["--config", str(config)] if config.exists() else []),
         "--fits-image",
+        # Only our own solutions, ever: solve-field would otherwise verify a
+        # WCS already in the file's header and adopt it — another program's
+        # solution, which nothing here trusts. (`--verify <seed>`, our own
+        # solution to refine, is separate and unaffected.)
+        "--no-verify",
         "--overwrite",
         "--no-plots",
         "--new-fits",

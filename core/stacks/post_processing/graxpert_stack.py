@@ -92,6 +92,10 @@ _SPFC_REFERENCE_SCALE: SpfcScale = SpfcScale(SPFC_REFERENCE_SCALE)
 # trips it, still twelve orders clear of a units error.
 _SANE_GAIN = (1e-4, 1e4)
 
+# A master peaking above this is in detector counts, not the [0, 1] pixel
+# convention (an AstroFlow or Siril float master tops out near 1).
+_COUNTS_ABOVE = 2.0
+
 # Reads the SPFC solution off the live view (PI 1.9.4 publishes it as the
 # PCL:SPFC:* properties, NOT the old PSFFLX00 keyword), prints the
 # certificate for the sidecar, and applies the gain in-session.
@@ -176,6 +180,18 @@ def calibrate_master(
     image = np.asarray(read_image(Path(master.filename))).astype(np.float32)
     if image.ndim == 3:
         image = image[:, :, 0]
+    peak = float(np.nanmax(image))
+    if peak > _COUNTS_ABOVE:
+        # Detector counts, not the [0, 1] convention SPFC's saturation window
+        # and every later step assume (`spfc_scale`'s contract): read the way
+        # Siril and PixInsight read a 16-bit camera's frames. The gain below
+        # is linear, so only where saturation lands depends on this choice.
+        import concerns
+        concerns.warn(
+            "Pixels in detector counts",
+            f"{Path(master.filename).name} peaks at {peak:.6g}, not within 0-1; read as 16-bit "
+            "counts (divided by 65535) before flux calibration.", peak=peak)
+        image = image / np.float32(65535)
     hdr = master.plate_solution.header
     wcs = WCS(pyfits.Header({
         k: v for k, v in hdr.items()
