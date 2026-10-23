@@ -224,14 +224,17 @@ def foreign_master(stack: ForeignStack) -> ImageMetadata:
             "not one this instance runs (another stacker, or another version of the code). It is "
             "merged as it is.",
             observer=stack.observer, pipeline_stamp=stack.pipeline_stamp)
-    meta = compute_image_metadata._function(Path(stack.master_path))
-    missing = missing_headers(meta.header)
+    # Before compute_image_metadata: its own log capture resets structlog on
+    # the way out, so a concern filed after it is logged but never stored.
+    from file_io.generic import read_header
+    missing = missing_headers(read_header(Path(stack.master_path)))
     if missing:
         concerns.warn(
             "Missing headers",
             f"{Path(stack.master_path).name} lacks headers AstroFlow reads a master by:\n"
             + "\n".join(f"• {line}" for line in missing),
             missing=[line.split(":")[0] for line in missing], observer=stack.observer)
+    meta = compute_image_metadata._function(Path(stack.master_path))
     return dataclasses.replace(meta, content_hash="")
 
 
