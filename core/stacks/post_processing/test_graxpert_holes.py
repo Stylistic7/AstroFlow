@@ -1,7 +1,7 @@
 """`calibrate_master` hands GraXpert no NaN: GraXpert can turn a handful of
 NaN pixels into a frame of nothing but NaN (MDW field 1347, 2026-10-23).
-Holes go in as sky and come back out as holes, and the master carries a
-"NaN pixels" concern."""
+Holes go in as sky and come back out as exact zero (no data, as everywhere
+in the pipeline), and the master carries a "NaN pixels" concern."""
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -48,5 +48,6 @@ def test_nan_holes_survive_graxpert_as_holes_and_nothing_else(tmp_path, monkeypa
     graxpert_stack.calibrate_master(master, "Ha", "stack ab12", config, out)
 
     result = np.asarray(read_image(out), np.float32).squeeze()
-    assert np.array_equal(np.isnan(result), np.isnan(pixels))
+    assert np.isfinite(result).all()
+    assert np.array_equal(result == 0, np.isnan(pixels))
     assert warned == [("NaN pixels", {"nan_pixels": 4})]

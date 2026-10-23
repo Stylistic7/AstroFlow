@@ -242,9 +242,11 @@ def calibrate_master(
         # PI recipe had).
         gain_true = image * np.float32(gain)
         del image
-        # GraXpert reads a NaN as data and can return nothing but NaN (MDW
-        # field 1347: 176 NaN pixels in, all 16M out). Holes go in as sky
-        # and come back out as holes.
+        # No tool downstream survives a NaN: GraXpert turned MDW field 1347
+        # (176 NaN pixels) into all NaN, and BlurXTerminator and
+        # StarXTerminator spread a few into whole panels. Holes go into
+        # GraXpert as sky and come out as exact zero, which is no data
+        # everywhere in the pipeline (a registered frame's rotated-in corners).
         holes = ~np.isfinite(gain_true)
         if holes.any():
             import concerns
@@ -280,7 +282,7 @@ def calibrate_master(
             raise ValueError(
                 f"post_stack_calibrate: GraXpert returned non-finite pixels for "
                 f"{subject} filter {filter} ({master.filename}).")
-        shipped[holes] = np.nan
+        shipped[holes] = 0
 
         # Measured on the pixels that ship (the pedestal below is a constant).
         from metadata.master_analysis import measure_master, pixel_arcsec_of
