@@ -244,7 +244,7 @@ def _merged_channels(mosaic, targets_by_id, channels, config,
 
 
 def register(name: str, post_processed_master, channel=None, geometry=None,
-             graxpert: bool = True) -> tuple:
+             panel_graxpert: bool = True) -> tuple:
     """Register this pipeline's three entry points (Stack, Target, Mosaic)
     under `name`, with `post_processed_master` as the per-stack recipe and
     `channel` as the per-filter one (see `channels_for_target`). Everything
@@ -257,12 +257,12 @@ def register(name: str, post_processed_master, channel=None, geometry=None,
     only its own merges, not the canvas every channel of the object shares
     (2026-10-09: one refused B panel left all 17 Coalsack finishes absent).
 
-    `graxpert=False` is the same pipeline with no GraXpert anywhere: no
-    background extraction on any master (`background_extraction`) and no
-    polish of the merged mosaic — gradients are left to the flats, the
-    pedestal and the overlap level solve."""
+    `panel_graxpert=False` is the same pipeline with no background extraction
+    on any master (`background_extraction`): each panel's gradients are left to
+    the flats, the pedestal and the overlap level solve. The polish of the
+    merged mosaic still runs."""
     def _config(config):
-        return config if graxpert else dataclasses.replace(config, background_extraction=False)
+        return config if panel_graxpert else dataclasses.replace(config, background_extraction=False)
 
     def _viewbox(targets, channels, config, single_panel):
         if geometry is None:
@@ -310,7 +310,7 @@ def register(name: str, post_processed_master, channel=None, geometry=None,
                            single_panel=len(targets_by_id) == 1)
         starless, stars = _merged_channels(mosaic, targets_by_id, channels,
                                            config, viewbox,
-                                           polish=graxpert and len(targets_by_id) > 1)
+                                           polish=len(targets_by_id) > 1)
         panel_sources = {
             f: panel_source_manifest(targets_by_id, f, config, channels)
             for f in starless
