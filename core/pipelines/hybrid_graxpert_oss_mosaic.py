@@ -35,6 +35,7 @@ slots. PI is still used for WBPP stacking and the HDR channel combine.
 
 Three entry points, matching the pipeline it forks.
 """
+import dataclasses
 from pathlib import Path
 
 import ray
@@ -242,7 +243,8 @@ def _merged_channels(mosaic, targets_by_id, channels, config,
     return starless_out, stars_out
 
 
-def register(name: str, post_processed_master, channel=None, geometry=None) -> tuple:
+def register(name: str, post_processed_master, channel=None, geometry=None,
+             graxpert: bool = True) -> tuple:
     """Register this pipeline's three entry points (Stack, Target, Mosaic)
     under `name`, with `post_processed_master` as the per-stack recipe and
     `channel` as the per-filter one (see `channels_for_target`). Everything
@@ -253,7 +255,15 @@ def register(name: str, post_processed_master, channel=None, geometry=None) -> t
     canvas is measured on those instead of on the calibrated channels, so a
     channel refused at calibration (SPFC: too few calibratable stars) loses
     only its own merges, not the canvas every channel of the object shares
-    (2026-10-09: one refused B panel left all 17 Coalsack finishes absent)."""
+    (2026-10-09: one refused B panel left all 17 Coalsack finishes absent).
+
+    `graxpert=False` is the same pipeline with no GraXpert anywhere: no
+    background extraction on any master (`background_extraction`) and no
+    polish of the merged mosaic — gradients are left to the flats, the
+    pedestal and the overlap level solve."""
+    def _config(config):
+        return config if graxpert else dataclasses.replace(config, background_extraction=False)
+
     def _viewbox(targets, channels, config, single_panel):
         if geometry is None:
             return _measured_viewbox(channels, single_panel)
@@ -263,12 +273,13 @@ def register(name: str, post_processed_master, channel=None, geometry=None) -> t
     @pipeline(name, processes=Stack)
     def for_stack(stack, config):
         """One stack's GraXpert-corrected master."""
-        return post_processed_master(stack, config)
+        return post_processed_master(stack, _config(config))
 
     @pipeline(name, processes=Target)
     def for_target(target, config):
         """Per-filter channel masters plus the full colour tail — a Target IS a
         single-panel mosaic, so it runs the same machinery `for_mosaic` does."""
+        config = _config(config)
         channels = {
             (target.id, filter): sink
             for filter, sink in channels_for_target(target, config, post_processed_master, channel).items()
@@ -289,6 +300,7 @@ def register(name: str, post_processed_master, channel=None, geometry=None) -> t
     @pipeline(name, processes=Mosaic)
     def for_mosaic(mosaic, config):
         """Per-filter mosaic layer channels plus the colour deliverables."""
+        config = _config(config)
         targets_by_id = {t.id: t for t in mosaic.targets}
         channels = {}
         for target in mosaic.targets:
@@ -298,7 +310,7 @@ def register(name: str, post_processed_master, channel=None, geometry=None) -> t
                            single_panel=len(targets_by_id) == 1)
         starless, stars = _merged_channels(mosaic, targets_by_id, channels,
                                            config, viewbox,
-                                           polish=len(targets_by_id) > 1)
+                                           polish=graxpert and len(targets_by_id) > 1)
         panel_sources = {
             f: panel_source_manifest(targets_by_id, f, config, channels)
             for f in starless
