@@ -18,7 +18,7 @@ const WEBGL2 = (() => {
 })();
 
 export default function Starmap() {
-	const { constellationPolylines, targets, mosaics, stacks, isQuarantined, showQuarantined } = useContext(AstroFlowContext);
+	const { constellationPolylines, targets, mosaics, stacks, isQuarantined, showQuarantined, isForeign, showForeign } = useContext(AstroFlowContext);
 
 
 	const navigate = useNavigate();
@@ -86,6 +86,7 @@ export default function Starmap() {
 		for (let [id, target] of Object.entries(targets)) {
 			if (!target.projected_footprints) continue;
 			if (!showQuarantined && isQuarantined("target", id)) continue;
+			if (!showForeign && isForeign("target", id)) continue;
 
 			const state = foreignState(target)
 				|| (target.contains_exception ? 'exception' : (target.is_complete ? 'ok' : 'incomplete'));
@@ -99,6 +100,7 @@ export default function Starmap() {
 		for (let [id, mosaic] of Object.entries(mosaics)) {
 			if (!mosaic.projected_footprints) continue;
 			if (!showQuarantined && isQuarantined("mosaic", id)) continue;
+			if (!showForeign && isForeign("mosaic", id)) continue;
 
 			const state = mosaic.contains_exception ? 'exception' : (mosaic.is_complete ? 'ok' : 'incomplete');
 			markersPlugs.addMarker({
@@ -107,7 +109,7 @@ export default function Starmap() {
 				polygon: mosaic.projected_footprints['galactic']['coords'],
 			});
 		};
-	}, [instance, constellationPolylines, targets, mosaics, stacks, isQuarantined, showQuarantined]);
+	}, [instance, constellationPolylines, targets, mosaics, stacks, isQuarantined, showQuarantined, isForeign, showForeign]);
 
 
 	const handleReady = (instance) => {

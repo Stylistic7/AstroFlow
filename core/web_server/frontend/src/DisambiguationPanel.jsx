@@ -8,7 +8,7 @@ import MosaicCard from "./MosaicCard.jsx";
 import CalibrationStackCard from "./CalibrationStackCard.jsx";
 
 export default function DisambiguationPanel({ items_in }) {
-	const { stacks, targets, mosaics, calibrationStacks } = useContext(AstroFlowContext);
+	const { stacks, targets, mosaics, calibrationStacks, isForeign, showForeign } = useContext(AstroFlowContext);
 
 	const lookup = (item) => {
 		const [type, id] = item.split(",");
@@ -49,8 +49,12 @@ export default function DisambiguationPanel({ items_in }) {
 	// what still exists and say how many links went stale, instead of
 	// letting a card crash on a missing object.
 	const allItems = items.split(";");
-	const presentItems = allItems.filter(item => lookup(item) !== undefined);
-	const missingCount = allItems.length - presentItems.length;
+	const existingItems = allItems.filter(item => lookup(item) !== undefined);
+	const missingCount = allItems.length - existingItems.length;
+	const presentItems = showForeign
+		? existingItems
+		: existingItems.filter(item => !isForeign(...item.split(",")));
+	const hiddenForeignCount = existingItems.length - presentItems.length;
 
 	return (
 		<>
@@ -58,6 +62,11 @@ export default function DisambiguationPanel({ items_in }) {
 				<div style={{ margin: "1em", color: "#999", fontStyle: "italic" }}>
 					{missingCount} result{missingCount === 1 ? "" : "s"} from this
 					search link no longer exist{missingCount === 1 ? "s" : ""}.
+				</div>
+			)}
+			{hiddenForeignCount > 0 && (
+				<div style={{ margin: "1em", color: "#999", fontStyle: "italic" }}>
+					{hiddenForeignCount} foreign result{hiddenForeignCount === 1 ? "" : "s"} hidden.
 				</div>
 			)}
 			<div style={{

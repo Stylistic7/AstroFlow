@@ -30,6 +30,8 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import MoreIcon from '@mui/icons-material/MoreVert';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
+import PublicIcon from '@mui/icons-material/Public';
+import PublicOffIcon from '@mui/icons-material/PublicOff';
 import Badge from '@mui/material/Badge';
 import LeftDrawer from "./LeftDrawer.jsx";
 import AstroFlowContext from './AstroFlowContext.jsx';
@@ -274,7 +276,7 @@ export function VerticalDivider({ height = 24, color = 'grey.400', marginX = 2 }
 }
 
 export default function PrimarySearchAppBar() {
-  const { stacks, targets, mosaics, calibrationStacks, catalogEntries, showQuarantined, toggleShowQuarantined, quarantineCount, asiairDevices } = useContext(AstroFlowContext);
+  const { stacks, targets, mosaics, calibrationStacks, catalogEntries, showQuarantined, toggleShowQuarantined, quarantineCount, showForeign, toggleShowForeign, foreignCount, asiairDevices } = useContext(AstroFlowContext);
 
   // Hide the ASIAir chip + its divider entirely when no ASIAir is
   // currently reachable on the network. Reduces toolbar noise when
@@ -381,6 +383,7 @@ export default function PrimarySearchAppBar() {
   const [anchorEl, setAnchorEl] = useState(null);
   const [mobileMoreAnchorEl, setMobileMoreAnchorEl] = useState(null);
   const [quarantineMenuAnchor, setQuarantineMenuAnchor] = useState(null);
+  const [foreignMenuAnchor, setForeignMenuAnchor] = useState(null);
   const [trashDialogOpen, setTrashDialogOpen] = useState(false);
   const [unsolvedDialogOpen, setUnsolvedDialogOpen] = useState(false);
 
@@ -519,6 +522,30 @@ export default function PrimarySearchAppBar() {
               onClose={() => setUnsolvedDialogOpen(false)}
             />
           </>)}
+          {foreignCount > 0 && (<>
+            <Tooltip title="Foreign masters">
+              <IconButton
+                color="inherit"
+                size="small"
+                onClick={(e) => setForeignMenuAnchor(e.currentTarget)}
+              >
+                <Badge badgeContent={foreignCount} color="info" max={999}>
+                  {showForeign ? <PublicIcon /> : <PublicOffIcon />}
+                </Badge>
+              </IconButton>
+            </Tooltip>
+            <Menu
+              anchorEl={foreignMenuAnchor}
+              open={Boolean(foreignMenuAnchor)}
+              onClose={() => setForeignMenuAnchor(null)}
+            >
+              <MenuItem onClick={() => { toggleShowForeign(); setForeignMenuAnchor(null); }}>
+                {showForeign ? <PublicOffIcon sx={{ mr: 1 }} /> : <PublicIcon sx={{ mr: 1 }} />}
+                {showForeign ? 'Hide foreign masters and their products' : 'Show foreign masters and their products'}
+              </MenuItem>
+            </Menu>
+          </>)}
+          {(quarantineCount > 0 || foreignCount > 0) && <VerticalDivider />}
           <ShoppingCartPanel />
           <VerticalDivider />
           <ProgressComponent />

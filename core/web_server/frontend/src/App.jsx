@@ -56,6 +56,9 @@ function App() {
   const [showQuarantined, setShowQuarantined] = useState(
     () => localStorage.getItem('astroflow_showQuarantined') !== 'false'
   );
+  const [showForeign, setShowForeign] = useState(
+    () => localStorage.getItem('astroflow_showForeign') !== 'false'
+  );
 
   // Lifted out of the SSE useEffect so the AstroFlowContext provider
   // can expose `refreshAsiairDevices` to the panel — the panel calls
@@ -229,6 +232,30 @@ function App() {
 
   const quarantineCount = quarantinedSet.size;
 
+  const toggleShowForeign = useCallback(() => {
+    setShowForeign(prev => {
+      const next = !prev;
+      localStorage.setItem('astroflow_showForeign', String(next));
+      return next;
+    });
+  }, []);
+
+  // Other people's masters (shared master folders) and everything made from
+  // them: a target with any foreign stack, a mosaic with any such target.
+  const isForeign = useCallback(
+    (objectType, objectId) => {
+      const target = (id) => (targets[id]?.stack_ids || []).some(sid => stacks[sid]?.foreign);
+      if (objectType === "stack") return Boolean(stacks[objectId]?.foreign);
+      if (objectType === "target") return target(objectId);
+      if (objectType === "mosaic") return (mosaics[objectId]?.target_ids || []).some(target);
+      return false;
+    },
+    [stacks, targets, mosaics]
+  );
+
+  const foreignCount = useMemo(
+    () => Object.values(stacks).filter(s => s.foreign).length, [stacks]);
+
   // Targets the user keeps out of every mosaic (decision "mosaic_membership").
   const standaloneTargets = useMemo(() => new Set(
     decisionOverrides
@@ -305,6 +332,10 @@ function App() {
             showQuarantined,
             toggleShowQuarantined,
             quarantineCount,
+            isForeign,
+            showForeign,
+            toggleShowForeign,
+            foreignCount,
             refreshDecisions,
             observingPlan,
             refreshObservingPlan,
