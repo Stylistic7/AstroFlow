@@ -4,7 +4,7 @@ Usage (head node, with the live app's Ray cluster up):
     PYTHONPATH=. python -m scripts.bench_trace_paths
 
 Picks the first cart item from context, or falls back to the first
-(mosaic, "Hybrid: Siril + GraXpert + OSS Mosaic") pair if no cart entry exists.
+(mosaic, "Siril + GraXpert + OSS Mosaic") pair if no cart entry exists.
 Times 10 traces, reports min/median/max + path count.
 """
 import time
@@ -26,7 +26,7 @@ def _pick_item():
     mosaics = context.mosaics or {}
     if mosaics:
         mosaic_id = next(iter(mosaics.keys()))
-        return ("mosaic", mosaic_id, "Hybrid: Siril + GraXpert + OSS Mosaic")
+        return ("mosaic", mosaic_id, "Siril + GraXpert + OSS Mosaic")
 
     targets = context.targets or {}
     if targets:

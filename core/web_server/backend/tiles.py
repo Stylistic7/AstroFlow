@@ -245,32 +245,23 @@ def _per_channel_linear_stats_uncached(path, star_paths=()):
 
 
 def _declared_colorspace(base) -> "str | None":
-    """The COLORSPC the PRODUCER stamped into this payload, or None — the
-    authority on display-referredness (see `payload_tags`). Everything this
-    app computes is LINEAR; only `mosaics/merging/stretched.py` stamps
-    `COLORSPC: "display"` (decision 2026-08-21), so the viewer applies
-    taste, not a second autostretch."""
+    """The COLORSPC the PRODUCER stamped into this payload, or None (see
+    `payload_tags`)."""
     return payload_tags(base).get("COLORSPC")
 
 
 def _is_display_referred(base) -> bool:
-    """True only for a payload that says it is already display-referred.
-
-    Linear is the DEFAULT — an untagged payload is linear scene data, which is
-    what nearly everything is. An 8-bit payload is display-ready by its own
-    encoding (the Subframe previews, which the tile route's uchar branch
-    rescales /255) and must not be stretched a second time.
-    """
-    if str(getattr(base, "format", "")) in ("uchar", "char"):
-        return True
-    return _declared_colorspace(base) == "display"
+    """True only for an 8-bit payload. Everything the app computes is linear;
+    an 8-bit payload is display-ready by its own encoding (the Subframe
+    previews, which the tile route's uchar branch rescales /255) and must
+    not be stretched a second time."""
+    return str(getattr(base, "format", "")) in ("uchar", "char")
 
 
 def _colorspace(base) -> str:
     """`linear-sho` (a narrowband S,H,O join), `display` (already display-
-    referred: an 8-bit payload or one tagged so), else `linear-scene` —
-    LINEAR BY DEFAULT: everything the app computes is linear, only a payload
-    that stamped itself display-referred opts out."""
+    referred: an 8-bit payload), else `linear-scene` — LINEAR BY DEFAULT:
+    everything the app computes is linear."""
     if _declared_colorspace(base) == "linear-sho":
         return "linear-sho"
     if _is_display_referred(base):

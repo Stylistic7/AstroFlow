@@ -1,6 +1,6 @@
 """Top-of-pyramid mosaic lab: synthetic masters through the REAL pipeline.
 
-The real "Hybrid: WBPP + GraXpert + OSS Mosaic" pipeline starts at
+The real "WBPP + GraXpert + OSS Mosaic" pipeline starts at
 calibrate → WBPP-stack (raw subs). This lab enters one step later, with
 synthetic per-panel masters carrying the Cygnus-measured error model
 (testing/synthetic_mosaic.py), and runs EVERYTHING downstream for real —

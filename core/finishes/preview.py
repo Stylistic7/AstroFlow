@@ -43,7 +43,7 @@ def read_pyramid_level(path, min_px: int = _PREVIEW_MIN_PX) -> "np.ndarray":
 
 
 def _stf_values(arr: "np.ndarray", suffixes: "tuple[str, ...] | None",
-                target: float = 0.10, display: bool = False,
+                target: float = 0.10,
                 anchors_from: "np.ndarray | None" = None) -> dict:
     """Image-adaptive stretch params — the Python twin of the viewer's
     stfSeed recipe (finish_seed.js, 2026-09-03 recalibration):
@@ -66,16 +66,8 @@ def _stf_values(arr: "np.ndarray", suffixes: "tuple[str, ...] | None",
     nearly black. `suffixes` are the band roles (`("S","H","O")`,
     `("R","G","B")`, `("H",)`): per-channel keys `black<role>…` are emitted
     for each, and the linked keys `blackpoint/whitepoint/midtones` from the
-    pooled stats always — a finish reads the keys it declares.
-    `display=True` (a display-referred payload) seeds the identity: the
-    finish applies taste, not a second autostretch."""
+    pooled stats always — a finish reads the keys it declares."""
     from mosaics.color.palettes import _solve_midtones
-    if display:
-        out = {"blackpoint": 0.0, "whitepoint": 1.0, "midtones": 0.5,
-               "trim_floor": 0.0, "star_white": 1.0}
-        for s_ in suffixes or ():
-            out[f"black{s_}"], out[f"white{s_}"], out[f"mid{s_}"] = 0.0, 1.0, 0.5
-        return out
     chans = [arr[..., i] for i in range(len(suffixes))] if suffixes else []
     chans.append(arr)   # the pooled channel, last
     # Shared sky subset from composite luminance, as in the backend stats.
@@ -216,7 +208,7 @@ def render_finish_preview(object_type: str, object_id: str, pipeline: str,
         if st.shape[-1] >= 3 and composite.shape[-1] < 3:
             st = st[..., :3].mean(axis=-1, keepdims=True)
         composite += np.maximum(np.nan_to_num(st[..., :composite.shape[-1]]), 0.0)
-    seeded = _stf_values(composite, tuple(roles), display=tags.get("COLORSPC") == "display",
+    seeded = _stf_values(composite, tuple(roles),
                          anchors_from=primary.astype(np.float32, copy=False))
 
     out = b.finish.bake(sources, {**seeded, **(values or {})})

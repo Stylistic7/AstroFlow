@@ -157,7 +157,7 @@ def test_orion_mosaic(test_context) -> None:
 
 @pytest.mark.exhaustive
 def test_orion_mosaic_hybrid_oss(test_context) -> None:
-    """End-to-end run of the "Hybrid: PI Master + OSS Mosaic" pipeline on
+    """End-to-end run of the "PI Master + OSS Mosaic" pipeline on
     the 4 real Orion panes. Exercises the variadic OSS merge: one
     `merge_images_oss(*all_placed)` call per filter (not the pairwise
     `merge_images_oss` loop the pipeline used to do), and the
@@ -173,9 +173,9 @@ def test_orion_mosaic_hybrid_oss(test_context) -> None:
     assert len(context.mosaics) == 1
     mosaic = next(iter(context.mosaics.values())).get()
 
-    # Queue under the Hybrid pipeline and run.
+    # Queue under the pipeline and run.
     context.shopping_cart = [
-        ("mosaic", mosaic.stable_hash, "Hybrid: PI Master + OSS Mosaic"),
+        ("mosaic", mosaic.stable_hash, "PI Master + OSS Mosaic"),
     ]
     _override_flats_for_all_stacks()
 

@@ -1,4 +1,4 @@
-"""Hybrid pipeline: PixInsight stacking + OSS mosaic merging.
+"""Pipeline: PixInsight stacking + OSS mosaic merging.
 
 Same backbone as `pixinsight_master.py` — WBPP stacking, per-stack
 PixInsight post-processing (WriteAstrometricSolution + SPFC + MGC),
@@ -73,14 +73,14 @@ def channels_for_target(target, config, post_processed_master=post_processed_mas
     return channels
 
 
-@pipeline("Hybrid: PI Master + OSS Mosaic", processes=Stack)
+@pipeline("PI Master + OSS Mosaic", processes=Stack)
 def for_stack(stack, config):
     """One stack's post-processed master. Identical to PI Master at the
     stack level — the OSS swap is only relevant for the mosaic step."""
     return post_processed_master(stack, config)
 
 
-@pipeline("Hybrid: PI Master + OSS Mosaic", processes=Target)
+@pipeline("PI Master + OSS Mosaic", processes=Target)
 def for_target(target, config):
     """Per-filter channel masters PLUS the full colour tail — a Target IS a
     single-panel mosaic (`Target.viewbox`/`.targets`/`.strips`), so it runs
@@ -109,7 +109,7 @@ def for_target(target, config):
     return {**starless, **{f"{f} Stars": h for f, h in stars.items()}, **color}
 
 
-@pipeline("Hybrid: PI Master + OSS Mosaic", processes=Mosaic)
+@pipeline("PI Master + OSS Mosaic", processes=Mosaic)
 def for_mosaic(mosaic, config):
     """Build a mosaic with PI-stacked panels + OSS panel-blending, then turn
     the per-filter channels into named color images.

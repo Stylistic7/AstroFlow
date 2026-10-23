@@ -154,9 +154,9 @@ def test_finishes_for_dedupes_by_name_in_registry_order(world):
 def test_default_prefers_registry_order_then_pipeline_rank(world, monkeypatch):
     taps, filters, status = world
     _mosaic(world, pipeline="PixInsight Master", narrowband=False)
-    _mosaic(world, pipeline="Hybrid: PI Master + OSS Mosaic")
+    _mosaic(world, pipeline="PI Master + OSS Mosaic")
     b = cf.default_finish_for("mosaic", "m")
-    assert (b.pipeline, b.name) == ("Hybrid: PI Master + OSS Mosaic", "Hubble")
+    assert (b.pipeline, b.name) == ("PI Master + OSS Mosaic", "Hubble")
     status[("Linear SHO", "RGB")] = ABSENT
     b = cf.default_finish_for("mosaic", "m")
     assert (b.pipeline, b.name) == ("PixInsight Master", "RGB")

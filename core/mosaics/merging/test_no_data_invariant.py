@@ -16,7 +16,6 @@ from pathlib import Path
 import numpy as np
 
 from mosaics.merging.oss import _blend_many, _equalize_sky, _UNSET_PEDESTAL
-from mosaics.merging.stretched import _stretch_nonzero
 from mosaics.placement.panel_io import write_placed_panel
 from stacks.post_processing.background_pedestal import apply_background_pedestal
 
@@ -41,15 +40,8 @@ def test_equalize_sky_preserves_zeros():
 def test_equalize_sky_preserves_zeros_with_explicit_target():
     a = _ragged(seed=1)
     zeros = a == 0
-    _equalize_sky([a], [a > 0], 0.25)        # display-space caller
+    _equalize_sky([a], [a > 0], 0.25)        # a caller's own target
     assert (a[zeros] == 0).all()
-
-
-def test_autostretch_panel_preserves_zeros():
-    a = _ragged(seed=2)
-    zeros = a == 0
-    out = _stretch_nonzero(a)
-    assert (out[zeros] == 0).all(), "per-panel autostretch must not lift no-data"
 
 
 def test_background_pedestal_preserves_zeros():

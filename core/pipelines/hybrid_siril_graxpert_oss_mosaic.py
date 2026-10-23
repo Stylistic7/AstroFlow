@@ -1,4 +1,4 @@
-"""Hybrid pipeline: Siril stacking + GraXpert gradients + OSS mosaic.
+"""Pipeline: Siril stacking + GraXpert gradients + OSS mosaic.
 
 An A/B fork of `hybrid_graxpert_oss_mosaic.py`. **One thing differs**: each
 stack is integrated by Siril (`stacks.stacking.siril.integrate_with_siril`)
@@ -28,7 +28,7 @@ from stacks.stacking.siril import integrate_with_siril
 from stacks.foreign import foreign_master, foreign_post_processed_master, is_foreign
 from targets.merging.oss import calibrate_channel, hdr_merge_masters, merge_target_channel_oss
 
-PIPELINE = "Hybrid: Siril + GraXpert + OSS Mosaic"
+PIPELINE = "Siril + GraXpert + OSS Mosaic"
 
 
 def solved_master(stack, config):

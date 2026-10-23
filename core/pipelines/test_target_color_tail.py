@@ -1,6 +1,6 @@
 """The Target colour tail — a Target IS a single-panel mosaic.
 
-`for_target` (Hybrid: PI Master + OSS Mosaic) runs the exact mosaic machinery
+`for_target` (PI Master + OSS Mosaic) runs the exact mosaic machinery
 on a Target: each channel is placed into the target's own viewbox and merged
 through the self-cleaning `{place → merge}` scope, then `color_post_process`
 produces the same colour deliverables mosaics get. These tests pin the three

@@ -1,4 +1,4 @@
-"""Hybrid pipeline: Siril stacking + OSS mosaic, GraXpert on the mosaic only.
+"""Pipeline: Siril stacking + OSS mosaic, GraXpert on the mosaic only.
 
 An A/B fork of `hybrid_siril_graxpert_oss_mosaic.py`. **One thing differs**:
 GraXpert runs on no master; the merged mosaic's polish still runs. The
@@ -21,7 +21,7 @@ wins everywhere; pick per mosaic.
 from pipelines.hybrid_graxpert_oss_mosaic import register
 from pipelines.hybrid_siril_graxpert_oss_mosaic import channel, geometry, post_processed_master
 
-PIPELINE = "Hybrid: Siril + OSS Mosaic (no per-panel GraXpert)"
+PIPELINE = "Siril + OSS Mosaic (no per-panel GraXpert)"
 
 for_stack, for_target, for_mosaic = register(PIPELINE, post_processed_master,
                                              channel=channel, geometry=geometry,

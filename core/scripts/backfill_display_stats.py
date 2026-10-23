@@ -18,7 +18,6 @@ section; products, the cache and the pipeline are untouched.
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sys
 import time
@@ -31,11 +30,7 @@ def _candidate(path: Path) -> bool:
     import pyvips
     try:
         img = pyvips.Image.new_from_file(str(path))
-        if img.get("n-pages") < 2 or img.format != "float":
-            return False
-        desc = img.get("image-description") if "image-description" in img.get_fields() else ""
-        tags = json.loads(desc) if desc.startswith("{") else {}
-        return tags.get("COLORSPC") != "display"
+        return img.get("n-pages") >= 2 and img.format == "float"
     except Exception:
         return False
 

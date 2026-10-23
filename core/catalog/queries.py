@@ -28,8 +28,8 @@ from products.product import Product, resolve_entity  # noqa: F401 — re-export
 #    against; a future per-object pinned "winner" would front-run this. ─────────
 _PIPELINE_PREFERENCE = (
     "PixInsight Master",
-    "Hybrid: PI Master + OSS Mosaic",
-    "Hybrid: OSS Stack + OSS Mosaic",
+    "PI Master + OSS Mosaic",
+    "OSS Stack + OSS Mosaic",
 )
 
 

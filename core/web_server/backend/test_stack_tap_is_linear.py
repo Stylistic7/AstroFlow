@@ -1,22 +1,14 @@
 """Colorspace comes from the payload's own COLORSPC tag, not its display name.
 
 Everything this app computes and serves is LINEAR; the non-linear step lives
-in the frontend WebGPU shaders. The one deliberate exception is
-`mosaics/merging/stretched.py`, which merges in stretched space because
-photometry is intentionally broken there (decision 2026-08-21) and stamps its
-output `COLORSPC: "display"` so the viewer "applies taste, not a second
-autostretch".
+in the frontend WebGPU shaders. Only an 8-bit payload (a Subframe preview) is
+display-ready.
 
-Classifying by display NAME got both directions wrong, because a name is not
-identity:
-
-  * `merge_images_stretched` and `polish_background` BOTH tap
-    `display="Mosaic Starless"`, which a name-keyed list called linear — so the
-    already-stretched deliverable was marked linear and stretched twice;
-  * every stack tap (`Master`, `Post-Processed`) was in no list, fell to the
-    `display` default, and was served raw linear — near-black, since a master
-    sits at sky ~0.005 with star cores near 1.0 (live 2026-09-11, stack
-    6d5b69676e23fdd9 `Master`/O returned `"colorspace":"display"`).
+Classifying by display NAME got it wrong, because a name is not identity:
+every stack tap (`Master`, `Post-Processed`) was in no list, fell to the
+`display` default, and was served raw linear — near-black, since a master
+sits at sky ~0.005 with star cores near 1.0 (live 2026-09-11, stack
+6d5b69676e23fdd9 `Master`/O returned `"colorspace":"display"`).
 """
 import json
 
@@ -47,11 +39,6 @@ def test_untagged_float_payload_is_linear():
     """The default. A WBPP master carries no COLORSPC and must be stretched."""
     assert _declared_colorspace(_Img()) is None
     assert _is_display_referred(_Img()) is False
-
-
-def test_the_stretched_merge_opts_out_by_its_tag():
-    """`merge_images_stretched` stamps COLORSPC=display — no second stretch."""
-    assert _is_display_referred(_Img(colorspc="display")) is True
 
 
 def test_linear_sho_tag_is_not_display_referred():

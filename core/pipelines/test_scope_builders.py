@@ -11,12 +11,10 @@ the contract at import time instead.
 
 def test_every_scope_builder_is_remote_decorated():
     from mosaics.merging.oss import merge_scope
-    from mosaics.merging.stretched import merge_scope_stretched
     from pipelines.hybrid_graxpert_oss_mosaic import merge_polish_scope
     from pipelines.subframe import subframe_scope
 
-    for builder in (merge_scope, merge_polish_scope,
-                    merge_scope_stretched, subframe_scope):
+    for builder in (merge_scope, merge_polish_scope, subframe_scope):
         assert hasattr(builder, "_function"), (
             f"{builder!r} is a bare function — Node.__hash__ will refuse it "
             f"and the pipeline's trace fails silently; decorate it "

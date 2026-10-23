@@ -253,7 +253,7 @@ def finishes(object_type: str, object_id: str):
 
       {
         "pipelines": [
-          {"name": "Hybrid: PI Master + OSS Mosaic",
+          {"name": "PI Master + OSS Mosaic",
            "finishes": [
              {"name": "Hubble", "role": null, "status": "live", "mtime": 17...,
               "inputs": [{"tap": "Linear SHO", "filter": "RGB", "status": "live"},

@@ -20,7 +20,7 @@ def test_listed_pipelines_are_offered():
     discover_pipelines()
     names = registered_pipeline_names()
     assert "PixInsight Master" in names
-    assert "Hybrid: PI Master + OSS Mosaic" in names
+    assert "PI Master + OSS Mosaic" in names
 
 
 def test_subframe_ranks_below_every_preferred_pipeline():

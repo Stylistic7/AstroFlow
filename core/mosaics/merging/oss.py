@@ -125,9 +125,8 @@ def _edt_weight(mask_crop, bbox, canvas_shape):
     return dist[pt:pt + (r1 - r0), pl:pl + (c1 - c0)]
 
 
-# Sentinel: use the house linear pedestal. Callers in display space pass
-# a target of their own, or None to equalize to the panels' OWN MEAN sky
-# (space-agnostic: no assumption about absolute level).
+# Sentinel: use the house linear pedestal. A caller in other units (raw ADU)
+# passes a target of its own.
 _UNSET_PEDESTAL = object()
 _ADU_FULL_SCALE = 65535.0   # a raw 16-bit light's saturation
 
@@ -212,12 +211,7 @@ def _apply_level_offsets(crops, masks, offsets, pedestal) -> "float | None":
     measured = [v for v in skies if v is not None]
     if not measured:
         return None
-    if pedestal is _UNSET_PEDESTAL:
-        target = float(DEFAULT_PEDESTAL)
-    elif pedestal is None:
-        target = float(np.mean(measured))
-    else:
-        target = float(pedestal)
+    target = float(DEFAULT_PEDESTAL if pedestal is _UNSET_PEDESTAL else pedestal)
     shift = np.float32(target - float(np.mean(measured)))
     for crop, mask in zip(crops, masks):
         if crop is None:
@@ -248,10 +242,8 @@ def _panel_sky(values: np.ndarray) -> "float | None":
 def _equalize_sky(crops, masks, pedestal) -> "float | None":
     """Shift every panel in place so its own sky sits on the shared target.
 
-    `pedestal` is the house linear pedestal by default, an explicit float
-    for callers in another space, or None to equalize to the panels' OWN
-    MEAN sky (which assumes nothing about absolute level, so it works in
-    display space too)."""
+    `pedestal` is the house linear pedestal by default, or an explicit float
+    for callers in other units."""
     from stacks.post_processing.background_pedestal import DEFAULT_PEDESTAL
     skies = []
     for crop, mask in zip(crops, masks):
@@ -259,12 +251,7 @@ def _equalize_sky(crops, masks, pedestal) -> "float | None":
     measured = [v for v in skies if v is not None]
     if not measured:
         return None
-    if pedestal is _UNSET_PEDESTAL:
-        target = float(DEFAULT_PEDESTAL)
-    elif pedestal is None:
-        target = float(np.mean(measured))
-    else:
-        target = float(pedestal)
+    target = float(DEFAULT_PEDESTAL if pedestal is _UNSET_PEDESTAL else pedestal)
     tiny = np.finfo(np.float32).tiny
     for crop, mask, sky in zip(crops, masks, skies):
         if crop is None or sky is None:
@@ -282,7 +269,7 @@ def _equalize_sky(crops, masks, pedestal) -> "float | None":
 
 
 def _blend_many(paths: list[Path], level_solve: "str | None" = None,
-                pedestal: "float | None" = _UNSET_PEDESTAL,
+                pedestal: float = _UNSET_PEDESTAL,
                 depth_weighted: bool = False) -> np.ndarray:
     """Variadic distance-weighted blend (gains arrive pre-calibrated).
 

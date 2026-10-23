@@ -1,4 +1,4 @@
-"""Hybrid pipeline: OSS stacking + OSS mosaic merging.
+"""Pipeline: OSS stacking + OSS mosaic merging.
 
 Like `hybrid_pi_oss_mosaic.py` but the stack-level master is produced by the
 OSS stacker (`stack_files_oss`) instead of WBPP (`stack_files`), AND post-
@@ -37,7 +37,7 @@ from stacks.foreign import foreign_post_processed_master, is_foreign
 from targets.merging.pixinsight import merge_target_channel
 from targets.types import Target
 
-_NAME = "Hybrid: OSS Stack + OSS Mosaic"
+_NAME = "OSS Stack + OSS Mosaic"
 
 
 @workflow_group

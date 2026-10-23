@@ -1,4 +1,4 @@
-"""Hybrid pipeline: PixInsight stacking + GraXpert gradients + OSS mosaic.
+"""Pipeline: PixInsight stacking + GraXpert gradients + OSS mosaic.
 
 An A/B fork of `hybrid_pi_oss_mosaic.py`. **One thing differs**: per-stack
 post-processing runs `post_stack_calibrate` (SPFC + GraXpert) instead of
@@ -64,7 +64,7 @@ from targets.merging.pixinsight import merge_target_channel
 from targets.types import Target
 from metadata.master_analysis import analyze_master
 
-PIPELINE = "Hybrid: WBPP + GraXpert + OSS Mosaic"
+PIPELINE = "WBPP + GraXpert + OSS Mosaic"
 
 
 @workflow_group

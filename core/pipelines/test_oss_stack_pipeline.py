@@ -65,7 +65,7 @@ def test_oss_stack_pipeline_produces_master(test_context):
         set_flat(stack.stable_hash, run_hash, flat_stack_id)
 
     # Engage the OSS-stacking pipeline and run it.
-    context.shopping_cart = [("stack", stack_id, "Hybrid: OSS Stack + OSS Mosaic")]
+    context.shopping_cart = [("stack", stack_id, "OSS Stack + OSS Mosaic")]
     run_graph(build_compute_graph(), debug=True)
 
     # The OSS stacker writes a full-resolution FITS master under stack_files_oss/.

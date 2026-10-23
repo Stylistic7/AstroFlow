@@ -22,7 +22,7 @@ def test_a_foreign_stack_carries_what_the_master_says(tmp_path):
     from file_io.sidecar import set_section
     set_section(tmp_path / "m.fits", "shared", {
         "oldest_date": "2026-09-01T03:00:00", "newest_date": "2026-10-02T05:00:00",
-        "integration_s": 7200.0, "n_frames": 12, "pipeline": "Hybrid: Siril + GraXpert + OSS Mosaic",
+        "integration_s": 7200.0, "n_frames": 12, "pipeline": "Siril + GraXpert + OSS Mosaic",
     })
     s = ForeignStack.from_master(meta, same_pipeline=True, shared_dir=str(tmp_path))
     assert is_foreign(s)

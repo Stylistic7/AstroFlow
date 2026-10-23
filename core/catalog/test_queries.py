@@ -117,12 +117,12 @@ def test_pipelines_for_is_whoever_routed_a_tap_here(fake_context, taps):
     under it, so that pipeline is the one on its page."""
     fake_context.calibration_stacks = {"f1": _Entity(content_hash="c")}
     fake_context.stacks = {"s1": _Ref(_Entity(content_hash="c"))}
-    taps("calibration_stack", "f1", "Hybrid: WBPP + GraXpert + OSS Mosaic",
+    taps("calibration_stack", "f1", "WBPP + GraXpert + OSS Mosaic",
          [{"display": "Star Flat", "filter": "S", "path": "/o/flat"}])
     taps("stack", "s1", "PixInsight Master",
          [{"display": "Master", "filter": "H", "path": "/o/m"}])
     assert q.pipelines_for("calibration_stack", "f1") == [
-        "Hybrid: WBPP + GraXpert + OSS Mosaic"]
+        "WBPP + GraXpert + OSS Mosaic"]
     assert q.pipelines_for("stack", "s1") == ["PixInsight Master"]
 
 

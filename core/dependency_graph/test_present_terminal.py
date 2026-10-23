@@ -62,7 +62,7 @@ def test_presented_builder_registers_its_terminals_tap():
 def test_presented_builder_lands_in_the_supersede_map():
     from compute_graph.compute_graph import _version_supersede_map
     n = _presented_node()
-    mapping = _version_supersede_map("Hybrid: PI Master + OSS Mosaic",
+    mapping = _version_supersede_map("PI Master + OSS Mosaic",
                                      Graph({n: []}))
     assert n in mapping, "presented deliverable missing from N-1 supersede"
 

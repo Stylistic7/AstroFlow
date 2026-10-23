@@ -17,7 +17,7 @@ def test_product_versions_routes_to_durable_store():
     swept — so its key MUST route to the never-evict durable store, else an LFU
     eviction silently loses the last-good fallback."""
     from context.cache import is_durable_key
-    k = vl.key("mosaic", "abc123", "Hybrid: PI Master + OSS Mosaic", "Color", "RGB")
+    k = vl.key("mosaic", "abc123", "PI Master + OSS Mosaic", "Color", "RGB")
     assert k[0] == "product_versions"
     assert is_durable_key(k) is True
 
