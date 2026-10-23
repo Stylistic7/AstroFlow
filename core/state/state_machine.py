@@ -611,7 +611,7 @@ def _schedule_download_from_asiairs(
         interval_s=5.0,
         start_delay_s=5.0,
     )
-    scheduler.start_shared_dirs_poller.remote(
+    scheduler.start_folder_watch.remote(
         interval_s=60 * 60,
         start_delay_s=120,
     )

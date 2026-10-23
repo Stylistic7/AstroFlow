@@ -38,6 +38,7 @@ dependencies = [
     "python-statemachine",
     "requests",
     "send2trash",
+    "watchdog",              # OS change notifications for the input and shared folders (state/folder_watch.py)
     # Astronomy / image pipeline
     "astropy",
     "astroalign",

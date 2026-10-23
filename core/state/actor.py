@@ -86,8 +86,12 @@ class StateActor:
 
     def drain_and_restart(self) -> None:
         """Stop starting new tasks in the current graph; let in-flight
-        finish; then enqueue a full restart."""
+        finish; then enqueue a full restart — one: a pass already queued
+        will see whatever this caller saw."""
         self._drain_event.set()
+        with self._cv:
+            if any(a.get("type") == "run_entire_graph" for a in self._q):
+                return
         self.enqueue(Action(type="run_entire_graph"))
 
     def is_busy(self) -> bool:

@@ -67,28 +67,41 @@ class SchedulerActor:
         except asyncio.CancelledError:
             pass
 
-    async def start_shared_dirs_poller(
-        self, interval_s: float, start_delay_s: float = 0.0,
+    async def start_folder_watch(
+        self, interval_s: float, start_delay_s: float = 0.0, sync_s: float = 60.0,
     ) -> None:
-        """Watch the shared master folders for other members' pushes (there
-        is no filesystem watcher; a scan is one directory walk)."""
-        if getattr(self, "_shared_dirs_task", None) is not None:
+        """Watch the raw data and shared master folders (`state.folder_watch`):
+        OS change notifications settle into a check within minutes, and every
+        `interval_s` the same check runs anyway, for changes no notification
+        reports (another machine writing to a network share). The watched
+        set follows the configured folders every `sync_s`."""
+        if getattr(self, "_folder_watch_task", None) is not None:
             return
-        self._shared_dirs_task = asyncio.get_event_loop().create_task(
-            self._shared_dirs_loop(interval_s, start_delay_s)
+        self._folder_watch_task = asyncio.get_event_loop().create_task(
+            self._folder_watch_loop(interval_s, start_delay_s, sync_s)
         )
 
-    async def _shared_dirs_loop(self, interval_s: float, start_delay_s: float) -> None:
+    async def _folder_watch_loop(self, interval_s: float, start_delay_s: float, sync_s: float) -> None:
+        from state.folder_watch import FolderWatcher
+        watcher = None
         try:
             await asyncio.sleep(start_delay_s)
+            watcher = FolderWatcher(_check_folders_and_maybe_restart)
+            next_check = time.monotonic() + interval_s
             while True:
                 try:
-                    await asyncio.to_thread(_check_shared_dirs_and_maybe_restart)
+                    await asyncio.to_thread(watcher.watch, _watched_folders())
+                    if time.monotonic() >= next_check:
+                        next_check = time.monotonic() + interval_s
+                        await asyncio.to_thread(_check_folders_and_maybe_restart)
                 except Exception as e:
-                    print(f"### shared folders poll raised, ignoring: {e}")
-                await asyncio.sleep(interval_s)
+                    print(f"### folder watch raised, ignoring: {e}")
+                await asyncio.sleep(sync_s)
         except asyncio.CancelledError:
             pass
+        finally:
+            if watcher is not None:
+                watcher.stop()
 
     async def start_asiair_live_poller(
         self, interval_s: float = 5.0, start_delay_s: float = 5.0,
@@ -311,16 +324,27 @@ def _drain_due(new_files: int) -> bool:
     return new_files > 0
 
 
-def _check_shared_dirs_and_maybe_restart() -> None:
-    """A shared master folder changed since its last scan (another member
-    pushed or retired a master): drain and re-identify, so their panel
-    joins — or leaves — the mosaic within the hour."""
+def _watched_folders() -> dict[str, float]:
+    """{folder: quiet seconds}: raw data folders settle quickly; a shared
+    folder outwaits the age at which a first-seen master is measured."""
     from context import context
-    from stacks.publish_shared import shared_dirs_changed
+    from metadata.shared_masters import SETTLED_AFTER_S
+    from state.folder_watch import RAW_QUIET_S
+    folders = {str(d): RAW_QUIET_S for d in (context.input_dirs or [])}
+    folders.update({str(d): SETTLED_AFTER_S + 30.0 for d in (context.shared_dirs or [])})
+    return folders
 
-    if not (context.shared_dirs and shared_dirs_changed(context)):
+
+def _check_folders_and_maybe_restart() -> None:
+    """A raw data folder or a shared master folder differs from its last
+    scan (frames copied in, another member pushed or retired a master):
+    drain and queue a pass."""
+    from context import context
+    from state.folder_watch import folders_changed
+
+    if not folders_changed(context):
         return
-    print("### shared master folders changed: draining graph")
+    print("### input or shared folders changed: draining graph")
     state = ray.get_actor("state", namespace=_get_namespace())
     ray.get(state.drain_and_restart.remote())
 
