@@ -42,7 +42,7 @@ def empty_context(init_ray):
 def test_store_populates_content_hash_and_ref(empty_context):
     ref = ContextRef.store("my_key", {"data": 42})
     assert ref.content_hash != ""
-    assert ref.cache_key == "my_key"
+    assert ref.cache_key == ("my_key", ref.content_hash)     # the slot names its value
     assert ref.ref is not None
 
 
@@ -68,8 +68,19 @@ def test_store_uses_existing_content_hash_from_content_hashed(empty_context):
 
 def test_store_writes_to_context(empty_context):
     obj = {"ra": 83.8, "dec": -5.4}
-    ContextRef.store("my_key", obj)
-    assert context["my_key"] == obj
+    ref = ContextRef.store("my_key", obj)
+    assert context[ref.cache_key] == obj
+
+
+def test_a_new_version_never_overwrites_the_value_an_older_ref_names(empty_context):
+    """Stacks A, then B, then A again: the ref a cache hit replays for A
+    must still resolve to A, whatever was stored under the same name since."""
+    a = ContextRef.store(("targets", "t"), MockStack(name="A", content_hash="a"))
+    b = ContextRef.store(("targets", "t"), MockStack(name="B", content_hash="b"))
+    for ref in (a, b):
+        ref.ref = None                      # as replayed from the cache: no plasma copy
+    assert a.get().name == "A" and b.get().name == "B"
+    assert ContextRef.store(("large_object", "h"), {"x": 1}, content_hash="h").cache_key == ("large_object", "h")
 
 
 # ---------------------------------------------------------------------------
@@ -279,20 +290,13 @@ def test_dict_content_hash_is_order_independent(empty_context):
 # ---------------------------------------------------------------------------
 
 
-def test_context_ref_shares_key_with_lazy_load_dict(empty_context):
-    """ContextRef uses the same ("stacks", k) key format as the lazy-load
-    dict, and both resolve through the routed context (the "stacks"
-    namespace lives in the durable store)."""
+def test_a_stack_slot_is_named_by_its_stable_hash_and_its_content(empty_context):
+    """The ("stacks", k) namespace, now with the value's content hash last, and
+    resolving through the routed context (it lives in the durable store)."""
     stack = MockStack(name="Orion", content_hash="orion_hash")
     ref = ContextRef.store(("stacks", "Orion"), stack)
-
-    # The value is reachable via the lazy-load dict registry, written
-    # through the routed context (not poking the raw evictable cache).
-    context["stacks"] = {"Orion": stack}  # register key list
-    assert context.stacks["Orion"] == stack
-
-    # And directly via the tuple key.
-    assert context[("stacks", "Orion")] == stack
+    assert ref.cache_key == ("stacks", "Orion", "orion_hash")
+    assert context[("stacks", "Orion", "orion_hash")] == stack
 
     # get() returns the same value.
     assert ref.get() == stack

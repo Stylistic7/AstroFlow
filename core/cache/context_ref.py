@@ -63,9 +63,9 @@ class ContextRef(Generic[T]):
     ray.ObjectRef for fast retrieval.  Falls back to fetching from the context
     (ContextActor / diskcache) when the ref is absent or stale.
 
-    The cache_key mirrors the exact diskcache key used by the lazy-load dict
-    system — e.g. ("stacks", "M42") — so ContextRef and LazyLoadDict share
-    the same underlying storage without any translation layer.
+    The cache_key is the diskcache key of the value, and ends in its content
+    hash — ("stacks", <stable hash>, <content hash>) — so one name never
+    holds two values (`store`).
     """
 
     cache_key: Any
@@ -195,6 +195,21 @@ class ContextRef(Generic[T]):
         from context import context
         import time
 
+        if content_hash is None:
+            if hasattr(obj, "content_hash") and obj.content_hash:
+                content_hash = obj.content_hash
+            else:
+                content_hash = hash_list([obj])
+        # The slot names its value: a ref can only ever resolve to the value it
+        # was made for. A slot named by `cache_key` alone was overwritten in
+        # place by every new version, and a cache hit replaying an older
+        # result handed out a ref to whatever version was written last
+        # (2026-10-22: stacks A, then B, then A again left 56 targets
+        # resolving to their B versions, listing stacks that no longer
+        # existed). `store_large`'s keys already end in the hash.
+        name = cache_key if isinstance(cache_key, tuple) else (cache_key,)
+        cache_key = name if name[-1] == content_hash else (*name, content_hash)
+
         actor = context._actor()        # connects this process to Ray if needed
         ref = ray.put(obj, _owner=actor)
 
@@ -219,12 +234,6 @@ class ContextRef(Generic[T]):
                     f"normally each time but the value was absent on read-back."
                 )
             time.sleep(0.05 * attempts)
-
-        if content_hash is None:
-            if hasattr(obj, "content_hash") and obj.content_hash:
-                content_hash = obj.content_hash
-            else:
-                content_hash = hash_list([obj])
 
         return cls(
             cache_key=cache_key,
