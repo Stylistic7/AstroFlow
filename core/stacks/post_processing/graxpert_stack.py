@@ -242,6 +242,19 @@ def calibrate_master(
         # PI recipe had).
         gain_true = image * np.float32(gain)
         del image
+        # GraXpert reads a NaN as data and can return nothing but NaN (MDW
+        # field 1347: 176 NaN pixels in, all 16M out). Holes go in as sky
+        # and come back out as holes.
+        holes = ~np.isfinite(gain_true)
+        if holes.any():
+            import concerns
+            n = int(holes.sum())
+            concerns.warn(
+                "NaN pixels",
+                f"{Path(master.filename).name} has {n} pixels with no value (NaN, "
+                f"{n / holes.size:.2g} of the frame); they stay holes in every later step.",
+                nan_pixels=n)
+        gain_true[holes] = np.nanmedian(gain_true)
         _write_pixels_preserving_metadata(Path(master.filename), gain_xisf, gain_true)
 
         corrected = None
@@ -262,15 +275,22 @@ def calibrate_master(
             if corrected.ndim == 3 and corrected.shape[2] == 1:
                 corrected = corrected[:, :, 0]
 
+        shipped = corrected if corrected is not None else gain_true
+        if not np.isfinite(shipped).all():
+            raise ValueError(
+                f"post_stack_calibrate: GraXpert returned non-finite pixels for "
+                f"{subject} filter {filter} ({master.filename}).")
+        shipped[holes] = np.nan
+
         # Measured on the pixels that ship (the pedestal below is a constant).
         from metadata.master_analysis import measure_master, pixel_arcsec_of
         analysis = measure_master(
-            corrected if corrected is not None else gain_true,
+            shipped,
             stable_hash=str(master.stable_hash), filter=str(filter),
             integration_s=master.master_integration_s, pixel_arcsec=pixel_arcsec_of(hdr),
         )
-        del gain_true
-        _write_pixels_preserving_metadata(gain_xisf, out, corrected)
+        del gain_true, corrected
+        _write_pixels_preserving_metadata(gain_xisf, out, shipped)
 
     # Equalize the sky to the shared pedestal — adjacent mosaic panels
     # must land on the same baseline or the seam shows.
