@@ -158,3 +158,26 @@ def test_logs_copy_keeps_the_device_folder_name(tmp_path):
     assert dl._download_logs_from_rig(str(log_dir), str(tmp_path / "date" / "350mm"))
     assert (tmp_path / "date" / "350mm" / "logs" / "log" / "guide.txt").read_text() == "rms 0.5"
     assert dl._download_logs_from_rig(str(log_dir), str(tmp_path / "date" / "350mm")), "a second copy is fine"
+
+
+def test_copy_never_copies_the_shares_flags(tmp_path, monkeypatch):
+    """2026-10-23: the SMB share marks every file SF_ARCHIVED; copystat's
+    chflags is EPERM, and copy2 left one `.partial` per rig all night."""
+    def refuse(*a, **k):
+        raise PermissionError(1, "Operation not permitted")
+    monkeypatch.setattr(dl.shutil, "copystat", refuse)
+    src, dest = tmp_path / "card", tmp_path / "raw"
+    src.mkdir(); dest.mkdir()
+    (src / "Light_1.fit").write_bytes(b"pixels")
+    (dest / "Light_1.fit.partial").write_bytes(b"pix")  # last night's leftover
+    assert dl._copy_fits_files([str(src / "Light_1.fit")], str(dest))
+    assert sorted(p.name for p in dest.iterdir()) == ["Light_1.fit"]
+    assert (dest / "Light_1.fit").read_bytes() == b"pixels"
+
+
+def test_one_frame_that_will_not_copy_does_not_stop_the_rest(tmp_path):
+    src, dest = tmp_path / "card", tmp_path / "raw"
+    src.mkdir(); dest.mkdir()
+    (src / "Light_2.fit").write_bytes(b"pixels")
+    assert not dl._copy_fits_files([str(src / "gone.fit"), str(src / "Light_2.fit")], str(dest))
+    assert (dest / "Light_2.fit").read_bytes() == b"pixels"

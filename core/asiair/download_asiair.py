@@ -121,25 +121,42 @@ def _copy_fits_files(fits_files: list[str], dest_dir: str) -> bool:
     that bumped 171 mtimes per sweep and spun the graph forever
     (2026-09-09). Nothing needs the list: the library scan discovers what
     landed, from the disk.
+
+    One file that will not copy is reported and passed over, never the end
+    of the sweep: aborting on the first one lost the whole night of
+    2026-10-23 on both rigs.
     """
     if not fits_files:
         return True
 
     print(f"Copying {len(fits_files)} FITS files to '{dest_dir}'...")
-    try:
-        for src in fits_files:
-            dest = Path(dest_dir) / Path(src).name
-            if dest.exists():
-                continue
-            partial = dest.with_name(dest.name + ".partial")
-            shutil.copy2(src, partial)
+    ok = True
+    for src in fits_files:
+        dest = Path(dest_dir) / Path(src).name
+        if dest.exists():
+            continue
+        partial = dest.with_name(dest.name + ".partial")
+        try:
+            _copy_keeping_mtime(src, partial)
             os.replace(partial, dest)
-    except OSError as e:
-        print(f"Could not copy FITS files: {e}")
-        return False
+        except OSError as e:
+            print(f"Could not copy {src}: {e}")
+            ok = False
 
     print("copy is done")
-    return True
+    return ok
+
+
+def _copy_keeping_mtime(src: str, dest: str) -> str:
+    """The bytes and the mtime, nothing else. NOT `shutil.copy2`: macOS's
+    SMB client marks every file on the rig's share SF_ARCHIVED, a
+    superuser-only flag, and copy2's `copystat` fails with EPERM trying to
+    set it on the copy — every frame since 2026-10-18 (when this replaced
+    rsync) failed that way."""
+    shutil.copyfile(src, dest)
+    st = os.stat(src)
+    os.utime(dest, ns=(st.st_atime_ns, st.st_mtime_ns))
+    return dest
 
 
 class MountContextManager:
@@ -274,7 +291,8 @@ def _download_from_rig_grouped_by_date(
             f"Downloading {len(fits_files)} frames from rig {rig_name} "
             f"for date {date} to dir {date_dir}"
         )
-        assert _copy_fits_files(fits_files, date_dir)
+        if not _copy_fits_files(fits_files, date_dir):
+            print(f"Some frames for {date} did not copy; the next poll retries them")
 
     return min(dates), rig_name
 
@@ -288,7 +306,7 @@ def _download_logs_from_rig(log_dir: str, dest_dir: str) -> bool:
     dest = os.path.join(dest_dir, "logs", os.path.basename(os.path.normpath(log_dir)))
     print(f"Copying logs from '{log_dir}' to '{dest}'")
     try:
-        shutil.copytree(log_dir, dest, dirs_exist_ok=True)
+        shutil.copytree(log_dir, dest, dirs_exist_ok=True, copy_function=_copy_keeping_mtime)
     except OSError as e:   # shutil.Error too: files the device is still writing
         print(f"Could not copy logs: {e}")
         return False
