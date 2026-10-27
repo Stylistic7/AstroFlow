@@ -324,9 +324,12 @@ def candidates(context, rig_list: list[Rig]) -> tuple[dict[str, list[Candidate]]
                 tiers = [[h, w] for h, w in tiers if h > 0 and w > 0]
                 if not tiers:
                     continue
+                # Aim at the stable centre, never the mean: the mean moves
+                # with every frame, so one mis-pointed night would pull
+                # every later push after it (2026-10, e308).
                 per_rig[rig.key].append(Candidate(
                     target_id=tid, label=label, mosaic_id=mosaic_id, filter=f,
-                    ra_deg=float(t.center[0]), dec_deg=float(t.center[1]), hours=hours,
+                    ra_deg=float(t.stable_center[0]), dec_deg=float(t.stable_center[1]), hours=hours,
                     tiers=tiers, why=why, kind=kind, rank=rank,
                     exposure_s=exposure.get((tid, f), DEFAULT_EXPOSURE_S.get(f, 300.0))))
     return dict(per_rig), unassignable

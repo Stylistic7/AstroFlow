@@ -215,6 +215,12 @@ class AstrometricAttributes:
     footprint: SingleSphericalPolygon
     healpix_cells: tuple[int, ...]
     projected_footprints: frozendict[str, Any]
+    # The oldest frame's own solved centre, carried up through the oldest
+    # member at every level — the same frame `ChronologyAttributes` takes
+    # `stable_hash` from. `center` is a centroid and moves with every frame
+    # added; this one only moves if that frame is removed. It is what the
+    # planner aims at, so a mis-pointed night can never drag later nights.
+    stable_center: tuple[Degrees, Degrees]
 
     @classmethod
     def from_frames(
@@ -250,6 +256,7 @@ class AstrometricAttributes:
         )
         projected_footprints = frozendict(footprints.all_projections(footprint))
         healpix_cells = healpix_cells_from_poly(footprint)
+        oldest_center = oldest_image_metadata.plate_solution.center
 
         return cls(
             name,
@@ -259,6 +266,7 @@ class AstrometricAttributes:
             footprint,
             healpix_cells,
             projected_footprints,
+            stable_center=(Degrees(oldest_center[0]), Degrees(oldest_center[1])),
         )
 
     @classmethod
@@ -266,8 +274,12 @@ class AstrometricAttributes:
         cls, objects: Sequence["AstrometricAttributes"],
         primary: "AstrometricAttributes",
         combine,
+        anchor: "AstrometricAttributes",
     ) -> "AstrometricAttributes":
         """Geometry for a composite, framed on ONE of its members.
+
+        `anchor` is the oldest member, the one whose `stable_hash` the
+        composite inherits; its `stable_center` becomes the composite's.
 
         `primary` supplies the rotation and the image scale instead of a mean
         over the members. A circular mean is arithmetically right but frames
@@ -311,6 +323,7 @@ class AstrometricAttributes:
             footprint,
             healpix_cells,
             projected_footprints,
+            stable_center=anchor.stable_center,
         )
 
     def __post_init__(self) -> None:

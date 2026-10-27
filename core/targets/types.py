@@ -54,11 +54,12 @@ class Target(
     @classmethod
     def from_stacks(cls, stacks: list[Stack]) -> Optional["Target"]:
         chronology_attributes = ChronologyAttributes.from_objects(stacks)
+        oldest = sorted(stacks, key=lambda s: s.oldest_date)[0]
         astrometric_attributes = AstrometricAttributes.from_objects(
-            stacks, reference_stack(stacks), covering_polygon)
+            stacks, reference_stack(stacks), covering_polygon, anchor=oldest)
 
         from hashing import hash_list
-        stable_hash = sorted(stacks, key=lambda s: s.oldest_date)[0].stable_hash
+        stable_hash = oldest.stable_hash
         stack_ids = tuple(s.stable_hash for s in stacks)
         # content_hash composes the children's CONTENT hashes (mirror
         # Stack.content_hash), NOT their stable/identity hashes — so a Target's

@@ -27,6 +27,7 @@ def _make_object(
         footprint=footprint,
         healpix_cells=tuple(),
         projected_footprints=frozendict(),
+        stable_center=(Degrees(ra), Degrees(dec)),
     )
 
 

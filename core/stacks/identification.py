@@ -328,6 +328,10 @@ def identify_stacks(
                                 camera_consensus=camera_consensus,
                             )
                             if new_stack is not None:
+                                # In the node body on purpose: the key hashes only
+                                # this source, so `from_frames` growing a field
+                                # (stable_center, 2026-10-27) must re-key here.
+                                assert new_stack.stable_center, "Stack without a stable centre"
                                 new_stacks[new_stack.stable_hash] = ContextRef.store(
                                     ("stacks", new_stack.stable_hash), new_stack
                                 )

@@ -223,9 +223,8 @@ def identify_mosaics(
     for i, mosaic in enumerate(mosaics):
         log.info("Processing mosaic", index=i, total=len(mosaics), num_targets=len(mosaic))
 
-        stable_hash = resolved[
-            sorted(mosaic, key=lambda t: resolved[t].oldest_date)[0]
-        ].stable_hash
+        oldest = resolved[sorted(mosaic, key=lambda t: resolved[t].oldest_date)[0]]
+        stable_hash = oldest.stable_hash
 
         oldest_date = min(resolved[t].oldest_date for t in mosaic)
         newest_date = max(resolved[t].newest_date for t in mosaic)
@@ -268,6 +267,7 @@ def identify_mosaics(
             footprint=footprint,
             healpix_cells=healpix_cells,
             projected_footprints=projected_footprints,
+            stable_center=oldest.stable_center,
         )
 
         from hashing import hash_list

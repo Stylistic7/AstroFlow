@@ -72,6 +72,10 @@ def run_from_frames(
     chronology_attributes = ChronologyAttributes.from_frames(frames, metadata)
     imaging_attributes = ImagingAttributes.from_frames(frames, metadata)
     astrometric_attributes = AstrometricAttributes.from_frames(frames, metadata)
+    # Checked HERE: this node's key hashes only its own source, so the
+    # field's arrival in `from_frames` (2026-10-27) would otherwise
+    # cache-hit Runs without a stable centre forever.
+    assert astrometric_attributes.stable_center, "Run without a stable centre"
 
     frame_metadata = MetadataDict({h: i for h, i in metadata.items() if h in frames})
     assert frame_metadata

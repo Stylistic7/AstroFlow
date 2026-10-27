@@ -194,6 +194,8 @@ def identify_foreign_stacks(
                         file=str(meta.filename), error=str(e))
             continue
         n_same += same
+        # In the node body: the key hashes only this source (stable_center, 2026-10-27).
+        assert stack.stable_center, "foreign stack without a stable centre"
         out[stack.stable_hash] = ContextRef.store(("stacks", stack.stable_hash), stack)
     log.info("identified foreign stacks", candidates=len(hashes), stacks=len(out),
              same_pipeline=n_same, ours=n_ours)

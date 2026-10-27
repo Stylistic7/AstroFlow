@@ -151,7 +151,7 @@ class Stack(BaseStack, AstrometricAttributes):
         from attributes.astrometric_attributes import intersect_polygons
         runs_by_age = sorted(contents.values(), key=lambda r: r.oldest_date)
         astrometric_attributes = AstrometricAttributes.from_objects(
-            runs_by_age, runs_by_age[0], intersect_polygons)
+            runs_by_age, runs_by_age[0], intersect_polygons, anchor=runs_by_age[0])
 
         content_hash = hash_list(sorted(r.content_hash for r in contents.values()))
 

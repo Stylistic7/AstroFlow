@@ -86,6 +86,7 @@ def identify_targets(
                     # (2026-10-07) would otherwise cache-hit sensorless
                     # Targets forever.
                     assert new_target.sensor != (0, 0), "Target without a sensor"
+                    assert new_target.stable_center, "Target without a stable centre"   # same reason, 2026-10-27
                     new_targets[new_target.stable_hash] = ContextRef.store(
                         ("targets", new_target.stable_hash), new_target
                     )

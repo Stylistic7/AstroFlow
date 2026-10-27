@@ -48,6 +48,7 @@ def make_composite_stack(**kwargs: Any) -> Stack:
             footprint=footprint,
             healpix_cells=healpix_cells,
             projected_footprints=frozendict(),
+            stable_center=(Degrees(50.0), Degrees(50.0)),
         )
     )
     composite_stack_attributes = {"contents": RunsDict(), "state": frozendict()}
