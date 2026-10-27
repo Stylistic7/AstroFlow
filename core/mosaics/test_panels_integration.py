@@ -63,7 +63,7 @@ def _target(name: str, content_hash: str, footprint) -> Target:
     return Target(
         name=name, content_hash=content_hash, stable_hash=name,
         oldest_date=_DATE, newest_date=_DATE,
-        center=(Degrees(100.0), Degrees(0.0)), image_scale=_SCALE,
+        center=(Degrees(100.0), Degrees(0.0)), stable_center=(Degrees(100.0), Degrees(0.0)), image_scale=_SCALE,
         rotation_angle=Radians(0.0), footprint=footprint,
         healpix_cells=healpix_cells_from_poly(footprint),
         projected_footprints=frozendict(), stack_ids=(name,))
@@ -74,7 +74,7 @@ def _mosaic(footprint) -> Mosaic:
         name="incr-test", content_hash="cm", stable_hash="MOSAIC_INCR",
         target_ids=("A", "B"), panel_target_ids=("A", "B"),
         oldest_date=_DATE, newest_date=_DATE,
-        center=(Degrees(100.0), Degrees(0.0)), image_scale=_SCALE,
+        center=(Degrees(100.0), Degrees(0.0)), stable_center=(Degrees(100.0), Degrees(0.0)), image_scale=_SCALE,
         rotation_angle=Radians(0.0), footprint=footprint,
         healpix_cells=healpix_cells_from_poly(footprint),
         projected_footprints=frozendict())

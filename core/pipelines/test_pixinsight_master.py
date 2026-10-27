@@ -37,7 +37,7 @@ def _make_target(stable_hash, stack_id):
     from targets.types import Target
     return Target(
         name=stable_hash,
-        center=(Degrees(0.0), Degrees(0.0)),
+        center=(Degrees(0.0), Degrees(0.0)), stable_center=(Degrees(0.0), Degrees(0.0)),
         image_scale=ArcsecondsPerPixel(1.0),
         rotation_angle=Radians(0.0),
         footprint=_FOOTPRINT,
@@ -96,7 +96,7 @@ def test_pixinsight_master_records_expected_graph_shape(test_context):
         panel_target_ids=("a", "b"),
         oldest_date=_OLDEST_DATE,
         newest_date=_NEWEST_DATE,
-        center=(Degrees(0.0), Degrees(0.0)),
+        center=(Degrees(0.0), Degrees(0.0)), stable_center=(Degrees(0.0), Degrees(0.0)),
         image_scale=ArcsecondsPerPixel(1.0),
         rotation_angle=Radians(0.0),
         footprint=_FOOTPRINT,
@@ -174,7 +174,7 @@ def test_pixinsight_master_handles_missing_panels(test_context):
         panel_target_ids=("a", "b"),
         oldest_date=_OLDEST_DATE,
         newest_date=_NEWEST_DATE,
-        center=(Degrees(0.0), Degrees(0.0)),
+        center=(Degrees(0.0), Degrees(0.0)), stable_center=(Degrees(0.0), Degrees(0.0)),
         image_scale=ArcsecondsPerPixel(1.0),
         rotation_angle=Radians(0.0),
         footprint=_FOOTPRINT,

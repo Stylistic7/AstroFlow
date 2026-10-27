@@ -55,7 +55,7 @@ def _mosaic() -> Mosaic:
         name="color-test", content_hash="content_color", stable_hash="mosaic_color",
         target_ids=("a",), panel_target_ids=("a",),
         oldest_date=_DATE, newest_date=_DATE,
-        center=(Degrees(0.0), Degrees(0.0)), image_scale=ArcsecondsPerPixel(8.0),
+        center=(Degrees(0.0), Degrees(0.0)), stable_center=(Degrees(0.0), Degrees(0.0)), image_scale=ArcsecondsPerPixel(8.0),
         rotation_angle=Radians(0.0), footprint=_FOOTPRINT, healpix_cells=_HEALPIX,
         projected_footprints=frozendict(),
     )
@@ -67,7 +67,7 @@ def _target(name: str, content_hash: str, footprint) -> Target:
     return Target(
         name=name, content_hash=content_hash, stable_hash=name,
         oldest_date=_DATE, newest_date=_DATE,
-        center=(Degrees(100.0), Degrees(0.0)), image_scale=ArcsecondsPerPixel(8.0),
+        center=(Degrees(100.0), Degrees(0.0)), stable_center=(Degrees(100.0), Degrees(0.0)), image_scale=ArcsecondsPerPixel(8.0),
         rotation_angle=Radians(0.0), footprint=footprint,
         healpix_cells=healpix_cells_from_poly(footprint),
         projected_footprints=frozendict(), stack_ids=(name,))

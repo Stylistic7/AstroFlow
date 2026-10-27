@@ -58,7 +58,7 @@ def _targets(panes, scale=2.21, start=0):
         poly = _footprint(ra, dec, pa)
         h = f"{i:016x}"
         refs[h] = _LocalRef(Target(
-            content_hash=h, name=name, center=(Degrees(ra), Degrees(dec)),
+            content_hash=h, name=name, center=(Degrees(ra), Degrees(dec)), stable_center=(Degrees(ra), Degrees(dec)),
             image_scale=ArcsecondsPerPixel(scale), rotation_angle=Radians(math.radians(pa - 180.0)),
             footprint=poly, healpix_cells=healpix_cells_from_poly(poly), projected_footprints=frozendict(),
             stable_hash=h, oldest_date=t0 + datetime.timedelta(minutes=i),

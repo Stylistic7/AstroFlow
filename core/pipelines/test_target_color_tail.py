@@ -39,7 +39,7 @@ def _target() -> Target:
     return Target(
         name="tail-test", content_hash="target_content", stable_hash="target_tail",
         oldest_date=_DATE, newest_date=_DATE,
-        center=(Degrees(100.0), Degrees(0.0)), image_scale=ArcsecondsPerPixel(8.0),
+        center=(Degrees(100.0), Degrees(0.0)), stable_center=(Degrees(100.0), Degrees(0.0)), image_scale=ArcsecondsPerPixel(8.0),
         rotation_angle=Radians(0.0), footprint=_FOOTPRINT,
         healpix_cells=healpix_cells_from_poly(_FOOTPRINT),
         projected_footprints=frozendict(), stack_ids=("s0",))

@@ -157,7 +157,7 @@ def _lab_target(i: int, spec):
     return Target(
         name=f"labpanel{i}", content_hash=f"lab_tcontent_{i}",
         stable_hash=f"lab_t{i}", oldest_date=_DATE, newest_date=_DATE,
-        center=(Degrees(float(center[0])), Degrees(float(center[1]))),
+        center=(Degrees(float(center[0])), Degrees(float(center[1]))), stable_center=(Degrees(float(center[0])), Degrees(float(center[1]))),
         image_scale=ArcsecondsPerPixel(2.0), rotation_angle=Radians(0.0),
         footprint=footprint, healpix_cells=healpix_cells_from_poly(footprint),
         projected_footprints=frozendict(),
@@ -183,7 +183,7 @@ def _lab_mosaic(targets):
         stable_hash="lab_mosaic", target_ids=ids,
         panel_target_ids=ids,
         oldest_date=_DATE, newest_date=_DATE,
-        center=(Degrees(_RA), Degrees(_DEC)),
+        center=(Degrees(_RA), Degrees(_DEC)), stable_center=(Degrees(_RA), Degrees(_DEC)),
         image_scale=ArcsecondsPerPixel(2.0), rotation_angle=Radians(0.0),
         footprint=footprint, healpix_cells=healpix_cells_from_poly(footprint),
         projected_footprints=frozendict(),
