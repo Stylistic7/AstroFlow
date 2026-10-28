@@ -91,6 +91,10 @@ def mosaic_as_of(mosaic, full_targets: dict, stacks_by_target: dict, night, quar
     """`(Mosaic, {target id: Target}, {(target id, filter): stacks})` as of
     `night`, or None when nothing was shot yet. An object whose membership
     is complete is today's own, so its keys are the production pipeline's.
+    An as-of object keeps the production identity of what it is a version
+    of — `Mosaic.targets` and friends resolve ids out of the context, and a
+    night whose oldest member is missing would otherwise mint ids nothing
+    knows — while its content hash is its own membership's.
 
     A stack with fewer than `min_frames` frames by that night is left out:
     the integration would refuse it at the same gate, and a refused channel
@@ -108,15 +112,18 @@ def mosaic_as_of(mosaic, full_targets: dict, stacks_by_target: dict, night, quar
         if not kept:
             continue
         target = full if len(kept) == len(stacks_by_target[tid]) and all(
-            s is f for s, f in zip(kept, stacks_by_target[tid])) else Target.from_stacks(kept)
-        targets[target.stable_hash] = target
+            s is f for s, f in zip(kept, stacks_by_target[tid])) else replace(
+            Target.from_stacks(kept), stable_hash=full.stable_hash)
+        targets[tid] = target
         for filter, group in group_stacks_by_filter(kept).items():
-            channels[(target.stable_hash, filter)] = tuple(group)
+            channels[(tid, filter)] = tuple(group)
     if not targets:
         return None
     complete = set(targets) == set(mosaic.target_ids) and all(
         targets[tid] is full_targets[tid] for tid in targets)
-    return (mosaic if complete else mosaic_from_targets(tuple(targets), targets)), targets, channels
+    as_of = mosaic if complete else replace(
+        mosaic_from_targets(tuple(targets), targets), stable_hash=mosaic.stable_hash)
+    return as_of, targets, channels
 
 
 def canvas_night(mosaic, decisions, nights: list[datetime.date]) -> datetime.date:

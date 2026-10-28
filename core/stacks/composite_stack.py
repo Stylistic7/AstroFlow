@@ -175,12 +175,12 @@ class Stack(BaseStack, AstrometricAttributes):
     def with_runs(self, run_hashes: Sequence[str]) -> "Stack":
         """This stack with only the runs `run_hashes` — a real Stack, its
         content hash and attributes those runs' (`pipelines/time_lapse.py`
-        builds the stack as it was on a given night). The stable hash is
-        the oldest run's, which must be among them."""
+        builds the stack as it was on a given night). It keeps THIS stack's
+        identity: it is a version of this stack, whichever of its runs the
+        oldest kept one is."""
         contents = RunsDict({h: r for h, r in self.contents.items() if h in run_hashes})
         runs_by_age = sorted(contents.values(), key=lambda r: r.oldest_date)
-        assert runs_by_age and runs_by_age[0].stable_hash == self.stable_hash, (
-            f"{self.stable_hash}: the oldest run carries the stack's id and must stay")
+        assert runs_by_age, f"{self.stable_hash}: no runs kept"
         frames = [f for r in runs_by_age for f in r.frames]
         metadata = MetadataDict({})
         for r in runs_by_age:
@@ -192,7 +192,7 @@ class Stack(BaseStack, AstrometricAttributes):
             | asdict(AstrometricAttributes.from_objects(
                 runs_by_age, runs_by_age[0], intersect_polygons, anchor=runs_by_age[0]))
             | {"content_hash": hash_list(sorted(r.content_hash for r in contents.values())),
-               "contents": contents}
+               "contents": contents, "stable_hash": self.stable_hash}
         )
         return replace(self, **attributes)
 
