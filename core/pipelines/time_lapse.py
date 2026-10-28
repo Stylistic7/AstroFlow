@@ -212,7 +212,9 @@ def hubble_frame(mosaic_id: str, night: str, caption: str, values: dict, sho: Im
     return Produced(out)
 
 
-@node
+# Head-pinned like the other file-less orchestration ops: ffmpeg lives on the
+# head, and the keepers it writes belong beside the products on the head's volume.
+@node(resources={"diskcache": 0.001})
 def time_lapse_video(root: str, nights: tuple, *frames) -> str:
     """The frames as `<root>/<night>.png` and the video as `<root>/time_lapse.mp4`
     (H.264, `FRAMES_PER_SECOND`, the last frame held); returns the video's path."""
