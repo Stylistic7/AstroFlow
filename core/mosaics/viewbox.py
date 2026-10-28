@@ -9,7 +9,7 @@ from geometry.projections.stereographic import StereographicProjection
 # TODO: Rename or unify geometry_compute_viewbox
 from geometry.viewbox import compute_viewbox as geometry_compute_viewbox
 from geometry.polygons import project_polygon
-from previews.types import SUBFRAME
+from previews.types import SUBFRAME, VIDEO, VIDEO_PIXELS_X
 
 
 
@@ -107,9 +107,12 @@ def compute_viewbox(
     x_min, y_min, x_span, y_span = geometry_compute_viewbox(list(zip(xs, ys)))
 
     # Compute the number of pixels along the x axis. Non-subframe modes use
-    # the object's image scale; subframe mode makes a fixed-size thumbnail.
+    # the object's image scale; subframe mode makes a fixed-size thumbnail,
+    # video mode a fixed-size frame.
     if quality == SUBFRAME:
         num_pixels_x = 2048
+    elif quality == VIDEO:
+        num_pixels_x = VIDEO_PIXELS_X
     else:
         num_pixels_x = x_span / np.deg2rad(object.image_scale / 3600)
     finished_pixels_x = int(np.ceil(num_pixels_x))

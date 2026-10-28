@@ -39,6 +39,7 @@ class DecisionType(str, Enum):
     PROJECT_KIND = "project_kind"          # planner: "lrgb" or "narrowband" (R/G/B = star colour)
     MOSAIC_MEMBERSHIP = "mosaic_membership"  # "standalone": kept out of every mosaic however it overlaps
     SHARING = "sharing"                      # subject = a shared master folder; "shared": this object's masters go there
+    TIME_LAPSE_CANVAS = "time_lapse_canvas"  # subject = a mosaic; the night (ISO date) whose extent frames its time-lapse
 
 
 # Lower precedence = applied first by resolve_decisions.
@@ -135,6 +136,14 @@ class DecisionKey:
         overlapping fields are different projects: the choice "standalone"
         keeps the target out of every mosaic (`mosaics.identification`)."""
         return cls(DecisionType.MOSAIC_MEMBERSHIP, ObjectType.TARGET, target_id, target_id)
+
+    @classmethod
+    def time_lapse_canvas(cls, mosaic_id: str) -> "DecisionKey":
+        """The night (an ISO date) whose extent frames this mosaic's
+        time-lapse (`pipelines/time_lapse.py`). Absent: the newest night —
+        which moves as the project grows, re-framing and re-keying every
+        frame; pinning it keeps the frames built so far built."""
+        return cls(DecisionType.TIME_LAPSE_CANVAS, ObjectType.MOSAIC, mosaic_id, mosaic_id)
 
     @classmethod
     def sharing(cls, object_type: "ObjectType", object_id: str, folder: str) -> "DecisionKey":

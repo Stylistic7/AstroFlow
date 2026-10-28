@@ -199,6 +199,89 @@ def standalone_targets(decision_overrides) -> frozenset[str]:
                      if k.decision_type is DecisionType.MOSAIC_MEMBERSHIP and v.choice == STANDALONE)
 
 
+def mosaic_from_targets(target_ids, resolved: dict[str, Target]) -> Mosaic:
+    """The Mosaic of the targets `target_ids` (`resolved`: id -> Target).
+    Identity is the oldest target's, content the members' contents — the
+    same composition Stack and Target use — so a mosaic built from a
+    SUBSET of a project's targets, or from targets holding a subset of their
+    runs (`pipelines/time_lapse.py`), is keyed by exactly that membership."""
+    oldest = resolved[sorted(target_ids, key=lambda t: resolved[t].oldest_date)[0]]
+    stable_hash = oldest.stable_hash
+
+    oldest_date = min(resolved[t].oldest_date for t in target_ids)
+    newest_date = max(resolved[t].newest_date for t in target_ids)
+
+    image_scale = ArcsecondsPerPixel(np.mean([resolved[t].image_scale for t in target_ids]))
+    rotation_angle = Radians(np.mean([resolved[t].rotation_angle for t in target_ids]))
+
+    all_points = [
+        resolved[target_id].footprint.points[:-1] for target_id in target_ids
+    ]
+    all_points = np.concatenate(all_points)
+    log.debug("Computing convex hull", num_targets=len(target_ids), num_points=all_points.shape[0])
+    footprint = SingleSphericalPolygon.convex_hull(all_points)
+
+    healpix_cells = healpix_cells_from_poly(footprint)
+
+    rng = random.Random(hash(tuple(map(tuple, all_points))))
+    for i in range(10):
+        if SphericalPolygon.self_intersect(footprint.points):
+            points = footprint.points
+            rng.shuffle(points)
+            footprint = SingleSphericalPolygon.convex_hull(points)
+        else:
+            break
+
+    projected_footprints = frozendict(footprints.all_projections(footprint))
+
+    center_raw = vector_to_lonlat(*np.mean(footprint.points, axis=0))
+    center = (Degrees(center_raw[0]), Degrees(center_raw[1]))
+    name = position_string.canonical_target_string(center)
+
+    chronology_attributes = ChronologyAttributes(
+        stable_hash, oldest_date, newest_date
+    )
+    astrometric_attributes = AstrometricAttributes(
+        name=name,
+        center=center,
+        image_scale=image_scale,
+        rotation_angle=rotation_angle,
+        footprint=footprint,
+        healpix_cells=healpix_cells,
+        projected_footprints=projected_footprints,
+        stable_center=oldest.stable_center,
+    )
+
+    from hashing import hash_list
+    # content_hash composes the children's CONTENT hashes (mirror
+    # Stack/Target), NOT their stable/identity hashes — so a Mosaic's
+    # content_hash changes whenever any member target's *content* changes.
+    # (target_ids stays the identity list.)
+    content_hash = hash_list(sorted(resolved[t].content_hash for t in target_ids))
+
+    # Panel order — observer-independent, sorted by RA with the
+    # sequence rotated to start after the largest RA gap so the
+    # 0h/24h boundary doesn't split a strip. Same numbering anywhere
+    # on Earth, so the polygon labels in the viewer match the
+    # "Panel N" prefix in the Telescopius / text export.
+    from mosaics.rise_time import panel_order
+    panel_target_ids = panel_order(
+        [(t, float(resolved[t].center[0])) for t in target_ids]
+    )
+
+    attributes: dict[str, Any] = (
+        asdict(chronology_attributes)
+        | asdict(astrometric_attributes)
+        | {
+            "stable_hash": stable_hash,
+            "content_hash": content_hash,
+            "target_ids": tuple(sorted(target_ids)),
+            "panel_target_ids": panel_target_ids,
+        }
+    )
+    return Mosaic(**attributes)
+
+
 @node
 def identify_mosaics(
     standalone: frozenset[str],
@@ -222,85 +305,9 @@ def identify_mosaics(
     output_mosaics = MosaicsDict()
     for i, mosaic in enumerate(mosaics):
         log.info("Processing mosaic", index=i, total=len(mosaics), num_targets=len(mosaic))
-
-        oldest = resolved[sorted(mosaic, key=lambda t: resolved[t].oldest_date)[0]]
-        stable_hash = oldest.stable_hash
-
-        oldest_date = min(resolved[t].oldest_date for t in mosaic)
-        newest_date = max(resolved[t].newest_date for t in mosaic)
-
-        image_scale = ArcsecondsPerPixel(np.mean([resolved[t].image_scale for t in mosaic]))
-        rotation_angle = Radians(np.mean([resolved[t].rotation_angle for t in mosaic]))
-
-        all_points = [
-            resolved[target_id].footprint.points[:-1] for target_id in mosaic
-        ]
-        all_points = np.concatenate(all_points)
-        log.debug("Computing convex hull", num_targets=len(mosaic), num_points=all_points.shape[0])
-        footprint = SingleSphericalPolygon.convex_hull(all_points)
-
-        healpix_cells = healpix_cells_from_poly(footprint)
-
-        rng = random.Random(hash(tuple(map(tuple, all_points))))
-        for i in range(10):
-            if SphericalPolygon.self_intersect(footprint.points):
-                points = footprint.points
-                rng.shuffle(points)
-                footprint = SingleSphericalPolygon.convex_hull(points)
-            else:
-                break
-
-        projected_footprints = frozendict(footprints.all_projections(footprint))
-
-        center_raw = vector_to_lonlat(*np.mean(footprint.points, axis=0))
-        center = (Degrees(center_raw[0]), Degrees(center_raw[1]))
-        name = position_string.canonical_target_string(center)
-
-        chronology_attributes = ChronologyAttributes(
-            stable_hash, oldest_date, newest_date
-        )
-        astrometric_attributes = AstrometricAttributes(
-            name=name,
-            center=center,
-            image_scale=image_scale,
-            rotation_angle=rotation_angle,
-            footprint=footprint,
-            healpix_cells=healpix_cells,
-            projected_footprints=projected_footprints,
-            stable_center=oldest.stable_center,
-        )
-
-        from hashing import hash_list
-        target_ids = tuple(sorted(mosaic))
-        # content_hash composes the children's CONTENT hashes (mirror
-        # Stack/Target), NOT their stable/identity hashes — so a Mosaic's
-        # content_hash changes whenever any member target's *content* changes.
-        # (target_ids stays the identity list.)
-        content_hash = hash_list(sorted(resolved[t].content_hash for t in mosaic))
-
-        # Panel order — observer-independent, sorted by RA with the
-        # sequence rotated to start after the largest RA gap so the
-        # 0h/24h boundary doesn't split a strip. Same numbering anywhere
-        # on Earth, so the polygon labels in the viewer match the
-        # "Panel N" prefix in the Telescopius / text export.
-        from mosaics.rise_time import panel_order
-        panel_target_ids = panel_order(
-            [(t, float(resolved[t].center[0])) for t in mosaic]
-        )
-
-        attributes: dict[str, Any] = (
-            asdict(chronology_attributes)
-            | asdict(astrometric_attributes)
-            | {
-                "stable_hash": stable_hash,
-                "content_hash": content_hash,
-                "target_ids": target_ids,
-                "panel_target_ids": panel_target_ids,
-            }
-        )
-
-        output_mosaic = Mosaic(**attributes)
-        log.info("Made mosaic", name=name, stable_hash=stable_hash, num_targets=len(mosaic))
+        output_mosaic = mosaic_from_targets(mosaic, resolved)
+        stable_hash = output_mosaic.stable_hash
+        log.info("Made mosaic", name=output_mosaic.name, stable_hash=stable_hash, num_targets=len(mosaic))
 
         if debug:
             plot_mosaic(
