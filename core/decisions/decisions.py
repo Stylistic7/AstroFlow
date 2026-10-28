@@ -41,6 +41,7 @@ class DecisionType(str, Enum):
     SHARING = "sharing"                      # subject = a shared master folder; "shared": this object's masters go there
     TIME_LAPSE_CANVAS = "time_lapse_canvas"  # subject = a mosaic; the night (ISO date) whose extent frames its time-lapse
     TIME_LAPSE_NIGHTS = "time_lapse_nights"  # subject = a mosaic; "A..B" (ISO dates): the nights its time-lapse builds this pass
+    TIME_LAPSE_LOOK = "time_lapse_look"      # subject = a mosaic; the id of the saved Hubble look its time-lapse bakes with
 
 
 # Lower precedence = applied first by resolve_decisions.
@@ -153,6 +154,15 @@ class DecisionKey:
         native intermediates are products a trace keeps alive, so the
         window is what bounds the disk (`pipelines/time_lapse.py`)."""
         return cls(DecisionType.TIME_LAPSE_NIGHTS, ObjectType.MOSAIC, mosaic_id, mosaic_id)
+
+    @classmethod
+    def time_lapse_look(cls, mosaic_id: str) -> "DecisionKey":
+        """Which saved look (`web_server/backend/finish_saves.py`, the id of a
+        save of the mosaic's production Hubble finish) the time-lapse bakes
+        its frames with; absent: the finish's defaults. A decision rather
+        than "the newest save" because a pipeline's trace is cached on its
+        config, and only a config change re-bakes the frames."""
+        return cls(DecisionType.TIME_LAPSE_LOOK, ObjectType.MOSAIC, mosaic_id, mosaic_id)
 
     @classmethod
     def sharing(cls, object_type: "ObjectType", object_id: str, folder: str) -> "DecisionKey":

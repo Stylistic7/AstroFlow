@@ -60,7 +60,7 @@ from mosaics.identification import mosaic_from_targets
 from mosaics.types import Mosaic, Viewbox
 from mosaics.viewbox import compute_viewbox
 from pipelines.hybrid_graxpert_oss_mosaic import _merged_channels
-from pipelines.hybrid_siril_graxpert_oss_mosaic import channel
+from pipelines.hybrid_siril_graxpert_oss_mosaic import PIPELINE as SIRIL_PIPELINE, channel
 from previews.types import VIDEO
 from targets.target_channel import _resolved_by_filter, group_stacks_by_filter
 from targets.types import Target
@@ -153,6 +153,24 @@ def nights_window(mosaic, decisions, nights: list[datetime.date]) -> list[dateti
     return [n for n in nights if first <= n <= last]
 
 
+def saved_look(mosaic, decisions) -> dict:
+    """The slider values of the saved Hubble look the `time_lapse_look`
+    decision names — a save of the mosaic's PRODUCTION Hubble finish, made
+    with the viewer's "Save this look" — or {} for the finish's defaults.
+    Only the sliders: the data anchors (sky, noise, bright level) are
+    measured from the final frame's own composite, not the production
+    mosaic's."""
+    override = decisions.get(DecisionKey.time_lapse_look(mosaic.stable_hash))
+    if override is None:
+        return {}
+    from finishes.registry import get_finish
+    saves = context.get(("finish_saves", "mosaic", mosaic.stable_hash, SIRIL_PIPELINE, "Hubble")) or []
+    save = next((s for s in saves if s["id"] == str(override.choice)), None)
+    assert save is not None, f"time-lapse look: no saved Hubble look {override.choice!r} for {mosaic.stable_hash}"
+    data = {p.name for p in get_finish("Hubble").params if p.kind == "data"}
+    return {k: float(v) for k, v in save["params"].items() if k not in data}
+
+
 def time_lapse_canvas(mosaic_as_of_canvas_night) -> Viewbox:
     """The one canvas every night is placed on, at the Video quality, from
     the declared geometry of the mosaic as of the canvas night. Stamped
@@ -204,13 +222,15 @@ def sho_composite(canvas: Viewbox, s, h, o, *, out: TiffFilePath) -> Produced:
 
 
 @node
-def hubble_values(sho: ImageMetadata) -> dict:
-    """The Hubble finish's values seeded from one composite — the final
-    night's, so every frame is stretched the same and the noise of the early
-    ones shows for what it is."""
+def hubble_values(sho: ImageMetadata, look: dict) -> dict:
+    """The Hubble finish's values: the data anchors seeded from one
+    composite — the final night's, so every frame is stretched the same and
+    the noise of the early ones shows for what it is — under the sliders of
+    the saved `look` (`saved_look`)."""
     from finishes.preview import _stf_values
     arr = _read(sho)
-    return {k: float(v) for k, v in _stf_values(arr, ("S", "H", "O"), anchors_from=arr).items()}
+    seeded = {k: float(v) for k, v in _stf_values(arr, ("S", "H", "O"), anchors_from=arr).items()}
+    return {**seeded, **look}
 
 
 def _caption(frame: np.ndarray, text: str) -> None:
@@ -325,7 +345,7 @@ def for_mosaic(mosaic, config):
         layers[night] = (starless, stars)
     composites = {night: sho_composite(canvas, sl.get("S"), sl.get("H"), sl.get("O"))
                   for night, (sl, _) in layers.items()}
-    values = hubble_values(composites[final])
+    values = hubble_values(composites[final], saved_look(mosaic, config.decisions))
 
     frames = []
     for night in sorted(n for n in layers if n in window):
