@@ -32,8 +32,11 @@ pixel, G alone where only it does, the H stars where no broadband does
 (RGB came to 75a1 a year after H), screened in at the finish's own star
 weight. The 16-bit frames are persisted intermediates (not display taps:
 a hundred of them would bury the finishes page); the keepers — a PNG per
-night, written as each night lands, and the MP4 at the end — go to
-`<output root>/TimeLapse/<mosaic>/`, named by night.
+night, written as each night lands, the night's frame inputs under
+`layers/<night>/`, and the MP4 at the end — go to
+`<output root>/TimeLapse/<mosaic>/`, named by night. The kept layers are
+what `scripts/time_lapse_bake.py` re-bakes with another look, so a change
+of taste costs a minute a frame, never a rebuild.
 """
 from __future__ import annotations
 
@@ -248,30 +251,70 @@ def _caption(frame: np.ndarray, text: str) -> None:
     frame[:] = (frame * (1.0 - a) + 65535.0 * a + 0.5).astype(np.uint16)
 
 
+LAYERS = ("sho", "starless_r", "starless_g", "starless_b", "stars_r", "stars_g", "stars_b", "stars_h")
+
+
+def render_frame(sho: np.ndarray, layers: dict, values: dict, caption: str) -> np.ndarray:
+    """One frame as a 16-bit RGB array: the SHO composite (missing bands
+    filled) through the Hubble finish with `values`, its stars from
+    `stars_fallback` over the layers' coverage, the caption burnt in.
+    `layers`: mono (H, W) arrays, or None, under the `LAYERS` names.
+    Shared by the frame node and `scripts/time_lapse_bake.py`, which
+    re-bakes kept layers with another look without the pipeline."""
+    from finishes.registry import get_finish
+    sho = fill_missing_bands(sho)
+    h, w = sho.shape[:2]
+
+    def mono(name):
+        a = layers.get(name)
+        return a if a is not None else np.zeros((h, w), np.float32)
+    covered = {f: mono(f"starless_{f.lower()}") > 0 for f in "RGB"}
+    covered["H"] = sho[..., 1] > 0
+    stars = {f: mono(f"stars_{f.lower()}") for f in "RGBH"}
+    rgb = get_finish("Hubble").bake([sho, stars_fallback(stars, covered)], values)
+    frame = np.ascontiguousarray((np.clip(rgb, 0.0, 1.0) * 65535.0 + 0.5).astype(np.uint16))
+    _caption(frame, caption)
+    return frame
+
+
 @node(auto_memory=True)
 def hubble_frame(mosaic_id: str, night: str, caption: str, values: dict, sho: ImageMetadata,
                  starless_r, starless_g, starless_b, stars_r, stars_g, stars_b, stars_h,
                  *, out: TiffFilePath) -> Produced:
-    """One frame: the night's SHO composite through the Hubble finish with
-    the pinned `values`, its stars from `stars_fallback`, the caption burnt
-    in; a 16-bit RGB TIFF."""
-    from finishes.registry import get_finish
-    sho_arr = fill_missing_bands(_read(sho))
-    h, w = sho_arr.shape[:2]
-
-    def mono(meta):
-        return _read(meta)[..., 0] if meta is not None else np.zeros((h, w), np.float32)
-    covered = {f: mono(m) > 0 for f, m in (("R", starless_r), ("G", starless_g), ("B", starless_b))}
-    covered["H"] = sho_arr[..., 1] > 0
-    stars = {f: mono(m) for f, m in (("R", stars_r), ("G", stars_g), ("B", stars_b), ("H", stars_h))}
-    rgb = get_finish("Hubble").bake([sho_arr, stars_fallback(stars, covered)], values)
-    frame = np.ascontiguousarray((np.clip(rgb, 0.0, 1.0) * 65535.0 + 0.5).astype(np.uint16))
-    _caption(frame, caption)
+    """One frame (`render_frame`) as a 16-bit RGB TIFF."""
+    metas = dict(zip(LAYERS[1:], (starless_r, starless_g, starless_b, stars_r, stars_g, stars_b, stars_h)))
+    frame = render_frame(_read(sho), {k: _read(m)[..., 0] for k, m in metas.items() if m is not None},
+                         values, caption)
+    h, w = frame.shape[:2]
     img = pyvips.Image.new_from_memory(frame.data, w, h, 3, "ushort").copy(interpretation="rgb16")
     img.set_type(pyvips.GValue.gstr_type, "image-description",
                  json.dumps({"PALETTE": "Hubble", "PIPELINE": "AstroFlow-OSS", "NIGHT": night}))
     img.tiffsave(str(out), compression=FAST_COMPRESSION, tile=True, bigtiff=True)
     return Produced(out)
+
+
+@node
+def keep_layers(root: str, night: str, caption: str, *layers) -> str:
+    """The night's frame inputs — its SHO composite and the starless and
+    stars layers, in `LAYERS` order, None where a filter is absent — copied
+    to `<root>/layers/<night>/`, with the caption, the moment they exist.
+    They are products otherwise, and the orphan sweep reclaims them once
+    their window is done; kept here, `scripts/time_lapse_bake.py` can
+    re-bake every frame with another look in a minute each, without the
+    pipeline. Returns the folder."""
+    import shutil
+    folder = Path(root) / "layers" / night
+    folder.mkdir(parents=True, exist_ok=True)
+    for name, meta in zip(LAYERS, layers):
+        dest = folder / f"{name}.tiff"
+        if meta is None:
+            dest.unlink(missing_ok=True)
+            continue
+        tmp = folder / f".{name}.{os.getpid()}.tiff"
+        shutil.copyfile(meta.filename, tmp)
+        os.replace(tmp, dest)
+    (folder / "caption.txt").write_text(caption)
+    return str(folder)
 
 
 @node
@@ -347,8 +390,9 @@ def for_mosaic(mosaic, config):
                   for night, (sl, _) in layers.items()}
     values = hubble_values(composites[final], saved_look(mosaic, config.decisions))
 
-    frames = []
-    for night in sorted(n for n in layers if n in window):
+    root = str(Path(context.output_dir).parent / "TimeLapse" / mosaic.stable_hash)
+    kept = []
+    for night in sorted(n for n in layers if n in window or n == final):
         i = nights.index(night)
         sl, st = layers[night]
         runs = [r for s in all_stacks.values() for h, r in s.contents.items()
@@ -356,12 +400,12 @@ def for_mosaic(mosaic, config):
         hours = sum(len(r.frames) * float(r.exposure) for r in runs) / 3600.0
         caption = (f"{night}   night {i + 1} of {len(nights)}   "
                    f"{hours:.1f} h   {sum(len(r.frames) for r in runs)} frames")
-        frames.append(hubble_frame(
-            mosaic.stable_hash, str(night), caption, values, composites[night],
-            sl.get("R"), sl.get("G"), sl.get("B"), st.get("R"), st.get("G"), st.get("B"), st.get("H")))
-    if not frames:
+        inputs = (composites[night], sl.get("R"), sl.get("G"), sl.get("B"),
+                  st.get("R"), st.get("G"), st.get("B"), st.get("H"))
+        keep_layers(root, str(night), caption, *inputs)   # the final night's too: the anchors' source
+        if night in window:
+            frame = hubble_frame(mosaic.stable_hash, str(night), caption, values, *inputs)
+            kept.append(keep_frame(root, str(night), frame))
+    if not kept:
         return {}
-    root = str(Path(context.output_dir).parent / "TimeLapse" / mosaic.stable_hash)
-    kept = [keep_frame(root, str(night), frame)
-            for night, frame in zip(sorted(n for n in layers if n in window), frames)]
     return {"Time-lapse": time_lapse_video(root, *kept)}
