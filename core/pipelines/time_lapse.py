@@ -123,6 +123,23 @@ def canvas_night(mosaic, decisions, nights: list[datetime.date]) -> datetime.dat
     return max(n for n in nights if n <= pinned)
 
 
+def nights_window(mosaic, decisions, nights: list[datetime.date]) -> list[datetime.date]:
+    """The nights to build this pass: those inside the `time_lapse_nights`
+    decision's `A..B`, else all of them.
+
+    Why windows: every night that adds a run to a stack re-integrates that
+    stack and re-separates its stars at the native grid, and those are
+    products — about a gigabyte per run added, kept for as long as a trace
+    references them, and only the orphan sweep (`scripts/sweep_orphans.py`)
+    reclaims them. A trace references only its window, so a window at a
+    time, swept between windows, bounds the disk to one window's worth."""
+    override = decisions.get(DecisionKey.time_lapse_nights(mosaic.stable_hash))
+    if override is None:
+        return nights
+    first, last = (datetime.date.fromisoformat(s) for s in str(override.choice).split(".."))
+    return [n for n in nights if first <= n <= last]
+
+
 def time_lapse_canvas(mosaic_as_of_canvas_night) -> Viewbox:
     """The one canvas every night is placed on, at the Video quality, from
     the declared geometry of the mosaic as of the canvas night. Stamped
@@ -229,10 +246,12 @@ def keep_frame(root: str, night: str, frame) -> tuple:
 # Head-pinned like the other file-less orchestration ops: ffmpeg lives on the head.
 @node(resources={"diskcache": 0.001})
 def time_lapse_video(root: str, *kept) -> str:
-    """`<root>/time_lapse.mp4` from the kept PNGs, in name (= night) order:
-    HEVC (a 36 MP frame is past H.264's largest level) through the Mac's
-    hardware encoder, at `FRAMES_PER_SECOND`, the last frame held; returns
-    its path."""
+    """`<root>/time_lapse.mp4` from EVERY night's PNG in the folder, in name
+    (= night) order — the windows built before this one included — HEVC (a
+    36 MP frame is past H.264's largest level) through the Mac's hardware
+    encoder, at `FRAMES_PER_SECOND`, the last frame held; returns its path.
+    `kept` is this window's frames: what makes the video re-cut when they
+    change."""
     folder = Path(root)
     video = folder / "time_lapse.mp4"
     tmp = folder / f".time_lapse.{os.getpid()}.mp4"
@@ -260,15 +279,19 @@ def for_mosaic(mosaic, config):
     nights = nights_of(all_stacks.values())
     if not nights:
         return {}
+    window = nights_window(mosaic, config.decisions, nights)
+    final, framing = nights[-1], canvas_night(mosaic, config.decisions, nights)
     built = {}
-    for night in nights:
+    for night in sorted({*window, final, framing}):   # the final night seeds the stretch
         as_of = mosaic_as_of(mosaic, full_targets, stacks_by_target, night, quarantine)
         if as_of is not None:
             built[night] = as_of
-    canvas = time_lapse_canvas(built[canvas_night(mosaic, config.decisions, list(built))][0])
+    canvas = time_lapse_canvas(built[framing][0])
 
     layers = {}
     for night, (m, targets, channel_stacks) in built.items():
+        if night != final and night not in window:
+            continue
         channels = {(tid, f): channel(targets[tid], f, stacks, config)
                     for (tid, f), stacks in channel_stacks.items()}
         starless, stars = _merged_channels(m, targets, channels, config, canvas,
@@ -276,19 +299,23 @@ def for_mosaic(mosaic, config):
         layers[night] = (starless, stars)
     composites = {night: sho_composite(canvas, sl.get("S"), sl.get("H"), sl.get("O"))
                   for night, (sl, _) in layers.items()}
-    values = hubble_values(composites[max(layers)])
+    values = hubble_values(composites[final])
 
     frames = []
-    for i, night in enumerate(sorted(layers)):
+    for night in sorted(n for n in layers if n in window):
+        i = nights.index(night)
         sl, st = layers[night]
         runs = [r for s in all_stacks.values() for h, r in s.contents.items()
                 if h in runs_through(s, night, quarantine.runs_of(s))]
         hours = sum(len(r.frames) * float(r.exposure) for r in runs) / 3600.0
-        caption = (f"{night}   night {i + 1} of {len(layers)}   "
+        caption = (f"{night}   night {i + 1} of {len(nights)}   "
                    f"{hours:.1f} h   {sum(len(r.frames) for r in runs)} frames")
         frames.append(hubble_frame(
             mosaic.stable_hash, str(night), caption, values, composites[night],
             sl.get("R"), sl.get("G"), sl.get("B"), st.get("R"), st.get("G"), st.get("B"), st.get("H")))
+    if not frames:
+        return {}
     root = str(Path(context.output_dir).parent / "TimeLapse" / mosaic.stable_hash)
-    kept = [keep_frame(root, str(night), frame) for night, frame in zip(sorted(layers), frames)]
+    kept = [keep_frame(root, str(night), frame)
+            for night, frame in zip(sorted(n for n in layers if n in window), frames)]
     return {"Time-lapse": time_lapse_video(root, *kept)}

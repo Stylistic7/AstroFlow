@@ -40,6 +40,7 @@ class DecisionType(str, Enum):
     MOSAIC_MEMBERSHIP = "mosaic_membership"  # "standalone": kept out of every mosaic however it overlaps
     SHARING = "sharing"                      # subject = a shared master folder; "shared": this object's masters go there
     TIME_LAPSE_CANVAS = "time_lapse_canvas"  # subject = a mosaic; the night (ISO date) whose extent frames its time-lapse
+    TIME_LAPSE_NIGHTS = "time_lapse_nights"  # subject = a mosaic; "A..B" (ISO dates): the nights its time-lapse builds this pass
 
 
 # Lower precedence = applied first by resolve_decisions.
@@ -144,6 +145,14 @@ class DecisionKey:
         which moves as the project grows, re-framing and re-keying every
         frame; pinning it keeps the frames built so far built."""
         return cls(DecisionType.TIME_LAPSE_CANVAS, ObjectType.MOSAIC, mosaic_id, mosaic_id)
+
+    @classmethod
+    def time_lapse_nights(cls, mosaic_id: str) -> "DecisionKey":
+        """The window of nights this mosaic's time-lapse builds in one pass,
+        "A..B" with inclusive ISO dates; absent: every night. A night's
+        native intermediates are products a trace keeps alive, so the
+        window is what bounds the disk (`pipelines/time_lapse.py`)."""
+        return cls(DecisionType.TIME_LAPSE_NIGHTS, ObjectType.MOSAIC, mosaic_id, mosaic_id)
 
     @classmethod
     def sharing(cls, object_type: "ObjectType", object_id: str, folder: str) -> "DecisionKey":

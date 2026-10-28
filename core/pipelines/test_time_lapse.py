@@ -7,7 +7,9 @@ import numpy as np
 from frozendict import frozendict
 
 from decisions.decisions import DecisionKey, DecisionOverride
-from pipelines.time_lapse import canvas_night, night_of, nights_of, runs_through, stars_fallback
+from pipelines.time_lapse import (
+    canvas_night, night_of, nights_of, nights_window, runs_through, stars_fallback,
+)
 
 UTC = datetime.timezone.utc
 
@@ -39,6 +41,14 @@ def test_the_canvas_night_is_pinned_by_decision_else_the_newest():
     assert canvas_night(mosaic, frozendict(), nights) == nights[-1]
     pinned = frozendict({DecisionKey.time_lapse_canvas("m"): DecisionOverride(choice="2025-12-31")})
     assert canvas_night(mosaic, pinned, nights) == nights[1], "the newest night at or before the pin"
+
+
+def test_the_window_decision_selects_the_nights_to_build():
+    mosaic = SimpleNamespace(stable_hash="m")
+    nights = [datetime.date(2024, 9, 29), datetime.date(2025, 10, 5), datetime.date(2026, 10, 14)]
+    assert nights_window(mosaic, frozendict(), nights) == nights
+    window = frozendict({DecisionKey.time_lapse_nights("m"): DecisionOverride(choice="2025-01-01..2025-12-31")})
+    assert nights_window(mosaic, window, nights) == [datetime.date(2025, 10, 5)]
 
 
 def test_stars_fall_back_to_g_then_h_where_broadband_is_missing():
