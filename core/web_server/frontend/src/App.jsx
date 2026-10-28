@@ -48,6 +48,7 @@ function App() {
   const [rayStatus, setRayStatus] = useState({});
   const [asiairDevices, setAsiairDevices] = useState({ rigs: [], summary: { total: 0, active: 0 } });
   const [decisionOverrides, setDecisionOverrides] = useState([]);
+  const [quarantined, setQuarantined] = useState({});
   // Stack ids that are night-sky flat sources NOW: promoted by hand, or shot
   // as SkyFlat panes and not demoted (`GET /api/sky_flat_sources`).
   const [skyFlatSources, setSkyFlatSources] = useState([]);
@@ -128,6 +129,7 @@ function App() {
       try {
         const d = await fetch('/api/decision_overrides').then(r => r.json());
         setDecisionOverrides(d.overrides || []);
+        setQuarantined(d.quarantined || {});
         setSkyFlatSources(await fetch('/api/sky_flat_sources').then(r => r.json()));
       } catch (e) { console.warn(e); }
     };
@@ -205,32 +207,27 @@ function App() {
     });
   }, []);
 
-  // Build a set of quarantined (objectType, objectId) from decision overrides.
+  // Effective quarantine is the server's call (decisions/quarantine.py):
+  // a key of the object's own, or every child's — run → stack → target →
+  // mosaic. The same rule processing uses, so what is dimmed here is what
+  // the pipelines leave out.
   const quarantinedSet = useMemo(() => {
     const set = new Set();
-    for (const { key, choice } of decisionOverrides) {
-      if (key.decision_type === "quarantine" && choice === "exclude") {
-        set.add(`${key.object_type}:${key.subject_id}`);
-      }
+    for (const [objectType, ids] of Object.entries(quarantined)) {
+      for (const id of ids) set.add(`${objectType}:${id}`);
     }
     return set;
-  }, [decisionOverrides]);
+  }, [quarantined]);
 
   const isQuarantined = useCallback(
-    (objectType, objectId) => {
-      if (quarantinedSet.has(`${objectType}:${objectId}`)) return true;
-      // A target is effectively quarantined if all its stacks are.
-      if (objectType === "target" && targets[objectId]?.stack_ids?.length > 0) {
-        return targets[objectId].stack_ids.every(
-          sid => quarantinedSet.has(`stack:${sid}`)
-        );
-      }
-      return false;
-    },
-    [quarantinedSet, targets]
+    (objectType, objectId) => quarantinedSet.has(`${objectType}:${objectId}`),
+    [quarantinedSet]
   );
 
-  const quarantineCount = quarantinedSet.size;
+  // The user's own keys, not what they imply.
+  const quarantineCount = decisionOverrides.filter(
+    ({ key, choice }) => key.decision_type === "quarantine" && choice === "exclude"
+  ).length;
 
   const toggleShowForeign = useCallback(() => {
     setShowForeign(prev => {
@@ -291,6 +288,7 @@ function App() {
     try {
       const d = await fetch('/api/decision_overrides').then(r => r.json());
       setDecisionOverrides(d.overrides || []);
+      setQuarantined(d.quarantined || {});
       setSkyFlatSources(await fetch('/api/sky_flat_sources').then(r => r.json()));
     } catch (e) { console.warn(e); }
   }, []);

@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 from typing import Literal
 
-from decisions.decisions import BinaryChoice, DecisionKey, ObjectType as _OT
 from mcp_server.server import NotAvailableYet, context, to_json, tool
 
 ObjectType = Literal["mosaic", "target", "stack", "calibration_stack"]
@@ -32,11 +31,12 @@ def _ui(object_type: str) -> dict:
     return table
 
 
-def _quarantined(object_type: _OT, object_id: str,
-                 parent_stack_id: str | None = None) -> bool:
-    key = DecisionKey.quarantine(object_type, object_id, parent_stack_id)
-    override = context.settings.decision_overrides.get(key)
-    return override is not None and override.choice == BinaryChoice.EXCLUDE
+def _quarantine():
+    """Effective quarantine (`decisions/quarantine.py`): a key of its own,
+    or every child's."""
+    from decisions.quarantine import Quarantine
+    return Quarantine(context.settings.decision_overrides,
+                      lambda sid: (ref := (context.stacks or {}).get(sid)) and ref.get())
 
 
 @tool()
@@ -129,7 +129,7 @@ def _target(t, depth: int) -> dict:
         # Not `t.filters`: that resolver goes through the Ray context proxy.
         "filters": filters_for("target", t.stable_hash),
         "stack_ids": list(t.stack_ids),
-        "quarantined": _quarantined(_OT.TARGET, t.stable_hash),
+        "quarantined": _quarantine().target(t.stable_hash, t.stack_ids),
     }
     if depth >= 1:
         out["stacks"] = [
@@ -157,11 +157,12 @@ def _stack(object_type: str, s, depth: int) -> dict:
         "image_type": s.image_type, "camera": s.camera,
         "oldest_date": s.oldest_date, "newest_date": s.newest_date,
         "n_runs": len(s.contents), "n_frames": len(s.all_frames()),
-        "quarantined": _quarantined(_OT.STACK, s.stable_hash),
+        "quarantined": _quarantine().stack(s.stable_hash),
     })
     if depth < 1:
         return out
     selected = _selected_counts(s)
+    quarantined_runs = _quarantine().runs_of(s)
     budget = MAX_FRAMES
     runs = []
     for run_id, run in s.contents.items():
@@ -171,7 +172,7 @@ def _stack(object_type: str, s, depth: int) -> dict:
             "n_frames": len(run.frames),
             "dependencies": {k: getattr(v, "stack_id", str(v))
                              for k, v in run.dependencies.items()},
-            "quarantined": _quarantined(_OT.STACK, run_id, s.stable_hash),
+            "quarantined": run_id in quarantined_runs,
         }
         if run_id in selected:
             r["selected_frame_count"], r["total_frame_count"] = selected[run_id]

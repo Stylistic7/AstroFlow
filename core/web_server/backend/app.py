@@ -360,16 +360,42 @@ def catalog_entries():
 
 @app.route("/api/decision_overrides")
 def decision_overrides():
-    """Return all decision overrides for the frontend to resolve locally."""
+    """All decision overrides for the frontend to resolve locally, plus the
+    ids each level of quarantine resolves to (`decisions/quarantine.py`):
+    the keys alone cannot say that a stack is out because its every run is,
+    or a target because its every stack is."""
+    from decisions.decisions import ObjectType
+    from decisions.quarantine import Quarantine
     from web_server.backend.decisions import _serialize_key, _serialize_choice
     overrides = context.settings.decision_overrides or {}
+    stacks = context.stacks or {}
+    targets = context.ui_targets or {}
+    mosaics = context.ui_mosaics or {}
+
+    def stack_of(sid):
+        ref = stacks.get(sid)
+        return ref.get() if ref is not None else None
+
+    quarantine = Quarantine(overrides, stack_of)
+    keyed_stacks = [s for sid in quarantine.explicit[ObjectType.STACK] if (s := stack_of(sid))]
     return {
         "overrides": [
             # Calibration choices are plain strings (a stack hash, a path,
             # or "none"); only the binary decisions carry an enum.
             {"key": _serialize_key(k), "choice": _serialize_choice(v.choice)}
             for k, v in overrides.items()
-        ]
+        ],
+        "quarantined": {
+            "run": sorted(quarantine.explicit[ObjectType.RUN]
+                          | {r for s in keyed_stacks for r in s.contents}),
+            "stack": sorted(sid for sid in stacks if quarantine.stack(sid)),
+            "target": sorted(tid for tid, t in targets.items()
+                             if quarantine.target(tid, t["stack_ids"])),
+            "mosaic": sorted(
+                mid for mid, m in mosaics.items()
+                if quarantine.mosaic(mid, ((tid, targets[tid]["stack_ids"])
+                                           for tid in m["panel_target_ids"] if tid in targets))),
+        },
     }
 
 

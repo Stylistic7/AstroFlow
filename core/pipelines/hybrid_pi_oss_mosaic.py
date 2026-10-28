@@ -64,8 +64,7 @@ def channels_for_target(target, config, post_processed_master=post_processed_mas
     `post_processed_master` is the per-stack recipe — this module's, or the
     Downscaled twin's, which adds a transform in front of it."""
     channels = {}
-    for filter in target.filters:
-        stacks = target.stacks_for(filter)
+    for filter, stacks in target.channels(config.decisions).items():
         masters = [post_processed_master(s, config) for s in stacks]
         channels[filter] = solved_channel(merge_target_channel(
             target, filter, stacks, config, *masters,
@@ -95,6 +94,8 @@ def for_target(target, config):
         (target.id, filter): sink
         for filter, sink in channels_for_target(target, config).items()
     }
+    if not channels:   # quarantined: no products of its own
+        return {}
     viewbox = _measured_viewbox(channels, single_panel=True)
     starless, stars = _merged_channels(target, {target.id: target}, channels,
                                        config, viewbox)
@@ -128,10 +129,13 @@ def mosaic_stage(mosaic, config, post_processed_master=post_processed_master):
     """Native star separation, place + merge each layer, the colour tail.
     Shared with the Downscaled twin, which only changes the per-stack
     recipe."""
-    targets_by_id = {t.id: t for t in mosaic.targets}
+    panels = mosaic.panels(config.decisions)
+    if not panels:   # quarantined: no products
+        return {}
+    targets_by_id = {t.id: t for t in panels}
 
     channels = {}
-    for target in mosaic.targets:
+    for target in panels:
         for filter, sink in channels_for_target(
                 target, config, post_processed_master).items():
             channels[(target.id, filter)] = sink

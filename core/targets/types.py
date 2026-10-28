@@ -98,6 +98,12 @@ class Target(
         from targets.target_channel import channel_stacks_for
         return channel_stacks_for(self, filter)
 
+    def channels(self, decision_overrides) -> dict:
+        """`filter -> member Stacks` after the user's exclusions — what a
+        pipeline builds (see `targets/target_channel.live_channels`)."""
+        from targets.target_channel import live_channels
+        return live_channels(self, decision_overrides)
+
     # A Target IS a single-panel mosaic. These two members let the entire
     # mosaic colour tail (place → merge → color_post_process, incl. the
     # panels-as-tiles machinery) run on a Target unchanged: `viewbox` frames

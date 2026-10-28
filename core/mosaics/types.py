@@ -66,6 +66,12 @@ class Mosaic(
             for v in (context.targets[tid] for tid in self.target_ids)
         )
 
+    def panels(self, decision_overrides) -> tuple:
+        """`targets` with the quarantined ones out — what a pipeline places
+        (see `targets/target_channel.live_panels`)."""
+        from targets.target_channel import live_panels
+        return live_panels(self, decision_overrides)
+
     @property
     def filters(self) -> list[str]:
         """All filters present across this mosaic's targets, deterministic order."""

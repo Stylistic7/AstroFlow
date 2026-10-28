@@ -1,5 +1,5 @@
 from dataclasses import replace, asdict
-from collections.abc import Sequence
+from collections.abc import Collection
 from frozendict import frozendict
 
 from context import context
@@ -15,7 +15,7 @@ from beartype import beartype
 # something in the UI.
 @beartype
 def apply_quarantine(
-    stack: Stack, quarantined_substacks: Sequence[StackHash] | set[StackHash]
+    stack: Stack, quarantined_substacks: Collection[StackHash]
 ) -> Stack | None:
     new_contents = RunsDict(
         {

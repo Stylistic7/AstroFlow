@@ -75,8 +75,9 @@ def _get_polygons(pipeline: str, viewbox: Viewbox, *args) -> list[dict[str, Any]
             for e in traced_paths_for(cart_item)
             if e.get("display") == "Master" and e.get("object_type") == "stack"
         }
-        overrides = context.settings.decision_overrides
-        from decisions.compute_graph import _is_quarantined
+        from decisions.quarantine import Quarantine
+        quarantine = Quarantine(context.settings.decision_overrides,
+                                lambda sid: stacks[sid].get())
 
         target_numbers = obj.panel_numbers()
 
@@ -106,7 +107,7 @@ def _get_polygons(pipeline: str, viewbox: Viewbox, *args) -> list[dict[str, Any]
             active_stack = next(
                 (stacks[sid].get() for sid in target.stack_ids
                  if (not selected_filter or stacks[sid].get().filter == selected_filter)
-                 and not _is_quarantined(overrides, ObjectType.STACK, sid)),
+                 and not quarantine.stack(sid)),
                 None,
             )
 

@@ -14,6 +14,7 @@ from decisions.decisions import (
     ObjectType, DECISION_PRECEDENCE, resolve_decision, get_decisions_for_object,
 )
 from decisions.subframe_selection import select_subframes
+from decisions.quarantine import Quarantine
 from quarantining.quarantining import apply_quarantine
 
 
@@ -22,19 +23,17 @@ def _apply_run_exclusions(
     decision_overrides: frozendict[DecisionKey, DecisionOverride],
     decision_type: DecisionType,
 ) -> Stack | None:
-    """Remove runs excluded by a specific decision type."""
-    excluded = {
-        key.subject_id
-        for key, override in decision_overrides.items()
-        if (
-            key.decision_type == decision_type
-            # quarantine keys for runs are RUN-typed; rotation outliers
-            # (and a stack-level quarantine, whose subject is the stack id)
-            # stay STACK-typed
-            and key.object_type in (ObjectType.STACK, ObjectType.RUN)
+    """Remove the runs a decision type excludes."""
+    if decision_type == DecisionType.QUARANTINE:
+        excluded = Quarantine(decision_overrides).runs_of(stack)
+    else:
+        # Rotation outliers are STACK-typed keys whose subject is the run.
+        excluded = {
+            key.subject_id
+            for key, override in decision_overrides.items()
+            if key.decision_type == decision_type
             and override.choice == BinaryChoice.EXCLUDE
-        )
-    }
+        }
     if not excluded:
         return stack
     return apply_quarantine(stack, excluded)
@@ -111,6 +110,8 @@ def is_run_included(
     decision_overrides: frozendict[DecisionKey, DecisionOverride],
 ) -> bool:
     """Check if a run survives rotation/quarantine decisions. For per-run annotation."""
+    if run_hash in Quarantine(decision_overrides).runs_of(stack):   # its key, or the stack's
+        return False
     keys = (
         DecisionKey.quarantine(
             ObjectType.STACK, run_hash, parent_stack_id=stack.stable_hash,

@@ -76,3 +76,43 @@ def channel_stacks_for(target: Target, filter: str) -> tuple[Stack, ...]:
 def filters_for_target(target: Target) -> list[str]:
     """Filters this target was imaged in, in deterministic order."""
     return list(_resolved_by_filter(target.stack_ids).keys())
+
+
+def _quarantine(decision_overrides):
+    from decisions.quarantine import Quarantine
+    return Quarantine(decision_overrides, lambda sid: context.stacks[sid].get())
+
+
+def live_channels(target: Target, decision_overrides) -> dict[str, tuple[Stack, ...]]:
+    """`filter -> member stacks` with the quarantined ones out
+    (`decisions/quarantine.py`): a filter with no member left is absent,
+    and a quarantined target has no channels at all. To every pipeline the
+    panel simply was not imaged in that filter.
+
+    Membership is settled HERE, at trace time, not inside the integration:
+    a stack that stays promised with nothing to integrate raises "no frames
+    after applying decisions", and one such panel channel held every finish
+    of its mosaic at the previous generation (549e 2026-10-24, e308
+    2026-10-27). Identities are untouched — the stack stays in its Target,
+    the Target in its Mosaic — so clearing the key brings the channel
+    straight back from cache. The computed subframe gate reads metadata and
+    stays the integration's to refuse."""
+    quarantine = _quarantine(decision_overrides)
+    if quarantine.target(target.stable_hash, target.stack_ids):
+        return {}
+    channels = {}
+    for filter, stacks in _resolved_by_filter(target.stack_ids).items():
+        members = tuple(s for s in stacks if not quarantine.stack(s.stable_hash))
+        if members:
+            channels[filter] = members
+    return channels
+
+
+def live_panels(mosaic, decision_overrides) -> tuple[Target, ...]:
+    """The mosaic's targets with the quarantined ones out; none when the
+    mosaic itself is. Same rule and reason as `live_channels`."""
+    quarantine = _quarantine(decision_overrides)
+    targets = mosaic.targets
+    if quarantine.mosaic(mosaic.stable_hash, ((t.stable_hash, t.stack_ids) for t in targets)):
+        return ()
+    return tuple(t for t in targets if not quarantine.target(t.stable_hash, t.stack_ids))

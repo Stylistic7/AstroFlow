@@ -51,8 +51,7 @@ def channels_for_target(target, config, post_processed_master=post_processed_mas
     `post_processed_master` is the per-stack recipe: this module's, or
     one a pipeline that shares everything from here up passes in."""
     channels = {}
-    for filter in target.filters:
-        stacks = target.stacks_for(filter)
+    for filter, stacks in target.channels(config.decisions).items():
         masters = [post_processed_master(s, config) for s in stacks]
         channels[filter] = solved_channel(merge_target_channel(
             target, filter, stacks, config, *masters,
@@ -83,10 +82,13 @@ def for_mosaic(mosaic, config):
 def mosaic_stage(mosaic, config, post_processed_master=post_processed_master):
     """Place + merge every target's channel masters into per-filter mosaic
     files. Shared with the twins that only change the per-stack recipe."""
-    targets_by_id = {t.id: t for t in mosaic.targets}
+    panels = mosaic.panels(config.decisions)
+    if not panels:   # quarantined: no products
+        return {}
+    targets_by_id = {t.id: t for t in panels}
 
     channels = {}
-    for target in mosaic.targets:
+    for target in panels:
         for filter, sink in channels_for_target(
                 target, config, post_processed_master).items():
             channels[(target.id, filter)] = sink

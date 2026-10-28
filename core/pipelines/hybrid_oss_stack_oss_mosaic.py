@@ -81,8 +81,7 @@ def post_processed_master(stack, config):
 def channels_for_target(target, config):
     """Per-filter HDR-combined channel masters. Same as PI Master."""
     channels = {}
-    for filter in target.filters:
-        stacks = target.stacks_for(filter)
+    for filter, stacks in target.channels(config.decisions).items():
         masters = [post_processed_master(s, config) for s in stacks]
         channels[filter] = solved_channel(merge_target_channel(
             target, filter, stacks, config, *masters,
@@ -112,10 +111,13 @@ def for_mosaic(mosaic, config):
     topology as the PI hybrid (native chain per panel, place each layer,
     then one variadic OSS blend per filter and layer).
     """
-    targets_by_id = {t.id: t for t in mosaic.targets}
+    panels = mosaic.panels(config.decisions)
+    if not panels:   # quarantined: no products
+        return {}
+    targets_by_id = {t.id: t for t in panels}
 
     channels = {}
-    for target in mosaic.targets:
+    for target in panels:
         for filter, sink in channels_for_target(target, config).items():
             channels[(target.id, filter)] = sink
 

@@ -96,8 +96,7 @@ def channels_for_target(target, config, post_processed_master=post_processed_mas
     channel with it; otherwise PixInsight HDR-combines the post-processed
     masters."""
     channels = {}
-    for filter in target.filters:
-        stacks = target.stacks_for(filter)
+    for filter, stacks in target.channels(config.decisions).items():
         if channel is not None:
             channels[filter] = channel(target, filter, stacks, config)
             continue
@@ -267,8 +266,10 @@ def register(name: str, post_processed_master, channel=None, geometry=None,
     def _viewbox(targets, channels, config, single_panel):
         if geometry is None:
             return _measured_viewbox(channels, single_panel)
-        return _measured_viewbox({(t.id, f): geometry(t, f, t.stacks_for(f), config)
-                                  for t in targets for f in t.filters}, single_panel)
+        return _measured_viewbox({(t.id, f): geometry(t, f, stacks, config)
+                                  for t in targets
+                                  for f, stacks in t.channels(config.decisions).items()},
+                                 single_panel)
 
     @pipeline(name, processes=Stack)
     def for_stack(stack, config):
@@ -284,6 +285,8 @@ def register(name: str, post_processed_master, channel=None, geometry=None,
             (target.id, filter): sink
             for filter, sink in channels_for_target(target, config, post_processed_master, channel).items()
         }
+        if not channels:   # quarantined: no products of its own
+            return {}
         viewbox = _viewbox([target], channels, config, single_panel=True)
         starless, stars = _merged_channels(target, {target.id: target}, channels,
                                            config, viewbox)
@@ -301,12 +304,15 @@ def register(name: str, post_processed_master, channel=None, geometry=None,
     def for_mosaic(mosaic, config):
         """Per-filter mosaic layer channels plus the colour deliverables."""
         config = _config(config)
-        targets_by_id = {t.id: t for t in mosaic.targets}
+        panels = mosaic.panels(config.decisions)
+        if not panels:   # quarantined: no products
+            return {}
+        targets_by_id = {t.id: t for t in panels}
         channels = {}
-        for target in mosaic.targets:
+        for target in panels:
             for filter, sink in channels_for_target(target, config, post_processed_master, channel).items():
                 channels[(target.id, filter)] = sink
-        viewbox = _viewbox(mosaic.targets, channels, config,
+        viewbox = _viewbox(panels, channels, config,
                            single_panel=len(targets_by_id) == 1)
         starless, stars = _merged_channels(mosaic, targets_by_id, channels,
                                            config, viewbox,
