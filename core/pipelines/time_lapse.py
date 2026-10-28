@@ -86,10 +86,16 @@ def runs_through(stack, night: datetime.date, quarantined) -> tuple[str, ...]:
                  if night_of(r.oldest_date) <= night and h not in quarantined)
 
 
-def mosaic_as_of(mosaic, full_targets: dict, stacks_by_target: dict, night, quarantine):
+def mosaic_as_of(mosaic, full_targets: dict, stacks_by_target: dict, night, quarantine,
+                 min_frames: int):
     """`(Mosaic, {target id: Target}, {(target id, filter): stacks})` as of
     `night`, or None when nothing was shot yet. An object whose membership
-    is complete is today's own, so its keys are the production pipeline's."""
+    is complete is today's own, so its keys are the production pipeline's.
+
+    A stack with fewer than `min_frames` frames by that night is left out:
+    the integration would refuse it at the same gate, and a refused channel
+    fails that filter's merge for the night and with it the frame. The
+    panel simply joins once it has enough."""
     targets, channels = {}, {}
     for tid, full in full_targets.items():
         if quarantine.target(tid, full.stack_ids):
@@ -97,7 +103,7 @@ def mosaic_as_of(mosaic, full_targets: dict, stacks_by_target: dict, night, quar
         kept = []
         for stack in stacks_by_target[tid]:
             runs = runs_through(stack, night, quarantine.runs_of(stack))
-            if runs:
+            if runs and sum(len(stack.contents[r].frames) for r in runs) >= min_frames:
                 kept.append(stack if len(runs) == len(stack.contents) else stack.with_runs(runs))
         if not kept:
             continue
@@ -283,7 +289,8 @@ def for_mosaic(mosaic, config):
     final, framing = nights[-1], canvas_night(mosaic, config.decisions, nights)
     built = {}
     for night in sorted({*window, final, framing}):   # the final night seeds the stretch
-        as_of = mosaic_as_of(mosaic, full_targets, stacks_by_target, night, quarantine)
+        as_of = mosaic_as_of(mosaic, full_targets, stacks_by_target, night, quarantine,
+                             config.min_frames_in_stack)
         if as_of is not None:
             built[night] = as_of
     canvas = time_lapse_canvas(built[framing][0])
