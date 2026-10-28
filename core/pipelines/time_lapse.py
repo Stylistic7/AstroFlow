@@ -18,7 +18,7 @@ and changes no earlier frame. The last night IS today's mosaic, object for
 object, so its masters and layers are the production pipeline's own cache
 hits.
 
-Canvas: fixed, at the Video quality (3840 px wide), from the declared
+Canvas: fixed, at the Video quality (6016 px wide, a 6K display at 1:1), from the declared
 geometry of the mosaic as of the CANVAS night — the newest night, or the
 one pinned by the `time_lapse_canvas` decision so the frame stays put when
 the project grows. Per-panel star separation (SXT, no BXT) runs on the
@@ -230,7 +230,9 @@ def keep_frame(root: str, night: str, frame) -> tuple:
 @node(resources={"diskcache": 0.001})
 def time_lapse_video(root: str, *kept) -> str:
     """`<root>/time_lapse.mp4` from the kept PNGs, in name (= night) order:
-    H.264 at `FRAMES_PER_SECOND`, the last frame held; returns its path."""
+    HEVC (a 36 MP frame is past H.264's largest level) through the Mac's
+    hardware encoder, at `FRAMES_PER_SECOND`, the last frame held; returns
+    its path."""
     folder = Path(root)
     video = folder / "time_lapse.mp4"
     tmp = folder / f".time_lapse.{os.getpid()}.mp4"
@@ -238,7 +240,8 @@ def time_lapse_video(root: str, *kept) -> str:
         ["ffmpeg", "-y", "-loglevel", "error", "-framerate", str(FRAMES_PER_SECOND),
          "-pattern_type", "glob", "-i", str(folder / "*.png"),
          "-vf", f"scale=trunc(iw/2)*2:trunc(ih/2)*2,tpad=stop_mode=clone:stop_duration={HOLD_LAST_SECONDS}",
-         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(tmp)],
+         "-c:v", "hevc_videotoolbox", "-q:v", "65", "-tag:v", "hvc1", "-pix_fmt", "yuv420p",
+         "-movflags", "+faststart", str(tmp)],
         check=True)
     os.replace(tmp, video)
     return str(video)

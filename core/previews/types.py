@@ -9,8 +9,8 @@ includes viewbox dimensions).
 `compute_viewbox` accepts these as inputs so a pipeline body can
 request a specific output-canvas size by name (`mosaic.viewbox(
 "Master")` etc.): a Subframe canvas is a fixed-size thumbnail, a Video
-canvas a fixed 3840 px wide frame, any other is at the object's native
-image scale.
+canvas a fixed 6016 px wide frame (a 6K display at 1:1), any other is at
+the object's native image scale.
 """
 from typing import NewType
 
@@ -21,4 +21,4 @@ PreviewHash = NewType("PreviewHash", str)
 SUBFRAME = "Subframe"
 MASTER = "Master"
 VIDEO = "Video"
-VIDEO_PIXELS_X = 3840
+VIDEO_PIXELS_X = 6016
