@@ -444,3 +444,17 @@ def test_orion_mosaic_trace_matches_disk_and_archive_lifecycle(test_context) -> 
         f"{len(missing_from_orphans)} intermediates not marked orphan "
         f"(first 3): {sorted(missing_from_orphans)[:3]}"
     )
+
+
+def test_identification_products_are_never_walked(temp_output_dir):
+    """Dust measurements and star flats are the identification graph's, not
+    any pipeline trace's: untraced, unreferenced, and never orphans."""
+    dust = _make_file(temp_output_dir / "measure_dust_run" / "a.fits")
+    flat = _make_file(temp_output_dir / "build_star_flat" / "b.xisf")
+    orphan = _make_file(temp_output_dir / "mosaic" / "orphan.xisf")
+
+    orphans, by_dir = orphan_sweep.walk_and_classify(temp_output_dir, set())
+
+    assert {p for p, _ in orphans} == {str(orphan)}
+    assert "measure_dust_run" not in by_dir and "build_star_flat" not in by_dir
+    assert dust.exists() and flat.exists()

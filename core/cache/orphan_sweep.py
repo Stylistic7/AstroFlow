@@ -178,6 +178,16 @@ def live_set(ctx) -> set[str]:
     return live
 
 
+# Op directories the IDENTIFICATION graph fills, which no pipeline trace names:
+# per-run dust measurements (`stacks/dust_runs.measure_dust_run`, the input of
+# `dust_epochs`) and star flats (`stacks/star_flat.build_star_flat`). The live
+# set is the pipeline traces, so these classified as 100% orphan, were swept,
+# and the next pass re-measured every run — 5,290 of them, over an hour, twice
+# in one afternoon (2026-10-28). Never walked until the identification graph
+# is traced for its paths the way the cart is.
+IDENTIFICATION_OPS = frozenset({"measure_dust_run", "build_star_flat"})
+
+
 def walk_and_classify(
     output_dir: "str | Path | None", live: set[str],
     include: "set[str] | None" = None,
@@ -186,7 +196,7 @@ def walk_and_classify(
     parent dir (rel to `output_dir`). Returns `(orphans, by_dir)` where
     `by_dir[rel] = [live_count, live_bytes, orph_count, orph_bytes]`. When
     `include` is non-empty, dirs not in it are skipped (not classified, not
-    swept).
+    swept); `IDENTIFICATION_OPS` dirs are always skipped.
 
     `include` limits the walk to named op dirs; everything else is untouched."""
     orphans: list[tuple[str, int]] = []
@@ -198,7 +208,7 @@ def walk_and_classify(
         if not files:
             continue
         rel = os.path.relpath(root, base)
-        if include is not None and rel not in include:
+        if rel in IDENTIFICATION_OPS or (include is not None and rel not in include):
             continue
         bucket = by_dir.setdefault(rel, [0, 0, 0, 0])
         for f in files:
