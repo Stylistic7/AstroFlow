@@ -22,10 +22,11 @@ const monospaceSx = {
   lineHeight: 1.5,
 };
 
-// `center` = where the pane is aimed. For a panel that is the TARGET's centre
-// (the point AstroFlow's ASIAir push aims at), not its first stack's: the two
-// differ whenever a panel's stacks were shot at different pointings, and two
-// aim points for one panel is how the 7098 seams opened (2026-10-14).
+// `center` = where the pane is aimed. For a panel that is the Target's
+// `stable_center`, the oldest frame's own solved centre and the point the
+// planner's ASIAir push aims at (2026-10-27) — never the mean `center`, which
+// moves with every frame added, so a mis-pointed night would re-aim the next.
+// Two aim points for one panel is how the 7098 seams opened (2026-10-14).
 // Coordinates are J2000 (plate solutions), what the ASIAir CSV import expects.
 function paneLineForStack(stack, pane, center = stack.center) {
   const [ra, dec] = center;
@@ -38,7 +39,7 @@ function paneLineForStack(stack, pane, center = stack.center) {
 function paneLineForTarget(stacks, targets, target_id, pane) {
   const target = targets[target_id];
   const stack = stacks[target.stack_ids[0]];
-  return paneLineForStack(stack, pane, target.center ?? stack.center);
+  return paneLineForStack(stack, pane, target.stable_center);
 }
 
 const HEADER = "Pane, RA, DEC, Position Angle (East), Pane width (arcmins), Pane height (arcmins), Overlap, Row, Column";
@@ -60,12 +61,8 @@ export default function TelescopiusDialog({ open, onClose, stacks, targets, mosa
       return [HEADER, paneLineForStack(stack, 0)].join("\n");
     }
     if (mosaic && targets && stacks) {
-      const sorted = [...mosaic.target_ids].sort((a, b) => {
-        const ra_a = targets[a]?.center?.[0] ?? 0;
-        const ra_b = targets[b]?.center?.[0] ?? 0;
-        return ra_a - ra_b;
-      });
-      const lines = sorted.map((tid, i) => paneLineForTarget(stacks, targets, tid, i));
+      // The Mosaic's own panel order, so "Pane N" is polygon "N" in the viewer.
+      const lines = mosaic.panel_target_ids.map((tid, i) => paneLineForTarget(stacks, targets, tid, i));
       return [HEADER, ...lines].join("\n");
     }
     return null;
