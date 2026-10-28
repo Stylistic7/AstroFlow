@@ -168,6 +168,18 @@ def stars_fallback(stars: dict, covered: dict) -> np.ndarray:
     return out
 
 
+def fill_missing_bands(sho: np.ndarray) -> np.ndarray:
+    """Where a pixel lacks one or two of S, H and O, fill them with the mean
+    of the bands it has: an H-only region renders grey through the same
+    stretch, and colour spreads across the mosaic as the other filters
+    arrive. Left black, the Hubble finish's green-to-gold step caps H at
+    the mean of two black bands, which is what made the first frames black."""
+    covered = sho > 0
+    n = covered.sum(axis=-1, keepdims=True)
+    mean = (sho * covered).sum(axis=-1, keepdims=True) / np.maximum(n, 1)
+    return np.where(covered, sho, mean).astype(np.float32)
+
+
 def _read(meta) -> np.ndarray:
     """A layer as (H, W, bands) float32 at the canvas's own resolution."""
     from finishes.preview import read_pyramid_level
@@ -217,7 +229,7 @@ def hubble_frame(mosaic_id: str, night: str, caption: str, values: dict, sho: Im
     the pinned `values`, its stars from `stars_fallback`, the caption burnt
     in; a 16-bit RGB TIFF."""
     from finishes.registry import get_finish
-    sho_arr = _read(sho)
+    sho_arr = fill_missing_bands(_read(sho))
     h, w = sho_arr.shape[:2]
 
     def mono(meta):

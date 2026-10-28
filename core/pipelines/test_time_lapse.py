@@ -8,7 +8,8 @@ from frozendict import frozendict
 
 from decisions.decisions import DecisionKey, DecisionOverride
 from pipelines.time_lapse import (
-    canvas_night, night_of, nights_of, nights_window, runs_through, stars_fallback,
+    canvas_night, fill_missing_bands, night_of, nights_of, nights_window, runs_through,
+    stars_fallback,
 )
 
 UTC = datetime.timezone.utc
@@ -49,6 +50,18 @@ def test_the_window_decision_selects_the_nights_to_build():
     assert nights_window(mosaic, frozendict(), nights) == nights
     window = frozendict({DecisionKey.time_lapse_nights("m"): DecisionOverride(choice="2025-01-01..2025-12-31")})
     assert nights_window(mosaic, window, nights) == [datetime.date(2025, 10, 5)]
+
+
+def test_missing_narrowband_bands_take_the_mean_of_the_present_ones():
+    sho = np.array([[[0.0, 0.006, 0.0],      # H only → grey
+                     [0.004, 0.008, 0.0]],   # S and H → O is their mean
+                    [[0.004, 0.008, 0.006],  # all three → unchanged
+                     [0.0, 0.0, 0.0]]], np.float32)   # nothing → black
+    out = fill_missing_bands(sho)
+    assert np.allclose(out[0, 0], [0.006, 0.006, 0.006])
+    assert np.allclose(out[0, 1], [0.004, 0.008, 0.006])
+    assert np.allclose(out[1, 0], sho[1, 0])
+    assert out[1, 1].tolist() == [0.0, 0.0, 0.0]
 
 
 def test_stars_fall_back_to_g_then_h_where_broadband_is_missing():
