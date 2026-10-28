@@ -31,9 +31,9 @@ night's composite. Stars: RGB where all three broadband layers cover a
 pixel, G alone where only it does, the H stars where no broadband does
 (RGB came to 75a1 a year after H), screened in at the finish's own star
 weight. The 16-bit frames are persisted intermediates (not display taps:
-a hundred of them would bury the finishes page); the video node writes the
-keepers — a PNG per night and the MP4 — to `<output root>/TimeLapse/<mosaic>/`,
-named by night.
+a hundred of them would bury the finishes page); the keepers — a PNG per
+night, written as each night lands, and the MP4 at the end — go to
+`<output root>/TimeLapse/<mosaic>/`, named by night.
 """
 from __future__ import annotations
 
@@ -212,19 +212,26 @@ def hubble_frame(mosaic_id: str, night: str, caption: str, values: dict, sho: Im
     return Produced(out)
 
 
-# Head-pinned like the other file-less orchestration ops: ffmpeg lives on the
-# head, and the keepers it writes belong beside the products on the head's volume.
-@node(resources={"diskcache": 0.001})
-def time_lapse_video(root: str, nights: tuple, *frames) -> str:
-    """The frames as `<root>/<night>.png` and the video as `<root>/time_lapse.mp4`
-    (H.264, `FRAMES_PER_SECOND`, the last frame held); returns the video's path."""
+@node
+def keep_frame(root: str, night: str, frame) -> tuple:
+    """The frame as `<root>/<night>.png`, written the moment it exists so the
+    nights can be watched arriving; returns `(path, the frame's content hash)`
+    so the video's key moves when a frame does, not only when a name does."""
     folder = Path(root)
     folder.mkdir(parents=True, exist_ok=True)
-    for night, frame in zip(nights, frames):
-        png = folder / f"{night}.png"
-        tmp = folder / f".{night}.{os.getpid()}.png"
-        pyvips.Image.new_from_file(str(frame.filename)).cast("uchar", shift=True).pngsave(str(tmp))
-        os.replace(tmp, png)
+    png = folder / f"{night}.png"
+    tmp = folder / f".{night}.{os.getpid()}.png"
+    pyvips.Image.new_from_file(str(frame.filename)).cast("uchar", shift=True).pngsave(str(tmp))
+    os.replace(tmp, png)
+    return (str(png), frame.content_hash)
+
+
+# Head-pinned like the other file-less orchestration ops: ffmpeg lives on the head.
+@node(resources={"diskcache": 0.001})
+def time_lapse_video(root: str, *kept) -> str:
+    """`<root>/time_lapse.mp4` from the kept PNGs, in name (= night) order:
+    H.264 at `FRAMES_PER_SECOND`, the last frame held; returns its path."""
+    folder = Path(root)
     video = folder / "time_lapse.mp4"
     tmp = folder / f".time_lapse.{os.getpid()}.mp4"
     subprocess.run(
@@ -280,4 +287,5 @@ def for_mosaic(mosaic, config):
             mosaic.stable_hash, str(night), caption, values, composites[night],
             sl.get("R"), sl.get("G"), sl.get("B"), st.get("R"), st.get("G"), st.get("B"), st.get("H")))
     root = str(Path(context.output_dir).parent / "TimeLapse" / mosaic.stable_hash)
-    return {"Time-lapse": time_lapse_video(root, tuple(str(n) for n in sorted(layers)), *frames)}
+    kept = [keep_frame(root, str(night), frame) for night, frame in zip(sorted(layers), frames)]
+    return {"Time-lapse": time_lapse_video(root, *kept)}
