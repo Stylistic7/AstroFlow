@@ -747,8 +747,12 @@ def run_pipeline(entity, cfg, pipeline_name: str, type_tag: str) -> "Graph":
     # Deterministic N-1 supersession: the runtime deletes a display tap's
     # previous version at the completion of the node that writes the new one
     # (`version_log.supersede`). Attached every run — including unchanged
-    # rebuilds, where the same-hash entry makes supersede a no-op.
-    graph.version_supersede = _version_supersede_map(pipeline_name, graph)
+    # rebuilds, where the same-hash entry makes supersede a no-op — unless
+    # the pipeline opted out (`@pipeline(supersede=False)`: many landings of
+    # one identity per run, which supersession would eat mid-run).
+    graph.version_supersede = (
+        _version_supersede_map(pipeline_name, graph)
+        if getattr(pipeline_fn, "_pipeline_supersedes", True) else {})
 
     # GraphRuntime asserts a sub-graph has exactly one terminal. Funnel
     # every current terminal into a sentinel so the child sub-runtime

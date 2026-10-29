@@ -48,7 +48,8 @@ _TYPE_TAG = {
 def pipeline(display_name: str, processes: type,
              listed: bool = True, author: "str | None" = None,
              version: "str | None" = None,
-             description: "str | None" = None) -> Callable:
+             description: "str | None" = None,
+             supersede: bool = True) -> Callable:
     """Decorator: register the wrapped function as an entry point for
     pipeline `display_name`, handling cart entries whose object class
     is `processes`. Re-registration silently overrides (so a user
@@ -58,6 +59,12 @@ def pipeline(display_name: str, processes: type,
     the pipeline file's docstring. The wrapped function, when called, runs
     the user's body under a fresh trace context and returns the
     recorded `Graph` (or `None` if the body returned `None`).
+
+    `supersede=False` opts the pipeline out of N-1 version supersession
+    (`compute_graph._version_supersede_map`): for a pipeline that lands MANY
+    versions of one product identity in a single run — the time-lapse, one
+    per night — supersession would delete each earlier landing as the next
+    one completes, while other nodes of the same run still read it.
 
     The runner ONLY traces — it does not snapshot the workflow graph.
     Snapshotting lives at the cart-dispatch sites (`_eager_trace_pipeline`),
@@ -89,6 +96,7 @@ def pipeline(display_name: str, processes: type,
         # user-chosen has been built (it ranks below every preferred name in
         # `catalog._PIPELINE_PREFERENCE`, so anything real front-runs it).
         runner._pipeline_listed = listed
+        runner._pipeline_supersedes = supersede
         runner._pipeline_about = {"author": author, "version": version,
                                   "description": description}
         _REGISTRY[(display_name, processes)] = runner

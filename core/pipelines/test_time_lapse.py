@@ -44,6 +44,13 @@ def test_the_canvas_night_is_pinned_by_decision_else_the_newest():
     assert canvas_night(mosaic, pinned, nights) == nights[1], "the newest night at or before the pin"
 
 
+def test_the_time_lapse_opts_out_of_version_supersession():
+    """Its nights share version-log keys; supersession would delete each
+    earlier night's products as the next one lands."""
+    from pipelines.time_lapse import for_mosaic
+    assert for_mosaic._pipeline_supersedes is False
+
+
 def test_the_window_decision_selects_the_nights_to_build():
     mosaic = SimpleNamespace(stable_hash="m")
     nights = [datetime.date(2024, 9, 29), datetime.date(2025, 10, 5), datetime.date(2026, 10, 14)]

@@ -69,9 +69,12 @@ def _cached_path_missing(cached: Any) -> Optional[Path]:
     if isinstance(cached, WithSidecar):
         cached = cached.path
     if not isinstance(cached, Path):
+        # A str filename counts too: an ImageMetadata whose filename was a
+        # plain string slipped past this check and served a hit for a
+        # product the orphan sweep had removed (2026-10-28).
         inner = getattr(cached, "filename", None)
-        if isinstance(inner, Path):
-            cached = inner
+        if isinstance(inner, (Path, str)) and inner:
+            cached = Path(inner)
         else:
             return None
     return cached if not cached.exists() else None

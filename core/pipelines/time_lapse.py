@@ -354,7 +354,12 @@ def time_lapse_video(root: str, *kept) -> str:
     return str(video)
 
 
-@pipeline(PIPELINE, processes=Mosaic)
+# supersede=False: every night's as-of master of a stack, and every night's
+# layer of the mosaic, lands under the SAME version-log key (object, this
+# pipeline, display, filter), so N-1 supersession would delete each earlier
+# night's file as the next one lands — while other nights still read it
+# (2026-10-28: FileNotFoundError mid-pass). The window sweep bounds them instead.
+@pipeline(PIPELINE, processes=Mosaic, supersede=False)
 def for_mosaic(mosaic, config):
     """One frame per night of shooting, cumulative; the video at the end."""
     full_targets = {t.stable_hash: t for t in mosaic.targets}
