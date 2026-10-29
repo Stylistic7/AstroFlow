@@ -1,4 +1,4 @@
-import React, { useContext, useMemo } from 'react';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { Box, IconButton, Paper } from '@mui/material';
 import { OpenInNew } from '@mui/icons-material';
 import MetadataItem from './MetadataItem.jsx';
@@ -13,6 +13,20 @@ const StackHeader = ({
   stack_type, stack, stack_id, pipeline, finish,
 }) => {
   const { isQuarantined, catalogEntries } = useContext(AstroFlowContext);
+
+  // What the master file itself says (`/api/stack/<id>/stacking_report`):
+  // the software that wrote it, its noise and its size. Absent until the
+  // page has a pipeline, and for fields the file does not carry.
+  const [report, setReport] = useState(null);
+  useEffect(() => {
+    if (stack_type !== 'stack' || !pipeline) return undefined;
+    let cancelled = false;
+    fetch(`/api/stack/${stack_id}/stacking_report?pipeline=${encodeURIComponent(pipeline)}`)
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => { if (!cancelled) setReport(data); })
+      .catch(e => console.warn(e));
+    return () => { cancelled = true; };
+  }, [stack_type, stack_id, pipeline]);
 
   // Catalog designations behind this object's canonical name, e.g.
   // "Lion Nebula" -> "Sh2-132", "Andromeda Galaxy" -> "NGC224 · M31".
@@ -70,6 +84,11 @@ const StackHeader = ({
             {(stack_type === 'calibration_stack') && <MetadataItem label="Exposure" value={format_duration(stack.exposure)} />}
             <MetadataItem label="Integration" value={format_duration(stack.integration)} />
             <MetadataItem label="Temp" value={`${stack.mean_temperature.toFixed(1)}°C`} />
+            {report?.pipeline && <MetadataItem label="Software" value={report.pipeline} />}
+            {report?.frames_combined != null && <MetadataItem label="Frames combined" value={report.frame_exposure_seconds ? `${report.frames_combined} × ${format_duration(report.frame_exposure_seconds)}` : `${report.frames_combined}`} />}
+            {report?.noise_estimate != null && <MetadataItem label="Noise" value={report.noise_estimate.toExponential(2)} />}
+            {report?.output_width && report?.output_height && <MetadataItem label="Output size" value={`${report.output_width} × ${report.output_height} px`} />}
+            {report?.date_obs && report?.date_end && <MetadataItem label="Window" value={`${report.date_obs.slice(0, 10)} – ${report.date_end.slice(0, 10)}`} />}
           </Box>
         </Box>
         <Box sx={{ flexGrow: 1 }} />

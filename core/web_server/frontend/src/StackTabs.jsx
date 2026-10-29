@@ -12,7 +12,6 @@ import {
 import { AstroFlowImage } from './AstroFlowImage.jsx';
 import RunsTab from './RunsTab.jsx';
 import WorkflowGraph from './WorkflowGraph.jsx';
-import StackingReportPanel from './StackingReportPanel.jsx';
 import darkTheme from './theme.js';
 
 function QualityFilterInfo({ stack_id }) {
@@ -116,7 +115,6 @@ const StackTabs = ({ stack_type, stack, stack_id, pipeline, finish }) => {
               (sx wins specificity), leaving this tab rendered under the
               Runs tab. */}
           <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-            {stack_type === 'stack' && <StackingReportPanel stack_id={stack_id} pipeline={pipeline} />}
             {stack_type === 'stack' && <QualityFilterInfo stack_id={stack_id} />}
             <Box sx={{ flex: 1, minHeight: 0 }}>
               <AstroFlowImage
