@@ -12,9 +12,10 @@ web worker. The process joins the cluster for what the thumbnail path reads —
 the stack and its calibration stacks — like the sweep CLI does.
 
 Frames are in time order, each calibrated with the run's resolved masters and
-autostretched on its own, with the night, the star count and the quality
-gate's verdict burnt in. The video is H.264, which every browser plays, and
-lives under `VIDEOS` as a file named by what it shows (`video_key`).
+autostretched on its own, with the night, what the harvest measured on the
+frame (`caption`) and the quality gate's verdict burnt in. The video is
+H.264, which every browser plays, and lives under `VIDEOS` as a file named by
+what it shows (`video_key`).
 """
 from __future__ import annotations
 
@@ -32,26 +33,46 @@ import numpy as np
 VIDEOS = Path.home() / "Pictures" / "AstroFlow" / "videos"
 JOBS = VIDEOS / ".jobs"
 WIDTH = 1200
-FRAMES_PER_SECOND = 6
+FRAMES_PER_SECOND = 6         # subframes shown per second
+# Chrome stalls a 6 fps H.264 stream within its first second (headless probe,
+# 2026-10-28: currentTime crept backwards, never looped), so each subframe is
+# held for four frames of a normal-rate stream instead.
+ENCODE_FRAMES_PER_SECOND = 24
+HOLD_LAST_SECONDS = 1         # a beat on the last subframe before the loop; what makes a one-frame run playable at all
 
 
 def video_key(stack, run_id: str, overrides, width: int = WIDTH) -> str:
-    """What the video shows: the run's frames, its resolved calibration,
-    the quality gate's override, the width."""
+    """What the video shows: the run's frames and how many of them are
+    solved (a solve brings the calibration and the harvest's caption with
+    it), its resolved calibration, the quality gate's override, the width."""
     from decisions.decisions import DecisionKey
     from decisions.resolve import resolve_calibration
     from context import context
     from hashing import hash_list
     run = resolve_calibration(stack, context.calibration_stacks, overrides).contents[run_id]
+    solved = sum(m.plate_solution is not None for m in run.metadata.values())
     calibration = sorted((kind, getattr(dep, "stack_id", str(dep))) for kind, dep in run.dependencies.items())
     gate = overrides.get(DecisionKey.subframe_quality(stack.stable_hash))
-    return hash_list([run.content_hash, str(calibration), str(getattr(gate, "choice", None)), width])
+    return hash_list([run.content_hash, solved, str(calibration), str(getattr(gate, "choice", None)), width])
 
 
 def chronological(run) -> list:
     """`(frame hash, metadata)` for every frame of `run`, oldest first."""
     rows = [(h, run.metadata[h]) for h in run.frames]
     return sorted(rows, key=lambda r: str(r[1].header.get("DATE-OBS", "")))
+
+
+def caption(when: str, fwhm_px: np.ndarray | None, image_scale: float | None) -> str:
+    """`when`, then what the harvest measured on the frame
+    (`metadata/star_photometry.py`): how many Gaia stars it found and their
+    median FWHM on the sky. The solver's own count is capped at its source
+    budget — 5000 on any decent frame — so it says nothing about the night;
+    the harvest's falls with cloud and grows with focus."""
+    if image_scale is None:
+        return f"{when}   unsolved"
+    if fwhm_px is None:
+        return f"{when}   unmeasured"
+    return f'{when}   {len(fwhm_px):,} stars   FWHM {np.median(fwhm_px) * image_scale:.1f}"'
 
 
 def annotate(im: np.ndarray, text: str, included: bool) -> np.ndarray:
@@ -89,6 +110,7 @@ def render(stack, run_id: str, overrides, dest: Path, width: int = WIDTH) -> dic
     """Write the run's subframe video to `dest`; returns {frames, width, height}."""
     from decisions.resolve import is_frame_included, resolve_calibration
     from context import context
+    from metadata.star_photometry import COLUMNS, read_star_photometry
     resolved = resolve_calibration(stack, context.calibration_stacks, overrides)
     run = resolved.contents[run_id]
     rows = chronological(run)
@@ -101,8 +123,10 @@ def render(stack, run_id: str, overrides, dest: Path, width: int = WIDTH) -> dic
             if im.shape != shape:                       # one grid per video
                 im = cv2.resize(im, (shape[1], shape[0]), interpolation=cv2.INTER_AREA)
             when = str(meta.header.get("DATE-OBS", ""))[:16].replace("T", " ")
-            text = (f"{when}   {meta.plate_solution.num_stars} stars" if meta.plate_solution
-                    else f"{when}   unsolved")
+            solution = meta.plate_solution
+            stars = read_star_photometry(meta.filename) if solution else None
+            fwhm = None if stars is None else stars[:, COLUMNS.index("fwhm")]
+            text = caption(when, fwhm, solution.image_scale if solution else None)
             annotate(im, text, is_frame_included(frame_hash, resolved, overrides))
             cv2.imwrite(os.path.join(tmp, f"{i:05d}.png"), im)
         if shape is None:
@@ -111,7 +135,8 @@ def render(stack, run_id: str, overrides, dest: Path, width: int = WIDTH) -> dic
         subprocess.run(
             ["ffmpeg", "-y", "-loglevel", "error", "-framerate", str(FRAMES_PER_SECOND),
              "-i", os.path.join(tmp, "%05d.png"),
-             "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2", "-c:v", "libx264", "-preset", "veryfast",
+             "-vf", f"scale=trunc(iw/2)*2:trunc(ih/2)*2,tpad=stop_mode=clone:stop_duration={HOLD_LAST_SECONDS}",
+             "-r", str(ENCODE_FRAMES_PER_SECOND), "-c:v", "libx264", "-preset", "veryfast",
              "-crf", "20", "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(out)],
             check=True)
         os.replace(out, dest)

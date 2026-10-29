@@ -3,7 +3,15 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from previews.run_video import annotate, chronological
+from previews.run_video import annotate, caption, chronological
+
+
+def test_caption_reports_the_harvest_on_the_sky():
+    when = "2026-10-18 03:47"
+    assert caption(when, np.array([1.5, 2.0, 2.5]), 2.0) == '2026-10-18 03:47   3 stars   FWHM 4.0"'
+    assert caption(when, np.full(1234, 1.5), 2.0).split("   ")[1] == "1,234 stars"
+    assert caption(when, None, 2.0) == "2026-10-18 03:47   unmeasured"
+    assert caption(when, None, None) == "2026-10-18 03:47   unsolved"
 
 
 def test_frames_come_out_oldest_first():

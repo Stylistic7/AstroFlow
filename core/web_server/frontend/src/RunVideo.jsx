@@ -1,7 +1,7 @@
 /**
  * A run's subframe video (web_server/backend/videos.py): every subframe in
- * time order, calibrated and autostretched, with the night, star count and
- * the quality gate's verdict burnt in. Asked for as soon as the card
+ * time order, calibrated and autostretched, with the night, the harvest's
+ * star count and FWHM and the quality gate's verdict burnt in. Asked for as soon as the card
  * mounts, rendered in the server's own process, and played looping and
  * muted the moment it exists — so whether the run is good or bad data is
  * visible at a glance. Kept as a file, so the next visit plays at once.
