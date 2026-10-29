@@ -1,13 +1,12 @@
-"""Subframes one after another, calibrated and autostretched, as a short video:
-one per RUN, looping in its card on the stack page's Runs tab so a run's
-quality is visible at a glance (Stylistic7's original intent), and one for the
-whole stack on the Blink tab.
+"""A run's subframes one after another, calibrated and autostretched, as a
+short video that loops in the run's card on the stack page's Runs tab — so
+whether a run is good or bad data is visible at a glance.
 
 This is the per-subframe video that existed until 2026-10-01, rendered ON
 DEMAND this time: the old one was generated eagerly for every stack at cold
 start (so it was switched off), and served under a key the generator never
 wrote (so it was blank). Now `web_server/backend/videos.py` starts
-`python -m previews.stack_video <job.json>` as its own process when a page
+`python -m previews.run_video <job.json>` as its own process when a page
 asks, the way a finish export runs, so a minute of frame reads never blocks a
 web worker. The process joins the cluster for what the thumbnail path reads —
 the stack and its calibration stacks — like the sweep CLI does.
@@ -36,29 +35,22 @@ WIDTH = 1200
 FRAMES_PER_SECOND = 6
 
 
-def video_key(stack, overrides, width: int = WIDTH, run_id: str | None = None) -> str:
-    """What the video shows: the frames (one run's, or the stack's), each
-    run's resolved calibration, the quality gate's override, the width."""
+def video_key(stack, run_id: str, overrides, width: int = WIDTH) -> str:
+    """What the video shows: the run's frames, its resolved calibration,
+    the quality gate's override, the width."""
     from decisions.decisions import DecisionKey
     from decisions.resolve import resolve_calibration
     from context import context
     from hashing import hash_list
-    resolved = resolve_calibration(stack, context.calibration_stacks, overrides)
-    runs = {run_id: resolved.contents[run_id]} if run_id else resolved.contents
-    calibration = sorted(
-        (rid, kind, getattr(dep, "stack_id", str(dep)))
-        for rid, run in runs.items()
-        for kind, dep in run.dependencies.items())
+    run = resolve_calibration(stack, context.calibration_stacks, overrides).contents[run_id]
+    calibration = sorted((kind, getattr(dep, "stack_id", str(dep))) for kind, dep in run.dependencies.items())
     gate = overrides.get(DecisionKey.subframe_quality(stack.stable_hash))
-    frames = run_id and runs[run_id].content_hash or stack.content_hash
-    return hash_list([frames, str(calibration), str(getattr(gate, "choice", None)), width])
+    return hash_list([run.content_hash, str(calibration), str(getattr(gate, "choice", None)), width])
 
 
-def chronological(stack, run_id: str | None = None) -> list:
-    """`(frame hash, metadata, run)` for every frame — of one run when
-    `run_id` names it — oldest first."""
-    runs = [stack.contents[run_id]] if run_id else list(stack.contents.values())
-    rows = [(h, run.metadata[h], run) for run in runs for h in run.frames]
+def chronological(run) -> list:
+    """`(frame hash, metadata)` for every frame of `run`, oldest first."""
+    rows = [(h, run.metadata[h]) for h in run.frames]
     return sorted(rows, key=lambda r: str(r[1].header.get("DATE-OBS", "")))
 
 
@@ -93,28 +85,28 @@ def _frame(meta, run, width: int) -> np.ndarray:
     return (autostretch(np.clip(im, 0.0, 1.0)) * 255.0).astype(np.uint8)
 
 
-def render(stack, overrides, dest: Path, width: int = WIDTH, run_id: str | None = None) -> dict:
-    """Write the subframe video (one run's, or the stack's) to `dest`;
-    returns {frames, width, height}."""
+def render(stack, run_id: str, overrides, dest: Path, width: int = WIDTH) -> dict:
+    """Write the run's subframe video to `dest`; returns {frames, width, height}."""
     from decisions.resolve import is_frame_included, resolve_calibration
     from context import context
     resolved = resolve_calibration(stack, context.calibration_stacks, overrides)
-    rows = chronological(resolved, run_id)
+    run = resolved.contents[run_id]
+    rows = chronological(run)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix=".stack-video-") as tmp:
+    with tempfile.TemporaryDirectory(prefix=".run-video-") as tmp:
         shape = None
-        for i, (frame_hash, meta, run) in enumerate(rows):
+        for i, (frame_hash, meta) in enumerate(rows):
             im = _frame(meta, run, width)
             shape = shape or im.shape
             if im.shape != shape:                       # one grid per video
                 im = cv2.resize(im, (shape[1], shape[0]), interpolation=cv2.INTER_AREA)
             when = str(meta.header.get("DATE-OBS", ""))[:16].replace("T", " ")
-            stars = meta.plate_solution.num_stars if meta.plate_solution else 0
-            text = f"{when}   {stars} stars" if meta.plate_solution else f"{when}   unsolved"
+            text = (f"{when}   {meta.plate_solution.num_stars} stars" if meta.plate_solution
+                    else f"{when}   unsolved")
             annotate(im, text, is_frame_included(frame_hash, resolved, overrides))
             cv2.imwrite(os.path.join(tmp, f"{i:05d}.png"), im)
         if shape is None:
-            raise ValueError(f"stack {stack.stable_hash} has no frames to show")
+            raise ValueError(f"run {run_id} of {stack.stable_hash} has no frames to show")
         out = dest.with_name(f".{dest.stem}.{os.getpid()}.mp4")
         subprocess.run(
             ["ffmpeg", "-y", "-loglevel", "error", "-framerate", str(FRAMES_PER_SECOND),
@@ -127,7 +119,7 @@ def render(stack, overrides, dest: Path, width: int = WIDTH, run_id: str | None 
 
 
 def run_job(job_file: Path) -> None:
-    """The process the route starts: `{stack_id, run_id?, width, dest, status}`."""
+    """The process the route starts: `{stack_id, run_id, width, dest, status}`."""
     job = json.loads(Path(job_file).read_text())
     status_file = Path(job["status"])
     status = {"state": "running", "path": job["dest"],
@@ -135,10 +127,10 @@ def run_job(job_file: Path) -> None:
     try:
         from context import context
         stack = context.stacks[job["stack_id"]].get()
-        status.update(render(stack, context.settings.decision_overrides, Path(job["dest"]),
-                             job["width"], job.get("run_id")))
+        status.update(render(stack, job["run_id"], context.settings.decision_overrides,
+                             Path(job["dest"]), job["width"]))
         status["state"] = "done"
-    except Exception as e:                            # reported to the tab, not swallowed
+    except Exception as e:                            # reported to the card, not swallowed
         status.update(state="error", error=f"{type(e).__name__}: {e}")
     tmp = status_file.with_suffix(".tmp")
     tmp.write_text(json.dumps(status))

@@ -1,16 +1,18 @@
-"""Subframe videos (`previews/stack_video.py`), rendered on demand in their
-own processes and served as files.
+"""A run's subframe video (`previews/run_video.py`), rendered on demand in
+its own process and served as a file.
 
-    GET /video/run/<stack>/<run>        one run's subframes
-    GET /video/stack/<stack>            the whole stack's
+    GET /video/run/<stack>/<run>            the video (200, ranges honoured)
+                                            when it is rendered; 202 {state}
+                                            while it renders or waits its turn;
+                                            404 when it is neither and was not
+                                            asked for
+    GET /video/run/<stack>/<run>?start=1    ...and ask for it when it is neither
 
-Either answers with the video (200, ranges honoured) when it is rendered;
-202 {state} while it renders or waits its turn; 404 when it is neither and
-was not asked for. `?start=1` asks. One job per video key, so two tabs
-asking at once start one render; at most `_PARALLEL` renders run at a time,
-and an ask that finds them all busy is "queued" — the page asks again on
-its next poll. A status that has said "running" for longer than `_STALE`
-is a process that died; a new ask starts over.
+One job per video key, so two tabs asking at once start one render; at most
+`_PARALLEL` renders run at a time, and an ask that finds them all busy is
+"queued" — the card asks again on its next poll. A status that has said
+"running" for longer than `_STALE` is a process that died; a new ask starts
+over.
 """
 from __future__ import annotations
 
@@ -23,7 +25,7 @@ from pathlib import Path
 from flask import Blueprint, abort, jsonify, request, send_file
 
 from context import local_context as context
-from previews.stack_video import JOBS, VIDEOS, WIDTH, video_key
+from previews.run_video import JOBS, VIDEOS, WIDTH, video_key
 
 videos_bp = Blueprint("videos", __name__)
 _CORE = Path(__file__).resolve().parents[2]
@@ -49,12 +51,13 @@ def _renders_running() -> int:
     return sum(1 for p in JOBS.glob("*.json") if _running(_status(p))) if JOBS.exists() else 0
 
 
-def _serve(stack_id: str, run_id: str | None):
+@videos_bp.route("/video/run/<stack_id>/<run_id>")
+def run_video(stack_id: str, run_id: str):
     stack = context.stacks[stack_id].get()
-    if run_id is not None and run_id not in stack.contents:
+    if run_id not in stack.contents:
         abort(404, f"{run_id} is not a run of {stack_id}")
     width = request.args.get("width", default=WIDTH, type=int)
-    key = video_key(stack, context.settings.decision_overrides, width, run_id)
+    key = video_key(stack, run_id, context.settings.decision_overrides, width)
     dest, status_file = VIDEOS / f"{key}.mp4", JOBS / f"{key}.json"
     if dest.exists():
         return send_file(dest, mimetype="video/mp4", conditional=True)
@@ -74,17 +77,7 @@ def _serve(stack_id: str, run_id: str | None):
     job_file = JOBS / f"{key}.job"
     job_file.write_text(json.dumps({"stack_id": stack_id, "run_id": run_id, "width": width,
                                     "dest": str(dest), "status": str(status_file)}))
-    subprocess.Popen([sys.executable, "-m", "previews.stack_video", str(job_file)],
+    subprocess.Popen([sys.executable, "-m", "previews.run_video", str(job_file)],
                      cwd=_CORE, start_new_session=True,
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return jsonify(status), 202
-
-
-@videos_bp.route("/video/stack/<stack_id>")
-def stack_video(stack_id: str):
-    return _serve(stack_id, None)
-
-
-@videos_bp.route("/video/run/<stack_id>/<run_id>")
-def run_video(stack_id: str, run_id: str):
-    return _serve(stack_id, run_id)

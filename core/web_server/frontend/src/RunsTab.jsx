@@ -8,7 +8,7 @@ import MetadataItem from './MetadataItem.jsx';
 import { format_duration } from './units.js';
 import FileBrowser from './FileBrowser.jsx';
 import DecisionReviewDialog from './DecisionReviewDialog.jsx';
-import StackVideo from './StackVideo.jsx';
+import RunVideo from './RunVideo.jsx';
 
 const RunsTab = ({ stack }) => {
   const { calibrationStacks, isQuarantined, showQuarantined } = useContext(AstroFlowContext);
@@ -198,7 +198,7 @@ const RunsTab = ({ stack }) => {
             </Box>
             {/* The run's subframes, looping: good or bad data at a glance. */}
             <Box sx={{ my: 1 }}>
-              <StackVideo stackId={stack.stable_hash} runId={run.id} auto maxWidth={640} />
+              <RunVideo stackId={stack.stable_hash} runId={run.id} />
             </Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <Box>

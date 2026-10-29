@@ -11,7 +11,6 @@ import {
 } from '@mui/material';
 import { AstroFlowImage } from './AstroFlowImage.jsx';
 import RunsTab from './RunsTab.jsx';
-import StackVideo from './StackVideo.jsx';
 import WorkflowGraph from './WorkflowGraph.jsx';
 import StackingReportPanel from './StackingReportPanel.jsx';
 import darkTheme from './theme.js';
@@ -106,7 +105,6 @@ const StackTabs = ({ stack_type, stack, stack_id, pipeline, finish }) => {
           <Tab label="Stacked" />
           {(stack_type === 'stack') && <Tab label="Runs" />}
           {(stack_type === 'stack') && <Tab label="Graph" />}
-          {(stack_type === 'stack') && <Tab label="Blink" />}
         </Tabs>
       </Box>
       <Divider />
@@ -137,10 +135,6 @@ const StackTabs = ({ stack_type, stack, stack_id, pipeline, finish }) => {
 
         {(stack_type === 'stack') && <Box hidden={tabIndex !== 2} sx={{ height: '100%', overflow: 'auto', position: 'absolute', inset: 0, p: 3 }}>
           <WorkflowGraph theme={darkTheme} url={`/api/workflow_graph/stack/${stack_id}`} />
-        </Box>}
-
-        {(stack_type === 'stack') && <Box hidden={tabIndex !== 3} sx={{ height: '100%', overflow: 'auto', position: 'absolute', inset: 0, p: 3 }}>
-          {tabIndex === 3 && <StackVideo stackId={stack_id} />}
         </Box>}
       </Box>
     </Paper>
