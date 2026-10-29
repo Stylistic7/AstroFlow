@@ -1,5 +1,7 @@
-"""A stack's subframes one after another, calibrated and autostretched, as a
-short video for the stack page's Blink tab.
+"""Subframes one after another, calibrated and autostretched, as a short video:
+one per RUN, looping in its card on the stack page's Runs tab so a run's
+quality is visible at a glance (Stylistic7's original intent), and one for the
+whole stack on the Blink tab.
 
 This is the per-subframe video that existed until 2026-10-01, rendered ON
 DEMAND this time: the old one was generated eagerly for every stack at cold
@@ -34,25 +36,29 @@ WIDTH = 1200
 FRAMES_PER_SECOND = 6
 
 
-def video_key(stack, overrides, width: int = WIDTH) -> str:
-    """What the video shows: the stack's frames, each run's resolved
-    calibration, the quality gate's override, the width."""
+def video_key(stack, overrides, width: int = WIDTH, run_id: str | None = None) -> str:
+    """What the video shows: the frames (one run's, or the stack's), each
+    run's resolved calibration, the quality gate's override, the width."""
     from decisions.decisions import DecisionKey
     from decisions.resolve import resolve_calibration
     from context import context
     from hashing import hash_list
     resolved = resolve_calibration(stack, context.calibration_stacks, overrides)
+    runs = {run_id: resolved.contents[run_id]} if run_id else resolved.contents
     calibration = sorted(
-        (run_id, kind, getattr(dep, "stack_id", str(dep)))
-        for run_id, run in resolved.contents.items()
+        (rid, kind, getattr(dep, "stack_id", str(dep)))
+        for rid, run in runs.items()
         for kind, dep in run.dependencies.items())
     gate = overrides.get(DecisionKey.subframe_quality(stack.stable_hash))
-    return hash_list([stack.content_hash, str(calibration), str(getattr(gate, "choice", None)), width])
+    frames = run_id and runs[run_id].content_hash or stack.content_hash
+    return hash_list([frames, str(calibration), str(getattr(gate, "choice", None)), width])
 
 
-def chronological(stack) -> list:
-    """`(frame hash, metadata, run)` for every frame, oldest first."""
-    rows = [(h, run.metadata[h], run) for run in stack.contents.values() for h in run.frames]
+def chronological(stack, run_id: str | None = None) -> list:
+    """`(frame hash, metadata, run)` for every frame — of one run when
+    `run_id` names it — oldest first."""
+    runs = [stack.contents[run_id]] if run_id else list(stack.contents.values())
+    rows = [(h, run.metadata[h], run) for run in runs for h in run.frames]
     return sorted(rows, key=lambda r: str(r[1].header.get("DATE-OBS", "")))
 
 
@@ -87,12 +93,13 @@ def _frame(meta, run, width: int) -> np.ndarray:
     return (autostretch(np.clip(im, 0.0, 1.0)) * 255.0).astype(np.uint8)
 
 
-def render(stack, overrides, dest: Path, width: int = WIDTH) -> dict:
-    """Write the stack's subframe video to `dest`; returns {frames, width, height}."""
+def render(stack, overrides, dest: Path, width: int = WIDTH, run_id: str | None = None) -> dict:
+    """Write the subframe video (one run's, or the stack's) to `dest`;
+    returns {frames, width, height}."""
     from decisions.resolve import is_frame_included, resolve_calibration
     from context import context
     resolved = resolve_calibration(stack, context.calibration_stacks, overrides)
-    rows = chronological(resolved)
+    rows = chronological(resolved, run_id)
     dest.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".stack-video-") as tmp:
         shape = None
@@ -120,7 +127,7 @@ def render(stack, overrides, dest: Path, width: int = WIDTH) -> dict:
 
 
 def run_job(job_file: Path) -> None:
-    """The process the route starts: `{stack_id, width, dest, status}`."""
+    """The process the route starts: `{stack_id, run_id?, width, dest, status}`."""
     job = json.loads(Path(job_file).read_text())
     status_file = Path(job["status"])
     status = {"state": "running", "path": job["dest"],
@@ -128,7 +135,8 @@ def run_job(job_file: Path) -> None:
     try:
         from context import context
         stack = context.stacks[job["stack_id"]].get()
-        status.update(render(stack, context.settings.decision_overrides, Path(job["dest"]), job["width"]))
+        status.update(render(stack, context.settings.decision_overrides, Path(job["dest"]),
+                             job["width"], job.get("run_id")))
         status["state"] = "done"
     except Exception as e:                            # reported to the tab, not swallowed
         status.update(state="error", error=f"{type(e).__name__}: {e}")

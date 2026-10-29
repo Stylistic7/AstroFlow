@@ -18,6 +18,7 @@ def test_frames_come_out_oldest_first_across_runs():
     })
     assert [h for h, _, _ in chronological(stack)] == ["a", "b", "c", "d"]
     assert all(r is stack.contents["early"] for h, _, r in chronological(stack)[:2])
+    assert [h for h, _, _ in chronological(stack, "late")] == ["c", "d"], "one run's video is that run's frames"
 
 
 def test_annotation_marks_excluded_frames_and_keeps_the_frame_shape():

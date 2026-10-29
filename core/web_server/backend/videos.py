@@ -1,14 +1,16 @@
-"""The stack page's subframe video (`previews/stack_video.py`), rendered on
-demand in its own process and served as a file.
+"""Subframe videos (`previews/stack_video.py`), rendered on demand in their
+own processes and served as files.
 
-    GET /video/stack/<id>            the video (200, ranges honoured) when it
-                                     is rendered; 202 {state} while it renders;
-                                     404 when it is neither and was not asked for
-    GET /video/stack/<id>?start=1    ...and ask for it when it is neither
+    GET /video/run/<stack>/<run>        one run's subframes
+    GET /video/stack/<stack>            the whole stack's
 
-One job per video key, so two tabs asking at once start one render. A
-status that has said "running" for longer than `_STALE` is a process that
-died; a new ask starts over.
+Either answers with the video (200, ranges honoured) when it is rendered;
+202 {state} while it renders or waits its turn; 404 when it is neither and
+was not asked for. `?start=1` asks. One job per video key, so two tabs
+asking at once start one render; at most `_PARALLEL` renders run at a time,
+and an ask that finds them all busy is "queued" — the page asks again on
+its next poll. A status that has said "running" for longer than `_STALE`
+is a process that died; a new ask starts over.
 """
 from __future__ import annotations
 
@@ -26,6 +28,7 @@ from previews.stack_video import JOBS, VIDEOS, WIDTH, video_key
 videos_bp = Blueprint("videos", __name__)
 _CORE = Path(__file__).resolve().parents[2]
 _STALE = datetime.timedelta(minutes=30)
+_PARALLEL = 3
 
 
 def _status(path: Path) -> dict | None:
@@ -42,11 +45,16 @@ def _running(status: dict | None) -> bool:
     return datetime.datetime.now(datetime.timezone.utc) - started < _STALE
 
 
-@videos_bp.route("/video/stack/<stack_id>")
-def stack_video(stack_id: str):
+def _renders_running() -> int:
+    return sum(1 for p in JOBS.glob("*.json") if _running(_status(p))) if JOBS.exists() else 0
+
+
+def _serve(stack_id: str, run_id: str | None):
     stack = context.stacks[stack_id].get()
+    if run_id is not None and run_id not in stack.contents:
+        abort(404, f"{run_id} is not a run of {stack_id}")
     width = request.args.get("width", default=WIDTH, type=int)
-    key = video_key(stack, context.settings.decision_overrides, width)
+    key = video_key(stack, context.settings.decision_overrides, width, run_id)
     dest, status_file = VIDEOS / f"{key}.mp4", JOBS / f"{key}.json"
     if dest.exists():
         return send_file(dest, mimetype="video/mp4", conditional=True)
@@ -57,14 +65,26 @@ def stack_video(stack_id: str):
         if status and status.get("state") == "error":
             return jsonify(status), 404
         abort(404)
+    if _renders_running() >= _PARALLEL:
+        return jsonify({"state": "queued", "path": str(dest)}), 202
     JOBS.mkdir(parents=True, exist_ok=True)
     status = {"state": "running", "path": str(dest),
               "started": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")}
     status_file.write_text(json.dumps(status))
     job_file = JOBS / f"{key}.job"
-    job_file.write_text(json.dumps({"stack_id": stack_id, "width": width,
+    job_file.write_text(json.dumps({"stack_id": stack_id, "run_id": run_id, "width": width,
                                     "dest": str(dest), "status": str(status_file)}))
     subprocess.Popen([sys.executable, "-m", "previews.stack_video", str(job_file)],
                      cwd=_CORE, start_new_session=True,
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return jsonify(status), 202
+
+
+@videos_bp.route("/video/stack/<stack_id>")
+def stack_video(stack_id: str):
+    return _serve(stack_id, None)
+
+
+@videos_bp.route("/video/run/<stack_id>/<run_id>")
+def run_video(stack_id: str, run_id: str):
+    return _serve(stack_id, run_id)
