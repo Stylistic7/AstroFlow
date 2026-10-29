@@ -26,4 +26,6 @@ def test_annotation_marks_excluded_frames_and_keeps_the_frame_shape():
     excluded = annotate(im.copy(), "2024-09-30 04:00   5000 stars", False)
     assert kept.shape == excluded.shape == (120, 200) and kept.dtype == np.uint8
     assert kept[:20, :80].max() > 200, "the text is burnt in (anti-aliased, so not exactly 255)"
-    assert kept[-2:, :].max() == 90 and excluded[-2:, :].min() == 200, "only the excluded frame has the bar"
+    # The bar runs the full width; its left end carries the label's outline, so
+    # judge it clear of the text.
+    assert kept[-2:, :].max() == 90 and excluded[-2:, 150:].min() == 200, "only the excluded frame has the bar"
