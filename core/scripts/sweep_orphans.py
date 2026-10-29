@@ -16,16 +16,40 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
+import sys
+import urllib.request
 
-from context import context
 from cache import orphan_sweep
+
+API = "http://localhost:8000"
+
+
+def nodes_in_flight() -> int | None:
+    """How many graph nodes are executing right now, by the web server's
+    count; None when it cannot say (restarting, down). A sweep is safe only
+    at zero: a running node's half-written output is in no trace, so the
+    sweep takes it for a crash leftover and deletes it from under the node
+    (2026-10-28: a sweep between time-lapse windows did exactly that)."""
+    try:
+        with urllib.request.urlopen(API + "/api/compute_graph/status") as r:
+            status = json.load(r)
+    except Exception:
+        return None
+    return sum(v.get("running_number", 0) for k, v in status.items()
+               if not k.startswith("_") and isinstance(v, dict))
 
 
 def main() -> None:
+    from context import context
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--delete", action="store_true",
         help="Actually unlink orphans (default is dry-run).",
+    )
+    parser.add_argument(
+        "--force", action="store_true",
+        help="Sweep even while nodes are in flight (their half-written outputs look like orphans).",
     )
     parser.add_argument(
         "--include", default=None,
@@ -36,6 +60,10 @@ def main() -> None:
               "output_dir is considered."),
     )
     args = parser.parse_args()
+    busy = nodes_in_flight()
+    if args.delete and not args.force and busy != 0:
+        sys.exit(f"{busy if busy is not None else 'unknown'} nodes in flight: a sweep now deletes "
+                 "their half-written outputs; wait for the pass, or --force to insist")
 
     include = (
         {s.strip() for s in args.include.split(",") if s.strip()}

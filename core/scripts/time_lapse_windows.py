@@ -26,6 +26,8 @@ import time
 import urllib.request
 from pathlib import Path
 
+from scripts.sweep_orphans import nodes_in_flight
+
 API = "http://localhost:8000"
 PIPELINE = "Siril + GraXpert + OSS Time-lapse"
 
@@ -104,19 +106,23 @@ def pass_idle() -> bool:
 
 
 def wait_for(window: list[datetime.date], folder: Path, poll_s: int = 60) -> bool:
-    """True once the pass is idle and every night's PNG is there; False when
-    the pass went idle without them."""
-    idle_polls = 0
+    """True once every night's PNG is there AND nothing has been in flight
+    for three polls — the sweep that follows must not run under a working
+    node (`scripts.sweep_orphans.nodes_in_flight`); False when the pass went
+    idle without them."""
+    idle_polls = quiet_polls = 0
     while True:
         have = [n for n in window if (folder / f"{n}.png").exists()]
-        if len(have) == len(window):
+        busy = nodes_in_flight()
+        quiet_polls = quiet_polls + 1 if busy == 0 else 0
+        if len(have) == len(window) and quiet_polls >= 3:
             return True
         idle_polls = idle_polls + 1 if pass_idle() else 0
         if idle_polls >= 3:      # idle for three polls with frames missing: it failed
             print(f"  idle, but {len(window) - len(have)} frames missing: "
                   f"{[str(n) for n in window if n not in have]}")
             return False
-        print(f"  {time.strftime('%H:%M')}  {len(have)}/{len(window)} frames", flush=True)
+        print(f"  {time.strftime('%H:%M')}  {len(have)}/{len(window)} frames, {busy} in flight", flush=True)
         time.sleep(poll_s)
 
 
