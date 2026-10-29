@@ -89,8 +89,18 @@ def runs_through(stack, night: datetime.date, quarantined) -> tuple[str, ...]:
                  if night_of(r.oldest_date) <= night and h not in quarantined)
 
 
+def skipped_states(mosaic, decisions) -> frozenset:
+    """`{(stack id, frames)}` from the `time_lapse_skip` decision: as-of
+    states to treat as not yet shot (`DecisionKey.time_lapse_skip`)."""
+    override = decisions.get(DecisionKey.time_lapse_skip(mosaic.stable_hash))
+    if override is None:
+        return frozenset()
+    pairs = (item.split(":") for item in str(override.choice).split())
+    return frozenset((stack_id, int(frames)) for stack_id, frames in pairs)
+
+
 def mosaic_as_of(mosaic, full_targets: dict, stacks_by_target: dict, night, quarantine,
-                 min_frames: int):
+                 min_frames: int, skipped: frozenset = frozenset()):
     """`(Mosaic, {target id: Target}, {(target id, filter): stacks})` as of
     `night`, or None when nothing was shot yet. An object whose membership
     is complete is today's own, so its keys are the production pipeline's.
@@ -102,7 +112,8 @@ def mosaic_as_of(mosaic, full_targets: dict, stacks_by_target: dict, night, quar
     A stack with fewer than `min_frames` frames by that night is left out:
     the integration would refuse it at the same gate, and a refused channel
     fails that filter's merge for the night and with it the frame. The
-    panel simply joins once it has enough."""
+    panel simply joins once it has enough. A state named in `skipped`
+    (`skipped_states`) is left out the same way."""
     targets, channels = {}, {}
     for tid, full in full_targets.items():
         if quarantine.target(tid, full.stack_ids):
@@ -110,7 +121,8 @@ def mosaic_as_of(mosaic, full_targets: dict, stacks_by_target: dict, night, quar
         kept = []
         for stack in stacks_by_target[tid]:
             runs = runs_through(stack, night, quarantine.runs_of(stack))
-            if runs and sum(len(stack.contents[r].frames) for r in runs) >= min_frames:
+            frames = sum(len(stack.contents[r].frames) for r in runs)
+            if runs and frames >= min_frames and (stack.stable_hash, frames) not in skipped:
                 kept.append(stack if len(runs) == len(stack.contents) else stack.with_runs(runs))
         if not kept:
             continue
@@ -374,10 +386,11 @@ def for_mosaic(mosaic, config):
         return {}
     window = nights_window(mosaic, config.decisions, nights)
     final, framing = nights[-1], canvas_night(mosaic, config.decisions, nights)
+    skipped = skipped_states(mosaic, config.decisions)
     built = {}
     for night in sorted({*window, final, framing}):   # the final night seeds the stretch
         as_of = mosaic_as_of(mosaic, full_targets, stacks_by_target, night, quarantine,
-                             config.min_frames_in_stack)
+                             config.min_frames_in_stack, skipped)
         if as_of is not None:
             built[night] = as_of
     canvas = time_lapse_canvas(built[framing][0])

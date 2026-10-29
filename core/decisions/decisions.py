@@ -42,6 +42,7 @@ class DecisionType(str, Enum):
     TIME_LAPSE_CANVAS = "time_lapse_canvas"  # subject = a mosaic; the night (ISO date) whose extent frames its time-lapse
     TIME_LAPSE_NIGHTS = "time_lapse_nights"  # subject = a mosaic; "A..B" (ISO dates): the nights its time-lapse builds this pass
     TIME_LAPSE_LOOK = "time_lapse_look"      # subject = a mosaic; the id of the saved Hubble look its time-lapse bakes with
+    TIME_LAPSE_SKIP = "time_lapse_skip"      # subject = a mosaic; "stack:frames ..." as-of states its time-lapse treats as not yet shot
 
 
 # Lower precedence = applied first by resolve_decisions.
@@ -163,6 +164,16 @@ class DecisionKey:
         than "the newest save" because a pipeline's trace is cached on its
         config, and only a config change re-bakes the frames."""
         return cls(DecisionType.TIME_LAPSE_LOOK, ObjectType.MOSAIC, mosaic_id, mosaic_id)
+
+    @classmethod
+    def time_lapse_skip(cls, mosaic_id: str) -> "DecisionKey":
+        """As-of states the time-lapse leaves out, "stack:frames" pairs
+        separated by spaces: that stack, on the nights its membership holds
+        exactly that many frames, counts as not yet shot. For a state the
+        photometric calibration refuses (a 22-frame B stack through cloud,
+        2026-03-10): the refusal is right and deterministic, and left in it
+        fails every frame until the stack's next run (23 nights)."""
+        return cls(DecisionType.TIME_LAPSE_SKIP, ObjectType.MOSAIC, mosaic_id, mosaic_id)
 
     @classmethod
     def sharing(cls, object_type: "ObjectType", object_id: str, folder: str) -> "DecisionKey":

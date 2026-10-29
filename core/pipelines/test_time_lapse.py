@@ -9,7 +9,7 @@ from frozendict import frozendict
 from decisions.decisions import DecisionKey, DecisionOverride
 from pipelines.time_lapse import (
     canvas_night, fill_missing_bands, night_of, nights_of, nights_window, runs_through,
-    stars_fallback,
+    skipped_states, stars_fallback,
 )
 
 UTC = datetime.timezone.utc
@@ -57,6 +57,13 @@ def test_the_window_decision_selects_the_nights_to_build():
     assert nights_window(mosaic, frozendict(), nights) == nights
     window = frozendict({DecisionKey.time_lapse_nights("m"): DecisionOverride(choice="2025-01-01..2025-12-31")})
     assert nights_window(mosaic, window, nights) == [datetime.date(2025, 10, 5)]
+
+
+def test_the_skip_decision_names_as_of_states_by_stack_and_frame_count():
+    mosaic = SimpleNamespace(stable_hash="m")
+    assert skipped_states(mosaic, frozendict()) == frozenset()
+    skip = frozendict({DecisionKey.time_lapse_skip("m"): DecisionOverride(choice="1e931ec705c1b419:22 abc:7")})
+    assert skipped_states(mosaic, skip) == {("1e931ec705c1b419", 22), ("abc", 7)}
 
 
 def test_missing_narrowband_bands_take_the_mean_of_the_present_ones():
