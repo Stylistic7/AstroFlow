@@ -55,6 +55,7 @@ const StackHeader = ({
             {catalogDesignations && <MetadataItem label="Catalog" value={catalogDesignations} />}
             {(stack_type === 'stack') && <MetadataItem label="RA" value={ra_to_hms(stack.center[0])} />}
             {(stack_type === 'stack') && <MetadataItem label="Dec" value={dec_to_dms(stack.center[1])} />}
+            {(stack_type === 'stack') && stack.focal_length && <MetadataItem label="Focal length" value={`${Math.round(stack.focal_length)} mm`} />}
             {(stack_type === 'stack') && <MetadataItem label="Scale" value={`${stack.image_scale.toFixed(3)}"/px`} />}
             {(stack_type === 'stack') && <MetadataItem label="Angle" value={`${(stack.rotation_angle * (180.0 / Math.PI)).toFixed(1)}°`} />}
             <MetadataItem label="Camera" value={stack.camera} />
