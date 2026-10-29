@@ -31,6 +31,7 @@ from web_server.backend.settings import settings_bp
 from web_server.backend.dust import dust_bp
 from web_server.backend.sky_flats import sky_flats_bp
 from web_server.backend.thumbnails import thumbnails_bp
+from web_server.backend.videos import videos_bp
 from web_server.backend.compute_graphs import compute_graphs_bp
 from web_server.backend.performance import performance_bp
 from web_server.backend.decisions import decisions_bp
@@ -105,6 +106,7 @@ app.register_blueprint(settings_bp)
 app.register_blueprint(dust_bp)
 app.register_blueprint(sky_flats_bp)
 app.register_blueprint(thumbnails_bp)
+app.register_blueprint(videos_bp)
 app.register_blueprint(compute_graphs_bp)
 
 
