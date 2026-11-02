@@ -18,16 +18,22 @@ refit differs materially (`model.fit_site_model`): the one deliberately
 path-dependent fold here, so that a night's new runs do not re-key every
 integration that used the model.
 """
+import inspect
 from collections import Counter, defaultdict
 
 import ray
 import structlog
 
+import light_pollution.measure as measure_module
+import light_pollution.model as model_module
+import light_pollution.robust as robust_module
+import light_pollution.sites as sites_module
 from clustering.quiesce import _utc
 from context import context
 from decisions.resolve import resolve_calibration
 from decorators import node
 from dependency_graph import Graph
+from hashing import hash_string
 from light_pollution.measure import MIN_FRAMES, RunTilts, block_flat, measure_run_tilts
 from light_pollution.model import SiteModel, SiteModels, fit_site_model
 from light_pollution.sites import Site, cluster_sites, site_of
@@ -35,10 +41,18 @@ from stacks.types import StackIdDependency
 
 log = structlog.get_logger()
 
+# A node's cache key hashes its own body, not the modules it calls. The science
+# lives in those modules, so their source rides along as an argument (the
+# `prepare_stack_for_ui._fn_hash` precedent in compute_graph): a change to the
+# measurement re-measures, a change to the model refits — and nothing else does.
+MEASURE_CODE = hash_string(inspect.getsource(measure_module) + inspect.getsource(robust_module) + inspect.getsource(sites_module))
+MODEL_CODE = hash_string(inspect.getsource(model_module) + inspect.getsource(robust_module))
+
 
 @node
-def fit_site(site: Site, previous: SiteModel | None, *tilts: RunTilts) -> SiteModels:
-    """One site's table: its report always, its model when the data support one."""
+def fit_site(site: Site, previous: SiteModel | None, code: str, *tilts: RunTilts) -> SiteModels:
+    """One site's table: its report always, its model when the data support one.
+    `code` is MODEL_CODE, in the key only."""
     model, report = fit_site_model(site, [t for t in tilts if t.n_frames], previous)
     log.info("site model fitted", site=site.key, model=model.content_hash if model else None,
              reason=report.get("reason"), runs=report["runs"])
@@ -92,15 +106,15 @@ def site_graph(stacks, cal_stacks, decisions, previous: SiteModels) -> Graph:
     for site in sorted(groups, key=lambda s: s.key):
         measures = []
         for run, flat in groups[site]:
-            measure = (measure_run_tilts, run)
+            measure = (measure_run_tilts, run, MEASURE_CODE)
             if flat is not None:
-                flat_task = (block_flat, flat)
+                flat_task = (block_flat, flat, MEASURE_CODE)
                 graph[flat_task] = {}
                 graph[measure] = [flat_task]          # ORDERED: the FlatBlock is the positional `*flat`
             else:
                 graph[measure] = {}
             measures.append(measure)
-        collector = (fit_site, site, previous.models.get(site.key))
+        collector = (fit_site, site, previous.models.get(site.key), MODEL_CODE)
         graph[collector] = measures
         collectors.append(collector)
     log.info("site runs scattered", sites=len(groups), runs=sum(len(r) for r in groups.values()),

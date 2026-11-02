@@ -130,8 +130,9 @@ def flat_files(flat_stack) -> list[str]:
 
 
 @node(num_cpus=1, resources={"diskcache": 0.001})
-def block_flat(flat_stack) -> FlatBlock:
-    """Head-pinned like every reader of raw frames."""
+def block_flat(flat_stack, code: str) -> FlatBlock:
+    """Head-pinned like every reader of raw frames. `code` is the measurement
+    source's hash (`graph.MEASURE_CODE`), in the key only."""
     files = flat_files(flat_stack)
     image = flat_block(files)
     log.info("flat blocked", flat=flat_stack.content_hash[:8], kind=getattr(flat_stack, "kind", "flat"),
@@ -276,9 +277,10 @@ def run_tilts(run: Run, flat: FlatBlock | None = None) -> RunTilts:
 
 
 @node(num_cpus=1, resources={"diskcache": 0.001})
-def measure_run_tilts(run: Run, *flat: FlatBlock) -> RunTilts:
-    """Head-pinned like every reader of raw subs (`measure_dust_run`). `flat`
-    is the run's flat as a `block_flat` result when the run resolves to one."""
+def measure_run_tilts(run: Run, code: str, *flat: FlatBlock) -> RunTilts:
+    """Head-pinned like every reader of raw subs (`measure_dust_run`). `code` is
+    the measurement source's hash (`graph.MEASURE_CODE`), in the key only;
+    `flat` is the run's flat as a `block_flat` result when the run resolves to one."""
     tilts = run_tilts(run, flat[0] if flat else None)
     log.info("run tilts measured", run=run.content_hash[:8], frames=tilts.n_frames,
              site=tilts.position, filter=tilts.filter, flat=flat[0].flat[:8] if flat else None)
