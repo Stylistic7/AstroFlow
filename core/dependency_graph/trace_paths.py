@@ -333,6 +333,7 @@ def _resolve_pipeline_call(
     # stack relevant entries inside stack_files's narrow hook.
     settings = context.settings
     from stacks.dust_runs import DustEpochs
+    from light_pollution.model import SiteModels
     cal_stacks_ref = ContextRef.store_large(context.calibration_stacks or {})
     config = ProcessingConfig(
         calibration_stacks=cal_stacks_ref,
@@ -340,6 +341,7 @@ def _resolve_pipeline_call(
         min_frames_in_stack=settings.clustering_settings.min_frames_in_stack,
         decisions=settings.decision_overrides,
         dust_epochs=ContextRef.store_large(context.dust_epochs or DustEpochs.empty()),
+        site_models=ContextRef.store_large(context.site_models or SiteModels.empty()),
     )
     return fn, entity, config
 

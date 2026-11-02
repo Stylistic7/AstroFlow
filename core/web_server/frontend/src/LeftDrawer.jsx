@@ -15,6 +15,7 @@ import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import PaletteIcon from '@mui/icons-material/Palette';
 import CameraAltIcon from '@mui/icons-material/CameraAlt';
 import BlurOnIcon from '@mui/icons-material/BlurOn';
+import PlaceIcon from '@mui/icons-material/Place';
 import FolderIcon from '@mui/icons-material/Folder';
 import BuildIcon from '@mui/icons-material/Build';
 import Divider from '@mui/material/Divider';
@@ -101,6 +102,14 @@ export default function LeftDrawer() {
                   <CameraAltIcon />
                 </ListItemIcon>
                 <ListItemText primary="Dust Correction" />
+              </ListItemButton>
+            </ListItem>
+            <ListItem key="sites" disablePadding>
+              <ListItemButton onClick={() => navigate('/sites')}>
+                <ListItemIcon>
+                  <PlaceIcon />
+                </ListItemIcon>
+                <ListItemText primary="Observing Sites" />
               </ListItemButton>
             </ListItem>
           </List>

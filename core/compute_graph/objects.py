@@ -5,6 +5,7 @@ from beartype import beartype
 from hashing import hash_dataclass
 from stacks.composite_stack import StacksDict, CalibrationStacksDict
 from stacks.dust_runs import DustEpochs
+from light_pollution.model import SiteModels
 from targets.types import TargetsDict
 from mosaics.types import MosaicsDict
 
@@ -18,6 +19,7 @@ class Objects:
     mosaics: MosaicsDict
     calibration_stacks: CalibrationStacksDict
     dust_epochs: DustEpochs = field(default_factory=DustEpochs.empty)
+    site_models: SiteModels = field(default_factory=SiteModels.empty)
 
     def __hash__(self):
         return hash_dataclass(self)

@@ -42,6 +42,9 @@ from file_io.types import FitsFilePath, Produced
 from file_io.links import link_or_copy
 from metadata.classes import ImageMetadata
 from stacks.composite_stack import BaseStack, Stack
+from light_pollution.model import SiteModel, frame_surface
+from light_pollution.sites import same_site, site_of
+from light_pollution.time import utc as _frame_utc
 from stacks.dust_epochs import MoteModel
 from stacks.stacking.pixinsight import _stack_files_narrow
 from stacks.star_flat_gain import GAIN_SECTION, FlatGain, with_scaled_flats
@@ -152,21 +155,71 @@ def _models_of_runs(stack: BaseStack, config: ProcessingConfig, models: list) ->
     return out
 
 
-def _gather(stack: BaseStack, tmp: Path) -> Path:
+def _frame_of(path: Path, run) -> "ImageMetadata | None":
+    """The run's frame a calibrated file came from, by DATE-OBS (Siril keeps it)."""
+    from astropy.io import fits
+    stamp = fits.getheader(path).get("DATE-OBS")
+    if not stamp:
+        return None
+    when = _frame_utc(stamp)
+    return next((m for m in run.metadata.values() if _frame_utc(m.header["DATE-OBS"]) == when), None)
+
+
+def _without_glow(src: Path, dst: Path, frame, model: SiteModel) -> str:
+    """Write `src` to `dst` with the frame's predicted sky glow subtracted;
+    the regime applied ('moonless' | 'moonlit'), or why not."""
+    from astropy.io import fits
+    from light_pollution.measure import block_median, sky_level
+    with fits.open(src) as hdul:
+        data = np.asarray(hdul[0].data, np.float32).squeeze()
+        surface, _, regime = frame_surface(
+            model, frame.header, frame.plate_solution.header, data.shape,
+            level=sky_level(block_median(data)), filt=str(frame.header.get("FILTER", "")))
+        if surface is None:
+            return regime
+        hdul[0].data = (data - surface).reshape(hdul[0].data.shape)
+        hdul.writeto(dst, overwrite=True)
+    return regime
+
+
+def _gather(stack: BaseStack, tmp: Path, site_models: list[SiteModel] = ()) -> tuple[Path, dict]:
     """Every frame to stack, calibrated where phase 1 calibrated it, as
     symlinks in ONE folder: one sequence without Siril's `merge`, which
-    would copy every calibrated frame again."""
+    would copy every calibrated frame again. With `site_models`, each
+    calibrated frame whose site has a model is written instead, its own
+    glow surface subtracted before Siril registers it (light_pollution):
+    the record of what happened to every frame comes back with the folder."""
     all_dir = tmp / "all"
     all_dir.mkdir()
     n = 0
+    record = {"models": sorted(m.content_hash for m in site_models), "frames": 0, "moonless": 0, "moonlit": 0,
+              "gated": 0, "no-amplitude": 0, "no-site": 0, "uncalibrated": 0, "unmatched": 0}
     for i, run in enumerate(stack.contents.values()):
         calibrated = sorted((tmp / "proc").glob(f"pp_r{i}_*.fit"))
         frames = calibrated or [Path(m.filename) for m in run.metadata.values()]
         assert len(frames) == len(run.metadata), (i, len(frames), len(run.metadata))
         for f in frames:
             n += 1
-            link_or_copy(f, all_dir / f"{n:05d}{f.suffix.lower()}")
-    return all_dir
+            record["frames"] += 1
+            dst = all_dir / f"{n:05d}{f.suffix.lower()}"
+            outcome = "uncalibrated" if not calibrated else None
+            if site_models and calibrated:
+                frame = _frame_of(f, run)
+                position = site_of(frame.header) if frame is not None and frame.plate_solution else None
+                model = next((m for m in site_models if position and same_site((m.site.lat, m.site.lon), position)), None)
+                if frame is None:
+                    outcome = "unmatched"
+                elif model is None:
+                    outcome = "no-site"
+                else:
+                    outcome = _without_glow(f, dst, frame, model)
+            if outcome in ("moonless", "moonlit"):
+                record[outcome] += 1
+                continue
+            if outcome:
+                record[outcome] += 1
+            link_or_copy(f, dst)
+    return all_dir, record
 
 
 def _stack_script(all_dir: Path, tmp: Path, mem_gb: float, image_type: str = "light") -> str:
@@ -250,12 +303,16 @@ def _scratch_parent(dest: Path, need_bytes: int) -> Path:
 def integrate_with_siril(
     stack: BaseStack,
     config: ProcessingConfig,
-    *cal_masters: ImageMetadata | FlatGain | MoteModel, out: FitsFilePath,
+    *cal_masters: ImageMetadata | FlatGain | MoteModel | SiteModel, out: FitsFilePath,
 ) -> Produced:
     """Calibrate, register and integrate `stack` with Siril. The peer of
     `stack_files`: pipelines call it with the same arguments. A `MoteModel`
     among them is an epoch's dust (`stacks/dust_epochs.py`): each run in that
-    epoch is calibrated with its scaled flat times the model's mote map."""
+    epoch is calibrated with its scaled flat times the model's mote map. A
+    `SiteModel` is a site's sky glow (`light_pollution`): every calibrated
+    frame shot there has its own predicted glow subtracted before
+    registration; the master's `site_model` sidecar section counts what
+    happened to each frame."""
     from file_io.generic import read_header
     stack = resolve_calibration(stack, config.get_calibration_stacks(), config.decisions)
     if config.decisions and isinstance(stack, Stack):
@@ -266,9 +323,10 @@ def integrate_with_siril(
     if n < config.min_frames_in_stack:
         raise ValueError(f"Stack {stack} contains only {n} files")
     cal_by_id = {str(read_header(m.filename)["STBLHASH"]): Path(m.filename)
-                 for m in cal_masters if not isinstance(m, (FlatGain, MoteModel))}
+                 for m in cal_masters if not isinstance(m, (FlatGain, MoteModel, SiteModel))}
     gains = [m for m in cal_masters if isinstance(m, FlatGain)]
     models = [m for m in cal_masters if isinstance(m, MoteModel)]
+    site_models = [m for m in cal_masters if isinstance(m, SiteModel)]
     model_of_run = _models_of_runs(stack, config, models)
     need = sum(2 * 4 * int(m.header["NAXIS1"]) * int(m.header["NAXIS2"])      # calibrated + registered float32
                for m in stack.all_metadata().values())
@@ -283,13 +341,19 @@ def integrate_with_siril(
         script = _calibration_script(stack, cal_by_id, tmp, model_of_run)
         if script:
             _run_siril(tmp, "calibrate.ssf", script)
-        _run_siril(tmp, "stack.ssf", _stack_script(_gather(stack, tmp), tmp, _memory_budget_gb(), stack.image_type))
+        all_dir, glow = _gather(stack, tmp, site_models)
+        if site_models:
+            log.info("Sky glow subtracted from the subs", stack=str(stack), **glow)
+        _run_siril(tmp, "stack.ssf", _stack_script(all_dir, tmp, _memory_budget_gb(), stack.image_type))
         master = tmp / "master.fit"
         assert master.exists(), f"Siril wrote no master for {stack}"
         shutil.move(master, out)                # a copy when the scratch is on another volume
     import json
+    sections = {GAIN_SECTION: {g.flat_id: json.loads(g.fit_json) for g in gains}} if gains else {}
+    if site_models:
+        sections["site_model"] = glow
     return Produced(
         out,
         header={"IMAGETYP": f"Master {stack.image_type}", "STBLHASH": stack.stable_hash,
                 "NOISE00": _robust_noise(out), "NOISEEST": "robust high-pass (AstroFlow)"},
-        sections={GAIN_SECTION: {g.flat_id: json.loads(g.fit_json) for g in gains}} if gains else {})
+        sections=sections)

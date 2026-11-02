@@ -272,6 +272,7 @@ def scatter_spatial_groups(
     graph[associate_cal_task] = {merge_star_flats_task}
 
     from stacks.dust_runs import scatter_dust_runs, store_dust_epochs
+    from light_pollution.graph import scatter_site_runs, store_site_models
 
     # ORDERED lists, not sets: these deps feed value-consuming nodes
     # (combine_dicts takes *ancestor_results), and dep order is part of the
@@ -368,6 +369,13 @@ def scatter_spatial_groups(
     graph[scatter_dust_runs] = [gather_stacks_task]
     graph[store_dust_epochs] = {scatter_dust_runs}
 
+    # Each observing site's sky glow — light pollution and moonlight — from
+    # the lights themselves (light_pollution/graph.py): one cached measurement
+    # per RUN, one model per site, stored for the Siril integration to
+    # subtract from each sub and for the Observing Sites panel.
+    graph[scatter_site_runs] = [gather_stacks_task]
+    graph[store_site_models] = {scatter_site_runs}
+
     # Night-sky flats close the loop the other calibration types do not:
     # their source is a LIGHT stack the user promoted, so the calibration
     # chain genuinely waits on identification here. Nothing else changes —
@@ -415,7 +423,7 @@ def scatter_spatial_groups(
     graph[gather_objects] = {
         store_stacks, store_targets, store_mosaics, store_calibration_stacks,
         store_ui_stacks, store_ui_targets, store_ui_mosaics, store_ui_calibration_stacks,
-        store_dust_epochs,
+        store_dust_epochs, store_site_models,
     }
 
     return graph
@@ -482,12 +490,14 @@ def build_regroup_graph(
 @beartype
 def gather_objects() -> Objects:
     """Snapshot all identified objects from context after regrouping."""
+    from light_pollution.model import SiteModels
     return Objects(
         stacks=context.stacks or StacksDict(),
         targets=context.targets or TargetsDict(),
         mosaics=context.mosaics or MosaicsDict({}),
         calibration_stacks=context.calibration_stacks or CalibrationStacksDict({}),
         dust_epochs=context.dust_epochs or DustEpochs.empty(),
+        site_models=context.site_models or SiteModels.empty(),
     )
 
 
@@ -967,6 +977,7 @@ def build_main_processing_graph(
     from cache.context_ref import ContextRef
     cal_stacks_ref = ContextRef.store_large(objects.calibration_stacks)
     dust_ref = ContextRef.store_large(objects.dust_epochs)
+    site_ref = ContextRef.store_large(objects.site_models)
 
     log.info("Building main processing graph", shopping_cart=shopping_cart)
 
@@ -1008,6 +1019,7 @@ def build_main_processing_graph(
             min_frames_in_stack=min_frames_in_stack,
             decisions=decisions,
             dust_epochs=dust_ref,
+            site_models=site_ref,
         )
 
     from pipelines.registry import registered_pipelines

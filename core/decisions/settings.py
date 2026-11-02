@@ -205,11 +205,20 @@ class ProcessingConfig:
     # calibration library and, like it, OUTSIDE every stacking key: a stack
     # carries the mote models its own runs resolved to as arguments.
     dust_epochs: Any = None
+    # The sites' sky-glow models (light_pollution/graph.py): the same kind of
+    # ref, outside every stacking key; an integration carries the models its
+    # frames' sites resolved to as arguments.
+    site_models: Any = None
 
     def get_dust_epochs(self):
         if hasattr(self.dust_epochs, 'cache_key'):
             return self.dust_epochs.get()
         return self.dust_epochs
+
+    def get_site_models(self):
+        if hasattr(self.site_models, 'cache_key'):
+            return self.site_models.get()
+        return self.site_models
 
     def get_calibration_stacks(self):
         """Dereference calibration_stacks (may be a ContextRef or a plain dict)."""

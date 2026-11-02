@@ -29,6 +29,7 @@ from web_server.backend.tiles import tiles_bp
 from web_server.backend.metadata import metadata_bp
 from web_server.backend.settings import settings_bp
 from web_server.backend.dust import dust_bp
+from web_server.backend.sites import sites_bp
 from web_server.backend.sky_flats import sky_flats_bp
 from web_server.backend.thumbnails import thumbnails_bp
 from web_server.backend.videos import videos_bp
@@ -104,6 +105,7 @@ app.register_blueprint(tiles_bp)
 app.register_blueprint(metadata_bp)
 app.register_blueprint(settings_bp)
 app.register_blueprint(dust_bp)
+app.register_blueprint(sites_bp)
 app.register_blueprint(sky_flats_bp)
 app.register_blueprint(thumbnails_bp)
 app.register_blueprint(videos_bp)

@@ -27,6 +27,7 @@ import { FolderProvider } from './FolderContext';
 import constellationPolylines from './constellationPolylines.json';
 import PlannerPanel from './planner/PlannerPanel.jsx';
 import DustCorrectionPanel from './DustCorrectionPanel.jsx';
+import SitesPanel from './SitesPanel.jsx';
 import StoragePanel, { RequireFolders } from './StoragePanel.jsx';
 import ToolsPanel from './ToolsPanel.jsx';
 import SkyFlatsPanel from './SkyFlatsPanel.jsx';
@@ -506,6 +507,11 @@ function App() {
                 <Route path="/dust-correction" element={
                   <AppLayout>
                     <DustCorrectionPanel />
+                  </AppLayout>
+                } />
+                <Route path="/sites" element={
+                  <AppLayout>
+                    <SitesPanel />
                   </AppLayout>
                 } />
                 <Route path="/folders" element={

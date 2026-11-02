@@ -53,7 +53,7 @@ def test_runs_calibrate_with_their_own_masters_then_stack_as_one_sequence():
     assert (tmp / "r0_dark.fit").resolve() == dark.resolve()
     for k in (1, 2):                                            # what Siril's calibrate writes
         _fits(tmp / "proc" / f"pp_r0_{k:05d}.fit")
-    all_dir = _gather(stack, tmp)
+    all_dir, _ = _gather(stack, tmp)
     targets = sorted(os.readlink(f) for f in all_dir.iterdir())
     assert targets == sorted([str(tmp / "proc/pp_r0_00001.fit"), str(tmp / "proc/pp_r0_00002.fit"),
                               str(lights / "b0.fit"), str(lights / "b1.fit")])
@@ -68,7 +68,7 @@ def test_uncalibrated_stack_needs_no_calibration_phase():
     (tmp / "proc").mkdir()
     run = _Run({"0": _Meta(_fits(tmp / "x.fit"))})
     assert _calibration_script(_Stack({"r": run}), {}, tmp) is None
-    assert len(list(_gather(_Stack({"r": run}), tmp).iterdir())) == 1
+    assert len(list(_gather(_Stack({"r": run}), tmp)[0].iterdir())) == 1
 
 
 def test_siril_master_integration_is_frame_count_times_exposure():
