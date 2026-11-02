@@ -124,6 +124,24 @@ def test_frame_surface_has_the_shape_and_no_mean_and_is_gated_when_flat():
     assert surface is None and regime in ("gated", "moonlit")
 
 
+def test_a_model_knows_where_its_frames_were_and_leaves_other_directions_alone():
+    model, report = fit_site_model(SITE, synthetic_runs(), None)
+    assert model.coverage and report["model"]["coverage"] == [list(c) for c in model.coverage]
+    assert all(1 <= a <= 5 for a, _ in model.coverage)            # runs drifted between ~22° and 80°
+    elsewhere = SiteModel.of(SITE, THETA * 4, (("H", CITY, MOON),), coverage=((0, 0),))   # only alt 0-15, north
+    surface, tilt, regime = frame_surface(elsewhere, _frame_header(), tan_wcs_header(305.0, 40.0, 20.0, 384, 256),
+                                          (256, 384), level=150.0, filt="H")
+    assert surface is None and regime == "uncovered"
+    assert elsewhere.content_hash == SiteModel.of(SITE, THETA * 4, (("H", CITY, MOON),)).content_hash   # record, not identity
+
+
+def test_a_shape_darker_than_the_zenith_inside_its_coverage_is_refused():
+    dark = np.zeros(N_CITY)
+    dark[0] = -0.25                                                  # brighter at the zenith than anywhere: unphysical
+    model, report = fit_site_model(SITE, synthetic_runs(theta=dark, moonlit_share=0), None)
+    assert model is None and "darker than the zenith" in report["reason"]
+
+
 def test_moonlit_frame_without_an_amplitude_is_left_alone():
     header = _frame_header()
     wcs = tan_wcs_header(305.0, 40.0, 20.0, 384, 256)

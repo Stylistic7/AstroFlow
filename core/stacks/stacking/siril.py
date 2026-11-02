@@ -193,7 +193,7 @@ def _gather(stack: BaseStack, tmp: Path, site_models: list[SiteModel] = ()) -> t
     all_dir.mkdir()
     n = 0
     record = {"models": sorted(m.content_hash for m in site_models), "frames": 0, "moonless": 0, "moonlit": 0,
-              "gated": 0, "no-amplitude": 0, "no-site": 0, "uncalibrated": 0, "unmatched": 0}
+              "gated": 0, "no-amplitude": 0, "uncovered": 0, "no-site": 0, "uncalibrated": 0, "unmatched": 0}
     for i, run in enumerate(stack.contents.values()):
         calibrated = sorted((tmp / "proc").glob(f"pp_r{i}_*.fit"))
         frames = calibrated or [Path(m.filename) for m in run.metadata.values()]

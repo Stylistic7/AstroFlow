@@ -62,6 +62,31 @@ HYSTERESIS_AMPLITUDE = 0.2        # sky with fresh noise differ by ~0.13); relat
 ROUND = 4
 REFERENCE_ALT = np.arange(30.0, 86.0, 5.0)   # where frames are shot; below, the (X-1)^2 terms amplify noise
 REFERENCE_AZ = np.arange(0.0, 360.0, 15.0)
+# A model is trusted only where the site's frames are: a Fourier dome does what it likes elsewhere
+# (Oakland, 2026-11-02: 45 runs over three octants predicted -100 % glow to the south). Coverage is
+# counted in cells of COVERAGE_ALT_STEP x COVERAGE_AZ_STEP degrees with at least COVERAGE_FRAMES dark frames.
+COVERAGE_ALT_STEP = 15.0
+COVERAGE_AZ_STEP = 45.0
+COVERAGE_FRAMES = 5
+MAX_DARKER_THAN_ZENITH = 0.1      # a shape darker than the zenith by more than this inside its coverage is unphysical
+
+
+def coverage_cell(alt_deg: float, az_deg: float) -> tuple[int, int]:
+    return int(min(alt_deg, 89.9) // COVERAGE_ALT_STEP), int((az_deg % 360.0) // COVERAGE_AZ_STEP)
+
+
+def coverage_of(tilts) -> tuple[tuple[int, int], ...]:
+    counts: dict[tuple[int, int], int] = {}
+    for t in tilts:
+        for j in range(t.n_frames):
+            if t.dark[j]:
+                c = coverage_cell(t.alt[j], t.az[j])
+                counts[c] = counts.get(c, 0) + 1
+    return tuple(sorted(c for c, n in counts.items() if n >= COVERAGE_FRAMES))
+
+
+def covered(coverage, alt_deg: float, az_deg: float) -> bool:
+    return coverage_cell(alt_deg, az_deg) in coverage
 
 
 def airmass(alt_deg):
@@ -107,6 +132,7 @@ class SiteModel:
     explained: float = 0.0
     explained_moonlit: float = 0.0
     newest_run: str = ""
+    coverage: tuple[tuple[int, int], ...] = ()   # (alt band, octant) cells the site's frames sampled: the record
     content_hash: str = ""
 
     @classmethod
@@ -121,7 +147,7 @@ class SiteModel:
     def summary(self) -> dict:
         return {"hash": self.content_hash, "runs": self.n_runs, "frames": self.n_frames,
                 "explained": round(self.explained, 3), "explained_moonlit": round(self.explained_moonlit, 3),
-                "newest_run": self.newest_run,
+                "newest_run": self.newest_run, "coverage": [list(c) for c in self.coverage],
                 "amplitudes": {f: {"city": c, "moon": m} for f, c, m in self.amplitudes}}
 
 
@@ -169,9 +195,15 @@ def _within_run(tilts, rows_of, y_of, x_of):
 
 
 def _explained(coef, X, Y, inl) -> float:
-    if inl.sum() < 4 or np.var(Y[inl]) == 0:
+    """The share of the (robust) variance the model explains: MAD-based, so a
+    cloud-crossed run cannot make a good model look useless."""
+    if inl.sum() < 4:
         return 0.0
-    return float(1 - np.var(Y[inl] - X[inl] @ coef) / np.var(Y[inl]))
+    y, r = Y[inl], Y[inl] - X[inl] @ coef
+    spread = 1.4826 * np.median(np.abs(y - np.median(y)))
+    if spread == 0:
+        return 0.0
+    return float(1 - (1.4826 * np.median(np.abs(r - np.median(r))) / spread) ** 2)
 
 
 def _reference_tilts(theta) -> np.ndarray:
@@ -227,6 +259,13 @@ def fit_site_model(site: Site, tilts, previous: SiteModel | None) -> tuple[SiteM
     if explained < MIN_EXPLAINED:
         report["reason"] = f"the shape explains only {100 * explained:.0f}% of the tilt changes within runs"
         return None, report
+    coverage = coverage_of(tilts)
+    darkest = min((float(city_shape(theta, (a + 0.5) * COVERAGE_ALT_STEP, (z + 0.5) * COVERAGE_AZ_STEP))
+                   for a, z in coverage), default=1.0)
+    if darkest < 1.0 - MAX_DARKER_THAN_ZENITH:
+        report["reason"] = (f"the shape is {100 * (1 - darkest):.0f}% darker than the zenith inside the site's own "
+                            f"coverage: unphysical, the runs do not pin it down")
+        return None, report
     # 2. the amplitudes, in counts per second, per filter, from all dark frames
     amplitudes = []
     for filt in sorted({t.filter for t in tilts}):
@@ -250,7 +289,7 @@ def fit_site_model(site: Site, tilts, previous: SiteModel | None) -> tuple[SiteM
         + amp[t.filter][1] * np.asarray(t.moon[j])[:, None])
     explained_moonlit = _explained(np.ones(1), Xm, Ym, np.ones(len(Ym), bool)) if len(Ym) else 0.0
     record = dict(n_runs=n_runs, n_frames=n_frames, explained=explained,
-                  explained_moonlit=explained_moonlit, newest_run=report["newest_run"])
+                  explained_moonlit=explained_moonlit, newest_run=report["newest_run"], coverage=coverage)
     model = SiteModel.of(site, theta, amplitudes, **record)
     if previous is not None and _same_within_hysteresis(model, previous):
         model = replace(previous, **record)
@@ -263,7 +302,8 @@ def frame_surface(model: SiteModel, header: dict, wcs_header: dict, shape: tuple
                   level: float, filt: str, step: int = 64):
     """The glow in this frame's own pixel grid at its mid-exposure moment, as
     (surface in counts with mean 0, or None; its tilt in % of `level` per
-    degree; the regime: 'moonless', 'moonlit', 'gated' or 'no-amplitude').
+    degree; the regime: 'moonless', 'moonlit', 'gated', 'no-amplitude' or
+    'uncovered' — outside the directions the site's frames sampled).
     `level` is the frame's sky level in counts (lower-half median of its
     block medians); `header` carries DATE-OBS, EXPTIME, SITELAT/SITELONG."""
     from astropy import units as u
@@ -288,6 +328,9 @@ def frame_surface(model: SiteModel, header: dict, wcs_header: dict, shape: tuple
     frame = AltAz(obstime=t, location=EarthLocation(lat=lat * u.deg, lon=lon * u.deg))
     cells = SkyCoord(ra * u.deg, dec * u.deg)
     aa = cells.transform_to(frame)
+    centre_az = float(np.degrees(math.atan2(np.median(np.sin(aa.az.rad)), np.median(np.cos(aa.az.rad)))) % 360)
+    if model.coverage and not covered(model.coverage, float(np.median(aa.alt.deg)), centre_az):
+        return None, 0.0, "uncovered"
     p = city_shape(model.theta, aa.alt.deg, aa.az.deg)
     city = p / p.mean() - 1.0
     moon = get_body("moon", t, frame.location)
