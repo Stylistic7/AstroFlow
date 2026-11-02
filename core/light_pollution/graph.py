@@ -1,9 +1,17 @@
 """The library-wide fold, scheduled beside the dust epochs
-(`compute_graph.scatter_spatial_groups`): one `measure_run_tilts` per light
-run that states where it was shot, one `fit_site` per site (its runs in date
-order — the collector's dependencies are ORDERED, they are its positional
-`*tilts`), `merge_site_models` into one table, `store_site_models` into the
-context, where the Siril integration and the Observing Sites panel read it.
+(`compute_graph.scatter_spatial_groups`), after the night-sky flats have
+joined the calibration stacks: one `block_flat` per flat stack a run resolves
+to, one `measure_run_tilts` per light run that states where it was shot (its
+flat as a value dependency: the flat — the etalon correction — is applied
+before anything about the glow is measured), one `fit_site` per site (its runs
+in date order — the collector's dependencies are ORDERED, they are its
+positional `*tilts`), `merge_site_models` into one table, `store_site_models`
+into the context, where the Siril integration and the Observing Sites panel
+read it.
+
+Each run's flat is resolved exactly as a pipeline resolves it
+(`decisions.resolve.resolve_calibration`, decision overrides included), so the
+measurement sees the flat the integration will divide by.
 
 The fit receives the site's previously stored model and keeps it unless the
 refit differs materially (`model.fit_site_model`): the one deliberately
@@ -17,11 +25,13 @@ import structlog
 
 from clustering.quiesce import _utc
 from context import context
+from decisions.resolve import resolve_calibration
 from decorators import node
 from dependency_graph import Graph
-from light_pollution.measure import MIN_FRAMES, RunTilts, measure_run_tilts
+from light_pollution.measure import MIN_FRAMES, RunTilts, block_flat, measure_run_tilts
 from light_pollution.model import SiteModel, SiteModels, fit_site_model
 from light_pollution.sites import Site, cluster_sites, site_of
+from stacks.types import StackIdDependency
 
 log = structlog.get_logger()
 
@@ -44,45 +54,72 @@ def merge_site_models(*tables: SiteModels) -> SiteModels:
     return SiteModels.of(models, report)
 
 
-def runs_by_site(stacks) -> dict[Site, list]:
-    """The light runs with at least MIN_FRAMES solved frames stating a position, by site."""
+def _flat_of(run, cal_stacks):
+    dep = run.dependencies.get("flat") if run.dependencies else None
+    if isinstance(dep, StackIdDependency):
+        return cal_stacks.get(str(dep.stack_id))
+    return None
+
+
+def runs_by_site(stacks, cal_stacks, decisions) -> dict[Site, list]:
+    """The light runs with at least MIN_FRAMES solved frames stating a
+    position, by site, each with the flat stack it resolves to (or None)."""
     placed = []
     for stack in stacks:
         if getattr(stack, "image_type", "light") != "light":
             continue
-        for run in stack.contents.values():
+        try:
+            resolved = resolve_calibration(stack, cal_stacks, decisions)
+        except Exception as e:   # a stack calibration cannot place still measures, flat-less
+            log.warning("site runs: calibration unresolved", stack=str(stack), error=str(e))
+            resolved = stack
+        for run in resolved.contents.values():
             positions = [p for m in run.metadata.values()
                          if m.plate_solution is not None and (p := site_of(m.header)) is not None]
             if len(positions) >= MIN_FRAMES:
-                placed.append((Counter(positions).most_common(1)[0][0], run))
-    sites = cluster_sites(p for p, _ in placed)
+                placed.append((Counter(positions).most_common(1)[0][0], run, _flat_of(run, cal_stacks)))
+    sites = cluster_sites(p for p, _, _ in placed)
     by_site = defaultdict(list)
-    for p, run in placed:
-        by_site[sites[p]].append(run)
-    return {s: sorted(runs, key=lambda r: (_utc(r.oldest_date), r.content_hash)) for s, runs in by_site.items()}
+    for p, run, flat in placed:
+        by_site[sites[p]].append((run, flat))
+    return {s: sorted(items, key=lambda rf: (_utc(rf[0].oldest_date), rf[0].content_hash)) for s, items in by_site.items()}
 
 
-def site_graph(stacks, previous: SiteModels) -> Graph:
+def site_graph(stacks, cal_stacks, decisions, previous: SiteModels) -> Graph:
     graph = Graph({})
     collectors = []
-    groups = runs_by_site(stacks)
+    groups = runs_by_site(stacks, cal_stacks, decisions)
     for site in sorted(groups, key=lambda s: s.key):
-        measures = [(measure_run_tilts, r) for r in groups[site]]
-        for m in measures:
-            graph[m] = {}
+        measures = []
+        for run, flat in groups[site]:
+            measure = (measure_run_tilts, run)
+            if flat is not None:
+                flat_task = (block_flat, flat)
+                graph[flat_task] = {}
+                graph[measure] = [flat_task]          # ORDERED: the FlatBlock is the positional `*flat`
+            else:
+                graph[measure] = {}
+            measures.append(measure)
         collector = (fit_site, site, previous.models.get(site.key))
         graph[collector] = measures
         collectors.append(collector)
-    log.info("site runs scattered", sites=len(groups), runs=sum(len(r) for r in groups.values()))
+    log.info("site runs scattered", sites=len(groups), runs=sum(len(r) for r in groups.values()),
+             flats=len({f.content_hash for rs in groups.values() for _, f in rs if f is not None}))
     graph[merge_site_models] = collectors
     return graph
 
 
+def _deref(values):
+    return [v.get() if hasattr(v, "get") else v for v in values]
+
+
 @ray.remote(num_cpus=0.1)
-def scatter_site_runs(stacks: dict) -> Graph:
-    """`stacks` is the identified light stacks, their values ContextRefs."""
+def scatter_site_runs(stacks: dict, cal_stacks: dict) -> Graph:
+    """`stacks` is the identified light stacks, `cal_stacks` the calibration
+    stacks with the night-sky flats merged in; values may be ContextRefs."""
     previous = context.get("site_models") or SiteModels.empty()
-    return site_graph([v.get() if hasattr(v, "get") else v for v in stacks.values()], previous)
+    cal = type(cal_stacks)(dict(zip(cal_stacks.keys(), _deref(cal_stacks.values()))))
+    return site_graph(_deref(stacks.values()), cal, context.settings.decision_overrides, previous)
 
 
 @ray.remote(num_cpus=0.1)

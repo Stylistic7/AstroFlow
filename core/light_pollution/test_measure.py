@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import numpy as np
 from astropy.io import fits
 
-from light_pollution.measure import BIN, MIN_FRAMES, RunTilts, block_median, run_tilts, sky_level
+from light_pollution.measure import BIN, MIN_FRAMES, FlatBlock, RunTilts, block_median, flat_block, run_tilts, sky_level
 from light_pollution.model import N_CITY
 from metadata.classes import ImageMetadata
 from plate_solving import PlateSolution
@@ -21,15 +21,25 @@ PEDESTAL, SKY = 500.0, 150.0
 T0 = datetime.datetime(2026, 10, 1, 6, 0, 0)   # 23:00 PDT: astronomical night in San Francisco
 
 
-def _frame(path: Path, k: int, tilt, position=(37.75, -122.42), nebula=True) -> tuple[str, ImageMetadata]:
+def _vignetting() -> np.ndarray:
+    """A flat with a 12 % bowl and a 2 % etalon ring, median 1."""
+    yy, xx = np.mgrid[0:NY, 0:NX]
+    r2 = ((xx - NX / 2) / NX) ** 2 + ((yy - NY / 2) / NY) ** 2
+    flat = 1.0 - 0.5 * r2 + 0.02 * np.cos(40 * np.sqrt(r2))
+    return (flat / np.median(flat)).astype(np.float32)
+
+
+def _frame(path: Path, k: int, tilt, position=(37.75, -122.42), nebula=True, flat=None) -> tuple[str, ImageMetadata]:
     wcs = tan_wcs_header(305.0, 40.0, SCALE, NX, NY)
     yy, xx = np.mgrid[0:NY, 0:NX]
     x_deg, y_deg = (xx - NX / 2) * SCALE / 3600, (yy - NY / 2) * SCALE / 3600
-    img = PEDESTAL + SKY + tilt[0] * x_deg + tilt[1] * y_deg
+    img = SKY + tilt[0] * x_deg + tilt[1] * y_deg
     if nebula:
         img = img + 60.0 * np.exp(-((xx - 400) ** 2 + (yy - 200) ** 2) / (2 * 60.0 ** 2))   # the same sky in every frame
+    if flat is not None:
+        img = img * flat                                                                   # the sensor's response
     rng = np.random.default_rng(k)
-    img = img + rng.normal(0, 3.0, img.shape)
+    img = PEDESTAL + img + rng.normal(0, 3.0, img.shape)
     header = {"DATE-OBS": (T0 + datetime.timedelta(minutes=5 * k)).isoformat(), "EXPTIME": 300.0, "OFFSET": 50,
               "FILTER": "H", "IMAGETYP": "Light Frame"}
     if position is not None:
@@ -94,3 +104,49 @@ def test_a_run_at_two_sites_keeps_the_majority_site(tmp_path):
 
 def test_tilt_math_matches_the_measurement_grid():
     assert math.isclose(BIN * SCALE / 3600, 0.1777, abs_tol=1e-3)
+
+
+def _tilt_error(out, tilts):
+    level = np.array(out.level)[:, None]
+    measured = np.array(out.tilt_pct) - np.mean(out.tilt_pct, 0)
+    expected = np.array(tilts) * 100.0 / level
+    expected -= expected.mean(0)
+    return float(np.abs(measured - expected).max())
+
+
+def test_the_flat_is_applied_before_the_tilt_is_measured(tmp_path):
+    """The etalon correction comes first: a vignetted sensor measured through its flat gives the
+    injected tilt changes back; measured raw, the bowl bends them."""
+    flat = _vignetting()
+    tilts = [(0.0, 0.0), (6.0, -2.0), (12.0, -4.0), (18.0, -6.0)]
+    run = _run(tmp_path, tilts, flat=flat)
+    block = FlatBlock.of("flat0001", "sky", 20, block_median(flat))
+    with_flat = run_tilts(run, block)
+    without = run_tilts(run)
+    span = float(np.ptp(np.array(tilts)[:, 0]) * 100.0 / SKY)             # the injected range, %/deg
+    assert _tilt_error(with_flat, tilts) < 0.08 * span                   # the transparency leak, nothing more
+    assert _tilt_error(without, tilts) < 0.08 * span                     # (a flat cancels to first order in the difference)
+    assert not np.allclose(with_flat.tilt_pct, without.tilt_pct, atol=0.02)   # but it IS applied, first
+    assert block.content_hash == FlatBlock.of("flat0001", "sky", 99, flat).content_hash   # identity = the flat stack's
+
+
+def test_flat_block_from_flat_frames(tmp_path):
+    """A night-sky flat's members, with stars, give the sensor's shape back to within a percent."""
+    flat = _vignetting()
+    yy, xx = np.mgrid[0:NY, 0:NX]
+    files = []
+    for k in range(6):
+        rng = np.random.default_rng(100 + k)
+        img = 400.0 * flat + rng.normal(0, 3.0, flat.shape)
+        for _ in range(40):                                                  # stars, dithered between frames
+            sx, sy = rng.integers(0, NX), rng.integers(0, NY)
+            img += 3000.0 * np.exp(-((xx - sx) ** 2 + (yy - sy) ** 2) / 4.0)
+        hdu = fits.PrimaryHDU((PEDESTAL + img).astype(np.float32))
+        hdu.header["OFFSET"] = 50
+        hdu.writeto(tmp_path / f"flat{k}.fits")
+        files.append(str(tmp_path / f"flat{k}.fits"))
+    shape = flat_block(files)
+    truth = block_median(flat)
+    truth = truth / np.median(truth)
+    assert shape.shape == truth.shape
+    assert float(np.abs(shape - truth).max()) < 0.01

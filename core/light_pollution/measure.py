@@ -8,15 +8,16 @@ against that median, in percent of the frame's sky level per degree and in
 counts per second per degree; beside it, the tilts the city shape's terms and
 the moonlight field would have at that frame's moment, so the fit is linear.
 
-Calibration is the OFFSET pedestal only, as the dust maps' is
-(`stacks/dust_runs.py`): no flat, because a flat multiplies frame and median
-alike and cancels in the difference to first order (the RedCat night-sky flats
-vary 2-5 % peak to peak), and because this way the measurement needs nothing a
-pipeline makes — the model exists before any pipeline runs and for all of them.
-Frames are block-medianed to BIN px (71″ on the RedCat), which drops stars and
-hot pixels, then resampled onto the first frame's grid through their plate
-solutions. The sky level is the lower-half median of the block medians: an
-estimate under the nebula, used again when a frame's surface is scaled.
+Calibration: the OFFSET pedestal, as the dust maps' is (`stacks/dust_runs.py`),
+and the run's flat — the night-sky flat is the etalon correction, and it comes
+BEFORE any estimate of the glow (Stylistic7, 2026-11-02). The flat is `block_flat`:
+the flat stack's own frames block-medianed to BIN px and normalised, a cached
+node per flat stack, so the measurement needs nothing a pipeline makes — the
+model exists before any pipeline runs and for all of them. Frames are
+block-medianed to BIN px (71″ on the RedCat), which drops stars and hot pixels,
+then resampled onto the first frame's grid through their plate solutions. The
+sky level is the lower-half median of the block medians: an estimate under the
+nebula, used again when a frame's surface is scaled.
 """
 from __future__ import annotations
 
@@ -79,10 +80,63 @@ class RunTilts:
         return cls(run.content_hash, (0.0, 0.0), "", "", 0, e, e, e, e, e, e, e, e, e, e, e, e, e, hash_list([run.content_hash, "empty"]))
 
 
+@dataclass(frozen=True)
+class FlatBlock:
+    """A flat stack's shape at BIN resolution, normalised to a median of 1.
+    Its identity is the flat stack's: the image follows from its frames."""
+    flat: str
+    kind: str
+    n_frames: int
+    image: np.ndarray
+    content_hash: str = ""
+
+    @classmethod
+    def of(cls, flat: str, kind: str, n_frames: int, image: np.ndarray) -> "FlatBlock":
+        return cls(flat, kind, n_frames, image, hash_list([flat, "block", BIN]))
+
+
 def block_median(a: np.ndarray, b: int = BIN) -> np.ndarray:
     h, w = (a.shape[0] // b) * b, (a.shape[1] // b) * b
     v = a[:h, :w].reshape(h // b, b, w // b, b).transpose(0, 2, 1, 3).reshape(h // b, w // b, b * b)
     return np.nanmedian(v, axis=2).astype(np.float32)
+
+
+MAX_FLAT_FRAMES = 24
+
+
+def flat_block(files) -> np.ndarray:
+    """The flat's shape from its frames: each pedestal-subtracted, block-medianed
+    (stars and hot pixels drop out) and normalised to its own median, the median
+    across frames, normalised to 1. No-data cells are 1."""
+    from file_io.generic import read_header, read_image
+    files = list(files)
+    files = files[::max(1, -(-len(files) // MAX_FLAT_FRAMES))]
+    blocks = []
+    for f in files:
+        pedestal = PEDESTAL_PER_OFFSET * float(read_header(Path(f)).get("OFFSET", 0) or 0)
+        b = block_median(np.asarray(read_image(Path(f)), np.float32).squeeze() - pedestal)
+        blocks.append(b / np.nanmedian(b))
+    flat = np.nanmedian(np.stack(blocks), 0)
+    flat = flat / np.nanmedian(flat)
+    return np.where(np.isfinite(flat) & (flat > 0), flat, 1.0).astype(np.float32)
+
+
+def flat_files(flat_stack) -> list[str]:
+    """A night-sky flat's members, or a flat stack's frames."""
+    members = getattr(flat_stack, "member_files", ())
+    if members:
+        return [str(f) for f in members]
+    return [str(m.filename) for run in flat_stack.contents.values() for m in run.metadata.values()]
+
+
+@node(num_cpus=1, resources={"diskcache": 0.001})
+def block_flat(flat_stack) -> FlatBlock:
+    """Head-pinned like every reader of raw frames."""
+    files = flat_files(flat_stack)
+    image = flat_block(files)
+    log.info("flat blocked", flat=flat_stack.content_hash[:8], kind=getattr(flat_stack, "kind", "flat"),
+             frames=len(files), shape=image.shape)
+    return FlatBlock.of(flat_stack.content_hash, str(getattr(flat_stack, "kind", "flat")), len(files), image)
 
 
 def sky_level(d: np.ndarray) -> float:
@@ -128,9 +182,10 @@ def transparency(d: np.ndarray, median: np.ndarray, cubic: np.ndarray, ok: np.nd
     return s, c
 
 
-def run_tilts(run: Run) -> RunTilts:
+def run_tilts(run: Run, flat: FlatBlock | None = None) -> RunTilts:
     """The measurement, or `RunTilts.empty` when fewer than MIN_FRAMES solved
-    frames state the same position."""
+    frames state the same position. With `flat`, every frame is divided by it
+    before anything is measured."""
     from astropy import units as u
     from astropy.coordinates import AltAz, EarthLocation, SkyCoord, get_body, get_sun
     from astropy.time import Time
@@ -158,6 +213,9 @@ def run_tilts(run: Run) -> RunTilts:
     for k, (h, m) in enumerate(frames):
         pedestal = PEDESTAL_PER_OFFSET * float(m.header.get("OFFSET", 0) or 0)
         img = block_median(np.asarray(read_image(Path(m.filename)), np.float32).squeeze() - pedestal)
+        if flat is not None:
+            h_, w_ = min(img.shape[0], flat.image.shape[0]), min(img.shape[1], flat.image.shape[1])
+            img = img[:h_, :w_] / flat.image[:h_, :w_]
         if k == 0:
             shape = img.shape
             cy, cx = np.mgrid[0:shape[0], 0:shape[1]]
@@ -218,9 +276,10 @@ def run_tilts(run: Run) -> RunTilts:
 
 
 @node(num_cpus=1, resources={"diskcache": 0.001})
-def measure_run_tilts(run: Run) -> RunTilts:
-    """Head-pinned like every reader of raw subs (`measure_dust_run`)."""
-    tilts = run_tilts(run)
+def measure_run_tilts(run: Run, *flat: FlatBlock) -> RunTilts:
+    """Head-pinned like every reader of raw subs (`measure_dust_run`). `flat`
+    is the run's flat as a `block_flat` result when the run resolves to one."""
+    tilts = run_tilts(run, flat[0] if flat else None)
     log.info("run tilts measured", run=run.content_hash[:8], frames=tilts.n_frames,
-             site=tilts.position, filter=tilts.filter)
+             site=tilts.position, filter=tilts.filter, flat=flat[0].flat[:8] if flat else None)
     return tilts

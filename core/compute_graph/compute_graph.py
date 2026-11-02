@@ -369,13 +369,6 @@ def scatter_spatial_groups(
     graph[scatter_dust_runs] = [gather_stacks_task]
     graph[store_dust_epochs] = {scatter_dust_runs}
 
-    # Each observing site's sky glow — light pollution and moonlight — from
-    # the lights themselves (light_pollution/graph.py): one cached measurement
-    # per RUN, one model per site, stored for the Siril integration to
-    # subtract from each sub and for the Observing Sites panel.
-    graph[scatter_site_runs] = [gather_stacks_task]
-    graph[store_site_models] = {scatter_site_runs}
-
     # Night-sky flats close the loop the other calibration types do not:
     # their source is a LIGHT stack the user promoted, so the calibration
     # chain genuinely waits on identification here. Nothing else changes —
@@ -389,6 +382,16 @@ def scatter_spatial_groups(
     # positionally.
     graph[merge_sky_flat_task] = [identify_sky_flat_task, associate_cal_task]
     graph[store_calibration_stacks] = {merge_sky_flat_task}
+
+    # Each observing site's sky glow — light pollution and moonlight — from
+    # the lights themselves (light_pollution/graph.py): one cached measurement
+    # per RUN, each behind its run's flat (the night-sky flat is the etalon
+    # correction and comes first, hence after the sky-flat merge; ORDERED:
+    # the builder takes the stacks and the calibration stacks positionally),
+    # one model per site, stored for the Siril integration to subtract from
+    # each sub and for the Observing Sites panel.
+    graph[scatter_site_runs] = [gather_stacks_task, merge_sky_flat_task]
+    graph[store_site_models] = {scatter_site_runs}
     graph[process_calibration_stacks_for_ui] = {merge_sky_flat_task}
     graph[store_ui_calibration_stacks] = {process_calibration_stacks_for_ui}
     # The builder embeds every `prepare_stack_for_ui` result in ITS cached
