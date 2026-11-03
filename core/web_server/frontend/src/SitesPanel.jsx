@@ -48,11 +48,14 @@ function DomeMap({ grid, samples, size = 340 }) {
   return (
     <Box>
       <svg width={size} height={size} style={{ display: 'block' }}>
-        {ALTS.map((alt, i) => AZS.map((az, j) => (
-          <Tooltip key={`${i}-${j}`} title={`alt ${alt}° az ${az}°: ${grid[i][j] >= 0 ? '+' : ''}${grid[i][j].toFixed(0)}% vs the zenith`}>
-            <path d={wedge(c, R, alt, az)} fill={ramp(grid[i][j], vmax)} stroke="none" />
-          </Tooltip>
-        )))}
+        {ALTS.map((alt, i) => AZS.map((az, j) => {
+          const v = grid[i][j];                       // null: outside the model's coverage — no frames were shot there
+          return (
+            <Tooltip key={`${i}-${j}`} title={`alt ${alt}° az ${az}°: ${v === null ? 'no frames here' : `${v >= 0 ? '+' : ''}${v.toFixed(0)}% vs the zenith`}`}>
+              <path d={wedge(c, R, alt, az)} fill={v === null ? theme.palette.action.disabledBackground : ramp(v, vmax)} stroke="none" />
+            </Tooltip>
+          );
+        }))}
         {[30, 60].map((alt) => (
           <circle key={alt} cx={c} cy={c} r={R * (90 - alt) / 75} fill="none" stroke={ink} strokeOpacity={0.5} strokeDasharray="3 3" />
         ))}
@@ -69,7 +72,7 @@ function DomeMap({ grid, samples, size = 340 }) {
       </svg>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
         <Box sx={{ width: 120, height: 10, borderRadius: 1, background: `linear-gradient(90deg, ${ramp(0, 1)}, ${ramp(0.5, 1)}, ${ramp(1, 1)})` }} />
-        <Typography variant="caption" color="text.secondary">0 → {vmax.toFixed(0)}% brighter than the zenith · dots: frames (hollow: Moon up)</Typography>
+        <Typography variant="caption" color="text.secondary">0 → {vmax.toFixed(0)}% brighter than the zenith · grey: no frames · dots: frames (hollow: Moon up)</Typography>
       </Box>
     </Box>
   );

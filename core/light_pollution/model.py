@@ -358,6 +358,9 @@ def frame_surface(model: SiteModel, header: dict, wcs_header: dict, shape: tuple
 
 
 def brightness_grid(model: SiteModel, alts=np.arange(15.0, 91.0, 5.0), azs=np.arange(0.0, 360.0, 10.0)) -> list:
-    """Percent brighter than the zenith, rows by altitude, columns by azimuth — the panel's map."""
+    """Percent brighter than the zenith, rows by altitude, columns by azimuth — the panel's map.
+    None outside the model's coverage, where the shape is not trusted (`frame_surface` corrects nothing there)."""
     alt, az = np.meshgrid(alts, azs, indexing="ij")
-    return (100.0 * (city_shape(model.theta, alt, az) - 1.0)).round(1).tolist()
+    pct = (100.0 * (city_shape(model.theta, alt, az) - 1.0)).round(1)
+    return [[float(p) if np.isfinite(p) and (not model.coverage or covered(model.coverage, a, z)) else None
+             for p, a, z in zip(prow, arow, zrow)] for prow, arow, zrow in zip(pct, alt, az)]

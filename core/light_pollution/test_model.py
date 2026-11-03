@@ -133,6 +133,9 @@ def test_a_model_knows_where_its_frames_were_and_leaves_other_directions_alone()
                                           (256, 384), level=150.0, filt="H")
     assert surface is None and regime == "uncovered"
     assert elsewhere.content_hash == SiteModel.of(SITE, THETA * 4, (("H", CITY, MOON),)).content_hash   # record, not identity
+    grid = brightness_grid(SiteModel.of(SITE, THETA * 4, (), coverage=((1, 0),)))     # alt 15-30, az 0-45 only
+    assert all(v is None for row in grid[3:] for v in row)                             # alt 30 and up: nothing
+    assert all(isinstance(v, float) for row in grid[:3] for v in row[:5]) and grid[0][5] is None   # az 0..40 drawn, 50 not
 
 
 def test_a_shape_darker_than_the_zenith_inside_its_coverage_is_refused():
