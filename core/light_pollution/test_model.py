@@ -143,6 +143,10 @@ def test_a_shape_darker_than_the_zenith_inside_its_coverage_is_refused():
     dark[0] = -0.25                                                  # brighter at the zenith than anywhere: unphysical
     model, report = fit_site_model(SITE, synthetic_runs(theta=dark, moonlit_share=0), None)
     assert model is None and "darker than the zenith" in report["reason"]
+    blinding = np.zeros(N_CITY)
+    blinding[0] = 3.0                                                # 1000x the zenith at airmass 2: a degenerate fit, not a sky
+    model, report = fit_site_model(SITE, synthetic_runs(theta=blinding, moonlit_share=0), None)
+    assert model is None and "brighter than the zenith" in report["reason"]
 
 
 def test_moonlit_frame_without_an_amplitude_is_left_alone():

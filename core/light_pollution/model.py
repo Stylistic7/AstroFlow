@@ -69,6 +69,8 @@ COVERAGE_ALT_STEP = 15.0
 COVERAGE_AZ_STEP = 45.0
 COVERAGE_FRAMES = 5
 MAX_DARKER_THAN_ZENITH = 0.1      # a shape darker than the zenith by more than this inside its coverage is unphysical
+MAX_BRIGHTER_THAN_ZENITH = 100.0  # city domes reach ~30x the zenith near the horizon; beyond this the fit is degenerate
+                                  # (Arizona, 2026-11-02: 33 runs in four cells fitted 10^192 x inside them)
 
 
 def coverage_cell(alt_deg: float, az_deg: float) -> tuple[int, int]:
@@ -260,11 +262,15 @@ def fit_site_model(site: Site, tilts, previous: SiteModel | None) -> tuple[SiteM
         report["reason"] = f"the shape explains only {100 * explained:.0f}% of the tilt changes within runs"
         return None, report
     coverage = coverage_of(tilts)
-    darkest = min((float(city_shape(theta, (a + 0.5) * COVERAGE_ALT_STEP, (z + 0.5) * COVERAGE_AZ_STEP))
-                   for a, z in coverage), default=1.0)
+    shape = [float(city_shape(theta, (a + 0.5) * COVERAGE_ALT_STEP, (z + 0.5) * COVERAGE_AZ_STEP)) for a, z in coverage]
+    darkest, brightest = (min(shape), max(shape)) if shape else (1.0, 1.0)
     if darkest < 1.0 - MAX_DARKER_THAN_ZENITH:
         report["reason"] = (f"the shape is {100 * (1 - darkest):.0f}% darker than the zenith inside the site's own "
                             f"coverage: unphysical, the runs do not pin it down")
+        return None, report
+    if not brightest <= MAX_BRIGHTER_THAN_ZENITH:                    # also catches inf and nan
+        report["reason"] = (f"the shape is {brightest:.3g}x brighter than the zenith inside the site's own "
+                            f"coverage: a degenerate fit, not a sky")
         return None, report
     # 2. the amplitudes, in counts per second, per filter, from all dark frames
     amplitudes = []
