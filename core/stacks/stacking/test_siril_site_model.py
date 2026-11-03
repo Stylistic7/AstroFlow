@@ -14,7 +14,7 @@ from light_pollution.sites import Site
 from light_pollution.test_model import CITY, MOON, THETA
 from metadata.classes import ImageMetadata
 from plate_solving import PlateSolution
-from stacks.stacking.siril import _gather
+from stacks.stacking.siril import SIRIL_ADU_PER_UNIT, _gather
 from testing.shared_masters import tan_wcs_header
 from units import ArcsecondsPerPixel, Degrees, Radians
 
@@ -29,43 +29,56 @@ def _frame(k: int, position) -> ImageMetadata:
     solution = PlateSolution(header=tan_wcs_header(305.0, 40.0, 20.0, NX, NY), num_stars=300,
                              center=(Degrees(305.0), Degrees(40.0)), image_scale=ArcsecondsPerPixel(20.0), rotation_angle=Radians(0.0))
     return ImageMetadata(content_hash=f"frame{k}", stable_hash=f"frame{k}", filename=Path(f"/nowhere/sub{k}.fit"),
-                         header=header, width_pixels=NX, height_pixels=NY, channels=1, dtype=np.dtype(np.float32),
+                         header=header, width_pixels=NX, height_pixels=NY, channels=1, dtype=np.dtype(np.uint16),
                          plate_solution=solution)
 
 
-def test_each_calibrated_frame_loses_its_own_glow_and_the_record_says_what_happened(tmp_path):
-    frames = [_frame(k, SF) for k in range(3)] + [_frame(3, OAKLAND)]
-    run = SimpleNamespace(metadata={m.content_hash: m for m in frames})
-    stack = SimpleNamespace(contents={"run": run})
+def _calibrated(tmp_path, frames, sky_adu=1000.0):
+    """Siril's calibrated frames in `proc/`: a 16-bit light's ADU over 65535, as Siril stores them."""
     proc = tmp_path / "proc"
     proc.mkdir()
     rng = np.random.default_rng(0)
     sources = {}
     for k, m in enumerate(frames, 1):
-        data = (1000.0 + rng.normal(0, 2.0, (NY, NX))).astype(np.float32)
+        data = ((sky_adu + rng.normal(0, 2.0, (NY, NX))) / SIRIL_ADU_PER_UNIT).astype(np.float32)
         hdu = fits.PrimaryHDU(data)
         hdu.header["DATE-OBS"] = m.header["DATE-OBS"]
         hdu.writeto(proc / f"pp_r0_{k:05d}.fit")
         sources[k] = data
+    return sources
+
+
+def test_each_calibrated_frame_loses_its_own_glow_and_the_record_says_what_happened(tmp_path):
+    frames = [_frame(k, SF) for k in range(3)] + [_frame(3, OAKLAND)]
+    stack = SimpleNamespace(contents={"run": SimpleNamespace(metadata={m.content_hash: m for m in frames})})
+    sources = _calibrated(tmp_path, frames)
     model = SiteModel.of(Site("37.75,-122.42", *SF), THETA * 4, (("H", CITY, MOON),))
 
     all_dir, record = _gather(stack, tmp_path, [model])
 
     assert record["models"] == [model.content_hash] and record["frames"] == 4
-    assert record["no-site"] == 1 and record["unmatched"] == 0 and record["uncalibrated"] == 0
+    assert record["no-site"] == 1 and record["unmatched"] == 0 and record["uncalibrated"] == 0 and record["overshoot"] == 0
     corrected = record["moonless"] + record["moonlit"]
     assert corrected + record["gated"] + record["no-amplitude"] == 3 and corrected >= 1
     for k in range(1, 5):
         out = np.asarray(fits.getdata(all_dir / f"{k:05d}.fit"), np.float32)
         diff = sources[k] - out
-        if k == 4 or not (all_dir / f"{k:05d}.fit").is_symlink() is False:
-            pass
         if (all_dir / f"{k:05d}.fit").is_symlink():
             assert np.array_equal(diff, np.zeros_like(diff))            # linked: untouched
         else:
             assert abs(float(diff.mean())) < 0.05 * float(np.abs(diff).max())   # a mean-zero surface came off
-            assert float(diff.std()) > 0.5
+            assert 0 < float(np.abs(diff).max()) < float(np.median(sources[k]))  # in the frame's units: less than its sky
     assert (all_dir / "00004.fit").is_symlink()                          # the Oakland frame: no model, untouched
+
+
+def test_a_glow_that_would_swing_by_more_than_the_sky_is_not_subtracted(tmp_path):
+    frames = [_frame(k, SF) for k in range(3)]
+    stack = SimpleNamespace(contents={"run": SimpleNamespace(metadata={m.content_hash: m for m in frames})})
+    _calibrated(tmp_path, frames)
+    absurd = SiteModel.of(Site("37.75,-122.42", *SF), THETA * 400, (("H", 1e6, 1e6),))
+    all_dir, record = _gather(stack, tmp_path, [absurd])
+    assert record["overshoot"] == 3 and record["moonless"] + record["moonlit"] == 0
+    assert all((all_dir / f"{k:05d}.fit").is_symlink() for k in (1, 2, 3))
 
 
 def test_without_models_every_frame_is_linked(tmp_path):

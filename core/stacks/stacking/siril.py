@@ -25,6 +25,7 @@ across stackers. Its frame count comes from Siril's own `STACKCNT`
 # annotation at decoration time to give the op its `filename_fn`; as a string
 # it silently doesn't (see stacks/sky_flat.py).
 
+import inspect
 import os
 import shutil
 import subprocess
@@ -34,12 +35,14 @@ from pathlib import Path
 import numpy as np
 import structlog
 
+import light_pollution.model as model_module
 from decisions.compute_graph import ALL_EXCLUSION_TYPES
 from decisions.resolve import resolve_calibration, resolve_decisions
 from decisions.settings import ProcessingConfig
 from decorators import node
 from file_io.types import FitsFilePath, Produced
 from file_io.links import link_or_copy
+from hashing import hash_string
 from metadata.classes import ImageMetadata
 from stacks.composite_stack import BaseStack, Stack
 from light_pollution.model import SiteModel, frame_surface
@@ -165,18 +168,32 @@ def _frame_of(path: Path, run) -> "ImageMetadata | None":
     return next((m for m in run.metadata.values() if _frame_utc(m.header["DATE-OBS"]) == when), None)
 
 
+# Siril processes in [0, 1]: a 16-bit light's ADU divided by 65535 ("Normalizing input data to our
+# float range", probed 2026-11-02). The site model speaks ADU — its amplitudes were measured on the
+# raw subframes — so a surface crosses this factor on its way into a calibrated frame. The first 75a1
+# masters subtracted ADU from [0, 1] frames: every moonlit frame became a ramp Siril could not register.
+SIRIL_ADU_PER_UNIT = 65535.0
+
+
 def _without_glow(src: Path, dst: Path, frame, model: SiteModel) -> str:
     """Write `src` to `dst` with the frame's predicted sky glow subtracted;
-    the regime applied ('moonless' | 'moonlit'), or why not."""
+    the regime applied ('moonless' | 'moonlit'), or why not ('overshoot':
+    the glow would swing by more than the frame's whole sky level, which no
+    sky does — the prediction is not trusted and the frame is left alone)."""
     from astropy.io import fits
     from light_pollution.measure import block_median, sky_level
+    assert frame.dtype.kind in "iu", f"{frame.filename}: Siril's unit scale is known for integer lights only, not {frame.dtype}"
     with fits.open(src) as hdul:
         data = np.asarray(hdul[0].data, np.float32).squeeze()
+        level = sky_level(block_median(data))
         surface, _, regime = frame_surface(
             model, frame.header, frame.plate_solution.header, data.shape,
-            level=sky_level(block_median(data)), filt=str(frame.header.get("FILTER", "")))
+            level=level * SIRIL_ADU_PER_UNIT, filt=str(frame.header.get("FILTER", "")))
         if surface is None:
             return regime
+        surface = surface / SIRIL_ADU_PER_UNIT
+        if not float(np.abs(surface).max()) < level:
+            return "overshoot"
         hdul[0].data = (data - surface).reshape(hdul[0].data.shape)
         hdul.writeto(dst, overwrite=True)
     return regime
@@ -193,7 +210,7 @@ def _gather(stack: BaseStack, tmp: Path, site_models: list[SiteModel] = ()) -> t
     all_dir.mkdir()
     n = 0
     record = {"models": sorted(m.content_hash for m in site_models), "frames": 0, "moonless": 0, "moonlit": 0,
-              "gated": 0, "no-amplitude": 0, "uncovered": 0, "no-site": 0, "uncalibrated": 0, "unmatched": 0}
+              "gated": 0, "no-amplitude": 0, "uncovered": 0, "overshoot": 0, "no-site": 0, "uncalibrated": 0, "unmatched": 0}
     for i, run in enumerate(stack.contents.values()):
         calibrated = sorted((tmp / "proc").glob(f"pp_r{i}_*.fit"))
         frames = calibrated or [Path(m.filename) for m in run.metadata.values()]
@@ -220,6 +237,14 @@ def _gather(stack: BaseStack, tmp: Path, site_models: list[SiteModel] = ()) -> t
                 record[outcome] += 1
             link_or_copy(f, dst)
     return all_dir, record
+
+
+# A node's key hashes its own body, not the helpers it calls (the fold's MEASURE_CODE precedent in
+# light_pollution/graph.py). The glow correction lives in these functions; a pipeline that corrects
+# passes this hash beside the models, so a change here re-integrates every corrected stack and nothing else.
+GLOW_CODE = hash_string("".join(inspect.getsource(f) for f in (
+    model_module.airmass, model_module.basis, model_module.city_shape, model_module.moonlight,
+    model_module.coverage_cell, model_module.covered, frame_surface, _without_glow, _gather)))
 
 
 def _stack_script(all_dir: Path, tmp: Path, mem_gb: float, image_type: str = "light") -> str:
@@ -303,7 +328,7 @@ def _scratch_parent(dest: Path, need_bytes: int) -> Path:
 def integrate_with_siril(
     stack: BaseStack,
     config: ProcessingConfig,
-    *cal_masters: ImageMetadata | FlatGain | MoteModel | SiteModel, out: FitsFilePath,
+    *cal_masters: ImageMetadata | FlatGain | MoteModel | SiteModel | str, out: FitsFilePath,
 ) -> Produced:
     """Calibrate, register and integrate `stack` with Siril. The peer of
     `stack_files`: pipelines call it with the same arguments. A `MoteModel`
@@ -312,7 +337,7 @@ def integrate_with_siril(
     `SiteModel` is a site's sky glow (`light_pollution`): every calibrated
     frame shot there has its own predicted glow subtracted before
     registration; the master's `site_model` sidecar section counts what
-    happened to each frame."""
+    happened to each frame. A `str` is `GLOW_CODE`, in the key only."""
     from file_io.generic import read_header
     stack = resolve_calibration(stack, config.get_calibration_stacks(), config.decisions)
     if config.decisions and isinstance(stack, Stack):
@@ -323,7 +348,7 @@ def integrate_with_siril(
     if n < config.min_frames_in_stack:
         raise ValueError(f"Stack {stack} contains only {n} files")
     cal_by_id = {str(read_header(m.filename)["STBLHASH"]): Path(m.filename)
-                 for m in cal_masters if not isinstance(m, (FlatGain, MoteModel, SiteModel))}
+                 for m in cal_masters if not isinstance(m, (FlatGain, MoteModel, SiteModel, str))}
     gains = [m for m in cal_masters if isinstance(m, FlatGain)]
     models = [m for m in cal_masters if isinstance(m, MoteModel)]
     site_models = [m for m in cal_masters if isinstance(m, SiteModel)]

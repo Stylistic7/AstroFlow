@@ -26,21 +26,23 @@ from pipelines.hybrid_siril_graxpert_oss_mosaic import _by_exposure
 from stacks.calibration_selection import calibrate
 from stacks.foreign import foreign_master, foreign_post_processed_master, is_foreign
 from stacks.post_processing.graxpert_stack import post_stack_calibrate
-from stacks.stacking.siril import integrate_with_siril
+from stacks.stacking.siril import GLOW_CODE, integrate_with_siril
 from targets.merging.oss import calibrate_channel, hdr_merge_masters, merge_target_channel_oss
 
 PIPELINE = "Siril + Site Model + OSS Mosaic"
 
 
-def models_for(stack, table: SiteModels | None) -> tuple[SiteModel, ...]:
+def models_for(stack, table: SiteModels | None) -> tuple[SiteModel | str, ...]:
     """The distinct models of the sites the stack's frames state, in hash
-    order (argument order folds into the integration's key). A frame at a site
-    without a model, or stating none, is simply stacked as it is."""
+    order (argument order folds into the integration's key), then the
+    correction's code hash. A frame at a site without a model, or stating
+    none, is simply stacked as it is; a stack no model applies to carries
+    no code hash either, so a change to the correction leaves it alone."""
     if table is None:
         return ()
     found = {m.content_hash: m for meta in stack.all_metadata().values()
              if (m := table.model_for(site_of(meta.header))) is not None}
-    return tuple(found[k] for k in sorted(found))
+    return (*(found[k] for k in sorted(found)), GLOW_CODE) if found else ()
 
 
 def solved_master(stack, config):
