@@ -119,7 +119,7 @@ def site_graph(stacks, cal_stacks, decisions, previous: SiteModels) -> Graph:
                 else:
                     graph[measure] = {}
                 measures.append(measure)
-            stack_task = (measure_stack_tilts, stable, MEASURE_CODE)
+            stack_task = (measure_stack_tilts, stable, site.key, MEASURE_CODE)
             graph[stack_task] = measures                  # ORDERED: the runs' measurements in date order
             stack_tasks.append(stack_task)
         collector = (fit_site, site, previous.models.get(site.key), MODEL_CODE)

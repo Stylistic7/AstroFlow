@@ -387,9 +387,11 @@ def stack_tilts(stack: str, tilts) -> StackTilts:
 
 
 @node
-def measure_stack_tilts(stack: str, code: str, *tilts: RunTilts) -> StackTilts:
-    """`stack` is the stack's stable hash and `code` MEASURE_CODE, in the key
-    only; `tilts` its runs' measurements in date order."""
+def measure_stack_tilts(stack: str, site: str, code: str, *tilts: RunTilts) -> StackTilts:
+    """`stack` is the stack's stable hash, `site` the site's key (a field shot
+    from two sites is measured per site, each against that site's runs of it)
+    and `code` MEASURE_CODE, all three in the key only; `tilts` its runs'
+    measurements in date order."""
     out = stack_tilts(stack, tilts)
     log.info("stack tilts measured", stack=stack[:8], runs=len(out.runs),
              tilt=[tuple(round(v, 2) for v in g) for g in out.run_tilt], scale=[round(s, 3) for s in out.run_scale])
