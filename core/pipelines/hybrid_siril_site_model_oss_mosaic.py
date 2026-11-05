@@ -17,8 +17,9 @@ moonlit-heavy ones once the Moon was modelled. Run both pipelines on the
 same mosaic and compare.
 """
 from dependency_graph.tracing import workflow_group
-from light_pollution.model import SiteModel, SiteModels
+from light_pollution.model import NightAmplitudes, SiteModel, SiteModels
 from light_pollution.sites import site_of
+from light_pollution.time import mid_exposure, night_of
 from metadata.master_analysis import analyze_master
 from metadata.solve_nodes import inherit_plate_solution, plate_solve_image
 from pipelines.hybrid_graxpert_oss_mosaic import register
@@ -32,17 +33,26 @@ from targets.merging.oss import calibrate_channel, hdr_merge_masters, merge_targ
 PIPELINE = "Siril + Site Model + OSS Mosaic"
 
 
-def models_for(stack, table: SiteModels | None) -> tuple[SiteModel | str, ...]:
-    """The distinct models of the sites the stack's frames state, in hash
-    order (argument order folds into the integration's key), then the
-    correction's code hash. A frame at a site without a model, or stating
-    none, is simply stacked as it is; a stack no model applies to carries
-    no code hash either, so a change to the correction leaves it alone."""
+def models_for(stack, table: SiteModels | None) -> tuple[SiteModel | NightAmplitudes | str, ...]:
+    """The distinct models of the sites the stack's frames state, then the
+    nights' own amplitudes for the nights and filters the frames were shot
+    (where the model has them), each in hash order (argument order folds
+    into the integration's key), then the correction's code hash. A frame at
+    a site without a model, or stating none, is simply stacked as it is; a
+    stack no model applies to carries no code hash either, so a change to
+    the correction leaves it alone."""
     if table is None:
         return ()
-    found = {m.content_hash: m for meta in stack.all_metadata().values()
-             if (m := table.model_for(site_of(meta.header))) is not None}
-    return (*(found[k] for k in sorted(found)), GLOW_CODE) if found else ()
+    found, nights = {}, {}
+    for meta in stack.all_metadata().values():
+        model = table.model_for(site_of(meta.header))
+        if model is None:
+            continue
+        found[model.content_hash] = model
+        night = model.night(str(meta.header.get("FILTER", "")), night_of(mid_exposure(meta.header), model.site.lon))
+        if night is not None:
+            nights[night.content_hash] = night
+    return (*(found[k] for k in sorted(found)), *(nights[k] for k in sorted(nights)), GLOW_CODE) if found else ()
 
 
 def solved_master(stack, config):

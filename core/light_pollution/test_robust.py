@@ -44,6 +44,24 @@ def test_bounded_fit_keeps_coefficients_non_negative():
     assert np.linalg.lstsq(A, y, rcond=None)[0][1] < 0                 # which least squares would report
 
 
+def test_a_nuisance_per_group_is_partialled_out():
+    """Each group of rows carries its own free gradient on a per-row coefficient (a field's nebula,
+    scaled by each frame's transparency over its sky level); the fit sees through it."""
+    rng = np.random.default_rng(5)
+    n, size = 6000, 50
+    A = rng.uniform(-1, 1, (n, 3))
+    w = rng.uniform(0.5, 1.0, n)
+    groups = [np.arange(i, i + size) for i in range(0, n, size)]
+    nuisance = np.repeat(rng.uniform(-5, 5, n // size), size)
+    y = A @ [0.3, -0.2, 0.5] + w * nuisance + rng.normal(0, 0.05, n)
+    y[rng.choice(n, n // 10, replace=False)] += 20.0
+    coef, _, sigma = irls(A, y, nuisance=(w, groups))
+    assert np.allclose(coef, [0.3, -0.2, 0.5], atol=0.01) and abs(sigma - 0.05) < 0.01
+    assert irls(A, y)[2] > 20 * sigma                                       # without: the gradients are the residual
+    bounded, _, _ = irls_bounded(A, y, nuisance=(w, groups))
+    assert abs(bounded[0] - 0.3) < 0.01 and bounded[1] < 1e-9 and abs(bounded[2] - 0.5) < 0.05
+
+
 def test_tiny_samples_fall_back_to_least_squares():
     A = np.column_stack([np.ones(5), np.arange(5.0)])
     y = 1 + 2 * np.arange(5.0)

@@ -45,8 +45,9 @@ from file_io.links import link_or_copy
 from hashing import hash_string
 from metadata.classes import ImageMetadata
 from stacks.composite_stack import BaseStack, Stack
-from light_pollution.model import SiteModel, frame_surface
+from light_pollution.model import NightAmplitudes, SiteModel, frame_surface
 from light_pollution.sites import same_site, site_of
+from light_pollution.time import mid_exposure, night_of
 from light_pollution.time import utc as _frame_utc
 from stacks.dust_epochs import MoteModel
 from stacks.stacking.pixinsight import _stack_files_narrow
@@ -175,11 +176,14 @@ def _frame_of(path: Path, run) -> "ImageMetadata | None":
 SIRIL_ADU_PER_UNIT = 65535.0
 
 
-def _without_glow(src: Path, dst: Path, frame, model: SiteModel) -> str:
+CORRECTED = ("moonless", "moonlit", "moonlit-pooled")
+
+
+def _without_glow(src: Path, dst: Path, frame, model: SiteModel, night: NightAmplitudes | None) -> str:
     """Write `src` to `dst` with the frame's predicted sky glow subtracted;
-    the regime applied ('moonless' | 'moonlit'), or why not ('overshoot':
-    the glow would swing by more than the frame's whole sky level, which no
-    sky does — the prediction is not trusted and the frame is left alone)."""
+    the regime applied (CORRECTED), or why not ('overshoot': the glow would
+    swing by more than the frame's whole sky level, which no sky does — the
+    prediction is not trusted and the frame is left alone)."""
     from astropy.io import fits
     from light_pollution.measure import block_median, sky_level
     assert frame.dtype.kind in "iu", f"{frame.filename}: Siril's unit scale is known for integer lights only, not {frame.dtype}"
@@ -188,7 +192,7 @@ def _without_glow(src: Path, dst: Path, frame, model: SiteModel) -> str:
         level = sky_level(block_median(data))
         surface, _, regime = frame_surface(
             model, frame.header, frame.plate_solution.header, data.shape,
-            level=level * SIRIL_ADU_PER_UNIT, filt=str(frame.header.get("FILTER", "")))
+            level=level * SIRIL_ADU_PER_UNIT, filt=str(frame.header.get("FILTER", "")), night=night)
         if surface is None:
             return regime
         surface = surface / SIRIL_ADU_PER_UNIT
@@ -199,17 +203,19 @@ def _without_glow(src: Path, dst: Path, frame, model: SiteModel) -> str:
     return regime
 
 
-def _gather(stack: BaseStack, tmp: Path, site_models: list[SiteModel] = ()) -> tuple[Path, dict]:
+def _gather(stack: BaseStack, tmp: Path, site_models: list[SiteModel] = (), nights: list[NightAmplitudes] = ()) -> tuple[Path, dict]:
     """Every frame to stack, calibrated where phase 1 calibrated it, as
     symlinks in ONE folder: one sequence without Siril's `merge`, which
     would copy every calibrated frame again. With `site_models`, each
     calibrated frame whose site has a model is written instead, its own
-    glow surface subtracted before Siril registers it (light_pollution):
-    the record of what happened to every frame comes back with the folder."""
+    glow surface subtracted before Siril registers it (light_pollution),
+    with its night's own amplitudes where `nights` has them: the record of
+    what happened to every frame comes back with the folder."""
     all_dir = tmp / "all"
     all_dir.mkdir()
     n = 0
-    record = {"models": sorted(m.content_hash for m in site_models), "frames": 0, "moonless": 0, "moonlit": 0,
+    record = {"models": sorted(m.content_hash for m in site_models), "nights": sorted(a.content_hash for a in nights),
+              "frames": 0, **{k: 0 for k in CORRECTED},
               "gated": 0, "no-amplitude": 0, "uncovered": 0, "overshoot": 0, "no-site": 0, "uncalibrated": 0, "unmatched": 0}
     for i, run in enumerate(stack.contents.values()):
         calibrated = sorted((tmp / "proc").glob(f"pp_r{i}_*.fit"))
@@ -229,8 +235,11 @@ def _gather(stack: BaseStack, tmp: Path, site_models: list[SiteModel] = ()) -> t
                 elif model is None:
                     outcome = "no-site"
                 else:
-                    outcome = _without_glow(f, dst, frame, model)
-            if outcome in ("moonless", "moonlit"):
+                    when = night_of(mid_exposure(frame.header), model.site.lon)
+                    night = next((a for a in nights if a.site == model.site.key and a.night == when
+                                  and a.filter == str(frame.header.get("FILTER", ""))), None)
+                    outcome = _without_glow(f, dst, frame, model, night)
+            if outcome in CORRECTED:
                 record[outcome] += 1
                 continue
             if outcome:
@@ -328,7 +337,7 @@ def _scratch_parent(dest: Path, need_bytes: int) -> Path:
 def integrate_with_siril(
     stack: BaseStack,
     config: ProcessingConfig,
-    *cal_masters: ImageMetadata | FlatGain | MoteModel | SiteModel | str, out: FitsFilePath,
+    *cal_masters: ImageMetadata | FlatGain | MoteModel | SiteModel | NightAmplitudes | str, out: FitsFilePath,
 ) -> Produced:
     """Calibrate, register and integrate `stack` with Siril. The peer of
     `stack_files`: pipelines call it with the same arguments. A `MoteModel`
@@ -336,7 +345,8 @@ def integrate_with_siril(
     epoch is calibrated with its scaled flat times the model's mote map. A
     `SiteModel` is a site's sky glow (`light_pollution`): every calibrated
     frame shot there has its own predicted glow subtracted before
-    registration; the master's `site_model` sidecar section counts what
+    registration, a `NightAmplitudes` giving a night's own amplitudes to its
+    moonlit frames; the master's `site_model` sidecar section counts what
     happened to each frame. A `str` is `GLOW_CODE`, in the key only."""
     from file_io.generic import read_header
     stack = resolve_calibration(stack, config.get_calibration_stacks(), config.decisions)
@@ -348,10 +358,11 @@ def integrate_with_siril(
     if n < config.min_frames_in_stack:
         raise ValueError(f"Stack {stack} contains only {n} files")
     cal_by_id = {str(read_header(m.filename)["STBLHASH"]): Path(m.filename)
-                 for m in cal_masters if not isinstance(m, (FlatGain, MoteModel, SiteModel, str))}
+                 for m in cal_masters if not isinstance(m, (FlatGain, MoteModel, SiteModel, NightAmplitudes, str))}
     gains = [m for m in cal_masters if isinstance(m, FlatGain)]
     models = [m for m in cal_masters if isinstance(m, MoteModel)]
     site_models = [m for m in cal_masters if isinstance(m, SiteModel)]
+    nights = [m for m in cal_masters if isinstance(m, NightAmplitudes)]
     model_of_run = _models_of_runs(stack, config, models)
     need = sum(2 * 4 * int(m.header["NAXIS1"]) * int(m.header["NAXIS2"])      # calibrated + registered float32
                for m in stack.all_metadata().values())
@@ -366,7 +377,7 @@ def integrate_with_siril(
         script = _calibration_script(stack, cal_by_id, tmp, model_of_run)
         if script:
             _run_siril(tmp, "calibrate.ssf", script)
-        all_dir, glow = _gather(stack, tmp, site_models)
+        all_dir, glow = _gather(stack, tmp, site_models, nights)
         if site_models:
             log.info("Sky glow subtracted from the subs", stack=str(stack), **glow)
         _run_siril(tmp, "stack.ssf", _stack_script(all_dir, tmp, _memory_budget_gb(), stack.image_type))

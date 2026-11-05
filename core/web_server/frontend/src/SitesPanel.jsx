@@ -94,20 +94,21 @@ function DomeMap({ grid, sigma, samples, size = 340 }) {
 function Numbers({ site }) {
   const m = site.model;
   const rows = [
-    ['Frames', `${site.frames} in ${site.runs} runs · ${site.usable_frames} in astronomical night · ${site.moonlit_frames} with the Moon up`],
+    ['Frames', `${site.frames} in ${site.runs} runs of ${site.stacks} fields · ${site.usable_frames} in astronomical night · ${site.moonlit_frames} with the Moon up`],
     ['Newest run', site.newest_run ? site.newest_run.slice(0, 10) : '—'],
   ];
   if (m) {
     rows.push(['Model', m.hash]);
     rows.push(['Fitted on', `${m.runs} moonless runs, ${m.frames} frames`]);
-    rows.push(['Explains', `${(100 * m.explained).toFixed(0)}% of the tilt changes within moonless runs · ${(100 * m.explained_moonlit).toFixed(0)}% within moonlit ones`]);
+    const byFilter = Object.entries(site.explained_by_filter || {}).map(([f, v]) => `${f} ${(100 * v).toFixed(0)}`).join(' · ');
+    rows.push(['Explains', `${(100 * m.explained).toFixed(0)}% of the tilt changes across a field's moonless frames${byFilter ? ` (${byFilter})` : ''} · ${(100 * m.explained_moonlit).toFixed(0)}% across moonlit ones`]);
     const g = site.gate;                     // the last refit against the fit's own spread, where the frames are
     if (g) {
       rows.push(['Last refit', g.previous === null ? `first model · spread ${g.noise.toFixed(2)} %/°`
         : `${g.kept ? 'kept' : 'replaced'} ${g.previous.slice(0, 8)} · change ${g.change.toFixed(2)} vs spread ${g.noise.toFixed(2)} %/° · largest ${g.local.toFixed(1)} %/° at ${g.local_significance.toFixed(0)}σ${g.amplitudes_changed ? ' · amplitudes changed' : ''}`]);
     }
     for (const [filt, a] of Object.entries(m.amplitudes || {})) {
-      rows.push([`${filt} amplitudes`, `city ${a.city.toFixed(3)} · moonlight ${a.moon.toFixed(3)} counts/s${a.moon === 0 ? ' (too few moonlit runs: not Moon-corrected)' : ''}`]);
+      rows.push([`${filt} amplitudes`, `city ${a.city.toFixed(3)} · moonlight ${a.moon.toFixed(3)} counts/s${a.moon === 0 ? ' (too few moonlit runs: not Moon-corrected)' : ` · ${a.nights} nights with their own`}`]);
     }
   }
   return (

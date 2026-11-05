@@ -9,7 +9,9 @@ from types import SimpleNamespace
 import numpy as np
 from astropy.io import fits
 
-from light_pollution.measure import BIN, MIN_FRAMES, FlatBlock, RunTilts, block_median, flat_block, run_tilts, sky_level
+from light_pollution.measure import (
+    BIN, MIN_FRAMES, FlatBlock, RunTilts, block_median, flat_block, run_tilts, sky_level, stack_tilts,
+)
 from light_pollution.model import N_CITY
 from metadata.classes import ImageMetadata
 from plate_solving import PlateSolution
@@ -29,13 +31,16 @@ def _vignetting() -> np.ndarray:
     return (flat / np.median(flat)).astype(np.float32)
 
 
-def _frame(path: Path, k: int, tilt, position=(37.75, -122.42), nebula=True, flat=None) -> tuple[str, ImageMetadata]:
-    wcs = tan_wcs_header(305.0, 40.0, SCALE, NX, NY)
+def _frame(path: Path, k: int, tilt, position=(37.75, -122.42), nebula=True, flat=None,
+           centre=(305.0, 40.0)) -> tuple[str, ImageMetadata]:
+    wcs = tan_wcs_header(*centre, SCALE, NX, NY)
     yy, xx = np.mgrid[0:NY, 0:NX]
     x_deg, y_deg = (xx - NX / 2) * SCALE / 3600, (yy - NY / 2) * SCALE / 3600
     img = SKY + tilt[0] * x_deg + tilt[1] * y_deg
-    if nebula:
-        img = img + 60.0 * np.exp(-((xx - 400) ** 2 + (yy - 200) ** 2) / (2 * 60.0 ** 2))   # the same sky in every frame
+    if nebula:                                                                             # the same sky in every frame
+        px = 400 + (centre[0] - 305.0) * math.cos(math.radians(40.0)) * 3600 / SCALE
+        py = 200 - (centre[1] - 40.0) * 3600 / SCALE
+        img = img + 60.0 * np.exp(-((xx - px) ** 2 + (yy - py) ** 2) / (2 * 60.0 ** 2))
     if flat is not None:
         img = img * flat                                                                   # the sensor's response
     rng = np.random.default_rng(k)
@@ -48,16 +53,16 @@ def _frame(path: Path, k: int, tilt, position=(37.75, -122.42), nebula=True, fla
     for key, v in header.items():
         hdu.header[key] = v
     hdu.writeto(path, overwrite=True)
-    solution = PlateSolution(header=wcs, num_stars=300, center=(Degrees(305.0), Degrees(40.0)),
+    solution = PlateSolution(header=wcs, num_stars=300, center=(Degrees(centre[0]), Degrees(centre[1])),
                              image_scale=ArcsecondsPerPixel(SCALE), rotation_angle=Radians(0.0))
     meta = ImageMetadata(content_hash=f"frame{k:04d}", stable_hash=f"frame{k:04d}", filename=path, header=header,
                          width_pixels=NX, height_pixels=NY, channels=1, dtype=np.dtype(np.float32), plate_solution=solution)
     return meta.content_hash, meta
 
 
-def _run(tmp_path, tilts, **kw):
-    frames = dict(_frame(tmp_path / f"sub{k}.fits", k, t, **kw) for k, t in enumerate(tilts))
-    return SimpleNamespace(content_hash="run0001", metadata=frames)
+def _run(tmp_path, tilts, name="run0001", first=0, **kw):
+    frames = dict(_frame(tmp_path / f"{name}_sub{k}.fits", first + k, t, **kw) for k, t in enumerate(tilts))
+    return SimpleNamespace(content_hash=name, metadata=frames)
 
 
 def test_block_median_and_sky_level():
@@ -87,6 +92,25 @@ def test_recovers_the_frame_to_frame_tilt_changes_and_ignores_the_nebula(tmp_pat
     assert all(100 < lv <= SKY + 3 for lv in out.level)                 # under the nebula and the tilt, above the noise
     assert 0 <= out.alt[0] <= 90 and 0 <= out.az[0] < 360 and out.sun_alt[0] < -18
     assert out.content_hash and out.date.startswith("2026-10-01T06:02:30")
+    assert all(abs(s - 1.0) < 0.1 for s in out.scale) and out.exposure == (300.0,) * 5
+    assert out.median.shape == (NY // BIN, NX // BIN) and out.wcs["CRVAL1"] == 305.0
+    assert math.isclose(out.scale_deg, BIN * SCALE / 3600, rel_tol=1e-6)
+
+
+def test_stack_tilts_measure_each_run_against_the_field_s_other_runs(tmp_path):
+    """The same field on two nights: a frame's tilt within its run plus its run's tilt within the
+    stack is the frame against both nights' frames — the nebula, the same sky, cancels there too."""
+    a = run_tilts(_run(tmp_path, [(0.0, 0.0), (3.0, -1.0), (6.0, -2.0)], name="runA"))
+    b = run_tilts(_run(tmp_path, [(20.0, 5.0), (23.0, 4.0), (26.0, 3.0)], name="runB", first=10, centre=(305.3, 40.1)))
+    stack = stack_tilts("stack01", [a, b])
+    assert stack.runs[0].run == "runA" and stack.runs[0].median is None and stack.runs[0].wcs is None
+    assert stack.runs[0].content_hash == a.content_hash                  # the measurement, its map dropped
+    (gax, gay), (gbx, gby) = stack.run_tilt
+    assert math.isclose(gbx - gax, 20.0, rel_tol=0.08) and math.isclose(gby - gay, 5.0, rel_tol=0.12), stack.run_tilt
+    assert math.isclose(gax + gbx, 0.0, abs_tol=1.0) and all(abs(s - 1) < 0.1 for s in stack.run_scale)
+    assert stack.content_hash != stack_tilts("stack01", [a]).content_hash
+    alone = stack_tilts("stack02", [a, RunTilts.empty(SimpleNamespace(content_hash="runC"))])
+    assert alone.run_tilt == ((0.0, 0.0),) and alone.run_scale == (1.0,) and len(alone.runs) == 1
 
 
 def test_frames_without_a_position_are_no_measurement(tmp_path):

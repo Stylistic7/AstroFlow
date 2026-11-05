@@ -9,9 +9,10 @@ from types import SimpleNamespace
 import numpy as np
 from astropy.io import fits
 
-from light_pollution.model import SiteModel
+from light_pollution.model import NightAmplitudes, SiteModel
 from light_pollution.sites import Site
 from light_pollution.test_model import CITY, MOON, THETA
+from light_pollution.time import night_of
 from metadata.classes import ImageMetadata
 from plate_solving import PlateSolution
 from stacks.stacking.siril import SIRIL_ADU_PER_UNIT, _gather
@@ -21,10 +22,11 @@ from units import ArcsecondsPerPixel, Degrees, Radians
 NX, NY = 384, 256
 SF, OAKLAND = (37.75, -122.42), (37.78, -122.20)
 T0 = datetime.datetime(2026, 10, 1, 6, 0, 0)
+FULL_MOON = datetime.datetime(2026, 9, 27, 7, 0, 0)       # local midnight after the full Moon of 2026-09-26
 
 
-def _frame(k: int, position) -> ImageMetadata:
-    header = {"DATE-OBS": (T0 + datetime.timedelta(minutes=5 * k)).isoformat(), "EXPTIME": 300.0, "FILTER": "H",
+def _frame(k: int, position, t0=T0) -> ImageMetadata:
+    header = {"DATE-OBS": (t0 + datetime.timedelta(minutes=5 * k)).isoformat(), "EXPTIME": 300.0, "FILTER": "H",
               "SITELAT": position[0], "SITELONG": position[1]}
     solution = PlateSolution(header=tan_wcs_header(305.0, 40.0, 20.0, NX, NY), num_stars=300,
                              center=(Degrees(305.0), Degrees(40.0)), image_scale=ArcsecondsPerPixel(20.0), rotation_angle=Radians(0.0))
@@ -56,10 +58,10 @@ def test_each_calibrated_frame_loses_its_own_glow_and_the_record_says_what_happe
 
     all_dir, record = _gather(stack, tmp_path, [model])
 
-    assert record["models"] == [model.content_hash] and record["frames"] == 4
+    assert record["models"] == [model.content_hash] and record["nights"] == [] and record["frames"] == 4
     assert record["no-site"] == 1 and record["unmatched"] == 0 and record["uncalibrated"] == 0 and record["overshoot"] == 0
-    corrected = record["moonless"] + record["moonlit"]
-    assert corrected + record["gated"] + record["no-amplitude"] == 3 and corrected >= 1
+    corrected = record["moonless"] + record["moonlit-pooled"]
+    assert corrected + record["gated"] + record["no-amplitude"] == 3 and corrected >= 1 and record["moonlit"] == 0
     for k in range(1, 5):
         out = np.asarray(fits.getdata(all_dir / f"{k:05d}.fit"), np.float32)
         diff = sources[k] - out
@@ -71,13 +73,31 @@ def test_each_calibrated_frame_loses_its_own_glow_and_the_record_says_what_happe
     assert (all_dir / "00004.fit").is_symlink()                          # the Oakland frame: no model, untouched
 
 
+def test_a_moonlit_frame_takes_its_night_s_own_amplitudes_when_the_integration_carries_them(tmp_path):
+    frames = [_frame(k, SF, t0=FULL_MOON) for k in range(3)]
+    stack = SimpleNamespace(contents={"run": SimpleNamespace(metadata={m.content_hash: m for m in frames})})
+    sources = _calibrated(tmp_path, frames)
+    model = SiteModel.of(Site("37.75,-122.42", *SF), THETA * 4, (("H", CITY, MOON),))
+    night = NightAmplitudes.of(model.site.key, night_of(frames[0].header["DATE-OBS"], SF[1]), "H", CITY, 3.0 * MOON)
+    other = NightAmplitudes.of(model.site.key, "2026-01-01", "H", CITY, 3.0 * MOON)
+    all_dir, record = _gather(stack, tmp_path, [model], [other, night])
+    assert record["nights"] == sorted([other.content_hash, night.content_hash])
+    assert record["moonlit"] == 3 and record["moonlit-pooled"] == 0
+    own = sources[1] - np.asarray(fits.getdata(all_dir / "00001.fit"), np.float32)
+    (tmp_path / "all").rename(tmp_path / "all-own")
+    _, record = _gather(stack, tmp_path, [model], [other])
+    assert record["moonlit-pooled"] == 3 and record["moonlit"] == 0
+    pooled = sources[1] - np.asarray(fits.getdata(all_dir / "00001.fit"), np.float32)
+    assert not np.allclose(own, pooled)
+
+
 def test_a_glow_that_would_swing_by_more_than_the_sky_is_not_subtracted(tmp_path):
     frames = [_frame(k, SF) for k in range(3)]
     stack = SimpleNamespace(contents={"run": SimpleNamespace(metadata={m.content_hash: m for m in frames})})
     _calibrated(tmp_path, frames)
     absurd = SiteModel.of(Site("37.75,-122.42", *SF), THETA * 400, (("H", 1e6, 1e6),))
     all_dir, record = _gather(stack, tmp_path, [absurd])
-    assert record["overshoot"] == 3 and record["moonless"] + record["moonlit"] == 0
+    assert record["overshoot"] == 3 and record["moonless"] + record["moonlit"] + record["moonlit-pooled"] == 0
     assert all((all_dir / f"{k:05d}.fit").is_symlink() for k in (1, 2, 3))
 
 

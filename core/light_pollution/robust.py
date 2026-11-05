@@ -9,7 +9,11 @@ A satellite trail, a cloud edge or a star the binning left behind cannot pull it
 
 `irls` / `irls_bounded`: Tukey-biweight iteratively reweighted least squares
 for the larger fits (the site model's shape and amplitudes), the bounded form
-with non-negative coefficients: glow and moonlight only add light.
+with non-negative coefficients: glow and moonlight only add light. With a
+`nuisance`, each group of rows has one free coefficient of its own on a
+given column (a stack's sky-fixed gradient, scaled per frame), partialled
+out under the current weights at every pass (`project_out`): the fit on
+what remains is the joint fit, without a column per group.
 
 Every fit seeds its own generator, so a refit is bit-identical whatever ran
 before it — a model's identity is a hash of its numbers.
@@ -29,44 +33,64 @@ def _weights(r: np.ndarray, s: float) -> np.ndarray:
     return np.where(np.abs(u) < 1, (1 - u ** 2) ** 2, 0.0)
 
 
-def irls(A: np.ndarray, y: np.ndarray, iters: int = 8) -> tuple[np.ndarray, np.ndarray, float]:
-    """(coefficients, inlier mask, robust sigma)."""
-    coef = np.linalg.lstsq(A, y, rcond=None)[0]
+def project_out(A: np.ndarray, y: np.ndarray, w: np.ndarray, groups, omega=None) -> tuple[np.ndarray, np.ndarray]:
+    """Frisch–Waugh–Lovell: within each group of rows (index arrays), `A` and `y` minus their
+    `omega`-weighted projection on `w`, the row's coefficient on the group's own free parameter.
+    Rows in no group, or with w = 0, pass through."""
+    A, y = np.array(A, float), np.array(y, float)
+    omega = np.ones(len(y)) if omega is None else omega
+    for idx in groups:
+        ww = omega[idx] * w[idx]
+        d = float(ww @ w[idx])
+        if d > 0:
+            y[idx] -= w[idx] * (ww @ y[idx] / d)
+            A[idx] -= np.outer(w[idx], ww @ A[idx] / d)
+    return A, y
+
+
+def _solve(A: np.ndarray, y: np.ndarray, bounded: bool) -> np.ndarray:
+    if bounded:
+        from scipy.optimize import lsq_linear
+        return lsq_linear(A, y, bounds=(0, np.inf)).x
+    return np.linalg.lstsq(A, y, rcond=None)[0]
+
+
+def irls(A: np.ndarray, y: np.ndarray, iters: int = 8, bounded: bool = False, nuisance: tuple | None = None,
+         prior: int = 0, scale: float | None = None) -> tuple[np.ndarray, np.ndarray, float]:
+    """(coefficients, inlier mask, robust sigma). `bounded`: every coefficient >= 0.
+    `nuisance` = (w, groups) as `project_out` takes them. The last `prior` rows are a prior:
+    weight 1 always, outside the robust scale — which is `scale` when given, else re-estimated
+    from the inliers each pass."""
+    data = np.arange(len(y)) < len(y) - prior
+    project = (lambda omega: project_out(A, y, *nuisance, omega)) if nuisance else (lambda omega: (A, y))
+    Ap, yp = project(None)
+    coef = _solve(Ap, yp, bounded)
     inl = np.ones(len(y), bool)
+
+    def sigma(r):
+        if scale is not None:
+            return scale
+        keep = inl & data
+        return mad_scale(r[keep]) if keep.any() else mad_scale(r[data])
+
     for _ in range(iters):
-        r = y - A @ coef
-        wt = _weights(r, mad_scale(r[inl]) if inl.any() else mad_scale(r))
+        r = yp - Ap @ coef
+        wt = np.where(data, _weights(r, sigma(r)), 1.0)
         if wt.sum() < A.shape[1] + 2:
             break
+        Ap, yp = project(wt)
         sw = np.sqrt(wt)
-        new = np.linalg.lstsq(A * sw[:, None], y * sw, rcond=None)[0]
+        new = _solve(Ap * sw[:, None], yp * sw, bounded)
         done = np.allclose(new, coef, rtol=1e-4, atol=1e-9)
         coef, inl = new, wt > 0
         if done:
             break
-    r = y - A @ coef
-    return coef, inl, mad_scale(r[inl]) if inl.any() else mad_scale(r)
+    return coef, inl, sigma(yp - Ap @ coef)
 
 
-def irls_bounded(A: np.ndarray, y: np.ndarray, iters: int = 8) -> tuple[np.ndarray, np.ndarray, float]:
+def irls_bounded(A: np.ndarray, y: np.ndarray, iters: int = 8, **kw):
     """`irls` with every coefficient >= 0."""
-    from scipy.optimize import lsq_linear
-    bounds = (0, np.inf)
-    coef = lsq_linear(A, y, bounds=bounds).x
-    inl = np.ones(len(y), bool)
-    for _ in range(iters):
-        r = y - A @ coef
-        wt = _weights(r, mad_scale(r[inl]) if inl.any() else mad_scale(r))
-        if wt.sum() < A.shape[1] + 2:
-            break
-        sw = np.sqrt(wt)
-        new = lsq_linear(A * sw[:, None], y * sw, bounds=bounds).x
-        done = np.allclose(new, coef, rtol=1e-4, atol=1e-9)
-        coef, inl = new, wt > 0
-        if done:
-            break
-    r = y - A @ coef
-    return coef, inl, mad_scale(r[inl]) if inl.any() else mad_scale(r)
+    return irls(A, y, iters, bounded=True, **kw)
 
 
 def lmeds(A: np.ndarray, y: np.ndarray, trials: int | None = None, sample: int = 5000,

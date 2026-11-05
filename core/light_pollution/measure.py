@@ -8,6 +8,18 @@ against that median, in percent of the frame's sky level per degree and in
 counts per second per degree; beside it, the tilts the city shape's terms and
 the moonlight field would have at that frame's moment, so the fit is linear.
 
+A run drifts ten degrees; the same field is shot, over a season, from forty
+degrees in the east to seventy in the west, Moon up and Moon down. So the
+run's median map stays with its measurement (`RunTilts.median`, on the first
+frame's grid), and a second step (`stack_tilts`, one per stack) measures each
+run's median against the stack's — the runs' medians on one grid, median
+across runs — as a tilt and a scale per run. A frame's tilt within its run
+plus its run's tilt within its stack is the frame against every frame of the
+field, at every altitude and azimuth it was shot; the nebula cancels there
+too, and what survives of the stack's mean glow is one free gradient per
+stack in the fit (`model.fit_site_model`), scaled per frame by the frame's
+transparency over its sky level.
+
 Calibration: the OFFSET pedestal, as the dust maps' is (`stacks/dust_runs.py`),
 and the run's flat — the night-sky flat is the etalon correction, and it comes
 BEFORE any estimate of the glow (Stylistic7, 2026-11-02). The flat is `block_flat`:
@@ -22,7 +34,8 @@ nebula, used again when a frame's surface is scaled.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+import warnings
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -43,11 +56,14 @@ log = structlog.get_logger()
 BIN = 32          # px per block
 COARSE = 7        # every COARSE-th block samples the smooth shapes
 MIN_FRAMES = 3
+PER_FRAME = ("tilt_pct", "tilt_abs", "city_pct", "moon", "level", "alt", "az",
+             "sun_alt", "moon_alt", "phase", "dark", "moonless", "scale", "exposure")
 
 
 @dataclass(frozen=True)
 class RunTilts:
-    """One run's measurement: per frame, tuples only (it rides in cache keys)."""
+    """One run's measurement: per frame, tuples (they ride in cache keys); the
+    run's median map and its grid's plate solution for `stack_tilts`."""
     run: str
     position: tuple[float, float]
     filter: str
@@ -66,18 +82,43 @@ class RunTilts:
     phase: tuple[float, ...]
     dark: tuple[bool, ...]
     moonless: tuple[bool, ...]
+    scale: tuple[float, ...]                                          # transparency against the run median
+    exposure: tuple[float, ...]                                       # seconds
+    scale_deg: float                                                  # degrees per block on the grid
+    median: np.ndarray | None                                         # the run's median block map (nebula + mean glow)
+    wcs: dict | None                                                  # the grid's plate solution
     content_hash: str = ""
 
     @classmethod
     def of(cls, **fields) -> "RunTilts":
         identity = hash_list([fields["run"], fields["position"], fields["tilt_pct"], fields["tilt_abs"],
-                              fields["city_pct"], fields["moon"]])
+                              fields["city_pct"], fields["moon"], fields["scale"], fields["exposure"]])
         return cls(**fields, content_hash=identity)
 
     @classmethod
     def empty(cls, run: Run) -> "RunTilts":
-        e = ()
-        return cls(run.content_hash, (0.0, 0.0), "", "", 0, e, e, e, e, e, e, e, e, e, e, e, e, e, hash_list([run.content_hash, "empty"]))
+        return cls(run=run.content_hash, position=(0.0, 0.0), filter="", date="", n_frames=0, frames=(),
+                   **{k: () for k in PER_FRAME}, scale_deg=0.0, median=None, wcs=None,
+                   content_hash=hash_list([run.content_hash, "empty"]))
+
+
+@dataclass(frozen=True)
+class StackTilts:
+    """One stack's runs against the stack's median map: every run's measurement,
+    its map dropped, and per run the tilt of its median against the stack's
+    (counts per degree, in the run's own grid) and its scale — what, added to a
+    frame's tilt within its run, measures the frame against the whole field."""
+    stack: str
+    runs: tuple[RunTilts, ...]
+    run_tilt: tuple[tuple[float, float], ...]
+    run_scale: tuple[float, ...]
+    content_hash: str = ""
+
+    @classmethod
+    def of(cls, stack: str, runs, run_tilt, run_scale) -> "StackTilts":
+        runs = tuple(replace(r, median=None, wcs=None) for r in runs)
+        return cls(stack, runs, tuple(run_tilt), tuple(run_scale),
+                   hash_list([stack, [r.content_hash for r in runs], tuple(run_tilt), tuple(run_scale)]))
 
 
 @dataclass(frozen=True)
@@ -145,11 +186,40 @@ def sky_level(d: np.ndarray) -> float:
     return float(np.median(v[v <= np.median(v)])) if v.size else float("nan")
 
 
+def wcs_items(solution_header: dict) -> dict:
+    """The plate solution's scalar cards: what a WCS is built from, and what a measurement keeps."""
+    return {k: v for k, v in solution_header.items()
+            if isinstance(v, (int, float, str)) and k not in ("COMMENT", "HISTORY")}
+
+
 def _wcs(solution_header: dict):
     from astropy.io import fits
     from astropy.wcs import WCS
-    return WCS(fits.Header({k: v for k, v in solution_header.items()
-                            if isinstance(v, (int, float, str)) and k not in ("COMMENT", "HISTORY")}))
+    return WCS(fits.Header(wcs_items(solution_header)))
+
+
+def grid_sky(wcs, shape) -> tuple[np.ndarray, np.ndarray]:
+    """(ra, dec) of the block centres of a `shape` grid on `wcs`, raveled."""
+    cy, cx = np.mgrid[0:shape[0], 0:shape[1]]
+    return wcs.all_pix2world(cx.ravel() * BIN + (BIN - 1) / 2, cy.ravel() * BIN + (BIN - 1) / 2, 0)
+
+
+def resample(src: np.ndarray, src_wcs, ra, dec, shape) -> np.ndarray:
+    """`src`, a block map on `src_wcs`'s grid, seen on the grid whose block
+    centres are at (ra, dec): bilinear, NaN beyond the source."""
+    from scipy.ndimage import map_coordinates
+    x, y = src_wcs.all_world2pix(ra, dec, 0, quiet=True)
+    return map_coordinates(src, [(y - (BIN - 1) / 2) / BIN, (x - (BIN - 1) / 2) / BIN],
+                           order=1, cval=np.nan).reshape(shape).astype(np.float32)
+
+
+def _grid(shape, scale_deg: float):
+    """The grid's axes in degrees from its centre, and the robust-cubic design (`_structure`)."""
+    cy, cx = np.mgrid[0:shape[0], 0:shape[1]]
+    X, Y = (cx - cx.mean()) * scale_deg, (cy - cy.mean()) * scale_deg
+    xn, yn = X / np.abs(X).max(), Y / np.abs(Y).max()
+    cubic = np.stack([np.ones(xn.size)] + [(xn ** i * yn ** j).ravel() for i in range(4) for j in range(4 - i) if i + j], 1)
+    return X, Y, cubic
 
 
 def _plane(values: np.ndarray, A: np.ndarray) -> np.ndarray:
@@ -183,6 +253,16 @@ def transparency(d: np.ndarray, median: np.ndarray, cubic: np.ndarray, ok: np.nd
     return s, c
 
 
+def residual_tilt(d: np.ndarray, median: np.ndarray, X: np.ndarray, Y: np.ndarray, cubic: np.ndarray) -> tuple[np.ndarray, float]:
+    """`d` against `median`: the plane tilt (counts per degree, along X and Y)
+    of what is left once `median` is scaled and offset to it, and the scale."""
+    ok = np.isfinite(d) & np.isfinite(median)
+    s, c = transparency(d, median, cubic, ok.ravel())
+    r = d - s * median - c
+    g, _, _ = lmeds(np.stack([np.ones(ok.sum()), X[ok], Y[ok]], 1), r[ok])
+    return g[1:], s
+
+
 def run_tilts(run: Run, flat: FlatBlock | None = None) -> RunTilts:
     """The measurement, or `RunTilts.empty` when fewer than MIN_FRAMES solved
     frames state the same position. With `flat`, every frame is divided by it
@@ -192,7 +272,6 @@ def run_tilts(run: Run, flat: FlatBlock | None = None) -> RunTilts:
     from astropy.time import Time
     from astropy.utils import iers
     from astropy.wcs.utils import proj_plane_pixel_scales
-    from scipy.ndimage import map_coordinates
 
     from file_io.generic import read_image
     iers.conf.auto_download = False    # a worker may be offline; arcsecond accuracy is plenty here
@@ -208,7 +287,8 @@ def run_tilts(run: Run, flat: FlatBlock | None = None) -> RunTilts:
     if len(frames) < MIN_FRAMES:
         return RunTilts.empty(run)
 
-    ref = _wcs(frames[0][1].plate_solution.header)
+    ref_header = wcs_items(frames[0][1].plate_solution.header)
+    ref = _wcs(ref_header)
     scale_deg = float(proj_plane_pixel_scales(ref)[0]) * BIN
     D = []
     for k, (h, m) in enumerate(frames):
@@ -219,31 +299,21 @@ def run_tilts(run: Run, flat: FlatBlock | None = None) -> RunTilts:
             img = img[:h_, :w_] / flat.image[:h_, :w_]
         if k == 0:
             shape = img.shape
-            cy, cx = np.mgrid[0:shape[0], 0:shape[1]]
-            px, py = cx * BIN + (BIN - 1) / 2, cy * BIN + (BIN - 1) / 2
-            ra, dec = ref.all_pix2world(px.ravel(), py.ravel(), 0)
+            ra, dec = grid_sky(ref, shape)
             D.append(img)
         else:
-            x, y = _wcs(m.plate_solution.header).all_world2pix(ra, dec, 0, quiet=True)
-            D.append(map_coordinates(img, [(y - (BIN - 1) / 2) / BIN, (x - (BIN - 1) / 2) / BIN],
-                                     order=1, cval=np.nan).reshape(shape).astype(np.float32))
+            D.append(resample(img, _wcs(m.plate_solution.header), ra, dec, shape))
     D = np.stack(D)
     median = np.nanmedian(D, 0)
-    X, Y = (cx - cx.mean()) * scale_deg, (cy - cy.mean()) * scale_deg
-    xn, yn = X / np.abs(X).max(), Y / np.abs(Y).max()
-    cubic = np.stack([np.ones(xn.size)] + [(xn ** i * yn ** j).ravel() for i in range(4) for j in range(4 - i) if i + j], 1)
+    X, Y, cubic = _grid(shape, scale_deg)
     coarse = SkyCoord(ra[::COARSE] * u.deg, dec[::COARSE] * u.deg)
     A_coarse = np.stack([np.ones(coarse.size), X.ravel()[::COARSE], Y.ravel()[::COARSE]], 1)
     lat, lon = position
     location = EarthLocation(lat=lat * u.deg, lon=lon * u.deg)
 
-    out = {k: [] for k in ("tilt_pct", "tilt_abs", "city_pct", "moon", "level", "alt", "az",
-                           "sun_alt", "moon_alt", "phase", "dark", "moonless")}
+    out = {k: [] for k in PER_FRAME}
     for d, (h, m) in zip(D, frames):
-        ok = np.isfinite(d) & np.isfinite(median)
-        s, c = transparency(d, median, cubic, ok.ravel())
-        r = d - s * median - c
-        g, _, _ = lmeds(np.stack([np.ones(ok.sum()), X[ok], Y[ok]], 1), r[ok])
+        g, s = residual_tilt(d, median, X, Y, cubic)
         level = sky_level(d)
         exposure = float(m.header.get("EXPTIME") or 1.0)
         t = Time(mid_exposure(m.header), scale="utc")
@@ -259,8 +329,8 @@ def run_tilts(run: Run, flat: FlatBlock | None = None) -> RunTilts:
             gm = _plane(ks, A_coarse)
         else:
             gm = np.zeros(2)
-        out["tilt_pct"].append(tuple(float(v) for v in 100.0 * g[1:] / level))
-        out["tilt_abs"].append(tuple(float(v) for v in g[1:] / exposure))
+        out["tilt_pct"].append(tuple(float(v) for v in 100.0 * g / level))
+        out["tilt_abs"].append(tuple(float(v) for v in g / exposure))
         out["city_pct"].append(tuple(tuple(float(v) for v in row) for row in city))
         out["moon"].append(tuple(float(v) for v in gm))
         out["level"].append(level)
@@ -271,9 +341,12 @@ def run_tilts(run: Run, flat: FlatBlock | None = None) -> RunTilts:
         out["phase"].append(phase)
         out["dark"].append(sun_alt < DARK_SUN_ALT_DEG)
         out["moonless"].append(moon_alt < MOON_UP_DEG)
+        out["scale"].append(s)
+        out["exposure"].append(exposure)
     return RunTilts.of(run=run.content_hash, position=position, filter=str(frames[0][1].header.get("FILTER", "")),
                        date=mid_exposure(frames[0][1].header).isoformat(), n_frames=len(frames),
-                       frames=tuple(h for h, _ in frames), **{k: tuple(v) for k, v in out.items()})
+                       frames=tuple(h for h, _ in frames), **{k: tuple(v) for k, v in out.items()},
+                       scale_deg=scale_deg, median=median, wcs=ref_header)
 
 
 @node(num_cpus=1, resources={"diskcache": 0.001})
@@ -285,3 +358,39 @@ def measure_run_tilts(run: Run, code: str, *flat: FlatBlock) -> RunTilts:
     log.info("run tilts measured", run=run.content_hash[:8], frames=tilts.n_frames,
              site=tilts.position, filter=tilts.filter, flat=flat[0].flat[:8] if flat else None)
     return tilts
+
+
+def stack_tilts(stack: str, tilts) -> StackTilts:
+    """The stack's measured runs, each against the stack's median map: the
+    runs' medians resampled onto the first run's grid and medianed across
+    runs, then that map seen on each run's own grid, where the run's median
+    is scaled and offset to it (`transparency`: from the structure they
+    share) and the residual plane is the run's tilt. A single run is its own
+    median: tilt 0, scale 1."""
+    runs = [t for t in tilts if t.n_frames]
+    if len(runs) < 2:
+        return StackTilts.of(stack, runs, [(0.0, 0.0)] * len(runs), [1.0] * len(runs))
+    ref, shape = _wcs(runs[0].wcs), runs[0].median.shape
+    ra, dec = grid_sky(ref, shape)
+    maps = [runs[0].median] + [resample(t.median, _wcs(t.wcs), ra, dec, shape) for t in runs[1:]]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)              # all-NaN cells beyond every other run
+        target = np.nanmedian(np.stack(maps), 0)
+    run_tilt, run_scale = [], []
+    for k, t in enumerate(runs):
+        seen = target if k == 0 else resample(target, ref, *grid_sky(_wcs(t.wcs), t.median.shape), t.median.shape)
+        X, Y, cubic = _grid(t.median.shape, t.scale_deg)
+        g, s = residual_tilt(t.median, seen, X, Y, cubic)
+        run_tilt.append((float(g[0]), float(g[1])))
+        run_scale.append(s)
+    return StackTilts.of(stack, runs, run_tilt, run_scale)
+
+
+@node
+def measure_stack_tilts(stack: str, code: str, *tilts: RunTilts) -> StackTilts:
+    """`stack` is the stack's stable hash and `code` MEASURE_CODE, in the key
+    only; `tilts` its runs' measurements in date order."""
+    out = stack_tilts(stack, tilts)
+    log.info("stack tilts measured", stack=stack[:8], runs=len(out.runs),
+             tilt=[tuple(round(v, 2) for v in g) for g in out.run_tilt], scale=[round(s, 3) for s in out.run_scale])
+    return out

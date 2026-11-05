@@ -3,11 +3,12 @@
 joined the calibration stacks: one `block_flat` per flat stack a run resolves
 to, one `measure_run_tilts` per light run that states where it was shot (its
 flat as a value dependency: the flat — the etalon correction — is applied
-before anything about the glow is measured), one `fit_site` per site (its runs
-in date order — the collector's dependencies are ORDERED, they are its
-positional `*tilts`), `merge_site_models` into one table, `store_site_models`
-into the context, where the Siril integration and the Observing Sites panel
-read it.
+before anything about the glow is measured), one `measure_stack_tilts` per
+light stack at the site (its runs in date order — a collector's dependencies
+are ORDERED, they are its positional varargs — each run's median against the
+stack's), one `fit_site` per site over its stacks, `merge_site_models` into
+one table, `store_site_models` into the context, where the Siril integration
+and the Observing Sites panel read it.
 
 Each run's flat is resolved exactly as a pipeline resolves it
 (`decisions.resolve.resolve_calibration`, decision overrides included), so the
@@ -34,7 +35,7 @@ from decisions.resolve import resolve_calibration
 from decorators import node
 from dependency_graph import Graph
 from hashing import hash_string
-from light_pollution.measure import MIN_FRAMES, RunTilts, block_flat, measure_run_tilts
+from light_pollution.measure import MIN_FRAMES, StackTilts, block_flat, measure_run_tilts, measure_stack_tilts
 from light_pollution.model import SiteModel, SiteModels, fit_site_model
 from light_pollution.sites import Site, cluster_sites, site_of
 from stacks.types import StackIdDependency
@@ -50,12 +51,12 @@ MODEL_CODE = hash_string(inspect.getsource(model_module) + inspect.getsource(rob
 
 
 @node
-def fit_site(site: Site, previous: SiteModel | None, code: str, *tilts: RunTilts) -> SiteModels:
+def fit_site(site: Site, previous: SiteModel | None, code: str, *tilts: StackTilts) -> SiteModels:
     """One site's table: its report always, its model when the data support one.
     `code` is MODEL_CODE, in the key only."""
-    model, report = fit_site_model(site, [t for t in tilts if t.n_frames], previous)
+    model, report = fit_site_model(site, [t for t in tilts if t.runs], previous)
     log.info("site model fitted", site=site.key, model=model.content_hash if model else None,
-             reason=report.get("reason"), runs=report["runs"], gate=report.get("gate"))
+             reason=report.get("reason"), runs=report["runs"], stacks=report["stacks"], gate=report.get("gate"))
     return SiteModels.of({site.key: model} if model is not None else {}, (report,))
 
 
@@ -75,9 +76,10 @@ def _flat_of(run, cal_stacks):
     return None
 
 
-def runs_by_site(stacks, cal_stacks, decisions) -> dict[Site, list]:
-    """The light runs with at least MIN_FRAMES solved frames stating a
-    position, by site, each with the flat stack it resolves to (or None)."""
+def runs_by_site(stacks, cal_stacks, decisions) -> dict[Site, dict[str, list]]:
+    """Per site, per light stack (its stable hash), the stack's runs with at
+    least MIN_FRAMES solved frames stating a position, in date order, each
+    with the flat stack it resolves to (or None)."""
     placed = []
     for stack in stacks:
         if getattr(stack, "image_type", "light") != "light":
@@ -91,12 +93,13 @@ def runs_by_site(stacks, cal_stacks, decisions) -> dict[Site, list]:
             positions = [p for m in run.metadata.values()
                          if m.plate_solution is not None and (p := site_of(m.header)) is not None]
             if len(positions) >= MIN_FRAMES:
-                placed.append((Counter(positions).most_common(1)[0][0], run, _flat_of(run, cal_stacks)))
-    sites = cluster_sites(p for p, _, _ in placed)
-    by_site = defaultdict(list)
-    for p, run, flat in placed:
-        by_site[sites[p]].append((run, flat))
-    return {s: sorted(items, key=lambda rf: (_utc(rf[0].oldest_date), rf[0].content_hash)) for s, items in by_site.items()}
+                placed.append((Counter(positions).most_common(1)[0][0], str(stack.stable_hash), run, _flat_of(run, cal_stacks)))
+    sites = cluster_sites(p for p, _, _, _ in placed)
+    by_site: dict = defaultdict(lambda: defaultdict(list))
+    for p, stable, run, flat in placed:
+        by_site[sites[p]][stable].append((run, flat))
+    return {s: {stable: sorted(items, key=lambda rf: (_utc(rf[0].oldest_date), rf[0].content_hash))
+                for stable, items in by_stack.items()} for s, by_stack in by_site.items()}
 
 
 def site_graph(stacks, cal_stacks, decisions, previous: SiteModels) -> Graph:
@@ -104,21 +107,27 @@ def site_graph(stacks, cal_stacks, decisions, previous: SiteModels) -> Graph:
     collectors = []
     groups = runs_by_site(stacks, cal_stacks, decisions)
     for site in sorted(groups, key=lambda s: s.key):
-        measures = []
-        for run, flat in groups[site]:
-            measure = (measure_run_tilts, run, MEASURE_CODE)
-            if flat is not None:
-                flat_task = (block_flat, flat, MEASURE_CODE)
-                graph[flat_task] = {}
-                graph[measure] = [flat_task]          # ORDERED: the FlatBlock is the positional `*flat`
-            else:
-                graph[measure] = {}
-            measures.append(measure)
+        stack_tasks = []
+        for stable in sorted(groups[site]):
+            measures = []
+            for run, flat in groups[site][stable]:
+                measure = (measure_run_tilts, run, MEASURE_CODE)
+                if flat is not None:
+                    flat_task = (block_flat, flat, MEASURE_CODE)
+                    graph[flat_task] = {}
+                    graph[measure] = [flat_task]          # ORDERED: the FlatBlock is the positional `*flat`
+                else:
+                    graph[measure] = {}
+                measures.append(measure)
+            stack_task = (measure_stack_tilts, stable, MEASURE_CODE)
+            graph[stack_task] = measures                  # ORDERED: the runs' measurements in date order
+            stack_tasks.append(stack_task)
         collector = (fit_site, site, previous.models.get(site.key), MODEL_CODE)
-        graph[collector] = measures
+        graph[collector] = stack_tasks
         collectors.append(collector)
-    log.info("site runs scattered", sites=len(groups), runs=sum(len(r) for r in groups.values()),
-             flats=len({f.content_hash for rs in groups.values() for _, f in rs if f is not None}))
+    log.info("site runs scattered", sites=len(groups), stacks=sum(len(g) for g in groups.values()),
+             runs=sum(len(r) for g in groups.values() for r in g.values()),
+             flats=len({f.content_hash for g in groups.values() for rs in g.values() for _, f in rs if f is not None}))
     graph[merge_site_models] = collectors
     return graph
 

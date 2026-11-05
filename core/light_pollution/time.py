@@ -17,3 +17,9 @@ def utc(value) -> datetime:
 
 def mid_exposure(header) -> datetime:
     return utc(header["DATE-OBS"]) + timedelta(seconds=float(header.get("EXPTIME") or 0) / 2)
+
+
+def night_of(when, lon_deg: float) -> str:
+    """The observing night a moment belongs to, as the date of its evening at
+    the site: mean solar time at the longitude, noon to noon."""
+    return (utc(when) + timedelta(hours=lon_deg / 15.0 - 12.0)).date().isoformat()
