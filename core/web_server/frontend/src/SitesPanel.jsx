@@ -94,14 +94,14 @@ function DomeMap({ grid, sigma, samples, size = 340 }) {
 function Numbers({ site }) {
   const m = site.model;
   const rows = [
-    ['Frames', `${site.frames} in ${site.runs} runs of ${site.stacks} fields · ${site.usable_frames} in astronomical night · ${site.moonlit_frames} with the Moon up`],
+    ['Frames', `${site.frames} in ${site.runs} runs · ${site.usable_frames} in astronomical night · ${site.moonlit_frames} with the Moon up`],
     ['Newest run', site.newest_run ? site.newest_run.slice(0, 10) : '—'],
   ];
   if (m) {
     rows.push(['Model', m.hash]);
     rows.push(['Fitted on', `${m.runs} moonless runs, ${m.frames} frames`]);
     const byFilter = Object.entries(site.explained_by_filter || {}).map(([f, v]) => `${f} ${(100 * v).toFixed(0)}`).join(' · ');
-    rows.push(['Explains', `${(100 * m.explained).toFixed(0)}% of the tilt changes across a field's moonless frames${byFilter ? ` (${byFilter})` : ''} · ${(100 * m.explained_moonlit).toFixed(0)}% across moonlit ones`]);
+    rows.push(['Explains', `${(100 * m.explained).toFixed(0)}% of the tilt changes within moonless runs${byFilter ? ` (${byFilter})` : ''} · ${(100 * m.explained_moonlit).toFixed(0)}% within moonlit ones`]);
     const g = site.gate;                     // the last refit against the fit's own spread, where the frames are
     if (g) {
       rows.push(['Last refit', g.previous === null ? `first model · spread ${g.noise.toFixed(2)} %/°`

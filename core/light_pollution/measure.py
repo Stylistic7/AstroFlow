@@ -8,17 +8,14 @@ against that median, in percent of the frame's sky level per degree and in
 counts per second per degree; beside it, the tilts the city shape's terms and
 the moonlight field would have at that frame's moment, so the fit is linear.
 
-A run drifts ten degrees; the same field is shot, over a season, from forty
-degrees in the east to seventy in the west, Moon up and Moon down. So the
-run's median map stays with its measurement (`RunTilts.median`, on the first
-frame's grid), and a second step (`stack_tilts`, one per stack) measures each
-run's median against the stack's — the runs' medians on one grid, median
-across runs — as a tilt and a scale per run. A frame's tilt within its run
-plus its run's tilt within its stack is the frame against every frame of the
-field, at every altitude and azimuth it was shot; the nebula cancels there
-too, and what survives of the stack's mean glow is one free gradient per
-stack in the fit (`model.fit_site_model`), scaled per frame by the frame's
-transparency over its sky level.
+What a run's frames share — the nebula, and the glow gradient the run's
+median itself carries — is one free gradient per run in the fit
+(`model.fit_site_model`), scaled per frame by the frame's transparency over
+its sky level. Measuring each run's median against its field's other runs
+as well (2026-11-05) added nothing: the run-to-run offsets were real but
+carried night-to-night flat and transparency differences, 0.4–1 %/° against
+0.04 within a run, and copied into every frame row they bent the dome at the
+horizon; the within-run differences explain as much on their own.
 
 Calibration: the OFFSET pedestal, as the dust maps' is (`stacks/dust_runs.py`),
 and the run's flat — the night-sky flat is the etalon correction, and it comes
@@ -34,8 +31,7 @@ nebula, used again when a frame's surface is scaled.
 from __future__ import annotations
 
 import math
-import warnings
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -62,8 +58,7 @@ PER_FRAME = ("tilt_pct", "tilt_abs", "city_pct", "moon", "level", "alt", "az",
 
 @dataclass(frozen=True)
 class RunTilts:
-    """One run's measurement: per frame, tuples (they ride in cache keys); the
-    run's median map and its grid's plate solution for `stack_tilts`."""
+    """One run's measurement: per frame, tuples (they ride in cache keys)."""
     run: str
     position: tuple[float, float]
     filter: str
@@ -84,9 +79,6 @@ class RunTilts:
     moonless: tuple[bool, ...]
     scale: tuple[float, ...]                                          # transparency against the run median
     exposure: tuple[float, ...]                                       # seconds
-    scale_deg: float                                                  # degrees per block on the grid
-    median: np.ndarray | None                                         # the run's median block map (nebula + mean glow)
-    wcs: dict | None                                                  # the grid's plate solution
     content_hash: str = ""
 
     @classmethod
@@ -98,27 +90,7 @@ class RunTilts:
     @classmethod
     def empty(cls, run: Run) -> "RunTilts":
         return cls(run=run.content_hash, position=(0.0, 0.0), filter="", date="", n_frames=0, frames=(),
-                   **{k: () for k in PER_FRAME}, scale_deg=0.0, median=None, wcs=None,
-                   content_hash=hash_list([run.content_hash, "empty"]))
-
-
-@dataclass(frozen=True)
-class StackTilts:
-    """One stack's runs against the stack's median map: every run's measurement,
-    its map dropped, and per run the tilt of its median against the stack's
-    (counts per degree, in the run's own grid) and its scale — what, added to a
-    frame's tilt within its run, measures the frame against the whole field."""
-    stack: str
-    runs: tuple[RunTilts, ...]
-    run_tilt: tuple[tuple[float, float], ...]
-    run_scale: tuple[float, ...]
-    content_hash: str = ""
-
-    @classmethod
-    def of(cls, stack: str, runs, run_tilt, run_scale) -> "StackTilts":
-        runs = tuple(replace(r, median=None, wcs=None) for r in runs)
-        return cls(stack, runs, tuple(run_tilt), tuple(run_scale),
-                   hash_list([stack, [r.content_hash for r in runs], tuple(run_tilt), tuple(run_scale)]))
+                   **{k: () for k in PER_FRAME}, content_hash=hash_list([run.content_hash, "empty"]))
 
 
 @dataclass(frozen=True)
@@ -187,7 +159,7 @@ def sky_level(d: np.ndarray) -> float:
 
 
 def wcs_items(solution_header: dict) -> dict:
-    """The plate solution's scalar cards: what a WCS is built from, and what a measurement keeps."""
+    """The plate solution's scalar cards: what a WCS is built from."""
     return {k: v for k, v in solution_header.items()
             if isinstance(v, (int, float, str)) and k not in ("COMMENT", "HISTORY")}
 
@@ -345,8 +317,7 @@ def run_tilts(run: Run, flat: FlatBlock | None = None) -> RunTilts:
         out["exposure"].append(exposure)
     return RunTilts.of(run=run.content_hash, position=position, filter=str(frames[0][1].header.get("FILTER", "")),
                        date=mid_exposure(frames[0][1].header).isoformat(), n_frames=len(frames),
-                       frames=tuple(h for h, _ in frames), **{k: tuple(v) for k, v in out.items()},
-                       scale_deg=scale_deg, median=median, wcs=ref_header)
+                       frames=tuple(h for h, _ in frames), **{k: tuple(v) for k, v in out.items()})
 
 
 @node(num_cpus=1, resources={"diskcache": 0.001})
@@ -358,41 +329,3 @@ def measure_run_tilts(run: Run, code: str, *flat: FlatBlock) -> RunTilts:
     log.info("run tilts measured", run=run.content_hash[:8], frames=tilts.n_frames,
              site=tilts.position, filter=tilts.filter, flat=flat[0].flat[:8] if flat else None)
     return tilts
-
-
-def stack_tilts(stack: str, tilts) -> StackTilts:
-    """The stack's measured runs, each against the stack's median map: the
-    runs' medians resampled onto the first run's grid and medianed across
-    runs, then that map seen on each run's own grid, where the run's median
-    is scaled and offset to it (`transparency`: from the structure they
-    share) and the residual plane is the run's tilt. A single run is its own
-    median: tilt 0, scale 1."""
-    runs = [t for t in tilts if t.n_frames]
-    if len(runs) < 2:
-        return StackTilts.of(stack, runs, [(0.0, 0.0)] * len(runs), [1.0] * len(runs))
-    ref, shape = _wcs(runs[0].wcs), runs[0].median.shape
-    ra, dec = grid_sky(ref, shape)
-    maps = [runs[0].median] + [resample(t.median, _wcs(t.wcs), ra, dec, shape) for t in runs[1:]]
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)              # all-NaN cells beyond every other run
-        target = np.nanmedian(np.stack(maps), 0)
-    run_tilt, run_scale = [], []
-    for k, t in enumerate(runs):
-        seen = target if k == 0 else resample(target, ref, *grid_sky(_wcs(t.wcs), t.median.shape), t.median.shape)
-        X, Y, cubic = _grid(t.median.shape, t.scale_deg)
-        g, s = residual_tilt(t.median, seen, X, Y, cubic)
-        run_tilt.append((float(g[0]), float(g[1])))
-        run_scale.append(s)
-    return StackTilts.of(stack, runs, run_tilt, run_scale)
-
-
-@node
-def measure_stack_tilts(stack: str, site: str, code: str, *tilts: RunTilts) -> StackTilts:
-    """`stack` is the stack's stable hash, `site` the site's key (a field shot
-    from two sites is measured per site, each against that site's runs of it)
-    and `code` MEASURE_CODE, all three in the key only; `tilts` its runs'
-    measurements in date order."""
-    out = stack_tilts(stack, tilts)
-    log.info("stack tilts measured", stack=stack[:8], runs=len(out.runs),
-             tilt=[tuple(round(v, 2) for v in g) for g in out.run_tilt], scale=[round(s, 3) for s in out.run_scale])
-    return out

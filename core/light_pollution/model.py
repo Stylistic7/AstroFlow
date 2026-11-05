@@ -5,14 +5,14 @@ brightness rises toward the horizon, differently in each direction. The
 model is log10 brightness relative to the zenith = (X−1)·F1(az) + (X−1)²·F2(az),
 X the airmass, F1 and F2 Fourier series in azimuth to HARMONICS — N_CITY
 numbers, `theta`. It is fitted in PERCENT of each frame's sky level per degree,
-from moonless dark frames, on each frame's tilt against every frame of its
-field (`measure.StackTilts`: within its run, and its run within its stack),
-at every altitude and azimuth the field was shot over a season. The field's
-own sky-fixed gradient — nebula, and what is left of the stack's mean glow —
-is one free parameter per stack, scaled per frame by transparency over sky
-level, partialled out of the fit (`robust.project_out`). Within a run alone
-(to 2026-11-05) a run's ten degrees of drift pinned the dome's curvature and
-left its slope to the model's form: the fit's spread was as large as the map.
+from moonless dark frames, on each frame's tilt against its run's median
+(`measure.RunTilts`). What a run's frames share — nebula, and the glow
+gradient the median itself carries — is one free parameter per run, scaled
+per frame by transparency over sky level, partialled out of the fit
+(`robust.project_out`). A run's ten degrees of drift pin the dome's curvature
+better than its slope; the same field's runs against each other (2026-11-05)
+did not help, their offsets carrying flat and transparency differences ten
+times the within-run noise.
 
 **Moonlight.** Scattered moonlight has a known shape (Krisciunas & Schaefer
 1991: separation from the Moon, phase, the Moon's airmass, the line of
@@ -63,7 +63,7 @@ N_CITY = 2 * (2 * HARMONICS + 1)
 K_EXT = 0.15                      # magnitudes per airmass, the extinction K&S scatter against
 MOON_UP_DEG = -5.0                # above this the Moon lights the sky; below, the moonless regime
 MIN_RUNS = 20                     # moonless dark runs a shape needs
-MIN_EXPLAINED = 0.4               # of the tilt changes within stacks
+MIN_EXPLAINED = 0.4               # of the tilt changes within runs
 MIN_MOON_FRAMES = 150             # moonlit frames a filter's moon amplitude needs
 NIGHT_PRIOR_WIDTH = 1.0           # a night's own amplitude is expected within this fraction of the pooled one
 FRAME_GATE_PCT_PER_DEG = 0.2      # below this a frame's surface is noise: not subtracted
@@ -77,7 +77,7 @@ GRID_AZ = np.arange(0.0, 360.0, 10.0)
 # stacks/star_flat.py). Both must hold, over the reference grid with each direction weighted by the
 # dark frames shot there (a change where nobody shoots reaches no master):
 #   significant: the rms change in the predicted tilt is at least GATE_SIGNIFICANCE times the fit's
-#     own uncertainty — the spread of BOOTSTRAPS refits on the stacks resampled with replacement;
+#     own uncertainty — the spread of BOOTSTRAPS refits on the runs resampled with replacement;
 #   material: that rms change is at least FRAME_GATE_PCT_PER_DEG — smaller than the smallest tilt
 #     ever subtracted from a frame, it cannot change a master.
 # A change confined to one direction also publishes: at least GATE_LOCAL_PCT_PER_DEG and
@@ -97,7 +97,9 @@ GATE_AMPLITUDE = 0.2
 COVERAGE_ALT_STEP = 15.0
 COVERAGE_AZ_STEP = 45.0
 COVERAGE_FRAMES = 5
-MAX_DARKER_THAN_ZENITH = 0.1      # a shape darker than the zenith by more than this inside its coverage is unphysical
+MAX_DARKER_THAN_ZENITH = 0.5      # a shape darker than the zenith by more than this at the site's own frames is unphysical;
+                                  # the zenith is not a city-edge sky's darkest point (SF, 2026-11-05: 0.8 of it over the
+                                  # ocean at altitude 20-30), but half of it is no sky
 MAX_BRIGHTER_THAN_ZENITH = 100.0  # city domes reach ~30x the zenith near the horizon; beyond this the fit is degenerate
                                   # (Arizona, 2026-11-02: 33 runs in four cells fitted 10^192 x inside them)
 
@@ -229,56 +231,52 @@ class SiteModels:
 
 
 # ------------------------------------------------------------------ fit
-# A frame against its whole field: its tilt within its run plus its run's tilt `g` within the stack,
-# the latter scaled by the frame's transparency `scale` (the run's median is scale x the frame's sky).
-# What the stack's frames then share is the field's sky-fixed gradient — the nuisance — in counts per
-# degree, which reaches a frame's row scaled by `scale` x the run's scale `sc` against the stack and
-# divided by what the row is in units of: the frame's sky level (percent) or its exposure (counts/s).
-def _y_pct(t, j, g, sc):
-    return np.asarray(t.tilt_pct[j]) + 100.0 * t.scale[j] * np.asarray(g) / t.level[j]
+# A frame's tilt against its run's median. What the run's frames share — the nuisance, in counts per
+# degree — reaches a frame's row scaled by the frame's transparency `scale` (the median is scale x
+# the frame's sky) and divided by what the row is in units of: the frame's sky level (percent) or
+# its exposure (counts/s).
+def _y_pct(t, j):
+    return t.tilt_pct[j]
 
 
 def _x_pct(t, j):
     return t.city_pct[j]
 
 
-def _w_pct(t, j, sc):
-    return 100.0 * t.scale[j] * sc / t.level[j]
+def _w_pct(t, j):
+    return 100.0 * t.scale[j] / t.level[j]
 
 
-def _y_abs(t, j, g, sc):
-    return np.asarray(t.tilt_abs[j]) + t.scale[j] * np.asarray(g) / t.exposure[j]
+def _y_abs(t, j):
+    return t.tilt_abs[j]
 
 
-def _w_abs(t, j, sc):
-    return t.scale[j] * sc / t.exposure[j]
+def _w_abs(t, j):
+    return t.scale[j] / t.exposure[j]
 
 
-def _rows(stacks, rows_of, y_of, x_of, w_of) -> list:
-    """Per stack with at least two chosen frames: (y, X, w, frames, runs, filter) — each frame's two
-    tilt components as two rows of y and X, w the rows' coefficient on the stack's nuisance."""
+def _rows(runs, rows_of, y_of, x_of, w_of) -> list:
+    """Per run with at least two chosen frames: (y, X, w, frames, filter) — each frame's two tilt
+    components as two rows of y and X, w the rows' coefficient on the run's nuisance."""
     blocks = []
-    for s in stacks:
-        y, X, w, runs = [], [], [], 0
-        for t, g, sc in zip(s.runs, s.run_tilt, s.run_scale):
-            idx = rows_of(t)
-            runs += bool(idx)
-            for j in idx:
-                yv, wv = y_of(t, j, g, sc), w_of(t, j, sc)
-                if np.all(np.isfinite(yv)) and np.isfinite(wv):
-                    y.append(yv)
-                    X.append(x_of(t, j))
-                    w.append(wv)
+    for t in runs:
+        y, X, w = [], [], []
+        for j in rows_of(t):
+            yv, wv = np.asarray(y_of(t, j), float), w_of(t, j)
+            if np.all(np.isfinite(yv)) and np.isfinite(wv):
+                y.append(yv)
+                X.append(x_of(t, j))
+                w.append(wv)
         if len(y) < 2:
             continue
         blocks.append((np.array(y, float).reshape(-1), np.array(X, float).reshape(2 * len(y), -1),
-                       np.repeat(np.array(w, float), 2), len(y), runs, s.runs[0].filter))
+                       np.repeat(np.array(w, float), 2), len(y), t.filter))
     return blocks
 
 
 def _stacked(blocks) -> tuple[np.ndarray, np.ndarray, tuple]:
-    """(Y, X, nuisance) of these stacks' blocks, stacked; nuisance = (w, groups) as the robust fits
-    take it — per stack two groups, its x-tilt rows and its y-tilt rows: the field's gradient is a
+    """(Y, X, nuisance) of these runs' blocks, stacked; nuisance = (w, groups) as the robust fits
+    take it — per run two groups, its x-tilt rows and its y-tilt rows: the run's gradient is a
     2-vector, one free coefficient per component."""
     if not blocks:
         return np.zeros(0), np.zeros((0, 1)), (np.zeros(0), [])
@@ -289,7 +287,7 @@ def _stacked(blocks) -> tuple[np.ndarray, np.ndarray, tuple]:
 
 
 def _bootstrap(blocks, fit, rng) -> np.ndarray:
-    """(BOOTSTRAPS, k): `fit`'s coefficients on the stacks resampled with replacement — the fit's own uncertainty."""
+    """(BOOTSTRAPS, k): `fit`'s coefficients on the runs resampled with replacement — the fit's own uncertainty."""
     out = []
     for _ in range(BOOTSTRAPS):
         Y, X, nu = _stacked([blocks[k] for k in rng.integers(0, len(blocks), len(blocks))])
@@ -342,7 +340,7 @@ def _gate(new: SiteModel, previous: SiteModel | None, weights: np.ndarray, tilt_
           amp_sigma: dict) -> dict:
     """Whether `new` replaces `previous`, and the numbers that decided it (the report's `gate`).
     `tilt_sigma` is one fit's uncertainty per reference direction; two fits of nearly the same
-    stacks differ by sqrt(2) of it. `amp_sigma`: per filter, (city, moon) uncertainties."""
+    runs differ by sqrt(2) of it. `amp_sigma`: per filter, (city, moon) uncertainties."""
     if not weights.any():
         weights = np.ones_like(weights)
     w = weights / weights.sum()
@@ -369,7 +367,7 @@ def _gate(new: SiteModel, previous: SiteModel | None, weights: np.ndarray, tilt_
             "amplitudes_changed": amps}
 
 
-def _night_amplitudes(site: Site, stacks, model: SiteModel, scale: dict, dark, moonless) -> dict:
+def _night_amplitudes(site: Site, runs, model: SiteModel, scale: dict, dark, moonless) -> dict:
     """Per filter with a moon amplitude, each night with moonlit frames: its own (city, moon) from all
     its dark frames — one city column and one moon column per night — each under a Gaussian prior at
     the pooled value, NIGHT_PRIOR_WIDTH of it wide: one row per column with that pull at the pooled
@@ -380,10 +378,10 @@ def _night_amplitudes(site: Site, stacks, model: SiteModel, scale: dict, dark, m
     for filt, city, moon in model.amplitudes:
         if moon == 0.0 or filt not in scale:
             continue
-        of_filter = [s for s in stacks if s.runs[0].filter == filt]
-        night = {t.run: night_of(t.date, site.lon) for s in of_filter for t in s.runs}
-        nights = sorted({night[t.run] for s in of_filter for t in s.runs if dark(t)})
-        moon_nights = sorted({night[t.run] for s in of_filter for t in s.runs if len(dark(t)) > len(moonless(t))})
+        of_filter = [t for t in runs if t.filter == filt]
+        night = {t.run: night_of(t.date, site.lon) for t in of_filter}
+        nights = sorted({night[t.run] for t in of_filter if dark(t)})
+        moon_nights = sorted({night[t.run] for t in of_filter if len(dark(t)) > len(moonless(t))})
         col = {n: i for i, n in enumerate(nights)}
         mcol = {n: len(nights) + i for i, n in enumerate(moon_nights)}
 
@@ -439,50 +437,51 @@ def _samples(runs) -> list:
     return pts[::max(1, -(-len(pts) // MAX_SAMPLES))]
 
 
-def fit_site_model(site: Site, stacks, previous: SiteModel | None) -> tuple[SiteModel | None, dict]:
-    """The site's model from its stacks' tilts (`light_pollution.measure.StackTilts`),
+def fit_site_model(site: Site, tilts, previous: SiteModel | None) -> tuple[SiteModel | None, dict]:
+    """The site's model from its runs' tilts (`light_pollution.measure.RunTilts`),
     and the site's report; (None, report) when the data do not support a model."""
-    stacks = [s for s in stacks if s is not None and s.runs]
-    runs = [t for s in stacks for t in s.runs]
+    runs = [t for t in tilts if t is not None and t.n_frames]
     dark = lambda t: [j for j in range(t.n_frames) if t.dark[j]]                          # noqa: E731
     moonless = lambda t: [j for j in range(t.n_frames) if t.dark[j] and t.moonless[j]]  # noqa: E731
     report = {"key": site.key, "lat": site.lat, "lon": site.lon,
-              "runs": len(runs), "stacks": len(stacks), "frames": sum(t.n_frames for t in runs),
+              "runs": len(runs), "frames": sum(t.n_frames for t in runs),
               "usable_frames": sum(len(dark(t)) for t in runs),
               "moonlit_frames": sum(len(dark(t)) - len(moonless(t)) for t in runs),
               "newest_run": max((t.date for t in runs), default=""),
               "samples": _samples(runs), "model": None, "reason": ""}
     rng = np.random.default_rng(0)                   # per call: a refit's bootstrap is bit-identical
     # 1. the shape, in percent of the sky level, from moonless frames
-    blocks = _rows(stacks, moonless, _y_pct, _x_pct, _w_pct)
-    n_runs, n_frames = sum(b[4] for b in blocks), sum(b[3] for b in blocks)
+    blocks = _rows(runs, moonless, _y_pct, _x_pct, _w_pct)
+    n_runs, n_frames = len(blocks), sum(b[3] for b in blocks)
     if n_runs < MIN_RUNS:
         report["reason"] = f"needs at least {MIN_RUNS} moonless dark runs; has {n_runs}"
         return None, report
     Y, X, nu = _stacked(blocks)
     theta, inl, _ = irls(X, Y, nuisance=nu)
     explained = _explained(theta, X, Y, inl, nu)
-    report["explained_by_filter"] = _explained(theta, X, Y, inl, nu, np.concatenate([[b[5]] * len(b[0]) for b in blocks]))
+    report["explained_by_filter"] = _explained(theta, X, Y, inl, nu, np.concatenate([[b[4]] * len(b[0]) for b in blocks]))
     if explained < MIN_EXPLAINED:
-        report["reason"] = f"the shape explains only {100 * explained:.0f}% of the tilt changes within stacks"
+        report["reason"] = f"the shape explains only {100 * explained:.0f}% of the tilt changes within runs"
         return None, report
     coverage = coverage_of(runs)
-    shape = [float(city_shape(theta, (a + 0.5) * COVERAGE_ALT_STEP, (z + 0.5) * COVERAGE_AZ_STEP)) for a, z in coverage]
-    darkest, brightest = (min(shape), max(shape)) if shape else (1.0, 1.0)
+    where = np.array([(t.alt[j], t.az[j]) for t in runs for j in range(t.n_frames)
+                      if t.dark[j] and covered(coverage, t.alt[j], t.az[j])]).reshape(-1, 2)
+    shape = city_shape(theta, where[:, 0], where[:, 1]) if len(where) else np.ones(1)   # where frames get corrected
+    darkest, brightest = float(shape.min()), float(shape.max())
     if darkest < 1.0 - MAX_DARKER_THAN_ZENITH:
-        report["reason"] = (f"the shape is {100 * (1 - darkest):.0f}% darker than the zenith inside the site's own "
-                            f"coverage: unphysical, the stacks do not pin it down")
+        report["reason"] = (f"the shape is {100 * (1 - darkest):.0f}% darker than the zenith at the site's own "
+                            f"frames: unphysical, the runs do not pin it down")
         return None, report
     if not brightest <= MAX_BRIGHTER_THAN_ZENITH:                    # also catches inf and nan
-        report["reason"] = (f"the shape is {brightest:.3g}x brighter than the zenith inside the site's own "
-                            f"coverage: a degenerate fit, not a sky")
+        report["reason"] = (f"the shape is {brightest:.3g}x brighter than the zenith at the site's own "
+                            f"frames: a degenerate fit, not a sky")
         return None, report
     thetas = _bootstrap(blocks, irls, rng)
     # 2. the pooled amplitudes, in counts per second, per filter, from all dark frames
     amplitudes, amp_sigma, amp_scale = [], {}, {}
     for filt in sorted({t.filter for t in runs}):
-        of_filter = [s for s in stacks if s.runs[0].filter == filt]
-        moonlit = sum(len(dark(t)) - len(moonless(t)) for s in of_filter for t in s.runs)
+        of_filter = [t for t in runs if t.filter == filt]
+        moonlit = sum(len(dark(t)) - len(moonless(t)) for t in of_filter)
         with_moon = moonlit >= MIN_MOON_FRAMES
         blocks_f = _rows(
             of_filter, dark, _y_abs,
@@ -498,7 +497,7 @@ def fit_site_model(site: Site, stacks, previous: SiteModel | None) -> tuple[Site
     # 3. how well the whole model does on moonlit frames
     amp = {f: (c, m) for f, c, m in amplitudes}
     Ym, Xm, num = _stacked(_rows(
-        [s for s in stacks if s.runs[0].filter in amp], lambda t: [j for j in dark(t) if not t.moonless[j]],
+        [t for t in runs if t.filter in amp], lambda t: [j for j in dark(t) if not t.moonless[j]],
         _y_abs,
         lambda t, j: amp[t.filter][0] * (np.asarray(t.city_pct[j]) @ theta / 100.0)[:, None]
         + amp[t.filter][1] * np.asarray(t.moon[j])[:, None], _w_abs))
@@ -511,7 +510,7 @@ def fit_site_model(site: Site, stacks, previous: SiteModel | None) -> tuple[Site
     if gate["kept"]:
         model = replace(previous, **record)
     # 5. each night's own amplitudes, under the model that stands
-    nights = _kept_nights(_night_amplitudes(site, stacks, model, amp_scale, dark, moonless),
+    nights = _kept_nights(_night_amplitudes(site, runs, model, amp_scale, dark, moonless),
                           previous.nights if gate["kept"] else ())
     gate["nights"] = len(nights)
     model = replace(model, nights=nights)
