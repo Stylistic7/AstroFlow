@@ -7,8 +7,8 @@ import numpy as np
 
 from light_pollution.measure import RunTilts
 from light_pollution.model import (
-    FRAME_GATE_PCT_PER_DEG, MIN_MOON_FRAMES, MIN_RUNS, N_CITY, SiteModel, SiteModels, basis,
-    brightness_grid, city_shape, fit_site_model, frame_surface, moonlight,
+    FRAME_GATE_PCT_PER_DEG, MIN_MOON_FRAMES, MIN_RUNS, N_CITY, REFERENCE_ALT, REFERENCE_AZ, SiteModel,
+    SiteModels, _gate, basis, brightness_grid, city_shape, fit_site_model, frame_surface, moonlight,
 )
 from light_pollution.sites import Site
 from testing.shared_masters import tan_wcs_header
@@ -80,15 +80,40 @@ def test_a_filter_without_moonlit_runs_gets_no_moon_amplitude():
     assert report["moonlit_frames"] < MIN_MOON_FRAMES
 
 
-def test_identity_is_the_numbers_and_hysteresis_keeps_it():
-    model, _ = fit_site_model(SITE, synthetic_runs(seed=0), None)
-    again, _ = fit_site_model(SITE, synthetic_runs(seed=1), model)      # same sky, fresh noise and more runs
+def test_identity_is_the_numbers_and_the_gate_keeps_it():
+    model, report = fit_site_model(SITE, synthetic_runs(seed=0), None)
+    assert report["gate"] == {"previous": None, "kept": False, "noise": report["gate"]["noise"]}
+    assert 0 < report["gate"]["noise"] < FRAME_GATE_PCT_PER_DEG
+    assert len(report["sigma"]) == 16 and len(report["sigma"][0]) == 36 and report["sigma"][-1] == [0.0] * 36
+    again, report = fit_site_model(SITE, synthetic_runs(seed=1), model)      # same sky, fresh noise and more runs
     assert again.content_hash == model.content_hash and again is not model
     assert again.theta == model.theta
-    changed, _ = fit_site_model(SITE, synthetic_runs(seed=2, theta=THETA * 2.0), model)
-    assert changed.content_hash != model.content_hash
+    assert report["gate"]["kept"] and report["gate"]["previous"] == model.content_hash
+    assert fit_site_model(SITE, synthetic_runs(seed=1), model)[1]["gate"] == report["gate"]   # deterministic
+    changed, report = fit_site_model(SITE, synthetic_runs(seed=2, theta=THETA * 2.0), model)
+    assert changed.content_hash != model.content_hash and not report["gate"]["kept"]
+    assert report["gate"]["change"] > report["gate"]["noise"] * 2
     counts_only = SiteModel.of(SITE, model.theta, model.amplitudes, n_runs=1)
     assert counts_only.content_hash == model.content_hash
+
+
+def test_the_gate_weighs_a_change_by_the_frames_under_it():
+    model, _ = fit_site_model(SITE, synthetic_runs(), None)
+    moved = np.array(model.theta)
+    moved[2] += 0.1                         # the sin(az) term: nothing due north or south, most due east and west
+    other = SiteModel.of(SITE, moved, model.amplitudes)
+    weights = np.zeros((len(REFERENCE_ALT), len(REFERENCE_AZ)))
+    sigma = np.full(weights.shape, 0.01)
+    weights[:, 0] = 1                       # every frame due north
+    assert _gate(other, model, weights, sigma, {})["kept"]
+    weights[:, 0], weights[:, 6] = 0, 1     # every frame due east
+    gate = _gate(other, model, weights, sigma, {})
+    assert not gate["kept"] and gate["change"] >= FRAME_GATE_PCT_PER_DEG
+    assert _gate(other, model, weights, sigma * 100, {})["kept"]     # the same change, inside the fit's own noise
+    assert _gate(model, model, weights, sigma, {"H": (0.0, 0.0)})["kept"]
+    louder = SiteModel.of(SITE, model.theta, [(f, c * 1.5, m) for f, c, m in model.amplitudes])
+    assert not _gate(louder, model, weights, sigma, {"H": (0.01, 0.01)})["kept"]
+    assert _gate(louder, model, weights, sigma, {"H": (1.0, 1.0)})["kept"]
 
 
 def test_the_table_finds_a_frame_s_site_within_the_radius():

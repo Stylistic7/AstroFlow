@@ -25,10 +25,10 @@ moonlight field per cell. A filter with too few moonlit runs keeps moon = 0
 and is simply not Moon-corrected; the report says so.
 
 **Identity.** `content_hash` is of theta and the amplitudes alone (the
-MoteModel rule): counts and fit quality are the record. The fit keeps the
-previous model, counts refreshed, unless the new one's predictions differ
-by more than HYSTERESIS — otherwise every night's runs would re-key every
-integration. This fold is path-dependent by design.
+MoteModel rule): counts and fit quality are the record. A refit keeps the
+previous model, counts refreshed, unless the gate (GATE_*) says the sky
+changed — otherwise every night's runs would re-key every integration. This
+fold is path-dependent by design.
 
 Imports nothing from compute_graph or stacks: `compute_graph.objects` holds a
 `SiteModels` and imports this module at import time.
@@ -57,11 +57,29 @@ MIN_RUNS = 20                     # moonless dark runs a shape needs
 MIN_EXPLAINED = 0.4               # of the within-run tilt changes
 MIN_MOON_FRAMES = 150             # moonlit frames a filter's moon amplitude needs
 FRAME_GATE_PCT_PER_DEG = 0.2      # below this a frame's surface is noise: not subtracted
-HYSTERESIS_PCT_PER_DEG = 0.15     # a refit replaces the stored model only beyond this (refits of one
-HYSTERESIS_AMPLITUDE = 0.2        # sky with fresh noise differ by ~0.13); relative, per amplitude
 ROUND = 4
 REFERENCE_ALT = np.arange(30.0, 86.0, 5.0)   # where frames are shot; below, the (X-1)^2 terms amplify noise
 REFERENCE_AZ = np.arange(0.0, 360.0, 15.0)
+GRID_ALT = np.arange(15.0, 91.0, 5.0)        # the panel's map
+GRID_AZ = np.arange(0.0, 360.0, 10.0)
+# When a refit counts as a DIFFERENT model — a new identity, every corrected master re-integrated,
+# deliberately, once — rather than the same sky with a night's more runs (the star-flat gate,
+# stacks/star_flat.py). Both must hold, over the reference grid with each direction weighted by the
+# dark frames shot there (a change where nobody shoots reaches no master):
+#   significant: the rms change in the predicted tilt is at least GATE_SIGNIFICANCE times the fit's
+#     own uncertainty — the spread of BOOTSTRAPS refits on the runs resampled with replacement;
+#   material: that rms change is at least FRAME_GATE_PCT_PER_DEG — smaller than the smallest tilt
+#     ever subtracted from a frame, it cannot change a master.
+# A change confined to one direction also publishes: at least GATE_LOCAL_PCT_PER_DEG and
+# GATE_LOCAL_SIGNIFICANCE times its uncertainty, in a direction with frames. An amplitude publishes
+# at GATE_AMPLITUDE of itself and GATE_SIGNIFICANCE times its uncertainty.
+# Before (to 2026-11-05): an unweighted 0.15 %/° rms over the whole grid, set from a synthetic refit;
+# three new runs moved the south at altitude 30 — five frames there — by 2 %/° and re-keyed 143 masters.
+BOOTSTRAPS = 20
+GATE_SIGNIFICANCE = 2.0
+GATE_LOCAL_PCT_PER_DEG = 1.0
+GATE_LOCAL_SIGNIFICANCE = 5.0
+GATE_AMPLITUDE = 0.2
 # A model is trusted only where the site's frames are: a Fourier dome does what it likes elsewhere
 # (Oakland, 2026-11-02: 45 runs over three octants predicted -100 % glow to the south). Coverage is
 # counted in cells of COVERAGE_ALT_STEP x COVERAGE_AZ_STEP degrees with at least COVERAGE_FRAMES dark frames.
@@ -177,23 +195,34 @@ class SiteModels:
 
 
 # ------------------------------------------------------------------ fit
-def _within_run(tilts, rows_of, y_of, x_of):
-    """Stack within-run differences: for each run, the chosen frames' (y, x) minus the run's mean."""
-    Y, X = [], []
-    n_runs = n_frames = 0
+def _run_blocks(tilts, rows_of, y_of, x_of) -> list:
+    """Per run with at least two chosen frames: (y, x, frames) — the frames' (y, x) minus the run's
+    mean, so a run's nebula and a night's brightness cancel."""
+    blocks = []
     for t in tilts:
         idx = rows_of(t)
         if len(idx) < 2:
             continue
         y = np.array([y_of(t, j) for j in idx], float)
         x = np.array([x_of(t, j) for j in idx], float)
-        Y.append((y - y.mean(0)).reshape(-1))
-        X.append((x - x.mean(0)).reshape(-1, x.shape[-1]))
-        n_runs += 1
-        n_frames += len(idx)
-    if not Y:
-        return np.zeros(0), np.zeros((0, 1)), 0, 0
-    return np.concatenate(Y), np.concatenate(X), n_runs, n_frames
+        blocks.append(((y - y.mean(0)).reshape(-1), (x - x.mean(0)).reshape(-1, x.shape[-1]), len(idx)))
+    return blocks
+
+
+def _stacked(blocks) -> tuple[np.ndarray, np.ndarray]:
+    """(Y, X) of these runs' blocks, stacked."""
+    if not blocks:
+        return np.zeros(0), np.zeros((0, 1))
+    return np.concatenate([b[0] for b in blocks]), np.concatenate([b[1] for b in blocks])
+
+
+def _bootstrap(blocks, fit, rng) -> np.ndarray:
+    """(BOOTSTRAPS, k): `fit`'s coefficients on the runs resampled with replacement — the fit's own uncertainty."""
+    out = []
+    for _ in range(BOOTSTRAPS):
+        Y, X = _stacked([blocks[k] for k in rng.integers(0, len(blocks), len(blocks))])
+        out.append(fit(X, Y)[0])
+    return np.array(out)
 
 
 def _explained(coef, X, Y, inl) -> float:
@@ -208,25 +237,63 @@ def _explained(coef, X, Y, inl) -> float:
     return float(1 - (1.4826 * np.median(np.abs(r - np.median(r))) / spread) ** 2)
 
 
-def _reference_tilts(theta) -> np.ndarray:
-    """The shape's gradient along altitude, %/°, over the reference grid — what two models are compared by."""
+def _tilt_grid(theta) -> np.ndarray:
+    """The shape's gradient along altitude, %/°, over the reference grid — what two models are
+    compared by. `theta` (N_CITY,) → (alt, az); (n, N_CITY) → (alt, az, n)."""
     alt, az = np.meshgrid(REFERENCE_ALT, REFERENCE_AZ, indexing="ij")
-    up = 100.0 * math.log(10.0) * (basis(alt + 0.5, az) @ np.asarray(theta))
-    down = 100.0 * math.log(10.0) * (basis(alt - 0.5, az) @ np.asarray(theta))
-    return up - down
+    return 100.0 * math.log(10.0) * ((basis(alt + 0.5, az) - basis(alt - 0.5, az)) @ np.asarray(theta, float).T)
 
 
-def _same_within_hysteresis(new: SiteModel, previous: SiteModel) -> bool:
-    d = _reference_tilts(new.theta) - _reference_tilts(previous.theta)
-    if float(np.sqrt(np.mean(d ** 2))) > HYSTERESIS_PCT_PER_DEG:
-        return False
-    old = dict((f, (c, m)) for f, c, m in previous.amplitudes)
+def _frame_weights(tilts) -> np.ndarray:
+    """Dark frames per reference-grid direction: where a change in the shape can reach a master."""
+    w = np.zeros((len(REFERENCE_ALT), len(REFERENCE_AZ)))
+    d_alt, d_az = REFERENCE_ALT[1] - REFERENCE_ALT[0], REFERENCE_AZ[1] - REFERENCE_AZ[0]
+    for t in tilts:
+        for j in range(t.n_frames):
+            i = round((t.alt[j] - REFERENCE_ALT[0]) / d_alt)
+            if t.dark[j] and 0 <= i < len(REFERENCE_ALT):
+                w[i, round(t.az[j] / d_az) % len(REFERENCE_AZ)] += 1
+    return w
+
+
+def _gate(new: SiteModel, previous: SiteModel | None, weights: np.ndarray, tilt_sigma: np.ndarray,
+          amp_sigma: dict) -> dict:
+    """Whether `new` replaces `previous`, and the numbers that decided it (the report's `gate`).
+    `tilt_sigma` is one fit's uncertainty per reference direction; two fits of nearly the same
+    runs differ by sqrt(2) of it. `amp_sigma`: per filter, (city, moon) uncertainties."""
+    if not weights.any():
+        weights = np.ones_like(weights)
+    w = weights / weights.sum()
+    noise = math.sqrt(2.0) * tilt_sigma
+    noise_rms = float(np.sqrt((w * noise ** 2).sum()))
+    if previous is None:
+        return {"previous": None, "kept": False, "noise": round(noise_rms, 3)}
+    d = np.abs(_tilt_grid(new.theta) - _tilt_grid(previous.theta))
+    change = float(np.sqrt((w * d ** 2).sum()))
+    sampled = weights > 0
+    local = float(d[sampled].max())
+    local_sig = float((d / np.maximum(noise, 1e-9))[sampled].max())
+    shape = ((change >= GATE_SIGNIFICANCE * noise_rms and change >= FRAME_GATE_PCT_PER_DEG)
+             or (local >= GATE_LOCAL_PCT_PER_DEG and local_sig >= GATE_LOCAL_SIGNIFICANCE))
+    old = {f: (c, m) for f, c, m in previous.amplitudes}
+    amps = set(old) != {f for f, _, _ in new.amplitudes}
     for f, c, m in new.amplitudes:
-        oc, om = old.get(f, (0.0, 0.0))
-        for a, b in ((c, oc), (m, om)):
-            if abs(a - b) > HYSTERESIS_AMPLITUDE * max(abs(a), abs(b), 1e-9) and abs(a - b) > 1e-3:
-                return False
-    return set(old) == {f for f, _, _ in new.amplitudes}
+        for a, b, s in zip((c, m), old.get(f, (0.0, 0.0)), amp_sigma.get(f, (0.0, 0.0))):
+            if (abs(a - b) > 1e-3 and abs(a - b) >= GATE_AMPLITUDE * max(abs(a), abs(b))
+                    and abs(a - b) >= GATE_SIGNIFICANCE * math.sqrt(2.0) * s):
+                amps = True
+    return {"previous": previous.content_hash, "kept": not (shape or amps), "change": round(change, 3),
+            "noise": round(noise_rms, 3), "local": round(local, 2), "local_significance": round(local_sig, 1),
+            "amplitudes_changed": amps}
+
+
+def sigma_grid(thetas: np.ndarray) -> list:
+    """The bootstrap spread of `brightness_grid`'s percent, rows by altitude, columns by azimuth —
+    how sure the map is in each direction. None where a refit ran away."""
+    alt, az = np.meshgrid(GRID_ALT, GRID_AZ, indexing="ij")
+    with np.errstate(over="ignore", invalid="ignore"):
+        s = (100.0 * city_shape(thetas.T, alt, az)).std(-1, ddof=1).round(1)
+    return [[float(v) if np.isfinite(v) else None for v in row] for row in s]
 
 
 MAX_SAMPLES = 2000
@@ -251,11 +318,14 @@ def fit_site_model(site: Site, tilts, previous: SiteModel | None) -> tuple[SiteM
               "moonlit_frames": sum(len(dark(t)) - len(moonless(t)) for t in tilts),
               "newest_run": max((t.date for t in tilts), default=""),
               "samples": _samples(tilts), "model": None, "reason": ""}
+    rng = np.random.default_rng(0)                   # per call: a refit's bootstrap is bit-identical
     # 1. the shape, in percent of the sky level, from moonless frames
-    Y, X, n_runs, n_frames = _within_run(tilts, moonless, lambda t, j: t.tilt_pct[j], lambda t, j: t.city_pct[j])
+    blocks = _run_blocks(tilts, moonless, lambda t, j: t.tilt_pct[j], lambda t, j: t.city_pct[j])
+    n_runs, n_frames = len(blocks), sum(b[2] for b in blocks)
     if n_runs < MIN_RUNS:
         report["reason"] = f"needs at least {MIN_RUNS} moonless dark runs; has {n_runs}"
         return None, report
+    Y, X = _stacked(blocks)
     theta, inl, _ = irls(X, Y)
     explained = _explained(theta, X, Y, inl)
     if explained < MIN_EXPLAINED:
@@ -272,34 +342,40 @@ def fit_site_model(site: Site, tilts, previous: SiteModel | None) -> tuple[SiteM
         report["reason"] = (f"the shape is {brightest:.3g}x brighter than the zenith inside the site's own "
                             f"coverage: a degenerate fit, not a sky")
         return None, report
+    thetas = _bootstrap(blocks, irls, rng)
     # 2. the amplitudes, in counts per second, per filter, from all dark frames
-    amplitudes = []
+    amplitudes, amp_sigma = [], {}
     for filt in sorted({t.filter for t in tilts}):
         of_filter = [t for t in tilts if t.filter == filt]
         moonlit = sum(len(dark(t)) - len(moonless(t)) for t in of_filter)
         with_moon = moonlit >= MIN_MOON_FRAMES
-        Ya, Xa, runs_a, _ = _within_run(
+        blocks_f = _run_blocks(
             of_filter, dark, lambda t, j: t.tilt_abs[j],
             lambda t, j: np.column_stack([np.asarray(t.city_pct[j]) @ theta / 100.0,
                                           np.asarray(t.moon[j])])[:, :2 if with_moon else 1])
-        if runs_a < 3:
+        if len(blocks_f) < 3:
             continue
+        Ya, Xa = _stacked(blocks_f)
         coef, _, _ = irls_bounded(Xa, Ya)
         amplitudes.append((filt, float(coef[0]), float(coef[1]) if with_moon else 0.0))
+        sigma = _bootstrap(blocks_f, irls_bounded, rng).std(0, ddof=1)
+        amp_sigma[filt] = (float(sigma[0]), float(sigma[1]) if with_moon else 0.0)
     # 3. how well the whole model does on moonlit frames
     amp = {f: (c, m) for f, c, m in amplitudes}
-    Ym, Xm, _, _ = _within_run(
+    Ym, Xm = _stacked(_run_blocks(
         [t for t in tilts if t.filter in amp], lambda t: [j for j in dark(t) if not t.moonless[j]],
         lambda t, j: t.tilt_abs[j],
         lambda t, j: amp[t.filter][0] * (np.asarray(t.city_pct[j]) @ theta / 100.0)[:, None]
-        + amp[t.filter][1] * np.asarray(t.moon[j])[:, None])
+        + amp[t.filter][1] * np.asarray(t.moon[j])[:, None]))
     explained_moonlit = _explained(np.ones(1), Xm, Ym, np.ones(len(Ym), bool)) if len(Ym) else 0.0
     record = dict(n_runs=n_runs, n_frames=n_frames, explained=explained,
                   explained_moonlit=explained_moonlit, newest_run=report["newest_run"], coverage=coverage)
     model = SiteModel.of(site, theta, amplitudes, **record)
-    if previous is not None and _same_within_hysteresis(model, previous):
+    # 4. the same sky, or a different one: the gate, against the fit's own uncertainty where frames are
+    gate = _gate(model, previous, _frame_weights(tilts), _tilt_grid(thetas).std(-1, ddof=1), amp_sigma)
+    if gate["kept"]:
         model = replace(previous, **record)
-    report["model"] = model.summary()
+    report.update(model=model.summary(), gate=gate, sigma=sigma_grid(thetas))
     return model, report
 
 
@@ -363,10 +439,10 @@ def frame_surface(model: SiteModel, header: dict, wcs_header: dict, shape: tuple
     return full.astype(np.float32), tilt, regime
 
 
-def brightness_grid(model: SiteModel, alts=np.arange(15.0, 91.0, 5.0), azs=np.arange(0.0, 360.0, 10.0)) -> list:
-    """Percent brighter than the zenith, rows by altitude, columns by azimuth — the panel's map.
+def brightness_grid(model: SiteModel) -> list:
+    """Percent brighter than the zenith over GRID_ALT x GRID_AZ — the panel's map.
     None outside the model's coverage, where the shape is not trusted (`frame_surface` corrects nothing there)."""
-    alt, az = np.meshgrid(alts, azs, indexing="ij")
+    alt, az = np.meshgrid(GRID_ALT, GRID_AZ, indexing="ij")
     pct = (100.0 * (city_shape(model.theta, alt, az) - 1.0)).round(1)
     return [[float(p) if np.isfinite(p) and (not model.coverage or covered(model.coverage, a, z)) else None
              for p, a, z in zip(prow, arow, zrow)] for prow, arow, zrow in zip(pct, alt, az)]

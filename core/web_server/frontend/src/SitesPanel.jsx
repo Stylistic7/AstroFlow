@@ -38,24 +38,37 @@ function wedge(c, R, alt, az) {
   return `M${x0},${y0} A${ro},${ro} 0 0 0 ${x1},${y1} L${x2},${y2} A${ri},${ri} 0 0 1 ${x3},${y3} Z`;
 }
 
-function DomeMap({ grid, samples, size = 340 }) {
+function DomeMap({ grid, sigma, samples, size = 340 }) {
   const theme = useTheme();
   const c = size / 2;
   const R = c - 18;
   const values = grid.flat().filter((v) => v > 0).sort((a, b) => a - b);
   const vmax = Math.max(10, values[Math.floor(values.length * 0.95)] || 0);
   const ink = theme.palette.text.secondary;
+  // The fit's own spread (bootstrap) in a direction; unsure when it is more than half the value there.
+  const spread = (i, j) => (sigma && grid[i][j] !== null && sigma[i][j] !== null ? sigma[i][j] : null);
+  const unsure = (i, j) => spread(i, j) !== null && spread(i, j) > Math.max(2.5, Math.abs(grid[i][j]) / 2);
   return (
     <Box>
       <svg width={size} height={size} style={{ display: 'block' }}>
+        <defs>
+          <pattern id="unsure" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <line x1="0" y1="0" x2="0" y2="4" stroke={theme.palette.background.paper} strokeWidth="1.2" />
+          </pattern>
+        </defs>
         {ALTS.map((alt, i) => AZS.map((az, j) => {
           const v = grid[i][j];                       // null: outside the model's coverage — no frames were shot there
+          const s = spread(i, j);
+          const title = v === null ? 'no frames here' : `${v >= 0 ? '+' : ''}${v.toFixed(0)}% vs the zenith${s === null ? '' : ` ± ${s.toFixed(0)}`}`;
           return (
-            <Tooltip key={`${i}-${j}`} title={`alt ${alt}° az ${az}°: ${v === null ? 'no frames here' : `${v >= 0 ? '+' : ''}${v.toFixed(0)}% vs the zenith`}`}>
+            <Tooltip key={`${i}-${j}`} title={`alt ${alt}° az ${az}°: ${title}`}>
               <path d={wedge(c, R, alt, az)} fill={v === null ? theme.palette.action.disabledBackground : ramp(v, vmax)} stroke="none" />
             </Tooltip>
           );
         }))}
+        {ALTS.map((alt, i) => AZS.map((az, j) => unsure(i, j) && (
+          <path key={`u${i}-${j}`} d={wedge(c, R, alt, az)} fill="url(#unsure)" stroke="none" pointerEvents="none" />
+        )))}
         {[30, 60].map((alt) => (
           <circle key={alt} cx={c} cy={c} r={R * (90 - alt) / 75} fill="none" stroke={ink} strokeOpacity={0.5} strokeDasharray="3 3" />
         ))}
@@ -72,7 +85,7 @@ function DomeMap({ grid, samples, size = 340 }) {
       </svg>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
         <Box sx={{ width: 120, height: 10, borderRadius: 1, background: `linear-gradient(90deg, ${ramp(0, 1)}, ${ramp(0.5, 1)}, ${ramp(1, 1)})` }} />
-        <Typography variant="caption" color="text.secondary">0 → {vmax.toFixed(0)}% brighter than the zenith · grey: no frames · dots: frames (hollow: Moon up)</Typography>
+        <Typography variant="caption" color="text.secondary">0 → {vmax.toFixed(0)}% brighter than the zenith · grey: no frames · hatched: unsure, the fit's spread is over half the value · dots: frames (hollow: Moon up)</Typography>
       </Box>
     </Box>
   );
@@ -88,6 +101,11 @@ function Numbers({ site }) {
     rows.push(['Model', m.hash]);
     rows.push(['Fitted on', `${m.runs} moonless runs, ${m.frames} frames`]);
     rows.push(['Explains', `${(100 * m.explained).toFixed(0)}% of the tilt changes within moonless runs · ${(100 * m.explained_moonlit).toFixed(0)}% within moonlit ones`]);
+    const g = site.gate;                     // the last refit against the fit's own spread, where the frames are
+    if (g) {
+      rows.push(['Last refit', g.previous === null ? `first model · spread ${g.noise.toFixed(2)} %/°`
+        : `${g.kept ? 'kept' : 'replaced'} ${g.previous.slice(0, 8)} · change ${g.change.toFixed(2)} vs spread ${g.noise.toFixed(2)} %/° · largest ${g.local.toFixed(1)} %/° at ${g.local_significance.toFixed(0)}σ${g.amplitudes_changed ? ' · amplitudes changed' : ''}`]);
+    }
     for (const [filt, a] of Object.entries(m.amplitudes || {})) {
       rows.push([`${filt} amplitudes`, `city ${a.city.toFixed(3)} · moonlight ${a.moon.toFixed(3)} counts/s${a.moon === 0 ? ' (too few moonlit runs: not Moon-corrected)' : ''}`]);
     }
@@ -143,7 +161,7 @@ export default function SitesPanel() {
         <PanelSection key={site.key} title={`${site.lat.toFixed(2)}°, ${site.lon.toFixed(2)}°`}
           meta={site.model ? <Chip size="small" color="success" label="model" /> : <Chip size="small" label="no model" />}>
           <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-            {site.grid ? <DomeMap grid={site.grid} samples={site.samples} /> : (
+            {site.grid ? <DomeMap grid={site.grid} sigma={site.sigma} samples={site.samples} /> : (
               <Typography color="text.secondary" sx={{ maxWidth: 340 }}>No model yet: {site.reason || 'not enough data'}.</Typography>
             )}
             <Numbers site={site} />

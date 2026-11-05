@@ -55,7 +55,7 @@ def fit_site(site: Site, previous: SiteModel | None, code: str, *tilts: RunTilts
     `code` is MODEL_CODE, in the key only."""
     model, report = fit_site_model(site, [t for t in tilts if t.n_frames], previous)
     log.info("site model fitted", site=site.key, model=model.content_hash if model else None,
-             reason=report.get("reason"), runs=report["runs"])
+             reason=report.get("reason"), runs=report["runs"], gate=report.get("gate"))
     return SiteModels.of({site.key: model} if model is not None else {}, (report,))
 
 
