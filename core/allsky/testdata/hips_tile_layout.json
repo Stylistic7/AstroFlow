@@ -1,0 +1,79 @@
+{
+ "hips": "CDS/P/unWISE/W1",
+ "tile_width": 512,
+ "note": "argmax (col,row) of the FITS tile holding each star; the writer is Aladin/Hipsgen",
+ "stars": [
+  {
+   "star": "Spica",
+   "ra": 201.29824736,
+   "dec": -11.16131949,
+   "order": 6,
+   "npix": 25659,
+   "col": 287,
+   "row": 72
+  },
+  {
+   "star": "Deneb",
+   "ra": 310.35797975,
+   "dec": 45.28033881,
+   "order": 6,
+   "npix": 14711,
+   "col": 130,
+   "row": 461
+  },
+  {
+   "star": "Regulus",
+   "ra": 152.09296244,
+   "dec": 11.96720878,
+   "order": 6,
+   "npix": 27574,
+   "col": 406,
+   "row": 458
+  },
+  {
+   "star": "Pollux",
+   "ra": 116.32895777,
+   "dec": 28.02619889,
+   "order": 6,
+   "npix": 6219,
+   "col": 430,
+   "row": 368
+  },
+  {
+   "star": "Fomalhaut",
+   "ra": 344.41269272,
+   "dec": -29.62223703,
+   "order": 6,
+   "npix": 46939,
+   "col": 181,
+   "row": 417
+  },
+  {
+   "star": "Vega",
+   "ra": 279.23473479,
+   "dec": 38.78368896,
+   "order": 6,
+   "npix": 14906,
+   "col": 255,
+   "row": 181
+  },
+  {
+   "star": "Altair",
+   "ra": 297.6958273,
+   "dec": 8.8683212,
+   "order": 6,
+   "npix": 30543,
+   "col": 362,
+   "row": 456
+  },
+  {
+   "star": "Aldebaran",
+   "ra": 68.98016279,
+   "dec": 16.50930235,
+   "order": 6,
+   "npix": 23540,
+   "col": 309,
+   "row": 161
+  }
+ ]
+}

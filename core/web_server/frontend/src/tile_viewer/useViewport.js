@@ -17,28 +17,15 @@
 import { useEffect, useRef } from 'react';
 
 
-function makeViewportState(initial = {}) {
-    const state = {
-        tx: initial.tx ?? 0,
-        ty: initial.ty ?? 0,
-        scale: initial.scale ?? 1,
-        screenW: initial.screenW ?? 0,
-        screenH: initial.screenH ?? 0,
-        imageW: initial.imageW ?? 0,
-        imageH: initial.imageH ?? 0,
-        // Caller-controlled zoom ceiling. 1.0 = stop at 1:1
-        // source-pixel-per-screen-pixel (default — past this the
-        // displayed image just gets blurry without revealing more
-        // detail). Set to a larger value (e.g. 16) to allow over-zoom.
-        maxScale: initial.maxScale ?? 1.0,
-    };
+/** rAF-coalesced observable state: `set` merges a patch and every
+ * subscriber sees the state once, on the next animation tick. Synchronous
+ * fan-out had the SVG / DOM overlays jumping ahead of the canvas paint
+ * (which coalesces via its own rAF), producing a visible "slippery"
+ * mismatch on zoom. With this pattern, every subscriber — canvas renderer,
+ * SVG polygons, DOM text — observes the same state on the same tick. Shared
+ * with the sky viewer's viewport (sky/useSkyViewport.js). */
+export function makeObservable(state) {
     const subscribers = new Set();
-    // rAF-coalesced subscriber notification. Synchronous fan-out had
-    // the SVG / DOM overlays jumping ahead of the canvas paint (which
-    // coalesces via its own rAF), producing a visible "slippery"
-    // mismatch on zoom. With this pattern, every subscriber — canvas
-    // renderer, SVG polygons, DOM text — observes the same state on
-    // the same animation tick.
     let rafScheduled = false;
     return {
         get: () => state,
@@ -56,6 +43,24 @@ function makeViewportState(initial = {}) {
             return () => subscribers.delete(fn);
         },
     };
+}
+
+
+function makeViewportState(initial = {}) {
+    return makeObservable({
+        tx: initial.tx ?? 0,
+        ty: initial.ty ?? 0,
+        scale: initial.scale ?? 1,
+        screenW: initial.screenW ?? 0,
+        screenH: initial.screenH ?? 0,
+        imageW: initial.imageW ?? 0,
+        imageH: initial.imageH ?? 0,
+        // Caller-controlled zoom ceiling. 1.0 = stop at 1:1
+        // source-pixel-per-screen-pixel (default — past this the
+        // displayed image just gets blurry without revealing more
+        // detail). Set to a larger value (e.g. 16) to allow over-zoom.
+        maxScale: initial.maxScale ?? 1.0,
+    });
 }
 
 

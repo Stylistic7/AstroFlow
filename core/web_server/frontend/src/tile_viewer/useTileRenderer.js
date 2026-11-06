@@ -31,6 +31,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { buildFinishShader, MAX_INPUTS } from './generic_finish_shader.js';
+import { FINISH_PARAMS_BYTES, compileFinishPipeline, initWebGpu, packFinishParams } from './gpu_common.js';
 import { fetchTileInputs } from './tile_loader.js';
 
 
@@ -49,10 +50,6 @@ const globalsLayoutEntries = (filterable) => [
 
 // Globals uniform: peakBrightness, padded to the 16-byte uniform struct size.
 const GLOBALS_BYTES = 16;
-// DisplayParams uniform buffer: fixed 256 B (64 f32) — comfortably larger
-// than any finish's param count. Each finish's DisplayParams struct is a
-// prefix; the shader reads only its own fields, the rest is slack.
-const FINISH_PARAMS_BYTES = 256;
 
 // Group 1 (per tile): the TileRect uniform + MAX_INPUTS texture slots, one
 // per finish input (src0..src3), dummy-bound when a finish declares fewer
@@ -177,16 +174,6 @@ function makeRenderer(stateRef) {
         device.queue.submit([encoder.finish()]);
     }
 
-    /** Pack a finish's param values into the DisplayParams buffer layout.
-     * `values` is one number per Python `Param`, in declared order — the
-     * exact order the served `DisplayParams` struct fields sit in, so index
-     * i of the array is field i of the struct. */
-    function packFinishParams(values) {
-        const out = new Float32Array(FINISH_PARAMS_BYTES / 4);
-        for (let i = 0; i < values.length && i < out.length; i++) out[i] = values[i];
-        return out;
-    }
-
     /** Enter/refresh 3×3 taste-grid mode. `cellParams` = 9 finish-param
      * arrays (setGlobals' `finishParams` shape); cell 4 is the unperturbed
      * centre. Lazily builds 9 DisplayParams buffers + bind groups that share
@@ -237,30 +224,8 @@ function makeRenderer(stateRef) {
         if (!s) return;
         const key = `${monoMask.join(',')} ${finishWgsl}`;
         if (key !== s.shaderKey) {
-            const code = buildFinishShader(finishWgsl, monoMask);
-            const module = s.device.createShaderModule({ code });
-            // WebGPU reports shader/layout problems ASYNCHRONOUSLY: without a
-            // scope the pipeline comes back "valid" and simply draws nothing,
-            // which reads as a black canvas with no clue anywhere in the UI.
-            // Capture and report — a user-authored finish that emits bad WGSL
-            // must say why.
-            s.device.pushErrorScope('validation');
-            s.pipeline = s.device.createRenderPipeline({
-                layout: s.pipelineLayout,
-                vertex: { module, entryPoint: 'vs_main' },
-                fragment: { module, entryPoint: 'fs_main', targets: [{ format: s.format }] },
-                primitive: { topology: 'triangle-strip' },
-            });
-            s.device.popErrorScope().then((err) => {
-                if (err) console.error('### finish shader rejected:', err.message);
-            });
-            module.getCompilationInfo?.().then((info) => {
-                for (const m of info.messages || []) {
-                    if (m.type === 'error') {
-                        console.error(`### finish WGSL ${m.lineNum}:${m.linePos} ${m.message}`);
-                    }
-                }
-            });
+            s.pipeline = compileFinishPipeline(
+                s.device, s.pipelineLayout, buildFinishShader(finishWgsl, monoMask), s.format);
             s.shaderKey = key;
         }
         redraw();
@@ -520,31 +485,9 @@ export function useTileRenderer({ canvasRef }) {
     useEffect(() => {
         let cancelled = false;
         (async () => {
-            if (!navigator.gpu) {
-                setError('WebGPU not available');
-                return;
-            }
-            const adapter = await navigator.gpu.requestAdapter();
-            if (!adapter) { setError('No WebGPU adapter'); return; }
-
-            const filterable = adapter.features.has('float32-filterable');
+            const { device, ctx, format, filterable } = await initWebGpu(canvasRef.current);
             setSmoothing(filterable);
-            const device = await adapter.requestDevice({
-                requiredFeatures: filterable ? ['float32-filterable'] : [],
-            });
             if (cancelled) return;
-
-            const canvas = canvasRef.current;
-            const ctx = canvas.getContext('webgpu');
-            const format = 'rgba16float';
-            ctx.configure({
-                device,
-                format,
-                colorSpace: 'srgb',
-                usage: GPUTextureUsage.RENDER_ATTACHMENT,
-                toneMapping: { mode: 'extended' },
-                alphaMode: 'opaque',
-            });
 
             const sampler = device.createSampler({
                 magFilter: filterable ? 'linear' : 'nearest',

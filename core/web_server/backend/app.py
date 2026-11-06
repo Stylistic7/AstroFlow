@@ -45,6 +45,7 @@ from web_server.backend.router import stateful_route
 from web_server.backend.planner import planner_bp
 from web_server.backend.storage import storage_bp
 from web_server.backend.tools_api import tools_bp
+from web_server.backend.healpix import healpix_bp
 
 debug = False
 STREAM_PORT = 8001
@@ -102,6 +103,7 @@ def _ray_not_up(_e):
 
 app.register_blueprint(files_bp)
 app.register_blueprint(tiles_bp)
+app.register_blueprint(healpix_bp)
 app.register_blueprint(metadata_bp)
 app.register_blueprint(settings_bp)
 app.register_blueprint(dust_bp)
