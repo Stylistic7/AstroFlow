@@ -852,7 +852,9 @@ def run_graph(
             if now > (last_status_time + status_interval):
                 if status_fn:
                     status_fn(root.get_status())
-                _fire_graph_updates(root)
+                rendered = _fire_graph_updates(root)
+                if time.time() - now > 1.0:  # the dispatch loop admits nothing meanwhile
+                    print(f"### workflow graphs: {rendered} re-rendered in {time.time() - now:.1f}s")
                 last_status_time = now
 
         # Inner loop exited with ready_cache and pending both empty.
@@ -1020,17 +1022,27 @@ def _report_disk_bloat(rt: "GraphRuntime") -> None:
         pass
 
 
-def _fire_graph_updates(rt: GraphRuntime) -> None:
-    """Fire graph_update_fn callbacks on all runtimes in the tree.
+def _fire_graph_updates(rt: GraphRuntime) -> int:
+    """Fire graph_update_fn on every runtime in the tree whose state changed
+    since its last render (`GraphRuntime.version`); how many fired.
 
     Walks both active and completed children — a fast-completing
     subgraph can be moved to `_completed_children` between periodic
     status ticks, and we still want its graph_update_fn to fire one
-    last time so its UI representation reflects the final state.
+    last time so its UI representation reflects the final state. Only
+    the changed ones render: re-rendering all of them every tick (every
+    cart pipeline, finished ones included, a ContextActor round trip per
+    node) took longer than the tick, and the dispatch loop it runs in
+    spent the pass rendering (2026-11-06: three py-spy dumps of the
+    StateActor, all three in here, with hundreds of nodes ready and the
+    Studio mostly idle).
     """
-    if rt.graph_update_fn is not None:
+    rendered = 0
+    if rt.graph_update_fn is not None and rt.rendered_version != rt.version:
+        version = rt.version
         rt.graph_update_fn(rt)
-    for child in rt._children.values():
-        _fire_graph_updates(child)
-    for child in rt._completed_children.values():
-        _fire_graph_updates(child)
+        rt.rendered_version = version
+        rendered += 1
+    for child in (*rt._children.values(), *rt._completed_children.values()):
+        rendered += _fire_graph_updates(child)
+    return rendered

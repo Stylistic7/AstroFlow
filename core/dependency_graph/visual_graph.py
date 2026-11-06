@@ -242,14 +242,14 @@ def _filter_membership(vg: VisualGraph) -> dict[VisualNode, set[str]]:
     return membership
 
 
-def _resolved_filename(rt, node: Node) -> str | None:
+def _resolved_filename(rt, node: Node, output_dir) -> str | None:
     """Resolve the on-disk output filename for a Node, if known by
     the runtime. Used by the frontend's `imageUrl` field."""
     try:
         fragment = rt.filenames.get(node)
         if fragment is None:
             return None
-        resolved = fragment.resolve_at(context.output_dir)
+        resolved = fragment.resolve_at(output_dir)
         if os.path.exists(resolved):
             return os.fspath(resolved)
     except (AttributeError, KeyError, TypeError):
@@ -292,13 +292,11 @@ def gather_state_from_visual(
     # Bake each node's UNCONDITIONAL expected output path (deterministic,
     # NOT existence-gated like `imageUrl`) so the serve layer can `os.path.
     # exists` it per node — this is what lets completed prior-run nodes
-    # render as done regardless of the current session. Lazy import + guard
-    # to avoid an import cycle / never break snapshot building.
-    try:
-        from dependency_graph.trace_paths import resolve_output_paths
-        path_map = resolve_output_paths(rt.graph)
-    except Exception:
-        path_map = {}
+    # render as done regardless of the current session. Resolved once per
+    # runtime (`GraphRuntime.expected_paths`), as is the output dir per render:
+    # each read is a ContextActor round trip.
+    path_map = rt.expected_paths
+    output_dir = context.output_dir
     meta: dict[str, dict] = {}
 
     for vn in vg:
@@ -308,7 +306,7 @@ def gather_state_from_visual(
             "state": _state_string(rt, node),
             "filters": sorted(filters_by_vn.get(vn, ())),
             "options": {
-                "imageUrl": f"/api/open_image/{_resolved_filename(rt, node)}",
+                "imageUrl": f"/api/open_image/{_resolved_filename(rt, node, output_dir)}",
             },
         }
         expected = path_map.get(node)

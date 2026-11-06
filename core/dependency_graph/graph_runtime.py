@@ -16,6 +16,7 @@ in run_graph(). It manages a tree of subgraphs internally:
 """
 from __future__ import annotations
 
+import functools
 import inspect
 import time
 from collections import Counter, defaultdict
@@ -197,10 +198,34 @@ class GraphRuntime:
         # parent's — a starred pipeline's nested scopes are starred too.
         self.priority: int = getattr(graph, "priority", 0) or (parent.priority if parent is not None else 0)
 
+        # Bumped on every state change here or in any descendant (`_touch`):
+        # the workflow-graph UI re-renders a runtime only when its version
+        # moved since `rendered_version` (`_fire_graph_updates`).
+        self.version: int = 0
+        self.rendered_version: int = -1
+
     @property
     def graph(self) -> dict[Node, list[Node]]:
         """The dependency graph dict. Used by workflow_graph_adapter."""
         return self._graph
+
+    @functools.cached_property
+    def expected_paths(self) -> dict[Node, str]:
+        """Every node's deterministic output path (`resolve_output_paths`),
+        for the workflow-graph UI. The graph never changes, so once: each path
+        costs a ContextActor round trip, and re-resolving them on every status
+        tick kept the dispatch loop busy rendering instead of dispatching."""
+        from dependency_graph.trace_paths import resolve_output_paths
+        try:
+            return resolve_output_paths(self._graph)
+        except Exception:
+            return {}
+
+    def _touch(self) -> None:
+        rt = self
+        while rt is not None:
+            rt.version += 1
+            rt = rt.parent
 
     @property
     def _root(self) -> "GraphRuntime":
@@ -229,6 +254,7 @@ class GraphRuntime:
         self._started.add(node)
         self._ready.discard(node)
         self._placement[node] = (time.time(), placed_on)
+        self._touch()
 
     def started(self, node: Node) -> bool:
         return node in self._started
@@ -296,6 +322,7 @@ class GraphRuntime:
             if pruned:
                 child = GraphRuntime(pruned, parent=self, parent_node=node)
                 self._children[node] = child
+                self._touch()
             else:
                 # Fully satisfied — every deliverable is already on disk, so
                 # there is no work to spin up. An empty subgraph would trip the
@@ -353,6 +380,7 @@ class GraphRuntime:
         self.results[node] = result
         self.logs[node] = logs
         self._done.add(node)
+        self._touch()
         self._done_per_fn[node.task._function.__name__] += 1
         self._ready.discard(node)
 
