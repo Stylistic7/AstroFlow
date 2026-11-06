@@ -2,7 +2,8 @@
  * The sky page: a whole-sky HEALPix map through a stock finish on the HDR
  * canvas — the tile viewer's finish, its seeding and its HDR controls, over
  * a sphere instead of a flat image. Route: /sky/:name[?finish=H]; the map is
- * ~/AstroFlow/healpix/<name>.fits (allsky/maps.py).
+ * ~/AstroFlow/healpix/<name>.fits or <name>.hips (allsky/maps.py), streamed
+ * as tiles (tile_loader.js) and always shown in Galactic coordinates.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
@@ -14,15 +15,29 @@ import Typography from '@mui/material/Typography';
 import HdrControls, { useHdrCapability } from '../HdrControls.jsx';
 import FinishControls from '../tile_viewer/FinishControls.jsx';
 import { stfSeed } from '../tile_viewer/finish_seed.js';
-import { useSkyRenderer } from './useSkyRenderer.js';
+import { ATLAS_SLOTS, useSkyRenderer } from './useSkyRenderer.js';
 import { useSkyViewport } from './useSkyViewport.js';
-import { lonlatAt } from './sky_projection.js';
+import { lonlatAt, skyAt } from './sky_projection.js';
+import { galacticOf, radecOf } from './frames.js';
+import { makeTileLoader } from './tile_loader.js';
+
+
+/** The opening view from the URL: `l`/`b` or `ra`/`dec` (degrees) and `fov`
+ * (degrees across the screen); null = fit the whole sky. */
+function initialViewOf(search) {
+    const num = (k) => parseFloat(search.get(k));
+    let lon = num('l'), lat = num('b');
+    if (Number.isFinite(num('ra')) && Number.isFinite(num('dec'))) [lon, lat] = galacticOf(num('ra'), num('dec'));
+    if (!Number.isFinite(lon) || !Number.isFinite(lat)) return null;
+    return { lon0: lon, lat0: lat, fov: Number.isFinite(num('fov')) ? num('fov') : 10 };
+}
 
 
 export default function HealpixViewer() {
     const { name } = useParams();
     const [search, setSearch] = useSearchParams();
     const finishName = search.get('finish') || 'H';
+    const [initialView] = useState(() => initialViewOf(search));
 
     const containerRef = useRef(null);
     const canvasRef = useRef(null);
@@ -49,27 +64,43 @@ export default function HealpixViewer() {
         return () => obs.disconnect();
     }, []);
 
-    // The map's geometry, the finish (WGSL + params) and the stats it seeds from.
+    // The map's tiling, frame and gauge, the finish (WGSL + params) and the
+    // stats it seeds from. Polled, because a local tree grows while the
+    // combiner runs: a new version means a fresh atlas and fresh tile URLs.
     useEffect(() => {
         let cancelled = false;
         setError(null);
-        fetch(`/api/healpix/${encodeURIComponent(name)}/metadata?finish=${encodeURIComponent(finishName)}`)
+        const load = () => fetch(`/api/healpix/${encodeURIComponent(name)}/metadata?finish=${encodeURIComponent(finishName)}`)
             .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`no map "${name}" (${r.status})`))))
-            .then((m) => { if (!cancelled) setMeta(m); })
+            .then((m) => { if (!cancelled) setMeta((prev) => (prev && prev.mtime === m.mtime && prev.finish.finish_hash === m.finish.finish_hash ? prev : m)); })
             .catch((e) => { if (!cancelled) setError(e.message); });
-        return () => { cancelled = true; };
+        load();
+        const timer = setInterval(load, 30000);
+        return () => { cancelled = true; clearInterval(timer); };
     }, [name, finishName]);
 
-    // The faces: one fetch per map file, uploaded with their mips.
+    const dims = useMemo(() => ({ screenW: size.width, screenH: size.height }), [size]);
+    const viewportRef = useRef(null);
+    const viewport = useSkyViewport({
+        targetRef: canvasRef, dims, nside: meta?.nside, initial: initialView,
+        onCursor: (x, y) => {
+            const s = viewportRef.current.get();
+            const v = x == null ? null : skyAt(x, y, s);
+            setCursor(v && { gal: lonlatAt(x, y, s), eq: radecOf(v) });
+        },
+    });
+    viewportRef.current = viewport;
+
+    // The atlas and the loader that streams tiles into it: one per map file.
     const mapKey = meta ? `${meta.name}|${meta.mtime}` : null;
+    const loaderRef = useRef(null);
     useEffect(() => {
         if (!renderer.isReady || !meta) return undefined;
-        const ctl = new AbortController();
-        fetch(`/api/healpix/${encodeURIComponent(meta.name)}/faces.f32?v=${meta.mtime}`, { signal: ctl.signal })
-            .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`faces ${r.status}`))))
-            .then((buf) => renderer.setMap({ nside: meta.nside, faces: new Float32Array(buf) }))
-            .catch((e) => { if (e?.name !== 'AbortError') setError(e.message); });
-        return () => ctl.abort();
+        renderer.setMap({ tileWidth: meta.tileWidth, maxOrder: meta.maxOrder, gauge: meta.gauge, frame: meta.frame });
+        const loader = makeTileLoader({ renderer, meta, slots: ATLAS_SLOTS });
+        loaderRef.current = loader;
+        loader.update(viewport.get(), window.devicePixelRatio || 1);
+        return () => { loader.dispose(); loaderRef.current = null; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [renderer, mapKey]);
 
@@ -109,37 +140,32 @@ export default function HealpixViewer() {
         });
     }, [renderer, activeFinish, effectivePeak, values]);
 
-    const dims = useMemo(() => ({ screenW: size.width, screenH: size.height }), [size]);
-    const viewportRef = useRef(null);
-    const viewport = useSkyViewport({
-        targetRef: canvasRef, dims, nside: meta?.nside,
-        onCursor: (x, y) => setCursor(x == null ? null : lonlatAt(x, y, viewportRef.current.get())),
-    });
-    viewportRef.current = viewport;
-
     useEffect(() => {
         if (!renderer.isReady || !viewport) return undefined;
         const dpr = window.devicePixelRatio || 1;
-        const apply = (s) => renderer.setView({ ...s, dpr });
+        const apply = (s) => {
+            renderer.setView({ ...s, dpr });
+            loaderRef.current?.update(s, dpr);
+        };
         const unsub = viewport.subscribe(apply);
         apply(viewport.get());
         return unsub;
     }, [renderer, viewport]);
 
     const dpr = window.devicePixelRatio || 1;
-    const frameLabel = meta?.frame === 'galactic' ? ['l', 'b'] : ['RA', 'Dec'];
+    const label = meta
+        ? `${meta.name} — ${meta.tiles ? 'HiPS' : 'map'}, nside ${meta.nside}, ${meta.frame} cells${meta.unit ? `, ${meta.unit}` : ''}`
+        : name;
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', width: '100vw', height: '100vh',
                    backgroundColor: '#000', color: '#fff' }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, px: 2, py: 0.75,
                        borderBottom: '1px solid rgba(255,255,255,0.12)', flexWrap: 'wrap' }}>
-                <Typography variant="subtitle2">
-                    {meta ? `${meta.name} — nside ${meta.nside}, ${meta.frame}${meta.unit ? `, ${meta.unit}` : ''}` : name}
-                </Typography>
+                <Typography variant="subtitle2">{label}</Typography>
                 {meta?.finishes && (
                     <Select
                         size="small" value={finishName} variant="standard"
-                        onChange={(e) => setSearch({ finish: e.target.value })}
+                        onChange={(e) => setSearch((prev) => { prev.set('finish', e.target.value); return prev; })}
                         sx={{ color: '#fff', fontSize: 13, '& .MuiSvgIcon-root': { color: '#fff' } }}
                     >
                         {meta.finishes.map((f) => <MenuItem key={f} value={f}>{f}</MenuItem>)}
@@ -153,7 +179,8 @@ export default function HealpixViewer() {
                     setPeakBrightness={setPeakBrightness}
                 />
                 <Typography variant="caption" sx={{ ml: 'auto', opacity: 0.75, fontVariantNumeric: 'tabular-nums' }}>
-                    {cursor ? `${frameLabel[0]} ${cursor[0].toFixed(3)}°  ${frameLabel[1]} ${cursor[1].toFixed(3)}°` : ''}
+                    {cursor ? `l ${cursor.gal[0].toFixed(3)}°  b ${cursor.gal[1].toFixed(3)}°    `
+                              + `RA ${cursor.eq[0].toFixed(3)}°  Dec ${cursor.eq[1].toFixed(3)}°` : ''}
                 </Typography>
                 {(error || renderer.error) && (
                     <Typography variant="caption" sx={{ color: '#f55' }}>{error || renderer.error}</Typography>

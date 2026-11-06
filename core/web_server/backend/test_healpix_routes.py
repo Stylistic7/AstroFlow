@@ -46,10 +46,13 @@ def test_metadata_carries_the_finish_and_the_seed_stats(client):
     assert client.get("/api/healpix/nope/metadata").status_code == 404
 
 
-def test_faces_are_twelve_float32_rasters(client):
-    r = client.get("/api/healpix/dust/faces.f32?v=1")
+def test_tiles_are_float32_rasters_in_file_units(client):
+    d = client.get("/api/healpix/dust/metadata").get_json()
+    assert (d["tileWidth"], d["maxOrder"], d["tiles"]) == (4, 0, "")
+    r = client.get("/api/healpix/dust/tile/0/5.f32?v=1")
     assert r.status_code == 200
-    assert r.headers["X-Healpix-Nside"] == "4"
     assert "immutable" in r.headers["Cache-Control"]
-    faces = np.frombuffer(r.data, "<f4").reshape(12, 4, 4)
-    assert faces.min() > 0 and np.isfinite(faces).all()
+    tile = np.frombuffer(r.data, "<f4").reshape(4, 4)
+    assert tile.min() >= 1.0 and tile.max() <= 2.0       # file units, not the gauge's
+    assert client.get("/api/healpix/dust/tile/1/0.f32").status_code == 404
+    assert client.get("/api/healpix/dust/tile/0/12.f32").status_code == 404

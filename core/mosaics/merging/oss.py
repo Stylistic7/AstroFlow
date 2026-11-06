@@ -183,18 +183,8 @@ def _solve_level_offsets(n: int, pairs: list[tuple]) -> np.ndarray:
     accumulate. Solved directly (24 unknowns is microseconds) — NOT via
     mBgModel: its iterative half-strength relaxation left ~half the
     correction unconverged on the same measured pairs (2026-08-31)."""
-    if n < 2 or not pairs:
-        return np.zeros(n)
-    A = np.zeros((len(pairs) + 1, n))
-    b = np.zeros(len(pairs) + 1)
-    for r, (i, j, dij, npix) in enumerate(pairs):
-        w = np.sqrt(npix)
-        A[r, i] = w
-        A[r, j] = -w
-        b[r] = w * dij
-    A[-1, :] = 1.0  # gauge: mean offset zero
-    o, *_ = np.linalg.lstsq(A, b, rcond=None)
-    return o
+    from mosaics.merging.level_solve import solve_level_offsets
+    return solve_level_offsets(n, pairs)
 
 
 def _apply_level_offsets(crops, masks, offsets, pedestal) -> "float | None":

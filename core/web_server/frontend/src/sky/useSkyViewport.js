@@ -102,8 +102,9 @@ function attach(el, view, onCursor, onInteract) {
  * on pointer movement (null, null on leave). Every screen size fits the
  * whole sky until the first wheel or drag — the finish sidebar mounts after
  * the first fit and narrows the canvas, and a fit to the wider canvas
- * cropped the ellipse on both sides. */
-export function useSkyViewport({ targetRef, dims, nside, onCursor }) {
+ * cropped the ellipse on both sides. `initial` = { lon0, lat0, fov } (display
+ * frame, degrees; fov = the screen's width) opens on that view instead. */
+export function useSkyViewport({ targetRef, dims, nside, onCursor, initial = null }) {
     const ref = useRef(null);
     if (!ref.current) {
         ref.current = makeObservable({
@@ -119,8 +120,17 @@ export function useSkyViewport({ targetRef, dims, nside, onCursor }) {
         if (!screenW || !screenH) return;
         const fit = fitPpu(screenW, screenH);
         const patch = { screenW, screenH, minPpu: fit * 0.5 };
-        if (!touched.current) patch.ppu = fit;
+        if (!touched.current) {
+            if (initial) {
+                touched.current = true;
+                Object.assign(patch, { lon0: initial.lon0, lat0: initial.lat0,
+                                       ppu: Math.max(fit * 0.5, screenW / (initial.fov * DEG)) });
+            } else {
+                patch.ppu = fit;
+            }
+        }
         ref.current.set(patch);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [dims.screenW, dims.screenH]);
 
     useEffect(() => {

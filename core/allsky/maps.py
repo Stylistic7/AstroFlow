@@ -1,12 +1,20 @@
 """Whole-sky HEALPix maps for the sky viewer.
 
-A map is a HEALPix FITS file in `~/AstroFlow/healpix/<name>.fits` (the same
-user folder the finishes and pipelines live under). It is read once per
-process into twelve face rasters on AstroFlow's pinned gauge -- scaled so the
-sky median sits on the stacks' background pedestal, or lower when the map's
-bright anchor would otherwise overshoot the finishes' declared range -- with
-the per-band statistics every finish seeds from, so the stock finishes see a
-map as they see a master: a sky level and an anchor inside their ranges.
+A map is one of two files in `~/AstroFlow/healpix` (the user folder the
+finishes and pipelines live under):
+
+* `<name>.fits` -- a flat HEALPix map (a binary table, one row per cell,
+  NESTED), read once per process into a pyramid of face rasters and served
+  to the viewer as HiPS-shaped tiles;
+* `<name>.hips` -- one line, the root of a HiPS tree (a URL or a folder);
+  the browser reads a remote tree's tiles itself (allsky/hips.py).
+
+Either way the map carries a gauge and the per-band statistics every finish
+seeds from. The gauge scales file units so the sky median sits on the
+stacks' background pedestal, or lower when the map's bright anchor would
+otherwise overshoot the finishes' declared range, so the stock finishes see
+a map as they see a master: a sky level and an anchor inside their ranges.
+Tiles stay in file units; the shader applies the gauge.
 """
 from __future__ import annotations
 
@@ -18,11 +26,14 @@ from pathlib import Path
 
 import numpy as np
 
-from allsky.healpix_faces import faces_from_nested
+from allsky.healpix_faces import compact_bits, degrade, faces_from_nested
 from previews.linear_stats import band_stats
 from stacks.post_processing.background_pedestal import DEFAULT_PEDESTAL
 
 MAPS_DIR = Path.home() / "AstroFlow" / "healpix"
+
+# A flat map's tiles: the HiPS tile side, or the whole face of a smaller map.
+TILE_WIDTH = 512
 
 # The stock finishes' declared ceiling for the bright anchor they seed from
 # (`top<role>` in finishes/stock.py, hi=0.5): a stack's anchor sits a few
@@ -39,33 +50,63 @@ class SkyMap:
     name: str
     path: Path
     mtime: float
-    nside: int
     frame: str          # "galactic" | "icrs": the frame the cells are laid out in
     unit: str           # the file's own unit, for the label only
-    gauge: float        # file units × gauge = the served (pinned-gauge) values
-    faces: np.ndarray   # (12, nside, nside) float32, gauge units, 0 = no data
+    gauge: float        # file units × gauge = pinned-gauge values (the shader applies it)
     stats: dict         # band_stats of the gauge-scaled map, one band
+    tile_width: int     # a tile is tile_width² cells, log2(tile_width) orders below its own
+    max_order: int      # the finest tile order
+    tiles: str = ""     # a HiPS root the browser reads, or "" when this app serves `tile()`
+    pyramid: tuple = () # flat maps: (12, n, n) face rasters per tile order, coarse to fine
+    tree: object = None # folder trees: the allsky.hips.HipsTree the tiles are read from
+
+    @property
+    def nside(self) -> int:
+        return self.tile_width << self.max_order
+
+    def tile(self, order: int, npix: int) -> np.ndarray:
+        """The (tile_width, tile_width) raster of cell `npix` at `order`, in
+        file units with 0 = no data; IndexError off the tree."""
+        if not 0 <= order <= self.max_order or not 0 <= npix < 12 << (2 * order):
+            raise IndexError((order, npix))
+        if self.pyramid:
+            face = npix >> (2 * order)
+            within = np.array([npix & ((1 << (2 * order)) - 1)], dtype=np.uint64)
+            tx = int(compact_bits(within)[0])
+            ty = int(compact_bits(within >> np.uint64(1))[0])
+            w = self.tile_width
+            return self.pyramid[order][face, ty * w:(ty + 1) * w, tx * w:(tx + 1) * w]
+        if self.tree is not None and not self.tree.remote:
+            from allsky.hips import read_tile, tile_path
+            data = self.tree.read(tile_path(order, npix))
+            if data is None:
+                raise IndexError((order, npix))
+            return read_tile(data)
+        raise IndexError((order, npix))
 
 
 def map_path(name: str) -> Path:
-    if not re.fullmatch(r"[A-Za-z0-9_-]+", name):
-        raise FileNotFoundError(name)
-    return MAPS_DIR / f"{name}.fits"
+    if re.fullmatch(r"[A-Za-z0-9_-]+", name):
+        for ext in (".fits", ".hips"):
+            p = MAPS_DIR / f"{name}{ext}"
+            if p.is_file():
+                return p
+    raise FileNotFoundError(name)
 
 
 def available_maps() -> list[str]:
     if not MAPS_DIR.is_dir():
         return []
-    return sorted(p.stem for p in MAPS_DIR.glob("*.fits"))
+    return sorted({p.stem for p in MAPS_DIR.iterdir() if p.suffix in (".fits", ".hips")})
 
 
-def _frame(coordsys) -> str:
+def frame_of(coordsys) -> str:
     key = (str(coordsys or "G")).strip().upper()
     if key in ("G", "GAL", "GALACTIC"):
         return "galactic"
     if key in ("C", "Q", "EQU", "EQUATORIAL", "ICRS", "FK5", "J2000"):
         return "icrs"
-    raise ValueError(f"unsupported HEALPix COORDSYS {coordsys!r}")
+    raise ValueError(f"unsupported sky frame {coordsys!r}")
 
 
 def read_healpix_fits(path: Path) -> tuple[np.ndarray, int, str, str]:
@@ -81,39 +122,68 @@ def read_healpix_fits(path: Path) -> tuple[np.ndarray, int, str, str]:
         if ordering != "NESTED":
             raise ValueError(f"{path.name}: ORDERING={ordering!r}; only NESTED maps are supported")
         values = np.asarray(hdu.data.field(0), dtype=np.float32).ravel()
-        frame = _frame(hd.get("COORDSYS"))
+        frame = frame_of(hd.get("COORDSYS"))
         unit = str(hd.get("TUNIT1") or "")
     if values.size != 12 * nside * nside:
         raise ValueError(f"{path.name}: {values.size} cells is not a nside={nside} map")
     return values, nside, frame, unit
 
 
-def _build(name: str, path: Path, mtime: float) -> SkyMap:
-    values, nside, frame, unit = read_healpix_fits(path)
-    # Unobserved cells become the viewer's no-data sentinel (exact zero).
-    values = np.where(np.isfinite(values) & (values > _UNSEEN / 2), values, 0.0).astype(np.float32)
+def gauge_and_stats(values: np.ndarray) -> tuple[float, dict]:
+    """The gauge for a map's cells (file units, 0 = no data) and the
+    statistics of the gauged map that the finishes seed from."""
     raw = band_stats(values[:, None])[0]
     sky, high = raw["skyMedian"], raw["high"]
     gauge = DEFAULT_PEDESTAL / sky if sky > 0 else 1.0
     if high * gauge > TOP_CEILING:
         gauge = TOP_CEILING / high
-    stats = {k: v * gauge for k, v in raw.items()}
-    return SkyMap(name=name, path=path, mtime=mtime, nside=nside, frame=frame, unit=unit,
-                  gauge=gauge, faces=faces_from_nested(values * np.float32(gauge), nside),
-                  stats=stats)
+    return gauge, {k: v * gauge for k, v in raw.items()}
+
+
+def _build_fits(name: str, path: Path, mtime: float) -> SkyMap:
+    values, nside, frame, unit = read_healpix_fits(path)
+    # Unobserved cells become the viewer's no-data sentinel (exact zero).
+    values = np.where(np.isfinite(values) & (values > _UNSEEN / 2), values, 0.0).astype(np.float32)
+    gauge, stats = gauge_and_stats(values)
+    width = min(TILE_WIDTH, nside)
+    levels = [faces_from_nested(values, nside)]
+    while levels[-1].shape[1] > width:
+        levels.append(degrade(levels[-1]))
+    levels.reverse()
+    return SkyMap(name=name, path=path, mtime=mtime, frame=frame, unit=unit, gauge=gauge,
+                  stats=stats, tile_width=width, max_order=len(levels) - 1,
+                  pyramid=tuple(levels))
 
 
 _cache: dict[str, SkyMap] = {}
 _lock = threading.Lock()
 
 
+def map_mtime(path: Path) -> float:
+    """When the map last changed: its file, or for a local HiPS tree also the
+    tree's `properties`, which the combiner rewrites on every run. The
+    viewer caches tiles as immutable under this version, so a tree that
+    grows under the same name must move it."""
+    mtime = os.path.getmtime(path)
+    if path.suffix == ".hips":
+        root = path.read_text().strip()
+        props = Path(root) / "properties"
+        if "://" not in root and props.is_file():
+            mtime = max(mtime, props.stat().st_mtime)
+    return mtime
+
+
 def load_map(name: str) -> SkyMap:
-    """The map, built on first use and again when its file changes."""
+    """The map, built on first use and again when its file or its tree changes."""
     path = map_path(name)
-    mtime = os.path.getmtime(path)          # FileNotFoundError when absent
+    mtime = map_mtime(path)
     with _lock:
         m = _cache.get(name)
         if m is None or m.mtime != mtime:
-            m = _build(name, path, mtime)
+            if path.suffix == ".hips":
+                from allsky.hips import load_hips
+                m = load_hips(name, path, mtime)
+            else:
+                m = _build_fits(name, path, mtime)
             _cache[name] = m
         return m

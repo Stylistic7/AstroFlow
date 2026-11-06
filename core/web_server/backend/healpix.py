@@ -4,11 +4,15 @@ the same finish WGSL, params and seeding render the sphere.
 
 * `/api/healpix` -- the maps in ~/AstroFlow/healpix and the single-input
   finishes that can show one.
-* `/api/healpix/<name>/metadata[?finish=H]` -- the map's geometry and frame,
-  the finish spec (WGSL + params) and the per-band stats it seeds from.
-* `/api/healpix/<name>/faces.f32` -- the twelve face rasters, float32
-  little-endian, face-major then row-major: `(12, nside, nside)`.
+* `/api/healpix/<name>/metadata[?finish=H]` -- the map's tiling, frame and
+  gauge, the finish spec (WGSL + params) and the per-band stats it seeds
+  from. `tiles` is a HiPS root the browser reads tiles from, or "" when
+  this app serves them:
+* `/api/healpix/<name>/tile/<order>/<npix>.f32` -- one tile, `tileWidth`²
+  float32 little-endian row-major in file units (0 = no data); 404 off the
+  tree, which the viewer takes as "use the coarser tile".
 """
+import numpy as np
 from flask import Blueprint, Response, abort, jsonify, request
 
 from allsky.maps import available_maps, load_map
@@ -55,6 +59,7 @@ def healpix_metadata(name: str):
     return jsonify({
         "name": m.name, "nside": m.nside, "frame": m.frame, "unit": m.unit,
         "gauge": m.gauge, "mtime": m.mtime,
+        "tileWidth": m.tile_width, "maxOrder": m.max_order, "tiles": m.tiles,
         "finish": finish.spec(),
         "finishes": [f.name for f in _single_input_finishes()],
         # One input, one band, in the tile viewer's input shape: the map is
@@ -68,11 +73,15 @@ def healpix_metadata(name: str):
     })
 
 
-@healpix_bp.route("/api/healpix/<name>/faces.f32")
-def healpix_faces(name: str):
+@healpix_bp.route("/api/healpix/<name>/tile/<int:order>/<int:npix>.f32")
+def healpix_tile(name: str, order: int, npix: int):
     m = _load(name)
-    resp = Response(m.faces.tobytes(), mimetype="application/octet-stream")
-    resp.headers["X-Healpix-Nside"] = str(m.nside)
+    try:
+        tile = m.tile(order, npix)
+    except IndexError:
+        return abort(404)
+    resp = Response(np.ascontiguousarray(tile, dtype="<f4").tobytes(),
+                    mimetype="application/octet-stream")
     if request.args.get("v"):
         resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
     return resp
