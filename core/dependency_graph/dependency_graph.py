@@ -331,6 +331,16 @@ def _apply_preflight(graph: Graph, is_subgraph: bool = False) -> Graph:
     return pruned
 
 
+def _queue(ready_cache: list, entries: list) -> None:
+    """Append a readiness batch — reversed, so its first-traced node is popped
+    first (admission pops from the tail) — then move the nodes of higher-
+    priority runtimes to the tail: a starred cart entry's sub-graph runs
+    before unstarred work that is ready (`GraphRuntime.priority`). The sort
+    is stable, so within a priority the depth-first order stands."""
+    ready_cache.extend(reversed(entries))
+    ready_cache.sort(key=lambda rn: rn[0].priority)
+
+
 def _declared_custom_resources(task) -> dict:
     """The op's declared *custom* Ray resources (e.g. ``{"PixInsight": 1}``),
     or ``{}``. Resource-name agnostic.
@@ -622,7 +632,7 @@ def run_graph(
     ready_cache: list[tuple[GraphRuntime, Node]] = []
 
     def _pull_ready() -> None:
-        ready_cache.extend(reversed(root.drain_newly_ready()))
+        _queue(ready_cache, root.drain_newly_ready())
 
     def _draining() -> bool:
         return bool(drain_event and drain_event.is_set())
@@ -637,7 +647,7 @@ def run_graph(
             # Active root, nothing queued: a readiness event was missed.
             # Rescan — rare — and the started() guard makes a duplicate
             # entry harmless.
-            ready_cache.extend(reversed(root.get_all_ready()))
+            _queue(ready_cache, root.get_all_ready())
 
         if debug:
             print(f"Top of loop, {len(ready_cache)} ready nodes")

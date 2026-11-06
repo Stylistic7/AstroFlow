@@ -193,6 +193,9 @@ class GraphRuntime:
         else:
             self._version_supersede = parent._root._version_supersede
             self._version_supersede.update(incoming_versions)
+        # Dispatch priority (`Graph.priority`): a sub-graph's own, else its
+        # parent's — a starred pipeline's nested scopes are starred too.
+        self.priority: int = getattr(graph, "priority", 0) or (parent.priority if parent is not None else 0)
 
     @property
     def graph(self) -> dict[Node, list[Node]]:

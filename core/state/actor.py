@@ -209,11 +209,9 @@ class StateActor:
                 print(f"### publishing shared masters failed: {e!r}")
         # No completion-time cleanup: display-product N-1s are deleted
         # deterministically at node completion (`version_log.supersede`),
-        # ephemerals by the in-run GC, foreign debris by the janitor. The
-        # global sweep (`scripts.sweep_orphans`) is a MANUAL tool only — the
-        # auto-run variant deleted in-flight tail intermediates whenever the
-        # live-set trace resolved partially (the place_image re-churn), so a
-        # global delete no longer runs unattended.
+        # ephemerals by the in-run GC, foreign debris by the janitor, and
+        # everything the cart does not declare by the orphan sweep at the
+        # start of every pass (`compute_graph.sweep_orphans`).
         return state, [Action(type="announce", message="reload_data")]
 
     # TODO: Complete this. The goal is to iterate over the graph's dry run result,

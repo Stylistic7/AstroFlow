@@ -1,10 +1,9 @@
 """Global orphan reconciliation for `context.output_dir` — the catch-all GC.
 
 THE TRACE IS THE AUTHORITY (2026-08-17). The live set is the union of:
-  * **every path traced for every cart item, including archived ones** — the
-    cart is the declaration of what should exist on disk. An archived item is
-    traced exactly like a live one; the only difference is that it is not added
-    to the compute graph that runs, so nothing recomputes it.
+  * **every path traced for every cart item** — the cart is the declaration
+    of what should exist on disk; what is not in it is fair game (Stylistic7,
+    2026-11-05). Done with an object: export the picture, take it out.
   * **every path any product_versions log references, unconditionally** — the
     log is written only at landings, so its entries are real files.
   * plus each primary's `.json` sidecar and `<stem>_tiles.tiff` pyramid.
@@ -37,19 +36,14 @@ up after itself; its interiors are deliberately absent from the trace. So an
 interior appearing as an orphan here is a SCOPE GC BUG, not routine litter, and
 `sweep` reports it as such rather than quietly reclaiming it.
 
-This is the extracted, callable core: `sweep(ctx, delete=...)` —
-`scripts/sweep_orphans.py` is a thin CLI over it, and that CLI is the ONLY
-caller. The app never runs a global delete unattended: the auto-run variant
-deleted in-flight tail intermediates whenever the live-set trace resolved
-PARTIALLY (`resolve_output_paths` skips unresolvable subtrees silently), which
-re-churned the color tail every pass. `ctx` supplies `shopping_cart` /
-`archive` / `output_dir` (pass `local_context`) — the version-log pin reads
-the durable cache directly, so it needs no Ray.
-
-Only a *global* disk-vs-trace scan can find orphans that nothing references —
-crash/partial/failed-write leftovers, removed-cart-item trees, non-display
-persistent intermediates, foreign cruft — run this by hand when the long tail
-is worth reclaiming, ideally while the app is idle.
+This is the callable core: `sweep(ctx, delete=...)`. The app runs it every
+pass (`compute_graph.sweep_orphans`): after every cart entry is traced, so
+the live set is those traces' snapshots, and before any pipeline runs.
+`scripts/sweep_orphans.py` is the dry-run report and a manual run. The
+auto-run variant of 2026-08 deleted in-flight tail intermediates because the
+live-set trace resolved PARTIALLY; the trace is strict now, and what a
+running node writes is spared by its age (`walk_and_classify`). `ctx`
+supplies `shopping_cart` / `mosaics` / `output_dir`.
 """
 from __future__ import annotations
 
@@ -101,15 +95,11 @@ _IMPLICIT_MOSAIC_PIPELINES = ("Subframe",)
 def _cart_items(ctx) -> "list[tuple]":
     """Every `(object_type, object_id, pipeline)` whose outputs must survive.
 
-    The cart is the declaration of what should exist on disk, and it has three
-    sources — all traced identically:
+    The cart is the declaration of what should exist on disk, and it has two
+    sources — both traced identically:
 
       * the shopping cart;
       * the IMPLICIT per-mosaic pipelines above.
-
-    NOT the archive. An archive entry carries its own frozen list of preserved
-    paths — see `_archived_paths` — because the user CHOSE what to keep when
-    they removed the item from the cart.
     """
     items: set[tuple] = set()
     for entry in (ctx.shopping_cart or []):
@@ -124,58 +114,47 @@ def _cart_items(ctx) -> "list[tuple]":
     return sorted(items)
 
 
-def _archived_paths(ctx) -> set[str]:
-    """The paths an archive entry PRESERVES, read from the entry itself.
-
-    An archive entry is `(object_type, object_id, pipeline, paths)`: when the
-    user removed the item from the cart they chose `preserve="all" |
-    "finals" | "none"`, and `state/archive.py` froze the resulting path list
-    INTO the entry.
-
-    Re-tracing the item instead — which is what happened until now, because
-    `_cart_items` took `t[:3]` and dropped the list — pins every intermediate
-    the pipeline ever wrote. That silently voids the user's choice: "finals"
-    and "all" behave identically, and nothing archived is ever sweepable. It
-    also means archived generations keep superseded intermediates alive
-    indefinitely, which is how a stale master survives a sweep and later gets
-    mistaken for current output.
-    """
-    out: set[str] = set()
-    for entry in (ctx.archive or []):
-        if entry is None:
-            continue
-        t = tuple(entry)
-        if len(t) >= 4 and t[3]:
-            out.update(str(p) for p in t[3])
-    return out
-
-
-def live_set(ctx) -> set[str]:
-    """Every path the trace says should exist, plus version-log pins.
+def item_paths(ctx) -> "dict[tuple, list[str]]":
+    """Every cart item's traced output paths, item by item.
 
     Traced STRICTLY: an unresolvable cart item raises `TraceResolutionError`
-    rather than silently dropping out of the live set — a dropped item would
-    condemn all of its outputs as orphans. That refusal is the one guard that
-    matters now the census is gone, and it is the reason this is safe to run at
-    any time: the sweep either knows the whole live set or does nothing.
+    rather than silently dropping out — a dropped item would condemn all of
+    its outputs as orphans. That refusal is the one guard that matters now the
+    census is gone: the sweep either knows the whole live set or does nothing.
     """
     from dependency_graph.trace_paths import traced_paths_for
 
-    primaries: set[str] = set()
-    for item in _cart_items(ctx):
-        # strict=True: raises TraceResolutionError rather than returning [].
-        for entry in traced_paths_for(item, recompute=True, strict=True):
-            p = entry.get("path")
-            if p:
-                primaries.add(str(p))
-    primaries |= _archived_paths(ctx)
+    return {item: [str(e["path"]) for e in traced_paths_for(item, recompute=True, strict=True) if e.get("path")]
+            for item in _cart_items(ctx)}
 
+
+def live_set(ctx, paths: "dict[tuple, list[str]] | None" = None) -> set[str]:
+    """Every path the trace says should exist (`paths`: `item_paths`, traced
+    here when not given), each primary's siblings, plus version-log pins."""
+    primaries = {p for ps in (item_paths(ctx) if paths is None else paths).values() for p in ps}
     live: set[str] = set()
     for p in primaries:
         live.add(p)
         live.update(str(s) for s in _siblings_of(p))
     live |= _pinned_versions()
     return live
+
+
+def footprints(paths: "dict[tuple, list[str]]") -> "dict[str, int]":
+    """Bytes on disk per cart item, keyed "type/id/pipeline": what removing
+    the entry frees on the next pass. A path two entries share counts under
+    each — the number is an estimate for a person, not a ledger."""
+    out = {}
+    for item, ps in paths.items():
+        total = 0
+        for p in ps:
+            for q in (p, *(str(s) for s in _siblings_of(p))):
+                try:
+                    total += os.path.getsize(q)
+                except OSError:
+                    pass
+        out["/".join(item)] = total
+    return out
 
 
 # Op directories the IDENTIFICATION graph fills, which no pipeline trace names:
@@ -188,21 +167,44 @@ def live_set(ctx) -> set[str]:
 IDENTIFICATION_OPS = frozenset({"measure_dust_run", "build_star_flat"})
 
 
+CLOCK_MARGIN_S = 300.0     # the worker's files arrive over SMB with the worker's clock
+
+
+def session_start(session_dir: "str | None" = None) -> float:
+    """When the Ray session this process belongs to started, as an epoch, from
+    the session directory's name (`session_YYYY-MM-DD_HH-MM-SS_<us>_<pid>`,
+    local time): the app's boot, which a sweep spares everything newer than."""
+    import datetime
+    import re
+
+    if session_dir is None:
+        import ray._private.worker as worker
+        session_dir = worker.global_worker.node.get_session_dir_path()
+    m = re.match(r"session_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})_", os.path.basename(session_dir))
+    if not m:
+        raise RuntimeError(f"cannot tell when the app booted from {session_dir!r}")
+    return datetime.datetime.strptime(m.group(1), "%Y-%m-%d_%H-%M-%S").timestamp()
+
+
 def walk_and_classify(
     output_dir: "str | Path | None", live: set[str],
-    include: "set[str] | None" = None,
-) -> "tuple[list[tuple[str, int]], dict[str, list[int]]]":
+    include: "set[str] | None" = None, spare_since: "float | None" = None,
+) -> "tuple[list[tuple[str, int]], dict[str, list[int]], list[tuple[str, int]]]":
     """Single walk of `output_dir`: classify each file live/orphan and bucket by
-    parent dir (rel to `output_dir`). Returns `(orphans, by_dir)` where
+    parent dir (rel to `output_dir`). Returns `(orphans, by_dir, spared)` where
     `by_dir[rel] = [live_count, live_bytes, orph_count, orph_bytes]`. When
     `include` is non-empty, dirs not in it are skipped (not classified, not
     swept); `IDENTIFICATION_OPS` dirs are always skipped.
 
-    `include` limits the walk to named op dirs; everything else is untouched."""
+    An untraced file modified at or after `spare_since` (an epoch) is in
+    flight, not an orphan: a running node's scratch and half-written outputs
+    are in no trace, and a crash leftover is older than the app that is
+    running now. Such files go to `spared`, counted nowhere else."""
     orphans: list[tuple[str, int]] = []
+    spared: list[tuple[str, int]] = []
     by_dir: dict[str, list[int]] = {}
     if output_dir is None:
-        return orphans, by_dir
+        return orphans, by_dir, spared
     base = str(output_dir).rstrip("/")
     for root, _, files in os.walk(base):
         if not files:
@@ -214,44 +216,49 @@ def walk_and_classify(
         for f in files:
             full = os.path.join(root, f)
             try:
-                sz = os.path.getsize(full)
+                st = os.stat(full)
             except OSError:
                 continue
-            is_live = full in live
-            if is_live:
+            if full in live:
                 bucket[0] += 1
-                bucket[1] += sz
+                bucket[1] += st.st_size
+            elif spare_since is not None and st.st_mtime >= spare_since:
+                spared.append((full, st.st_size))
             else:
                 bucket[2] += 1
-                bucket[3] += sz
-                orphans.append((full, sz))
-    return orphans, by_dir
+                bucket[3] += st.st_size
+                orphans.append((full, st.st_size))
+    return orphans, by_dir, spared
 
 
-def sweep(ctx, delete: bool = False, include: "set[str] | None" = None) -> dict:
+def sweep(ctx, delete: bool = False, include: "set[str] | None" = None,
+          spare_since: "float | None" = None) -> dict:
     """Compute orphans under `ctx.output_dir` and, when `delete`, unlink them.
 
     Returns a report `{orphans, by_dir, live_count, reclaimable_bytes,
-    deleted, skipped_empty_live}`. The version-log pin keeps every logged
-    version out of the orphan set, and `live_set` traces strict so an
-    unresolvable cart item raises (never silently drops from the live set).
-    MANUAL-ONLY, best run while the app is idle: a partially-resolvable trace
-    (mid-rebuild) silently thins the live set, which is exactly why the
-    auto-run variant was removed.
+    deleted, skipped_empty_live, spared, scope_gc_leaks}`. The version-log pin
+    keeps every logged version out of the orphan set, and `live_set` traces
+    strict so an unresolvable cart item raises (never silently drops from the
+    live set). Safe while the graph runs when `spare_since` is the app's boot:
+    every traced output is live before it exists, and what a running node
+    writes untraced — scratch, a partial file — is newer than the boot and
+    spared (`walk_and_classify`); a later sweep takes it if it is still an
+    orphan then.
 
     Defensive floor: if the live set resolves EMPTY (empty cart + empty
     archive, or every cart item legitimately traced to no outputs), refuse to
     delete. Every file under `output_dir` would classify as an orphan, and
     "nothing is live" is a misconfiguration signal, never license to wipe the
     output tree. Callers get `skipped_empty_live=True` and zero deletions."""
-    live = live_set(ctx)
+    paths = item_paths(ctx)
+    live = live_set(ctx, paths)
     if not live:
         return {
             "orphans": [], "by_dir": {}, "live_count": 0,
             "reclaimable_bytes": 0, "deleted": 0, "skipped_empty_live": True,
-            "scope_gc_leaks": {},
+            "spared": [], "scope_gc_leaks": {}, "footprints": footprints(paths),
         }
-    orphans, by_dir = walk_and_classify(ctx.output_dir, live, include)
+    orphans, by_dir, spared = walk_and_classify(ctx.output_dir, live, include, spare_since)
     leaks = scope_gc_leaks(orphans)
     deleted = 0
     if delete:
@@ -268,7 +275,9 @@ def sweep(ctx, delete: bool = False, include: "set[str] | None" = None) -> dict:
         "reclaimable_bytes": sum(sz for _, sz in orphans),
         "deleted": deleted,
         "skipped_empty_live": False,
+        "spared": spared,
         "scope_gc_leaks": leaks,
+        "footprints": footprints(paths),
     }
 
 

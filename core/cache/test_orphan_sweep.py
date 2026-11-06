@@ -1,7 +1,7 @@
 """Unit tests for `cache.orphan_sweep.sweep` — TRACE-as-authority (2026-08-17).
 
-Liveness is what the TRACE says should exist, for every cart item, every
-ARCHIVED item, and the pipelines implicitly carted per mosaic. The runtime
+Liveness is what the TRACE says should exist, for every cart item and the
+pipelines implicitly carted per mosaic. The runtime
 census is gone: it recorded only what one complete pass landed, so it
 under-pinned, needed a completeness guard, and that guard deadlocked (a failed
 run stored no census, so the sweep freed nothing exactly when space was needed).
@@ -24,12 +24,11 @@ import cache.orphan_sweep as orphan_sweep
 from dependency_graph.trace_paths import TraceResolutionError
 
 
-def _ctx(tmp_path, cart=(), archive=(), mosaics=None):
+def _ctx(tmp_path, cart=(), mosaics=None):
     out = tmp_path / "Processed"
     out.mkdir(exist_ok=True)
     return types.SimpleNamespace(
         shopping_cart=list(cart),
-        archive=list(archive),
         mosaics=mosaics or {},
         output_dir=str(out),
     )
@@ -63,32 +62,20 @@ def test_live_set_refuses_on_an_unresolvable_item(tmp_path, monkeypatch):
         orphan_sweep.live_set(ctx)
 
 
-def test_live_set_covers_cart_archive_and_siblings(tmp_path, monkeypatch):
-    """The cart is traced; an ARCHIVE entry pins exactly its frozen path list
-    (the `preserve=` choice the user made removing it from the cart, see
-    `state/archive.py`) — NOT a re-trace, which pinned every intermediate and
-    silently voided that choice. Every primary from either source drags its
-    sidecar and pyramid in with it."""
+def test_live_set_covers_the_cart_and_each_primary_s_siblings(tmp_path, monkeypatch):
+    """The cart is the whole declaration: an item not in it pins nothing. Every
+    primary drags its sidecar and pyramid in with it."""
     _no_pins(monkeypatch)
     _fake_trace(monkeypatch, {
         ("target", "t1", "P"): ["/o/a.tiff"],
-        # The archived item's trace would ALSO yield an intermediate —
-        # proving the entry's own list wins over a re-trace.
-        ("target", "t2", "P"): ["/o/b.tiff", "/o/b_intermediate.tiff"],
+        ("target", "t2", "P"): ["/o/b.tiff"],          # traceable, but not in the cart
     })
-    ctx = _ctx(tmp_path,
-               cart=[("target", "t1", "P")],
-               archive=[("target", "t2", "P", ["/o/b.tiff"])])
+    ctx = _ctx(tmp_path, cart=[("target", "t1", "P")])
 
     live = orphan_sweep.live_set(ctx)
 
-    assert {"/o/a.tiff", "/o/b.tiff"} <= live
-    assert "/o/a.tiff.json" in live          # sidecar
-    assert "/o/a_tiles.tiff" in live         # pyramid
-    assert "/o/b.tiff.json" in live          # archived primary's sidecar too
-    assert "/o/b_intermediate.tiff" not in live, (
-        "archived item was re-traced — unpreserved intermediates must not "
-        "be pinned")
+    assert {"/o/a.tiff", "/o/a.tiff.json", "/o/a_tiles.tiff"} <= live
+    assert "/o/b.tiff" not in live
 
 
 def test_mosaics_implicitly_carry_the_subframe_pipeline(tmp_path, monkeypatch):
@@ -123,6 +110,7 @@ def test_sweep_deletes_only_untraced_files(tmp_path, monkeypatch):
     assert live_pyr.exists()             # sibling of a traced primary
     assert not orphan.exists()
     assert report["deleted"] == 1
+    assert report["footprints"] == {"target/t1/P": 20}      # the primary and its pyramid: what removal frees
 
 
 def test_empty_live_set_refuses_to_delete(tmp_path, monkeypatch):
@@ -175,3 +163,36 @@ def test_scope_interior_orphans_are_reported_as_a_gc_bug(tmp_path, monkeypatch):
 
     assert report["scope_gc_leaks"]["place_image"][0] == 1
     assert report["scope_gc_leaks"]["place_image"][1] == 100
+
+
+def test_untraced_files_modified_since_the_boot_are_spared(tmp_path, monkeypatch):
+    """A running node's scratch and half-written outputs are in no trace; they are newer than the
+    app's boot. A crash leftover is older. The sweep deletes only the latter."""
+    import os
+    import time
+
+    _no_pins(monkeypatch)
+    out = tmp_path / "Processed" / "an_op"
+    out.mkdir(parents=True)
+    live_file, leftover, in_flight = out / "keep.tiff", out / "dead.tiff", out / ".siril-scratch.fit"
+    for f in (live_file, leftover, in_flight):
+        f.write_bytes(b"x" * 10)
+    boot = time.time() - 3600.0
+    os.utime(leftover, (boot - 7200.0, boot - 7200.0))                  # written before the boot
+    _fake_trace(monkeypatch, {("target", "t1", "P"): [str(live_file)]})
+    ctx = _ctx(tmp_path, cart=[("target", "t1", "P")])
+
+    report = orphan_sweep.sweep(ctx, delete=True, spare_since=boot)
+
+    assert live_file.exists() and in_flight.exists() and not leftover.exists()
+    assert report["deleted"] == 1 and [p for p, _ in report["spared"]] == [str(in_flight)]
+    assert report["by_dir"]["an_op"] == [1, 10, 1, 10]                   # the spared file is counted nowhere
+
+
+def test_the_boot_is_read_from_the_ray_session_name():
+    import datetime
+
+    start = orphan_sweep.session_start("/tmp/ray/session_2026-11-05_16-15-14_181293_53689")
+    assert start == datetime.datetime(2026, 11, 5, 16, 15, 14).timestamp()
+    with pytest.raises(RuntimeError):
+        orphan_sweep.session_start("/tmp/ray")

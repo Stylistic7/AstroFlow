@@ -673,33 +673,15 @@ def _add_to_shopping_cart(
 def _remove_from_shopping_cart(
     state: State, action: Action
 ) -> tuple[State, list[Action]]:
-    """Remove an item from the live cart. The action's optional
-    `preserve` field (`"all" | "finals" | "none"`, default
-    `"none"`) controls whether the item's outputs are snapshotted
-    into `context.archive`. See `state.archive` for semantics."""
-    from state.archive import apply_remove_from_cart
-    preserve = action.get("preserve", "none")
-    apply_remove_from_cart(action["item"], preserve=preserve)
+    """Remove an item from the cart: its products are no longer declared, and
+    the next pass's orphan sweep deletes them."""
+    cart = list(context.shopping_cart or [])
+    if tuple(action["item"]) in cart:
+        cart.remove(tuple(action["item"]))
+        context.shopping_cart = cart
     # TODO: Consider canceling running graphs when items are removed from
     # the shopping cart.
     return state, []
-
-
-def _remove_from_archive(
-    state: State, action: Action
-) -> tuple[State, list[Action]]:
-    from state.archive import apply_remove_from_archive
-    apply_remove_from_archive(action["item"])
-    return state, []
-
-
-def _move_archive_to_cart(
-    state: State, action: Action
-) -> tuple[State, list[Action]]:
-    from state.archive import apply_move_archive_to_cart
-    apply_move_archive_to_cart(action["item"])
-    new_action = dict(type="run_processing_graph", item=action["item"])
-    return state, [new_action]
 
 
 def _graph_done(state: State, action: Action) -> tuple[State, list[Action]]:
@@ -720,8 +702,6 @@ _HANDLERS = {
     "prepare_pix": _prepare_pix,
     "add_to_shopping_cart": _add_to_shopping_cart,
     "remove_from_shopping_cart": _remove_from_shopping_cart,
-    "remove_from_archive": _remove_from_archive,
-    "move_archive_to_cart": _move_archive_to_cart,
     "start_gunicorn": _start_gunicorn,
     "stop_gunicorn": _stop_gunicorn,
     "start_mcp": _start_mcp,

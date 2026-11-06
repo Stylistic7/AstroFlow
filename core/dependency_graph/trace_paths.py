@@ -19,8 +19,8 @@ read — the web dashboard, tiles, the catalog — is then a ~0.1 ms
 A read that misses the snapshot means the object×pipeline was never built.
 `recompute=False` callers take the miss as "nothing on disk to show" and
 return `[]` rather than tracing on an HTTP request. Only head-driver callers
-that legitimately need a trace for something NOT in the current graph —
-`scripts.sweep_orphans` (live set) and `state.archive` (cart→archive) — pass
+that legitimately need a trace for something NOT in the current graph — the
+orphan sweep's live set (`cache.orphan_sweep`) — pass
 `recompute=True`, and for them the miss recomputes the trace INLINE (pure,
 in-process). There is deliberately no persistent trace cache beyond the
 build-time snapshot: the trace is authoritative and cheap-to-recompute, so a
@@ -51,7 +51,7 @@ class TraceResolutionError(RuntimeError):
 
     Distinct from a *successful* trace that legitimately yields no paths (an
     empty list). Callers that must establish a COMPLETE live set before a
-    destructive step — the orphan sweep, cart→archive — pass `strict=True` and
+    destructive step — the orphan sweep — pass `strict=True` and
     let this propagate rather than silently proceeding on a PARTIAL set. A
     swallowed trace failure looks identical to "this item has no outputs", so
     the GC would treat the item's real, on-disk files as orphans and delete
@@ -96,10 +96,9 @@ def paths_for_cart_item(
     cart entry) or the pipeline isn't registered.
 
     With `finals_only=True`, restricts to outputs of ops decorated
-    `@node(... final=True)` — used by archive transition with
-    `preserve="finals"`.
+    `@node(... final=True)`.
 
-    With `strict=True` (the orphan sweep, cart→archive), a trace FAILURE —
+    With `strict=True` (the orphan sweep), a trace FAILURE —
     entity absent, pipeline unregistered, or tracing raised — raises
     `TraceResolutionError` instead of returning `[]`, so a caller building a
     live set before a destructive step never mistakes an unresolved trace for
@@ -107,7 +106,7 @@ def paths_for_cart_item(
 
     Reads the build-time snapshot (Ray-free, ~0.1 ms, via
     `traced_paths_for`); on a snapshot miss, recomputes the trace inline —
-    this is a HEAD-DRIVER helper (archive), never a web read.
+    this is a HEAD-DRIVER helper (the orphan sweep), never a web read.
     """
     return [Path(e["path"])
             for e in traced_paths_for(item, recompute=True, strict=strict)
@@ -137,8 +136,8 @@ def traced_paths_for(
     `context.get`). A MISS means the object×pipeline was never built (or not
     yet re-traced on this code version): the DEFAULT `recompute=False`
     returns `[]`, and only the head-driver callers that must know the whole
-    live set before a destructive step — the orphan sweep, cart→archive,
-    completeness — pass `recompute=True` to trace inline.
+    live set before a destructive step — the orphan sweep, completeness —
+    pass `recompute=True` to trace inline.
 
     The default is False because a web worker MUST never trace: a mosaic
     trace is ~30 s of `calibrate()` in the request thread, and after every
@@ -156,12 +155,12 @@ def traced_paths_for(
         # request; just report "no paths".
         return []
 
-    # Genuine on-demand miss on the head driver (sweep / archive of an item not
+    # Genuine on-demand miss on the head driver (the sweep, for an item not
     # in the current graph). The trace is a PURE function — recompute it inline,
     # in-process. No @node, no Ray dispatch, no second diskcache to keep
     # canonical, no metadata_ref (that only existed to key the old @node).
     #
-    # `strict=True` (sweep / archive) must NOT let a trace FAILURE degrade to an
+    # `strict=True` (the sweep) must NOT let a trace FAILURE degrade to an
     # empty result — that would drop the item from the live set and its on-disk
     # outputs would be swept as orphans. Each failure mode raises
     # TraceResolutionError instead. Non-strict callers (the viewer) keep the

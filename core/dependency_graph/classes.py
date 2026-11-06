@@ -198,7 +198,7 @@ GraphUpdateFn = Callable[..., Any]
 
 
 class Graph(dict[TaskDescriptor, Iterable[TaskDescriptor]]):
-    __slots__ = ("graph_update_fn", "node_status_fn", "version_supersede")
+    __slots__ = ("graph_update_fn", "node_status_fn", "version_supersede", "priority")
     graph_update_fn: GraphUpdateFn | None
     node_status_fn: NodeStatusFn | None
     # Optional `{node: version_log_key}` map attached by `run_pipeline` to its
@@ -206,6 +206,11 @@ class Graph(dict[TaskDescriptor, Iterable[TaskDescriptor]]):
     # the landed version and delete the superseded one (graceful N/N-1,
     # `version_log.supersede`) — keyed on product identity, never a path.
     version_supersede: "dict | None"
+    # Dispatch priority of this sub-graph's nodes: higher runs first among the
+    # ready. `run_pipeline` sets 1 for a STARRED cart entry, so a starred
+    # object's chain finishes before unstarred work starts (the planner's
+    # star, applied to the cluster). Inherited by nested sub-graphs.
+    priority: int
 
     def __init__(
         self,
@@ -213,12 +218,14 @@ class Graph(dict[TaskDescriptor, Iterable[TaskDescriptor]]):
         graph_update_fn: GraphUpdateFn | None = None,
         node_status_fn: NodeStatusFn | None = None,
         version_supersede: "dict | None" = None,
+        priority: int = 0,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.graph_update_fn = graph_update_fn
         self.node_status_fn = node_status_fn
         self.version_supersede = version_supersede
+        self.priority = priority
 
 
 class CanonicalGraph(dict[Node, list[Node]]):

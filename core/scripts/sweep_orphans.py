@@ -1,13 +1,12 @@
 """CLI over `cache.orphan_sweep` — dry-run report of orphaned pipeline outputs,
 or `--delete` to unlink them.
 
-MANUAL ONLY — run it when the long tail is worth reclaiming, ideally while the
-app is idle. The app never sweeps unattended (see `cache/orphan_sweep.py`).
-
-REQUIRES A RUNNING RAY CLUSTER. Liveness is now the TRACE, and tracing resolves
-entities out of the shared context, so this is no longer the Ray-free operation
-the census-based version was. Start the app first; "idle but up" is exactly the
-right moment anyway.
+The app sweeps itself at the start of every pass (`compute_graph.sweep_orphans`:
+every cart entry traced, then the sweep, then the pipelines). This is the
+report between passes, and a manual run. REQUIRES A RUNNING RAY CLUSTER:
+liveness is the TRACE, read from the cart entries' snapshots in the shared
+context. The graph may be running: whatever a running node writes untraced —
+Siril's scratch, a partial file — is newer than the app's boot and spared.
 
 Usage:
     python -m scripts.sweep_orphans            # dry-run
@@ -16,28 +15,9 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
-import sys
-import urllib.request
+import datetime
 
 from cache import orphan_sweep
-
-API = "http://localhost:8000"
-
-
-def nodes_in_flight() -> int | None:
-    """How many graph nodes are executing right now, by the web server's
-    count; None when it cannot say (restarting, down). A sweep is safe only
-    at zero: a running node's half-written output is in no trace, so the
-    sweep takes it for a crash leftover and deletes it from under the node
-    (2026-10-28: a sweep between time-lapse windows did exactly that)."""
-    try:
-        with urllib.request.urlopen(API + "/api/compute_graph/status") as r:
-            status = json.load(r)
-    except Exception:
-        return None
-    return sum(v.get("running_number", 0) for k, v in status.items()
-               if not k.startswith("_") and isinstance(v, dict))
 
 
 def main() -> None:
@@ -48,10 +28,6 @@ def main() -> None:
         help="Actually unlink orphans (default is dry-run).",
     )
     parser.add_argument(
-        "--force", action="store_true",
-        help="Sweep even while nodes are in flight (their half-written outputs look like orphans).",
-    )
-    parser.add_argument(
         "--include", default=None,
         help=("Comma-separated op directories (rel to output_dir) to scope the "
               "sweep to. Files outside these dirs are skipped entirely — not "
@@ -60,23 +36,23 @@ def main() -> None:
               "output_dir is considered."),
     )
     args = parser.parse_args()
-    busy = nodes_in_flight()
-    if args.delete and not args.force and busy != 0:
-        sys.exit(f"{busy if busy is not None else 'unknown'} nodes in flight: a sweep now deletes "
-                 "their half-written outputs; wait for the pass, or --force to insist")
-
     include = (
         {s.strip() for s in args.include.split(",") if s.strip()}
         if args.include else None
     )
+    context.output_dir                                   # connects to the cluster: the session is known from here
+    spare_since = orphan_sweep.session_start() - orphan_sweep.CLOCK_MARGIN_S
 
-    report = orphan_sweep.sweep(context, delete=args.delete, include=include)
-    orphans, by_dir = report["orphans"], report["by_dir"]
+    report = orphan_sweep.sweep(context, delete=args.delete, include=include, spare_since=spare_since)
+    orphans, by_dir, spared = report["orphans"], report["by_dir"], report["spared"]
 
     if include is not None:
         print(f"--include scope: {sorted(include)}")
     print(f"{len(orphans)} orphans, {report['reclaimable_bytes'] / 1e9:.2f} GB reclaimable.")
-    print(f"Live set: {report['live_count']} paths.\n")
+    print(f"Live set: {report['live_count']} paths.")
+    print(f"Spared {len(spared)} untraced files, {sum(sz for _, sz in spared) / 1e9:.2f} GB, modified since the app "
+          f"booted ({datetime.datetime.fromtimestamp(spare_since + orphan_sweep.CLOCK_MARGIN_S):%Y-%m-%d %H:%M}): "
+          "in flight.\n")
 
     print(f"{'op directory':<55}  {'live #':>7}  {'live GB':>8}  {'orph #':>7}  {'orph GB':>8}")
     for op_dir, b in sorted(by_dir.items(), key=lambda kv: -(kv[1][1] + kv[1][3])):

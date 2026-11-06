@@ -1,8 +1,8 @@
 """End-to-end tests of the sweep CLI's orphan classification.
 
-The live set is the TRACE (2026-08-17): every path traced for every cart item,
-every ARCHIVED item, and the pipelines implicitly carted per mosaic, unioned
-with the version-log pins. The runtime census is gone — it under-pinned, needed
+The live set is the TRACE (2026-08-17): every path traced for every cart item
+and the pipelines implicitly carted per mosaic, unioned with the version-log
+pins. The runtime census is gone — it under-pinned, needed
 a completeness guard, and that guard deadlocked when a run failed. A trace
 over-pins, which is the safe direction for a deletion authority.
 
@@ -30,15 +30,12 @@ def temp_output_dir(tmp_path):
 
 
 @pytest.fixture(autouse=True)
-def _clean_cart_and_archive():
-    """Reset cart and archive around each test."""
+def _clean_cart():
+    """Reset the cart around each test."""
     original_cart = context.shopping_cart
-    original_archive = context.archive
     context.shopping_cart = []
-    context.archive = []
     yield
     context.shopping_cart = original_cart
-    context.archive = original_archive
 
 
 @pytest.fixture
@@ -66,46 +63,10 @@ def test_walk_and_classify_returns_unreferenced_files_only(temp_output_dir):
     orphan_path = _make_file(temp_output_dir / "mosaic" / "orphan.xisf")
     live = {str(live_path)}
 
-    orphans, _ = orphan_sweep.walk_and_classify(temp_output_dir, live)
+    orphans, _, _ = orphan_sweep.walk_and_classify(temp_output_dir, live)
     paths = {p for p, _ in orphans}
 
     assert paths == {str(orphan_path)}
-
-
-def test_live_set_includes_archive_paths_and_their_siblings(
-    temp_output_dir, fake_trace,
-):
-    """An archive entry pins EXACTLY the paths frozen into it — the list the
-    user chose (`preserve="all"|"finals"|"none"`) when removing the item from
-    the cart (`state/archive.py`). Siblings (sidecar, tile pyramid) come along
-    so a preserved primary is never stranded.
-
-    It is NOT re-traced like a cart item. Re-tracing pinned every intermediate
-    the pipeline ever wrote, which silently voided the user's choice ("finals"
-    behaved like "all") and kept superseded generations alive forever — that
-    is how a stale master survived the 2026-08-24 sweep and was later
-    mistaken for current output."""
-    primary = temp_output_dir / "mosaic" / "preserved.xisf"
-    sidecar = temp_output_dir / "mosaic" / "preserved.xisf.json"
-    tile = temp_output_dir / "mosaic" / "preserved_tiles.tiff"
-    unpreserved = temp_output_dir / "mosaic" / "intermediate.xisf"
-    _make_file(primary); _make_file(sidecar); _make_file(tile)
-    _make_file(unpreserved)
-
-    # 4-tuple: (type, id, pipeline, frozen preserved paths).
-    context.archive = [("mosaic", "abc", "P", [str(primary)])]
-    # The trace would ALSO yield the intermediate — proving the entry's own
-    # list wins over a re-trace.
-    fake_trace["live"] = [str(primary), str(unpreserved)]
-
-    live = orphan_sweep.live_set(context)
-
-    assert str(primary) in live
-    assert str(sidecar) in live
-    assert str(tile) in live
-    assert str(unpreserved) not in live, (
-        "archived item was re-traced — its unpreserved intermediates must "
-        "not be pinned")
 
 
 def test_live_set_includes_traced_paths(temp_output_dir, fake_trace):
@@ -169,18 +130,16 @@ def test_sweep_deletes_orphans_when_trace_defines_live(
 
 
 def test_full_sweep_classifies_correctly(temp_output_dir, fake_trace):
-    """End-to-end: the trace covers a cart item and an archived one; a third
-    file is in neither — only the third shows up as an orphan."""
+    """End-to-end: the trace covers the cart item; a file it does not name is
+    the orphan."""
     cart_path = _make_file(temp_output_dir / "a" / "landed.xisf")
-    archive_path = _make_file(temp_output_dir / "b" / "archive.xisf")
     orphan_path = _make_file(temp_output_dir / "c" / "orphan.xisf")
 
     context.shopping_cart = [("stack", "s1", "P")]
-    context.archive = [("mosaic", "2", "P")]
-    fake_trace["live"] = [str(cart_path), str(archive_path)]
+    fake_trace["live"] = [str(cart_path)]
 
     live = orphan_sweep.live_set(context)
-    orphans, _ = orphan_sweep.walk_and_classify(temp_output_dir, live)
+    orphans, _, _ = orphan_sweep.walk_and_classify(temp_output_dir, live)
     orphan_paths = {p for p, _ in orphans}
 
     assert orphan_paths == {str(orphan_path)}
@@ -188,13 +147,13 @@ def test_full_sweep_classifies_correctly(temp_output_dir, fake_trace):
 
 def test_walk_and_classify_returns_sizes(temp_output_dir):
     p = _make_file(temp_output_dir / "x.bin", size=512)
-    orphans, _ = orphan_sweep.walk_and_classify(temp_output_dir, set())
+    orphans, _, _ = orphan_sweep.walk_and_classify(temp_output_dir, set())
     assert orphans == [(str(p), 512)]
 
 
 def test_walk_and_classify_with_no_output_dir_returns_empty():
     """If output_dir is None (pre-init), sweep is a no-op."""
-    orphans, by_dir = orphan_sweep.walk_and_classify(None, set())
+    orphans, by_dir, _ = orphan_sweep.walk_and_classify(None, set())
     assert orphans == []
     assert by_dir == {}
 
@@ -205,7 +164,7 @@ def test_include_scopes_to_named_dirs(temp_output_dir, fake_trace):
     included = _make_file(temp_output_dir / "place_image" / "a.tiff")
     excluded = _make_file(temp_output_dir / "stack_files" / "b.xisf")
 
-    orphans, by_dir = orphan_sweep.walk_and_classify(
+    orphans, by_dir, _ = orphan_sweep.walk_and_classify(
         temp_output_dir, set(), include={"place_image"},
     )
     paths = {p for p, _ in orphans}
@@ -229,7 +188,6 @@ from decisions.settings import DevelopmentSettings
 from dependency_graph import run_graph
 from dependency_graph.trace_paths import paths_for_cart_item
 from mosaics.orion_mosaic import add_orion_mosaic_images
-from state import archive as archive_mod
 
 
 def _override_flats_for_all_stacks():
@@ -308,14 +266,8 @@ def test_orion_mosaic_trace_matches_disk_and_archive_lifecycle(test_context) -> 
     trace's call_hashes diverge from the runtime's at any node, the
     set difference will be non-empty.
 
-    Phase 2 — Move the cart item to `archive` with `preserve="finals"`.
-    Assert the archive entry contains `stack_files` masters and the
-    final `post_process_mosaic_color_channel`, and nothing in between.
-
-    Phase 3 — Re-run with the item out of the cart (refreshing the runtime
-    census), then sweep. Assert intermediates (post_process_stack,
-    place_image, merge_images, merge_target_channel) are orphans;
-    archived finals remain live.
+    Phase 2 — Take the item out of the cart and classify: the cart is the
+    whole declaration, so every primary the pipeline wrote is an orphan now.
 
     Phase 1 is ALSO the standing regression test for hash stability: the
     trace and the runtime must agree on every call_hash. The 2026-08
@@ -376,73 +328,22 @@ def test_orion_mosaic_trace_matches_disk_and_archive_lifecycle(test_context) -> 
             msg.append(f"  MATCH      [{op_dir}] ({len(names)})")
         pytest.fail("\n".join(msg))
 
-    # --- Phase 2: cart → archive with preserve="finals" --------------
-    archive_mod.apply_remove_from_cart(item, preserve="finals")
-
-    assert list(context.shopping_cart or []) == []
-    assert len(context.archive or []) == 1
-    archived_entry = context.archive[0]
-    assert tuple(archived_entry[:3]) == item
-    archived_paths = set(archived_entry[3])
-
-    # `finals_only=True` trace should equal what the archive captured.
-    finals_traced = {
-        str(p) for p in paths_for_cart_item(item, finals_only=True)
-    }
-    assert archived_paths == finals_traced
-
-    # `stack_files` is now `final=True` — must be in the archive set.
-    assert any("stack_files" in p for p in archived_paths)
-    assert any(
-        "post_process_mosaic_color_channel" in p
-        for p in archived_paths
-    )
-    # Intermediates must NOT be in finals.
-    for non_final_dir in (
-        "post_process_stack",
-        "place_image",
-        "merge_images",
-        "merge_target_channel",
-    ):
-        assert not any(non_final_dir in p for p in archived_paths), (
-            f"{non_final_dir} should not be in finals"
-        )
-
-    # --- Phase 3: sweep classifies correctly --------------------------
-    # Trace semantics (2026-08-17): liveness is what the TRACE says should
-    # exist for the cart plus the archive, so removing an item from the cart
-    # retires its files IMMEDIATELY — no pass has to run first. The archived
-    # finals stay live because an archived item is traced like any other; the
-    # intermediates, referenced by nothing, become orphans.
+    # --- Phase 2: out of the cart, every primary is an orphan ----------
+    # Liveness is what the TRACE says should exist for the cart, so removing
+    # an item retires its files IMMEDIATELY — no pass has to run first.
+    context.shopping_cart = []
 
     live = orphan_sweep.live_set(context)
-    orphans, _by_dir = orphan_sweep.walk_and_classify(
+    orphans, _by_dir, _ = orphan_sweep.walk_and_classify(
         Path(context.output_dir), live,
     )
     orphan_paths = {p for p, _ in orphans}
 
-    # Every archived (finals) path is live (covered by archive entry).
-    for f in archived_paths:
-        assert f in live, f"Archived path {f} missing from live set"
-        assert f not in orphan_paths, (
-            f"Archived path {f} unexpectedly orphan"
-        )
-
-    # Every Master intermediate primary is an orphan.
-    intermediates_on_disk = {
-        p for p in on_disk
-        if any(d in p for d in (
-            "post_process_stack",
-            "place_image",
-            "merge_images",
-            "merge_target_channel",
-        ))
-    }
-    assert intermediates_on_disk, "Test setup didn't produce intermediates"
-    missing_from_orphans = intermediates_on_disk - orphan_paths
-    assert not missing_from_orphans, (
-        f"{len(missing_from_orphans)} intermediates not marked orphan "
-        f"(first 3): {sorted(missing_from_orphans)[:3]}"
+    assert on_disk, "Test setup produced no primaries"
+    still_live = on_disk - orphan_paths
+    assert not still_live, (
+        f"{len(still_live)} primaries of an item out of the cart are still live "
+        f"(first 3): {sorted(still_live)[:3]}"
     )
 
 
@@ -453,7 +354,7 @@ def test_identification_products_are_never_walked(temp_output_dir):
     flat = _make_file(temp_output_dir / "build_star_flat" / "b.xisf")
     orphan = _make_file(temp_output_dir / "mosaic" / "orphan.xisf")
 
-    orphans, by_dir = orphan_sweep.walk_and_classify(temp_output_dir, set())
+    orphans, by_dir, _ = orphan_sweep.walk_and_classify(temp_output_dir, set())
 
     assert {p for p, _ in orphans} == {str(orphan)}
     assert "measure_dust_run" not in by_dir and "build_star_flat" not in by_dir

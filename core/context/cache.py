@@ -152,7 +152,6 @@ _DURABLE_STR_KEYS = frozenset(
         "tool_paths",
         # --- user curation (reason 1: an eviction loses user work) ---
         "shopping_cart",
-        "archive",
         "observing_plan",
         "asiair_cooling",
         # --- hot web-read state (reason 2: keep reads off the LFU lock) ---
@@ -180,7 +179,7 @@ _DURABLE_STR_KEYS = frozenset(
 # deliberately not migrated — they self-heal per pipeline run via
 # _store_tap_snapshot's presence check.
 _MIGRATE_STR_KEYS = (
-    "shopping_cart", "archive", "observing_plan",
+    "shopping_cart", "observing_plan",
     "ui_stacks", "ui_targets", "ui_mosaics", "ui_calibration_stacks",
     "tap_snapshots",
     "network_settings", "role_chosen",

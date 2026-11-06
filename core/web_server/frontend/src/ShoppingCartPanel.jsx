@@ -1,4 +1,4 @@
-import { useState, useContext } from "react";
+import { useState, useContext, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Box,
@@ -6,7 +6,6 @@ import {
   Typography,
   IconButton,
   Chip,
-  Divider,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -15,79 +14,37 @@ import {
   Button,
   Tooltip,
 } from "@mui/material";
-import {
-  Delete, Unarchive, Archive, Star, StarBorder,
-} from "@mui/icons-material";
+import { Delete, Star, StarBorder } from "@mui/icons-material";
 import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
 import ShoppingCartOutlinedIcon from "@mui/icons-material/ShoppingCartOutlined";
 import AstroFlowContext from "./AstroFlowContext.jsx";
 import DropdownChip from "./DropdownChip.jsx";
 
 
-// Removing an item from the live cart pops this modal. The three
-// choices map 1:1 to the backend's `preserve` field:
-//   - "all"    → snapshot every traced path into context.archive
-//   - "finals" → snapshot only final-tagged paths (@makes_image final=True)
-//   - "none"   → no archive entry; everything orphan-eligible next sweep
+const gb = (bytes) => `${(bytes / 1e9).toFixed(bytes >= 1e10 ? 0 : 1)} GB`;
+
+// The cart is the declaration of what is kept: removing an entry deletes its
+// products on the next pass. The dialog says what that frees — the footprint
+// the last pass's orphan sweep measured — before the user confirms.
 function RemoveCartItemDialog({ item, open, onClose, onConfirm }) {
+  const [footprint, setFootprint] = useState(null);
+  useEffect(() => {
+    if (!item) return;
+    setFootprint(null);
+    fetch("/api/shopping_cart/footprints")
+      .then((r) => (r.ok ? r.json() : {}))
+      .then((f) => setFootprint(f[`${item.type}/${item.id}/${item.pipeline}`] ?? 0))
+      .catch(() => setFootprint(0));
+  }, [item]);
   if (!item) return null;
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle>Remove from cart</DialogTitle>
       <DialogContent>
         <DialogContentText>
-          What should happen to this item's on-disk outputs? You can
-          always move the item back to the cart later and re-run the
-          pipeline to regenerate missing intermediates.
-        </DialogContentText>
-        <Box sx={{ mt: 2 }}>
-          <Typography variant="body2" sx={{ fontWeight: 500 }}>
-            {item.name}
-          </Typography>
-          <Box sx={{ display: "flex", gap: 0.5, mt: 0.5 }}>
-            <Chip size="small" label={item.type} variant="outlined" />
-            <Chip size="small" label={item.pipeline} variant="outlined" color="info" />
-          </Box>
-        </Box>
-      </DialogContent>
-      <DialogActions sx={{ flexWrap: "wrap", gap: 1, px: 3, pb: 2 }}>
-        <Button onClick={onClose}>Cancel</Button>
-        <Box sx={{ flexGrow: 1 }} />
-        <Button
-          onClick={() => onConfirm("none")}
-          color="warning"
-        >
-          Just remove (delete outputs)
-        </Button>
-        <Button
-          onClick={() => onConfirm("all")}
-        >
-          Archive everything
-        </Button>
-        <Button
-          onClick={() => onConfirm("finals")}
-          variant="contained"
-        >
-          Archive finals only
-        </Button>
-      </DialogActions>
-    </Dialog>
-  );
-}
-
-
-// Confirmation when removing an archived item — the preserved paths
-// become orphan-eligible on the next sweep.
-function RemoveArchiveItemDialog({ item, open, onClose, onConfirm }) {
-  if (!item) return null;
-  return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>Remove from archive</DialogTitle>
-      <DialogContent>
-        <DialogContentText>
-          This will mark {item.pathCount} preserved
-          {item.pathCount === 1 ? " path" : " paths"} as orphan-
-          eligible. The next sweep will delete them.
+          Its products are deleted on the next pass
+          {footprint === null ? "" : footprint > 0 ? ` — about ${gb(footprint)} on disk` : " (nothing on disk yet)"}.
+          Raw frames are never touched; putting it back in the cart rebuilds everything.
         </DialogContentText>
         <Box sx={{ mt: 2 }}>
           <Typography variant="body2" sx={{ fontWeight: 500 }}>
@@ -102,7 +59,7 @@ function RemoveArchiveItemDialog({ item, open, onClose, onConfirm }) {
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>
         <Button onClick={onConfirm} color="warning" variant="contained">
-          Delete
+          Remove
         </Button>
       </DialogActions>
     </Dialog>
@@ -111,14 +68,12 @@ function RemoveArchiveItemDialog({ item, open, onClose, onConfirm }) {
 
 
 export default function ShoppingCartPanel() {
-  const { shoppingCart, archive, stacks, targets, mosaics, plannerStars } =
+  const { shoppingCart, stacks, targets, mosaics, plannerStars } =
     useContext(AstroFlowContext);
   const navigate = useNavigate();
   const [removeCartTarget, setRemoveCartTarget] = useState(null);
-  const [removeArchiveTarget, setRemoveArchiveTarget] = useState(null);
 
   const cart = shoppingCart || [];
-  const arch = archive || [];
 
   const getName = (type, id) => {
     const sources = { stack: stacks, target: targets, mosaic: mosaics };
@@ -147,57 +102,32 @@ export default function ShoppingCartPanel() {
     }
     group.pipelines.push(it.pipeline);
   }
-  const archItems = arch.map(([type, id, pipeline, paths]) => ({
-    type, id, pipeline, name: getName(type, id),
-    pathCount: (paths || []).length,
-  }));
 
   const cartUrl = (type, id, pipeline) =>
     `/api/shopping_cart/${type}/${id}/${encodeURIComponent(pipeline)}`;
-  const archiveUrl = (type, id, pipeline) =>
-    `/api/archive/${type}/${id}/${encodeURIComponent(pipeline)}`;
 
-  const confirmRemoveCart = async (preserve) => {
+  const confirmRemoveCart = async () => {
     const item = removeCartTarget;
     setRemoveCartTarget(null);
-    await fetch(cartUrl(item.type, item.id, item.pipeline), {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ preserve }),
-    });
+    await fetch(cartUrl(item.type, item.id, item.pipeline), { method: "DELETE" });
   };
 
-  const confirmRemoveArchive = async () => {
-    const item = removeArchiveTarget;
-    setRemoveArchiveTarget(null);
-    await fetch(archiveUrl(item.type, item.id, item.pipeline), {
-      method: "DELETE",
-    });
-  };
-
-  // Two tiers: the planner gives starred objects every hour they can still
-  // use and plans the unstarred, by improvement, from the hours the stars
-  // cannot use. Stars, not a ranking.
+  // The star is priority, in the sky and in the cluster: the planner gives
+  // starred objects every hour they can still use, and the compute graph runs
+  // their pipelines before unstarred work. Stars, not a ranking.
   const isStarred = (g) => (plannerStars || []).some(([t, id]) => t === g.type && id === g.id);
   const toggleStar = async (g) => {
     await fetch(`/api/planner/star/${g.type}/${g.id}`, { method: isStarred(g) ? "DELETE" : "PUT" });
   };
 
-  const moveArchiveToCart = async (item) => {
-    await fetch(`${archiveUrl(item.type, item.id, item.pipeline)}/to_cart`, {
-      method: "POST",
-    });
-  };
-
-  const totalCount = cartItems.length + archItems.length;
-
   // Summary slot. When the cart's empty we still show a muted label so
   // the chip carries the same information density as the other panels
   // (otherwise it'd be an icon floating in space).
-  const summaryNode = totalCount === 0
+  const starred = cartGroups.filter(isStarred).length;
+  const summaryNode = cartItems.length === 0
     ? <Typography variant="body2" color="text.secondary">empty</Typography>
     : <Typography variant="body2">
-        {`${cartItems.length} live · ${archItems.length} archived`}
+        {`${cartItems.length} in the cart${starred ? ` · ${starred} starred` : ""}`}
       </Typography>;
 
   return (
@@ -213,7 +143,7 @@ export default function ShoppingCartPanel() {
           <>
             <MenuItem disabled sx={{ opacity: "1 !important" }}>
               <Typography variant="caption" sx={{ fontWeight: 600 }}>
-                LIVE CART
+                IN THE CART — processed, accumulating, kept
               </Typography>
             </MenuItem>
             {cartItems.length === 0 ? (
@@ -243,8 +173,8 @@ export default function ShoppingCartPanel() {
                     <Box sx={{ display: "flex", alignItems: "center", width: "100%", justifyContent: "space-between" }}>
                       <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
                         <Tooltip title={isStarred(g)
-                          ? "Starred: the planner shoots this before anything unstarred, whenever it is up"
-                          : "Star: shoot this before anything unstarred"}>
+                          ? "Starred: shot and processed before anything unstarred"
+                          : "Star: shoot and process this before anything unstarred"}>
                           <IconButton
                             size="small"
                             color={isStarred(g) ? "warning" : "default"}
@@ -301,63 +231,6 @@ export default function ShoppingCartPanel() {
                 );
               })
             )}
-
-            <Divider sx={{ my: 0.5 }} />
-
-            <MenuItem disabled sx={{ opacity: "1 !important" }}>
-              <Typography variant="caption" sx={{ fontWeight: 600 }}>
-                ARCHIVE
-              </Typography>
-            </MenuItem>
-            {archItems.length === 0 ? (
-              <MenuItem disabled>
-                <Typography variant="body2" color="text.secondary">
-                  (empty)
-                </Typography>
-              </MenuItem>
-            ) : (
-              archItems.map((it) => (
-                <MenuItem
-                  key={`arch:${it.type}:${it.id}:${it.pipeline}`}
-                  sx={{ display: "flex", flexDirection: "column", alignItems: "flex-start", py: 1 }}
-                  onClick={() => { close(); navigate(`/${it.type}/${it.id}`); }}
-                >
-                  <Box sx={{ display: "flex", alignItems: "center", width: "100%", justifyContent: "space-between" }}>
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                      {it.name}
-                    </Typography>
-                    <Box>
-                      <Tooltip title="Move back to live cart">
-                        <IconButton
-                          size="small"
-                          onClick={(e) => { e.stopPropagation(); moveArchiveToCart(it); }}
-                        >
-                          <Unarchive fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="Remove from archive">
-                        <IconButton
-                          size="small"
-                          onClick={(e) => { e.stopPropagation(); setRemoveArchiveTarget(it); }}
-                        >
-                          <Delete fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    </Box>
-                  </Box>
-                  <Box sx={{ display: "flex", gap: 0.5, mt: 0.5, flexWrap: "wrap" }}>
-                    <Chip size="small" label={it.type} variant="outlined" />
-                    <Chip size="small" label={it.pipeline} variant="outlined" color="info" />
-                    <Chip
-                      size="small"
-                      icon={<Archive sx={{ fontSize: 14 }} />}
-                      label={`${it.pathCount} path${it.pathCount === 1 ? "" : "s"}`}
-                      variant="outlined"
-                    />
-                  </Box>
-                </MenuItem>
-              ))
-            )}
           </>
         )}
       </DropdownChip>
@@ -367,12 +240,6 @@ export default function ShoppingCartPanel() {
         open={Boolean(removeCartTarget)}
         onClose={() => setRemoveCartTarget(null)}
         onConfirm={confirmRemoveCart}
-      />
-      <RemoveArchiveItemDialog
-        item={removeArchiveTarget}
-        open={Boolean(removeArchiveTarget)}
-        onClose={() => setRemoveArchiveTarget(null)}
-        onConfirm={confirmRemoveArchive}
       />
     </>
   );
