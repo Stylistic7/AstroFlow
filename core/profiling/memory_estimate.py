@@ -231,7 +231,7 @@ def _max_memory_bytes() -> int:
     never appear.
 
     Reads `ray.nodes()` to track joins/leaves. Falls back to the
-    local machine's projected Ray memory (`total × 0.7`, matching
+    local machine's projected Ray memory (`total`, matching
     `state/ray_control._ray_memory_bytes`) if Ray isn't initialized
     yet — keeps the cap meaningful during cold start.
     """
@@ -245,7 +245,7 @@ def _max_memory_bytes() -> int:
                 return int(_MAX_MEMORY_FRACTION * max(mems))
     except Exception:
         pass
-    return int(_MAX_MEMORY_FRACTION * psutil.virtual_memory().total * 0.7)
+    return int(_MAX_MEMORY_FRACTION * psutil.virtual_memory().total)
 
 
 def _trim_high_outliers(values: list[float]) -> list[float]:

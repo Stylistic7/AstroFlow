@@ -712,12 +712,11 @@ def _trace_and_snapshot(entity, cfg, pipeline_name: str, type_tag: str):
     graph None when the trace legitimately bails (a MASTER-mode mosaic with
     missing panels).
 
-    The trace is the @node-cached `trace_pipeline` — its body only re-runs when
-    the pipeline source, entity, or cfg changes; the graph is freshly
-    deserialized on each hit so in-place mutation downstream is safe. The
-    version arg folds in the deployed code SHA so editing ANY op the pipeline
-    calls (not just the pipeline body) re-derives the trace — otherwise the
-    cached graph keeps the op's old call_hash and no rebuild is triggered.
+    The trace is `trace_pipeline`, which always runs: the cache refuses to
+    store a Graph (`cached_decorator`), so its key only labels the miss. Hence
+    a cart entry is traced once per pass, by `trace_cart_item`, and its graph
+    handed to `run_pipeline` (2026-11-06: tracing again there ran 75a1's
+    18-29 min trace twice before its pipeline started).
 
     The snapshot is persisted HERE, on every pass (not in the @node-cached
     build_main_processing_graph, a cache hit on an unchanged cart): the
@@ -736,16 +735,18 @@ def _trace_and_snapshot(entity, cfg, pipeline_name: str, type_tag: str):
 
 
 @ray.remote(num_cpus=0.1)
-def trace_cart_item(entity, cfg, pipeline_name: str, type_tag: str) -> None:
+def trace_cart_item(entity, cfg, pipeline_name: str, type_tag: str) -> tuple:
     """The trace half of `run_pipeline`, run for every cart entry before the
-    orphan sweep: the sweep's live set is the entries' snapshots."""
-    _trace_and_snapshot(entity, cfg, pipeline_name, type_tag)
+    orphan sweep: the sweep's live set is the entries' snapshots. The graph
+    goes to the entry's `run_pipeline` in a 1-tuple: a bare Graph result
+    would be expanded by the runtime as a sub-graph here."""
+    return (_trace_and_snapshot(entity, cfg, pipeline_name, type_tag)[1],)
 
 
 @ray.remote(num_cpus=0.1, resources={"diskcache": 0.001})
-def sweep_orphans(*traced) -> None:
+def sweep_orphans() -> None:
     """Delete every output the cart does not declare (`cache.orphan_sweep`):
-    after every cart entry is traced (`traced`: ordering only), alongside the
+    after every cart entry is traced, alongside the
     pipelines that have started. Head-pinned: the output volume is local
     there. Files written since this Ray session started are in flight and
     spared, which is what makes running beside the pipelines safe. A cart
@@ -767,9 +768,11 @@ def sweep_orphans(*traced) -> None:
 
 
 @ray.remote(num_cpus=0.1)
-def run_pipeline(entity, cfg, pipeline_name: str, type_tag: str, starred: bool = False) -> "Graph":
-    """Reach for the cached trace, funnel terminals into the
-    sub-runtime sentinel. Returns the Graph so the parent runtime
+def run_pipeline(entity, cfg, pipeline_name: str, type_tag: str, starred: bool = False,
+                 traced: "tuple | None" = None) -> "Graph":
+    """Take the entry's trace (`traced`, from its `trace_cart_item`; traced
+    here when absent), funnel terminals into the sub-runtime sentinel.
+    Returns the Graph so the parent runtime
     spins up a child `GraphRuntime`, at dispatch priority 1 when the
     cart entry is `starred` (its chain runs before unstarred work).
 
@@ -783,7 +786,12 @@ def run_pipeline(entity, cfg, pipeline_name: str, type_tag: str, starred: bool =
     """
     from dependency_graph import Graph
 
-    pipeline_fn, graph = _trace_and_snapshot(entity, cfg, pipeline_name, type_tag)
+    if traced is None:
+        pipeline_fn, graph = _trace_and_snapshot(entity, cfg, pipeline_name, type_tag)
+    else:
+        from pipelines.registry import get_pipeline
+        from products.product import object_class
+        pipeline_fn, (graph,) = get_pipeline(pipeline_name, processes=object_class(type_tag)), traced
     if graph is None:
         # Surface an empty graph so the parent task's `node_completed`
         # still gets a Graph and closes out the cart entry cleanly.
@@ -1067,7 +1075,7 @@ def build_main_processing_graph(
     for entry in shopping_cart:
         # Cart entries: `(type, id, pipeline_name)`. Each entry is traced
         # (`trace_cart_item`, its snapshot stored), then becomes a
-        # `run_pipeline` Ray task that returns its cached trace as a
+        # `run_pipeline` Ray task that returns that trace as a
         # dynamic sub-graph. The returned Graph carries the
         # tracer's per-pipeline callbacks (`set_workflow_key`), so the
         # per-pipeline workflow-graph state updates fire naturally without
@@ -1085,18 +1093,16 @@ def build_main_processing_graph(
         graph[trace] = set()
         traces.append(trace)
         task = (run_pipeline, entity, cfg, pipeline_name, type, (type, id) in stars)
-        graph[task] = {trace}
+        graph[task] = [trace]                                           # the trace is its last arg
         pipeline_tasks.append(task)
 
-    # Each pipeline starts when its OWN trace lands (the edge keeps
-    # `run_pipeline`'s cached trace warm, so it is never traced twice); the
+    # Each pipeline starts when its OWN trace lands, and takes it; the
     # sweep starts when the LAST one does, alongside the running pipelines.
     # Gating every pipeline on the sweep left the cluster idle behind the
     # slowest trace (2026-11-06: 26 of 27 traced, 75a1's still running at
     # 9 min, nothing else to do). Running beside the pipelines is safe: the
     # sweep spares every file written since boot (`orphan_sweep.session_start`).
-    # ORDERED: the sweep takes the traces positionally.
-    graph[sweep] = traces
+    graph[sweep] = set(traces)                                          # ordering only
     graph[main_processing_graph_done] = [*pipeline_tasks, sweep]      # one terminal, cart empty or not
     return graph
 

@@ -31,17 +31,20 @@ def _workers_soft_limit() -> int:
 
 
 def _ray_memory_bytes() -> int:
-    """Memory to advertise to Ray as the node's static `memory` resource.
+    """Memory to advertise to Ray as the node's static `memory` resource:
+    all of physical RAM.
 
     Ray's default at startup is `available × 0.7`, taken once — so if
     PixInsight (or anything else heavy) was running when the head started,
     the cluster ends up with a permanently smaller cap than the machine
-    can actually deliver. Anchoring on `total × 0.7` instead gives a
-    stable per-machine number that doesn't depend on what was running
-    at start time. The auto-memory system gates per-task scheduling, so
-    a generous static cap doesn't risk OOM on its own.
+    can actually deliver; anchoring on `total` gives a stable number. It is
+    the whole of RAM, not 0.7 of it, because reservations are p95 PEAKS held
+    for a task's whole run (and Siril's is a fixed budget): at 0.7 the ledger
+    filled at ~3x the memory actually in use and held Siril with 59 % of the
+    Studio free (2026-11-06). The real brakes are `_select_node`'s measured
+    free memory and the macOS pressure veto.
     """
-    return int(psutil.virtual_memory().total * 0.7)
+    return int(psutil.virtual_memory().total)
 
 
 def is_ray_connected(timeout: float = 10.0):
@@ -188,7 +191,7 @@ def start_ray_subordinate_node(head_node_address, node_ip_address: str | None = 
     # `ray start` does not detect/replace it. Without this reap,
     # every code-follow (or crash-restart on a head bounce → WrongClusterID)
     # STACKS another raylet; observed 11 raylets on one 10-core worker, each
-    # advertising 10 CPU + 0.7×RAM, defeating CPU- and memory-gated scheduling
+    # advertising 10 CPU + all of RAM, defeating CPU- and memory-gated scheduling
     # ~11×. `stop --force` is a fast, unconditional local reap (no-op when none
     # are running); only ever called on a worker joining, never on the head.
     subprocess.run([*RAY_CLI, "stop", "--force"], capture_output=True, text=True)

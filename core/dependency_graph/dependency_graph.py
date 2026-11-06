@@ -433,7 +433,7 @@ def _select_node(
     * RESERVED leg (ceiling - reserved) covers the lag before a just-launched
       task has allocated and shows up in the measurement. The ceiling is the
       SMALLER of physical RAM and the node's Ray ``memory`` capacity (``ray
-      start --memory``, 0.7 x RAM): the reservation we hand Ray is admitted
+      start --memory``, all of RAM since 2026-11-06): the reservation we hand Ray is admitted
       against the latter, so a lease that fits RAM but not Ray's ledger is
       not placed — Ray holds it, pending, while our ledger shows it running
       (24-panel merges, 2026-09-16: 43 GB admitted against 68.7 GB of RAM on
