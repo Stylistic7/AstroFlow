@@ -38,7 +38,8 @@ interior appearing as an orphan here is a SCOPE GC BUG, not routine litter, and
 
 This is the callable core: `sweep(ctx, delete=...)`. The app runs it every
 pass (`compute_graph.sweep_orphans`): after every cart entry is traced, so
-the live set is those traces' snapshots, and before any pipeline runs.
+the live set is those traces' snapshots, alongside the pipelines (each starts
+when its own trace lands).
 `scripts/sweep_orphans.py` is the dry-run report and a manual run. The
 auto-run variant of 2026-08 deleted in-flight tail intermediates because the
 live-set trace resolved PARTIALLY; the trace is strict now, and what a

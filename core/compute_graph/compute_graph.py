@@ -745,9 +745,10 @@ def trace_cart_item(entity, cfg, pipeline_name: str, type_tag: str) -> None:
 @ray.remote(num_cpus=0.1, resources={"diskcache": 0.001})
 def sweep_orphans(*traced) -> None:
     """Delete every output the cart does not declare (`cache.orphan_sweep`):
-    after every cart entry is traced (`traced`: ordering only) and before any
-    pipeline runs. Head-pinned: the output volume is local there. Files
-    written since this Ray session started are in flight and spared. A cart
+    after every cart entry is traced (`traced`: ordering only), alongside the
+    pipelines that have started. Head-pinned: the output volume is local
+    there. Files written since this Ray session started are in flight and
+    spared, which is what makes running beside the pipelines safe. A cart
     item that does not trace skips the sweep for this pass, never the pass.
     Per-entry footprints go to the context for the cart's removal note."""
     from cache import orphan_sweep
@@ -1065,9 +1066,9 @@ def build_main_processing_graph(
     sweep = Node(sweep_orphans)
     for entry in shopping_cart:
         # Cart entries: `(type, id, pipeline_name)`. Each entry is traced
-        # (`trace_cart_item`, its snapshot stored) before the orphan sweep,
-        # then becomes a `run_pipeline` Ray task that returns its cached
-        # trace as a dynamic sub-graph. The returned Graph carries the
+        # (`trace_cart_item`, its snapshot stored), then becomes a
+        # `run_pipeline` Ray task that returns its cached trace as a
+        # dynamic sub-graph. The returned Graph carries the
         # tracer's per-pipeline callbacks (`set_workflow_key`), so the
         # per-pipeline workflow-graph state updates fire naturally without
         # any plumbing here, and the entry's star as its dispatch priority.
@@ -1084,11 +1085,17 @@ def build_main_processing_graph(
         graph[trace] = set()
         traces.append(trace)
         task = (run_pipeline, entity, cfg, pipeline_name, type, (type, id) in stars)
-        graph[task] = {sweep}
+        graph[task] = {trace}
         pipeline_tasks.append(task)
 
-    # Every entry traced → the sweep (what the cart does not declare goes) →
-    # every pipeline. ORDERED: the sweep takes the traces positionally.
+    # Each pipeline starts when its OWN trace lands (the edge keeps
+    # `run_pipeline`'s cached trace warm, so it is never traced twice); the
+    # sweep starts when the LAST one does, alongside the running pipelines.
+    # Gating every pipeline on the sweep left the cluster idle behind the
+    # slowest trace (2026-11-06: 26 of 27 traced, 75a1's still running at
+    # 9 min, nothing else to do). Running beside the pipelines is safe: the
+    # sweep spares every file written since boot (`orphan_sweep.session_start`).
+    # ORDERED: the sweep takes the traces positionally.
     graph[sweep] = traces
     graph[main_processing_graph_done] = [*pipeline_tasks, sweep]      # one terminal, cart empty or not
     return graph
