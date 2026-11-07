@@ -836,6 +836,12 @@ def run_graph(
                     print(f"Node {node_to_string(node)} raised exception {e}")
                     for rt, node in completions:
                         rt.node_failed(node, e.cause, _retrieve_logs(rt, node))
+                except ray.exceptions.RaySystemError as e:
+                    # The task ran, but its result can't be read here (an
+                    # unpicklable graph, say). That fails this node, not the pass.
+                    print(f"Node {node_to_string(node)} result unreadable: {e}")
+                    for rt, node in completions:
+                        rt.node_failed(node, e, _retrieve_logs(rt, node))
                 else:
                     for rt, node in completions:
                         rt.node_completed(node, result, _retrieve_logs(rt, node))

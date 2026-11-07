@@ -23,25 +23,20 @@ def _discover_builtin_pipelines() -> None:
     Failures are logged but don't abort discovery — one broken file
     must not knock out the others.
 
-    Uses `importlib.reload` when the module is already in
-    `sys.modules` so the `@pipeline` decoration re-runs and the
-    registry is refreshed. Without this, a previous discovery (or any
-    other import) would cache the module, and a subsequent call after
-    the registry was cleared (e.g. by a test fixture) would silently
-    skip re-registration.
+    Never reloads a module that is already imported: a reload rebinds its
+    `@node`s, and a graph already holding the old ones can then only be
+    pickled by value, which `dependency_graph.serialization` cannot read
+    back. `run_pipeline` got exactly that: unpickling its traced graph
+    imported `pipelines.time_lapse`, and its first `get_pipeline` reloaded
+    it, so returning the graph ended the pass (2026-11-07).
     """
-    import sys
     pipelines_dir = Path(__file__).parent
     skip = {"__init__.py", "registry.py", "decorators.py"}
     for path in sorted(pipelines_dir.glob("*.py")):
         if path.name in skip or path.name.startswith("test_"):
             continue
-        module_name = f"pipelines.{path.stem}"
         try:
-            if module_name in sys.modules:
-                importlib.reload(sys.modules[module_name])
-            else:
-                importlib.import_module(module_name)
+            importlib.import_module(f"pipelines.{path.stem}")
             log.debug("Loaded built-in pipeline file", path=str(path))
         except Exception as e:
             log.warning(

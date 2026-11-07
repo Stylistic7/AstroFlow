@@ -26,6 +26,8 @@ def _isolate_registry():
     pre-test state on exit so tests that follow see the same registry
     they would have seen without us."""
     import pipelines.registry as r
+    # Imported first, so a pipeline a test imports isn't wiped by the restore.
+    r._discover_builtin_pipelines()
     saved = dict(_REGISTRY)
     saved_discovered = r._DISCOVERED
     # Pin discovery off so tests don't trigger ~/AstroFlow scans.

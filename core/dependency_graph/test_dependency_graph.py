@@ -1,5 +1,6 @@
 from typing import TypeVar
 import os
+import pickle
 import pytest
 import ray
 import time
@@ -384,6 +385,27 @@ def test_with_exception(test_context) -> None:
 
     run_graph(graph)
     assert isinstance(captured[scatter_raises_exception], TimeoutError)
+
+
+def _refuse_to_load() -> None:
+    raise pickle.UnpicklingError("this result can't be read")
+
+
+class _UnreadableResult:
+    def __reduce__(self):
+        return _refuse_to_load, ()
+
+
+@ray.remote
+def returns_unreadable_result():
+    return _UnreadableResult()
+
+
+def test_unreadable_result_fails_the_node_not_the_pass(test_context) -> None:
+    graph, captured = _capturing_graph(Graph({returns_unreadable_result: {}}))
+
+    run_graph(graph)
+    assert isinstance(captured[returns_unreadable_result], ray.exceptions.RaySystemError)
 
 
 def test_dynamic_subgraph(test_context) -> None:
