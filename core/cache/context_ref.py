@@ -74,6 +74,21 @@ class ContextRef(Generic[T]):
     session: str | None = None
 
     def get(self) -> T:
+        """The value, read once per handle. Every read used to unpickle it
+        afresh: a trace asks its config for the calibration library ~3 times
+        per stack, and for 75a1's 144 stacks that was 55% of a 21-33 min
+        trace (py-spy, 2026-11-06). The slot names its value (`store`), so
+        it can never change under this handle; the copy is a plain
+        attribute, never pickled (`__reduce__`, the Ray serializer), so it
+        lives as long as the handle -- in a task, as long as the task."""
+        if "_value" not in self.__dict__:
+            value = self._read()
+            if value is None:
+                return None
+            self._value = value
+        return self._value
+
+    def _read(self) -> T:
         if self.ref is not None:
             try:
                 return ray.get(self.ref, timeout=5)
@@ -134,6 +149,7 @@ class ContextRef(Generic[T]):
         actor = context._actor()        # Ray wants the handle held, not chained
         ray.get(actor.release.remote(self.cache_key))
         self.ref = None
+        self.__dict__.pop("_value", None)
 
     def __reduce__(self):
         # stdlib pickle path (diskcache persistence, cached Graphs,
