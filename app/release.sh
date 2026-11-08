@@ -25,7 +25,7 @@ utm=/Applications/UTM.app/Contents/MacOS/utmctl
 tart=~/Applications/tart.app/Contents/MacOS/tart
 key=(-i "$HOME/.ssh/astroflow_vm" -o BatchMode=yes -o LogLevel=ERROR -o ServerAliveInterval=30
      -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
-tmp=$(mktemp -d)
+tmp=$(cd "$(mktemp -d)" && pwd -P)   # resolved: build_app.sh compares real paths
 wt=$tmp/tree
 cleanup() {
     "$tart" stop astroflow-clean >/dev/null 2>&1 || true
@@ -51,7 +51,16 @@ vm_up() {   # a UTM VM's address, once it answers ssh
     echo "$1 never answered ssh" >&2; return 1
 }
 
-echo "==> AstroFlow $version (${sha:0:8}): Windows build"
+desktop() { ssh "${key[@]}" "$1" '(Get-Process explorer -ErrorAction SilentlyContinue | Select-Object -First 1).SessionId' | grep -q .; }
+echo "==> AstroFlow $version (${sha:0:8}): preflight"
+tip=$(vm_up Windows)
+if ! desktop "$tip"; then
+    echo "    waiting for someone to log in on the \"Windows\" VM's desktop in UTM (the tray app needs one)"
+    until desktop "$tip"; do sleep 60; done
+fi
+"$utm" suspend Windows
+
+echo "==> Windows build"
 bip=$(vm_up "Windows Build")
 (cd "$wt" && app/windows/build_in_vm.sh "$bip")
 ssh "${key[@]}" "$bip" 'shutdown /s /t 0' || true
@@ -68,8 +77,7 @@ fi
 echo "==> Windows test (the \"Windows\" VM)"
 tip=$(vm_up Windows)
 th=$tip
-ssh "${key[@]}" "$th" '(Get-Process explorer -ErrorAction SilentlyContinue | Select-Object -First 1).SessionId' | grep -q . \
-    || { echo "nobody is logged in on the Windows VM's desktop: log in once in UTM, then run again"; exit 1; }
+desktop "$tip" || { echo "FAIL: the Windows VM's desktop login is gone: log in in UTM and run again"; exit 1; }
 cat > "$tmp/install.ps1" <<'EOF'
 Get-Process pythonw, python, raylet, gcs_server -ErrorAction SilentlyContinue | Stop-Process -Force
 $exe = Get-ChildItem C:\AstroFlow-release\AstroFlow-Setup-*.exe | Select-Object -First 1
