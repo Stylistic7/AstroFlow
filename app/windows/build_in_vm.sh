@@ -50,6 +50,20 @@ vm 'C:\cygwin\bin\bash.exe -lc "cd /cygdrive/c/build/src && bash -o igncr app/wi
 echo "==> the install layout and setup.exe"
 vm "cd C:\\build\\src; powershell -NoProfile -ExecutionPolicy Bypass -File app\\windows\\build_installer.ps1 -Tree C:\\build\\tree.zip -Sha $sha -Inputs C:\\build\\inputs -Stage C:\\build\\stage -Downloads C:\\build\\downloads -Out C:\\build\\dist; if (\$LASTEXITCODE) { throw 'installer build failed' }"
 
+echo "==> the proof: the install layout solves a real frame"
+# The test frame from this clone's LFS store, never fetched.
+oid=$(git show HEAD:app/windows/test/frame_bin4.fit | sed -n 's/^oid sha256://p')
+scp -q "${key[@]}" "$(git rev-parse --git-common-dir)/lfs/objects/${oid:0:2}/${oid:2:2}/$oid" "$host:C:/build/frame.fits"
+vm '$t = "C:\build\solve-test"; $st = "C:\build\stage"
+if (Test-Path $t) { Remove-Item -Recurse -Force $t }; New-Item -ItemType Directory -Force "$t\tmp" | Out-Null
+Move-Item C:\build\frame.fits "$t\frame.fits"
+"inparallel`ncpulimit 300`nadd_path C:/build/stage/tools/astrometry-index`nautoindex`n" | Set-Content "$t\an.cfg" -NoNewline
+# The app'"'"'s PATH shape: the bundle'"'"'s bin first, then its Python, then the system; no other Cygwin.
+$env:Path = "$st\tools\solve-field\bin;$st\python;C:\Windows\System32;C:\Windows"
+$env:ASTROFLOW_PYTHON = "$st\python\python.exe"; $env:CYGWIN = "nodosfilewarning"
+solve-field.exe --config C:/build/solve-test/an.cfg --fits-image --overwrite --no-plots --new-fits none --tweak-order 2 --crpix-center --cpulimit 300 --objs 1000 --scale-units degwidth --scale-low 4 --scale-high 8 --temp-dir C:/build/solve-test/tmp C:/build/solve-test/frame.fits | Select-String "solved with|Field center: \(RA,Dec\)"
+if (-not (Test-Path "$t\frame.solved")) { throw "the frame did not solve" }'
+
 out=installers/AstroFlow-Setup-$version-windows
 rm -rf "$out" && mkdir -p "$out"
 scp -q "${key[@]}" "$host:C:/build/dist/*" "$out/"

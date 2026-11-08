@@ -51,7 +51,6 @@ uv export --frozen --no-dev --no-emit-project --no-hashes -o "$Downloads\require
 if ($LASTEXITCODE -ne 0) { throw "uv export failed" }
 uv pip install --python $py -r "$Downloads\requirements.txt"
 if ($LASTEXITCODE -ne 0) { throw "uv pip install failed" }
-& $py -c "import ray, numpy, pyvips, astropy, waitress, pystray; print('python', ray.__version__, numpy.__version__)"
 
 Write-Host "==> solve-field (astrometry.net under Cygwin)"
 Expand-Archive "$repo\solve-field-windows-x64.zip" -DestinationPath "$Stage\tools" -Force
@@ -59,6 +58,10 @@ Expand-Archive "$repo\solve-field-windows-x64.zip" -DestinationPath "$Stage\tool
 Write-Host "==> libvips $VipsVersion"
 Expand-Archive "$Inputs\vips-dev-x64-all-$VipsVersion.zip" -DestinationPath "$Downloads\vips" -Force
 Copy-Item -Recurse (Get-ChildItem "$Downloads\vips" -Directory | Select-Object -First 1).FullName "$Stage\tools\vips"
+# The packages, pyvips with the libvips just staged among them.
+$env:Path = "$Stage\tools\vips\bin;$env:Path"
+& $py -c "import ray, numpy, pyvips, astropy, waitress, pystray; print('python', ray.__version__, numpy.__version__, 'libvips', pyvips.API_mode, pyvips.version(0), pyvips.version(1))"
+if ($LASTEXITCODE -ne 0) { throw "the bundled Python cannot import its packages" }
 
 Write-Host "==> GraXpert: its own packages, its model, and the wrapper"
 uv pip install --python $py --target "$Stage\tools\graxpert" -r "$repo\app\graxpert-requirements.txt"
