@@ -108,6 +108,27 @@ def relocate(lib_dir: Path, files: dict[Path, Path]) -> set[tuple[str, str]]:
     return formulas
 
 
+def check_lock(formulas: set[tuple[str, str]]) -> None:
+    """The formulas the app carries against app/homebrew.lock, the last
+    release's: Homebrew upgrades itself, so a change stops the build and is
+    named, never shipped unnoticed. HOMEBREW_LOCK_UPDATE=1 accepts it, writing
+    the lock to commit."""
+    lock = Path(__file__).with_name("homebrew.lock")
+    now = "".join(f"{n} {v}\n" for n, v in sorted(formulas))
+    was = lock.read_text() if lock.exists() else ""
+    if now == was:
+        return
+    if os.environ.get("HOMEBREW_LOCK_UPDATE") == "1":
+        lock.write_text(now)
+        print(f"{lock} updated: commit it with the release")
+        return
+    old, new = set(was.splitlines()), set(now.splitlines())
+    raise SystemExit("The app would carry other Homebrew formulas than app/homebrew.lock records:\n"
+                     + "".join(f"  - {line}\n" for line in sorted(old - new))
+                     + "".join(f"  + {line}\n" for line in sorted(new - old))
+                     + "\nTo ship them, build again with HOMEBREW_LOCK_UPDATE=1 and commit the lock.")
+
+
 def record(formulas: set[tuple[str, str]], licenses_dir: Path, sources_dir: Path) -> None:
     licenses_dir.mkdir(parents=True, exist_ok=True)
     sources_dir.mkdir(parents=True, exist_ok=True)
@@ -163,4 +184,6 @@ def record(formulas: set[tuple[str, str]], licenses_dir: Path, sources_dir: Path
 if __name__ == "__main__":
     lib, licenses, sources, *files = sys.argv[1:]
     pairs = {Path(f.split("=", 1)[0]): Path(f.split("=", 1)[-1]) for f in files}
-    record(relocate(Path(lib), pairs), Path(licenses), Path(sources))
+    formulas = relocate(Path(lib), pairs)
+    check_lock(formulas)
+    record(formulas, Path(licenses), Path(sources))
