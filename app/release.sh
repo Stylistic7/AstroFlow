@@ -9,8 +9,11 @@
 # Needs: the UTM VMs "Windows Build" (builds, see app/windows/build_in_vm.sh)
 # and "Windows" (tests, with a user logged in on its desktop: the tray app
 # needs one, so keep it suspended between releases rather than shut down); the
-# tart VM astroflow-clean; ~/.ssh/astroflow_vm in all three; the Windows inputs
-# in ~/Projects/AstroFlow-build-inputs; Homebrew's astrometry-net and vips at
+# tart VM astroflow-clean; ~/.ssh/astroflow_vm in all three. Both test VMs keep
+# a small library and a cart, so each smoke check runs a real pass: six RC71
+# e308 Pane 17 H frames in ~/Pictures/AstroFlow/Raw, and target 4c593d16 on
+# "OSS Stack + OSS Mosaic" in the cart (no Siril, which users install). Also the Windows
+# inputs in ~/Projects/AstroFlow-build-inputs; Homebrew's astrometry-net and vips at
 # app/homebrew.lock's versions. About 2 h, 40 GB of disk and much of the RAM:
 # run it while the graph is quiet.
 set -euo pipefail

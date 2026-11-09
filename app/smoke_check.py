@@ -48,15 +48,20 @@ def main(base, sha):
                 sys.exit(f"FAIL: {name} on {node['host']}: {t['detail']}")
             print(f"ok  {name}: {t['detail']}")
 
-    def idle():   # idle, and still idle a minute later: a pass can start late
-        if get(f"{base}/api/compute_graph/status")["_totals"]["remaining_number"]:
-            return False
-        time.sleep(60)
-        return get(f"{base}/api/compute_graph/status")["_totals"]["remaining_number"] == 0
-    wait("the graph going idle", idle, 3600, every=20)
     cart = get(f"{base}/api/shopping_cart")
     if not cart:
-        print("ok  graph idle; the cart is empty, so no pipeline ran")
+        sys.exit("FAIL: the cart is empty, so no pipeline would run: give the VM a library and a cart")
+
+    def remaining():   # None until the first pass reports
+        totals = get(f"{base}/api/compute_graph/status").get("_totals")
+        return None if totals is None else totals["remaining_number"]
+
+    def idle():   # a pass has reported, is done, and is still done a minute later
+        if remaining() != 0:
+            return False
+        time.sleep(60)
+        return remaining() == 0
+    wait("the graph going idle", idle, 3600, every=20)
     for kind, ident, pipeline in cart:
         states = get(f"{base}/api/workflow_graph/{kind}/{ident}/{urllib.parse.quote(pipeline)}",
                      timeout=300).get("state") or {}

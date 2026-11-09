@@ -14,6 +14,7 @@ import pytest
 
 from calibration.directory_affinity import (
     _ancestor_dirs,
+    _candidate_dirs_at,
     _dir_master_cache,
     find_external_master,
     masters_in_dir,
@@ -256,3 +257,20 @@ def test_the_walk_stops_at_the_home_folder_or_the_volume_never_a_system_root(tmp
     assert walk[0] == (tmp_path / "lights").resolve()
     assert Path("/") not in walk and Path("/System/Volumes/Data") not in walk
     assert all(not os.path.ismount(p) or p == walk[-1] for p in walk)
+
+
+def test_privacy_protected_folders_are_never_read(tmp_path, monkeypatch):
+    """Reading `Photos Library.photoslibrary` (or Documents, beside it in
+    home) blocks on macOS's consent prompt: a clean Mac's pass hung on it for
+    good (2026-11-08). Packages and the home folder's children are skipped;
+    the home folder itself, and an ordinary dotted folder name, are not."""
+    home = (tmp_path / "home").resolve()
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    (home / "Documents").mkdir(parents=True)
+    (home / "Pictures" / "Photos Library.photoslibrary").mkdir(parents=True)
+    (home / "Pictures" / "Flats 2026.10.12").mkdir()
+    (home / "Pictures" / "AstroFlow" / "Raw").mkdir(parents=True)
+    seen = [c for a in _ancestor_dirs(home / "Pictures" / "AstroFlow" / "Raw") for c in _candidate_dirs_at(a)]
+    names = {p.name for p in seen}
+    assert "Photos Library.photoslibrary" not in names and "Documents" not in names
+    assert {"Flats 2026.10.12", "home", "Raw"} <= names

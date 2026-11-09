@@ -198,13 +198,21 @@ def _candidate_dirs_at(ancestor: Path) -> Iterable[Path]:
     before an unnamed sibling that merely happens to hold master files.
     Ordering only: every subdirectory is still searched, and `sorted` keeps
     the walk deterministic within each group.
+
+    Never peeked into: the home folder's children (Desktop, Documents,
+    Downloads...) and macOS packages (`Photos Library.photoslibrary`, `.app`):
+    they are privacy-protected, and reading one from the app blocks until
+    someone answers macOS's consent prompt. Frames in `~/Pictures/AstroFlow`
+    hung a clean Mac's pass on the Photos library for good (2026-11-08).
     """
     yield ancestor
+    if ancestor == Path.home().resolve():
+        return
     try:
         if ancestor.is_dir():
             children = sorted(
                 c for c in ancestor.iterdir()
-                if c.is_dir() and not c.name.startswith(".")
+                if c.is_dir() and not c.name.startswith(".") and not c.suffix[1:].isalpha()
             )
             yield from (c for c in children if _looks_like_calibration_dir(c.name))
             yield from (c for c in children if not _looks_like_calibration_dir(c.name))
