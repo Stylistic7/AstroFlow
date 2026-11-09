@@ -123,11 +123,16 @@ cp -c "$dmg" "$frame" "$share/"
 mip=$("$tart" ip astroflow-clean --wait 300)
 mh=admin@$mip
 until ssh "${key[@]}" -o ConnectTimeout=5 "$mh" true 2>/dev/null; do sleep 5; done
-# An upgrade in place, as a user's would be.
-ssh "${key[@]}" "$mh" "set -e; pkill -f '[A]stroFlow.app' || true; sleep 3; rm -rf /Applications/AstroFlow.app
+# An upgrade in place, as a user's would be. The old app is quit twice: at
+# login macOS reopens an app that was running when the VM stopped, and one
+# reopened after the only quit left `open` raising that stale launcher, with
+# no server behind it (2026-11-08).
+ssh "${key[@]}" "$mh" "set -e; quit() { pkill -f '[A]stroFlow.app' || true; sleep 3; }
+until pgrep -xq Dock; do sleep 2; done
+quit; rm -rf /Applications/AstroFlow.app
 hdiutil attach -nobrowse -quiet '/Volumes/My Shared Files/share/AstroFlow-$version.dmg'
 ditto /Volumes/AstroFlow/AstroFlow.app /Applications/AstroFlow.app; hdiutil detach -quiet /Volumes/AstroFlow
-open -a /Applications/AstroFlow.app"
+quit; open -a /Applications/AstroFlow.app"
 /usr/bin/python3 "$check" "http://$mip:8000" "$sha"
 ssh "${key[@]}" "$mh" "set -e; R=/Applications/AstroFlow.app/Contents/Resources; t=\$(mktemp -d); mkdir \$t/tmp
 cp '/Volumes/My Shared Files/share/$oid' \$t/frame.fits
