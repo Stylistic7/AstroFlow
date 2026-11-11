@@ -47,7 +47,7 @@ wheels = [
 
 [[package]]
 name = "astroflow"
-version = "0.1"
+version = "0.2"
 source = { editable = "." }
 dependencies = [
     { name = "astroalign" },
