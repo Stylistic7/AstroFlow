@@ -1,14 +1,21 @@
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 import time
 import socket
+from pathlib import Path
 
 import psutil
 
-from base_path import RAY_CLI
+from base_path import RAY_CLI, ray_temp_root
 from state.procs import CHILD_FLAGS
+
+# Every `ray` command here and `ray.init` (ray_infra.ray_init) must agree on
+# the session directory: `ray start` creates it there, `ray status` and
+# `address="auto"` read `<RAY_TMPDIR>/ray/ray_current_cluster`.
+RAY_ENV = {"RAY_TMPDIR": ray_temp_root()}
 
 
 def _workers_soft_limit() -> int:
@@ -60,11 +67,27 @@ def is_ray_connected(timeout: float = 10.0):
     """
     try:
         result = subprocess.run(
-            [*RAY_CLI, "status"], capture_output=True, text=True, timeout=timeout
+            [*RAY_CLI, "status"], capture_output=True, text=True, timeout=timeout,
+            env={**os.environ, **RAY_ENV},
         )
     except subprocess.TimeoutExpired:
         return False
     return "Autoscaler status" in result.stdout
+
+
+def _fresh_temp_dir() -> None:
+    """Clear Ray's session directory before this node starts: nothing else
+    ever does (macOS swept `/tmp/ray`; `ray_temp_root` is out of its reach),
+    and a session is logs plus the shipped code — gigabytes a boot. The
+    newest session stays as the post-mortem of whatever ended the last run.
+    A live local node (`ray status` answers) keeps everything: its sockets
+    are in there."""
+    root = Path(ray_temp_root()) / "ray"
+    if not root.is_dir() or is_ray_connected():
+        return
+    sessions = sorted(p for p in root.glob("session_*") if p.is_dir() and not p.is_symlink())
+    for stale in sessions[:-1]:
+        shutil.rmtree(stale, ignore_errors=True)
 
 
 def _wait_for_ray(process: subprocess.Popen, timeout):
@@ -109,7 +132,7 @@ def _start_ray(args: list[str], env: dict[str, str]) -> subprocess.Popen:
             resource.setrlimit(resource.RLIMIT_NOFILE, (want, hard))
     command = [*RAY_CLI, "start", *args]
     print(f'### Starting Ray with {" ".join(f"{k}={v}" for k, v in env.items())} {shlex.join(command)}')
-    return subprocess.Popen(command, env={**os.environ, **env}, creationflags=CHILD_FLAGS)
+    return subprocess.Popen(command, env={**os.environ, **RAY_ENV, **env}, creationflags=CHILD_FLAGS)
 
 
 # Generous: under x64 emulation on an ARM Windows VM a start takes well over a
@@ -124,6 +147,7 @@ def start_ray_head_node(node_ip_address: str | None = None, timeout=_START_TIMEO
     # here and tag the target functions with resources={"fake_resource": 1}.
     resources = _resources({"PixInsight": 1, "diskcache": 1, "fastest_storage": 1, "gpu_slots": 3})
     bind = ["--node-ip-address", node_ip_address] if node_ip_address else []
+    _fresh_temp_dir()
     process = _start_ray(
         ["--head", *bind, "--memory", str(_ray_memory_bytes()), "--resources", resources],
         {"RAY_num_workers_soft_limit": str(_workers_soft_limit())})
@@ -195,6 +219,7 @@ def start_ray_subordinate_node(head_node_address, node_ip_address: str | None = 
     # ~11×. `stop --force` is a fast, unconditional local reap (no-op when none
     # are running); only ever called on a worker joining, never on the head.
     subprocess.run([*RAY_CLI, "stop", "--force"], capture_output=True, text=True)
+    _fresh_temp_dir()
     # TODO: Put these resources in the UI.
     resources = _resources({"PixInsight": 1, "gpu_slots": 2})
     bind = node_ip_address or get_ip()

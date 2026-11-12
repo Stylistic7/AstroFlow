@@ -121,7 +121,8 @@ ray-clean:
 	@echo "→ pkill stray pytest"
 	-pkill -9 -f "pytest" >/dev/null 2>&1 || true
 	@sleep 1
-	@echo "→ rm /tmp/ray and /tmp/ray-gw* (per-session state, plasma + spill dirs, sockets)"
+	@echo "→ rm the app's Ray session root (base_path.ray_temp_root) and /tmp/ray* (tests, old installs)"
+	-rm -rf /var/tmp/astroflow/ray 2>/dev/null
 	-rm -rf /tmp/ray 2>/dev/null
 	-rm -rf /tmp/ray-* 2>/dev/null
 	-rm -rf /tmp/ray-gw* 2>/dev/null

@@ -1,8 +1,9 @@
+import os
 import ray
 import ray._private.auto_init_hook
 import threading
 
-from base_path import get_base_path, get_ray_working_dir
+from base_path import get_base_path, get_ray_working_dir, ray_temp_root
 
 # Disable Ray's auto-init, which silently creates a standalone local cluster
 # when ray.get_actor() etc. are called before connect_to_ray_cluster().
@@ -58,6 +59,9 @@ def connect_to_ray_cluster(create_orchestrator_actors: bool = True):
 
         from state.code_version import CODE_VERSION_ENV, RAY_WORKING_DIR_EXCLUDES, deployed_code_version
 
+        # The session directory `ray start` used (state.ray_control.RAY_ENV):
+        # `address="auto"` reads `<RAY_TMPDIR>/ray/ray_current_cluster`.
+        os.environ["RAY_TMPDIR"] = ray_temp_root()
         no_uv_runtime_env()
         try:
             ray_context = ray.init(

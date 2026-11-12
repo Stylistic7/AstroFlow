@@ -11,6 +11,21 @@ def app_support_dir() -> Path:
     return Path.home() / "Library" / "Application Support" / "AstroFlow"
 
 
+def ray_temp_root() -> str:
+    """Where Ray keeps its session (`<root>/ray/session_*`: logs, the Unix
+    sockets, and the copies of `core/` it ships to every worker). Not `/tmp`,
+    Ray's default on macOS: `/usr/libexec/tmp_cleaner` runs at midnight and
+    deletes any file there untouched for three days, and on 2026-11-12 it
+    emptied the shipped `core/` copies of a head four days up — every worker
+    spawned after that failed its first import, every pass ended with nothing
+    it could run, and every object with new frames read OUT OF DATE. `/var/tmp`
+    is not swept. Short, because the sockets' paths
+    (`…/session_<32 chars>/sockets/plasma_store`) must fit macOS's 104 bytes."""
+    if sys.platform == "win32":
+        return str(app_support_dir() / "tmp")
+    return "/var/tmp/astroflow"
+
+
 def get_base_path() -> str:
     # The app runs the checkout (or app bundle copy) it was launched from —
     # full stop. The old ASTROFLOW_LIVE_CORE / pointer-file redirect existed
