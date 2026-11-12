@@ -6,8 +6,9 @@ finishes and pipelines live under):
 * `<name>.fits` -- a flat HEALPix map (a binary table, one row per cell,
   NESTED), read once per process into a pyramid of face rasters and served
   to the viewer as HiPS-shaped tiles;
-* `<name>.hips` -- one line, the root of a HiPS tree (a URL or a folder);
-  the browser reads a remote tree's tiles itself (allsky/hips.py).
+* `<name>.hips` -- one line, the root of a HiPS tree (a URL or a folder) or
+  of a packed plane (allsky/tiles.py, the combiner's output); the browser
+  reads a remote tree's tiles itself (allsky/hips.py).
 
 Either way the map carries a gauge and the per-band statistics every finish
 seeds from. The gauge scales file units so the sky median sits on the
@@ -77,11 +78,10 @@ class SkyMap:
             w = self.tile_width
             return self.pyramid[order][face, ty * w:(ty + 1) * w, tx * w:(tx + 1) * w]
         if self.tree is not None and not self.tree.remote:
-            from allsky.hips import read_tile, tile_path
-            data = self.tree.read(tile_path(order, npix))
-            if data is None:
+            raster = self.tree.tile(order, npix)
+            if raster is None:
                 raise IndexError((order, npix))
-            return read_tile(data)
+            return np.where(np.isfinite(raster), raster, 0.0).astype(np.float32)
         raise IndexError((order, npix))
 
 
@@ -160,16 +160,19 @@ _lock = threading.Lock()
 
 
 def map_mtime(path: Path) -> float:
-    """When the map last changed: its file, or for a local HiPS tree also the
-    tree's `properties`, which the combiner rewrites on every run. The
-    viewer caches tiles as immutable under this version, so a tree that
-    grows under the same name must move it."""
+    """When the map last changed: its file, or for a local source also its
+    properties -- a tree's `properties` file, a packed plane's `zarr.json` --
+    which the combiner rewrites last on every run. The viewer caches tiles
+    as immutable under this version, so a source that grows under the same
+    name must move it."""
     mtime = os.path.getmtime(path)
     if path.suffix == ".hips":
         root = path.read_text().strip()
-        props = Path(root) / "properties"
-        if "://" not in root and props.is_file():
-            mtime = max(mtime, props.stat().st_mtime)
+        if "://" not in root:
+            for marker in ("properties", "zarr.json"):
+                p = Path(root) / marker
+                if p.is_file():
+                    mtime = max(mtime, p.stat().st_mtime)
     return mtime
 
 

@@ -14,10 +14,20 @@ from astropy.io import fits
 
 from allsky import reduce as rd
 from allsky.healpix_faces import compact_bits, xyf_from_vec
-from allsky.hips import read_properties
+from allsky.tiles import Plane
 
 TESTDATA = Path(__file__).parent / "testdata"
 PSF = 60.0                        # arcsec: the test masters' PSF unless a sidecar says otherwise
+
+
+def _plane(out, name):
+    return Plane(Path(out) / name)
+
+
+def _tile(out, name, order, npix):
+    """A tile as float32 with NaN where it has no data, None if absent."""
+    t = _plane(out, name).tile(order, npix)
+    return None if t is None else t.astype(np.float32)
 
 
 def test_vec_from_xyf_hits_astropy_cell_centres_and_round_trips():
@@ -85,7 +95,7 @@ def _write_master(path, ra0, dec0, value, nx=160, ny=120, scale_arcsec=30.0, sig
 
 
 def _finest_tiles(out, order):
-    return sorted(int(p.stem[4:]) for p in (out / "mean" / f"Norder{order}").rglob("Npix*.fits"))
+    return _plane(out, "mean").existing(order)
 
 
 def test_two_overlapping_masters_reduce_to_a_hips_tree(tmp_path):
@@ -100,20 +110,20 @@ def test_two_overlapping_masters_reduce_to_a_hips_tree(tmp_path):
     # 30″ pixels → cells of ~26″ (pixel order 13) → tile order 13 − 6 = 7 with 64-px tiles.
     assert info["order"] == rd.order_for(30.0, width) == 7
     assert info["masters"] == 2 and 12 <= info["tiles"] <= 24     # ~9 tiles a field, shared overlap
-    props = read_properties((out / "mean" / "properties").read_text())
-    assert (props["hips_order"], props["hips_tile_width"], props["hips_frame"], props["hips_tile_format"]) == ("7", "64", "equatorial", "fits")
-    # The noise tree is half width; the count tree is 16-bit integers.
-    assert read_properties((out / "noise" / "properties").read_text())["hips_tile_width"] == "32"
-    assert read_properties((out / "count" / "properties").read_text())["hips_pixel_bitpix"] == "16"
+    props = _plane(out, "mean").properties
+    assert (props["hips_order"], props["hips_tile_width"], props["hips_frame"]) == ("7", "64", "equatorial")
+    # The noise plane is half width; the count plane is 16-bit integers.
+    assert _plane(out, "noise").properties["hips_tile_width"] == "32"
+    assert _plane(out, "count").properties["hips_pixel_bitpix"] == "16"
     area = (30.0 ** 2)                                    # file units are per pixel; served per arcsec²
     mean, noise, count = {}, {}, {}
     for npix in _finest_tiles(out, 7):
-        mean[npix] = rd.read_tile(out / "mean", 7, npix)
-        noise[npix] = rd.read_tile(out / "noise", 7, npix)
-        count[npix] = rd.read_tile(out / "count", 7, npix)
-        assert fits.getheader(out / "count" / rd.tile_path(7, npix))["BITPIX"] == 16
+        mean[npix] = _tile(out, "mean", 7, npix)
+        noise[npix] = _tile(out, "noise", 7, npix)
+        count[npix] = _tile(out, "count", 7, npix)
+        assert _plane(out, "count").tile(7, npix).dtype == np.uint16
         assert noise[npix].shape == (width // 2, width // 2)
-        assert fits.getheader(out / "mean" / rd.tile_path(7, npix))["PSFFWHM"] > PSF    # the pixel widens it
+        assert _plane(out, "mean").scalar("psffwhm", 7, npix) > PSF    # the pixel widens it
     counts = np.concatenate([c.ravel() for c in count.values()])
     assert set(np.unique(counts)) == {0.0, 1.0, 2.0}
     both = np.concatenate([m[c == 2] for m, c in zip(mean.values(), count.values())])
@@ -132,9 +142,9 @@ def test_two_overlapping_masters_reduce_to_a_hips_tree(tmp_path):
     assert np.nanmedian(n2) == pytest.approx(2.0 / area / np.sqrt(2), rel=0.15)
     # The pyramid reaches order 0 and a parent is the mean of its children.
     for k in range(7):
-        assert any((out / "mean" / f"Norder{k}").rglob("Npix*.fits")), k
+        assert _plane(out, "mean").existing(k), k
     child = max(mean, key=lambda n: np.isfinite(mean[n]).sum())
-    parent = rd.read_tile(out / "mean", 6, child >> 2)
+    parent = _tile(out, "mean", 6, child >> 2)
     i = child & 3
     half = width // 2
     block = parent[((i >> 1) & 1) * half:((i >> 1) & 1) * half + half, (i & 1) * half:(i & 1) * half + half]
@@ -158,9 +168,9 @@ def test_sky_offsets_are_solved_from_overlaps_and_the_map_is_seamless(tmp_path):
     # included: the lone field's covered area is its own area.
     cell_deg2 = (rd.CELL_ARCSEC_NSIDE1 / (width << info["order"]) / 3600.0) ** 2
     covered = 0
-    for p in (out / "count" / f"Norder{info['order']}").rglob("Npix*.fits"):
-        c = rd.read_tile(out / "count", info["order"], int(p.stem[4:]))
-        m = rd.read_tile(out / "mean", info["order"], int(p.stem[4:]))
+    for npix in _plane(out, "count").existing(info["order"]):
+        c = _tile(out, "count", info["order"], npix)
+        m = _tile(out, "mean", info["order"], npix)
         covered += int(((c > 0) & (m * area > 125)).sum())             # d's cells carry its +50
     # (116 live rows: the dead strip is four of 120; bilinear sampling loses half a pixel at the rim.)
     assert covered * cell_deg2 == pytest.approx(160 * 116 * (30.0 / 3600) ** 2, rel=0.03)
@@ -172,7 +182,7 @@ def test_sky_offsets_are_solved_from_overlaps_and_the_map_is_seamless(tmp_path):
     # Every covered cell of the row now sits at 100 (per arcsec²), seams included.
     vals = []
     for npix in _finest_tiles(out, 7):
-        m, c = rd.read_tile(out / "mean", 7, npix), rd.read_tile(out / "count", 7, npix)
+        m, c = _tile(out, "mean", 7, npix), _tile(out, "count", 7, npix)
         vals.append(m[c > 0] * area)
     vals = np.concatenate(vals)
     row = vals[vals < 125]                                      # d's cells carry its +50
@@ -199,7 +209,7 @@ def test_one_master_comes_back_as_itself(tmp_path):
     from scipy.ndimage import binary_erosion
     checked = 0
     for npix in _finest_tiles(out, info["order"]):
-        coadd = rd.read_tile(out / "mean", info["order"], npix)
+        coadd = _tile(out, "mean", info["order"], npix)
         direct = rd.sample_master(m, rd.tile_cell_vectors(info["order"], npix, width, 1)).reshape(width, width)
         interior = binary_erosion(np.isfinite(direct), iterations=8)
         if interior.sum() < 100:
@@ -263,12 +273,12 @@ def test_two_resolutions_give_the_predicted_psf_and_conserve_flux(tmp_path):
     assert 20.0 < predicted < 60.0
     best = None
     for npix in _finest_tiles(out, order):
-        mean = rd.read_tile(out / "mean", order, npix)
+        mean = _tile(out, "mean", order, npix)
         if not np.isfinite(mean).any() or np.nanmax(mean) < (sky + 2.0) / 100.0:
             continue
         fwhm, got_flux, (iy, ix) = _star_profile(mean, sky / 100.0, cell)
         if 14 <= iy < width - 14 and 14 <= ix < width - 14:
-            assert fits.getheader(out / "mean" / rd.tile_path(order, npix))["PSFFWHM"] == pytest.approx(predicted, rel=0.02)
+            assert _plane(out, "mean").scalar("psffwhm", order, npix) == pytest.approx(predicted, rel=0.02)
             best = (fwhm, got_flux)
             break
     assert best is not None, "no star fell inside a tile"
@@ -286,5 +296,5 @@ def test_two_resolutions_give_the_predicted_psf_and_conserve_flux(tmp_path):
     assert again["changed"] > 0
     assert _finest_tiles(inc, order) == _finest_tiles(out, order)
     for npix in _finest_tiles(out, order):
-        assert np.allclose(np.nan_to_num(rd.read_tile(inc / "mean", order, npix)),
-                           np.nan_to_num(rd.read_tile(out / "mean", order, npix)), rtol=1e-5, atol=1e-7)
+        assert np.allclose(np.nan_to_num(_tile(inc, "mean", order, npix)),
+                           np.nan_to_num(_tile(out, "mean", order, npix)), rtol=1e-5, atol=1e-7)

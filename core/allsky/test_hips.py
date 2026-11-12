@@ -82,3 +82,37 @@ def test_a_folder_tree_loads_as_a_map(tmp_path, monkeypatch):
     os.utime(root / "properties", (m.mtime + 100, m.mtime + 100))
     again = maps.load_map("tiny")
     assert again is not m and again.mtime == pytest.approx(m.mtime + 100)
+
+
+def test_a_packed_plane_loads_as_a_map(tmp_path, monkeypatch):
+    """The combiner's output (allsky/tiles.py) behind the same pointer: tiles
+    served with NaN as the no-data zero, the sample for the gauge taken over
+    the tiles it has, and the properties' write moving the version."""
+    import os
+    from allsky import tiles
+    plane = tiles.create(tmp_path / "sky", {"mean": (np.float32, 4)}, order=1)["mean"]
+    written = {}
+    for n in (5, 17, 40):
+        raster = np.full((4, 4), 2.0, np.float32)
+        raster[1, 3] = 50.0 + n
+        raster[2, 2] = np.nan
+        written[n] = raster
+    plane.write_block(1, 0, written)
+    plane.write_properties({"hips_order": 1, "hips_tile_width": 4, "hips_frame": "equatorial"})
+    maps_dir = tmp_path / "maps"
+    maps_dir.mkdir()
+    (maps_dir / "packed.hips").write_text(f"{tmp_path / 'sky' / 'mean'}\n")
+    monkeypatch.setattr(maps, "MAPS_DIR", maps_dir)
+    maps._cache.clear()
+    m = maps.load_map("packed")
+    assert (m.frame, m.tile_width, m.max_order, m.tiles) == ("icrs", 4, 1, "")
+    t = m.tile(1, 17)
+    assert t[1, 3] == 67.0 and t[0, 0] == 2.0 and t[2, 2] == 0.0 and t.dtype == np.float32
+    assert m.stats["skyMedian"] == pytest.approx(DEFAULT_PEDESTAL)
+    for absent in ((1, 6), (0, 0), (2, 0)):
+        with pytest.raises(IndexError):
+            m.tile(*absent)
+    assert maps.load_map("packed") is m
+    plane.write_properties({"hips_release_date": "later"})
+    os.utime(tmp_path / "sky" / "mean" / "zarr.json", (m.mtime + 100, m.mtime + 100))
+    assert maps.load_map("packed") is not m

@@ -33,12 +33,13 @@ The denominator's shape is the tile's (its level is each cell's own Ω):
 exact where every master covers the tile, a small approximation at a
 footprint edge.
 
-The output is three HiPS trees (allsky/hips.py), `mean` (R), `noise` (1/√Ω)
-and `count`, each with its pyramid, which the sky viewer and Aladin read as
-they are; the count is 16-bit and the noise half width (it varies slowly),
-so the two together cost a third of the mean. Work is per tile -- the ~10⁵
-tiles of a hemisphere at 3″, each 512² cells -- in NESTED order so
-consecutive tiles share masters, across a process pool.
+The output is three packed planes (allsky/tiles.py), `mean` (R), `noise`
+(1/√Ω) and `count`, each with its pyramid, which the sky viewer reads as they
+are; the count is 16-bit and the noise half width (it varies slowly), so the
+two together cost a third of the mean. Work is per shard of 64 tiles -- the
+~10⁵ tiles of a hemisphere at 3″, each 512² cells -- in NESTED order so
+consecutive tiles share masters, across a process pool; a worker owns its
+shards, so no two write the same file.
 
     python -m allsky.reduce <masters folder> <out folder> [--pattern '*.fits']
                             [--order K] [--workers N] [--title ...] [--psf-fwhm ARCSEC]
@@ -61,7 +62,7 @@ from pathlib import Path
 import numpy as np
 
 from allsky.healpix_faces import compact_bits, xyf_from_vec
-from allsky.hips import tile_path
+from allsky.tiles import Plane, create, shard_of
 
 CELL_ARCSEC_NSIDE1 = np.degrees(np.sqrt(4 * np.pi / 12)) * 3600   # one face's side
 TILE_WIDTH = 512
@@ -502,42 +503,21 @@ def reduce_tile(order: int, npix: int, masters: list[Master], width: int) -> tup
             coadd_fwhm_cells(spectra) * cell_arcsec)
 
 
-# --- the trees
+# --- the planes
 
-def write_tile(root: Path, order: int, npix: int, raster: np.ndarray, cards: dict | None = None) -> None:
-    """A raster (our face orientation) as a HiPS FITS tile: turned a quarter
-    turn, the inverse of hips.raster_from_tile."""
-    from astropy.io import fits
-    p = root / tile_path(order, npix)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    hdu = fits.PrimaryHDU(np.ascontiguousarray(np.rot90(raster, 1)))
-    hdu.header["ORDER"] = order
-    hdu.header["NPIX"] = npix
-    for key, value in (cards or {}).items():
-        hdu.header[key] = value
-    hdu.writeto(p, overwrite=True)
-
-
-def read_tile(root: Path, order: int, npix: int) -> np.ndarray | None:
-    from astropy.io import fits
-    p = root / tile_path(order, npix)
-    if not p.is_file():
-        return None
-    return np.rot90(np.asarray(fits.getdata(p), np.float32), 3)
-
-
-def write_properties(root: Path, name: str, order: int, width: int, first: Master, title: str) -> None:
+def properties(name: str, order: int, width: int, first: Master, title: str) -> dict:
+    """A plane's HiPS properties (allsky/hips.py's vocabulary, so a plane
+    exported as a tree needs no translation)."""
     lon, lat = lonlat_of(np.asarray(first.centre))
     width = tree_width(name, width)
     cell_deg = CELL_ARCSEC_NSIDE1 / (width << order) / 3600.0
-    props = {
+    return {
         "creator_did": f"ivo://astroflow/{name}",
         "obs_title": f"{title} ({name})",
         "dataproduct_type": "image",
         "hips_version": "1.4",
         "hips_release_date": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),
         "hips_status": "private master clonable",
-        "hips_tile_format": "fits",
         "hips_order": str(order),
         "hips_order_min": "0",
         "hips_tile_width": str(width),
@@ -548,10 +528,8 @@ def write_properties(root: Path, name: str, order: int, width: int, first: Maste
         "hips_initial_dec": f"{float(lat):.5f}",
         "hips_initial_fov": f"{2 * first.radius_deg:.3f}",
         "hips_creator": "AstroFlow allsky.reduce",
-        "astroflow_coadd": "proper (Zackay & Ofek 2017); PSFFWHM per tile",
+        "astroflow_coadd": "proper (Zackay & Ofek 2017); psffwhm per tile",
     }
-    root.mkdir(parents=True, exist_ok=True)
-    (root / "properties").write_text("".join(f"{k:<20} = {v}\n" for k, v in props.items()))
 
 
 def _degrade(raster: np.ndarray) -> np.ndarray:
@@ -560,64 +538,71 @@ def _degrade(raster: np.ndarray) -> np.ndarray:
     return _nanmean(blocks, axis=-1).astype(np.float32)
 
 
-def remove_tile(root: Path, order: int, npix: int) -> None:
-    p = root / tile_path(order, npix)
-    if p.is_file():
-        p.unlink()
-
-
-def build_parent(out: Path, name: str, child_order: int, p: int, width: int) -> None:
-    """Parent tile `p` of tree `name` one order above its four children
-    (missing ones NaN), each averaged 2 × 2 -- plain means of valid cells,
-    which is the area mean on HEALPix's equal-area grid. A parent with no
-    child left is removed."""
-    root = out / name
+def build_parents(plane: Plane, name: str, child_order: int, shard: int, parents: list[int], width: int) -> None:
+    """The parent tiles `parents` -- all in `shard`, one order above
+    `child_order` -- of plane `name`, each its four children (missing ones
+    NaN) averaged 2 × 2: plain means of valid cells, which is the area mean
+    on HEALPix's equal-area grid. A parent with no child left is removed.
+    One write of the shard."""
     width = tree_width(name, width)
     half = width // 2
-    raster = np.full((width, width), np.nan, np.float32)
-    any_child = False
-    for i in range(4):
-        child = read_tile(root, child_order, 4 * p + i)
-        if child is not None:
-            any_child = True
-            x0, y0 = (i & 1) * half, ((i >> 1) & 1) * half
-            raster[y0:y0 + half, x0:x0 + half] = _degrade(child)
-    if any_child:
-        write_tile(root, child_order - 1, p, as_tile(name, raster))
-    else:
-        remove_tile(root, child_order - 1, p)
+    tiles: dict[int, np.ndarray | None] = {}
+    for p in parents:
+        raster = np.full((width, width), np.nan, np.float32)
+        any_child = False
+        for i in range(4):
+            child = plane.tile(child_order, 4 * p + i)
+            if child is not None:
+                any_child = True
+                x0, y0 = (i & 1) * half, ((i >> 1) & 1) * half
+                raster[y0:y0 + half, x0:x0 + half] = _degrade(child.astype(np.float32))
+        tiles[p] = as_tile(name, raster) if any_child else None
+    plane.write_block(child_order - 1, shard, tiles)
 
 
 # --- the run
 
 _job_masters: list[Master] = []
-_job_out: Path = Path()
 _job_order = 0
 _job_width = TILE_WIDTH
-_job_planes: tuple = TREES
+_job_planes: dict[str, Plane] = {}
 
 
-def _init_worker(masters, out, order, width, planes):
-    global _job_masters, _job_out, _job_order, _job_width, _job_planes
-    _job_masters, _job_out, _job_order, _job_width, _job_planes = masters, out, order, width, planes
+def _init_worker(masters, out, order, width, names):
+    global _job_masters, _job_order, _job_width, _job_planes
+    _job_masters, _job_order, _job_width = masters, order, width
+    _job_planes = {name: Plane(Path(out) / name, "r+") for name in names}
 
 
-def _run_parent(args) -> None:
-    name, child_order, p = args
-    build_parent(_job_out, name, child_order, p, _job_width)
+def _run_parents(args) -> None:
+    name, child_order, shard, parents = args
+    build_parents(_job_planes[name], name, child_order, shard, parents, _job_width)
 
 
-def _run_tile(args) -> int | None:
-    npix, master_ids = args
-    reduced = reduce_tile(_job_order, npix, [_job_masters[i] for i in master_ids], _job_width)
-    if reduced is None:
-        return None
-    planes, fwhm = reduced
-    for name in _job_planes:
-        raster = _degrade(planes[name]) if PLANES[name][1] else planes[name]
-        cards = {"PSFFWHM": (round(fwhm, 3), "coadd PSF FWHM, arcsec")} if name == "mean" else None
-        write_tile(_job_out / name, _job_order, npix, as_tile(name, raster), cards)
-    return npix
+def _run_shard(args) -> list[tuple[int, bool]]:
+    """One shard: reduce its dirty tiles, drop its gone ones, one write per
+    plane. Returns (npix, landed) for every tile reduced -- not landed when
+    no master had data under it."""
+    shard, dirty, gone = args
+    tiles: dict[str, dict[int, np.ndarray | None]] = {name: {npix: None for npix in gone} for name in _job_planes}
+    fwhm: dict[int, float] = {}
+    landed = []
+    for npix, master_ids in dirty:
+        reduced = reduce_tile(_job_order, npix, [_job_masters[i] for i in master_ids], _job_width)
+        if reduced is None:
+            for name in tiles:
+                tiles[name][npix] = None
+            landed.append((npix, False))
+            continue
+        planes, psf = reduced
+        for name in tiles:
+            raster = _degrade(planes[name]) if PLANES[name][1] else planes[name]
+            tiles[name][npix] = as_tile(name, raster)
+        fwhm[npix] = round(psf, 3)
+        landed.append((npix, True))
+    for name, plane in _job_planes.items():
+        plane.write_block(_job_order, shard, tiles[name], {"psffwhm": fwhm} if name == "mean" else None)
+    return landed
 
 
 def order_for(pixel_arcsec: float, width: int) -> int:
@@ -686,38 +671,55 @@ def reduce_folder(masters_dir: Path, out: Path, *, pattern: str = "*.fits", orde
     log(f"{len(touched)} tiles touched, {len(dirty)} to reduce, {len(gone)} to drop")
     tiles = {int(n): made_by for n, made_by in prev_tiles.items() if int(n) in touched}
     empty = {int(n): made_by for n, made_by in prev_empty.items() if int(n) in touched}
-    changed: set[int] = set(gone)
-    for npix in gone:
+    if prev and not same_grid:
+        # A new grid: nothing of the old planes would ever be reached again.
+        import shutil
         for name in planes:
-            remove_tile(out / name, order, npix)
+            shutil.rmtree(out / name, ignore_errors=True)
+        log(f"grid was order {prev.get('order')}, width {prev.get('width')}: planes rebuilt")
+    create(out, {name: (PLANES[name][0], tree_width(name, width)) for name in planes}, order,
+           scalars={"mean": ("psffwhm",)})
+    # A worker owns whole shards: the shard is the file it rewrites.
+    by_shard: dict[int, tuple[list, list]] = {}
+    for npix, idx in dirty.items():
+        by_shard.setdefault(shard_of(npix), ([], []))[0].append((npix, idx))
+    for npix in gone:
+        by_shard.setdefault(shard_of(npix), ([], []))[1].append(npix)
+    changed: set[int] = set(gone)
     t0 = time.time()
+    done = 0
     with ProcessPoolExecutor(workers or os.cpu_count(), initializer=_init_worker,
                              initargs=(masters, out, order, width, planes)) as pool:
-        for i, (npix, result) in enumerate(zip(dirty, pool.map(_run_tile, dirty.items(), chunksize=4)), 1):
-            changed.add(npix)
-            if result is None:
-                tiles.pop(npix, None)
-                empty[npix] = wanted[npix]
-                for name in planes:
-                    remove_tile(out / name, order, npix)
-            else:
-                tiles[npix] = wanted[npix]
-                empty.pop(npix, None)
-            if i % 500 == 0:
+        for landed in pool.map(_run_shard, [(s, d, g) for s, (d, g) in sorted(by_shard.items())], chunksize=1):
+            for npix, ok in landed:
+                changed.add(npix)
+                if ok:
+                    tiles[npix] = wanted[npix]
+                    empty.pop(npix, None)
+                else:
+                    tiles.pop(npix, None)
+                    empty[npix] = wanted[npix]
+            if done // 500 != (done + len(landed)) // 500:
+                i = done + len(landed)
                 log(f"{i}/{len(dirty)} tiles, {(time.time() - t0) / i * (len(dirty) - i) / 60:.0f} min left")
+            done += len(landed)
         log(f"{len(tiles)} tiles at order {order} ({len(changed)} changed) in {(time.time() - t0) / 60:.1f} min; pyramid...")
         # The coarser orders above the tiles that changed, one level at a
         # time (a level's parents are independent of each other, not of the
-        # level below), every plane's parents in the same pool.
+        # level below), every plane's parents in the same pool, by shard.
         level = set(changed)
         for k in range(order - 1, -1, -1):
             parents = sorted({c >> 2 for c in level})
-            list(pool.map(_run_parent, [(name, k + 1, q) for name in planes for q in parents], chunksize=16))
+            groups: dict[int, list[int]] = {}
+            for p in parents:
+                groups.setdefault(shard_of(p), []).append(p)
+            list(pool.map(_run_parents, [(name, k + 1, s, ps) for name in planes for s, ps in groups.items()],
+                          chunksize=4))
             level = set(parents)
-    # Written LAST: its mtime is the map's version in the viewer, which caches
-    # tiles as immutable under it, so it must move only once the tree is whole.
+    # Written LAST: it moves the map's version in the viewer, which caches
+    # tiles as immutable under it, so it must move only once the planes are whole.
     for name in planes:
-        write_properties(out / name, name, order, width, masters[0], title)
+        Plane(out / name, "r+").write_properties(properties(name, order, width, masters[0], title))
     state_path.write_text(json.dumps({
         "order": order, "width": width, "pairs": record, "pairs_grid": [GRID_POINTS, MIN_OVERLAP_POINTS],
         "offsets": {ids[i]: m.offset for i, m in enumerate(masters)},
@@ -737,9 +739,9 @@ def main(argv=None) -> int:
     ap.add_argument("--order", type=int)
     ap.add_argument("--workers", type=int)
     ap.add_argument("--title", default="AstroFlow sky")
-    ap.add_argument("--planes", default=",".join(TREES), help="which trees to write: mean,noise,count")
+    ap.add_argument("--planes", default=",".join(TREES), help="which planes to write: mean,noise,count")
     ap.add_argument("--no-level", action="store_true", help="skip the sky-offset solve (masters as they are)")
-    ap.add_argument("--fresh", action="store_true", help="delete the output tree first: every tile from scratch")
+    ap.add_argument("--fresh", action="store_true", help="delete the output first: every tile from scratch")
     ap.add_argument("--psf-fwhm", type=float, help="PSF FWHM in arcsec for masters whose sidecar carries none")
     a = ap.parse_args(argv)
     planes = tuple(p for p in a.planes.split(",") if p)

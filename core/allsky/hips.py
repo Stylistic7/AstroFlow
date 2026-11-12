@@ -91,6 +91,11 @@ class HipsTree:
         part.replace(local)
         return r.content
 
+    def tile(self, order: int, npix: int) -> np.ndarray | None:
+        """The tile's raster, or None where the tree has no such tile."""
+        data = self.read(tile_path(order, npix))
+        return None if data is None else read_tile(data)
+
 
 def read_tile(data: bytes) -> np.ndarray:
     """A FITS tile as the face raster, file units, 0 where it has no data."""
@@ -101,7 +106,14 @@ def read_tile(data: bytes) -> np.ndarray:
 
 
 def load_hips(name: str, path: Path, mtime: float) -> maps.SkyMap:
-    tree = HipsTree(path.read_text().strip(), maps.MAPS_DIR / name)
+    """The map a `.hips` pointer names: a packed plane (allsky/tiles.py) or a
+    HiPS tree, local or remote."""
+    from allsky.tiles import Plane, is_plane
+    root = path.read_text().strip()
+    if "://" not in root and is_plane(Path(root)):
+        plane = Plane(Path(root))
+        return _measured(name, path, mtime, plane.properties, plane, root)
+    tree = HipsTree(root, maps.MAPS_DIR / name)
     text = tree.read("properties")
     if text is None:
         raise FileNotFoundError(f"{path.name}: no properties at {tree.root}")
@@ -109,20 +121,27 @@ def load_hips(name: str, path: Path, mtime: float) -> maps.SkyMap:
     if "fits" not in props.get("hips_tile_format", "").split():
         raise ValueError(f"{path.name}: {tree.root} has no FITS tiles "
                          f"(hips_tile_format={props.get('hips_tile_format')!r})")
+    return _measured(name, path, mtime, props, tree, root)
+
+
+def _measured(name: str, path: Path, mtime: float, props: dict, source, root: str) -> maps.SkyMap:
+    """The map over `source` (a HipsTree or a Plane: `tile`, `existing`),
+    its gauge and seed statistics measured on a sample of its finest tiles.
+    A sparse local source (a survey of part of the sky) is sampled over the
+    tiles it has; a remote tree over the whole sphere."""
     order = int(props["hips_order"])
     width = int(props.get("hips_tile_width", 512))
     frame = maps.frame_of(props.get("hips_frame", "equatorial"))
-    # A sparse local tree (a survey of part of the sky) is sampled over the
-    # tiles it has; a remote tree over the whole sphere.
-    have = tree.existing(order)
+    have = source.existing(order)
     sample = sample_npix(order, SAMPLE_TILES) if have is None else \
         [have[i] for i in sorted({int(i) for i in np.linspace(0, len(have) - 1, min(SAMPLE_TILES, len(have)))})]
     with ThreadPoolExecutor(16) as pool:
-        tiles = list(pool.map(lambda n: tree.read(tile_path(order, n)), sample))
-    rasters = [read_tile(t) for t in tiles if t is not None]
+        tiles = list(pool.map(lambda n: source.tile(order, n), sample))
+    rasters = [np.where(np.isfinite(t), t, 0.0).astype(np.float32) for t in tiles if t is not None]
     if not rasters:
-        raise ValueError(f"{path.name}: none of the sampled tiles exist at {tree.root}")
+        raise ValueError(f"{path.name}: none of the sampled tiles exist at {root}")
     gauge, stats = maps.gauge_and_stats(np.concatenate([r.ravel() for r in rasters]))
+    remote = getattr(source, "remote", False)
     return maps.SkyMap(name=name, path=path, mtime=mtime, frame=frame, unit="",
                        gauge=gauge, stats=stats, tile_width=width, max_order=order,
-                       tiles=tree.root if tree.remote else "", tree=tree)
+                       tiles=root if remote else "", tree=source)
