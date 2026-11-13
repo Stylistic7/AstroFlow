@@ -269,6 +269,25 @@ def test_bxt_narrow_keys_on_bxt_settings_only():
         pp._bxt_channel_narrow((t, "H", mocked, "chan"), {})
 
 
+def test_rc_astro_nodes_key_on_the_wrappers_padding(monkeypatch):
+    """rc_astro_cli is a helper, so its body is outside every key; its padding
+    mode changes the pixels of all three tools' outputs (2026-11-13), so the
+    narrow hooks carry it — changing it re-derives BXT, SXT and NXT and
+    everything below them, with no setting and no files moved by hand."""
+    import rc_astro_cli
+    base = ProcessingConfig()
+    t = SimpleNamespace(stable_hash="t")
+    m = SimpleNamespace(stable_hash="m")
+    before = (pp._bxt_channel_narrow((t, "H", base, "chan"), {}),
+              pp._sxt_channel_narrow((t, "H", base, "chan"), {}),
+              pp._nxt_narrow((m, base, "img"), {}))
+    monkeypatch.setattr(rc_astro_cli, "PADDING", "constant")
+    after = (pp._bxt_channel_narrow((t, "H", base, "chan"), {}),
+             pp._sxt_channel_narrow((t, "H", base, "chan"), {}),
+             pp._nxt_narrow((m, base, "img"), {}))
+    assert all(b != a for b, a in zip(before, after))
+
+
 def test_sxt_narrow_keys_on_sxt_settings_only():
     """sxt_channel keys on (mock, config.sxt); a BXT-only change must NOT
     touch it (the BXT dependence rides in through `channel`, its input)."""

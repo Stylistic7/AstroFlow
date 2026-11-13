@@ -63,6 +63,16 @@ MODEL_CACHE_CAP_BYTES = 40 * 10**9
 # A bundle compiled this recently may belong to a run in progress.
 MODEL_CACHE_MIN_AGE_S = 6 * 3600
 
+# How `_on_ladder` extends an off-ladder image to the next rung. SXT and NXT
+# stretch from WHOLE-IMAGE statistics, so a zero pad is not inert: 11% of zeros
+# on a 9315x6196 channel left residual cores and dark discs under every star
+# and a ~400 px band of raw stars along the padded sides (2026-11-13; BXT, a
+# local operator, lost only the band). Reflection measures identical to no
+# padding at all. Folded into the rc-astro nodes' cache keys (the `_*_narrow`
+# hooks in mosaics/color/post_process.py): this module is a helper, so no
+# product would otherwise re-derive when it changes.
+PADDING = "reflect"
+
 
 def bound_model_cache(root: Path = MODEL_CACHE, cap: int = MODEL_CACHE_CAP_BYTES,
                       now: "float | None" = None) -> int:
@@ -141,11 +151,11 @@ def _on_ladder(image: Path, td: Path) -> "tuple[Path, tuple[int, int] | None]":
     on the `RC_ASTRO_SIZE_QUANTUM` ladder already (`mosaics/panels.py`);
     channel masters do not — each Siril master is cropped to its own
     registration overlap, so 143 BXT runs saw 132 sizes (2026-10-15) and the
-    cache passed 400 GB. An image off the ladder is zero-padded on the right
-    and bottom to the next rung — the tools are local sliding-window
-    operators, and zero rims are everywhere in the mosaic crops — and every
-    product is cropped back, so the output keeps the input's exact grid. The
-    master itself is never padded; this copy lives in rc-astro's scratch.
+    cache passed 400 GB. An image off the ladder is extended on the right
+    and bottom to the next rung by `PADDING` (reflection — see there for why
+    never zeros), and every product is cropped back, so the output keeps the
+    input's exact grid. The master itself is never padded; this copy lives in
+    rc-astro's scratch.
 
     rc-astro's TIFF reader takes stripped none/deflate/LZW only, and
     AstroFlow writes zstd, so the copy is also the portable one. It keeps the
@@ -167,8 +177,7 @@ def _on_ladder(image: Path, td: Path) -> "tuple[Path, tuple[int, int] | None]":
     import numpy as np
     import pyvips
     pixels = np.atleast_3d(np.asarray(read_image(image), np.float32))
-    padded = np.zeros((ph, pw, pixels.shape[2]), np.float32)
-    padded[:h, :w] = pixels
+    padded = np.pad(pixels, ((0, ph - h), (0, pw - w), (0, 0)), mode=PADDING)
     copy.parent.mkdir()
     pyvips.Image.new_from_memory(padded.tobytes(), pw, ph, padded.shape[2], "float").tiffsave(
         str(copy), bigtiff=True)

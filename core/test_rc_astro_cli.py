@@ -28,9 +28,10 @@ def _fake_run_writing_outputs():
         sub = cmd[cmd.index("--no-banner") + 1]
         inp = Path(cmd[cmd.index("--no-banner") + 2])
         o = Path(cmd[cmd.index("-o") + 1])
-        from file_io.generic import read_image_geometry
+        from file_io.generic import read_image, read_image_geometry
         g = read_image_geometry(inp)
         fake_run.fed = (g.width_pixels, g.height_pixels)
+        fake_run.fed_pixels = np.atleast_3d(np.asarray(read_image(inp), np.float32))[..., 0]
 
         def write(target: Path):     # the "product" is the input, unchanged
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -151,10 +152,13 @@ def test_nonzero_exit_raises(monkeypatch, tmp_path):
         rc_astro_cli.run_bxt(tmp_path / "chan.fits", tmp_path / "o.xisf")
 
 
-def test_an_image_off_the_ladder_runs_padded_and_comes_back_on_its_own_grid(fake, tmp_path):
+def test_an_image_off_the_ladder_runs_reflect_padded_and_comes_back_on_its_own_grid(fake, tmp_path):
     """The Neural Engine compiles a model bundle per input SHAPE, so a master
-    off the 512 ladder runs zero-padded to the next rung (right and bottom)
-    and every product is cropped back to the input's exact size and pixels."""
+    off the 512 ladder runs padded to the next rung (right and bottom) and
+    every product is cropped back to the input's exact size and pixels. The
+    pad is a REFLECTION of the image, never zeros: SXT stretches from
+    whole-image statistics, and a zero rim degraded every star in the frame
+    and left the tiles touching the rim unprocessed (2026-11-13)."""
     import pyvips
     from file_io.tiff_file_io import write_tiff_image
     src = tmp_path / "master.tiff"
@@ -163,6 +167,7 @@ def test_an_image_off_the_ladder_runs_padded_and_comes_back_on_its_own_grid(fake
     out = tmp_path / "bxt.tiff"
     rc_astro_cli.run_bxt(src, out)
     assert fake.fed == (1024, 512)
+    assert np.array_equal(fake.fed_pixels, np.pad(pixels, ((0, 212), (0, 424)), mode="reflect"))
     got = pyvips.Image.tiffload(str(out), page=0)
     assert (got.width, got.height) == (600, 300)
     arr = np.ndarray(buffer=got.write_to_memory(), dtype=np.float32, shape=(300, 600))

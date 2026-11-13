@@ -188,19 +188,24 @@ def _save_color_vips(path: str, img: pyvips.Image, name: str,
 # per-channel denoising mints chroma noise; placement co-registers free).
 
 def _bxt_channel_narrow(args, kwargs):
-    """Cache-key hook: project `config` to (mock, config.bxt) — the only
-    things a BXT'd channel depends on. `channel` is the trailing
-    data-dependency; `config` sits just before it."""
+    """Cache-key hook: project `config` to (mock, config.bxt, the wrapper's
+    padding) — the only things a BXT'd channel depends on besides its input.
+    `channel` is the trailing data-dependency; `config` sits just before it.
+    `rc_astro_cli.PADDING` rides along because the wrapper is a helper: its
+    body is outside the key, and its padding changes the pixels (2026-11-13)."""
+    from rc_astro_cli import PADDING
     target, filter, config, channel = args
     mock = config.development_settings.mock_pixinsight
-    return (target, filter, (mock, config.bxt), channel), kwargs
+    return (target, filter, (mock, config.bxt, PADDING), channel), kwargs
 
 
 def _sxt_channel_narrow(args, kwargs):
-    """Cache-key hook: project `config` to (mock, config.sxt)."""
+    """Cache-key hook: project `config` to (mock, config.sxt, the wrapper's
+    padding) — see `_bxt_channel_narrow`."""
+    from rc_astro_cli import PADDING
     target, filter, config, channel = args
     mock = config.development_settings.mock_pixinsight
-    return (target, filter, (mock, config.sxt), channel), kwargs
+    return (target, filter, (mock, config.sxt, PADDING), channel), kwargs
 
 
 @node(cache_key_narrow=_bxt_channel_narrow, auto_memory=True, resources={"gpu_slots": 1})
@@ -346,11 +351,13 @@ LINEAR_SHO_DISPLAY = "Linear SHO"
 
 
 def _nxt_narrow(args, kwargs):
-    """Cache-key hook: project `config` to (mock, config.nxt) — the only config an
-    NXT'd image depends on. `image` (whole OR one tile) is the trailing data-dep."""
+    """Cache-key hook: project `config` to (mock, config.nxt, the wrapper's
+    padding — see `_bxt_channel_narrow`) — the only config an NXT'd image
+    depends on. `image` (whole OR one tile) is the trailing data-dep."""
+    from rc_astro_cli import PADDING
     mosaic, config, image = args
     mock = config.development_settings.mock_pixinsight
-    return (mosaic.stable_hash, (mock, config.nxt), image), kwargs   # stable_hash: no cross-panel churn
+    return (mosaic.stable_hash, (mock, config.nxt, PADDING), image), kwargs   # stable_hash: no cross-panel churn
 
 
 def _blend_sho_narrow(args, kwargs):
