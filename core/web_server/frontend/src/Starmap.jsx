@@ -17,12 +17,22 @@ const WEBGL2 = (() => {
 	}
 })();
 
+// The map comes back where it was left, reload or not: the view is kept per
+// browser, written on every move and read once when the map mounts.
+const VIEW_KEY = "astroflow_starmapView";
+const savedView = () => JSON.parse(localStorage.getItem(VIEW_KEY)) || {};
+const saveView = (instance) => {
+	const { yaw, pitch } = instance.getPosition();
+	localStorage.setItem(VIEW_KEY, JSON.stringify({ yaw, pitch, zoom: instance.getZoomLevel() }));
+};
+
 export default function Starmap() {
 	const { constellationPolylines, targets, mosaics, stacks, isQuarantined, showQuarantined, isForeign, showForeign } = useContext(AstroFlowContext);
 
 
 	const navigate = useNavigate();
 	const [instance, setInstance] = useState(undefined);
+	const [view] = useState(savedView);
 
 	const handleClick = (data) => {
 		let elements = document.elementsFromPoint(data.data.clientX, data.data.clientY);
@@ -131,6 +141,11 @@ export default function Starmap() {
 		plugins={plugins}
 		minFov={10}
 		maxFov={140}
+		defaultYaw={view.yaw}
+		defaultPitch={view.pitch}
+		defaultZoomLvl={view.zoom}
+		onPositionChange={(pitch, yaw, viewer) => saveView(viewer)}
+		onZoomChange={(zoom, viewer) => saveView(viewer)}
 		// The viewer moves 5 zoom steps (of 100) per wheel EVENT, whatever the
 		// scroll distance, and trackpads fire many events per gesture: at the
 		// default speed one flick crossed most of the 10-140° range.
