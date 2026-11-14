@@ -39,6 +39,7 @@ needs to not hold/write the whole image). Track: see project memory.
 import shutil
 import subprocess
 import tempfile
+import time
 import uuid
 from pathlib import Path
 
@@ -54,14 +55,15 @@ def rc_astro_base_command() -> list[str]:
     return [tool_path("rc-astro")]
 
 
-# The Neural Engine's compiled-model cache rc-astro fills, one bundle per input
-# shape (see `_on_ladder`), which macOS never prunes. Bounded HERE, by the code
-# that fills it, so every node that runs rc-astro keeps its own in check (the
-# janitor runs on the head only; the MacBook's reached 414 GB, 2026-10-15).
+# The compiled-model cache rc-astro fills, which macOS never prunes: two
+# bundles PER CALL (SXT ~63 MB, BXT ~181 MB), keyed per process, so not even an
+# identical call reuses one (measured 2026-11-14; a re-key pass wrote 120 GB in
+# a day and filled the boot volume). Swept HERE, by the code that fills it, so
+# every node that runs rc-astro keeps its own Mac in check (the janitor runs on
+# the head only; the MacBook's reached 414 GB, 2026-10-15).
 MODEL_CACHE = Path.home() / "Library" / "Caches" / "rc-astro" / "com.apple.e5rt.e5bundlecache"
-MODEL_CACHE_CAP_BYTES = 40 * 10**9
-# A bundle compiled this recently may belong to a run in progress.
-MODEL_CACHE_MIN_AGE_S = 6 * 3600
+# No call outlives its timeout, so a bundle older than this belongs to no run.
+TIMEOUT_S = 1800.0
 
 # How `_on_ladder` extends an off-ladder image to the next rung. SXT and NXT
 # stretch from WHOLE-IMAGE statistics, so a zero pad is not inert: 11% of zeros
@@ -74,30 +76,19 @@ MODEL_CACHE_MIN_AGE_S = 6 * 3600
 PADDING = "reflect"
 
 
-def bound_model_cache(root: Path = MODEL_CACHE, cap: int = MODEL_CACHE_CAP_BYTES,
-                      now: "float | None" = None) -> int:
-    """Delete the oldest compiled bundles until the cache is under `cap`,
-    never one younger than `MODEL_CACHE_MIN_AGE_S`; returns the bytes freed.
-    Recompiling a deleted shape costs seconds."""
-    import time
+def sweep_model_cache(root: Path = MODEL_CACHE, now: "float | None" = None) -> int:
+    """Delete every compiled bundle older than `TIMEOUT_S`, the longest any
+    rc-astro call can run; returns the bytes freed. Nothing is lost: no call
+    ever reuses a bundle."""
     now = time.time() if now is None else now
-    bundles = []
+    freed = 0
     for build in (root.iterdir() if root.is_dir() else ()):
         for b in (build.iterdir() if build.is_dir() else ()):
-            if b.is_dir():
-                size = sum(f.stat().st_size for f in b.rglob("*") if f.is_file())
-                bundles.append((b.stat().st_mtime, size, b))
-    total = sum(size for _, size, _ in bundles)
-    freed = 0
-    for mtime, size, b in sorted(bundles):
-        if total <= cap or now - mtime < MODEL_CACHE_MIN_AGE_S:
-            break
-        shutil.rmtree(b, ignore_errors=True)
-        total -= size
-        freed += size
+            if b.is_dir() and now - b.stat().st_mtime > TIMEOUT_S:
+                freed += sum(f.stat().st_size for f in b.rglob("*") if f.is_file())
+                shutil.rmtree(b, ignore_errors=True)
     if freed:
-        log.info("rc-astro model cache trimmed", freed_gb=round(freed / 1e9, 1),
-                 kept_gb=round(total / 1e9, 1))
+        log.info("rc-astro model cache swept", freed_gb=round(freed / 1e9, 1))
     return freed
 
 
@@ -107,9 +98,9 @@ def _run(subcommand_args: list[str], timeout: float | None) -> None:
     `--no-banner` is a top-level flag (before the subcommand); per-product flags
     (`--depth`, `-o`, `--overwrite`, ...) live in `subcommand_args` after it."""
     try:
-        bound_model_cache()
-    except OSError as e:          # a trim must never cost a run
-        log.warning("rc-astro model cache trim failed", error=str(e))
+        sweep_model_cache()
+    except OSError as e:          # a sweep must never cost a run
+        log.warning("rc-astro model cache sweep failed", error=str(e))
     cmd = rc_astro_base_command() + ["--no-banner"] + subcommand_args
     log.info("Running rc-astro", cmd=" ".join(cmd))
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
@@ -145,17 +136,18 @@ def _on_ladder(image: Path, td: Path) -> "tuple[Path, tuple[int, int] | None]":
     """`image` as rc-astro should see it, and the (width, height) its products
     are cropped back to — None when nothing was padded.
 
-    rc-astro runs on Apple's Neural Engine, which compiles and caches a model
-    bundle PER INPUT SHAPE (~55 MB each, in `~/Library/Caches/rc-astro/
-    com.apple.e5rt.e5bundlecache`, never pruned). The colour tail's crops sit
-    on the `RC_ASTRO_SIZE_QUANTUM` ladder already (`mosaics/panels.py`);
-    channel masters do not — each Siril master is cropped to its own
-    registration overlap, so 143 BXT runs saw 132 sizes (2026-10-15) and the
-    cache passed 400 GB. An image off the ladder is extended on the right
-    and bottom to the next rung by `PADDING` (reflection — see there for why
-    never zeros), and every product is cropped back, so the output keeps the
-    input's exact grid. The master itself is never padded; this copy lives in
-    rc-astro's scratch.
+    The ladder dates from reading rc-astro's compiled-model cache as one
+    bundle per input shape (143 BXT runs saw 132 sizes, 2026-10-15, and the
+    cache passed 400 GB); the bundles are per CALL (see `sweep_model_cache`),
+    so it saves nothing, and stays only because dropping it would re-key every
+    BXT/SXT/NXT product. The colour tail's crops sit on the
+    `RC_ASTRO_SIZE_QUANTUM` ladder already (`mosaics/panels.py`); channel
+    masters do not — each Siril master is cropped to its own registration
+    overlap. An image off the ladder is extended on the right and bottom to
+    the next rung by `PADDING` (reflection — see there for why never zeros),
+    and every product is cropped back, so the output keeps the input's exact
+    grid. The master itself is never padded; this copy lives in rc-astro's
+    scratch.
 
     rc-astro's TIFF reader takes stripped none/deflate/LZW only, and
     AstroFlow writes zstd, so the copy is also the portable one. It keeps the
@@ -228,7 +220,7 @@ def run_bxt(
     correct_only: bool = False,
     ml_version: int = 0,
     overlap: float = 0.2,
-    timeout: float | None = 1800.0,
+    timeout: float | None = TIMEOUT_S,
 ) -> None:
     """BlurXTerminator `input_image` to `output` (32-bit float, WCS preserved).
 
@@ -271,7 +263,7 @@ def run_sxt(
     unscreen: bool = False,
     ml_version: int = 0,
     overlap: float = 0.2,
-    timeout: float | None = 1800.0,
+    timeout: float | None = TIMEOUT_S,
 ) -> None:
     """StarXTerminator `input_image`, writing the requested output(s).
 
@@ -323,7 +315,7 @@ def run_nxt(
     frequency_scale: float = 5.0,         # HF/LF transition scale (rc-astro default)
     iterations: int = 2,                  # successive-approximation steps (AI3)
     overlap: float = 0.2,
-    timeout: float | None = 1800.0,
+    timeout: float | None = TIMEOUT_S,
 ) -> None:
     """NoiseXTerminator `input_image` → `output_xisf` (32-bit float).
 

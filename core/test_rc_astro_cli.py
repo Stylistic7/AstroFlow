@@ -174,17 +174,16 @@ def test_an_image_off_the_ladder_runs_reflect_padded_and_comes_back_on_its_own_g
     assert np.array_equal(arr, pixels)
 
 
-def test_the_model_cache_is_trimmed_oldest_first_and_never_a_young_bundle(tmp_path):
+def test_the_model_cache_keeps_only_bundles_young_enough_to_be_a_running_call(tmp_path):
     import os
     now = 1_000_000_000.0
     root = tmp_path / "e5bundlecache"
-    for i, age_h in enumerate([30, 20, 10, 1]):            # four 1 kB bundles
+    ages = [30 * 3600, 3600, rc_astro_cli.TIMEOUT_S + 1, rc_astro_cli.TIMEOUT_S - 60]
+    for i, age_s in enumerate(ages):                       # four 1 kB bundles
         b = root / "25G227" / f"bundle{i}"
         b.mkdir(parents=True)
         (b / "model.bin").write_bytes(b"x" * 1000)
-        os.utime(b, (now - age_h * 3600, now - age_h * 3600))
-    assert rc_astro_cli.bound_model_cache(root, cap=2500, now=now) == 2000
-    assert sorted(p.name for p in (root / "25G227").iterdir()) == ["bundle2", "bundle3"]
-    # Over the cap but only young bundles left: nothing more goes.
-    assert rc_astro_cli.bound_model_cache(root, cap=500, now=now) == 1000
+        os.utime(b, (now - age_s, now - age_s))
+    assert rc_astro_cli.sweep_model_cache(root, now=now) == 3000
     assert [p.name for p in (root / "25G227").iterdir()] == ["bundle3"]
+    assert rc_astro_cli.sweep_model_cache(root, now=now) == 0
