@@ -7,9 +7,10 @@
 #   app/release.sh
 #
 # Needs: the UTM VMs "Windows Build" (builds, see app/windows/build_in_vm.sh)
-# and "Windows" (tests, with a user logged in on its desktop: the tray app
-# needs one, so keep it suspended between releases rather than shut down); the
-# tart VM astroflow-clean; ~/.ssh/astroflow_vm in all three. Both test VMs keep
+# and "Windows" (tests; its desktop signs in by itself at boot, which the tray
+# app needs); each is shut down the moment its phase ends, never suspended,
+# since a VM, even paused, keeps its memory from the app; the tart VM
+# astroflow-clean; ~/.ssh/astroflow_vm in all three. Both test VMs keep
 # a small library and a cart, so each smoke check runs a real pass: six RC71
 # e308 Pane 17 H frames in ~/Pictures/AstroFlow/Raw, and target 4c593d16 on
 # "OSS Stack + OSS Mosaic" in the cart (no Siril, which users install). Also the Windows
@@ -32,6 +33,8 @@ tmp=$(cd "$(mktemp -d)" && pwd -P)   # resolved: build_app.sh compares real path
 wt=$tmp/tree
 cleanup() {
     "$tart" stop astroflow-clean >/dev/null 2>&1 || true
+    "$utm" stop Windows >/dev/null 2>&1 || true
+    "$utm" stop "Windows Build" >/dev/null 2>&1 || true
     git -C "$repo" worktree remove --force "$wt" 2>/dev/null || true
     rm -rf "$tmp"
 }
@@ -54,19 +57,45 @@ vm_up() {   # a UTM VM's address, once it answers ssh
     echo "$1 never answered ssh" >&2; return 1
 }
 
+vm_down() {   # a UTM VM shut down, and not before: the app gets the Mac's memory back
+    ssh "${key[@]}" "$2" 'shutdown /s /t 0' >/dev/null 2>&1 || true
+    for _ in $(seq 1 24); do
+        "$utm" list | grep -qE "stopped +$1\$" && return
+        sleep 5
+    done
+    "$utm" stop "$1" >/dev/null 2>&1 || true
+}
+
 desktop() { ssh "${key[@]}" "$1" '(Get-Process explorer -ErrorAction SilentlyContinue | Select-Object -First 1).SessionId' | grep -q .; }
+# The "Windows" VM's address with its desktop signed in (the tray app needs
+# one). Signed out, as after a host reboot, it reboots into its automatic sign-in.
+desktop_up() {
+    local ip
+    ip=$(vm_up Windows)
+    if ! desktop "$ip"; then
+        echo "    the \"Windows\" VM is signed out: rebooting it" >&2
+        ssh "${key[@]}" "$ip" 'shutdown /r /t 0' || true
+        for _ in $(seq 1 24); do
+            ssh "${key[@]}" -o ConnectTimeout=5 "$ip" hostname >/dev/null 2>&1 || break
+            sleep 5
+        done
+        ip=$(vm_up Windows)
+        for _ in $(seq 1 24); do
+            desktop "$ip" && break
+            sleep 5
+        done
+        desktop "$ip" || { echo "FAIL: the \"Windows\" VM did not sign in by itself after a reboot" >&2; return 1; }
+    fi
+    echo "$ip"
+}
 echo "==> AstroFlow $version (${sha:0:8}): preflight"
-tip=$(vm_up Windows)
-if ! desktop "$tip"; then
-    echo "    waiting for someone to log in on the \"Windows\" VM's desktop in UTM (the tray app needs one)"
-    until desktop "$tip"; do sleep 60; done
-fi
-"$utm" suspend Windows
+tip=$(desktop_up)
+vm_down Windows "$tip"
 
 echo "==> Windows build"
 bip=$(vm_up "Windows Build")
 (cd "$wt" && app/windows/build_in_vm.sh "$bip")
-ssh "${key[@]}" "$bip" 'shutdown /s /t 0' || true
+vm_down "Windows Build" "$bip"
 win=$wt/installers/AstroFlow-Setup-$version-windows
 
 echo "==> macOS build"
@@ -78,9 +107,8 @@ if ! cmp -s "$wt/app/homebrew.lock" "$repo/app/homebrew.lock"; then
 fi
 
 echo "==> Windows test (the \"Windows\" VM)"
-tip=$(vm_up Windows)
+tip=$(desktop_up)
 th=$tip
-desktop "$tip" || { echo "FAIL: the Windows VM's desktop login is gone: log in in UTM and run again"; exit 1; }
 cat > "$tmp/install.ps1" <<'EOF'
 Get-Process pythonw, python, raylet, gcs_server -ErrorAction SilentlyContinue | Stop-Process -Force
 $exe = Get-ChildItem C:\AstroFlow-release\AstroFlow-Setup-*.exe | Select-Object -First 1
@@ -113,7 +141,7 @@ $env:ASTROFLOW_PYTHON = "$app\python\python.exe"; $env:CYGWIN = "nodosfilewarnin
 solve-field.exe --config C:/AstroFlow-release/an.cfg --fits-image --overwrite --no-plots --new-fits none --tweak-order 2 --crpix-center --cpulimit 300 --objs 1000 --scale-units degwidth --scale-low 4 --scale-high 8 --temp-dir C:/AstroFlow-release/tmp C:/AstroFlow-release/frame.fits | Select-String "solved with"
 if (-not (Test-Path "$t\frame.solved")) { throw "the installed solver did not solve the test frame" }'
 echo "ok  the installed solver solves the test frame"
-"$utm" suspend Windows    # keeps the desktop login for the next release
+vm_down Windows "$tip"
 
 echo "==> macOS test (tart astroflow-clean)"
 share=$tmp/share
