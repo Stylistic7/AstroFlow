@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "astroflow"
-version = "0.2.1"
+version = "0.2.2"
 # Pin the Python minor (also see `.python-version`): cluster nodes must
 # share one interpreter, and the pinned deps (ray, numpy, ...) only ship
 # cp313 wheels — let uv pick 3.14 and `uv sync` fails with "no wheel for
