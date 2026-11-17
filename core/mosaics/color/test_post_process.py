@@ -269,11 +269,12 @@ def test_bxt_narrow_keys_on_bxt_settings_only():
         pp._bxt_channel_narrow((t, "H", mocked, "chan"), {})
 
 
-def test_rc_astro_nodes_key_on_the_wrappers_padding(monkeypatch):
-    """rc_astro_cli is a helper, so its body is outside every key; its padding
-    mode changes the pixels of all three tools' outputs (2026-11-13), so the
-    narrow hooks carry it — changing it re-derives BXT, SXT and NXT and
-    everything below them, with no setting and no files moved by hand."""
+def test_rc_astro_nodes_key_on_how_the_wrapper_feeds_the_image(monkeypatch):
+    """rc_astro_cli is a helper, so its body is outside every key; what it
+    does to an image before rc-astro sees it changes all three tools' outputs
+    (the 2026-11-13 padding did), so the narrow hooks carry it — changing it
+    re-derives BXT, SXT and NXT and everything below them, with no setting
+    and no files moved by hand."""
     import rc_astro_cli
     base = ProcessingConfig()
     t = SimpleNamespace(stable_hash="t")
@@ -281,7 +282,7 @@ def test_rc_astro_nodes_key_on_the_wrappers_padding(monkeypatch):
     before = (pp._bxt_channel_narrow((t, "H", base, "chan"), {}),
               pp._sxt_channel_narrow((t, "H", base, "chan"), {}),
               pp._nxt_narrow((m, base, "img"), {}))
-    monkeypatch.setattr(rc_astro_cli, "PADDING", "constant")
+    monkeypatch.setattr(rc_astro_cli, "INPUT", "reflect")
     after = (pp._bxt_channel_narrow((t, "H", base, "chan"), {}),
              pp._sxt_channel_narrow((t, "H", base, "chan"), {}),
              pp._nxt_narrow((m, base, "img"), {}))

@@ -36,11 +36,8 @@ TIFF) and removes the memory ceiling. It's finicky and may cost quality at seams
 author to tile internally end-to-end (it already tiles for GPU memory; it just
 needs to not hold/write the whole image). Track: see project memory.
 """
-import shutil
 import subprocess
 import tempfile
-import time
-import uuid
 from pathlib import Path
 
 import structlog
@@ -55,41 +52,17 @@ def rc_astro_base_command() -> list[str]:
     return [tool_path("rc-astro")]
 
 
-# The compiled-model cache rc-astro fills, which macOS never prunes: two
-# bundles PER CALL (SXT ~63 MB, BXT ~181 MB), keyed per process, so not even an
-# identical call reuses one (measured 2026-11-14; a re-key pass wrote 120 GB in
-# a day and filled the boot volume). Swept HERE, by the code that fills it, so
-# every node that runs rc-astro keeps its own Mac in check (the janitor runs on
-# the head only; the MacBook's reached 414 GB, 2026-10-15).
-MODEL_CACHE = Path.home() / "Library" / "Caches" / "rc-astro" / "com.apple.e5rt.e5bundlecache"
-# No call outlives its timeout, so a bundle older than this belongs to no run.
+# The longest any rc-astro call may run.
 TIMEOUT_S = 1800.0
 
-# How `_on_ladder` extends an off-ladder image to the next rung. SXT and NXT
-# stretch from WHOLE-IMAGE statistics, so a zero pad is not inert: 11% of zeros
-# on a 9315x6196 channel left residual cores and dark discs under every star
-# and a ~400 px band of raw stars along the padded sides (2026-11-13; BXT, a
-# local operator, lost only the band). Reflection measures identical to no
-# padding at all. Folded into the rc-astro nodes' cache keys (the `_*_narrow`
-# hooks in mosaics/color/post_process.py): this module is a helper, so no
-# product would otherwise re-derive when it changes.
-PADDING = "reflect"
-
-
-def sweep_model_cache(root: Path = MODEL_CACHE, now: "float | None" = None) -> int:
-    """Delete every compiled bundle older than `TIMEOUT_S`, the longest any
-    rc-astro call can run; returns the bytes freed. Nothing is lost: no call
-    ever reuses a bundle."""
-    now = time.time() if now is None else now
-    freed = 0
-    for build in (root.iterdir() if root.is_dir() else ()):
-        for b in (build.iterdir() if build.is_dir() else ()):
-            if b.is_dir() and now - b.stat().st_mtime > TIMEOUT_S:
-                freed += sum(f.stat().st_size for f in b.rglob("*") if f.is_file())
-                shutil.rmtree(b, ignore_errors=True)
-    if freed:
-        log.info("rc-astro model cache swept", freed_gb=round(freed / 1e9, 1))
-    return freed
+# What the wrapper does to an image before rc-astro sees it. In the rc-astro
+# nodes' cache keys (the `_*_narrow` hooks in mosaics/color/post_process.py),
+# because this module is a helper whose body is outside every key, and a
+# product made under another treatment must never be served: "native" is the
+# image at its own size, untouched (a format conversion aside). Until
+# 2026-11-17 it was padded to a 512 ladder ("reflect" from 11-13; zeros, and
+# unkeyed, before that) for a per-shape model cache rc-astro never had.
+INPUT = "native"
 
 
 def _run(subcommand_args: list[str], timeout: float | None) -> None:
@@ -97,10 +70,6 @@ def _run(subcommand_args: list[str], timeout: float | None) -> None:
 
     `--no-banner` is a top-level flag (before the subcommand); per-product flags
     (`--depth`, `-o`, `--overwrite`, ...) live in `subcommand_args` after it."""
-    try:
-        sweep_model_cache()
-    except OSError as e:          # a sweep must never cost a run
-        log.warning("rc-astro model cache sweep failed", error=str(e))
     cmd = rc_astro_base_command() + ["--no-banner"] + subcommand_args
     log.info("Running rc-astro", cmd=" ".join(cmd))
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
@@ -132,67 +101,20 @@ def _move(produced: Path, dest: Path) -> None:
     publish_atomically(produced, dest, consume=True)
 
 
-def _on_ladder(image: Path, td: Path) -> "tuple[Path, tuple[int, int] | None]":
-    """`image` as rc-astro should see it, and the (width, height) its products
-    are cropped back to — None when nothing was padded.
-
-    The ladder dates from reading rc-astro's compiled-model cache as one
-    bundle per input shape (143 BXT runs saw 132 sizes, 2026-10-15, and the
-    cache passed 400 GB); the bundles are per CALL (see `sweep_model_cache`),
-    so it saves nothing, and stays only because dropping it would re-key every
-    BXT/SXT/NXT product. The colour tail's crops sit on the
-    `RC_ASTRO_SIZE_QUANTUM` ladder already (`mosaics/panels.py`); channel
-    masters do not — each Siril master is cropped to its own registration
-    overlap. An image off the ladder is extended on the right and bottom to
-    the next rung by `PADDING` (reflection — see there for why never zeros),
-    and every product is cropped back, so the output keeps the input's exact
-    grid. The master itself is never padded; this copy lives in rc-astro's
-    scratch.
-
-    rc-astro's TIFF reader takes stripped none/deflate/LZW only, and
-    AstroFlow writes zstd, so the copy is also the portable one. It keeps the
-    input's stem (products are named after it), in a subdirectory `_locate`
-    never globs."""
-    from file_io.generic import read_image, read_image_geometry
+def _portable(image: Path, td: Path) -> Path:
+    """`image` as rc-astro reads it: the file itself, or, for a tiled or zstd
+    TIFF (its TIFF reader takes stripped none/deflate/LZW only, and AstroFlow
+    writes zstd), a stripped uncompressed copy in rc-astro's scratch. The
+    copy keeps the input's stem (products are named after it), in a
+    subdirectory `_locate` never globs. The pixels and the grid are the
+    input's own (see `INPUT`)."""
     from file_io.planar import needs_planar, write_planar
-    from mosaics.panels import RC_ASTRO_SIZE_QUANTUM as rung
-    g = read_image_geometry(image)
-    w, h = g.width_pixels, g.height_pixels
-    pw, ph = -(-w // rung) * rung, -(-h // rung) * rung
+    if not needs_planar(image):
+        return image
     copy = td / "input" / f"{image.stem}.tiff"
-    if (pw, ph) == (w, h):
-        if not needs_planar(image):
-            return image, None
-        copy.parent.mkdir()
-        write_planar(image, copy)
-        return copy, None
-    import numpy as np
-    import pyvips
-    pixels = np.atleast_3d(np.asarray(read_image(image), np.float32))
-    padded = np.pad(pixels, ((0, ph - h), (0, pw - w), (0, 0)), mode=PADDING)
     copy.parent.mkdir()
-    pyvips.Image.new_from_memory(padded.tobytes(), pw, ph, padded.shape[2], "float").tiffsave(
-        str(copy), bigtiff=True)
-    return copy, (w, h)
-
-
-def _cropped(product: Path, size: "tuple[int, int] | None") -> Path:
-    """`product` cropped to the top-left `size` (see `_on_ladder`), as a new
-    file beside it; `product` itself when nothing was padded."""
-    if size is None:
-        return product
-    w, h = size
-    out = product.with_name(f"{product.stem}-cropped{product.suffix}")
-    if product.suffix.lower() in (".tif", ".tiff"):
-        import pyvips
-        pyvips.Image.tiffload(str(product), page=0, unlimited=True).crop(0, 0, w, h).tiffsave(
-            str(out), bigtiff=True)
-    else:
-        from file_io.generic import read_image
-        from file_io.xisf_file_io import write_xisf_image
-        import numpy as np
-        write_xisf_image(out, np.atleast_3d(read_image(product))[:h, :w])
-    return out
+    write_planar(image, copy)
+    return copy
 
 
 def _locate(td: Path, base: str) -> Path:
@@ -240,7 +162,7 @@ def run_bxt(
     always passed so the model + tiling are pinned, not left to CLI defaults."""
     input_image, output = Path(input_image), Path(output)
     with tempfile.TemporaryDirectory(prefix="rcastro_bxt_") as td:
-        input_image, size = _on_ladder(input_image, Path(td))
+        input_image = _portable(input_image, Path(td))
         # Extension drives rc-astro's output format; mirror the caller's request.
         produced = Path(td) / f"{input_image.stem}-bxt{output.suffix}"
         args = ["bxt", str(input_image), "-o", str(produced),
@@ -252,7 +174,7 @@ def run_bxt(
             args += ["--sharpen-stars", str(sharpen_stars),
                      "--sharpen-nonstellar", str(sharpen_nonstellar)]
         _run(args, timeout)
-        _move(_cropped(_locate(Path(td), f"{input_image.stem}-bxt"), size), output)
+        _move(_locate(Path(td), f"{input_image.stem}-bxt"), output)
 
 
 def run_sxt(
@@ -279,7 +201,7 @@ def run_sxt(
         raise ValueError("run_sxt needs starless_out and/or stars_out")
     input_image = Path(input_image)
     with tempfile.TemporaryDirectory(prefix="rcastro_sxt_") as td:
-        input_image, size = _on_ladder(input_image, Path(td))
+        input_image = _portable(input_image, Path(td))
         if stars_out is None:
             # Single product: name it explicitly so the CLI writes the
             # FORMAT the caller's extension requests (as run_bxt does).
@@ -299,9 +221,9 @@ def run_sxt(
                 args.append("--unscreen")
         _run(args, timeout)
         if starless_out is not None:
-            _move(_cropped(_locate(Path(td), f"{input_image.stem}-sxt"), size), Path(starless_out))
+            _move(_locate(Path(td), f"{input_image.stem}-sxt"), Path(starless_out))
         if stars_out is not None:
-            _move(_cropped(_locate(Path(td), f"{input_image.stem}-sxt-stars"), size), Path(stars_out))
+            _move(_locate(Path(td), f"{input_image.stem}-sxt-stars"), Path(stars_out))
 
 
 def run_nxt(
@@ -329,7 +251,7 @@ def run_nxt(
     FITS writer overflows on huge images)."""
     input_image, output_xisf = Path(input_image), Path(output_xisf)
     with tempfile.TemporaryDirectory(prefix="rcastro_nxt_") as td:
-        input_image, size = _on_ladder(input_image, Path(td))
+        input_image = _portable(input_image, Path(td))
         produced = Path(td) / f"{input_image.stem}-nxt.xisf"
         args = ["nxt", str(input_image), "-o", str(produced),
                 "--depth", "32F", "--overwrite",
@@ -340,4 +262,4 @@ def run_nxt(
                 "--denoise-color-high-freq", str(denoise_color_hf),
                 "--denoise-color-low-freq", str(denoise_color_lf)]
         _run(args, timeout)
-        _move(_cropped(_locate(Path(td), f"{input_image.stem}-nxt"), size), output_xisf)
+        _move(_locate(Path(td), f"{input_image.stem}-nxt"), output_xisf)

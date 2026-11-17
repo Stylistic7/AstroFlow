@@ -53,7 +53,7 @@ def _fake_run_writing_outputs():
 
 
 def _channels(d: Path, w: int = 512, h: int = 512) -> None:
-    """`chan.fits` and `chan.xisf`, `w` x `h` (on the 512 ladder by default)."""
+    """`chan.fits` and `chan.xisf`, `w` x `h`."""
     from astropy.io import fits
     from file_io.xisf_file_io import write_xisf_image
     pixels = np.random.default_rng(0).random((h, w)).astype(np.float32)
@@ -63,7 +63,6 @@ def _channels(d: Path, w: int = 512, h: int = 512) -> None:
 
 @pytest.fixture
 def fake(monkeypatch, tmp_path):
-    monkeypatch.setattr(rc_astro_cli, "MODEL_CACHE", tmp_path / "no-model-cache")
     _channels(tmp_path)
     f = _fake_run_writing_outputs()
     monkeypatch.setattr(rc_astro_cli, "rc_astro_base_command", lambda: ["rc-astro"])
@@ -146,19 +145,17 @@ def test_nonzero_exit_raises(monkeypatch, tmp_path):
         return R()
     monkeypatch.setattr(rc_astro_cli, "rc_astro_base_command", lambda: ["rc-astro"])
     monkeypatch.setattr(subprocess, "run", boom)
-    monkeypatch.setattr(rc_astro_cli, "MODEL_CACHE", tmp_path / "no-model-cache")
     _channels(tmp_path)
     with pytest.raises(RuntimeError, match="exited 1"):
         rc_astro_cli.run_bxt(tmp_path / "chan.fits", tmp_path / "o.xisf")
 
 
-def test_an_image_off_the_ladder_runs_reflect_padded_and_comes_back_on_its_own_grid(fake, tmp_path):
-    """The Neural Engine compiles a model bundle per input SHAPE, so a master
-    off the 512 ladder runs padded to the next rung (right and bottom) and
-    every product is cropped back to the input's exact size and pixels. The
-    pad is a REFLECTION of the image, never zeros: SXT stretches from
-    whole-image statistics, and a zero rim degraded every star in the frame
-    and left the tiles touching the rim unprocessed (2026-11-13)."""
+def test_rc_astro_sees_the_image_as_it_is(fake, tmp_path):
+    """No padding, no ladder: a master of any size reaches rc-astro at its
+    own size with its own pixels, and the product comes back on that grid.
+    (The 512 ladder of 2026-09-02 to 11-17 served a per-shape model cache
+    rc-astro never had; its zero pad corrupted SXT and its reflection cost
+    up to 11% more pixels per call.)"""
     import pyvips
     from file_io.tiff_file_io import write_tiff_image
     src = tmp_path / "master.tiff"
@@ -166,24 +163,9 @@ def test_an_image_off_the_ladder_runs_reflect_padded_and_comes_back_on_its_own_g
     write_tiff_image(src, pixels, {})
     out = tmp_path / "bxt.tiff"
     rc_astro_cli.run_bxt(src, out)
-    assert fake.fed == (1024, 512)
-    assert np.array_equal(fake.fed_pixels, np.pad(pixels, ((0, 212), (0, 424)), mode="reflect"))
+    assert fake.fed == (600, 300)
+    assert np.array_equal(fake.fed_pixels, pixels)
     got = pyvips.Image.tiffload(str(out), page=0)
     assert (got.width, got.height) == (600, 300)
     arr = np.ndarray(buffer=got.write_to_memory(), dtype=np.float32, shape=(300, 600))
     assert np.array_equal(arr, pixels)
-
-
-def test_the_model_cache_keeps_only_bundles_young_enough_to_be_a_running_call(tmp_path):
-    import os
-    now = 1_000_000_000.0
-    root = tmp_path / "e5bundlecache"
-    ages = [30 * 3600, 3600, rc_astro_cli.TIMEOUT_S + 1, rc_astro_cli.TIMEOUT_S - 60]
-    for i, age_s in enumerate(ages):                       # four 1 kB bundles
-        b = root / "25G227" / f"bundle{i}"
-        b.mkdir(parents=True)
-        (b / "model.bin").write_bytes(b"x" * 1000)
-        os.utime(b, (now - age_s, now - age_s))
-    assert rc_astro_cli.sweep_model_cache(root, now=now) == 3000
-    assert [p.name for p in (root / "25G227").iterdir()] == ["bundle3"]
-    assert rc_astro_cli.sweep_model_cache(root, now=now) == 0

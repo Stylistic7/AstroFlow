@@ -125,16 +125,16 @@ def test_stripped_zstd_needs_a_portable_copy(tmp_path):
 def test_rc_astro_reads_a_portable_copy_under_the_same_name(tmp_path):
     """rc-astro names products after its input's stem, so the copy keeps the
     name — in a subdirectory `_locate` never globs."""
-    from rc_astro_cli import _on_ladder
+    from rc_astro_cli import _portable
     src = tmp_path / "abc123.tiff"
-    _write(src, tile=False, compression="zstd", w=512, h=512)     # on the ladder: no padding
+    _write(src, tile=False, compression="zstd", w=300, h=200)
     td = tmp_path / "td"
     td.mkdir()
-    copy, size = _on_ladder(src, td)
-    assert copy.name == src.name and copy.parent != td and not needs_planar(copy) and size is None
+    copy = _portable(src, td)
+    assert copy.name == src.name and copy.parent != td and not needs_planar(copy)
     plain = tmp_path / "plain.tiff"
-    _write(plain, tile=False, w=512, h=512)
-    assert _on_ladder(plain, td) == (plain, None)
+    _write(plain, tile=False, w=300, h=200)
+    assert _portable(plain, td) == plain
 
 
 def test_pixinsight_recipe_opens_portable_copies_with_unchanged_view_ids(tmp_path):

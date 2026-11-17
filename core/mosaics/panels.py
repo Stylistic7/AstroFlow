@@ -169,29 +169,27 @@ def _rects_overlap(a: tuple, b: tuple) -> bool:
     return not (ax1 < bx0 or bx1 < ax0 or ay1 < by0 or by1 < ay0)
 
 
-# Crop dimensions sent to the rc-astro tools are quantized UP to
-# multiples of this (the "size ladder", Stylistic7 2026-09-02). Apple's ANE
-# runtime compiles and caches a model bundle PER INPUT SHAPE and never
-# prunes: arbitrary footprint-derived crop sizes minted 37k bundles /
-# 395 GB in ~/Library/Caches/rc-astro (found 2026-09-01). Rounding each
-# axis to a 512 rung bounds the shape set to a handful per mosaic, at a
-# worst-case cost of 511 extra px per axis (~5-10% area) — which the
-# feather design already treats as free (crops overlap by construction;
-# the taper eats the excess). 512 also matches the tools' internal tile
-# scale, so edge-remainder shapes inside the tools collapse too.
+# Panel crops sent to NXT are quantized UP to multiples of this (the "size
+# ladder", Stylistic7 2026-09-02), so a mosaic's tiles come in a handful of
+# shapes and 512 matches the tool's internal tile scale. It began as a bound
+# on rc-astro's compiled-model cache, which turned out to be per call, not
+# per shape (2026-11-14); the rung stays as the tile geometry. Its cost, up
+# to 511 extra px per axis, is free by the feather design: crops overlap by
+# construction and the taper eats the excess.
 RC_ASTRO_SIZE_QUANTUM = 512
 
 
 def _grow_to_rung(lo: int, hi: int) -> "tuple[int, int]":
     """Grow [lo, hi) symmetrically to the next ladder rung — UNCLAMPED.
     Rects may overhang the canvas (negative origin included): the crop
-    reader zero-fills the overhang and the feather blend clips it, and
-    the rc-astro tools are local sliding-window operators that already
-    digest exact-zero regions in every rim panel (place_image fills
-    uncovered canvas with 0.0). Not clamping keeps the shape set PURE
-    rungs — no canvas-dependent stragglers (Stylistic7, 2026-09-02).
-    (GraXpert is the one tool zeros poison — 14x over-subtraction — and
-    it never sees these crops; it runs upstream in post_stack_calibrate.)"""
+    reader zero-fills the overhang and the feather blend clips it. The
+    zeros are no data, like the uncovered canvas of every rim panel
+    (place_image fills it with 0.0), and the `nxt` node fills them with
+    the band median before rc-astro sees them (NXT stretches from
+    whole-image statistics). Not clamping keeps the shape set PURE rungs
+    — no canvas-dependent stragglers (Stylistic7, 2026-09-02). (GraXpert is
+    the one tool zeros poison — 14x over-subtraction — and it never sees
+    these crops; it runs upstream in post_stack_calibrate.)"""
     span = hi - lo
     target = int(np.ceil(span / RC_ASTRO_SIZE_QUANTUM)) * RC_ASTRO_SIZE_QUANTUM
     lo -= (target - span) // 2
