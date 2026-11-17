@@ -39,9 +39,9 @@ def test_pixinsight_paths_are_inside_its_folder(settings):
         "/Volumes/Apps/PixInsight/src/scripts/AdP/ImageSolver.js"
 
 
-def _rc_astro_help(rows: str) -> str:
+def _rc_astro_help(rows: str, version: str = "2.6.11 (build 769, gb83d408e, 2026-11-06)") -> str:
     return f"""Astronomical image processing tools
-Version 2.6.7 (build 687, g866e915e, 2026-08-31)
+Version {version}
 
 Products:
   +-----+------------------+------------------------------------------+
@@ -59,7 +59,31 @@ def test_rc_astro_passes_when_every_product_is_licensed(monkeypatch):
         "  | bxt | BlurXTerminator  | Permanently licensed through ML5 on a |\n"
         "  | sxt | StarXTerminator  | Permanently licensed through ML11 on a |\n"
         "  | nxt | NoiseXTerminator | Permanently licensed through ML3 on a |")))
-    assert tools._trial_rc_astro("rc-astro") == "rc-astro 2.6.7; BXT, SXT and NXT licensed"
+    assert tools._trial_rc_astro("rc-astro") == "rc-astro 2.6.11; BXT, SXT and NXT licensed"
+
+
+_LICENSED = ("  | bxt | BlurXTerminator  | Permanently licensed through ML5 on a |\n"
+             "  | sxt | StarXTerminator  | Permanently licensed through ML11 on a |\n"
+             "  | nxt | NoiseXTerminator | Permanently licensed through ML3 on a |")
+
+
+@pytest.mark.parametrize("version", ["2.6.7 (build 687, g866e915e, 2026-08-31)", "2.6.10 (build 740)", "1.9.99"])
+def test_rc_astro_older_than_the_minimum_fails_even_when_licensed(monkeypatch, version):
+    monkeypatch.setattr(tools.subprocess, "run", _fake_run(_rc_astro_help(_LICENSED, version)))
+    with pytest.raises(RuntimeError, match="too old: AstroFlow needs 2.6.11"):
+        tools._trial_rc_astro("rc-astro")
+
+
+@pytest.mark.parametrize("version", ["2.6.12", "2.7.0 (build 800)", "3.0.0"])
+def test_rc_astro_newer_than_the_minimum_passes(monkeypatch, version):
+    monkeypatch.setattr(tools.subprocess, "run", _fake_run(_rc_astro_help(_LICENSED, version)))
+    assert tools._trial_rc_astro("rc-astro").startswith(f"rc-astro {version.split()[0]};")
+
+
+def test_rc_astro_without_a_version_fails(monkeypatch):
+    monkeypatch.setattr(tools.subprocess, "run", _fake_run("Products:\n" + _LICENSED))
+    with pytest.raises(RuntimeError, match="reports no version"):
+        tools._trial_rc_astro("rc-astro")
 
 
 def test_rc_astro_names_the_unlicensed_products(monkeypatch):

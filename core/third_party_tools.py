@@ -25,6 +25,10 @@ from pathlib import Path
 import node_settings
 
 _TIMEOUT_S = 120
+# The oldest rc-astro the pipelines accept: 2.6.10 changed how it reads TIFF
+# and FITS, and up to 2.6.10 it kept a copy of each compiled model per call
+# (120 GB a day under a re-key, 2026-11-13); 2.6.11 fixed both.
+RC_ASTRO_MIN = (2, 6, 11)
 
 
 class ToolNotFoundError(FileNotFoundError):
@@ -123,11 +127,18 @@ def _trial_siril(path: str) -> str:
 
 
 def _trial_rc_astro(path: str) -> str:
-    """Its help page carries the version and the licence of each product;
-    every product the pipelines use must be licensed."""
+    """Its help page carries the version and the licence of each product:
+    the version must be `RC_ASTRO_MIN` or newer, and every product the
+    pipelines use must be licensed."""
     text = _run([path, "--no-banner", "--help"]).stdout
-    version = re.search(r"Version (\S+)", text)
-    version = version.group(1) if version else "(unknown version)"
+    found = re.search(r"Version (\d+)\.(\d+)\.(\d+)", text)
+    if not found:
+        raise RuntimeError("rc-astro reports no version; AstroFlow needs " + ".".join(map(str, RC_ASTRO_MIN)))
+    version = ".".join(found.groups())
+    if tuple(map(int, found.groups())) < RC_ASTRO_MIN:
+        raise RuntimeError(f"rc-astro {version} is too old: AstroFlow needs {'.'.join(map(str, RC_ASTRO_MIN))} "
+                           "or newer (older versions read images differently and fill the disk with a copy of "
+                           "each compiled model per call); update it from https://www.rc-astro.com")
     status = {m.group(1): m.group(2).strip() for m in re.finditer(r"\|\s*(bxt|sxt|nxt)\s*\|[^|]*\|([^|]*)\|", text)}
     unlicensed = [f"{p}: {status.get(p, 'not listed')}" for p in ("bxt", "sxt", "nxt")
                   if not re.search(r"(?<!un)licensed", status.get(p, "").lower())
