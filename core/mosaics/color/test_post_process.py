@@ -334,3 +334,56 @@ def test_mono_layer_outputs_say_which_layer_they_are(tmp_path, monkeypatch):
         inspect.unwrap(op._function)(None, None, out=out)
     inspect.unwrap(pp.stars_channel._function)(None, "Ha", None, None, out=out)
     assert seen == ["starless", "stars", "stars"]
+
+
+def test_nxt_hands_rc_astro_a_sky_just_above_zero(tmp_path, monkeypatch):
+    """NXT's internal stretch is anchored near zero (2026-11-17, rc-astro
+    2.6.11 on a deep tile: at the 0.005 pedestal, ~1,700 sigma up, it removed
+    4 % of the sky noise; at 30-100 sigma, 73-82 %). So the node fills each
+    band's no-data zeros with the band median, drops the sky to
+    NXT_SKY_SIGMAS sigma, and undoes both on the way back: an identity
+    denoiser hands the tile back unchanged, zeros where they were."""
+    import inspect
+    import rc_astro_cli
+    from file_io.xisf_file_io import write_xisf_image
+    rng = np.random.default_rng(3)
+    h, w, sigma = 256, 320, 3e-6
+    tile = (0.005 + sigma * rng.standard_normal((h, w, 3))).astype(np.float32)
+    tile[:, :, 1] += (0.002 * np.exp(-((np.arange(w) - 200) ** 2) / 800.0)).astype(np.float32)  # H nebula
+    tile[200:, :, :] = 0                       # canvas padding: no band has data
+    tile[:, :40, 1] = 0                        # H's footprint ends sooner than S/O's
+    src = tmp_path / "tile.tiff"
+    write_tiff_image(src, tile, {})
+    fed = {}
+
+    def identity(tin, tout, **flags):
+        fed["pixels"] = np.atleast_3d(read_image(Path(tin)))
+        fed["flags"] = flags
+        write_xisf_image(Path(tout), fed["pixels"])
+    monkeypatch.setattr(rc_astro_cli, "run_nxt", identity)
+    meta = ImageMetadata(content_hash="tile", stable_hash="tile", filename=src, header={},
+                         width_pixels=w, height_pixels=h, channels=3, dtype=np.dtype("float32"))
+    out = tmp_path / "nxt.tiff"
+    inspect.unwrap(pp.nxt._function)(_mosaic(), ProcessingConfig(), meta, out=out)
+    got = fed["pixels"]
+    assert got.shape == tile.shape and got.min() >= 0
+    for b in range(3):
+        valid = tile[..., b] != 0
+        seen = got[..., b][valid]
+        sky = np.median(seen[seen <= np.quantile(seen, 0.25)])
+        assert 20 * sigma < sky < 45 * sigma, (b, sky / sigma)   # ~NXT_SKY_SIGMAS up, not 1,700
+        assert np.all(got[..., b][~valid] > 0)                    # holes filled, never fed as zeros
+    assert fed["flags"]["denoise_intensity_hf"] == ProcessingConfig().nxt.denoise_intensity_hf
+    result = np.atleast_3d(read_image(out))
+    assert np.array_equal(result == 0, tile == 0)                 # zeros back exactly where they were
+    assert np.allclose(result[tile != 0], tile[tile != 0], rtol=0, atol=2e-9)
+
+
+def test_nxt_keys_on_where_it_puts_the_sky(monkeypatch):
+    """NXT_SKY_SIGMAS changes every NXT output, so it is in the narrow key:
+    tuning it re-derives the tiles and their blends, nothing else."""
+    base = ProcessingConfig()
+    m = SimpleNamespace(stable_hash="m")
+    before = pp._nxt_narrow((m, base, "img"), {})
+    monkeypatch.setattr(pp, "NXT_SKY_SIGMAS", 100.0)
+    assert pp._nxt_narrow((m, base, "img"), {}) != before

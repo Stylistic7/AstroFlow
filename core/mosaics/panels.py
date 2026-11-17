@@ -169,37 +169,19 @@ def _rects_overlap(a: tuple, b: tuple) -> bool:
     return not (ax1 < bx0 or bx1 < ax0 or ay1 < by0 or by1 < ay0)
 
 
-# Panel crops sent to NXT are quantized UP to multiples of this (the "size
-# ladder", Stylistic7 2026-09-02), so a mosaic's tiles come in a handful of
-# shapes and 512 matches the tool's internal tile scale. It began as a bound
-# on rc-astro's compiled-model cache, which turned out to be per call, not
-# per shape (2026-11-14); the rung stays as the tile geometry. Its cost, up
-# to 511 extra px per axis, is free by the feather design: crops overlap by
-# construction and the taper eats the excess.
-RC_ASTRO_SIZE_QUANTUM = 512
-
-
-def _grow_to_rung(lo: int, hi: int) -> "tuple[int, int]":
-    """Grow [lo, hi) symmetrically to the next ladder rung — UNCLAMPED.
-    Rects may overhang the canvas (negative origin included): the crop
-    reader zero-fills the overhang and the feather blend clips it. The
-    zeros are no data, like the uncovered canvas of every rim panel
-    (place_image fills it with 0.0), and the `nxt` node fills them with
-    the band median before rc-astro sees them (NXT stretches from
-    whole-image statistics). Not clamping keeps the shape set PURE rungs
-    — no canvas-dependent stragglers (Stylistic7, 2026-09-02). (GraXpert is
-    the one tool zeros poison — 14x over-subtraction — and it never sees
-    these crops; it runs upstream in post_stack_calibrate.)"""
-    span = hi - lo
-    target = int(np.ceil(span / RC_ASTRO_SIZE_QUANTUM)) * RC_ASTRO_SIZE_QUANTUM
-    lo -= (target - span) // 2
-    return lo, lo + target
+# How `panel_rect` cuts a panel's tile from the canvas, in crop_panel's key:
+# the rect is derived at run time by a helper outside the body hash, so a
+# change in that derivation must re-key the tiles by itself. "bbox" is the
+# panel's padded footprint clamped to the canvas: the tile at its own size,
+# which rc-astro takes as it is. Until 2026-11-17 it was grown to a 512
+# ladder, overhanging the canvas with zeros, for a per-shape model cache
+# rc-astro never had.
+RECT = "bbox"
 
 
 def panel_rect(panel, viewbox, pad: int) -> "tuple | None":
     """One panel's padded crop rect `(x0, y0, w, h)` in `viewbox` pixel space,
     clamped to the canvas — or None when the panel doesn't project finitely.
-    Both dimensions land on the RC_ASTRO_SIZE_QUANTUM ladder (see above).
 
     Computed at RUNTIME from whichever viewbox the op actually received, so
     the rect always lives on the same canvas as the merged image it crops —
@@ -221,8 +203,6 @@ def panel_rect(panel, viewbox, pad: int) -> "tuple | None":
     y1 = min(H, int(np.ceil(maxy)) + pad)
     if x1 <= x0 or y1 <= y0:
         return None
-    x0, x1 = _grow_to_rung(x0, x1)
-    y0, y1 = _grow_to_rung(y0, y1)
     return (x0, y0, x1 - x0, y1 - y0)
 
 
@@ -264,14 +244,15 @@ def panel_tiles(mosaic: Mosaic, viewbox, config: ProcessingConfig) -> list[tuple
 # --------------------------------------------------------------------------- #
 
 def _crop_panel_narrow(args, kwargs):
-    """Cache key = (mosaic.stable_hash, panel.stable_hash, viewbox, pad,
+    """Cache key = (mosaic.stable_hash, panel.stable_hash, viewbox, pad, RECT,
     scope_manifest_hashes).
 
     The rect used to sit here directly; it is now DERIVED at runtime from
-    `(panel, viewbox, pad)`, so those three stand in for it — same
-    information, but computable at trace time when `viewbox` is a handle
-    (its content_hash is what the hash machinery reduces it to, and the
-    runtime-stamped Viewbox carries the identical hash).
+    `(panel, viewbox, pad)` by `panel_rect`, so those three plus RECT (how
+    it derives them) stand in for it — same information, but computable at
+    trace time when `viewbox` is a handle (its content_hash is what the hash
+    machinery reduces it to, and the runtime-stamped Viewbox carries the
+    identical hash).
 
     `source` (the merged image handle) is DELIBERATELY excluded: its whole-image
     content_hash churns whenever any panel moved. `scope_manifest_hashes` — the
@@ -283,7 +264,7 @@ def _crop_panel_narrow(args, kwargs):
     (each derived hash is an op's `filename_fn`, which narrows on config) — and
     `pad` (the one tiling field the rect depends on) is an explicit arg."""
     mosaic, panel, viewbox, pad, source, scope_hashes = args
-    return (mosaic.stable_hash, panel.stable_hash, viewbox, pad,
+    return (mosaic.stable_hash, panel.stable_hash, viewbox, pad, RECT,
             scope_hashes), kwargs
 
 

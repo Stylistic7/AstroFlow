@@ -214,9 +214,8 @@ def test_panel_incremental_is_pixel_identical_and_selective(test_context, tmp_pa
 
     # ---- ASSERTION 1: PIXEL IDENTITY vs an honest full recompute -----------
     ref_path = tmp_path / "reference_v2.tiff"
-    # The pipeline crops and blends on `panel_rect` — the padded bbox grown to
-    # the RC_ASTRO_SIZE_QUANTUM ladder — not the raw padded bbox `panel_tiles`
-    # reports; an honest recompute uses the same rects.
+    # The pipeline crops and blends on `panel_rect`; an honest recompute uses
+    # the same rects.
     ordered = [(pid, panel_rect(context.targets[pid], vb, config.tiling.overlap_px))
                for pid, _, _ in tiles]
     feather_blend_to_bigtiff(

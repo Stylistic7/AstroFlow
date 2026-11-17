@@ -22,11 +22,13 @@ from decisions.settings import ProcessingConfig, TilingSettings
 from geometry.projections import mercator
 from geometry.polygons import project_polygon
 from hashing.hashing import hash_call, hash_list
+from mosaics import panels
 from mosaics.panels import (
     _crop_panel_narrow,
     _panel_pixel_bboxes,
     _rects_overlap,
     base_panel_mosaic,
+    panel_rect,
     panel_tiles,
 )
 
@@ -128,6 +130,34 @@ def test_panel_tiles_one_per_finite_panel_scope_includes_self():
         assert pid in scope                                 # a panel is in its own scope
         x0, y0, w, h = rect
         assert 0 <= x0 and 0 <= y0 and x0 + w <= vb.num_pixels_x and y0 + h <= vb.num_pixels_y
+
+
+def test_panel_rect_is_the_padded_bbox_inside_the_canvas():
+    """The tile rc-astro gets is the panel's padded bbox clamped to the canvas
+    and nothing more: no rung, no overhang, no zeros of our own making (the
+    512 ladder of 2026-09-02 to 11-17 served a per-shape model cache
+    rc-astro never had). The same rect `panel_tiles` scopes by."""
+    m = _overlapping_mosaic()
+    vb = _viewbox_for(m.targets)
+    pad = _CONFIG.tiling.overlap_px
+    for pid, rect, _ in panel_tiles(m, vb, _CONFIG):
+        got = panel_rect(next(p for p in m.targets if p.id == pid), vb, pad)
+        assert got == rect, (pid, got, rect)
+        x0, y0, w, h = got
+        assert 0 <= x0 and 0 <= y0 and x0 + w <= vb.num_pixels_x and y0 + h <= vb.num_pixels_y
+
+
+def test_crop_key_carries_how_the_rect_is_cut(monkeypatch):
+    """`panel_rect` is a helper outside crop_panel's body hash, so RECT names
+    its geometry in the key: a change there re-cuts every tile, and a crop
+    made under the old geometry is never served to a blend that places tiles
+    under the new one."""
+    m = _overlapping_mosaic()
+    vb = _viewbox_for(m.targets)
+    args = (m, m.targets[0], vb, 20, "source", ("manifest",))
+    before = _crop_panel_narrow(args, {})
+    monkeypatch.setattr(panels, "RECT", "ladder")
+    assert _crop_panel_narrow(args, {}) != before
 
 
 def test_panel_tiles_scope_reflects_overlap():

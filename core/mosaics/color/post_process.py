@@ -353,12 +353,13 @@ LINEAR_SHO_DISPLAY = "Linear SHO"
 
 def _nxt_narrow(args, kwargs):
     """Cache-key hook: project `config` to (mock, config.nxt, how the wrapper
-    feeds the image — see `_bxt_channel_narrow`) — the only config an NXT'd
-    image depends on. `image` (whole OR one tile) is the trailing data-dep."""
+    feeds the image — see `_bxt_channel_narrow` — and where the node puts the
+    sky) — the only config an NXT'd image depends on. `image` (whole OR one
+    tile) is the trailing data-dep."""
     from rc_astro_cli import INPUT
     mosaic, config, image = args
     mock = config.development_settings.mock_pixinsight
-    return (mosaic.stable_hash, (mock, config.nxt, INPUT), image), kwargs   # stable_hash: no cross-panel churn
+    return (mosaic.stable_hash, (mock, config.nxt, INPUT, NXT_SKY_SIGMAS), image), kwargs   # stable_hash: no cross-panel churn
 
 
 def _blend_sho_narrow(args, kwargs):
@@ -392,6 +393,30 @@ def stack_sho_channels(
     return Produced(out)
 
 
+# Where NXT should see the sky, in sigmas of sky noise above zero. rc-astro's
+# internal stretch (undocumented) is anchored near zero, so how far above zero
+# the sky sits decides what NXT does. Measured 2026-11-17 on a deep mosaic tile
+# with rc-astro 2.6.11, sky noise removed: the sky at the 0.005 pedestal
+# (~1,700 sigma up) 4 %, at 300 sigma 20 %, between 30 and 100 sigma 73-82 %,
+# at 10 sigma 62-78 %; a sky straddling zero wrecked the output. In
+# `_nxt_narrow`'s key: tuning it re-derives the NXT tiles and their blends.
+NXT_SKY_SIGMAS = 30.0
+
+
+def _nxt_sky_shift(band: np.ndarray, valid: np.ndarray) -> np.float32:
+    """How much to subtract from `band` so its sky sits NXT_SKY_SIGMAS sigma
+    above zero. The sky is the median of the lowest quarter of the valid
+    pixels (stars and nebula sit above it, as in background_pedestal.py);
+    sigma is the robust spread of a 9-px box high-pass, the pixel-scale noise
+    NXT acts on, not the gradients."""
+    from scipy.ndimage import uniform_filter
+    pixels = band[valid]
+    sky = np.median(pixels[pixels <= np.quantile(pixels, 0.25)])
+    residual = (band - uniform_filter(band, 9))[valid]
+    sigma = 1.4826 * np.median(np.abs(residual - np.median(residual)))
+    return np.float32(sky - NXT_SKY_SIGMAS * sigma)
+
+
 @node(cache_key_narrow=_nxt_narrow, auto_memory=True, resources={"gpu_slots": 1}, ephemeral=True)  # NXT on an image (whole OR one tile)
 def nxt(
     mosaic: Mosaic, config: ProcessingConfig, image: ImageMetadata, *, out: TiffFilePath,
@@ -411,21 +436,28 @@ def nxt(
     blend itself cache-hits and the tiles never re-run at all. Stylistic7's
     ruling: correctness over compute — a re-merge re-NXTs the mosaic.
 
-    Zero pixels are NO DATA (padding past the canvas, the merge rim, and a
-    band whose footprint is smaller than the others'). NXT stretches
+    What rc-astro is handed is the tile with two things undone afterwards.
+    Zero pixels are NO DATA (the merge rim inside the canvas, and a band
+    whose footprint is smaller than the others'); NXT stretches
     internally from image statistics, and zeros cripple it for the WHOLE
-    image: Heart 334b9c01 (19% zeros) lost 13% of its sky noise instead of
-    89% (2026-10-02). So each band's zeros are filled with that band's
-    median before rc-astro sees them, and set back to zero afterwards."""
+    image (Heart 334b9c01, 19% zeros, lost 13% of its sky noise instead of
+    89%, 2026-10-02), so each band's zeros are filled with that band's
+    median, and set back to zero on the way out. And the sky is dropped from
+    the pedestal to NXT_SKY_SIGMAS sigma above zero, where NXT works (see
+    the constant), and lifted back by the same amount."""
     if config.development_settings.mock_pixinsight:
         write_tiff_image(Path(out), read_image(Path(image.filename)), {"PIPELINE": "AstroFlow-OSS"})
     else:
         from rc_astro_cli import run_nxt
         filled = np.atleast_3d(read_image(Path(image.filename))).copy()
         empty = filled == 0
-        for band, hole in zip(np.moveaxis(filled, -1, 0), np.moveaxis(empty, -1, 0)):
+        shifts = np.zeros(filled.shape[-1], np.float32)
+        for b, (band, hole) in enumerate(zip(np.moveaxis(filled, -1, 0), np.moveaxis(empty, -1, 0))):
             if (~hole).any():
                 band[hole] = np.median(band[~hole])
+                shifts[b] = _nxt_sky_shift(band, ~hole)
+                band -= shifts[b]
+                np.maximum(band, 0, out=band)
         with tempfile.TemporaryDirectory(prefix="nxt_") as td:
             tin, tout = os.path.join(td, "in.tiff"), os.path.join(td, "out.xisf")
             write_tiff_image(Path(tin), filled)
@@ -438,6 +470,7 @@ def nxt(
                     iterations=config.nxt.iterations,
                     overlap=config.nxt.overlap)
             result = np.atleast_3d(read_image(Path(tout))).copy()
+            result += shifts
             result[empty] = 0
             write_tiff_image(Path(out), result, {"PIPELINE": "AstroFlow-OSS"})
     return Produced(out)

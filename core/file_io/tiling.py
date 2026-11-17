@@ -59,18 +59,10 @@ def crop_source_region(source_path: Path | str, rect: TileRect) -> np.ndarray:
     """
     x0, y0, w, h = rect
     img = pyvips.Image.new_from_file(str(source_path), unlimited=True)
-    # Ladder rects (mosaics/panels.RC_ASTRO_SIZE_QUANTUM) may overhang the
-    # canvas on any side; the overhang reads as zeros — the same exact-0.0
-    # content every rim panel already carries (place_image fill_value=0).
-    ix0, iy0 = max(x0, 0), max(y0, 0)
-    ix1, iy1 = min(x0 + w, img.width), min(y0 + h, img.height)
-    if ix0 >= ix1 or iy0 >= iy1:
-        raise ValueError(f"rect {rect} lies entirely outside "
+    if x0 < 0 or y0 < 0 or x0 + w > img.width or y0 + h > img.height:
+        raise ValueError(f"rect {rect} is not inside the "
                          f"{img.width}x{img.height} source {source_path}")
-    part = img.crop(ix0, iy0, ix1 - ix0, iy1 - iy0)
-    if (ix0, iy0, ix1, iy1) != (x0, y0, x0 + w, y0 + h):
-        part = part.embed(ix0 - x0, iy0 - y0, w, h, extend="black")
-    return part.numpy()
+    return img.crop(x0, y0, w, h).numpy()
 
 
 def _cosine_ramp_1d(n: int, taper: int, flat_lo: bool, flat_hi: bool) -> np.ndarray:
@@ -128,11 +120,7 @@ def feather_blend_to_bigtiff(
         raise ValueError("no tiles to blend")
 
     # `canvas` is the TRUE output size; without it, the union of the rects
-    # stands in (the pre-ladder behavior). Ladder rects (see
-    # mosaics/panels.RC_ASTRO_SIZE_QUANTUM) may overhang the canvas on any
-    # side — each tile's overhang (zero-filled at crop time, zero-weight
-    # sky at worst) is clipped away here, so the output never grows past
-    # the real mosaic.
+    # stands in, which falls short wherever no tile reaches a canvas edge.
     if canvas is not None:
         canvas_w, canvas_h = canvas
     else:
