@@ -1,8 +1,12 @@
 #!/bin/bash
 # An AstroFlow release: both installers built from HEAD, each smoke-tested in a
 # clean VM, then published into installers/ (its README.md is written by hand).
-# Builds in a throwaway worktree, never the live checkout (both builds rebuild
-# the frontend in place).
+# Builds in throwaway worktrees, one per build, never the live checkout (each
+# build rebuilds the frontend in place). The Windows build takes hours in its
+# VM and the macOS build minutes on the host, so they run side by side, and a
+# host-side failure shows within the first half hour; the tests then run one
+# VM at a time (the two test VMs together would take 48 of the Studio's 64 GB
+# from the app).
 #
 #   app/release.sh
 #
@@ -15,7 +19,8 @@
 # e308 Pane 17 H frames in ~/Pictures/AstroFlow/Raw, and target 4c593d16 on
 # "OSS Stack + OSS Mosaic" in the cart (no Siril, which users install). Also the Windows
 # inputs in ~/Projects/AstroFlow-build-inputs; Homebrew's astrometry-net and vips at
-# app/homebrew.lock's versions. About 2 h, 40 GB of disk and much of the RAM:
+# app/homebrew.lock's versions. About 4.5 h (the Windows build is most of it:
+# Inno Setup compiles under emulation), 40 GB of disk and much of the RAM:
 # run it while the graph is quiet.
 set -euo pipefail
 repo=$(git rev-parse --show-toplevel)
@@ -30,16 +35,22 @@ tart=~/Applications/tart.app/Contents/MacOS/tart
 key=(-i "$HOME/.ssh/astroflow_vm" -o BatchMode=yes -o LogLevel=ERROR -o ServerAliveInterval=30
      -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
 tmp=$(cd "$(mktemp -d)" && pwd -P)   # resolved: build_app.sh compares real paths
-wt=$tmp/tree
+wt=$tmp/tree        # the macOS build's tree
+wtw=$tmp/windows    # the Windows build's
+winpid=             # the Windows build, once it runs in the background
+kill_tree() { local p; for p in $(pgrep -P "$1"); do kill_tree "$p"; done; kill "$1" 2>/dev/null || true; }
 cleanup() {
+    [ -z "$winpid" ] || kill_tree "$winpid"
     "$tart" stop astroflow-clean >/dev/null 2>&1 || true
     "$utm" stop Windows >/dev/null 2>&1 || true
     "$utm" stop "Windows Build" >/dev/null 2>&1 || true
     git -C "$repo" worktree remove --force "$wt" 2>/dev/null || true
+    git -C "$repo" worktree remove --force "$wtw" 2>/dev/null || true
     rm -rf "$tmp"
 }
 trap cleanup EXIT
 GIT_LFS_SKIP_SMUDGE=1 git worktree add --detach -q "$wt" HEAD
+GIT_LFS_SKIP_SMUDGE=1 git worktree add --detach -q "$wtw" HEAD
 # The test frame from this clone's LFS store, never fetched.
 oid=$(git show HEAD:app/windows/test/frame_bin4.fit | sed -n 's/^oid sha256://p')
 frame=$(git rev-parse --path-format=absolute --git-common-dir)/lfs/objects/${oid:0:2}/${oid:2:2}/$oid
@@ -92,11 +103,14 @@ echo "==> AstroFlow $version (${sha:0:8}): preflight"
 tip=$(desktop_up)
 vm_down Windows "$tip"
 
-echo "==> Windows build"
-bip=$(vm_up "Windows Build")
-(cd "$wt" && app/windows/build_in_vm.sh "$bip")
-vm_down "Windows Build" "$bip"
-win=$wt/installers/AstroFlow-Setup-$version-windows
+echo "==> Windows build, in the background (its lines are marked [windows])"
+(
+    bip=$(vm_up "Windows Build")
+    (cd "$wtw" && app/windows/build_in_vm.sh "$bip")
+    vm_down "Windows Build" "$bip"
+) > >(while IFS= read -r line; do echo "    [windows] $line"; done) 2>&1 &
+winpid=$!
+win=$wtw/installers/AstroFlow-Setup-$version-windows
 
 echo "==> macOS build"
 (cd "$wt" && nice -n 15 bash app/build_app.sh)
@@ -105,6 +119,36 @@ if ! cmp -s "$wt/app/homebrew.lock" "$repo/app/homebrew.lock"; then
     cp "$wt/app/homebrew.lock" "$repo/app/homebrew.lock"
     echo "app/homebrew.lock changed (HOMEBREW_LOCK_UPDATE=1): commit it"
 fi
+
+echo "==> waiting for the Windows build"
+wait "$winpid" || { echo "FAIL: the Windows build failed; see its [windows] lines"; exit 1; }
+winpid=
+
+echo "==> macOS test (tart astroflow-clean)"
+share=$tmp/share
+mkdir "$share"
+cp -c "$dmg" "$frame" "$share/"
+"$tart" run --no-graphics --dir="share:$share" astroflow-clean >/dev/null 2>&1 &
+mip=$("$tart" ip astroflow-clean --wait 300)
+mh=admin@$mip
+until ssh "${key[@]}" -o ConnectTimeout=5 "$mh" true 2>/dev/null; do sleep 5; done
+# An upgrade in place, as a user's would be. The old app is quit twice: at
+# login macOS reopens an app that was running when the VM stopped, and one
+# reopened after the only quit left `open` raising that stale launcher, with
+# no server behind it (2026-11-08).
+ssh "${key[@]}" "$mh" "set -e; quit() { pkill -f '[A]stroFlow.app' || true; sleep 3; }
+until pgrep -xq Dock; do sleep 2; done
+quit; rm -rf /Applications/AstroFlow.app
+hdiutil attach -nobrowse -quiet '/Volumes/My Shared Files/share/AstroFlow-$version.dmg'
+ditto /Volumes/AstroFlow/AstroFlow.app /Applications/AstroFlow.app; hdiutil detach -quiet /Volumes/AstroFlow
+quit; open -a /Applications/AstroFlow.app"
+/usr/bin/python3 "$check" "http://$mip:8000" "$sha"
+ssh "${key[@]}" "$mh" "set -e; R=/Applications/AstroFlow.app/Contents/Resources; t=\$(mktemp -d); mkdir \$t/tmp
+cp '/Volumes/My Shared Files/share/$oid' \$t/frame.fits
+printf 'inparallel\ncpulimit 300\nadd_path %s\nautoindex\n' \$R/astrometry-index > \$t/an.cfg
+PATH=\$R/tools/bin:\$R/python/bin:/usr/bin:/bin solve-field --config \$t/an.cfg --fits-image --overwrite --no-plots --new-fits none --tweak-order 2 --crpix-center --cpulimit 300 --objs 1000 --scale-units degwidth --scale-low 4 --scale-high 8 --temp-dir \$t/tmp \$t/frame.fits | grep 'solved with'
+test -f \$t/frame.solved"
+echo "ok  the bundled solver solves the test frame"
 
 echo "==> Windows test (the \"Windows\" VM)"
 tip=$(desktop_up)
@@ -142,32 +186,6 @@ solve-field.exe --config C:/AstroFlow-release/an.cfg --fits-image --overwrite --
 if (-not (Test-Path "$t\frame.solved")) { throw "the installed solver did not solve the test frame" }'
 echo "ok  the installed solver solves the test frame"
 vm_down Windows "$tip"
-
-echo "==> macOS test (tart astroflow-clean)"
-share=$tmp/share
-mkdir "$share"
-cp -c "$dmg" "$frame" "$share/"
-"$tart" run --no-graphics --dir="share:$share" astroflow-clean >/dev/null 2>&1 &
-mip=$("$tart" ip astroflow-clean --wait 300)
-mh=admin@$mip
-until ssh "${key[@]}" -o ConnectTimeout=5 "$mh" true 2>/dev/null; do sleep 5; done
-# An upgrade in place, as a user's would be. The old app is quit twice: at
-# login macOS reopens an app that was running when the VM stopped, and one
-# reopened after the only quit left `open` raising that stale launcher, with
-# no server behind it (2026-11-08).
-ssh "${key[@]}" "$mh" "set -e; quit() { pkill -f '[A]stroFlow.app' || true; sleep 3; }
-until pgrep -xq Dock; do sleep 2; done
-quit; rm -rf /Applications/AstroFlow.app
-hdiutil attach -nobrowse -quiet '/Volumes/My Shared Files/share/AstroFlow-$version.dmg'
-ditto /Volumes/AstroFlow/AstroFlow.app /Applications/AstroFlow.app; hdiutil detach -quiet /Volumes/AstroFlow
-quit; open -a /Applications/AstroFlow.app"
-/usr/bin/python3 "$check" "http://$mip:8000" "$sha"
-ssh "${key[@]}" "$mh" "set -e; R=/Applications/AstroFlow.app/Contents/Resources; t=\$(mktemp -d); mkdir \$t/tmp
-cp '/Volumes/My Shared Files/share/$oid' \$t/frame.fits
-printf 'inparallel\ncpulimit 300\nadd_path %s\nautoindex\n' \$R/astrometry-index > \$t/an.cfg
-PATH=\$R/tools/bin:\$R/python/bin:/usr/bin:/bin solve-field --config \$t/an.cfg --fits-image --overwrite --no-plots --new-fits none --tweak-order 2 --crpix-center --cpulimit 300 --objs 1000 --scale-units degwidth --scale-low 4 --scale-high 8 --temp-dir \$t/tmp \$t/frame.fits | grep 'solved with'
-test -f \$t/frame.solved"
-echo "ok  the bundled solver solves the test frame"
 
 echo "==> publish"
 out=$repo/installers
