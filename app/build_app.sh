@@ -111,6 +111,10 @@ echo "→ source"
 	| grep -vE '^core/(testdata|pix/testdata|testing|web_server/frontend)/' \
 	| grep -vE '(^|/)(test_[^/]*|conftest)\.py$' > "$WORK/files.txt"
 rsync -a --files-from="$WORK/files.txt" "$REPO/" "$RES/AstroFlow/"
+# The frontend folder itself is not in files.txt, and rsync makes only the
+# last component of a destination (Apple's openrsync made the whole path,
+# Homebrew's rsync 3.5.2 does not).
+mkdir -p "$RES/AstroFlow/core/web_server/frontend"
 rsync -a "$REPO/core/web_server/frontend/build/" "$RES/AstroFlow/core/web_server/frontend/build/"
 echo "$sha" > "$RES/AstroFlow/RELEASE"
 cp "$APP_SRC/icon.icns" "$RES/icon.icns"
