@@ -147,6 +147,11 @@ printf 'inparallel\ncpulimit 300\nadd_path %s\nautoindex\n' \$R/astrometry-index
 PATH=\$R/tools/bin:\$R/python/bin:/usr/bin:/bin solve-field --config \$t/an.cfg --fits-image --overwrite --no-plots --new-fits none --tweak-order 2 --crpix-center --cpulimit 300 --objs 1000 --scale-units degwidth --scale-low 4 --scale-high 8 --temp-dir \$t/tmp \$t/frame.fits | grep 'solved with'
 test -f \$t/frame.solved"
 echo "ok  the bundled solver solves the test frame"
+# Down before the Windows VM starts: beside a running tart VM a UTM VM comes
+# up on a second shared subnet (192.168.65), which Windows takes for a new,
+# Public network, where its sshd rule (Private) does not apply (2026-11-18).
+"$tart" stop astroflow-clean >/dev/null 2>&1 || true
+for _ in $(seq 1 12); do "$tart" list 2>/dev/null | grep -qE 'astroflow-clean .*stopped$' && break; sleep 5; done
 
 echo "==> Windows test (the \"Windows\" VM)"
 tip=$(desktop_up)
