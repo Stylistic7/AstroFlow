@@ -76,18 +76,55 @@ jobs:
           chmod +x squashfs-root/siril-cli
           echo "$PWD/squashfs-root" >> "$GITHUB_PATH"
           squashfs-root/siril-cli --version
+      - name: the wide-field index files the installers carry, so solve-field can solve the fixtures
+        id: index
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/astrometry-index
+          key: astrometry-index-4107-4119
+      - if: steps.index.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/astrometry-index && cd ~/astrometry-index
+          for i in $(seq 4107 4119); do curl -fsSL -o index-$i.fits http://data.astrometry.net/4100/index-$i.fits; done
+      - name: solve-field reads them from its own folder
+        run: |
+          sudo mkdir -p /usr/share/astrometry && sudo cp ~/astrometry-index/*.fits /usr/share/astrometry/
+          grep -vE '^\s*#|^\s*$' /etc/astrometry.cfg
       - run: uv sync --frozen
       - name: the fixtures' cache, keyed by the manifest
-        uses: actions/cache@v4
+        id: fixtures
+        uses: actions/cache/restore@v4
         with:
           path: ~/.cache/astroflow/testdata
           key: testdata-${{ hashFiles('core/testdata/manifest.txt') }}
       - run: python3 core/testdata/fetch.py
+      - name: the solutions earlier runs banked, keyed by the solver's source and the fixtures
+        id: solutions
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/astroflow-testdata-solutions
+          key: solutions-${{ hashFiles('core/plate_solving.py', 'core/testdata/manifest.txt') }}
       - run: make tests
         working-directory: core
         env:
           ASTROFLOW_TEST_SHARDS: "1"  # one Ray cluster for the real-data fixtures on four cores
           PYTEST_TIMEOUT: "1800"      # the session fixtures identify 27 real frames before the first test
+      - name: keep what this run fetched, solved and cached, even when it failed
+        if: always() && steps.index.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/astrometry-index
+          key: ${{ steps.index.outputs.cache-primary-key }}
+      - if: always() && steps.fixtures.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/astroflow/testdata
+          key: ${{ steps.fixtures.outputs.cache-primary-key }}
+      - if: always() && steps.solutions.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/astroflow-testdata-solutions
+          key: ${{ steps.solutions.outputs.cache-primary-key }}
       - name: the shards' reports and Ray's logs, when the suite fails
         if: failure()
         uses: actions/upload-artifact@v4
