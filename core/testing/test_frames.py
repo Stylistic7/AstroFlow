@@ -1,3 +1,7 @@
+import pytest
+
+pytestmark = pytest.mark.testdata  # reads core/testdata
+
 import os
 from spherical_geometry.polygon import SphericalPolygon  # type: ignore
 import astropy.io.fits as pyfits  # type: ignore

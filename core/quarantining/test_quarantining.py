@@ -18,7 +18,7 @@ from stacks.composite_stack import Stack
 
 # Every test here identifies real frames, which now includes measuring each
 # Run's dust (~50 s alone; past 120 s beside five sibling shards).
-pytestmark = pytest.mark.timeout(300)
+pytestmark = [pytest.mark.timeout(300), pytest.mark.testdata]  # reads core/testdata
 
 
 def test_quarantine_run(test_context) -> None:

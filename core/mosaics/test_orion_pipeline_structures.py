@@ -18,6 +18,8 @@ from dataclasses import replace
 
 import pytest
 
+pytestmark = pytest.mark.testdata  # reads core/testdata
+
 from compute_graph import build_compute_graph
 from context import context
 from decisions.settings import ProcessingConfig

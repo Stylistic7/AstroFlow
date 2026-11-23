@@ -6,8 +6,12 @@ import pytest
 import astropy.io.fits as pf
 
 from file_io.sidecar import get_section, set_section
+from photometry.gaia_catalog import CATALOG_PATH
 from metadata import star_photometry as sp
 from stacks.starflat import gather_star_photometry
+
+pytestmark = pytest.mark.skipif(not CATALOG_PATH.exists(),
+                                reason="the Gaia XP catalogue is not at ASTROFLOW_GAIA_CATALOG")
 
 _STARS = np.array([
     # x, y, ra, dec, G, colour, fwhm, signal, scale, snr
