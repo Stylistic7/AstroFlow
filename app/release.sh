@@ -142,7 +142,7 @@ ditto /Volumes/AstroFlow/AstroFlow.app /Applications/AstroFlow.app; hdiutil deta
 quit; open -a /Applications/AstroFlow.app"
 /usr/bin/python3 "$check" "http://$mip:8000" "$sha"
 ssh "${key[@]}" "$mh" "set -e; R=/Applications/AstroFlow.app/Contents/Resources; t=\$(mktemp -d); mkdir \$t/tmp
-cp '/Volumes/My Shared Files/share/$oid' \$t/frame.fits
+cp '/Volumes/My Shared Files/share/${frame##*/}' \$t/frame.fits
 printf 'inparallel\ncpulimit 300\nadd_path %s\nautoindex\n' \$R/astrometry-index > \$t/an.cfg
 PATH=\$R/tools/bin:\$R/python/bin:/usr/bin:/bin solve-field --config \$t/an.cfg --fits-image --overwrite --no-plots --new-fits none --tweak-order 2 --crpix-center --cpulimit 300 --objs 1000 --scale-units degwidth --scale-low 4 --scale-high 8 --temp-dir \$t/tmp \$t/frame.fits | grep 'solved with'
 test -f \$t/frame.solved"
