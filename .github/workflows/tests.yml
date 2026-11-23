@@ -86,4 +86,16 @@ jobs:
       - run: make tests
         working-directory: core
         env:
-          PYTEST_TIMEOUT: "900"  # real stacking on four cores takes about three times the Studio's wall time
+          ASTROFLOW_TEST_SHARDS: "1"  # one Ray cluster for the real-data fixtures on four cores
+          PYTEST_TIMEOUT: "1800"      # the session fixtures identify 27 real frames before the first test
+      - name: the shards' reports and Ray's logs, when the suite fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-logs
+          path: |
+            core/*.xml
+            /tmp/ray-*/session_latest/logs/*.log
+            /tmp/ray-*/session_latest/logs/*.out
+            /tmp/ray-*/session_latest/logs/*.err
+          if-no-files-found: ignore
