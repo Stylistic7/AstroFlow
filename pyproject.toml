@@ -10,6 +10,7 @@ version = "0.2.4"
 # cp313 wheels — let uv pick 3.14 and `uv sync` fails with "no wheel for
 # the current platform". Bump this in lockstep across all nodes.
 requires-python = ">=3.12,<3.13"
+license = "Apache-2.0"
 
 # Every node (head or worker) installs the same set so behaviour is
 # identical everywhere. Splitting into head-vs-worker optional extras
