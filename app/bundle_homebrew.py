@@ -28,6 +28,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import time
 import urllib.request
 from pathlib import Path
 
@@ -129,6 +130,21 @@ def check_lock(formulas: set[tuple[str, str]]) -> None:
                      + "\nTo ship them, build again with HOMEBREW_LOCK_UPDATE=1 and commit the lock.")
 
 
+def fetch(url: str, dest: Path) -> None:
+    """One source archive. Fifty-odd hosts take part in a release, and one of
+    them stalling a connection once (2026-11-18) must not end the build: five
+    tries, a minute each."""
+    for attempt in range(1, 6):
+        try:
+            with urllib.request.urlopen(url, timeout=60) as response, open(dest, "wb") as out:
+                shutil.copyfileobj(response, out)
+            return
+        except OSError as e:
+            print(f"    {dest.name}: {e} (try {attempt} of 5)")
+            time.sleep(10)
+    raise SystemExit(f"{url}: not fetched in five tries")
+
+
 def record(formulas: set[tuple[str, str]], licenses_dir: Path, sources_dir: Path) -> None:
     licenses_dir.mkdir(parents=True, exist_ok=True)
     sources_dir.mkdir(parents=True, exist_ok=True)
@@ -150,7 +166,7 @@ def record(formulas: set[tuple[str, str]], licenses_dir: Path, sources_dir: Path
         archive = sources_dir / url.rsplit("/", 1)[-1].split("?")[0]
         if not archive.exists():
             tmp = archive.with_suffix(archive.suffix + ".part")
-            urllib.request.urlretrieve(url, tmp)
+            fetch(url, tmp)
             tmp.rename(archive)
         got = hashlib.sha256(archive.read_bytes()).hexdigest()
         note = ""
