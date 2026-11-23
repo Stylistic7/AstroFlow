@@ -90,6 +90,15 @@ jobs:
         run: |
           sudo mkdir -p /usr/share/astrometry && sudo cp ~/astrometry-index/*.fits /usr/share/astrometry/
           grep -vE '^\s*#|^\s*$' /etc/astrometry.cfg
+      - name: the Gaia XP catalogue the installers carry, which every plate solution is checked against
+        id: gaia
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/gaia_xp.zip
+          key: gaia-xp-data-v1
+      - if: steps.gaia.outputs.cache-hit != 'true'
+        run: curl -fsSL -o ~/gaia_xp.zip https://github.com/Stylistic7/astroflow-testdata/releases/download/data-v1/gaia_xp.zip
+      - run: mkdir -p "$RUNNER_TEMP/gaia_xp" && unzip -q ~/gaia_xp.zip -d "$RUNNER_TEMP/gaia_xp" && ls "$RUNNER_TEMP/gaia_xp"
       - run: uv sync --frozen
       - name: the fixtures' cache, keyed by the manifest
         id: fixtures
@@ -108,6 +117,7 @@ jobs:
         working-directory: core
         env:
           ASTROFLOW_TEST_SHARDS: "1"  # one Ray cluster for the real-data fixtures on four cores
+          ASTROFLOW_GAIA_CATALOG: ${{ runner.temp }}/gaia_xp
           PYTEST_ADDOPTS: --timeout=3600  # the command line beats pytest.ini's 240 s; the session fixtures solve 27 real frames before the first test
       - name: keep what this run fetched, solved and cached, even when it failed
         if: always() && steps.index.outputs.cache-hit != 'true'
@@ -115,6 +125,11 @@ jobs:
         with:
           path: ~/astrometry-index
           key: ${{ steps.index.outputs.cache-primary-key }}
+      - if: always() && steps.gaia.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/gaia_xp.zip
+          key: ${{ steps.gaia.outputs.cache-primary-key }}
       - if: always() && steps.fixtures.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
