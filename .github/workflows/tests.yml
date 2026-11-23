@@ -108,7 +108,7 @@ jobs:
         working-directory: core
         env:
           ASTROFLOW_TEST_SHARDS: "1"  # one Ray cluster for the real-data fixtures on four cores
-          PYTEST_TIMEOUT: "1800"      # the session fixtures identify 27 real frames before the first test
+          PYTEST_ADDOPTS: --timeout=3600  # the command line beats pytest.ini's 240 s; the session fixtures solve 27 real frames before the first test
       - name: keep what this run fetched, solved and cached, even when it failed
         if: always() && steps.index.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
