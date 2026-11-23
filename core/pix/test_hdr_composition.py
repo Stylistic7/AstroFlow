@@ -22,6 +22,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+pytestmark = pytest.mark.testdata  # reads core/testdata
+
 from file_io.generic import read_image
 from file_io.xisf_file_io import write_xisf_image
 from pix import Image

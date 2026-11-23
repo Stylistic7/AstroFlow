@@ -1,3 +1,7 @@
+import pytest
+
+pytestmark = pytest.mark.testdata  # reads core/testdata
+
 import unittest
 import time
 import hashlib

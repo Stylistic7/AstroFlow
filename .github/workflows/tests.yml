@@ -29,8 +29,8 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - name: libvips, which pyvips links at install
-        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends libvips-dev
+      - name: libvips, which pyvips links at install, and solve-field, which the solving tests look for before mocking it
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends libvips-dev astrometry.net
       - run: uv sync --frozen
       - run: make tests-unit
         working-directory: core
@@ -65,17 +65,16 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - name: libvips, which pyvips links at install
-        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends libvips-dev
+      - name: libvips, which pyvips links at install, and solve-field
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends libvips-dev astrometry.net
       - name: Siril 1.4 from its AppImage, extracted (a runner has no FUSE, and the PPA has no build for this Ubuntu)
         run: |
           cd "$RUNNER_TEMP"
           curl -fsSL -o siril.AppImage https://free-astro.org/download/Siril-1.4.5-x86_64.AppImage
           chmod +x siril.AppImage && ./siril.AppImage --appimage-extract >/dev/null
-          printf '#!/bin/sh\nAPPDIR=%s/squashfs-root\nexport LD_LIBRARY_PATH="$APPDIR/usr/lib:$APPDIR/usr/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"\nexec "$APPDIR/usr/bin/siril-cli" "$@"\n' "$PWD" > squashfs-root/siril-cli
+          printf '#!/bin/sh\nexec %s/squashfs-root/AppRun siril-cli "$@"\n' "$PWD" > squashfs-root/siril-cli
           chmod +x squashfs-root/siril-cli
           echo "$PWD/squashfs-root" >> "$GITHUB_PATH"
-          head -c 600 squashfs-root/AppRun; echo
           squashfs-root/siril-cli --version
       - run: uv sync --frozen
       - name: the fixtures' cache, keyed by the manifest

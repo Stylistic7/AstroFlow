@@ -11,6 +11,8 @@ import shutil
 from pathlib import Path
 
 import pytest
+
+pytestmark = pytest.mark.testdata  # reads core/testdata
 from astropy.time import Time
 
 from pix import Image
