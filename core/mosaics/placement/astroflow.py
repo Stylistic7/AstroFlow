@@ -461,9 +461,7 @@ def place_image(
     # bbox-on-disk: persist only the projected bbox pixels + the bbox's (x, y)
     # offset and the canvas size (in the header), NOT a full-canvas embed. The
     # OSS/Subframe mergers read the small array + offset directly (no full-canvas
-    # decompress); the PI PhotometricMosaic path re-hydrates to full-canvas
-    # deflate on demand (see panel_io). zstd is fine — place_image no longer feeds
-    # PixInsight directly.
+    # decompress).
     write_placed_panel(
         out, image,
         offset_xy=(x0_px, y0_px),

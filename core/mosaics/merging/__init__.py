@@ -1,14 +1,6 @@
-"""Mosaic-level merging: pairwise-combine placed images into a mosaic
-channel master. PixInsight (PhotometricMosaic) default; OSS available.
-
-`from mosaics.merging import merge_images, MergedImage` etc. keeps
-working via the re-export from `.pixinsight`. Pipeline code should pick
-a backend explicitly: `from mosaics.merging.pixinsight import …` or
-`from mosaics.merging.oss import …`.
+"""Mosaic-level merging: `oss.merge_images_oss` blends the placed panels of one
+filter into a mosaic channel, `polish` finishes the blend, `level_solve` solves
+the per-panel levels and `seam_metric` scores a join. `place_image` takes
+PANEL_COUNT from here.
 """
-from mosaics.merging.pixinsight import *  # noqa: F401, F403
-# Underscore-prefixed re-exports needed by other modules.
-from mosaics.merging.pixinsight import (  # noqa: F401
-    PANEL_COUNT,
-    _panel_count,
-)
+from mosaics.merging.oss import PANEL_COUNT  # noqa: F401

@@ -217,23 +217,9 @@ def _disable_preview_graph():
     context.settings = replace(settings, development_settings=dev)
 
 
-def _master_pipeline_op_dirs() -> tuple[str, ...]:
-    """Directories the Master pipeline writes primary outputs into.
-    Used to filter disk-scan results for the trace==disk comparison."""
-    return (
-        "stack_files",
-        "stack_files",
-        "post_process_stack",
-        "merge_target_channel",
-        "place_image",
-        "merge_images",
-        "post_process_mosaic_color_channel",
-    )
-
-
-def _gather_disk_primaries(output_dir: Path) -> set[str]:
-    """All on-disk primary outputs (xisf + tiff), excluding sidecars
-    and tile pyramids.
+def _gather_disk_primaries(output_dir: Path, op_dirs: set[str]) -> set[str]:
+    """All on-disk primary outputs (xisf + tiff) under the op directories the
+    trace names, excluding sidecars and tile pyramids.
 
     Pyramids are `<stem>_tiles.tiff` siblings (previews.create_tile_pyramid
     .pyramid_path_for) — the rename made them self-identifying, so the old
@@ -241,7 +227,7 @@ def _gather_disk_primaries(output_dir: Path) -> set[str]:
     became TIFFs (prefer-OSS-formats): pyramids of tiff primaries matched
     nothing and were miscounted as primaries."""
     primaries: set[str] = set()
-    for d in _master_pipeline_op_dirs():
+    for d in sorted(op_dirs):
         full_dir = output_dir / d
         if not full_dir.exists():
             continue
@@ -281,9 +267,9 @@ def test_orion_mosaic_trace_matches_disk_and_archive_lifecycle(test_context) -> 
     run_graph(graph)
 
     mosaic = next(iter(context.mosaics.values())).get()
-    item = ("mosaic", mosaic.stable_hash, "PixInsight Master")
+    item = ("mosaic", mosaic.stable_hash, "PI Master + OSS Mosaic")
 
-    # Second pass: actually run the Master pipeline.
+    # Second pass: actually run the pipeline.
     context.shopping_cart = [item]
     _override_flats_for_all_stacks()
     graph = build_compute_graph()
@@ -291,7 +277,9 @@ def test_orion_mosaic_trace_matches_disk_and_archive_lifecycle(test_context) -> 
 
     # --- Phase 1: trace == disk ---------------------------------------
     traced = {str(p) for p in paths_for_cart_item(item)}
-    on_disk = _gather_disk_primaries(Path(context.output_dir))
+    on_disk = _gather_disk_primaries(
+        Path(context.output_dir),
+        {os.path.basename(os.path.dirname(p)) for p in traced})
 
     # Ops inside a `delete_intermediates` scope are TRACED but deliberately
     # NOT on disk — the scope reclaims them once its terminal completes (the

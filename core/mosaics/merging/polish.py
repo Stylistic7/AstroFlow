@@ -40,7 +40,7 @@ import structlog
 from decorators.decorators import node
 from file_io.types import Produced, TiffFilePath
 from metadata.classes import ImageMetadata
-from mosaics.merging.pixinsight import PANEL_COUNT, _panel_count
+from mosaics.merging.oss import PANEL_COUNT, _panel_count
 from mosaics.types import MosaicLike as Mosaic
 
 log = structlog.get_logger()

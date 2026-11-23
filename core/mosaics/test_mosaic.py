@@ -56,106 +56,6 @@ def test_sagittarius_mosaic(test_context) -> None:
 
 
 @pytest.mark.exhaustive
-def test_orion_mosaic(test_context) -> None:
-    add_orion_mosaic_images()
-
-    # Running the graph the first time, with an empty shopping cart, should
-    # produce all the subframe previews for the stacks, targets, and mosaic.
-    graph = build_compute_graph()
-    run_graph(graph)
-
-    assert len(context.targets) == 4
-    assert len(context.mosaics) == 1
-    mosaic = next(iter(context.mosaics.values())).get()
-
-    assert mosaic.stable_hash in [
-        t.get().stable_hash for t in context.targets.values()
-    ]
-
-    # After putting the mosaic in the shopping cart, the second graph
-    # execution should stack the subframes into masters, and generate a final
-    # master mosaic image.
-    context.shopping_cart = [("mosaic", mosaic.stable_hash, "PixInsight Master")]
-    _override_flats_for_all_stacks()
-
-    print("### First pass done; starting pass with shopping cart")
-    graph = build_compute_graph()
-    run_graph(graph)
-
-    assert len(context.targets) == 4
-    assert len(context.mosaics) == 1
-    mosaic = next(iter(context.mosaics.values())).get()
-
-    print_tree(context.output_dir)
-
-    def assert_files(
-        pattern: str,
-        expected_number: int | None = None,
-        expected_header: dict | None = None,
-    ):
-        files = list(Path(context.output_dir).rglob(pattern))
-        if expected_number is not None:
-            assert len(files) == expected_number
-        if expected_header is not None:
-            for file in files:
-                header = read_header(file)
-                print(f"### {file=} {header=}")
-                assert expected_header.items() <= header.items()
-
-    # Filenames are now `<op>/<call_hash>.<ext>` — no human-readable
-    # stem. Per-op directories disambiguate by producer; call_hash
-    # disambiguates by call args. Filter is verified via FITS header
-    # (FILTER=H is the test corpus).
-
-    # Since the calibration-topology unification, `stack_files` is the single
-    # shared stacking op for BOTH calibration masters (bias/dark/flat) AND the
-    # per-stack light masters, so they all land in one `stack_files/` dir. This
-    # corpus: 4 light panes + bias + dark + flat = 7 XISF (call_hash-distinct).
-    assert_files("stack_files/*.xisf", 7)
-
-    # Only the 4 light masters get post-processed (calibration masters don't),
-    # and each carries FILTER=H (the test corpus is single-band).
-    assert_files("post_process_stack/*.xisf", 4, {"FILTER": "H"})
-
-    # Placed panels: NONE survive. This used to expect 8 (4 stacks × 2 viewbox
-    # sizes, Master + Subframe, each a distinct call_hash). `place_image` is
-    # `@node(ephemeral=True)` — a working value, not a deliverable — and
-    # `GraphRuntime._reclaim_ephemerals` reclaims it when any graph concludes,
-    # sparing only that graph's terminal.
-    #
-    # Kept as an assertion rather than deleted, because 0 is now the load-
-    # bearing value: a non-zero count means reclamation did NOT run, which is
-    # exactly the leak `cache/orphan_sweep.SCOPE_INTERIOR_OPS` exists to
-    # report (458 leaked `place_image` files were measured on 2026-08-17).
-    assert_files("place_image/*.tiff", 0)
-
-    # Master-pipeline mosaic merge: pairwise PhotometricMosaic over the
-    # 4 panels in a 2x2 layout → 2 within-strip + 1 cross-strip = 3
-    # merge_images nodes, each writing its own output file (matches
-    # test_orion_pipeline_structures' op counts).
-    assert_files("merge_images/*.xisf", 3, {"FILTER": "H"})
-
-    # Subframe-pipeline mosaic merge (numpy TIFF). One variadic `_blend_many`
-    # over all 4 panels → a single merge per filter, so ONE `.tiff` for the
-    # single-filter corpus. This expected 2 while `display="Merged"` meant a
-    # `_tiles.tiff` pyramid SIBLING was written beside the primary; since
-    # "the pyramid IS the payload" (2026-08-17,
-    # `products/registry.makes_image_wrap`) the primary is itself
-    # pyramidal and no sibling is written. FILTER=H is verified on the
-    # `store_mosaic_color_channel_subframe` deliverable below.
-    assert_files("merge_images_subframe/*.tiff", 1)
-
-    assert_files("store_mosaic_color_channel_subframe/*.tiff", 1, {"FILTER": "H"})
-    assert_files("post_process_mosaic_color_channel/*.xisf", 1, {"FILTER": "H"})
-    # PostProcessed not produced — test data has only "H" filter,
-    # which doesn't match any post-processing path (RGB or SHO).
-
-    ui_mosaics = context.ui_mosaics
-    assert len(ui_mosaics) == 1
-    assert list(ui_mosaics.keys()) == [mosaic.stable_hash]
-
-
-@pytest.mark.exhaustive
 def test_orion_mosaic_hybrid_oss(test_context) -> None:
     """End-to-end run of the "PI Master + OSS Mosaic" pipeline on
     the 4 real Orion panes. Exercises the variadic OSS merge: one
@@ -242,9 +142,8 @@ def test_orion_mosaic_hybrid_oss(test_context) -> None:
         f"{merge_primaries[0].name} has {pages} page(s) — not pyramidal, so "
         "the tile route has nothing to serve")
 
-    # No vestigial store op, and the PI XISF terminal isn't invoked here.
+    # No vestigial store op.
     assert_files("store_mosaic_color_channel_oss/*.fits", 0)
-    assert_files("post_process_mosaic_color_channel/*.xisf", 0)
 
     # NO placed panels persist — not even the Subframe-preview ones. This
     # expected 4 back when reclamation was per-SCOPE
@@ -307,7 +206,7 @@ def test_orion_mosaic_with_missing_panel(test_context) -> None:
     # After putting the mosaic in the shopping cart, the second graph
     # execution should stack the subframes into masters, and generate a final
     # master mosaic image.
-    context.shopping_cart = [("mosaic", mosaic.stable_hash, "PixInsight Master")]
+    context.shopping_cart = [("mosaic", mosaic.stable_hash, "PI Master + OSS Mosaic")]
     print("### test_mosaic shopping_cart", context.shopping_cart)
 
     print("### First pass done; starting pass with shopping cart")

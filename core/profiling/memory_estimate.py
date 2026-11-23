@@ -34,15 +34,13 @@ _GB = 1024 ** 3
 _MAX_MEMORY_FRACTION = 0.9
 
 # Per-op cold-start default (no profile samples yet). Keyed on op
-# `__name__`: heavy ops (full-res WBPP / PhotometricMosaic) get 16 GB,
+# `__name__`: heavy ops (full-res WBPP) get 16 GB,
 # everything else 4 GB. After the first sample lands in the matching
 # pixel bucket, this default is bypassed.
 _DEFAULT_MEMORY_BY_OP = {
     "stack_files":                     16 * _GB,
     "post_process_stack":              16 * _GB,
     "merge_target_channel":            16 * _GB,
-    "store_mosaic_color_channel_xisf": 16 * _GB,
-    "merge_images":                    16 * _GB,
     # autostretch_channel is the one full-array numpy op left in the OSS color
     # path (its input is XISF, which libvips can't stream): ~40 GB on a 2.25 Gpx
     # channel. Measurable, so this is only a safe COLD-START (the profiled p95

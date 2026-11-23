@@ -109,20 +109,15 @@ class Step:
 
 
 def _pi_readable(path: Path, dest_dir: Path) -> Path:
-    """`path` as PixInsight can open it. A bbox-on-disk placed panel is
-    re-hydrated to its full canvas (PixInsight infers placement from it); any
-    other zstd or tiled TIFF gets a stripped uncompressed copy. Everything
-    else (XISF, FITS, a stripped deflate TIFF) opens as-is."""
+    """`path` as PixInsight can open it: a zstd or tiled TIFF gets a stripped
+    uncompressed copy; everything else (XISF, FITS, a stripped deflate TIFF)
+    opens as-is."""
     from file_io.planar import needs_planar, write_planar
-    from mosaics.placement.panel_io import is_placed_panel, rehydrate_placed_panel
-    if not needs_planar(path) and not is_placed_panel(path):
+    if not needs_planar(path):
         return path
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / Path(path).name
-    if is_placed_panel(path):
-        rehydrate_placed_panel(path, dest)
-    else:
-        write_planar(path, dest)
+    write_planar(path, dest)
     return dest
 
 

@@ -53,9 +53,6 @@ _BIGTIFF_THRESHOLD = 2 * 1024**3
 # uncompressed copy written at the boundary (Stylistic7 2026-10-11: AstroFlow runs
 # fast, the PixInsight export may take a minute).
 FAST_COMPRESSION = "zstd"
-# deflate: what an external consumer that needs a COMPRESSED full file gets
-# (the PhotometricMosaic re-hydration in mosaics/placement/panel_io.py).
-COMPATIBLE_COMPRESSION = "deflate"
 
 
 def _open(filename: Path) -> pyvips.Image:
@@ -176,47 +173,13 @@ def write_tiff_image_streaming(
 ) -> None:
     """`write_tiff_image` for a LAZY pyvips image: tiffsave pulls the
     pipeline tile-by-tile, so a gigapixel result never materializes in
-    RAM (the `write_tiff_embedded` idiom generalized to any lazy
-    expression). The caller owns keeping any borrowed numpy buffers in
-    the pipeline alive until this returns."""
+    RAM. The caller owns keeping any borrowed numpy buffers in the
+    pipeline alive until this returns."""
     img = image.copy()
     img.set_type(pyvips.GValue.gstr_type, _DESC,
                  json.dumps(metadata or {}, ensure_ascii=True))
     _atomic_tiffsave(img, Path(filename), tile=tile, compression=compression)
     assert Path(filename).exists()
-
-
-def write_tiff_embedded(
-    filename: Path,
-    image: np.ndarray,
-    offset_xy: tuple[int, int],
-    canvas_size: tuple[int, int],
-    metadata: dict[str, Any] | None = None,
-    compression: str = FAST_COMPRESSION,
-) -> None:
-    """Write a full `canvas_size` (W, H) TIFF holding `image` at `offset_xy`
-    (x, y) with the rest black — WITHOUT ever materializing the full canvas.
-
-    libvips `embed` builds a lazy canvas whose out-of-image region is
-    synthesized as zeros tile-by-tile on demand, so `tiffsave` streams the
-    whole (possibly gigapixel) output while only `image` sits in RAM. This is
-    what lets `place_image` keep its RSS at panel-bbox size instead of
-    full-mosaic-canvas size: a placed panel fills only a small bbox of the
-    canvas, the rest is `place_image`-zero anyway (the OSS merge relies on
-    exactly that), so the bytes on disk are identical to writing a
-    fully-materialized zero-padded canvas — just without the ~9 GB array.
-    """
-    metadata = metadata or {}
-    arr = np.ascontiguousarray(image)  # kept alive through the tiffsave below
-    x0, y0 = offset_xy
-    canvas_w, canvas_h = canvas_size
-    img = _vips_from_numpy(arr).embed(
-        x0, y0, canvas_w, canvas_h, extend="black"
-    ).copy()
-    img.set_type(pyvips.GValue.gstr_type, _DESC, json.dumps(metadata, ensure_ascii=True))
-    _atomic_tiffsave(img, Path(filename), compression=compression)
-    assert Path(filename).exists()
-    del arr  # explicit: buffer no longer referenced after the save
 
 
 def update_tiff_header(filename: Path, metadata_in: dict[str, Any]) -> None:

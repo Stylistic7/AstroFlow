@@ -5,16 +5,16 @@ semantically "every object is implicitly in the cart with the
 Subframe pipeline" — so the user never has to queue it explicitly.
 A cart entry with pipeline `"Subframe"` re-runs it on demand.
 
-NOT a fork of `PixInsight Master`. The two share `place_image` (which
+NOT a fork of `PI Master + OSS Mosaic`. The two share `place_image` (which
 is genuinely pipeline-agnostic) but use different merge / store ops:
 
-  Subframe                            PixInsight Master
-  ────────                            ─────────────────
+  Subframe                            PI Master + OSS Mosaic
+  ────────                            ──────────────────────
   best-light-frame per stack          calibrate + stack_files
   (no stacking, no calibration)       post_process_stack
                                       merge_target_channel_master
   place_image (universal)             place_image (universal)
-  merge_images_subframe (numpy)       merge_images (PhotometricMosaic)
+  merge_images_subframe (numpy)       merge_images_oss (scipy)
   store_mosaic_color_channel_subframe store_mosaic_color_channel_master
 
 Missing panels are tolerated: this is a preview, not a science-

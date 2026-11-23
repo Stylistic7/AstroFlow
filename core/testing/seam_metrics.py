@@ -3,8 +3,7 @@
 Two panels offset in RA join along a roughly vertical seam, so a column-wise
 sky-background profile is the natural probe: a seamless mosaic is ~one value
 everywhere (stars aside), and a seam shows up as a step between the panels.
-Shared by the PhotometricMosaic apex test and the OSS `merge_images_oss` seam
-test so both judge "is there a visible seam?" the same way.
+The OSS `merge_images_oss` seam test judges "is there a visible seam?" with it.
 """
 import numpy as np
 

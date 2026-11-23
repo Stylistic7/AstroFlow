@@ -75,57 +75,6 @@ def _identify(test_context):
     return next(iter(context.mosaics.values())).get()
 
 
-@pytest.mark.exhaustive
-def test_pi_master_orion_op_counts(test_context):
-    """`PixInsight Master`.for_mosaic traced on the 4-pane Orion
-    mosaic emits the expected per-op node counts.
-
-    Orion's 4 panes each contain one stack at one filter, with
-    bias+dark+flat cal stacks shared across every pane. The 2x2
-    strip layout means each filter sees a within-strip pairwise
-    merge per row, then a cross-strip merge."""
-    mosaic = _identify(test_context)
-    config = _make_config()
-
-    import pipelines.pixinsight_master as pi
-    g = trace(pi.for_mosaic._function, mosaic, config)
-    assert g is not None
-    counts = _count_by_op(g)
-
-    print(f"\nPI Master op counts:\n{counts}")
-
-    # Dump stack_files Nodes for debugging dedup behavior.
-    print("\nstack_files Nodes:")
-    seen = set()
-    for node, deps in g.items():
-        if id(node) in seen or not isinstance(node, Node):
-            continue
-        seen.add(id(node))
-        if node.task._function.__name__ != "stack_files":
-            continue
-        stack = node.args[0]
-        print(f"  type={type(stack).__name__} image_type={stack.image_type} "
-              f"stable={stack.stable_hash[:12]} ndeps={len(deps)} "
-              f"name={node.name[:12]}")
-
-    # Per-pane chain:
-    assert counts["post_process_stack"] == 4, counts
-    # 4 light stack_files (unique per pane) + 3 cal stack_files
-    # (bias/dark/flat — deduped across pane chains because the
-    # same `stack_files(cs, config, *cal_masters_so_far)` Node
-    # has the same args for all panes).
-    assert counts["stack_files"] == 7, counts
-    # Per-(target, filter) HDR-combine; Orion = 4 targets × 1 filter.
-    assert counts["merge_target_channel"] == 4, counts
-    # Panel placement: one per panel.
-    assert counts["place_image"] == 4, counts
-    # 2x2 strip layout: 2 within-strip pairwise (one per row of 2)
-    # + 1 cross-strip pairwise = 3.
-    assert counts["merge_images"] == 3, counts
-    # Final per-filter mosaic file: 1.
-    assert counts["post_process_mosaic_color_channel"] == 1, counts
-
-
 def _format_scope(scope: tuple) -> str:
     """Render one scope as `name#abcd/name#efgh`. The short hash
     suffix on each segment disambiguates instances of the same
@@ -183,15 +132,15 @@ def _print_full_topology(label: str, graph) -> None:
 
 
 @pytest.mark.exhaustive
-def test_pi_master_orion_full_topology(test_context):
-    """Dump the full PI Master traced topology on the 4-pane
+def test_pi_oss_orion_full_topology(test_context):
+    """Dump the full PI Master + OSS Mosaic traced topology on the 4-pane
     Orion mosaic. Doesn't assert structure — exists for a human
     to eyeball when investigating cross-group edges or weird
     fan-out patterns in the viewer."""
     mosaic = _identify(test_context)
     config = _make_config()
 
-    import pipelines.pixinsight_master as pi
+    import pipelines.hybrid_pi_oss_mosaic as pi
     g = trace(pi.for_mosaic._function, mosaic, config)
 
     _print_full_topology("PI Master / Orion 2x2", g)
@@ -211,7 +160,7 @@ def _canonical_nodes(graph) -> list[Node]:
 
 
 @pytest.mark.exhaustive
-def test_pi_master_orion_traced_group_structure(test_context):
+def test_pi_oss_orion_traced_group_structure(test_context):
     """Structural invariants of the RAW traced graph (pre any
     `sanitize_for_display` transforms). With `record()` clearing
     `_group_path` to `()` on shared re-record:
@@ -230,7 +179,7 @@ def test_pi_master_orion_traced_group_structure(test_context):
     mosaic = _identify(test_context)
     config = _make_config()
 
-    import pipelines.pixinsight_master as pi
+    import pipelines.hybrid_pi_oss_mosaic as pi
     g = trace(pi.for_mosaic._function, mosaic, config)
 
     nodes_by_op: dict[str, list[Node]] = defaultdict(list)
@@ -278,7 +227,7 @@ def test_pi_master_orion_traced_group_structure(test_context):
 
 
 @pytest.mark.exhaustive
-def test_pi_master_orion_sanitized_duplicates_cal_masters(test_context):
+def test_pi_oss_orion_sanitized_duplicates_cal_masters(test_context):
     """After `sanitize_for_display`, the VisualGraph has cal-master
     `stack_files` duplicated into each `post_processed_master`
     scope — that's the visual-duplication the user wants in the
@@ -290,7 +239,7 @@ def test_pi_master_orion_sanitized_duplicates_cal_masters(test_context):
     mosaic = _identify(test_context)
     config = _make_config()
 
-    import pipelines.pixinsight_master as pi
+    import pipelines.hybrid_pi_oss_mosaic as pi
     g = trace(pi.for_mosaic._function, mosaic, config)
 
     vg = sanitize_for_display(to_visual_graph(g))
@@ -336,14 +285,14 @@ def test_pi_master_orion_sanitized_duplicates_cal_masters(test_context):
 
 
 @pytest.mark.exhaustive
-def test_pi_master_pipeline_sets_status_callbacks(test_context):
+def test_pi_oss_pipeline_sets_status_callbacks(test_context):
     """The @pipeline runner sets `node_status_fn` and
     `graph_update_fn` on the Graph it returns. Without these, the
     runtime has no way to populate per-node state for the viewer."""
     mosaic = _identify(test_context)
     config = _make_config()
 
-    import pipelines.pixinsight_master as pi
+    import pipelines.hybrid_pi_oss_mosaic as pi
     graph = pi.for_mosaic(mosaic, config)
 
     assert graph is not None
@@ -358,14 +307,14 @@ def test_pi_master_pipeline_sets_status_callbacks(test_context):
 
 
 @pytest.mark.exhaustive
-def test_pi_master_node_status_fn_writes_context(test_context):
+def test_pi_oss_node_status_fn_writes_context(test_context):
     """Firing `graph.node_status_fn(node, result, logs)` writes a
     `("node_status", node_id)` entry into context. This is the path
     the runtime takes for every node completion."""
     mosaic = _identify(test_context)
     config = _make_config()
 
-    import pipelines.pixinsight_master as pi
+    import pipelines.hybrid_pi_oss_mosaic as pi
     graph = pi.for_mosaic(mosaic, config)
     leaf = next(n for n in graph if isinstance(n, Node) and not graph[n])
 
@@ -385,7 +334,7 @@ def test_pi_master_node_status_fn_writes_context(test_context):
 
 
 @pytest.mark.exhaustive
-def test_pi_master_graph_update_fn_reflects_runtime_state(test_context):
+def test_pi_oss_graph_update_fn_reflects_runtime_state(test_context):
     """Firing `graph.graph_update_fn(rt)` against a runtime where
     some nodes have completed should produce a workflow-graph
     snapshot that surfaces those completions as state=SUCCEEDED in
@@ -394,7 +343,7 @@ def test_pi_master_graph_update_fn_reflects_runtime_state(test_context):
     mosaic = _identify(test_context)
     config = _make_config()
 
-    import pipelines.pixinsight_master as pi
+    import pipelines.hybrid_pi_oss_mosaic as pi
     graph = pi.for_mosaic(mosaic, config)
 
     rt = GraphRuntime(graph)
@@ -409,7 +358,7 @@ def test_pi_master_graph_update_fn_reflects_runtime_state(test_context):
     # Find the snapshot the @pipeline runner keyed under
     # (type_tag, entity_id, pipeline_name) and confirm the leaf
     # appears as SUCCEEDED.
-    key = ("mosaic", mosaic.stable_hash, "PixInsight Master")
+    key = ("mosaic", mosaic.stable_hash, "PI Master + OSS Mosaic")
     ref = wf_index.get(key)
     assert ref is not None, (
         f"no workflow_graph snapshot at key={key}; have keys: "
@@ -437,7 +386,7 @@ def test_pi_master_graph_update_fn_reflects_runtime_state(test_context):
 
 
 @pytest.mark.exhaustive
-def test_pi_master_initial_topology_snapshot_is_stateless(test_context):
+def test_pi_oss_initial_topology_snapshot_is_stateless(test_context):
     """Documents the topology-only snapshot written by
     `_eager_trace_pipeline` at cart-dispatch time, before any nodes
     have run. Every node's state is `NO_STATE_RUNTIME`. The runtime
@@ -452,9 +401,9 @@ def test_pi_master_initial_topology_snapshot_is_stateless(test_context):
     mosaic = _identify(test_context)
     config = _make_config()
 
-    _eager_trace_pipeline("PixInsight Master", "mosaic", mosaic, config)
+    _eager_trace_pipeline("PI Master + OSS Mosaic", "mosaic", mosaic, config)
 
-    key = ("mosaic", mosaic.stable_hash, "PixInsight Master")
+    key = ("mosaic", mosaic.stable_hash, "PI Master + OSS Mosaic")
     snapshot = context["workflow_graphs"][key].get()
     states = {meta["state"] for meta in snapshot["state"].values()}
     assert states == {"NO_STATE_RUNTIME"}, (
@@ -463,7 +412,7 @@ def test_pi_master_initial_topology_snapshot_is_stateless(test_context):
 
 
 @pytest.mark.exhaustive
-def test_pi_master_runtime_mark_done_propagates_to_snapshot(test_context):
+def test_pi_oss_runtime_mark_done_propagates_to_snapshot(test_context):
     """End-to-end: simulate the runtime path that the parent graph
     would take when `run_pipeline` returns the pipeline's Graph.
 
@@ -478,7 +427,7 @@ def test_pi_master_runtime_mark_done_propagates_to_snapshot(test_context):
     mosaic = _identify(test_context)
     config = _make_config()
 
-    import pipelines.pixinsight_master as pi
+    import pipelines.hybrid_pi_oss_mosaic as pi
     graph = pi.for_mosaic(mosaic, config)
 
     rt = GraphRuntime(graph)
@@ -488,7 +437,7 @@ def test_pi_master_runtime_mark_done_propagates_to_snapshot(test_context):
 
     _fire_graph_updates(rt)
 
-    key = ("mosaic", mosaic.stable_hash, "PixInsight Master")
+    key = ("mosaic", mosaic.stable_hash, "PI Master + OSS Mosaic")
     snapshot = context["workflow_graphs"][key].get()
     states = [meta["state"] for meta in snapshot["state"].values()]
     # Synthetic group entries aggregate from members; with every
@@ -500,7 +449,7 @@ def test_pi_master_runtime_mark_done_propagates_to_snapshot(test_context):
 
 
 @pytest.mark.exhaustive
-def test_pi_master_callbacks_survive_ray_serialization(test_context):
+def test_pi_oss_callbacks_survive_ray_serialization(test_context):
     """`run_pipeline` is a `@ray.remote` task that returns the
     pipeline Graph. That return value is serialized via cloudpickle,
     shipped through the Ray object store, deserialized on the
@@ -519,7 +468,7 @@ def test_pi_master_callbacks_survive_ray_serialization(test_context):
     mosaic = _identify(test_context)
     config = _make_config()
 
-    import pipelines.pixinsight_master as pi
+    import pipelines.hybrid_pi_oss_mosaic as pi
     graph = pi.for_mosaic(mosaic, config)
     assert graph.node_status_fn is not None
     assert graph.graph_update_fn is not None
@@ -538,7 +487,7 @@ def test_pi_master_callbacks_survive_ray_serialization(test_context):
 
 
 @pytest.mark.exhaustive
-def test_pi_master_filter_sliced_snapshot_shows_succeeded(test_context):
+def test_pi_oss_filter_sliced_snapshot_shows_succeeded(test_context):
     """End-to-end check for the read-time per-filter slice that
     `web_server/backend/compute_graphs.py:_slice_workflow_graph_by_filter`
     serves on the `<filter>` URL: the FULL snapshot is written once,
@@ -555,7 +504,7 @@ def test_pi_master_filter_sliced_snapshot_shows_succeeded(test_context):
     mosaic = _identify(test_context)
     config = _make_config()
 
-    import pipelines.pixinsight_master as pi
+    import pipelines.hybrid_pi_oss_mosaic as pi
     graph = pi.for_mosaic(mosaic, config)
 
     rt = GraphRuntime(graph)
@@ -564,7 +513,7 @@ def test_pi_master_filter_sliced_snapshot_shows_succeeded(test_context):
             rt._mark_done(n, "fake", [])
     _fire_graph_updates(rt)
 
-    key = ("mosaic", mosaic.stable_hash, "PixInsight Master")
+    key = ("mosaic", mosaic.stable_hash, "PI Master + OSS Mosaic")
     full_snapshot = context["workflow_graphs"][key].get()
 
     sliced = _slice_workflow_graph_by_filter(full_snapshot, "H")
@@ -587,7 +536,7 @@ def test_pi_master_filter_sliced_snapshot_shows_succeeded(test_context):
 
 
 @pytest.mark.exhaustive
-def test_pi_master_cal_masters_visually_duplicated_per_stack(test_context):
+def test_pi_oss_cal_masters_visually_duplicated_per_stack(test_context):
     """The viewer renders each cal-master `stack_files` Node ONCE
     per consuming `post_processed_master` scope — visual
     duplication eliminates the criss-cross fan-out from a single
@@ -600,9 +549,9 @@ def test_pi_master_cal_masters_visually_duplicated_per_stack(test_context):
     # The @pipeline runner no longer snapshots on its own; the topology
     # snapshot is written at dispatch time by `_eager_trace_pipeline`.
     from compute_graph.compute_graph import _eager_trace_pipeline
-    _eager_trace_pipeline("PixInsight Master", "mosaic", mosaic, config)
+    _eager_trace_pipeline("PI Master + OSS Mosaic", "mosaic", mosaic, config)
 
-    key = ("mosaic", mosaic.stable_hash, "PixInsight Master")
+    key = ("mosaic", mosaic.stable_hash, "PI Master + OSS Mosaic")
     snapshot = context["workflow_graphs"][key].get()
 
     # Group state entries by the canonical node_to_id (the prefix
@@ -631,7 +580,7 @@ def test_pi_master_cal_masters_visually_duplicated_per_stack(test_context):
 
 
 @pytest.mark.exhaustive
-def test_pi_master_run_pipeline_done_hidden_from_skeleton(test_context):
+def test_pi_oss_run_pipeline_done_hidden_from_skeleton(test_context):
     """`run_pipeline_done` is a sub-runtime terminator added by the
     `run_pipeline` Ray task — not part of the user's pipeline code.
     The `remove_transparent_nodes` transform strips it; the
@@ -642,7 +591,7 @@ def test_pi_master_run_pipeline_done_hidden_from_skeleton(test_context):
     mosaic = _identify(test_context)
     config = _make_config()
 
-    import pipelines.pixinsight_master as pi
+    import pipelines.hybrid_pi_oss_mosaic as pi
     pipeline_graph = pi.for_mosaic(mosaic, config)
 
     # Mimic what `run_pipeline` does: tack the terminator onto the
@@ -671,7 +620,7 @@ def test_pi_master_run_pipeline_done_hidden_from_skeleton(test_context):
 
 
 @pytest.mark.exhaustive
-def test_pi_master_no_per_filter_snapshots_written(test_context):
+def test_pi_oss_no_per_filter_snapshots_written(test_context):
     """The @pipeline decorator does NOT write per-filter workflow-
     graph snapshots. The MosaicViewer's per-filter URL
     (`/api/workflow_graph/mosaic/<id>/<pipeline>/<filter>`) falls
@@ -688,9 +637,9 @@ def test_pi_master_no_per_filter_snapshots_written(test_context):
     # The @pipeline runner no longer snapshots on its own; the topology
     # snapshot is written at dispatch time by `_eager_trace_pipeline`.
     from compute_graph.compute_graph import _eager_trace_pipeline
-    _eager_trace_pipeline("PixInsight Master", "mosaic", mosaic, config)
+    _eager_trace_pipeline("PI Master + OSS Mosaic", "mosaic", mosaic, config)
 
-    base_key = ("mosaic", mosaic.stable_hash, "PixInsight Master")
+    base_key = ("mosaic", mosaic.stable_hash, "PI Master + OSS Mosaic")
     wf = context["workflow_graphs"]
     assert base_key in wf, f"full-pipeline key {base_key} missing"
     per_filter_keys = [k for k in wf if len(k) == 4 and k[:3] == base_key]
@@ -701,14 +650,14 @@ def test_pi_master_no_per_filter_snapshots_written(test_context):
 
 
 @pytest.mark.exhaustive
-def test_pi_master_pipeline_callbacks_are_fresh_per_call(test_context):
+def test_pi_oss_pipeline_callbacks_are_fresh_per_call(test_context):
     """Independent calls to the @pipeline runner each get their own
     fresh callbacks — neither the closure nor `set_workflow_key` is
     holding onto a stale `partial(...)` from a prior trace."""
     mosaic = _identify(test_context)
     config = _make_config()
 
-    import pipelines.pixinsight_master as pi
+    import pipelines.hybrid_pi_oss_mosaic as pi
     g1 = pi.for_mosaic(mosaic, config)
     g2 = pi.for_mosaic(mosaic, config)
     assert g1 is not g2

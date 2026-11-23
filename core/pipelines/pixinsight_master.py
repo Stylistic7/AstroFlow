@@ -1,11 +1,10 @@
-"""Reference pipeline: full-resolution PixInsight master, end-to-end.
+"""Reference pipeline: full-resolution PixInsight master.
 
 WBPP-style stacking, per-stack PixInsight post-processing, HDR channel
-combine, photometric mosaic place + merge. Three entry points:
+combine. Two entry points (mosaics: `PI Master + OSS Mosaic`):
 
 * `for_stack(stack, config)`   → one post-processed stack master.
 * `for_target(target, config)` → per-filter channel masters.
-* `for_mosaic(mosaic, config)` → per-filter mosaic outputs (headline).
 
 To fork this pipeline (e.g. swap MultiscaleGradientCorrection for
 GraXpert), copy this file to `~/AstroFlow/pipelines/<YourName>.py`,
@@ -15,16 +14,11 @@ want to replace.
 from astroflow.pipeline import pipeline
 from metadata.solve_nodes import inherit_plate_solution, plate_solve_image, solved_channel
 from dependency_graph.tracing import workflow_group
-from mosaics.post_process_channel import post_process_mosaic_color_channel
-from mosaics.merging.pixinsight import merge_images
-from mosaics.placement.astroflow import place_image
-from mosaics.viewbox_measured import compute_viewbox_measured
-from mosaics.types import Mosaic
 from stacks.calibration_selection import calibrate
 from stacks.composite_stack import Stack
 from stacks.post_processing.pixinsight import post_process_stack
 from stacks.stacking.pixinsight import stack_files
-from stacks.foreign import foreign_master, foreign_post_processed_master, is_foreign
+from stacks.foreign import foreign_post_processed_master, is_foreign
 from targets.merging.pixinsight import merge_target_channel
 from targets.types import Target
 from metadata.master_analysis import analyze_master
@@ -71,65 +65,3 @@ def for_target(target, config):
     return channels_for_target(target, config)
 
 
-@pipeline("PixInsight Master", processes=Mosaic)
-def for_mosaic(mosaic, config):
-    """Build a complete mosaic, end to end. Returns
-    `{filter: store_handle}`. Missing panels are skipped (the
-    pipeline merges what's present)."""
-    return mosaic_stage(mosaic, config)
-
-
-def mosaic_stage(mosaic, config, post_processed_master=post_processed_master):
-    """Place + merge every target's channel masters into per-filter mosaic
-    files. Shared with the twins that only change the per-stack recipe."""
-    panels = mosaic.panels(config.decisions)
-    if not panels:   # quarantined: no products
-        return {}
-    targets_by_id = {t.id: t for t in panels}
-
-    channels = {}
-    for target in panels:
-        for filter, sink in channels_for_target(
-                target, config, post_processed_master).items():
-            channels[(target.id, filter)] = sink
-
-    # ONE measured canvas for the whole object, shared across filters (see
-    # hybrid_graxpert_oss_mosaic._measured_viewbox). Channels here are the HDR-combined per-target masters.
-    _ordered = [channels[k] for k in sorted(channels)]
-    viewbox = compute_viewbox_measured(
-        "Master", len(targets_by_id) == 1,
-        tuple(c.content_hash for c in _ordered), *_ordered)
-
-    out = {}
-    for filter in mosaic.filters:
-
-        # Placed-panel and intermediate-merge images are multi-GB each
-        # and only feed the final `store_*` — everything inside this
-        # block cleans up once it's been consumed. `store_*` is
-        # `final=True`, so the persisted mosaic survives.
-        # Merge per strip first, then merge strips together.
-        rows = []
-        for strip in mosaic.strips:
-            placed = [
-                place_image(mosaic, targets_by_id[tid], filter, viewbox,
-                            config, channels[(tid, filter)])
-                for tid in strip if (tid, filter) in channels
-            ]
-            if not placed:
-                continue
-            row = placed[0]
-            for p in placed[1:]:
-                row = merge_images(mosaic, filter, config, row, p)
-            rows.append(row)
-        if not rows:
-            continue
-
-        merged = rows[0]
-        for r in rows[1:]:
-            merged = merge_images(mosaic, filter, config, merged, r)
-
-        out[filter] = post_process_mosaic_color_channel(
-            mosaic, filter, config, merged,
-        )
-
-    return out

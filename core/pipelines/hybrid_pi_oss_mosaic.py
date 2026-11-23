@@ -1,15 +1,14 @@
 """Pipeline: PixInsight stacking + OSS mosaic merging.
 
-Same backbone as `pixinsight_master.py` — WBPP stacking, per-stack
-PixInsight post-processing (WriteAstrometricSolution + SPFC + MGC),
-HDR per-target channel combine — but swaps `merge_images` (PI's
-PhotometricMosaic) for `merge_images_oss` (distance-weighted
-feathering with per-overlap flux equalization, in scipy).
+The `PixInsight Master` backbone — WBPP stacking, per-stack PixInsight
+post-processing (WriteAstrometricSolution + SPFC + MGC), HDR per-target
+channel combine — then `merge_images_oss` (distance-weighted feathering
+with per-overlap flux equalization, in scipy) blends the placed panels.
 
 The intent: keep PI for the parts it's genuinely best at (calibration,
 HDR composition, MGC's MARS-aware gradient correction *per stack*),
-and replace just the panel-blending step where PhotometricMosaic's
-global normalization leaves visible transitions on large mosaics.
+and blend the panels where a global normalization would leave visible
+transitions on large mosaics.
 
 `merge_images_oss._blend` does the two things that fix panel seams:
   1. pairwise flux equalization in the overlap region — bright-side
@@ -19,7 +18,7 @@ global normalization leaves visible transitions on large mosaics.
      distance to the panel boundary, so deep-interior pixels dominate
      and edge pixels smoothly merge.
 
-Three entry points, matching the PI Master pipeline:
+Three entry points:
 
 * `for_stack(stack, config)`   → one post-processed stack master.
 * `for_target(target, config)` → per-filter channel masters.

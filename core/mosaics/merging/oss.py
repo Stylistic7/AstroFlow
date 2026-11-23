@@ -26,12 +26,22 @@ from file_io.tiff_file_io import write_tiff_image
 from file_io.types import Produced, TiffFilePath
 from hashing import hash_list
 from metadata.classes import ImageMetadata
-from mosaics.merging.pixinsight import PANEL_COUNT, _panel_count
+from file_io.sidecar import get_section
 # MosaicLike bound as `Mosaic`: widens beartype to accept a Target acting as
 # its own single-panel mosaic WITHOUT touching the `mosaic: Mosaic`
 # annotations — those serialize into the op code hash, so editing them would
 # re-key every op in this module (see mosaics/types.py).
 from mosaics.types import MosaicLike as Mosaic
+
+# Sidecar section: how many mosaic panels an image holds. A placed image
+# records 1, a merge the sum of its inputs (returned in `Produced(sections=)`).
+PANEL_COUNT = "panel_count"
+
+
+def _panel_count(image_metadata: ImageMetadata) -> int:
+    """Number of mosaic panels contained in this intermediate (1 when
+    unrecorded: a placed panel)."""
+    return get_section(image_metadata.filename, PANEL_COUNT) or 1
 
 log = structlog.get_logger()
 

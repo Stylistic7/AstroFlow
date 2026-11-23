@@ -52,8 +52,7 @@ def _enlarge_viewbox(vb: Viewbox, pad_tiles: int) -> Viewbox:
 
 
 def _reconstruct(panel: np.ndarray, y0: int, x0: int, vb: Viewbox) -> np.ndarray:
-    """What write_tiff_embedded produces on disk: the panel embedded at
-    (x0, y0) on a black full-canvas image."""
+    """The panel embedded at (x0, y0) on a black full-canvas image."""
     canvas = np.zeros((vb.num_pixels_y, vb.num_pixels_x), dtype=np.float32)
     canvas[y0:y0 + panel.shape[0], x0:x0 + panel.shape[1]] = panel
     return canvas
@@ -94,35 +93,11 @@ def test_bbox_streaming_bit_identical_to_full_canvas(pad_tiles):
         assert panel.size < full.size
 
 
-def test_write_tiff_embedded_matches_numpy_reconstruction(tmp_path):
-    """The real pyvips lazy-embed write path produces exactly the zero-padded
-    full canvas — the vips `embed` + zstd round-trip is bit-identical to placing
-    the panel into a numpy zeros() canvas."""
-    from file_io.tiff_file_io import write_tiff_embedded, read_tiff_image
-
-    panel = np.arange(1, 1 + 40 * 30, dtype=np.float32).reshape(30, 40)
-    canvas_w, canvas_h, x0, y0 = 200, 150, 64, 32
-    out = tmp_path / "embedded.tiff"
-    write_tiff_embedded(
-        out, panel, offset_xy=(x0, y0), canvas_size=(canvas_w, canvas_h),
-    )
-
-    got = read_tiff_image(out)
-    expected = np.zeros((canvas_h, canvas_w), dtype=np.float32)
-    expected[y0:y0 + 30, x0:x0 + 40] = panel
-    assert got.shape == (canvas_h, canvas_w)
-    assert np.array_equal(got, expected)
-
-
-def test_placed_panel_roundtrip_and_rehydrate(tmp_path):
+def test_placed_panel_roundtrip(tmp_path):
     """bbox-on-disk round-trip: `write_placed_panel` stores the bbox pixels +
     offset + canvas size; `read_placed_panel` returns them (what the OSS/Subframe
-    mergers consume); `rehydrate_placed_panel` reconstructs exactly the
-    full-canvas embed the PhotometricMosaic path needs."""
-    from mosaics.placement.panel_io import (
-        write_placed_panel, read_placed_panel, rehydrate_placed_panel,
-    )
-    from file_io.tiff_file_io import read_tiff_image
+    mergers consume)."""
+    from mosaics.placement.panel_io import write_placed_panel, read_placed_panel
 
     panel = np.arange(1, 1 + 40 * 30, dtype=np.float32).reshape(30, 40)
     canvas_w, canvas_h, x0, y0 = 200, 150, 64, 32
@@ -136,14 +111,6 @@ def test_placed_panel_roundtrip_and_rehydrate(tmp_path):
     assert np.array_equal(arr, panel)
     assert (rx, ry) == (x0, y0)
     assert (rw, rh) == (canvas_w, canvas_h)
-
-    dst = tmp_path / "rehydrated.tiff"
-    rehydrate_placed_panel(src, dst)
-    got = read_tiff_image(dst)
-    expected = np.zeros((canvas_h, canvas_w), dtype=np.float32)
-    expected[y0:y0 + 30, x0:x0 + 40] = panel
-    assert got.shape == (canvas_h, canvas_w)
-    assert np.array_equal(got, expected)
 
 
 def test_footprint_entirely_off_canvas_returns_none():

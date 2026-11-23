@@ -9,8 +9,8 @@ test-data frames in, Ray graph dispatches the Subframe pipeline over
 every identified mosaic, the run produces subframe previews + the
 expected target/mosaic identification.
 
-Structural shape tests for the new pipeline bodies live in
-`pipelines/test_pixinsight_master.py`.
+Structural shape tests for the pipeline bodies live in
+`mosaics/test_orion_pipeline_structures.py`.
 """
 import pytest
 
