@@ -98,6 +98,10 @@ def pytest_unconfigure(config):
     _ray_clean("end")
 
 
+_REAL_DATA_FIXTURES = {"identified_testdata", "with_real_testdata", "orion_mosaic_snapshot", "with_orion_mosaic"}
+
+
+@pytest.hookimpl(tryfirst=True)  # the marks added here must exist before pytest's own hook applies `-m`
 def pytest_collection_modifyitems(config, items):
     # The 120s default timeout (pytest.ini) is a *fast-test* regression tripwire:
     # a core test blowing past it means something substantive changed (e.g. the
@@ -106,6 +110,10 @@ def pytest_collection_modifyitems(config, items):
     # is meaningless noise. Disable the timeout for anything marked `exhaustive`
     # (timeout(0) == disabled in pytest-timeout), overriding the ini default.
     for item in items:
+        if _REAL_DATA_FIXTURES & set(getattr(item, "fixturenames", ())):
+            # The real frames, stacked by Siril: the unit tier has neither.
+            item.add_marker(pytest.mark.testdata)
+            item.add_marker(pytest.mark.siril)
         if "exhaustive" in item.keywords:
             item.add_marker(pytest.mark.timeout(0))
         elif {"identified_testdata", "orion_mosaic_snapshot"} & set(getattr(item, "fixturenames", ())):

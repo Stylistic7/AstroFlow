@@ -4,6 +4,8 @@ from collections import Counter
 from pathlib import Path
 
 import pytest
+
+pytestmark = pytest.mark.testdata  # reads core/testdata
 import ray
 
 from context import context

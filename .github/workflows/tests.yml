@@ -1,0 +1,82 @@
+# The suite on cloud runners (core/pytest.ini describes the tiers):
+#   unit         every pull request and push: no fixtures, no Siril (`make tests-unit`)
+#   frontend     the web client builds
+#   integration  main, nightly and by hand: Siril and the fetched fixtures (`make tests`)
+# The studio tier (PixInsight, RC Astro) runs on the maintainer's Mac, never
+# here. Never attach a self-hosted runner to this repository either: a pull
+# request from any fork would run its code on that machine.
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 9 * * *"  # nightly, 01:17 Pacific
+  workflow_dispatch:
+
+env:
+  ASTROFLOW_TEST_SHARDS: "2"  # a four-core runner; the Studio runs six
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: false
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: libvips, which pyvips links at install
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends libvips-dev
+      - run: uv sync --frozen
+      - run: make tests-unit
+        working-directory: core
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: core/web_server/frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+        working-directory: core/web_server/frontend
+      - run: npm run build
+        working-directory: core/web_server/frontend
+        env:
+          CI: ""  # under CI=true react-scripts turns lint warnings into errors
+
+  integration:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: false
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: libvips and Siril 1.4 (the Siril team's PPA)
+        run: |
+          sudo add-apt-repository -y ppa:lock042/siril
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends libvips-dev siril
+          siril-cli --version
+      - run: uv sync --frozen
+      - name: the fixtures' cache, keyed by the manifest
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/astroflow/testdata
+          key: testdata-${{ hashFiles('core/testdata/manifest.txt') }}
+      - run: python3 core/testdata/fetch.py
+      - run: make tests
+        working-directory: core

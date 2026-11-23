@@ -24,6 +24,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+pytestmark = pytest.mark.testdata  # reads core/testdata
+
 from calibration.sensor_fingerprint import extract_defects
 from file_io.generic import read_image
 from file_io.types import FitsFilePath

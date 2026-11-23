@@ -36,6 +36,7 @@ Usage:  uv run python scripts/run_parallel_tests.py [N]
         N (or $ASTROFLOW_TEST_SHARDS) = parallel shard count
         (default 6; exhaustive default 4 — those tests peak at GBs each).
         $INCLUDE_SLOW=1 to also run tests marked `slow` (light mode only).
+        $ASTROFLOW_TEST_MARKS = a further marker clause (`make tests-unit`).
 
 EXHAUSTIVE MODE: "exhaustive" only ever meant SLOW, not serial-only — these
 are the top-of-the-pyramid full-pipeline tests, and they use the same private
@@ -81,7 +82,8 @@ _slow = "" if os.environ.get("INCLUDE_SLOW") == "1" else " and not slow"
 # isolation) — are run separately as plain `pytest -n 0` by `make tests`; routing
 # them through this runner's spawned subprocess flaked Ray's cluster init. The
 # selection here therefore excludes both, plus opt-in exhaustive/slow.
-LIGHT = f"not exhaustive and not exclusive and not serial{_slow}"
+_marks = os.environ.get("ASTROFLOW_TEST_MARKS")
+LIGHT = f"not exhaustive and not exclusive and not serial{_slow}" + (f" and {_marks}" if _marks else "")
 
 BASE_ENV = {
     **os.environ,

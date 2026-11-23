@@ -5,4 +5,6 @@ __pycache__
 AstroFlow.PixInsight.lock
 .ipynb_checkpoints/
 astroflow.egg-info/
-
+# Fixtures that core/testdata/fetch.py brings from the release store.
+core/testdata/input/
+core/testdata/cache.tar.gz

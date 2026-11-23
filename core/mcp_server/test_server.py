@@ -6,6 +6,8 @@ from pathlib import Path
 import anyio
 import pytest
 
+pytestmark = pytest.mark.testdata  # reads core/testdata
+
 TESTDATA = Path(__file__).resolve().parent.parent / "testdata"
 EXPECTED_TOOLS = {
     "list_objects", "get_object", "finishes_for_object", "resolve_finish",

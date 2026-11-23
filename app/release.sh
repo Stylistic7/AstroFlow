@@ -51,9 +51,7 @@ cleanup() {
 trap cleanup EXIT
 GIT_LFS_SKIP_SMUDGE=1 git worktree add --detach -q "$wt" HEAD
 GIT_LFS_SKIP_SMUDGE=1 git worktree add --detach -q "$wtw" HEAD
-# The test frame from this clone's LFS store, never fetched.
-oid=$(git show HEAD:app/windows/test/frame_bin4.fit | sed -n 's/^oid sha256://p')
-frame=$(git rev-parse --path-format=absolute --git-common-dir)/lfs/objects/${oid:0:2}/${oid:2:2}/$oid
+frame=$wt/app/windows/test/frame_bin4.fit
 check=$wt/app/smoke_check.py
 
 vm_up() {   # a UTM VM's address, once it answers ssh

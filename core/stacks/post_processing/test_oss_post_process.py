@@ -19,6 +19,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+pytestmark = pytest.mark.testdata  # reads core/testdata
+
 from graxpert_cli import graxpert_base_command
 from stacks.post_processing import oss as oss_module
 from stacks.post_processing.background_pedestal import _SKY_QUANTILE

@@ -8,6 +8,8 @@ refuse to believe an absurd answer.
 import numpy as np
 import pytest
 
+pytestmark = pytest.mark.testdata  # reads core/testdata
+
 from stacks.star_flat_gain import (
     GAIN_RANGE, apply_gain, block_mean, fit_gain, sample_paths,
 )

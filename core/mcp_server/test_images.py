@@ -5,6 +5,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+pytestmark = pytest.mark.testdata  # reads core/testdata
+
 from mcp_server.server import NotAvailableYet
 
 TESTDATA = Path(__file__).resolve().parent.parent / "testdata"

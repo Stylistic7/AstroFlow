@@ -66,6 +66,18 @@ tests:
 	[ $$rc -eq 0 ] && echo "✅ all phases green — report: $(JUNIT_MERGED)" || echo "❌ a phase failed — report: $(JUNIT_MERGED)"; \
 	exit $$rc
 
+# The unit tier: what a cloud runner with no fixtures and no Siril can run
+# (.github/workflows/tests.yml, every pull request). Tests marked `testdata`
+# or `siril` are deselected; one that reaches either without the mark fails
+# there with the tool's own message, which is the cue to mark it. Exit 5 is
+# pytest's "nothing collected", fine for a phase the marks empty out.
+tests-unit:
+	@rc=0; m="not exhaustive and not slow and not testdata and not siril"; \
+	echo "→ serial tests"; PYTHONPATH=. uv run pytest -n 0 -m "$$m and serial" || [ $$? -eq 5 ] || rc=1; \
+	echo "→ exclusive tests"; PYTHONPATH=. uv run pytest -n 0 -m "$$m and exclusive" || [ $$? -eq 5 ] || rc=1; \
+	echo "→ parallel correctness tests"; ASTROFLOW_TEST_MARKS="not testdata and not siril" uv run python scripts/run_parallel_tests.py || rc=1; \
+	exit $$rc
+
 # The top-of-the-pyramid full-pipeline tests, parallelized per-TEST across
 # private Ray clusters (same isolation model as `tests`). "Exhaustive" means
 # slow, not serial-only. ~15-20 min wall (the slowest single test), not the

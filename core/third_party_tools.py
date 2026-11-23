@@ -70,6 +70,11 @@ def _installed(mac: str, windows: str) -> Callable[[], str | None]:
     return _at(windows if sys.platform == "win32" else mac)
 
 
+def _linux(command: str) -> Callable[[], str | None]:
+    """On Linux only, the distribution's package puts the tool on PATH (a CI runner)."""
+    return lambda: shutil.which(command) if sys.platform == "linux" else None
+
+
 def _first(*finders: Callable[[], str | None]) -> Callable[[], str | None]:
     return lambda: next((p for p in (f() for f in finders) if p), None)
 
@@ -173,8 +178,9 @@ TOOLS = [
          "included in AstroFlow", _graxpert, _trial_graxpert),
     Tool("siril", "Siril", "stacking",
          "the app from https://siril.org",
-         _installed("/Applications/Siril.app/Contents/MacOS/siril-cli",
-                    r"C:\Program Files\Siril\bin\siril-cli.exe"), _trial_siril),
+         _first(_installed("/Applications/Siril.app/Contents/MacOS/siril-cli",
+                           r"C:\Program Files\Siril\bin\siril-cli.exe"),
+                _linux("siril-cli")), _trial_siril),
     Tool("rc-astro", "RC Astro", "BlurXTerminator, StarXTerminator, NoiseXTerminator",
          "the rc-astro installer from https://www.rc-astro.com",
          # The app's PATH is its own tools and the system's, not /usr/local/bin

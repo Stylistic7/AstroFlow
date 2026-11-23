@@ -1,9 +1,9 @@
 import datetime
 import numpy as np
 import os
+import pytest
 import tempfile
 import unittest
-import shutil
 from pathlib import Path
 
 from file_io.types import FitsFilePath, XisfFilePath, WithSidecar
@@ -15,10 +15,22 @@ from file_io.generic import (
     set_content_hash,
     copy_image,
 )
-from file_io.sidecar import sidecar_path_for
+from file_io.xisf_file_io import write_xisf_image
+
+
+def write_master(path: Path) -> XisfFilePath:
+    """A master light as the pipeline writes one: float32, with the header
+    cards the reader types (IMAGETYP, EXPTIME, DATE-OBS). Twelve by nineteen
+    pixels stand in for a 12772 x 19148 stack; the reader is size-blind, and
+    the 979 MB real master this file used to carry bought nothing."""
+    pixels = np.random.default_rng(0).random((12, 19, 1), dtype=np.float32)
+    write_xisf_image(path, pixels, {"IMAGETYP": "master light", "EXPTIME": 300.0,
+                                    "DATE-OBS": "2024-02-05T17:29:43", "FILTER": "H"})
+    return XisfFilePath(path)
 
 
 class TestFileIO(unittest.TestCase):
+    @pytest.mark.testdata
     def test_read_fits(self):
         filename = FitsFilePath(
             "testdata/input/Light_Orion_Pane 1_300.0s_Bin1_6200MM_H_20231222-210506_0001.fit"
@@ -37,30 +49,24 @@ class TestFileIO(unittest.TestCase):
         self.assertEqual(image.dtype, np.uint16)
 
     def test_read_xisf(self):
-        filename = XisfFilePath(
-            "testdata/output/Stacks/Great Nebula in Orion/masters/master_light_Great Nebula in Orion_RA_82.70_DEC_-5.60_ZWO ASI6200MM Pro_2.21aspp_1.57deg_H_77ade5e8fa458f7f.xisf"
-        )
-        header = read_header(filename)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            filename = write_master(Path(temp_dir) / "master.xisf")
+            header = read_header(filename)
 
-        self.assertEqual(type(header["IMAGETYP"]), str)
-        self.assertEqual(header["NAXIS"], 2)
-        self.assertEqual(header["NAXIS1"], 19148)
-        self.assertEqual(header["NAXIS2"], 12772)
-        self.assertEqual(type(header["EXPTIME"]), float)
-        self.assertEqual(type(header["DATE-OBS"]), datetime.datetime)
+            self.assertEqual(type(header["IMAGETYP"]), str)
+            self.assertEqual(header["NAXIS"], 2)
+            self.assertEqual(header["NAXIS1"], 19)
+            self.assertEqual(header["NAXIS2"], 12)
+            self.assertEqual(type(header["EXPTIME"]), float)
+            self.assertEqual(type(header["DATE-OBS"]), datetime.datetime)
 
-        image = read_image(filename)
-        print(image.shape, image.dtype)
-        self.assertEqual(image.shape, (12772, 19148))
-        self.assertEqual(image.dtype, np.float32)
+            image = read_image(filename)
+            self.assertEqual(image.shape, (12, 19))
+            self.assertEqual(image.dtype, np.float32)
 
     def test_add_xisf_metadata(self):
-        input_filename = XisfFilePath(
-            "testdata/output/Stacks/Great Nebula in Orion/masters/master_light_Great Nebula in Orion_RA_82.70_DEC_-5.60_ZWO ASI6200MM Pro_2.21aspp_1.57deg_H_77ade5e8fa458f7f.xisf"
-        )
         with tempfile.TemporaryDirectory() as temp_dir:
-            output_filename = XisfFilePath(os.path.join(temp_dir, "foo.xisf"))
-            shutil.copy(input_filename, output_filename)
+            output_filename = write_master(Path(temp_dir) / "foo.xisf")
             update_header(output_filename, {"CONTHASH": "foo", "FLOATVAL": 1.234})
             header = read_header(output_filename)
             self.assertEqual(header["CONTHASH"], "foo")
@@ -70,12 +76,8 @@ class TestFileIO(unittest.TestCase):
         """`set_content_hash` for `WithSidecar` dispatches through to
         the wrapped Path and lands in the XISF native header — single
         source of truth, no companion sidecar file."""
-        input_filename = Path(
-            "testdata/output/Stacks/Great Nebula in Orion/masters/master_light_Great Nebula in Orion_RA_82.70_DEC_-5.60_ZWO ASI6200MM Pro_2.21aspp_1.57deg_H_77ade5e8fa458f7f.xisf"
-        )
         with tempfile.TemporaryDirectory() as temp_dir:
-            output_file = WithSidecar(XisfFilePath(os.path.join(temp_dir, "foo.xisf")))
-            shutil.copy(input_filename, output_file.path)
+            output_file = WithSidecar(write_master(Path(temp_dir) / "foo.xisf"))
             set_content_hash(output_file, "foo")
 
             update_header(output_file, {"FLOATVAL": 1.234})
@@ -88,12 +90,8 @@ class TestFileIO(unittest.TestCase):
             self.assertEqual(read_header(output_file.path)["CONTHASH"], "foo")
 
     def test_copy(self):
-        input_filename = Path(
-            "testdata/output/Stacks/Great Nebula in Orion/masters/master_light_Great Nebula in Orion_RA_82.70_DEC_-5.60_ZWO ASI6200MM Pro_2.21aspp_1.57deg_H_77ade5e8fa458f7f.xisf"
-        )
         with tempfile.TemporaryDirectory() as temp_dir:
-            first_file = WithSidecar(XisfFilePath(os.path.join(temp_dir, "foo.xisf")))
-            shutil.copy(input_filename, first_file.path)
+            first_file = WithSidecar(write_master(Path(temp_dir) / "foo.xisf"))
             set_content_hash(first_file, "foo")
             update_header(first_file, {"FLOATVAL": 1.234})
 

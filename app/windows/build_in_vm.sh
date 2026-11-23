@@ -51,9 +51,7 @@ echo "==> the install layout and setup.exe"
 vm "cd C:\\build\\src; powershell -NoProfile -ExecutionPolicy Bypass -File app\\windows\\build_installer.ps1 -Tree C:\\build\\tree.zip -Sha $sha -Inputs C:\\build\\inputs -Stage C:\\build\\stage -Downloads C:\\build\\downloads -Out C:\\build\\dist; if (\$LASTEXITCODE) { throw 'installer build failed' }"
 
 echo "==> the proof: the install layout solves a real frame"
-# The test frame from this clone's LFS store, never fetched.
-oid=$(git show HEAD:app/windows/test/frame_bin4.fit | sed -n 's/^oid sha256://p')
-scp -q "${key[@]}" "$(git rev-parse --git-common-dir)/lfs/objects/${oid:0:2}/${oid:2:2}/$oid" "$host:C:/build/frame.fits"
+scp -q "${key[@]}" "$(git rev-parse --show-toplevel)/app/windows/test/frame_bin4.fit" "$host:C:/build/frame.fits"
 vm '$t = "C:\build\solve-test"; $st = "C:\build\stage"
 if (Test-Path $t) { Remove-Item -Recurse -Force $t }; New-Item -ItemType Directory -Force "$t\tmp" | Out-Null
 Move-Item C:\build\frame.fits "$t\frame.fits"

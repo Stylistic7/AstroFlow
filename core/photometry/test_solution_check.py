@@ -8,6 +8,8 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+
+pytestmark = pytest.mark.testdata  # reads core/testdata
 from astropy.io import fits
 from astropy.wcs import WCS
 
