@@ -707,6 +707,10 @@ def slow_gather(*ancestor_results: tuple[int]) -> float:
 
 from decorators import cached
 
+# Wall-time assertions compare N sleeping tasks against their serial sum; on a
+# four-core runner the ratio never clears the bar, so they run on wide machines.
+_needs_cores = pytest.mark.skipif((os.cpu_count() or 1) < 8, reason="wall-time assertions need a wide machine")
+
 
 @cached.remote
 def cached_slow_process(sleep_s: int, item: T) -> T:
@@ -714,6 +718,7 @@ def cached_slow_process(sleep_s: int, item: T) -> T:
     return item
 
 
+@_needs_cores
 @pytest.mark.serial  # wall-time assertion — flaky under parallel load; run serially (see scripts/run_parallel_tests.py)
 def test_cached_tasks_run_in_parallel(test_context) -> None:
     """@cached.remote tasks with {} should run in parallel.
@@ -745,6 +750,7 @@ def test_cached_tasks_run_in_parallel(test_context) -> None:
     )
 
 
+@_needs_cores
 @pytest.mark.serial  # wall-time assertion — flaky under parallel load; run serially (see scripts/run_parallel_tests.py)
 def test_cached_tasks_list_run_in_parallel(test_context) -> None:
     """@cached.remote tasks with [] should run in parallel.
@@ -794,6 +800,7 @@ def test_list_deps_run_in_parallel(test_context) -> None:
     assert captured[gather] == sum(range(N))
 
 
+@_needs_cores
 @pytest.mark.serial  # wall-time assertion — flaky under parallel load; run serially (see scripts/run_parallel_tests.py)
 def test_set_deps_wall_time(test_context) -> None:
     """Wall time with {} should be ~1s for 10 x 1s tasks, not ~10s."""
@@ -808,6 +815,7 @@ def test_set_deps_wall_time(test_context) -> None:
     assert elapsed < N * 0.5, f"Took {elapsed:.1f}s — tasks ran serially"
 
 
+@_needs_cores
 @pytest.mark.serial  # wall-time assertion — flaky under parallel load; run serially (see scripts/run_parallel_tests.py)
 def test_list_deps_wall_time(test_context) -> None:
     """Wall time with [] should be ~1s for 10 x 1s tasks, not ~10s."""

@@ -71,7 +71,11 @@ def enable_test_mode(ray_temp_dir: str | None = None) -> None:
     # parallelize ACROSS shards; the few tests that assert task parallelism /
     # wall time are marked `serial` and run alone (ASTROFLOW_TEST_CONCURRENCY=1
     # => the whole machine), where their timing assertions are valid.
-    num_cpus = max(1, (os.cpu_count() or 4) // n_workers)
+    # Never below the largest request a node makes (SIRIL_CPUS, 6; the star flat
+    # and the fringe frame ask 4): a shard's cluster that cannot fit a node makes
+    # run_graph wait on it forever. Ray CPUs are logical, so a four-core runner
+    # simply oversubscribes, which correctness tests do not mind.
+    num_cpus = max(6, (os.cpu_count() or 4) // n_workers)
     # Object store: cap total test object-store use to ~25% of RAM, split across
     # the N clusters. Ray spills to disk past this (a cap, not a hard wall); the
     # 256 MB floor keeps a lone cluster usable; the 1.5 GB ceiling is mandatory
