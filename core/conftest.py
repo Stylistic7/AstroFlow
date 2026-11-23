@@ -1,3 +1,6 @@
+# On Linux libvips brings the system HDF5 into the process; h5py bundles a newer
+# one and must bind to it first, so h5py loads before anything loads libvips.
+import h5py  # noqa: F401
 import faulthandler
 import os
 import shutil

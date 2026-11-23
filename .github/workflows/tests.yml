@@ -44,7 +44,7 @@ jobs:
           lfs: false
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 26  # npm 11 wrote the lock file; npm 10 rejects it
           cache: npm
           cache-dependency-path: core/web_server/frontend/package-lock.json
       - run: npm ci --no-audit --no-fund
@@ -69,7 +69,9 @@ jobs:
         run: |
           sudo add-apt-repository -y ppa:lock042/siril
           sudo apt-get update -q
-          sudo apt-get install -y -q --no-install-recommends libvips-dev siril
+          sudo apt-get install -y -q --no-install-recommends libvips-dev
+          apt-cache policy siril
+          sudo apt-get install -y -q siril
           siril-cli --version
       - run: uv sync --frozen
       - name: the fixtures' cache, keyed by the manifest

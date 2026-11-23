@@ -6,6 +6,9 @@ the same pieces itself where they matter to it.
 
 
 def setup_worker() -> None:
+    # On Linux libvips brings the system HDF5 into the process; h5py bundles a
+    # newer one and must bind to it first, so it loads before pyvips does.
+    import h5py  # noqa: F401
     from cache.context_ref import register_context_ref_serializer
     register_context_ref_serializer()
 
