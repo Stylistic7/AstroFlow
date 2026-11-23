@@ -125,7 +125,7 @@ def test_dir_available_cases(tmp_path):
 
 
 def test_dir_on_present_volume_but_deleted_is_a_real_change():
-    volumes = [v for v in Path("/Volumes").iterdir() if v.is_dir()]
+    volumes = [v for v in Path("/Volumes").iterdir() if v.is_dir()] if Path("/Volumes").is_dir() else []
     if not volumes:
         pytest.skip("no mounted volumes")
     missing_dir = volumes[0] / "__astroflow_never_existed__"

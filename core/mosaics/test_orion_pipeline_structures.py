@@ -707,7 +707,7 @@ def _ancestor_ops(graph, node) -> set[str]:
 
 # Identifies the real Orion frames, which now includes measuring each Run's
 # dust (~80 s alone; past 120 s beside five sibling shards).
-@pytest.mark.timeout(300)
+@pytest.mark.timeout(900)   # a four-core runner takes three times the Studio's 120 s
 def test_siril_canvas_never_waits_on_calibration(test_context):
     """The Siril pipeline measures its shared canvas on each channel's RAW
     solved master, so an SPFC refusal (too few calibratable stars) at

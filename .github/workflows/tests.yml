@@ -85,3 +85,5 @@ jobs:
       - run: python3 core/testdata/fetch.py
       - run: make tests
         working-directory: core
+        env:
+          PYTEST_TIMEOUT: "900"  # real stacking on four cores takes about three times the Studio's wall time

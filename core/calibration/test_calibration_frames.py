@@ -522,6 +522,7 @@ def test_same_filter_flats_split_by_exposure(test_context) -> None:
     assert {round(f.exposure) for f in flats} == {15, 13}
 
 
+@pytest.mark.testdata  # reads core/testdata
 def test_multiple_filters_for_flats(test_context) -> None:
     # Only one run of flat frames applies to the light frames, which use
     # the H filter.
@@ -758,6 +759,7 @@ def test_darks_from_two_bodies_split_by_camera_id_hash(test_context) -> None:
     assert len(dark_hashes) == 2
 
 
+@pytest.mark.testdata  # reads core/testdata
 def test_bias_only_stack_has_no_camera_id_hash(test_context) -> None:
     """Biases have no defect_candidates so their CalibrationStack
     carries `camera_id_hash=None`."""
