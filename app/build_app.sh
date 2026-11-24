@@ -129,10 +129,12 @@ uv pip install --quiet --python "$py" --break-system-packages -r "$WORK/requirem
 echo "→ GraXpert"
 # Its own folder, not the app's site-packages: GraXpert pins its own numpy.
 uv pip install --quiet --python "$py" --target "$RES/tools/graxpert" -r "$APP_SRC/graxpert-requirements.txt"
-# The installs' console scripts name the build folder in their first line and are
-# not what the app runs (it starts modules with its interpreter): gone.
+# The installs' console scripts name the build folder, in their first line or, when
+# the path is too long for a shebang, in the exec wrapper under it, and are not what
+# the app runs (it starts modules with its interpreter): gone.
 for script in "$RES/python/bin"/* "$RES/tools/graxpert/bin"/*; do
-	case "$(head -1 "$script")" in "#!$RES/python/bin/"*) rm "$script" ;; esac
+	[ "$(head -c 2 "$script")" = '#!' ] || continue
+	case "$(head -3 "$script")" in *"$RES/python/bin/"*) rm "$script" ;; esac
 done
 mkdir -p "$RES/tools/bin"
 cat > "$RES/tools/bin/graxpert" <<'EOF'
