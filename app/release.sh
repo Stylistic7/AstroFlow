@@ -37,6 +37,7 @@ tart=~/Applications/tart.app/Contents/MacOS/tart
 index_src=${ASTROMETRY_INDEX:-/Volumes/AstroProcessed/astrometry-net}
 gaia_src=${GAIA_CATALOG:-/Volumes/AstroProcessed/Catalogs/GaiaXP/gaia_xp}
 stage_refdata() {   # $1: the folder to fill, laid out as the app's data folder
+    local sha size path url src   # the manifest's columns, never the script's own sha
     while IFS=$'\t' read -r sha size path url; do
         case $sha in \#*|'') continue;; esac
         case $path in
