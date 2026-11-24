@@ -47,6 +47,8 @@ if ($LASTEXITCODE -ne 0) { throw "unpacking Python failed" }
 $py = "$Stage\python\python.exe"
 # Ours to fill: an EXTERNALLY-MANAGED marker would stop uv pip install.
 Remove-Item "$Stage\python\Lib\EXTERNALLY-MANAGED" -ErrorAction SilentlyContinue
+# uv works out of a cache inside the build, never out of this account's.
+$env:UV_CACHE_DIR = "$Downloads\uv-cache"
 uv export --frozen --no-dev --no-emit-project --no-hashes -o "$Downloads\requirements.txt"
 if ($LASTEXITCODE -ne 0) { throw "uv export failed" }
 uv pip install --python $py -r "$Downloads\requirements.txt"

@@ -46,6 +46,14 @@ APP_SRC="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(dirname "$APP_SRC")"
 DIST="$APP_SRC/dist"
 WORK="$APP_SRC/build"
+# uv works out of a cache inside the build, never out of this account's
+# (~/.cache/uv): a module built there bakes that path into the bundle.
+export UV_CACHE_DIR="$WORK/uv-cache"
+# The C compiler records source paths (cffi's pyvips module); the bundle's say /build.
+export CFLAGS="-ffile-prefix-map=$WORK=/build"
+# Interpreters run during the build would cache bytecode naming the build folder;
+# compileall below writes all of it, with the bundle's path.
+export PYTHONDONTWRITEBYTECODE=1
 PYTHON_VERSION=3.12
 PYOBJC="pyobjc-framework-Cocoa==11.1"
 SOURCES="$APP_SRC/.sources"   # source archives, kept between builds
@@ -87,6 +95,9 @@ rsync -a --files-from="$WORK/files.txt" "$REPO/" "$RES/AstroFlow/"
 # Homebrew's rsync 3.5.2 does not).
 mkdir -p "$RES/AstroFlow/core/web_server/frontend"
 rsync -a "$REPO/core/web_server/frontend/build/" "$RES/AstroFlow/core/web_server/frontend/build/"
+# webpack inlines a dependency's import.meta.url (flexsearch's worker fallback) as a
+# file URL of the build folder; the bundle's copy drops the folder.
+sed -i '' "s|file://$REPO/|file:///|g" "$RES/AstroFlow/core/web_server/frontend/build/static/js/"main.*.js
 echo "$sha" > "$RES/AstroFlow/RELEASE"
 cp "$APP_SRC/icon.icns" "$RES/icon.icns"
 
@@ -99,6 +110,11 @@ export UV_PYTHON_INSTALL_DIR="$APP_SRC/.python"
 uv python install --quiet --managed-python "$PYTHON_VERSION"
 standalone="$(ls -d "$UV_PYTHON_INSTALL_DIR"/cpython-$PYTHON_VERSION.*-macos-aarch64-none | sort -V | tail -1)"
 rsync -a "$standalone/" "$RES/python/"
+# uv relocated the interpreter to its download folder; the bundle's copy says
+# /Applications (the dylib's id is cosmetic: python3.12 loads it through @rpath).
+sed -i '' "s|$standalone|/Applications/AstroFlow.app/Contents/Resources/python|g" "$RES/python/lib/python$PYTHON_VERSION/_sysconfigdata__darwin_darwin.py"
+install_name_tool -id "@rpath/libpython$PYTHON_VERSION.dylib" "$RES/python/lib/libpython$PYTHON_VERSION.dylib"
+codesign --force --sign - "$RES/python/lib/libpython$PYTHON_VERSION.dylib"
 py="$RES/python/bin/python$PYTHON_VERSION"
 prefix="$("$py" -c 'import sys; print(sys.prefix)')"
 if [ "$prefix" != "$RES/python" ]; then
@@ -113,6 +129,11 @@ uv pip install --quiet --python "$py" --break-system-packages -r "$WORK/requirem
 echo "→ GraXpert"
 # Its own folder, not the app's site-packages: GraXpert pins its own numpy.
 uv pip install --quiet --python "$py" --target "$RES/tools/graxpert" -r "$APP_SRC/graxpert-requirements.txt"
+# The installs' console scripts name the build folder in their first line and are
+# not what the app runs (it starts modules with its interpreter): gone.
+for script in "$RES/python/bin"/* "$RES/tools/graxpert/bin"/*; do
+	case "$(head -1 "$script")" in "#!$RES/python/bin/"*) rm "$script" ;; esac
+done
 mkdir -p "$RES/tools/bin"
 cat > "$RES/tools/bin/graxpert" <<'EOF'
 #!/bin/sh
@@ -159,7 +180,8 @@ mkdir -p "$RES/tools/vips"
 
 
 # Bytecode now, so nothing writes into the signed bundle at run time.
-"$py" -m compileall -q -j 0 "$RES/python/lib" "$RES/tools/graxpert" "$RES/tools/astrometry" "$RES/AstroFlow" >/dev/null || true
+# Bytecode records its source path: the bundle's say /Applications, wherever it was built.
+"$py" -m compileall -f -q -j 0 -s "$WORK" -p /Applications "$RES/python/lib" "$RES/tools/graxpert" "$RES/tools/astrometry" "$RES/AstroFlow" >/dev/null || true
 
 echo "→ bundle"
 cat > "$APP/Contents/MacOS/AstroFlow" <<'EOF'
@@ -195,6 +217,15 @@ cat > "$APP/Contents/Info.plist" <<EOF
 </dict>
 </plist>
 EOF
+
+# The bundle is public and goes anywhere: nothing in it may carry this account's
+# home folder, the folder it was built in, or the account's temporary folder.
+carried=$(grep -rlF -e "$HOME" -e "$REPO" -e "$(getconf DARWIN_USER_TEMP_DIR | cut -d/ -f4-5)" "$APP" || true)
+if [ -n "$carried" ]; then
+	printf "the bundle carries this machine's paths in %d files, among them:\n%s\n" \
+		"$(printf '%s\n' "$carried" | wc -l)" "$(printf '%s\n' "$carried" | head -12)" >&2
+	exit 1
+fi
 
 echo "→ signing"
 if [ -n "${SIGN_IDENTITY:-}" ]; then

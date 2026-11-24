@@ -221,5 +221,8 @@ mkdir -p "$out"
 mv -f "$out/.windows.zip.part" "$out/AstroFlow-Setup-$version-windows.zip"
 mv -f "$dmg" "$out/AstroFlow-$version.dmg"
 rsync -a --delete "$wt/app/dist/sources/" "$out/AstroFlow-$version-sources/"
+# tar records owner names; the public archive carries none of this account's.
+tar --uid 0 --gid 0 --uname root --gname wheel -cf "$out/AstroFlow-$version-sources.tar" -C "$out" "AstroFlow-$version-sources"
+(cd "$out" && shasum -a 256 "AstroFlow-$version.dmg" "AstroFlow-Setup-$version-windows.zip" "AstroFlow-$version-sources.tar" > SHA256SUMS)
 ls -la "$out"
 echo "Released $sha: both installers built and smoke-tested. Update installers/README.md."
