@@ -39,6 +39,13 @@ done < app/windows/inputs.sha256
 echo "==> the tree and the frontend"
 git archive --format=zip -o "$tmp/tree.zip" HEAD
 (cd core/web_server/frontend && npm ci --no-audit --no-fund --loglevel=error && npm run build --silent)
+# webpack inlines a dependency's import.meta.url (flexsearch's worker fallback) as a
+# file URL of the build folder; the installer's copy drops the folder. Then nothing
+# built here may carry this account's home folder, the build folder or the account's
+# temporary folder: the tree and this build are all the VM gets from this machine.
+sed -i '' "s|file://$repo/|file:///|g" core/web_server/frontend/build/static/js/main.*.js
+carried=$(grep -rlF -e "$HOME" -e "$repo" -e "$(getconf DARWIN_USER_TEMP_DIR | cut -d/ -f4-5)" core/web_server/frontend/build || true)
+[ -z "$carried" ] || { printf "the frontend build carries this machine's paths:\n%s\n" "$carried" >&2; exit 1; }
 (cd core/web_server/frontend/build && zip -qr "$tmp/frontend.zip" .)
 vm 'foreach ($d in "C:\build\src", "C:\build\dist") { if (Test-Path $d) { Remove-Item -Recurse -Force $d } }'
 scp -q "${key[@]}" "$tmp/tree.zip" "$tmp/frontend.zip" "$host:C:/build/"
