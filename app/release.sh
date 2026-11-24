@@ -32,6 +32,20 @@ free=$(df -k "$HOME" | tail -1 | awk '{print int($4 / 1048576)}')
 [ "$free" -ge 40 ] || { echo "only $free GB free; a release needs about 40"; exit 1; }
 utm=/Applications/UTM.app/Contents/MacOS/utmctl
 tart=~/Applications/tart.app/Contents/MacOS/tart
+# The reference data a first start fetches (core/refdata), staged into each test VM
+# from this machine's copies so the smoke tests measure the app, not the network.
+index_src=${ASTROMETRY_INDEX:-/Volumes/AstroProcessed/astrometry-net}
+gaia_src=${GAIA_CATALOG:-/Volumes/AstroProcessed/Catalogs/GaiaXP/gaia_xp}
+stage_refdata() {   # $1: the folder to fill, laid out as the app's data folder
+    while IFS=$'\t' read -r sha size path url; do
+        case $sha in \#*|'') continue;; esac
+        case $path in
+            astrometry-index/*) src=$index_src/${path#astrometry-index/};;
+            gaia_xp/*) src=$gaia_src/${path#gaia_xp/};;
+        esac
+        mkdir -p "$1/${path%/*}" && cp -c "$src" "$1/$path"
+    done < "$wt/core/refdata/manifest.txt"
+}
 key=(-i "$HOME/.ssh/astroflow_vm" -o BatchMode=yes -o LogLevel=ERROR -o ServerAliveInterval=30
      -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
 tmp=$(cd "$(mktemp -d)" && pwd -P)   # resolved: build_app.sh compares real paths
@@ -126,6 +140,7 @@ echo "==> macOS test (tart astroflow-clean)"
 share=$tmp/share
 mkdir "$share"
 cp -c "$dmg" "$frame" "$share/"
+stage_refdata "$share/refdata"
 "$tart" run --no-graphics --dir="share:$share" astroflow-clean >/dev/null 2>&1 &
 mip=$("$tart" ip astroflow-clean --wait 300)
 mh=admin@$mip
@@ -139,11 +154,13 @@ until pgrep -xq Dock; do sleep 2; done
 quit; rm -rf /Applications/AstroFlow.app
 hdiutil attach -nobrowse -quiet '/Volumes/My Shared Files/share/AstroFlow-$version.dmg'
 ditto /Volumes/AstroFlow/AstroFlow.app /Applications/AstroFlow.app; hdiutil detach -quiet /Volumes/AstroFlow
+d=\"\$HOME/Library/Application Support/AstroFlow\"; rm -rf \"\$d/refdata\"; mkdir -p \"\$d\"
+cp -R '/Volumes/My Shared Files/share/refdata' \"\$d/refdata\"
 quit; open -a /Applications/AstroFlow.app"
 /usr/bin/python3 "$check" "http://$mip:8000" "$sha"
 ssh "${key[@]}" "$mh" "set -e; R=/Applications/AstroFlow.app/Contents/Resources; t=\$(mktemp -d); mkdir \$t/tmp
 cp '/Volumes/My Shared Files/share/${frame##*/}' \$t/frame.fits
-printf 'inparallel\ncpulimit 300\nadd_path %s\nautoindex\n' \$R/astrometry-index > \$t/an.cfg
+printf 'inparallel\ncpulimit 300\nadd_path %s\nautoindex\n' \"\$HOME/Library/Application Support/AstroFlow/refdata/astrometry-index\" > \$t/an.cfg
 PATH=\$R/tools/bin:\$R/python/bin:/usr/bin:/bin solve-field --config \$t/an.cfg --fits-image --overwrite --no-plots --new-fits none --tweak-order 2 --crpix-center --cpulimit 300 --objs 1000 --scale-units degwidth --scale-low 4 --scale-high 8 --temp-dir \$t/tmp \$t/frame.fits | grep 'solved with'
 test -f \$t/frame.solved"
 echo "ok  the bundled solver solves the test frame"
@@ -163,7 +180,12 @@ $p = Start-Process -Wait -PassThru $exe.FullName -ArgumentList "/VERYSILENT", "/
 Set-Content C:\AstroFlow-release\install.exit $p.ExitCode
 EOF
 cat > "$tmp/launch.ps1" <<'EOF'
-# As the Start menu shortcut does: the tray launcher on the bundled Python.
+# The reference data in place, as a first start would have fetched it; then, as
+# the Start menu shortcut does, the tray launcher on the bundled Python.
+$rd = "$env:LOCALAPPDATA\AstroFlow\refdata"
+if (Test-Path $rd) { Remove-Item -Recurse -Force $rd }
+New-Item -ItemType Directory -Force (Split-Path $rd) | Out-Null
+Copy-Item -Recurse C:\AstroFlow-release\refdata $rd
 Start-Process -FilePath "C:\Program Files\AstroFlow\python\pythonw.exe" `
     -ArgumentList "`"C:\Program Files\AstroFlow\AstroFlow\app\windows\AstroFlow.pyw`"" `
     -WorkingDirectory "C:\Program Files\AstroFlow\AstroFlow\core"
@@ -171,6 +193,7 @@ EOF
 ssh "${key[@]}" "$th" 'if (Test-Path C:\AstroFlow-release) { Remove-Item -Recurse -Force C:\AstroFlow-release }; New-Item -ItemType Directory C:\AstroFlow-release | Out-Null'
 scp -q "${key[@]}" "$win"/AstroFlow-Setup-* "$tmp/install.ps1" "$tmp/launch.ps1" "$th:C:/AstroFlow-release/"
 scp -q "${key[@]}" "$frame" "$th:C:/AstroFlow-release/frame.fits"
+scp -q -r "${key[@]}" "$share/refdata" "$th:C:/AstroFlow-release/refdata"
 # Detached and elevated (an ssh session's children die with it); the launch in
 # the logged-in desktop session (/it), where the tray icon lives.
 ssh "${key[@]}" "$th" 'schtasks /create /tn AstroFlowInstall /tr "powershell -NoProfile -ExecutionPolicy Bypass -File C:\AstroFlow-release\install.ps1" /sc once /st 00:00 /rl highest /ru SYSTEM /f | Out-Null; schtasks /run /tn AstroFlowInstall | Out-Null'
@@ -182,7 +205,7 @@ ssh "${key[@]}" "$th" 'schtasks /create /tn AstroFlowLaunch /tr "powershell -Win
 /usr/bin/python3 "$check" "http://$tip:8000" "$sha"
 ssh "${key[@]}" "$th" '$app = "C:\Program Files\AstroFlow"; $t = "C:\AstroFlow-release"
 New-Item -ItemType Directory -Force "$t\tmp" | Out-Null
-"inparallel`ncpulimit 300`nadd_path C:/Program Files/AstroFlow/tools/astrometry-index`nautoindex`n" | Set-Content "$t\an.cfg" -NoNewline
+("inparallel", "cpulimit 300", ("add_path " + $env:LOCALAPPDATA.Replace([char]92, [char]47) + "/AstroFlow/refdata/astrometry-index"), "autoindex", "") -join "`n" | Set-Content "$t\an.cfg" -NoNewline
 $env:Path = "$app\tools\solve-field\bin;$app\python;C:\Windows\System32;C:\Windows"
 $env:ASTROFLOW_PYTHON = "$app\python\python.exe"; $env:CYGWIN = "nodosfilewarning"
 solve-field.exe --config C:/AstroFlow-release/an.cfg --fits-image --overwrite --no-plots --new-fits none --tweak-order 2 --crpix-center --cpulimit 300 --objs 1000 --scale-units degwidth --scale-low 4 --scale-high 8 --temp-dir C:/AstroFlow-release/tmp C:/AstroFlow-release/frame.fits | Select-String "solved with"

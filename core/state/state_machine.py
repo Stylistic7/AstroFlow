@@ -230,6 +230,8 @@ def _populate_context(
 
     context.ray_head_node_enabled = True
     import node_settings
+    from refdata.fetch import ensure as ensure_refdata
+    ensure_refdata()
     node_settings.write(node_settings.current())
 
     from state.actor import state as state_proxy
@@ -498,8 +500,10 @@ def _join_head(state: State, action: Action) -> tuple[State, list[Action]]:
         return state, []
 
     import node_settings
+    from refdata.fetch import ensure as ensure_refdata
     from state.worker_sync import head_node_settings
     try:
+        ensure_refdata()
         node_settings.write(head_node_settings(head_ip))
     except Exception as e:
         print(f"### Cannot read the head's tool and catalogue settings ({e}); will retry.")

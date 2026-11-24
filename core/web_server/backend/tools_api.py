@@ -64,6 +64,14 @@ def check_tools():
     return jsonify({"nodes": check_cluster()})
 
 
+@tools_bp.route("/api/refdata", methods=["GET"])
+def get_refdata():
+    """The reference data on this node: per folder, how many of its files are
+    in place and how much is still to come (`refdata.fetch`)."""
+    from refdata.fetch import status
+    return jsonify(status())
+
+
 @tools_bp.route("/api/node_settings", methods=["GET"])
 def get_node_settings():
     """What every node keeps a copy of (`node_settings`); a joining worker

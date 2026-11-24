@@ -35,8 +35,11 @@ from pix.tasks.spectrophotometric_flux_calibration import (
     _BROADBAND_FILTERS, _CHROMA_BANDWIDTH_NM, _NARROWBAND_LINE_NM,
 )
 
-CATALOG_PATH = Path(os.environ.get(
-    "ASTROFLOW_GAIA_CATALOG", "/Volumes/AstroProcessed/Catalogs/GaiaXP/gaia_xp"))
+from refdata.fetch import data_dir
+
+# An installer that carries the catalogue, or a machine that keeps it elsewhere,
+# says where; otherwise it is the one `refdata.fetch` brings.
+CATALOG_PATH = Path(os.environ.get("ASTROFLOW_GAIA_CATALOG") or data_dir() / "gaia_xp")
 _COLUMNS = ("source_id", "ra", "dec", "G", "colour", "flux")
 WAVELENGTHS_NM = 336.0 + 2.0 * np.arange(343)
 FILTERS = ("H", "S", "O", "L", "R", "G", "B")

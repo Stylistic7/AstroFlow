@@ -3,9 +3,9 @@
 #
 #   <stage>\AstroFlow\  the committed tree, stamped RELEASE, with the frontend built
 #   <stage>\python\     a standalone x64 CPython 3.12 holding every package of uv.lock
-#   <stage>\tools\      solve-field (the Cygwin build), libvips, GraXpert with its
-#                       model, the astrometry.net index files, the Gaia XP catalogue,
-#                       and bin\ with the wrappers the app finds on PATH
+#   <stage>	ools\      solve-field (the Cygwin build), libvips, GraXpert, and bin\
+#                       with the wrappers the app finds on PATH; the index files and
+#                       the Gaia catalogue the app fetches at first start (core/refdata)
 #
 # Runs in the build VM (app/windows/build_in_vm.sh, which says what it holds),
 # from the unpacked tree: the frontend already built, solve-field-windows-x64.zip
@@ -66,7 +66,6 @@ if ($LASTEXITCODE -ne 0) { throw "the bundled Python cannot import its packages"
 Write-Host "==> GraXpert: its own packages, its model, and the wrapper"
 uv pip install --python $py --target "$Stage\tools\graxpert" -r "$repo\app\graxpert-requirements.txt"
 if ($LASTEXITCODE -ne 0) { throw "GraXpert install failed" }
-Expand-Archive "$Inputs\data\graxpert-model-1.0.1.zip" -DestinationPath "$Stage\tools\graxpert-models" -Force
 Set-Content "$Stage\tools\bin\graxpert.cmd" @'
 @echo off
 rem GraXpert on AstroFlow's Python, with only its own packages beside the stdlib.
@@ -75,25 +74,6 @@ set "PYTHONPATH=%here%..\graxpert"
 "%here%..\..\python\python.exe" -s -c "import sys; from graxpert.main import main; sys.argv[0] = 'graxpert'; sys.exit(main())" %*
 '@ -NoNewline
 
-Write-Host "==> astrometry.net index files (our zips: data.astrometry.net has no 5200 series)"
-$indexDir = "$Downloads\astrometry-index"
-if (-not (Test-Path "$indexDir\index-5206-47.fits")) {
-    New-Item -ItemType Directory -Force $indexDir | Out-Null
-    Get-ChildItem "$Inputs\data\index-*.zip" | ForEach-Object { Expand-Archive $_.FullName -DestinationPath $indexDir -Force }
-}
-$expected = Get-Content "$repo\app\windows\index-files.txt"
-foreach ($name in $expected) {
-    $bytes = [IO.File]::ReadAllBytes("$indexDir\$name")[0..5]
-    if ([Text.Encoding]::ASCII.GetString($bytes) -ne "SIMPLE") { throw "$name is not a FITS file" }
-}
-Write-Host "    $($expected.Count) index files, all FITS"
-New-Item -ItemType Directory -Force "$Stage\tools\astrometry-index" | Out-Null
-Copy-Item "$indexDir\*.fits" "$Stage\tools\astrometry-index\"
-Copy-Item "$repo\app\LICENSE-astrometry-index.txt" "$Stage\tools\astrometry-index\"
-
-Write-Host "==> Gaia XP catalogue"
-Expand-Archive "$Inputs\data\gaia_xp.zip" -DestinationPath "$Stage\tools\gaia_xp" -Force
-Copy-Item "$repo\app\LICENSE-gaia.txt" "$Stage\tools\gaia_xp\"
 
 Write-Host "==> bytecode, then setup.exe"
 & $py -m compileall -q -j 0 "$Stage\python\Lib" "$Stage\tools\graxpert" "$tree\core" | Out-Null

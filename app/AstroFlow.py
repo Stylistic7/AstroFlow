@@ -7,8 +7,8 @@ dashboard once it answers, and a graceful shutdown on Quit.
 
 What the bundle ships beside the code (`app/build_app.sh`): Python with every
 package, GraXpert, solve-field and libvips (`Resources/tools`,
-`Resources/lib`), the astrometry.net index files (`Resources/astrometry-index`)
-and the Gaia XP catalogue (`Resources/gaia_xp`). Nothing comes from Homebrew.
+`Resources/lib`); the index files and the Gaia catalogue the app fetches at
+first start (core/refdata). Nothing comes from Homebrew.
 
 The app bundle (`app/build_app.sh`) runs this with its own Python; from a
 checkout, `uv run --with pyobjc-framework-Cocoa python app/AstroFlow.py`.
@@ -43,9 +43,7 @@ ROOT = Path(__file__).resolve().parent.parent  # the bundle's Resources/AstroFlo
 CORE = ROOT / "core"
 RESOURCES = ROOT.parent  # the bundle's Resources (from a checkout, none of the below exist)
 TOOLS_BIN = RESOURCES / "tools" / "bin"
-INDEX_DIR = RESOURCES / "astrometry-index"
 VIPS_HOME = RESOURCES / "tools" / "vips"
-GAIA_CATALOG = RESOURCES / "gaia_xp"
 ICON = next((p for p in (ROOT.parent / "icon.icns", ROOT / "app" / "icon.icns") if p.exists()), None)
 DASHBOARD_PORT = 8000
 DASHBOARD = f"http://localhost:{DASHBOARD_PORT}"
@@ -122,11 +120,9 @@ class AppDelegate(NSObject):
         env = dict(os.environ, PATH=PATH,
                    PYTHONUNBUFFERED="1", PYTHONDONTWRITEBYTECODE="1",
                    ASTROFLOW_HEAD_NODE="1" if self._is_head() else "0")
-        for var, path in (("ASTROFLOW_GAIA_CATALOG", GAIA_CATALOG), ("ASTROFLOW_INDEX_DIR", INDEX_DIR),
-                          # libvips loads its plugins from here: an empty folder, never Homebrew's
-                          ("VIPSHOME", VIPS_HOME)):
-            if path.is_dir():
-                env[var] = str(path)
+        # libvips loads its plugins from here: an empty folder, never Homebrew's
+        if VIPS_HOME.is_dir():
+            env["VIPSHOME"] = str(VIPS_HOME)
         with open(LOG, "ab") as log:
             self.child = subprocess.Popen(
                 [sys.executable, "main.py"], cwd=CORE, env=env,

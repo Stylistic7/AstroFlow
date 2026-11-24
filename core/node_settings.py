@@ -50,9 +50,13 @@ def write(settings: dict) -> None:
 
 def index_folders(settings: dict) -> list[str]:
     """The folders solve-field reads index files from on this node: the app's
-    own, then the user's extra one."""
+    own (an installer's, or the one `refdata.fetch` filled), then the user's
+    extra one."""
+    from refdata.fetch import data_dir
     bundled = os.environ.get("ASTROFLOW_INDEX_DIR")
-    return [f for f in (bundled, settings.get("astrometry_index_dir")) if f]
+    fetched = data_dir() / "astrometry-index"
+    own = bundled or (str(fetched) if any(fetched.glob("index-*.fits")) else None)
+    return [f for f in (own, settings.get("astrometry_index_dir")) if f]
 
 
 def _replace(path: Path, text: str) -> None:

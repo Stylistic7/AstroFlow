@@ -11,6 +11,14 @@ from dataclasses import dataclass
 
 import pytest
 
+
+@pytest.fixture(autouse=True)
+def _no_reference_data_fetch(monkeypatch):
+    """A joining worker brings the reference data first; these tests join
+    without a network."""
+    import refdata.fetch
+    monkeypatch.setattr(refdata.fetch, "ensure", lambda log=print: None)
+
 import node_settings
 import state.state_machine as sm
 import state.worker_sync as ws

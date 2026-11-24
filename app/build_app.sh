@@ -19,14 +19,8 @@
 #     Resources/lib (bundle_homebrew.py). Their licences go in
 #     Resources/licenses; their source archives beside the disk image, for
 #     publishing with the release.
-#   * the astrometry.net index files for fields from about 20' to the whole
-#     sky (Resources/astrometry-index, from ASTROMETRY_INDEX): 4107-4119 and
-#     5203-5206, 4.6 GB. An ASI585MM at 2000 mm, a 19' x 11' field, solves on
-#     these alone, blind, in sparse fields (tested on the M101 and M51 subs,
-#     2026-10-17). Smaller fields add their own index files on the
-#     Third-Party Tools page.
-#   * the Gaia XP catalogue AstroFlow calibrates with (Resources/gaia_xp, from
-#     GAIA_CATALOG, built by core/photometry/gaia_catalog.py).
+#   * not the astrometry.net index files nor the Gaia XP catalogue: the app
+#     fetches those from their publishers at first start (core/refdata).
 #
 # What the user installs, if they want them: PixInsight, Siril and RC Astro
 # (the dashboard's Third-Party Tools page tries each tool on every Mac).
@@ -54,31 +48,8 @@ DIST="$APP_SRC/dist"
 WORK="$APP_SRC/build"
 PYTHON_VERSION=3.12
 PYOBJC="pyobjc-framework-Cocoa==11.1"
-GAIA_CATALOG="${GAIA_CATALOG:-/Volumes/AstroProcessed/Catalogs/GaiaXP/gaia_xp}"
-ASTROMETRY_INDEX="${ASTROMETRY_INDEX:-/Volumes/AstroProcessed/astrometry-net}"
 SOURCES="$APP_SRC/.sources"   # source archives, kept between builds
 
-for column in source_id ra dec G colour flux; do
-	if [ ! -f "$GAIA_CATALOG/$column.npy" ]; then
-		echo "No Gaia XP catalogue at $GAIA_CATALOG ($column.npy is missing); set GAIA_CATALOG." >&2
-		exit 1
-	fi
-done
-index_files=()
-for i in 4107 4108 4109 4110 4111 4112 4113 4114 4115 4116 4117 4118 4119; do
-	index_files+=("index-$i.fits")
-done
-for i in 5203 5204 5205 5206; do
-	for hp in $(seq -w 0 47); do
-		index_files+=("index-$i-$hp.fits")
-	done
-done
-for f in "${index_files[@]}"; do
-	if [ ! -f "$ASTROMETRY_INDEX/$f" ]; then
-		echo "No $f in $ASTROMETRY_INDEX; set ASTROMETRY_INDEX." >&2
-		exit 1
-	fi
-done
 for formula in astrometry-net vips; do
 	if ! brew list --versions "$formula" >/dev/null 2>&1; then
 		echo "The build copies Homebrew's $formula into the app: brew install $formula" >&2
@@ -186,14 +157,6 @@ relocate+=("$vips_module")
 # empty one so it never loads Homebrew's (which link Homebrew's libvips).
 mkdir -p "$RES/tools/vips"
 
-echo "→ astrometry.net index files"
-mkdir -p "$RES/astrometry-index"
-(cd "$ASTROMETRY_INDEX" && rsync -a "${index_files[@]}" "$RES/astrometry-index/")
-cp "$APP_SRC/LICENSE-astrometry-index.txt" "$RES/astrometry-index/"
-
-echo "→ Gaia XP catalogue"
-rsync -a --exclude '.*' "$GAIA_CATALOG/" "$RES/gaia_xp/"
-cp "$APP_SRC/LICENSE-gaia.txt" "$RES/gaia_xp/"
 
 # Bytecode now, so nothing writes into the signed bundle at run time.
 "$py" -m compileall -q -j 0 "$RES/python/lib" "$RES/tools/graxpert" "$RES/tools/astrometry" "$RES/AstroFlow" >/dev/null || true

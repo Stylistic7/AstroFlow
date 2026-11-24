@@ -30,6 +30,7 @@ export default function ToolsPanel() {
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [refdata, setRefdata] = useState(null);
 
   const load = (t) => {
     setSaved(t);
@@ -48,6 +49,7 @@ export default function ToolsPanel() {
     setChecking(false);
   };
   useEffect(() => {
+    fetch('/api/refdata').then((r) => (r.ok ? r.json() : null)).then(setRefdata).catch(() => setRefdata(null));
     fetch('/api/tools').then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then(load).catch((e) => setError(String(e)));
     check();
@@ -133,6 +135,20 @@ export default function ToolsPanel() {
           <Box component="pre" sx={{ m: 0, mt: 0.5, whiteSpace: 'pre-wrap', fontSize: 12 }}>{f.detail}</Box>
         </Alert>
       ))}
+      {refdata && (
+        <PanelSection title="Reference data" meta={refdata.complete ? 'complete' : 'incomplete'}
+          subtitle={`The index files the solver matches stars against and the Gaia catalogue the photometry reads, `
+            + `fetched from their publishers into ${refdata.root}`}>
+          <Stack spacing={0.5}>
+            {Object.entries(refdata.folders).map(([name, f]) => (
+              <Typography key={name} variant="body2">
+                {name}: {f.present} of {f.files} files
+                {f.missing_bytes > 0 ? `, ${(f.missing_bytes / 1e9).toFixed(2)} GB still to come` : ''}
+              </Typography>
+            ))}
+          </Stack>
+        </PanelSection>
+      )}
       <PanelSection title="Locations">
         <Stack spacing={1.5}>
           {saved.tools.filter((t) => t.locatable).map((t) => (
