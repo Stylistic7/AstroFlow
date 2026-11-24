@@ -55,7 +55,11 @@ scp -q "${key[@]}" "$(git rev-parse --show-toplevel)/app/windows/test/frame_bin4
 vm '$t = "C:\build\solve-test"; $st = "C:\build\stage"
 if (Test-Path $t) { Remove-Item -Recurse -Force $t }; New-Item -ItemType Directory -Force "$t\tmp" | Out-Null
 Move-Item C:\build\frame.fits "$t\frame.fits"
-"inparallel`ncpulimit 300`nadd_path C:/build/stage/tools/astrometry-index`nautoindex`n" | Set-Content "$t\an.cfg" -NoNewline
+# The index files this field needs, from their publisher, kept between builds: the
+# install layout carries none (core/refdata brings them at a first start).
+$idx = "C:\build\downloads\astrometry-index-proof"; New-Item -ItemType Directory -Force $idx | Out-Null
+foreach ($i in 4107..4113) { $f = "$idx\index-$i.fits"; if (-not (Test-Path $f)) { Invoke-WebRequest -UseBasicParsing "http://data.astrometry.net/4100/index-$i.fits" -OutFile $f } }
+("inparallel", "cpulimit 300", "add_path C:/build/downloads/astrometry-index-proof", "autoindex", "") -join "`n" | Set-Content "$t\an.cfg" -NoNewline
 # The app'"'"'s PATH shape: the bundle'"'"'s bin first, then its Python, then the system; no other Cygwin.
 $env:Path = "$st\tools\solve-field\bin;$st\python;C:\Windows\System32;C:\Windows"
 $env:ASTROFLOW_PYTHON = "$st\python\python.exe"; $env:CYGWIN = "nodosfilewarning"
